@@ -1,0 +1,65 @@
+{
+  "pages": {
+    "/_not-found/page": [
+      "static/chunks/webpack-616e068a201ad621.js",
+      "static/chunks/fd9d1056-ae97a97996823271.js",
+      "static/chunks/117-5f3c6264c409a084.js",
+      "static/chunks/main-app-a24636380f2c38dd.js",
+      "static/chunks/app/_not-found/page-43a8f100af37686a.js"
+    ],
+    "/layout": [
+      "static/chunks/webpack-616e068a201ad621.js",
+      "static/chunks/fd9d1056-ae97a97996823271.js",
+      "static/chunks/117-5f3c6264c409a084.js",
+      "static/chunks/main-app-a24636380f2c38dd.js",
+      "static/css/74bcb1e123b24842.css",
+      "static/chunks/app/layout-51316d6397e06c84.js"
+    ],
+    "/oportunidades/page": [
+      "static/chunks/webpack-616e068a201ad621.js",
+      "static/chunks/fd9d1056-ae97a97996823271.js",
+      "static/chunks/117-5f3c6264c409a084.js",
+      "static/chunks/main-app-a24636380f2c38dd.js",
+      "static/chunks/448-6f98f8d1562d2b79.js",
+      "static/chunks/app/oportunidades/page-3b57e952c46c0181.js"
+    ],
+    "/login/page": [
+      "static/chunks/webpack-616e068a201ad621.js",
+      "static/chunks/fd9d1056-ae97a97996823271.js",
+      "static/chunks/117-5f3c6264c409a084.js",
+      "static/chunks/main-app-a24636380f2c38dd.js",
+      "static/chunks/app/login/page-2e04c6ff43043d3b.js"
+    ],
+    "/dashboard/page": [
+      "static/chunks/webpack-616e068a201ad621.js",
+      "static/chunks/fd9d1056-ae97a97996823271.js",
+      "static/chunks/117-5f3c6264c409a084.js",
+      "static/chunks/main-app-a24636380f2c38dd.js",
+      "static/chunks/448-6f98f8d1562d2b79.js",
+      "static/chunks/app/dashboard/page-831e8febcd4a5d56.js"
+    ],
+    "/clientes/page": [
+      "static/chunks/webpack-616e068a201ad621.js",
+      "static/chunks/fd9d1056-ae97a97996823271.js",
+      "static/chunks/117-5f3c6264c409a084.js",
+      "static/chunks/main-app-a24636380f2c38dd.js",
+      "static/chunks/448-6f98f8d1562d2b79.js",
+      "static/chunks/app/clientes/page-bfd64e7b12c121ee.js"
+    ],
+    "/visitas/page": [
+      "static/chunks/webpack-616e068a201ad621.js",
+      "static/chunks/fd9d1056-ae97a97996823271.js",
+      "static/chunks/117-5f3c6264c409a084.js",
+      "static/chunks/main-app-a24636380f2c38dd.js",
+      "static/chunks/448-6f98f8d1562d2b79.js",
+      "static/chunks/app/visitas/page-1a5a0d85912af35f.js"
+    ],
+    "/page": [
+      "static/chunks/webpack-616e068a201ad621.js",
+      "static/chunks/fd9d1056-ae97a97996823271.js",
+      "static/chunks/117-5f3c6264c409a084.js",
+      "static/chunks/main-app-a24636380f2c38dd.js",
+      "static/chunks/app/page-438ce72cbc538072.js"
+    ]
+  }
+}

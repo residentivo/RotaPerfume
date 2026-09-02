@@ -1,0 +1,1593 @@
+{
+  "info": {
+    "_postman_id": "rotaperfumes-2024",
+    "name": "RotaPerfumes",
+    "description": "Coleção completa das APIs RH, CRM e ERP do sistema RotaPerfumes. Execute o Login da pasta Autenticação antes de testar os endpoints protegidos.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "rh_url",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "crm_url",
+      "value": "http://localhost:8082"
+    },
+    {
+      "key": "erp_url",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "rh_token",
+      "value": ""
+    },
+    {
+      "key": "crm_token",
+      "value": ""
+    },
+    {
+      "key": "erp_token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "RH",
+      "item": [
+        {
+          "name": "Autenticação",
+          "item": [
+            {
+              "name": "POST /auth/login",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    pm.collectionVariables.set('rh_token', jsonData.token);",
+                      "    pm.test('Token salvo na variável rh_token', true);",
+                      "} else {",
+                      "    pm.test('Falha no login', false);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"login\": \"rh_admin\",\n    \"senha\": \"rh123456\"\n}"
+                },
+                "url": {
+                  "raw": "{{rh_url}}/auth/login",
+                  "host": ["{{rh_url}}"],
+                  "path": ["auth", "login"]
+                },
+                "description": "Login no backend RH. O token é salvo automaticamente na variável rh_token."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /auth/trocar-senha",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"senha_atual\": \"rh123456\",\n    \"nova_senha\": \"NovaSenha123!\"\n}"
+                },
+                "url": {
+                  "raw": "{{rh_url}}/auth/trocar-senha",
+                  "host": ["{{rh_url}}"],
+                  "path": ["auth", "trocar-senha"]
+                },
+                "description": "Troca a senha do usuário logado."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Vendedores",
+          "item": [
+            {
+              "name": "GET /vendedores",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200', pm.response.code === 200);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{rh_url}}/vendedores",
+                  "host": ["{{rh_url}}"],
+                  "path": ["vendedores"],
+                  "query": [
+                    {
+                      "key": "nome",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por nome"
+                    },
+                    {
+                      "key": "uf",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por UF (ex: SP)"
+                    },
+                    {
+                      "key": "ativo",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por ativo (true/false)"
+                    }
+                  ]
+                },
+                "description": "Lista todos os vendedores. Filtros opcionais: nome, uf, ativo."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /vendedores/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{rh_url}}/vendedores/1",
+                  "host": ["{{rh_url}}"],
+                  "path": ["vendedores", "1"]
+                },
+                "description": "Busca um vendedor pelo ID."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /vendedores",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 201 Created', pm.response.code === 201);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"nome\": \"João Silva\",\n    \"regiao\": \"Sudeste\",\n    \"uf\": \"SP\",\n    \"data_admissao\": \"2024-01-15\",\n    \"meta_mensal\": 50000.00\n}"
+                },
+                "url": {
+                  "raw": "{{rh_url}}/vendedores",
+                  "host": ["{{rh_url}}"],
+                  "path": ["vendedores"]
+                },
+                "description": "Cria um novo vendedor. Requer tipo_usuario rh ou gerente."
+              },
+              "response": []
+            },
+            {
+              "name": "PUT /vendedores/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"nome\": \"João Silva Atualizado\",\n    \"regiao\": \"Sul\",\n    \"uf\": \"SC\",\n    \"meta_mensal\": 60000.00\n}"
+                },
+                "url": {
+                  "raw": "{{rh_url}}/vendedores/1",
+                  "host": ["{{rh_url}}"],
+                  "path": ["vendedores", "1"]
+                },
+                "description": "Atualiza um vendedor existente. Requer tipo_usuario rh ou gerente."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Usuários",
+          "item": [
+            {
+              "name": "GET /usuarios",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{rh_url}}/usuarios",
+                  "host": ["{{rh_url}}"],
+                  "path": ["usuarios"]
+                },
+                "description": "Lista todos os usuários."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /usuarios/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{rh_url}}/usuarios/1",
+                  "host": ["{{rh_url}}"],
+                  "path": ["usuarios", "1"]
+                },
+                "description": "Busca um usuário pelo ID."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /usuarios/{id}/vendedor",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{rh_url}}/usuarios/3/vendedor",
+                  "host": ["{{rh_url}}"],
+                  "path": ["usuarios", "3", "vendedor"]
+                },
+                "description": "Retorna o vendedor associado a um usuário."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /usuarios",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 201 Created', pm.response.code === 201);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"login\": \"novo_vendedor\",\n    \"email\": \"novo_vendedor@rotaperfumes.com\",\n    \"senha\": \"SenhaForte123\",\n    \"tipo_usuario\": \"vendedor\",\n    \"vendedor_id\": 2,\n    \"gerenciado_por\": 1,\n    \"ativo\": \"S\"\n}"
+                },
+                "url": {
+                  "raw": "{{rh_url}}/usuarios",
+                  "host": ["{{rh_url}}"],
+                  "path": ["usuarios"]
+                },
+                "description": "Cria um novo usuário. Requer tipo_usuario rh."
+              },
+              "response": []
+            },
+            {
+              "name": "PUT /usuarios/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"email\": \"novo_email@rotaperfumes.com\",\n    \"tipo_usuario\": \"gerente\",\n    \"ativo\": \"S\"\n}"
+                },
+                "url": {
+                  "raw": "{{rh_url}}/usuarios/1",
+                  "host": ["{{rh_url}}"],
+                  "path": ["usuarios", "1"]
+                },
+                "description": "Atualiza um usuário existente. Requer tipo_usuario rh."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /usuarios/{id}/reset-senha",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200', pm.response.code === 200);",
+                      "pm.test('Contém nova_senha', pm.response.json().nova_senha !== undefined);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{rh_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{rh_url}}/usuarios/3/reset-senha",
+                  "host": ["{{rh_url}}"],
+                  "path": ["usuarios", "3", "reset-senha"]
+                },
+                "description": "Gera uma nova senha aleatória para o usuário. Requer tipo_usuario rh. A resposta contém a nova senha em texto plano."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CRM",
+      "item": [
+        {
+          "name": "Autenticação",
+          "item": [
+            {
+              "name": "POST /auth/login",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    pm.collectionVariables.set('crm_token', jsonData.token);",
+                      "    pm.test('Token salvo na variável crm_token', true);",
+                      "} else {",
+                      "    pm.test('Falha no login', false);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"login\": \"rh_admin\",\n    \"senha\": \"rh123456\"\n}"
+                },
+                "url": {
+                  "raw": "{{crm_url}}/auth/login",
+                  "host": ["{{crm_url}}"],
+                  "path": ["auth", "login"]
+                },
+                "description": "Login no backend CRM. O token é salvo automaticamente na variável crm_token."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Clientes",
+          "item": [
+            {
+              "name": "GET /api/clientes",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/clientes",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "clientes"],
+                  "query": [
+                    {
+                      "key": "uf",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por UF"
+                    },
+                    {
+                      "key": "segmento",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por segmento"
+                    },
+                    {
+                      "key": "ativo",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por ativo (S ou N)"
+                    },
+                    {
+                      "key": "cidade",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por cidade"
+                    }
+                  ]
+                },
+                "description": "Lista clientes com filtros opcionais: uf, segmento, ativo, cidade."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /api/clientes/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/clientes/1",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "clientes", "1"]
+                },
+                "description": "Busca um cliente pelo ID."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /api/clientes",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 201 Created', pm.response.code === 201);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cnpj\": \"12.345.678/0001-99\",\n    \"razao_social\": \"Empresa Teste LTDA\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"ativo\": \"S\"\n}"
+                },
+                "url": {
+                  "raw": "{{crm_url}}/api/clientes",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "clientes"]
+                },
+                "description": "Cria um novo cliente."
+              },
+              "response": []
+            },
+            {
+              "name": "PUT /api/clientes/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cnpj\": \"12.345.678/0001-99\",\n    \"razao_social\": \"Empresa Teste Atualizada\",\n    \"segmento\": \"Atacado\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Jardins\",\n    \"ativo\": \"S\"\n}"
+                },
+                "url": {
+                  "raw": "{{crm_url}}/api/clientes/1",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "clientes", "1"]
+                },
+                "description": "Atualiza um cliente existente."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Vendedores",
+          "item": [
+            {
+              "name": "GET /api/vendedores",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/vendedores",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "vendedores"]
+                },
+                "description": "Lista vendedores (somente leitura)."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /api/vendedores/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/vendedores/1",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "vendedores", "1"]
+                },
+                "description": "Busca um vendedor pelo ID."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Carteira",
+          "item": [
+            {
+              "name": "GET /api/carteira",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/carteira",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "carteira"],
+                  "query": [
+                    {
+                      "key": "vendedor_id",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por vendedor"
+                    }
+                  ]
+                },
+                "description": "Lista clientes na carteira de vendedores."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /api/carteira",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 201 Created', pm.response.code === 201);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 2,\n    \"data_inicio\": \"2024-01-01\"\n}"
+                },
+                "url": {
+                  "raw": "{{crm_url}}/api/carteira",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "carteira"]
+                },
+                "description": "Adiciona um cliente à carteira de um vendedor."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Visitas",
+          "item": [
+            {
+              "name": "GET /api/visitas",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/visitas",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "visitas"],
+                  "query": [
+                    {
+                      "key": "vendedor_id",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por vendedor"
+                    },
+                    {
+                      "key": "cliente_id",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por cliente"
+                    }
+                  ]
+                },
+                "description": "Lista visitas realizadas."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /api/visitas",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 201 Created', pm.response.code === 201);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 2,\n    \"data_visita\": \"2024-06-15\",\n    \"resultado\": \"Negociação avançada\",\n    \"duracao_min\": 45\n}"
+                },
+                "url": {
+                  "raw": "{{crm_url}}/api/visitas",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "visitas"]
+                },
+                "description": "Registra uma nova visita."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Oportunidades",
+          "item": [
+            {
+              "name": "GET /api/oportunidades",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/oportunidades",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "oportunidades"],
+                  "query": [
+                    {
+                      "key": "vendedor_id",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por vendedor"
+                    },
+                    {
+                      "key": "etapa",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Filtro por etapa (Aberta, Em negociação, Fechada, Perdida)"
+                    }
+                  ]
+                },
+                "description": "Lista oportunidades de venda."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /api/oportunidades/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/oportunidades/1",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "oportunidades", "1"]
+                },
+                "description": "Busca uma oportunidade pelo ID."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /api/oportunidades",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 201 Created', pm.response.code === 201);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 2,\n    \"origem\": \"Indicação\",\n    \"etapa\": \"Aberta\",\n    \"probabilidade_pct\": 30,\n    \"valor_estimado\": 25000.00,\n    \"data_fechamento\": \"\"\n}"
+                },
+                "url": {
+                  "raw": "{{crm_url}}/api/oportunidades",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "oportunidades"]
+                },
+                "description": "Cria uma nova oportunidade."
+              },
+              "response": []
+            },
+            {
+              "name": "PUT /api/oportunidades/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 2,\n    \"origem\": \"Indicação\",\n    \"etapa\": \"Fechada\",\n    \"probabilidade_pct\": 100,\n    \"valor_estimado\": 25000.00,\n    \"data_fechamento\": \"2024-06-20\",\n    \"motivo_perda\": \"\"\n}"
+                },
+                "url": {
+                  "raw": "{{crm_url}}/api/oportunidades/1",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "oportunidades", "1"]
+                },
+                "description": "Atualiza uma oportunidade existente (ex: marcar como Fechada)."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Dashboard",
+          "item": [
+            {
+              "name": "GET /api/dashboard/vendas",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/dashboard/vendas",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "dashboard", "vendas"],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "",
+                      "disabled": true,
+                      "description": "Limite de resultados (padrão: 20)"
+                    }
+                  ]
+                },
+                "description": "Ranking de vendedores por valor de oportunidades fechadas."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /api/dashboard/carteira",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{crm_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{crm_url}}/api/dashboard/carteira",
+                  "host": ["{{crm_url}}"],
+                  "path": ["api", "dashboard", "carteira"]
+                },
+                "description": "Distribuição de clientes por vendedor na carteira."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ERP",
+      "item": [
+        {
+          "name": "Autenticação",
+          "item": [
+            {
+              "name": "POST /auth/login",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    pm.collectionVariables.set('erp_token', jsonData.token);",
+                      "    pm.test('Token salvo na variável erp_token', true);",
+                      "} else {",
+                      "    pm.test('Falha no login', false);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"login\": \"rh_admin\",\n    \"senha\": \"rh123456\"\n}"
+                },
+                "url": {
+                  "raw": "{{erp_url}}/auth/login",
+                  "host": ["{{erp_url}}"],
+                  "path": ["auth", "login"]
+                },
+                "description": "Login no backend ERP. O token é salvo automaticamente na variável erp_token."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Produtos",
+          "item": [
+            {
+              "name": "GET /api/produtos",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{erp_url}}/api/produtos",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "produtos"]
+                },
+                "description": "Lista todos os produtos."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /api/produtos/{sku}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{erp_url}}/api/produtos/PF001",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "produtos", "PF001"]
+                },
+                "description": "Busca um produto pelo SKU."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /api/produtos",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 201 Created', pm.response.code === 201);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"sku\": \"PF999\",\n    \"descricao\": \"Perfume Novo Lancamento\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 189.90,\n    \"custo_unitario\": 75.00,\n    \"unidade\": \"UN\",\n    \"ativo\": \"S\"\n}"
+                },
+                "url": {
+                  "raw": "{{erp_url}}/api/produtos",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "produtos"]
+                },
+                "description": "Cria um novo produto."
+              },
+              "response": []
+            },
+            {
+              "name": "PUT /api/produtos/{sku}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"descricao\": \"Perfume Atualizado\",\n    \"categoria\": \"Feminino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Floral\",\n    \"preco_tabela\": 199.90,\n    \"custo_unitario\": 80.00,\n    \"unidade\": \"UN\",\n    \"ativo\": \"S\"\n}"
+                },
+                "url": {
+                  "raw": "{{erp_url}}/api/produtos/PF001",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "produtos", "PF001"]
+                },
+                "description": "Atualiza um produto existente."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Pedidos",
+          "item": [
+            {
+              "name": "GET /api/pedidos",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{erp_url}}/api/pedidos",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "pedidos"]
+                },
+                "description": "Lista pedidos (últimos 500)."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /api/pedidos/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{erp_url}}/api/pedidos/1",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                },
+                "description": "Busca um pedido pelo ID."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /api/pedidos/{id}/itens",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{erp_url}}/api/pedidos/1/itens",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "pedidos", "1", "itens"]
+                },
+                "description": "Lista os itens de um pedido."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /api/pedidos",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 201 Created', pm.response.code === 201);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 2,\n    \"canal\": \"direto\",\n    \"status\": \"pendente\",\n    \"itens\": [\n        {\n            \"sku\": \"PF001\",\n            \"quantidade\": 10,\n            \"preco_praticado\": 89.90,\n            \"desconto_pct\": 5.0\n        },\n        {\n            \"sku\": \"PF002\",\n            \"quantidade\": 5,\n            \"preco_praticado\": 129.90,\n            \"desconto_pct\": 0\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{erp_url}}/api/pedidos",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "pedidos"]
+                },
+                "description": "Cria um novo pedido com itens. O valor_total é calculado automaticamente."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Pagamentos",
+          "item": [
+            {
+              "name": "GET /api/pagamentos",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{erp_url}}/api/pagamentos",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "pagamentos"]
+                },
+                "description": "Lista pagamentos (últimos 500)."
+              },
+              "response": []
+            },
+            {
+              "name": "POST /api/pagamentos",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 201 Created', pm.response.code === 201);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 899.00,\n    \"taxa_pct\": 0,\n    \"valor_liquido\": 899.00,\n    \"data_vencimento\": \"2024-07-15\",\n    \"data_pagamento\": \"\",\n    \"status_pagamento\": \"pendente\"\n}"
+                },
+                "url": {
+                  "raw": "{{erp_url}}/api/pagamentos",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "pagamentos"]
+                },
+                "description": "Registra um novo pagamento."
+              },
+              "response": []
+            },
+            {
+              "name": "PUT /api/pagamentos/{id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200 ou 404', [200,404].includes(pm.response.code));"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"status_pagamento\": \"pago\",\n    \"data_pagamento\": \"2024-07-10\"\n}"
+                },
+                "url": {
+                  "raw": "{{erp_url}}/api/pagamentos/1",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "pagamentos", "1"]
+                },
+                "description": "Atualiza o status de um pagamento (ex: marcar como pago)."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Estoque",
+          "item": [
+            {
+              "name": "GET /api/estoque",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": ["pm.test('Status 200', pm.response.code === 200);"]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{erp_url}}/api/estoque?sku=PF001",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "estoque"],
+                  "query": [
+                    {
+                      "key": "sku",
+                      "value": "PF001",
+                      "description": "SKU do produto (obrigatório)"
+                    }
+                  ]
+                },
+                "description": "Lista histórico de estoque de um produto (por data de snapshot). Requer parâmetro sku."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Dashboard",
+          "item": [
+            {
+              "name": "GET /api/dashboard/financeiro",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200', pm.response.code === 200);",
+                      "var json = pm.response.json();",
+                      "pm.test('Retorna array', Array.isArray(json));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{erp_url}}/api/dashboard/financeiro",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "dashboard", "financeiro"]
+                },
+                "description": "Totais de pagamentos por forma de pagamento (valor bruto, líquido e quantidade)."
+              },
+              "response": []
+            },
+            {
+              "name": "GET /api/dashboard/estoque",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200', pm.response.code === 200);",
+                      "var json = pm.response.json();",
+                      "pm.test('Retorna array', Array.isArray(json));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{erp_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{erp_url}}/api/dashboard/estoque",
+                  "host": ["{{erp_url}}"],
+                  "path": ["api", "dashboard", "estoque"]
+                },
+                "description": "Lista produtos em ruptura (saldo = 0) no último snapshot de estoque."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

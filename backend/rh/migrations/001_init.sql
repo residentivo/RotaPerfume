@@ -1,0 +1,2 @@
+-- Migrations placeholder
+-- As tabelas vendedores e usuarios já existem no banco de dados rotaperfumes

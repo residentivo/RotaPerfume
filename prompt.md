@@ -1,8 +1,9 @@
+-Documente tudo que for feito por esse prompt para verificação futura.
 -Instale as configurações nessa pasta para melhorar o desempenho da execução do Claude
 -Use as chaves de acesso que estaos no arquivo .env
 -Tenho um banco de dados rodando no endereço mysql://localhost:3306/ usando o acesso golang e preciso que vc pegue todos os csvs da pasta dados e crie os scripts para criação das tabelas nesse banco. crie todas as ligações entre as tabelas inferindo as colunas que fazem as referencias entres os IDs. 
 -Criar também uma tabela de usuarios associadas aos vendedores. Essa tabela tem que conter se o login é um vendor ou um gerente ou do Rh. Deve conter uma coluna para dizer quem é o login que genencia o login.
--copie cada vendedor na tabela de usuario com uma senha aleatorio invalida.
+-copie cada vendedor na tabela de usuario usando o nome do vendedor como nomes de email e login com uma senha aleatorio invalida.
 -todas as senhas devem ser armazenadas como hash na tabela de usuario.
 -Apos criar os scripts executar no banco rotaperfumes esses scripts e que em seguida, suba os dados dos CSVS nessas tabelas. 
 -OS projetos devem seguir o padrão MVC e deve conter uma camada de repositorio para os acessos ao banco de dados.
@@ -11,7 +12,9 @@
 -fazer uma API com as regras de negocio de um CRM que usem as tabelas que forem da pasta Dados\CRM. 
 -fazer uma API com as regras de negocio de um ERP que usem as tabelas que forem da pasta Dados\ERP.
 -Todos os aplicativos web devem conter login e troca de senha.
--Para as paginas será usadno typescript e next para as telas. Os carregametos das telas devem ser feitas por endpoins para o backend que fara uma nova reguisição para API. 
+-Para as paginas será usadno typescript e next para as telas. Os carregametos das telas devem ser feitas por endpoins para o backend que fara uma nova reguisição para API.
+-Nos sistemas de tela deve haver um arquivo de configuração com o endereço base da api.
 -Deve haver uma sistema de telas para o RH gerencias os daods de login e vendedores que irão se cominunicar com os dados que virão da api de RH.
 -Em outro sistema de telas deve conter todas as regras de negocio de um CRM para a telas que irão se cominunicar com os dados que virão da api de CRM.
 -Em outro sistema de telas deve conter todas as regras de negocio de um ERP para a telas que irão se cominunicar com os dados que virão da api de ERP.
+-Crie um arquivo para importar no postman que contenha todos as apis como pastas e os endpois dessa api registradas dentro delas e ja configurando a token que eu gere pela requisição de login daquela pasta para todas as requisições dessa pasta
