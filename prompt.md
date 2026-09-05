@@ -1,25 +1,21 @@
-- **Auditoria e Logs**: Documentar detalhadamente todas as ações e artefatos gerados por este prompt para fins de auditoria e verificação futura.
+- **Preferencia de Execução**: Usar powershell para as execuções de comando pois estou em um ambiente windows
 - **Ambiente de Execução**: Configurar o ambiente de execução nesta pasta atual com parâmetros de contexto específicos para otimizar o desempenho do Claude.
 - **Variáveis de Ambiente**: Utilizar exclusivamente as credenciais e chaves de acesso armazenadas no arquivo `.env`.
 - **Modelagem de Dados**: Analisar todos os arquivos CSV contidos na pasta `dados` e gerar os scripts DDL (SQL) para criação das tabelas no banco de dados MySQL localizado em `mysql://localhost:3306/`. Inferir e mapear automaticamente as chaves primárias e estrangeiras (`IDs`) para criar os relacionamentos entre as tabelas.
 - **Tabela de Usuários**: Criar uma tabela de usuários vinculada aos vendedores. A tabela deve conter controle de nível de acesso (Roles: `VENDEDOR`, `GERENTE`, `RH`) e uma coluna de auto-relacionamento (`gerente_id`) para definir a hierarquia de subordinação dos logins.
-- **Carga Inicial de Usuários**: Migrar os dados dos vendedores para a tabela de usuários. Gerar o e-mail e o login baseados no nome do vendedor, definir uma senha inicial aleatória inválida e implementar uma flag ou mecanismo que permita ao perfil `RH` resetar/alterar a senha dos usuários.
+- **Carga Inicial de Usuários**: Migrar os dados dos vendedores para a tabela de usuários. Gerar o e-mail e o login baseados no nome do vendedor, definir uma senha inicial aleatória inválida e implementar uma flag ou mecanismo que permita ao perfil `RH` resetar/alterar a senha dos usuários. Os vendedores com data de desligamento devem ter o usuario desativado.
 - **Segurança de Credenciais**: Aplicar criptografia com algoritmo de hash seguro (ex: bcrypt) para armazenar todas as senhas na tabela de usuários.
 - **Execução e Carga do Banco**: Executar os scripts SQL criados diretamente no banco de dados denominado `rotaperfumes` e, na sequência, realizar o seed (carga) dos dados dos arquivos CSV para as respectivas tabelas.
-- **Padrão de Paginação**: Implementar paginação em todos os endpoints que retornem listas com mais de 20 itens, permitindo parâmetros dinâmicos de limite por página nos tamanhos estritos de 20, 50 e 100 registros.
+- **Padrão de Pesquisa**: Implementar campos de pesquisa em todas as listas criadas para filtrar os dados.
+- **Padrão de Paginação**: Implementar paginação em todos os endpoints que retornem listas com mais de 20 itens, permitindo parâmetros dinâmicos de limite por página.
 - **Testabilidade**: Estruturar a arquitetura de todos os projetos para garantir suporte nativo a testes automatizados de ponta a ponta.
 - **Arquitetura do Software**: Desenvolver todas as APIs seguindo estritamente os padrões e camadas descritos no guia de referência `cleanarch.md`.
-- **Rastreabilidade (Logs)**: Implementar um sistema de log verboso em todas as APIs que registre uma descrição textual e cronológica de cada etapa interna executada pelas requisições.
+- **Rastreabilidade (Logs)**: Implementar um sistema de log verboso em todas as APIs que registre uma descrição textual e cronológica de cada etapa interna executada pelas requisições. Deve haver uma configuração para desligar o modo verboso de log dos processos.
 - **Autenticação**: Desenvolver um serviço de autenticação baseado em Token (JWT) com validação de usuário e senha, utilizando estritamente a linguagem Go.
-- **API RH**: Desenvolver uma API em Go para a gestão de logins, permissões e vendedores, denominada `API RH`.
-- **API CRM**: Desenvolver uma API em Go contendo as regras de negócio de um CRM, utilizando como fonte de dados as tabelas originadas da pasta `Dados\CRM`.
-- **API ERP**: Desenvolver uma API em Go contendo as regras de negócio de um ERP, utilizando como fonte de dados as tabelas originadas da pasta `Dados\ERP`.
+- **API**: API dever ser escrita Go para a gestão de logins, permissões e  aplicando suas regras de negócio das tabelas do banco de dados
 - **Autenticação no Frontend**: Implementar fluxos obrigatórios de login e alteração de senha em todas as aplicações web.
 - **Exibição de Dados**: Exibir obrigatoriamente o ID único do cliente ou do vendedor de forma adjacente ao seu respectivo nome em todos os componentes de interface web.
 - **Tecnologias do Frontend**: Desenvolver las interfaces utilizando TypeScript e Next.js. O carregamento de dados nas telas deve ser feito via Server-Side (BFF/API Route) ou endpoints intermediários que realizam novas requisições para as APIs de backend.
-- **Configuração do Cliente**: Criar um arquivo de configuração centralizado no frontend para armazenar a URL base (Base URL) de comunicação com o backend.
-- **Frontend RH**: Desenvolver o sistema de telas específico para o RH gerenciar dados de login e vendedores, consumindo os endpoints da `API RH`.
-- **Frontend CRM**: Desenvolver o sistema de telas específico para o CRM, aplicando suas regras de negócio visuais e consumindo os endpoints da `API CRM`.
-- **Frontend ERP**: Desenvolver o sistema de telas específico para o ERP, aplicando suas regras de negócio visuais e consumindo os endpoints da `API ERP`.
+- **Frontend**: Desenvolver o sistema de telas gerenciar dados de login e aplicando suas regras de negócio visuais e consumindo os endpoints consumindo os endpoints da `API`
 - **Garantia de Qualidade**: Escrever e executar os testes unitários e de integração para todos os projetos desenvolvidos para validar o funcionamento do ecossistema.
 - **Artefatos do Postman**: Gerar um arquivo de coleção do Postman (JSON v2.1) organizado em pastas por API. Configurar cada pasta para herdar um token de autenticação gerado dinamicamente a partir da requisição de login daquela respectiva pasta.
