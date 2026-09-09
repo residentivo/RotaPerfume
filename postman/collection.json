@@ -1,0 +1,2155 @@
+{
+  "info": {
+    "name": "RotaPerfumes API — Autenticação",
+    "description": "Coleção de endpoints da API de autenticação do SistemaCompleto.\n\n## Credenciais padrão\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedor 1: `v1.henrique_rodrigues@rotaperfumes.com.br` / `Mudar@123`\n\n## Configuração\n1. Importe esta coleção no Postman.\n2. Defina a variável `{{base_url}}` como `http://localhost:8080`.\n3. Para endpoints protegidos, primeiro faça login (POST /api/auth/login) e copie o `access_token` da resposta para a variável `{{token}}` — ou use o botão **Authorize** com o tipo Bearer Token.\n4. Para reset-password e listar usuarios, o token deve ser de um usuário com role=`admin`.\n\n## Inicialização\n```bash\nmake db-reset && make gen-hash && make dev-api\n```",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "refresh_token",
+      "value": ""
+    },
+    {
+      "key": "vendedor_token",
+      "value": ""
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Healthcheck",
+      "event": [],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "Verifica se a API está no ar."
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"status\": \"ok\"\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.success && jsonData.data && jsonData.data.access_token) {",
+              "    pm.collectionVariables.set('token', jsonData.data.access_token);",
+              "    if (jsonData.data.refresh_token) {",
+              "        pm.collectionVariables.set('refresh_token', jsonData.data.refresh_token);",
+              "    }",
+              "    if (jsonData.data.user && jsonData.data.user.role === 'admin') {",
+              "        pm.collectionVariables.set('admin_token', jsonData.data.access_token);",
+              "    }",
+              "}",
+              "pm.test('Login bem-sucedido', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Resposta contém user com role', function() {",
+              "    pm.expect(jsonData.data.user.role).to.be.oneOf(['admin', 'normal']);",
+              "});",
+              "pm.test('Contém access_token', function() {",
+              "    pm.expect(jsonData.data.access_token).to.be.a('string').and.to.not.be.empty;",
+              "});",
+              "pm.test('Contém refresh_token', function() {",
+              "    pm.expect(jsonData.data.refresh_token).to.be.a('string').and.to.not.be.empty;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"password\": \"Admin@123\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/login",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "login"]
+        },
+        "description": "Faz login e retorna um JWT Bearer Token + refresh token.\n\n**Body:**\n- `email` (string, obrigatório) — e-mail do usuário\n- `password` (string, obrigatório) — senha em texto puro\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 1,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"nome\": \"Administrador Principal\"\n    },\n    \"trocar_senha\": false\n  }\n}\n```\n\n**Credenciais:**\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedor: `v1.henrique_rodrigues@rotaperfumes.com.br` / `Mudar@123`\n\n**Observação:** Para vendedores com senha padrão (`Mudar@123`), `trocar_senha` será `true`."
+      },
+      "response": [
+        {
+          "name": "200 OK — Login como admin",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"password\": \"Admin@123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 1,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"nome\": \"Administrador Principal\"\n    },\n    \"trocar_senha\": false\n  }\n}"
+        },
+        {
+          "name": "401 Unauthorized — Credenciais inválidas",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"password\": \"senha-errada\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"credenciais inválidas\"\n}"
+        },
+        {
+          "name": "401 Unauthorized — Usuário inativo",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"usuario-inativo@rotaperfumes.com.br\",\n    \"password\": \"qualquer\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"usuário inativo\"\n}"
+        },
+        {
+          "name": "400 Bad Request — Body vazio",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"email e senha são obrigatórios\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Login — Vendedor (primeiro acesso)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.success && jsonData.data) {",
+              "    if (jsonData.data.access_token) {",
+              "        pm.collectionVariables.set('vendedor_token', jsonData.data.access_token);",
+              "    }",
+              "    if (jsonData.data.refresh_token) {",
+              "        pm.collectionVariables.set('refresh_token', jsonData.data.refresh_token);",
+              "    }",
+              "}",
+              "pm.test('Login de vendedor bem-sucedido', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Role é normal', function() {",
+              "    pm.expect(jsonData.data.user.role).to.eql('normal');",
+              "});",
+              "pm.test('Flag trocar_senha é true (senha padrão)', function() {",
+              "    pm.expect(jsonData.data.trocar_senha).to.eql(true);",
+              "});",
+              "pm.test('Contém access_token', function() {",
+              "    pm.expect(jsonData.data.access_token).to.be.a('string').and.to.not.be.empty;",
+              "});",
+              "pm.test('Contém refresh_token', function() {",
+              "    pm.expect(jsonData.data.refresh_token).to.be.a('string').and.to.not.be.empty;",
+              "});",
+              "pm.test('Contém dados do usuário', function() {",
+              "    pm.expect(jsonData.data.user).to.have.property('id');",
+              "    pm.expect(jsonData.data.user).to.have.property('email');",
+              "    pm.expect(jsonData.data.user).to.have.property('role', 'normal');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n    \"password\": \"Mudar@123\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/login",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "login"]
+        },
+        "description": "Login de vendedor com senha padrão — deve retornar `trocar_senha: true`.\n\n**Body:**\n- `email` (string) — e-mail do vendedor\n- `password` (string) — `Mudar@123` (senha padrão)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 2,\n      \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n      \"role\": \"normal\",\n      \"nome\": \"Henrique Rodrigues\"\n    },\n    \"trocar_senha\": true\n  }\n}\n```\n\n**Vendedores (42 disponíveis):**\n- `v1.henrique_rodrigues@rotaperfumes.com.br` / `Mudar@123`\n- `v2.carla_carvalho@rotaperfumes.com.br` / `Mudar@123`\n- `v3.thiago_silva@rotaperfumes.com.br` / `Mudar@123`\n\n**Nota:** `trocar_senha: true` indica que o vendedor deve ser redirecionado para a tela de troca de senha no frontend."
+      },
+      "response": [
+        {
+          "name": "200 OK — Vendedor com senha padrão",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n    \"password\": \"Mudar@123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 2,\n      \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n      \"role\": \"normal\",\n      \"nome\": \"Henrique Rodrigues\"\n    },\n    \"trocar_senha\": true\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "Logout",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Logout realizado com sucesso', function() {",
+              "    pm.expect(jsonData.success).to.eql(true);",
+              "    pm.expect(jsonData.data.mensagem).to.include('logout');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/logout",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "logout"]
+        },
+        "description": "Revoga o refresh token (faz logout).\n\n**Body (opcional):**\n- `refresh_token` (string) — token a ser revogado. Se omitido, apenas retorna sucesso.\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"mensagem\": \"logout realizado\"\n  }\n}\n```\n\n**Nota:** O endpoint é público, mas usa o `refresh_token` no body para revogá-lo. Se o body for omitido, retorna 200 sem revogar nada."
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "logout"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"mensagem\": \"logout realizado\"\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "Refresh Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Novo access_token gerado', function() {",
+              "    pm.expect(jsonData.data.access_token).to.be.a('string').and.to.not.be.empty;",
+              "});",
+              "pm.test('Novo refresh_token gerado', function() {",
+              "    pm.expect(jsonData.data.refresh_token).to.be.a('string').and.to.not.be.empty;",
+              "});",
+              "pm.test('Expires_in presente', function() {",
+              "    pm.expect(jsonData.data.expires_in).to.be.a('number');",
+              "});",
+              "if (jsonData.success && jsonData.data) {",
+              "    pm.collectionVariables.set('token', jsonData.data.access_token);",
+              "    pm.collectionVariables.set('refresh_token', jsonData.data.refresh_token);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/refresh",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "refresh"]
+        },
+        "description": "Renova o access token usando um refresh token válido.\n\nO refresh token antigo é **revogado** (single-use) e um novo par é gerado.\n\n**Body:**\n- `refresh_token` (string, obrigatório) — token de renovação\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"novo-uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — refresh token inválido, expirado ou revogado"
+      },
+      "response": [
+        {
+          "name": "200 OK — Token renovado",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "refresh"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"novo-uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900\n  }\n}"
+        },
+        {
+          "name": "401 Unauthorized — Token inválido",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"refresh_token\": \"token-invalido\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "refresh"]
+            }
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"refresh token inválido\"\n}"
+        },
+        {
+          "name": "400 Bad Request — Body vazio",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "refresh"]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"refresh_token é obrigatório\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Me (dados do usuário logado)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Resposta contém dados do usuário', function() {",
+              "    pm.expect(jsonData.data).to.have.property('id');",
+              "    pm.expect(jsonData.data).to.have.property('email');",
+              "    pm.expect(jsonData.data).to.have.property('role');",
+              "    pm.expect(jsonData.data).to.have.property('nome');",
+              "});",
+              "pm.test('Sem token retorna 401', function() {",
+              "    var noAuthRequest = {",
+              "        url: pm.variables.replaceIn('{{base_url}}/api/auth/me'),",
+              "        method: 'GET',",
+              "        header: []",
+              "    };",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/auth/me",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "me"]
+        },
+        "description": "Retorna os dados do usuário autenticado.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{token}}\n```\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"nome\": \"Administrador Principal\",\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"role\": \"admin\",\n    \"ativo\": true,\n    \"id_vendedor\": null,\n    \"created_at\": \"2026-09-06T00:00:00Z\",\n    \"ultimo_login_at\": \"2026-09-06T12:00:00Z\"\n  }\n}\n```"
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "me"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"nome\": \"Administrador Principal\",\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"role\": \"admin\",\n    \"ativo\": true,\n    \"id_vendedor\": null,\n    \"created_at\": \"2026-09-06T00:00:00Z\",\n    \"ultimo_login_at\": \"2026-09-06T12:00:00Z\"\n  }\n}"
+        },
+        {
+          "name": "401 Unauthorized — Sem token",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "me"]
+            }
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"não autenticado\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Reset Password (própria senha)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 para usuário autenticado', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Confirmação de reset', function() {",
+              "    pm.expect(jsonData.data.mensagem).to.include('sucesso');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"senha_atual\": \"Admin@123\",\n    \"nova_senha\": \"NovaSenha@456\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/reset-password",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "reset-password"]
+        },
+        "description": "O usuário autenticado troca a própria senha.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{token}}\n```\n\n**Body:**\n- `senha_atual` (string, obrigatório) — senha atual (comparada com hash)\n- `nova_senha` (string, obrigatório) — nova senha (mínimo 6 caracteres)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"mensagem\": \"senha alterada com sucesso\"\n  }\n}\n```\n\n**Segurança:** Após a troca, todos os refresh tokens do usuário são revogados.\n\n**Códigos de erro:**\n- `400` — `senha_atual` ou `nova_senha` vazios, ou `nova_senha` < 6 chars\n- `401` — `senha_atual` incorreta\n- `401` — não autenticado"
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"senha_atual\": \"Admin@123\",\n    \"nova_senha\": \"NovaSenha@456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "reset-password"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"mensagem\": \"senha alterada com sucesso\"\n  }\n}"
+        },
+        {
+          "name": "401 Unauthorized — Senha atual incorreta",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"senha_atual\": \"senha-errada\",\n    \"nova_senha\": \"NovaSenha@456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "reset-password"]
+            }
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"senha atual incorreta\"\n}"
+        },
+        {
+          "name": "400 Bad Request — Nova senha curta",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"senha_atual\": \"Admin@123\",\n    \"nova_senha\": \"abc\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "reset-password"]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"nova_senha deve ter pelo menos 6 caracteres\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Listar Usuários (admin only)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Lista retornada', function() {",
+              "    pm.expect(jsonData.data).to.be.an('array');",
+              "});",
+              "pm.test('Paginação presente', function() {",
+              "    pm.expect(jsonData).to.have.property('pagination');",
+              "    pm.expect(jsonData.pagination).to.have.property('page');",
+              "    pm.expect(jsonData.pagination).to.have.property('limit');",
+              "    pm.expect(jsonData.pagination).to.have.property('total');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/usuarios?page=1&limit=10",
+          "host": ["{{base_url}}"],
+          "path": ["api", "usuarios"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1",
+              "description": "Número da página (padrão: 1)"
+            },
+            {
+              "key": "limit",
+              "value": "10",
+              "description": "Itens por página (padrão: 20, máx: 100)"
+            }
+          ]
+        },
+        "description": "Lista usuários com paginação (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"id_vendedor\": null,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"ativo\": true,\n      \"nome\": \"Administrador Principal\",\n      \"created_at\": \"2026-09-06T00:00:00Z\",\n      \"ultimo_login_at\": \"2026-09-06T12:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 10,\n    \"total\": 43,\n    \"pages\": 5\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/usuarios?page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"id_vendedor\": null,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"ativo\": true,\n      \"nome\": \"Administrador Principal\",\n      \"created_at\": \"2026-09-06T00:00:00Z\",\n      \"ultimo_login_at\": \"2026-09-06T12:00:00Z\"\n    },\n    {\n      \"id\": 2,\n      \"id_vendedor\": 1,\n      \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n      \"role\": \"normal\",\n      \"ativo\": true,\n      \"nome\": \"Henrique Rodrigues\",\n      \"created_at\": \"2026-09-06T00:00:00Z\",\n      \"ultimo_login_at\": null\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 10,\n    \"total\": 43,\n    \"pages\": 5\n  }\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Criar Usuário (admin only)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', function() {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Usuário criado com dados corretos', function() {",
+              "    pm.expect(jsonData.data).to.have.property('id');",
+              "    pm.expect(jsonData.data.email).to.eql('novo.vendedor@rotaperfumes.com.br');",
+              "    pm.expect(jsonData.data.role).to.eql('normal');",
+              "    pm.expect(jsonData.data.ativo).to.eql(true);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"nome\": \"Novo Vendedor\",\n    \"email\": \"novo.vendedor@rotaperfumes.com.br\",\n    \"role\": \"normal\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/usuarios",
+          "host": ["{{base_url}}"],
+          "path": ["api", "usuarios"]
+        },
+        "description": "Cria um novo usuário (apenas admin).\n\nO usuário é criado com senha padrão `Mudar@123`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Body:**\n- `nome` (string, obrigatório) — nome completo\n- `email` (string, obrigatório) — e-mail único\n- `role` (string, obrigatório) — `admin` ou `normal`\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 44,\n    \"id_vendedor\": null,\n    \"email\": \"novo.vendedor@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": true,\n    \"nome\": \"Novo Vendedor\",\n    \"created_at\": \"2026-09-07T10:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — campos obrigatórios ausentes ou `role` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `409` — e-mail já cadastrado"
+      },
+      "response": [
+        {
+          "name": "201 Created",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"nome\": \"Novo Vendedor\",\n    \"email\": \"novo.vendedor@rotaperfumes.com.br\",\n    \"role\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios"]
+            }
+          },
+          "status": "Created",
+          "code": 201,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 44,\n    \"id_vendedor\": null,\n    \"email\": \"novo.vendedor@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": true,\n    \"nome\": \"Novo Vendedor\",\n    \"created_at\": \"2026-09-07T10:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null\n  }\n}"
+        },
+        {
+          "name": "400 Bad Request — Campos ausentes",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"nome\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios"]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"email é obrigatório\"\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"nome\": \"Teste\",\n    \"email\": \"teste@teste.com\",\n    \"role\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Atualizar Usuário (admin only)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Usuário atualizado com dados corretos', function() {",
+              "    pm.expect(jsonData.data.id).to.eql(2);",
+              "    pm.expect(jsonData.data.nome).to.eql('Henrique Atualizado');",
+              "    pm.expect(jsonData.data.role).to.eql('normal');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"nome\": \"Henrique Atualizado\",\n    \"role\": \"normal\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/usuarios/2",
+          "host": ["{{base_url}}"],
+          "path": ["api", "usuarios", "2"]
+        },
+        "description": "Atualiza nome e/ou role de um usuário (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID do usuário\n\n**Body:**\n- `nome` (string, obrigatório) — novo nome completo\n- `role` (string, obrigatório) — `admin` ou `normal`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 2,\n    \"id_vendedor\": 1,\n    \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": true,\n    \"nome\": \"Henrique Atualizado\",\n    \"created_at\": \"2026-09-06T00:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `nome` vazio ou `role` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — usuário não encontrado"
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"nome\": \"Henrique Atualizado\",\n    \"role\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/2",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios", "2"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 2,\n    \"id_vendedor\": 1,\n    \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": true,\n    \"nome\": \"Henrique Atualizado\",\n    \"created_at\": \"2026-09-06T00:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null\n  }\n}"
+        },
+        {
+          "name": "404 Not Found — Usuário inexistente",
+          "originalRequest": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"nome\": \"Teste\",\n    \"role\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/99999",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios", "99999"]
+            }
+          },
+          "status": "Not Found",
+          "code": 404,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"usuário não encontrado\"\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"nome\": \"Teste\",\n    \"role\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/2",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios", "2"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Ativar/Inativar Usuário (admin only)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Usuário com campo ativo retornado', function() {",
+              "    pm.expect(jsonData.data).to.have.property('ativo');",
+              "    pm.expect(jsonData.data.id).to.eql(2);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"ativo\": false\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/usuarios/2/inativar",
+          "host": ["{{base_url}}"],
+          "path": ["api", "usuarios", "2", "inativar"]
+        },
+        "description": "Ativa ou inativa um usuário (apenas admin).\n\n- **Body omitido:** faz toggle (inverte o estado atual)\n- **Body `{ \"ativo\": true }`:** ativa o usuário\n- **Body `{ \"ativo\": false }`:** inativa o usuário\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID do usuário\n\n**Body (opcional):**\n- `ativo` (bool) — estado desejado. Se omitido, faz toggle.\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 2,\n    \"id_vendedor\": 1,\n    \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": false,\n    \"nome\": \"Henrique Rodrigues\",\n    \"created_at\": \"2026-09-06T00:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — usuário não encontrado"
+      },
+      "response": [
+        {
+          "name": "200 OK — Inativar",
+          "originalRequest": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ativo\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/2/inativar",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios", "2", "inativar"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 2,\n    \"id_vendedor\": 1,\n    \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": false,\n    \"nome\": \"Henrique Rodrigues\",\n    \"created_at\": \"2026-09-06T00:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null\n  }\n}"
+        },
+        {
+          "name": "200 OK — Toggle (body omitido)",
+          "originalRequest": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/2/inativar",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios", "2", "inativar"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 2,\n    \"ativo\": true\n  }\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ativo\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/2/inativar",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios", "2", "inativar"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Reset Password Admin (admin only)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Senha resetada com sucesso', function() {",
+              "    pm.expect(jsonData.data.sucesso).to.eql(true);",
+              "    pm.expect(jsonData.data.mensagem).to.include('padrão');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"usuario_id\": 2\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/admin/reset-password",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "reset-password"]
+        },
+        "description": "Admin reseta a senha de outro usuário para o padrão `Mudar@123`.\n\nO usuário afetado precisará trocar a senha no próximo login.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Body:**\n- `usuario_id` (int64, obrigatório) — ID do usuário alvo\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"sucesso\": true,\n    \"mensagem\": \"Senha resetada para padrão\"\n  }\n}\n```\n\n**Segurança:** Após o reset, todos os refresh tokens do usuário são revogados.\n\n**Códigos de erro:**\n- `400` — `usuario_id` ausente ou <= 0\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — usuário não encontrado"
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"usuario_id\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "reset-password"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"sucesso\": true,\n    \"mensagem\": \"Senha resetada para padrão\"\n  }\n}"
+        },
+        {
+          "name": "400 Bad Request — usuario_id ausente",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "reset-password"]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"usuario_id é obrigatório e deve ser > 0\"\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"usuario_id\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "reset-password"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Dashboard — Métricas",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Dados de métricas presentes', function() {",
+              "    pm.expect(jsonData.data).to.have.property('total_vendas');",
+              "    pm.expect(jsonData.data).to.have.property('total_pedidos');",
+              "    pm.expect(jsonData.data).to.have.property('ticket_medio');",
+              "    pm.expect(jsonData.data).to.have.property('periodo');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/dashboard/metrics?periodo=month",
+          "host": ["{{base_url}}"],
+          "path": ["api", "dashboard", "metrics"],
+          "query": [
+            {
+              "key": "periodo",
+              "value": "month",
+              "description": "today | month"
+            },
+            {
+              "key": "ano",
+              "value": "2026",
+              "description": "Ano YYYY (opcional)"
+            },
+            {
+              "key": "mes",
+              "value": "9",
+              "description": "Mês 1-12 (opcional, usado com periodo=month)"
+            }
+          ]
+        },
+        "description": "Retorna métricas gerais de vendas (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `periodo` (string, opcional) — `today` ou `month` (padrão: `month`)\n- `ano` (int, opcional) — ano YYYY (usado com `periodo=month`)\n- `mes` (int, opcional) — mês 1-12 (usado com `periodo=month`)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_vendas\": 152300.50,\n    \"total_pedidos\": 234,\n    \"ticket_medio\": 650.86,\n    \"vendedores_ativos\": 38\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `periodo` inválido\n- `401` — não autenticado\n- `403` — não é admin"
+      },
+      "response": [
+        {
+          "name": "200 OK — Métricas do mês",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/metrics?periodo=month",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "metrics"],
+              "query": [
+                {
+                  "key": "periodo",
+                  "value": "month"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_vendas\": 152300.50,\n    \"total_pedidos\": 234,\n    \"ticket_medio\": 650.86,\n    \"vendedores_ativos\": 38\n  }\n}"
+        },
+        {
+          "name": "200 OK — Métricas do dia",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/metrics?periodo=today",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "metrics"],
+              "query": [
+                {
+                  "key": "periodo",
+                  "value": "today"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"today\",\n    \"total_vendas\": 8500.00,\n    \"total_pedidos\": 12,\n    \"ticket_medio\": 708.33,\n    \"vendedores_ativos\": 15\n  }\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/metrics?periodo=month",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "metrics"],
+              "query": [
+                {
+                  "key": "periodo",
+                  "value": "month"
+                }
+              ]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Dashboard — Vendas (série temporal)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Série temporal retornada', function() {",
+              "    pm.expect(jsonData.data).to.be.an('array');",
+              "});",
+              "if (jsonData.data && jsonData.data.length > 0) {",
+              "    pm.test('Cada item tem data e valor', function() {",
+              "        pm.expect(jsonData.data[0]).to.have.property('data');",
+              "        pm.expect(jsonData.data[0]).to.have.property('valor');",
+              "    });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/dashboard/vendas?dias=30",
+          "host": ["{{base_url}}"],
+          "path": ["api", "dashboard", "vendas"],
+          "query": [
+            {
+              "key": "dias",
+              "value": "30",
+              "description": "Quantidade de dias (padrão: 30, máx: 365)"
+            }
+          ]
+        },
+        "description": "Retorna série temporal de vendas dos últimos N dias (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `dias` (int, opcional) — quantidade de dias (padrão: 30, máx: 365)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"data\": \"2026-09-01\",\n      \"valor\": 12500.00,\n      \"pedidos\": 18\n    },\n    {\n      \"data\": \"2026-09-02\",\n      \"valor\": 8700.00,\n      \"pedidos\": 12\n    }\n  ]\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+      },
+      "response": [
+        {
+          "name": "200 OK — Série de 30 dias",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/vendas?dias=30",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "vendas"],
+              "query": [
+                {
+                  "key": "dias",
+                  "value": "30"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"data\": \"2026-09-01\",\n      \"valor\": 12500.00,\n      \"pedidos\": 18\n    },\n    {\n      \"data\": \"2026-09-02\",\n      \"valor\": 8700.00,\n      \"pedidos\": 12\n    }\n  ]\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/vendas?dias=30",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "vendas"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Dashboard — Ranking Vendedores",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Lista de vendedores retornada', function() {",
+              "    pm.expect(jsonData.data).to.be.an('array');",
+              "});",
+              "pm.test('Paginação presente', function() {",
+              "    pm.expect(jsonData).to.have.property('pagination');",
+              "});",
+              "if (jsonData.data && jsonData.data.length > 0) {",
+              "    pm.test('Cada vendedor tem métricas', function() {",
+              "        pm.expect(jsonData.data[0]).to.have.property('vendedor_id');",
+              "        pm.expect(jsonData.data[0]).to.have.property('nome');",
+              "        pm.expect(jsonData.data[0]).to.have.property('total_vendas');",
+              "        pm.expect(jsonData.data[0]).to.have.property('meta');",
+              "    });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/dashboard/vendedores?page=1&limit=20",
+          "host": ["{{base_url}}"],
+          "path": ["api", "dashboard", "vendedores"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1",
+              "description": "Número da página (padrão: 1)"
+            },
+            {
+              "key": "limit",
+              "value": "20",
+              "description": "Itens por página (padrão: 20, máx: 100)"
+            }
+          ]
+        },
+        "description": "Retorna ranking de vendedores com vendas, meta e percentual de atingimento (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"vendedor_id\": 7,\n      \"nome\": \"Débora Ribeiro\",\n      \"regiao\": \"Salvador\",\n      \"total_vendas\": 95000.00,\n      \"meta\": 100000.00,\n      \"percentual_meta\": 95.0,\n      \"pedidos\": 142\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 42,\n    \"pages\": 3\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/vendedores?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "vendedores"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"vendedor_id\": 7,\n      \"nome\": \"Débora Ribeiro\",\n      \"regiao\": \"Salvador\",\n      \"total_vendas\": 95000.00,\n      \"meta\": 100000.00,\n      \"percentual_meta\": 95.0,\n      \"pedidos\": 142\n    },\n    {\n      \"vendedor_id\": 13,\n      \"nome\": \"Ursula Oliveira\",\n      \"regiao\": \"Campinas\",\n      \"total_vendas\": 88000.00,\n      \"meta\": 100000.00,\n      \"percentual_meta\": 88.0,\n      \"pedidos\": 130\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 42,\n    \"pages\": 3\n  }\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/vendedores",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "vendedores"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Histórico de Senhas — Todos (admin only)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Lista de histórico retornada', function() {",
+              "    pm.expect(jsonData.data).to.be.an('array');",
+              "});",
+              "pm.test('Paginação presente', function() {",
+              "    pm.expect(jsonData).to.have.property('pagination');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/senha-historico?page=1&limit=20",
+          "host": ["{{base_url}}"],
+          "path": ["api", "senha-historico"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1",
+              "description": "Número da página (padrão: 1)"
+            },
+            {
+              "key": "limit",
+              "value": "20",
+              "description": "Itens por página (padrão: 20, máx: 100)"
+            }
+          ]
+        },
+        "description": "Lista todo o histórico de alterações de senha (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": 1,\n      \"ip_origem\": \"192.168.1.1\",\n      \"user_agent\": \"PostmanRuntime/7.29.0\",\n      \"tipo_reset\": \"admin\",\n      \"created_at\": \"2026-09-07T10:00:00Z\"\n    },\n    {\n      \"id\": 2,\n      \"usuario_id\": 3,\n      \"resetado_por_id\": null,\n      \"ip_origem\": \"192.168.1.5\",\n      \"user_agent\": \"Mozilla/5.0...\",\n      \"tipo_reset\": \"usuario\",\n      \"created_at\": \"2026-09-06T15:30:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 2,\n    \"pages\": 1\n  }\n}\n```\n\n**`tipo_reset` valores:**\n- `admin` — resetado por um administrador\n- `usuario` — alterado pelo próprio usuário\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/senha-historico?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "senha-historico"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": 1,\n      \"ip_origem\": \"192.168.1.1\",\n      \"user_agent\": \"PostmanRuntime/7.29.0\",\n      \"tipo_reset\": \"admin\",\n      \"created_at\": \"2026-09-07T10:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1,\n    \"pages\": 1\n  }\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/senha-historico",
+              "host": ["{{base_url}}"],
+              "path": ["api", "senha-historico"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Histórico de Senhas — Por Usuário (admin only)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "var jsonData = pm.response.json();",
+              "pm.test('Lista de histórico do usuário retornada', function() {",
+              "    pm.expect(jsonData.data).to.be.an('array');",
+              "});",
+              "pm.test('Todos os itens são do usuário correto', function() {",
+              "    if (jsonData.data && jsonData.data.length > 0) {",
+              "        jsonData.data.forEach(function(item) {",
+              "            pm.expect(item.usuario_id).to.eql(2);",
+              "        });",
+              "    }",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/senha-historico/2?page=1&limit=20",
+          "host": ["{{base_url}}"],
+          "path": ["api", "senha-historico", "2"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1",
+              "description": "Número da página (padrão: 1)"
+            },
+            {
+              "key": "limit",
+              "value": "20",
+              "description": "Itens por página (padrão: 20, máx: 100)"
+            }
+          ]
+        },
+        "description": "Lista o histórico de alterações de senha de um usuário específico (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `usuario_id` (int64) — ID do usuário\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": 1,\n      \"ip_origem\": \"192.168.1.1\",\n      \"user_agent\": \"PostmanRuntime/7.29.0\",\n      \"tipo_reset\": \"admin\",\n      \"created_at\": \"2026-09-07T10:00:00Z\"\n    },\n    {\n      \"id\": 5,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": null,\n      \"ip_origem\": \"192.168.1.10\",\n      \"user_agent\": \"Mozilla/5.0...\",\n      \"tipo_reset\": \"usuario\",\n      \"created_at\": \"2026-09-05T14:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 2,\n    \"pages\": 1\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `usuario_id` inválido na URL\n- `401` — não autenticado\n- `403` — não é admin"
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/senha-historico/2?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "senha-historico", "2"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": 1,\n      \"ip_origem\": \"192.168.1.1\",\n      \"user_agent\": \"PostmanRuntime/7.29.0\",\n      \"tipo_reset\": \"admin\",\n      \"created_at\": \"2026-09-07T10:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1,\n    \"pages\": 1\n  }\n}"
+        },
+        {
+          "name": "403 Forbidden — Não é admin",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/senha-historico/2",
+              "host": ["{{base_url}}"],
+              "path": ["api", "senha-historico", "2"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+        }
+      ]
+    }
+  ]
+}

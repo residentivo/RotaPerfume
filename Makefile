@@ -1,6 +1,7 @@
 .PHONY: help db-up db-down db-seed db-reset db-create test test-all lint \
 	build build-api run-api dev-api stop-api \
-	test-api gen-hash \
+	test-api gen-hash fix-hash \
+	frontend-deps \
 	audit
 
 # =============================================================================
@@ -24,18 +25,27 @@ db-create: ## Cria o banco de dados se não existir
 	mysql $(MYSQL_OPTS) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 db-up: db-create ## Cria o schema (tabelas vazias)
-	@echo "=== Aplicando DDL Users ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/01_ddl_users.sql
+	@echo "=== Aplicando DDL de usuarios (vendedores + usuarios) ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/01_ddl_usuarios.sql
 
-db-seed: db-up ## Cria o schema e carrega todos os dados
-	@echo "=== Carregando usuários ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/02_seed_users.sql
-	@echo "=== Seed completo! ==="
+db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
+	@echo "=== Seed: admin principal ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/02_seed_admin.sql
+	@echo "=== Seed: usuarios dos 42 vendedores ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/03_seed_vendedores.sql
+	@echo ""
+	@echo "=== Corrigindo hashes (placeholder -> bcrypt real) + criando admin ==="
+	cd apis/shared && go run ./cmd/resetpassword -list
+	cd apis/shared && go run ./cmd/resetpassword -create-admin
+	cd apis/shared && go run ./cmd/resetpassword -all-users
+	@echo ""
+	@echo "=== Seed completo com hashes validos! ==="
+	@echo "=== Admin: admin@rotaperfumes.com.br / Admin@123 ==="
 
 db-down: ## Dropa o banco de dados (CUIDADO!)
 	mysql $(MYSQL_OPTS) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
 
-db-reset: db-down db-seed ## Recria o banco do zero
+db-reset: db-down db-seed ## Recria o banco do zero com hashes validos
 
 # =============================================================================
 # Build
@@ -65,8 +75,11 @@ dev-api: ## go run API (modo desenvolvimento)
 # =============================================================================
 # Frontend dev
 # =============================================================================
-dev-frontend: ## npm run dev frontend (configurar conforme projeto)
+dev-frontend: frontend-deps ## npm run dev frontend
 	cd frontend && npm run dev
+
+frontend-deps: ## Instala dependências npm do frontend (roda uma vez)
+	cd frontend && npm install
 
 # =============================================================================
 # Testes
@@ -99,8 +112,20 @@ deps: ## Instala dependências Go
 # =============================================================================
 # Seed de usuários (gera bcrypt hash)
 # =============================================================================
-gen-hash: ## Gera hash bcrypt para o SEED_DEFAULT_PASSWORD
+gen-hash: ## Gera hash bcrypt e atualiza SQLs de seed (para db-reset limpo)
 	cd apis/shared && go run ./cmd/seedusers
+
+fix-hash: ## Lista usuários e corrige TODOS os PLACEHOLDER + cria admin (se faltar)
+	cd apis/shared && go run ./cmd/resetpassword -list
+	@echo.
+	@echo "=== Corrigindo todos os PLACEHOLDER + criando admin ==="
+	cd apis/shared && go run ./cmd/resetpassword -all-users -password=Admin@123
+	cd apis/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
+	@echo.
+	@echo "=== CORRIGIDO! Credenciais: admin@rotaperfumes.com.br / Admin@123 ==="
+
+fix-admin: ## Garante que admin existe (cria se não existir) com senha Admin@123
+	cd apis/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
 
 # =============================================================================
 # Audit
