@@ -22,10 +22,11 @@
 
 ## Tarefas Pendentes
 
-| # | Feature | Descrição | Camadas | Prioridade |
-|---|---------|-----------|---------|------------|
-| 1 | Correção de vulnerabilidades no Frontend | 2 vulnerabilidades críticas (XSS/IDOR/Token leak) — auditar e corrigir | FE | Alta |
+Nenhuma tarefa pendente — todas as tarefas foram concluídas.
 
+## Histórico de Conclusões
+
+Todas as 6 features originais + 2 correções de segurança foram concluídas.
 
 ---
 

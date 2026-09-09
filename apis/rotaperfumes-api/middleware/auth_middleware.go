@@ -103,6 +103,29 @@ func GetRole(ctx context.Context) (string, bool) {
 	return v, ok
 }
 
+// RequireAdmin returns a middleware that checks if the user has admin role.
+// This is for use with the existing JWTMiddleware pattern in this codebase.
+func RequireAdmin() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Get role from context (set by JWTMiddleware)
+			roleCtx := r.Context().Value(middleware.KeyRole{})
+			if roleCtx == nil {
+				writeError(w, http.StatusUnauthorized, "Não autenticado")
+				return
+			}
+
+			role, ok := roleCtx.(string)
+			if !ok || role != "admin" {
+				writeError(w, http.StatusForbidden, "Acesso negado. Requer permissão admin.")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func writeError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
