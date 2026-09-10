@@ -309,3 +309,7 @@ function getAccessTokenForDirectFetch(): string {
 
 // Re-exporta API_BASE para uso externo se necessário
 export { API_BASE };
+
+function getAuthHeaders(): HeadersInit | undefined {
+  throw new Error("Function not implemented.");
+}

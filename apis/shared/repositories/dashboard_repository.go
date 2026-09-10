@@ -90,12 +90,12 @@ func (r *DashboardRepository) GetTotalPedidos(ctx context.Context, db *sql.DB, p
 
 // VendedorRanking representa um vendedor no ranking de vendas.
 type VendedorRanking struct {
-	ID              int64   `json:"id"`
-	Nome            string  `json:"nome"`
-	TotalVendas     float64 `json:"total_vendas"`
-	Meta            float64 `json:"meta"`
-	PercentualMeta  float64 `json:"percentual_meta"`
-	QuantidadeVendas int    `json:"quantidade_vendas"`
+	ID               int64   `json:"id"`
+	Nome             string  `json:"nome"`
+	TotalVendas      float64 `json:"total_vendas"`
+	Meta             float64 `json:"meta"`
+	PercentualMeta   float64 `json:"percentual_meta"`
+	QuantidadeVendas int     `json:"quantidade_vendas"`
 }
 
 // GetTopVendedores retorna o ranking dos top N vendedores por valor de vendas no mes atual.
@@ -206,14 +206,14 @@ func (r *DashboardRepository) enrichWithVendas(ctx context.Context, db *sql.DB, 
 
 // MetaVendedor representa a meta de um vendedor comparada com realizacao.
 type MetaVendedor struct {
-	ID             int64   `json:"id"`
-	Nome           string  `json:"nome"`
-	Regiao         string  `json:"regiao"`
-	UF             string  `json:"uf"`
-	Meta           float64 `json:"meta"`
-	Realizado      float64 `json:"realizado"`
-	Percentual     float64 `json:"percentual"`
-	QuantidadeVendas int  `json:"quantidade_vendas"`
+	ID               int64   `json:"id"`
+	Nome             string  `json:"nome"`
+	Regiao           string  `json:"regiao"`
+	UF               string  `json:"uf"`
+	Meta             float64 `json:"meta"`
+	Realizado        float64 `json:"realizado"`
+	Percentual       float64 `json:"percentual"`
+	QuantidadeVendas int     `json:"quantidade_vendas"`
 }
 
 // GetMetasVendedores retorna todas as metas dos vendedores ativos com comparativo.
@@ -479,6 +479,10 @@ func (r *DashboardRepository) buildFullSeries(ctx context.Context, db *sql.DB, d
 	}
 	defer rows.Close()
 
+	if err := rows.Err(); err != nil {
+		return r.emptySeries(dias)
+	}
+
 	for rows.Next() {
 		var dia string
 		if err := rows.Scan(&dia); err != nil {
@@ -503,7 +507,7 @@ func (r *DashboardRepository) buildFullSeries(ctx context.Context, db *sql.DB, d
 }
 
 // GetVendedoresRanking retorna ranking paginado de vendedores com vendas, meta e percentual.
-func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.DB, page, limit int) ([]map[string]any, int,  error) {
+func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.DB, page, limit int) ([]map[string]any, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -538,20 +542,20 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 
 	var vendedorIDs []int64
 	var raw []struct {
-		ID    int64
-		Nome  string
+		ID     int64
+		Nome   string
 		Regiao string
-		UF    string
-		Meta  float64
+		UF     string
+		Meta   float64
 	}
 
 	for rows.Next() {
 		var v struct {
-			ID    int64
-			Nome  string
+			ID     int64
+			Nome   string
 			Regiao string
-			UF    string
-			Meta  float64
+			UF     string
+			Meta   float64
 		}
 		if err := rows.Scan(&v.ID, &v.Nome, &v.Regiao, &v.UF, &v.Meta); err != nil {
 			return nil, 0, fmt.Errorf("GetVendedoresRanking scan: %w", err)

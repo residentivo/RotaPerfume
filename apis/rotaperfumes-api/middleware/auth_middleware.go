@@ -109,7 +109,7 @@ func RequireAdmin() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Get role from context (set by JWTMiddleware)
-			roleCtx := r.Context().Value(middleware.KeyRole{})
+			roleCtx := r.Context().Value(keyRole)
 			if roleCtx == nil {
 				writeError(w, http.StatusUnauthorized, "Não autenticado")
 				return

@@ -7,6 +7,8 @@
 # Dependencies
 node_modules/
 vendor/
+jspm_packages/
+web_modules/
 
 # Go build
 bin/
@@ -16,6 +18,14 @@ dist/
 *.dll
 *.so
 *.dylib
+
+# Next.js - Builds e logs
+.next/
+/frontend/.next
+out/
+build/
+.lighthouse/
+.chronicle/
 
 # Test
 *.test
@@ -49,3 +59,5 @@ temp/
 # Build outputs
 build/
 out/
+
+
