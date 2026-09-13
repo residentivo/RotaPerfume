@@ -122,6 +122,19 @@ export interface Cliente {
   updated_at: string;
 }
 
+// Payload usado tanto para POST /api/clientes (criar) quanto para
+// PUT /api/clientes/{id} (editar). Em criacao, data_cadastro e opcional
+// (default hoje no backend); em edicao, e obrigatorio.
+export interface ClienteInput {
+  cnpj: string;
+  razao_social: string;
+  segmento: string;
+  cidade: string;
+  uf: string;
+  bairro: string;
+  data_cadastro?: string; // formato AAAA-MM-DD
+}
+
 export interface ClienteSegmentoTotal {
   segmento: string;
   total: number;

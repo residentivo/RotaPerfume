@@ -7,8 +7,14 @@ import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Select } from "@/components/ui/Select";
 import { Table, Badge, Column } from "@/components/ui/Table";
-import { apiListClientes, apiToggleClienteStatus } from "@/lib/api";
-import { Cliente } from "@/lib/types";
+import { ClienteModal } from "@/components/admin/ClienteModal";
+import {
+  apiListClientes,
+  apiToggleClienteStatus,
+  apiCreateCliente,
+  apiUpdateCliente,
+} from "@/lib/api";
+import { Cliente, ClienteInput } from "@/lib/types";
 
 type SortKey =
   | "id"
@@ -71,6 +77,11 @@ export default function ClientesPage() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(0);
+
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
 
   const loadClientes = async () => {
     setLoading(true);
@@ -177,15 +188,49 @@ export default function ClientesPage() {
     }
   };
 
+  const openCreate = () => {
+    setModalMode("create");
+    setEditingCliente(null);
+    setModalOpen(true);
+  };
+
+  const openEdit = (cliente: Cliente) => {
+    setModalMode("edit");
+    setEditingCliente(cliente);
+    setModalOpen(true);
+  };
+
+  const handleModalSubmit = async (data: ClienteInput) => {
+    setError(null);
+    if (modalMode === "create") {
+      const created = await apiCreateCliente(data);
+      await loadClientes();
+      setSuccess(`Cliente "${created.razao_social}" criado com sucesso.`);
+    } else if (editingCliente) {
+      const updated = await apiUpdateCliente(editingCliente.id, data);
+      setClientes((prev) =>
+        prev.map((c) => (c.id === updated.id ? updated : c))
+      );
+      setSuccess(`Cliente "${updated.razao_social}" atualizado com sucesso.`);
+    }
+    setModalOpen(false);
+    setTimeout(() => setSuccess(null), 4000);
+  };
+
   const columns: Column<Cliente>[] = [
     {
       key: "razao_social",
       header: "Razao Social",
       sortable: true,
       render: (c) => (
-        <span className="font-medium text-slate-900">
+        <button
+          type="button"
+          onClick={() => openEdit(c)}
+          className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
+          title="Editar cliente"
+        >
           #{c.id} - {c.razao_social}
-        </span>
+        </button>
       ),
     },
     {
@@ -258,6 +303,24 @@ export default function ClientesPage() {
         </button>
       ),
     },
+    {
+      key: "actions",
+      header: "Acoes",
+      width: "120px",
+      align: "right",
+      render: (c) => (
+        <div className="inline-flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => openEdit(c)}
+            title="Editar cliente"
+          >
+            Editar
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
@@ -272,6 +335,7 @@ export default function ClientesPage() {
             Consulte e gerencie os clientes cadastrados no CRM.
           </p>
         </div>
+        <Button onClick={openCreate}>+ Novo Cliente</Button>
       </div>
 
       {error && (
@@ -434,6 +498,14 @@ export default function ClientesPage() {
         <code>PATCH /api/clientes/&#123;id&#125;/inativar</code> estao
         implementados no backend.
       </div>
+
+      <ClienteModal
+        open={modalOpen}
+        mode={modalMode}
+        cliente={editingCliente}
+        onClose={() => setModalOpen(false)}
+        onSubmit={handleModalSubmit}
+      />
     </div>
   );
 }

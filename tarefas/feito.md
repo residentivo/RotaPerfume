@@ -4,6 +4,25 @@
 
 ---
 
+## [Clientes — Criação e Edição] — 2026-09-13
+**Agentes:** 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** A tela `/admin/clientes` só listava e ativava/inativava clientes. Adicionada criação e edição de clientes (complementando o CRUD), acessível somente para usuários admin.
+
+**Camadas:**
+- [x] Backend (🟡 BackBrain) — `POST /api/clientes` (cria, `201`, `cliente_id_origem` autogerado via `MAX+1`, `ativo=true` por padrão) e `PUT /api/clientes/{id}` (edita, `200`/`404`/`400`; não permite alterar `cliente_id_origem` nem `ativo`). Ambos exigem body com `cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro` (`data_cadastro` opcional só no `POST`, default hoje). Validações: `razao_social`, `cnpj`, `segmento`, `cidade` obrigatórios; `uf` deve ter 2 letras. Build/vet/test OK.
+- [x] Frontend (🟢 FrontBrain) — `frontend/src/components/admin/ClienteModal.tsx` (criar/editar), botão "Novo Cliente" e ação "Editar" em `frontend/src/app/admin/clientes/page.tsx`. **Checagem de tipos não pôde ser rodada no sandbox (sem Node)** — revisão manual do código não encontrou problemas. **Recomenda-se rodar `npx tsc --noEmit` no ambiente local antes do merge definitivo.**
+- [x] Teste (🔴 TestBrain) — testes de `CreateCliente`/`UpdateCliente` (service + handler), cobrindo validações, sucesso e erros; todos passando. **Débito técnico registrado (não bloqueante):** `cliente_id_origem` é gerado via `MAX(cliente_id_origem) + 1` sem transação/lock explícito — existe risco teórico de colisão em criações concorrentes simultâneas. Risco considerado baixo dado o baixo volume de uso desta tela (admin only), mas fica registrado para eventual revisão futura.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — pasta "Clientes" ampliada com 2 novos requests: "Criar Cliente (admin only)" (`POST /api/clientes`) e "Editar Cliente (admin only)" (`PUT /api/clientes/{id}`), com exemplos de body válido, respostas de sucesso (`201`/`200`) e de erro (`400` validação, `403` não-admin, `404` não encontrado no PUT), seguindo o mesmo padrão dos demais requests da collection.
+- `postman/README.md` — seção "Clientes" atualizada com os dois novos endpoints (lista de endpoints e tabela "Resumo de testes por endpoint"); nota sobre o débito técnico do `cliente_id_origem` (`MAX+1` sem transação) adicionada junto à descrição de `POST /api/clientes`.
+
+**Nota — ação pendente do usuário:** rodar `npx tsc --noEmit` em `frontend/` no ambiente local antes do merge definitivo, já que o sandbox dos agentes não tem Node disponível para validar `ClienteModal.tsx`.
+
+---
+
 ## [Gestão de Clientes] — 2026-09-13
 **Agentes:** 🌸 DataBrain + 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
 

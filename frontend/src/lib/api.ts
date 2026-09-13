@@ -12,6 +12,7 @@ import {
   TipoReset,
   Vendedor,
   Cliente,
+  ClienteInput,
   ClienteDashboardMetrics,
 } from "./types";
 import { fetchWithAuth } from "./apiClient";
@@ -463,6 +464,27 @@ export async function apiListClientes(
 export async function apiGetCliente(id: number): Promise<Cliente> {
   return fetchWithAuth<Cliente>(`/api/clientes/${id}`, {
     method: "GET",
+  });
+}
+
+// POST /api/clientes — admin cria novo cliente. cliente_id_origem e gerado
+// automaticamente pelo backend. data_cadastro e opcional (default hoje).
+export async function apiCreateCliente(input: ClienteInput): Promise<Cliente> {
+  return fetchWithAuth<Cliente>("/api/clientes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// PUT /api/clientes/{id} — admin atualiza dados cadastrais do cliente.
+// Nao permite editar cliente_id_origem nem ativo (use apiToggleClienteStatus).
+export async function apiUpdateCliente(
+  id: number,
+  input: ClienteInput
+): Promise<Cliente> {
+  return fetchWithAuth<Cliente>(`/api/clientes/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
   });
 }
 

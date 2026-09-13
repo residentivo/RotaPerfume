@@ -156,3 +156,147 @@ func (h *ClienteHandler) ToggleAtivoCliente(w http.ResponseWriter, r *http.Reque
 	log.Printf("[clientes] ativo=%t: id=%d por admin=%s", cliente.Ativo, id, role)
 	writeJSON(w, http.StatusOK, cliente, "")
 }
+
+// ---------------------------------------------------------------------------
+// Request DTOs
+// ---------------------------------------------------------------------------
+
+// CreateClienteRequest body do POST /api/clientes.
+type CreateClienteRequest struct {
+	CNPJ         string `json:"cnpj"`
+	RazaoSocial  string `json:"razao_social"`
+	Segmento     string `json:"segmento"`
+	Cidade       string `json:"cidade"`
+	UF           string `json:"uf"`
+	Bairro       string `json:"bairro"`
+	DataCadastro string `json:"data_cadastro"` // opcional, formato AAAA-MM-DD; vazio = hoje
+}
+
+// UpdateClienteRequest body do PUT /api/clientes/{id}.
+type UpdateClienteRequest struct {
+	CNPJ         string `json:"cnpj"`
+	RazaoSocial  string `json:"razao_social"`
+	Segmento     string `json:"segmento"`
+	Cidade       string `json:"cidade"`
+	UF           string `json:"uf"`
+	Bairro       string `json:"bairro"`
+	DataCadastro string `json:"data_cadastro"` // formato AAAA-MM-DD
+}
+
+// clienteErroParaStatus mapeia erros de validação/negócio do ClienteService
+// para o status HTTP e mensagem apropriados. Retorna ok=false se o erro não
+// for reconhecido (cabe ao chamador tratar como erro interno).
+func clienteErroParaStatus(err error) (status int, msg string, ok bool) {
+	switch {
+	case errors.Is(err, services.ErrClienteNaoEncontrado):
+		return http.StatusNotFound, "cliente não encontrado", true
+	case errors.Is(err, services.ErrRazaoSocialObrigatoria):
+		return http.StatusBadRequest, "razão social é obrigatória", true
+	case errors.Is(err, services.ErrCNPJObrigatorio):
+		return http.StatusBadRequest, "cnpj é obrigatório", true
+	case errors.Is(err, services.ErrSegmentoObrigatorio):
+		return http.StatusBadRequest, "segmento é obrigatório", true
+	case errors.Is(err, services.ErrCidadeObrigatoria):
+		return http.StatusBadRequest, "cidade é obrigatória", true
+	case errors.Is(err, services.ErrUFInvalida):
+		return http.StatusBadRequest, "uf deve ter 2 letras", true
+	case errors.Is(err, services.ErrDataCadastroInvalida):
+		return http.StatusBadRequest, "data_cadastro inválida (use o formato AAAA-MM-DD)", true
+	default:
+		return 0, "", false
+	}
+}
+
+// CreateCliente POST /api/clientes
+//
+// Body: { "cnpj": string, "razao_social": string, "segmento": string, "cidade": string, "uf": string, "bairro": string, "data_cadastro": "AAAA-MM-DD" (opcional, default hoje) }
+// cliente_id_origem é gerado automaticamente pelo sistema.
+// Retorna: 201 com o cliente criado.
+// Admin only.
+func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
+	role, ok := middleware.GetRole(r.Context())
+	if !ok || role != models.RoleAdmin {
+		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
+		return
+	}
+
+	var req CreateClienteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
+		return
+	}
+
+	input := services.ClienteInput{
+		CNPJ:         req.CNPJ,
+		RazaoSocial:  req.RazaoSocial,
+		Segmento:     req.Segmento,
+		Cidade:       req.Cidade,
+		UF:           req.UF,
+		Bairro:       req.Bairro,
+		DataCadastro: req.DataCadastro,
+	}
+
+	cliente, err := h.svc.CreateCliente(r.Context(), h.db, input)
+	if err != nil {
+		if status, msg, ok := clienteErroParaStatus(err); ok {
+			writeJSON(w, status, nil, msg)
+			return
+		}
+		log.Printf("[clientes] CreateCliente: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	log.Printf("[clientes] criado: id=%d por admin=%s", cliente.ID, role)
+	writeJSON(w, http.StatusCreated, cliente, "")
+}
+
+// UpdateCliente PUT /api/clientes/{id}
+//
+// Body: { "cnpj": string, "razao_social": string, "segmento": string, "cidade": string, "uf": string, "bairro": string, "data_cadastro": "AAAA-MM-DD" }
+// cliente_id_origem e ativo não são editáveis por esta rota.
+// Retorna: 200 com o cliente atualizado, 404 se não existir, 400 se o payload for inválido.
+// Admin only.
+func (h *ClienteHandler) UpdateCliente(w http.ResponseWriter, r *http.Request) {
+	role, ok := middleware.GetRole(r.Context())
+	if !ok || role != models.RoleAdmin {
+		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
+		return
+	}
+
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	var req UpdateClienteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
+		return
+	}
+
+	input := services.ClienteInput{
+		CNPJ:         req.CNPJ,
+		RazaoSocial:  req.RazaoSocial,
+		Segmento:     req.Segmento,
+		Cidade:       req.Cidade,
+		UF:           req.UF,
+		Bairro:       req.Bairro,
+		DataCadastro: req.DataCadastro,
+	}
+
+	cliente, err := h.svc.UpdateCliente(r.Context(), h.db, id, input)
+	if err != nil {
+		if status, msg, ok := clienteErroParaStatus(err); ok {
+			writeJSON(w, status, nil, msg)
+			return
+		}
+		log.Printf("[clientes] UpdateCliente: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	log.Printf("[clientes] atualizado: id=%d por admin=%s", id, role)
+	writeJSON(w, http.StatusOK, cliente, "")
+}

@@ -31,7 +31,9 @@ import (
 //	GET  /api/dashboard/vendedores      — admin only — ranking de vendedores com meta
 //	GET  /api/dashboard/clientes        — admin only — métricas da base de clientes (totais, novos, por segmento, por uf)
 //	GET  /api/clientes                  — admin only — lista clientes (paginado, filtros uf/segmento/ativo/q)
+//	POST /api/clientes                  — admin only — criar cliente
 //	GET  /api/clientes/{id}             — admin only — detalhe de um cliente
+//	PUT  /api/clientes/{id}             — admin only — atualizar cliente
 //	PATCH /api/clientes/{id}/inativar   — admin only — ativar/inativar cliente
 //	GET  /health                        — público
 func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler) http.Handler {
@@ -111,9 +113,17 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	listClientesChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.ListClientes))
 	mux.Handle("GET /api/clientes", listClientesChain)
 
+	// Cria cliente: admin only.
+	createClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.CreateCliente))
+	mux.Handle("POST /api/clientes", createClienteChain)
+
 	// Detalhe de cliente: admin only.
 	getClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.GetCliente))
 	mux.Handle("GET /api/clientes/{id}", getClienteChain)
+
+	// Atualiza cliente: admin only.
+	updateClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.UpdateCliente))
+	mux.Handle("PUT /api/clientes/{id}", updateClienteChain)
 
 	// Toggle ativo/inativo de cliente: admin only.
 	toggleAtivoClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.ToggleAtivoCliente))

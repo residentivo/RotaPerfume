@@ -238,3 +238,334 @@ func TestClienteService_ToggleAtivoCliente(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// ---------------------------------------------------------------------------
+// CreateCliente
+// ---------------------------------------------------------------------------
+
+func validClienteInput() services.ClienteInput {
+	return services.ClienteInput{
+		CNPJ:         "12345678000199",
+		RazaoSocial:  "Empresa Teste LTDA",
+		Segmento:     "varejo",
+		Cidade:       "São Paulo",
+		UF:           "SP",
+		Bairro:       "Centro",
+		DataCadastro: "2024-01-15",
+	}
+}
+
+func TestClienteService_CreateCliente(t *testing.T) {
+	testCases := []struct {
+		nome      string
+		input     func() services.ClienteInput
+		mock      func(mock sqlmock.Sqlmock)
+		wantErr   error
+		wantErrIs bool
+	}{
+		{
+			nome:  "sucesso",
+			input: validClienteInput,
+			mock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(`SELECT COALESCE\(MAX\(cliente_id_origem\), 0\) \+ 1 FROM clientes`).
+					WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(int64(101)))
+				mock.ExpectExec(`INSERT INTO clientes \(cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo\)`).
+					WithArgs(int64(101), "12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), true).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+		},
+		{
+			nome: "razao_social vazia",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.RazaoSocial = "   "
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrRazaoSocialObrigatoria,
+			wantErrIs: true,
+		},
+		{
+			nome: "cnpj vazio",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.CNPJ = ""
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrCNPJObrigatorio,
+			wantErrIs: true,
+		},
+		{
+			nome: "segmento vazio",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.Segmento = ""
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrSegmentoObrigatorio,
+			wantErrIs: true,
+		},
+		{
+			nome: "cidade vazia",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.Cidade = ""
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrCidadeObrigatoria,
+			wantErrIs: true,
+		},
+		{
+			nome: "uf inválida",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.UF = "S"
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrUFInvalida,
+			wantErrIs: true,
+		},
+		{
+			nome: "data_cadastro inválida",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.DataCadastro = "15/01/2024"
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrDataCadastroInvalida,
+			wantErrIs: true,
+		},
+		{
+			nome: "data_cadastro vazia usa hoje (sucesso)",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.DataCadastro = ""
+				return in
+			},
+			mock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(`SELECT COALESCE\(MAX\(cliente_id_origem\), 0\) \+ 1 FROM clientes`).
+					WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(int64(101)))
+				mock.ExpectExec(`INSERT INTO clientes \(cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo\)`).
+					WithArgs(int64(101), "12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), true).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+		},
+		{
+			nome:  "erro no NextClienteIDOrigem é propagado",
+			input: validClienteInput,
+			mock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(`SELECT COALESCE\(MAX\(cliente_id_origem\), 0\) \+ 1 FROM clientes`).
+					WillReturnError(sql.ErrConnDone)
+			},
+			wantErr: sql.ErrConnDone,
+		},
+		{
+			nome:  "erro no Create é propagado",
+			input: validClienteInput,
+			mock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(`SELECT COALESCE\(MAX\(cliente_id_origem\), 0\) \+ 1 FROM clientes`).
+					WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(int64(101)))
+				mock.ExpectExec(`INSERT INTO clientes \(cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo\)`).
+					WillReturnError(sql.ErrConnDone)
+			},
+			wantErr: sql.ErrConnDone,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.nome, func(t *testing.T) {
+			db, mock := newClienteTestDB(t)
+			tc.mock(mock)
+
+			svc := services.NewClienteService(db, clienteTestCfg(true))
+			c, err := svc.CreateCliente(context.Background(), db, tc.input())
+
+			if tc.wantErr != nil {
+				assert.Nil(t, c)
+				if tc.wantErrIs {
+					assert.ErrorIs(t, err, tc.wantErr)
+				} else {
+					assert.Error(t, err)
+				}
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, c)
+				assert.Equal(t, int64(1), c.ID)
+				assert.Equal(t, int64(101), c.ClienteIDOrigem)
+				assert.True(t, c.Ativo)
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UpdateCliente
+// ---------------------------------------------------------------------------
+
+func TestClienteService_UpdateCliente(t *testing.T) {
+	testCases := []struct {
+		nome      string
+		input     func() services.ClienteInput
+		mock      func(mock sqlmock.Sqlmock)
+		wantErr   error
+		wantErrIs bool
+	}{
+		{
+			nome:  "sucesso",
+			input: validClienteInput,
+			mock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE id = \?`).
+					WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(1)).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE id = \? LIMIT 1`).
+					WithArgs(int64(1)).
+					WillReturnRows(clienteRows())
+			},
+		},
+		{
+			nome: "razao_social vazia",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.RazaoSocial = ""
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrRazaoSocialObrigatoria,
+			wantErrIs: true,
+		},
+		{
+			nome: "cnpj vazio",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.CNPJ = ""
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrCNPJObrigatorio,
+			wantErrIs: true,
+		},
+		{
+			nome: "segmento vazio",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.Segmento = ""
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrSegmentoObrigatorio,
+			wantErrIs: true,
+		},
+		{
+			nome: "cidade vazia",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.Cidade = ""
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrCidadeObrigatoria,
+			wantErrIs: true,
+		},
+		{
+			nome: "uf inválida",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.UF = "SPX"
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrUFInvalida,
+			wantErrIs: true,
+		},
+		{
+			nome: "data_cadastro inválida",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.DataCadastro = "2024-31-01"
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrDataCadastroInvalida,
+			wantErrIs: true,
+		},
+		{
+			nome: "data_cadastro vazia é erro na edição (defaultHoje=false)",
+			input: func() services.ClienteInput {
+				in := validClienteInput()
+				in.DataCadastro = ""
+				return in
+			},
+			mock:      func(mock sqlmock.Sqlmock) {},
+			wantErr:   services.ErrDataCadastroInvalida,
+			wantErrIs: true,
+		},
+		{
+			nome:  "id inexistente retorna ErrClienteNaoEncontrado",
+			input: validClienteInput,
+			mock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE id = \?`).
+					WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(999)).
+					WillReturnResult(sqlmock.NewResult(0, 0))
+			},
+			wantErr:   services.ErrClienteNaoEncontrado,
+			wantErrIs: true,
+		},
+		{
+			nome:  "erro no Update é propagado",
+			input: validClienteInput,
+			mock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE id = \?`).
+					WillReturnError(sql.ErrConnDone)
+			},
+			wantErr: sql.ErrConnDone,
+		},
+		{
+			nome:  "erro no GetByID pós-update é propagado",
+			input: validClienteInput,
+			mock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE id = \?`).
+					WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(1)).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE id = \? LIMIT 1`).
+					WithArgs(int64(1)).
+					WillReturnError(sql.ErrConnDone)
+			},
+			wantErr: sql.ErrConnDone,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.nome, func(t *testing.T) {
+			db, mock := newClienteTestDB(t)
+			tc.mock(mock)
+
+			id := int64(1)
+			if tc.nome == "id inexistente retorna ErrClienteNaoEncontrado" {
+				id = 999
+			}
+
+			svc := services.NewClienteService(db, clienteTestCfg(true))
+			c, err := svc.UpdateCliente(context.Background(), db, id, tc.input())
+
+			if tc.wantErr != nil {
+				assert.Nil(t, c)
+				if tc.wantErrIs {
+					assert.ErrorIs(t, err, tc.wantErr)
+				} else {
+					assert.Error(t, err)
+				}
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, c)
+				assert.Equal(t, int64(1), c.ID)
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}

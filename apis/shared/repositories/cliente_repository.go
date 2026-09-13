@@ -234,6 +234,76 @@ func (r *ClienteRepository) CountPorUF(ctx context.Context, db *sql.DB) ([]UFCon
 	return out, nil
 }
 
+// NextClienteIDOrigem retorna o próximo valor disponível para
+// cliente_id_origem (MAX atual + 1). cliente_id_origem é UNIQUE e obrigatório
+// na tabela, mas não é gerado automaticamente pelo banco — clientes criados
+// via API (fora do CSV de origem) recebem um valor sequencial aqui.
+func (r *ClienteRepository) NextClienteIDOrigem(ctx context.Context, db *sql.DB) (int64, error) {
+	var next int64
+	const q = `SELECT COALESCE(MAX(cliente_id_origem), 0) + 1 FROM clientes`
+	if err := db.QueryRowContext(ctx, q).Scan(&next); err != nil {
+		return 0, fmt.Errorf("repositories: next cliente_id_origem: %w", err)
+	}
+	return next, nil
+}
+
+// Create insere um novo cliente e preenche c.ID com o id gerado.
+func (r *ClienteRepository) Create(ctx context.Context, db *sql.DB, c *models.Cliente) error {
+	const q = `
+		INSERT INTO clientes (cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	res, err := db.ExecContext(ctx, q,
+		c.ClienteIDOrigem,
+		c.CNPJ,
+		c.RazaoSocial,
+		c.Segmento,
+		c.Cidade,
+		c.UF,
+		c.Bairro,
+		c.DataCadastro,
+		c.Ativo,
+	)
+	if err != nil {
+		return fmt.Errorf("repositories: create cliente: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("repositories: create cliente lastInsertId: %w", err)
+	}
+	c.ID = id
+	return nil
+}
+
+// Update atualiza os campos editáveis de um cliente (cliente_id_origem e
+// ativo não são alterados por aqui). Retorna ErrNotFound se não existir.
+func (r *ClienteRepository) Update(ctx context.Context, db *sql.DB, id int64, c *models.Cliente) error {
+	const q = `
+		UPDATE clientes
+		SET cnpj = ?, razao_social = ?, segmento = ?, cidade = ?, uf = ?, bairro = ?, data_cadastro = ?
+		WHERE id = ?`
+	res, err := db.ExecContext(ctx, q,
+		c.CNPJ,
+		c.RazaoSocial,
+		c.Segmento,
+		c.Cidade,
+		c.UF,
+		c.Bairro,
+		c.DataCadastro,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("repositories: update cliente: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("repositories: update cliente rowsAffected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func scanCliente(s rowScanner) (*models.Cliente, error) {
 	var c models.Cliente
 	if err := s.Scan(

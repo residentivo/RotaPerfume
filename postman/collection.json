@@ -2299,6 +2299,156 @@
           ]
         },
         {
+          "name": "Criar Cliente (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Cliente criado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data).to.have.property('cliente_id_origem');",
+                  "    pm.expect(jsonData.data.razao_social).to.eql('Perfumaria Nova Ltda');",
+                  "    pm.expect(jsonData.data.ativo).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/clientes",
+              "host": ["{{base_url}}"],
+              "path": ["api", "clientes"]
+            },
+            "description": "Cria um novo cliente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cnpj\": \"98765432000188\",\n  \"razao_social\": \"Perfumaria Nova Ltda\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"Campinas\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Centro\",\n  \"data_cadastro\": \"2026-09-13\"\n}\n```\n- `data_cadastro` é opcional (formato `AAAA-MM-DD`); se omitido, usa a data de hoje.\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras).\n- `cliente_id_origem` é gerado automaticamente pelo sistema (`MAX + 1`) e `ativo` é sempre `true` na criação — não são aceitos no body.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 3041,\n    \"cliente_id_origem\": 13041,\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, ou campo obrigatório ausente (`razao_social`, `cnpj`, `segmento`, `cidade`) ou `uf` com formato inválido (deve ter 2 letras), ou `data_cadastro` em formato inválido\n- `401` — não autenticado\n- `403` — não é admin"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 3041,\n    \"cliente_id_origem\": 13041,\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — Campo obrigatório ausente",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cnpj\": \"98765432000188\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes"]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"razão social é obrigatória\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
           "name": "Detalhe do Cliente (admin only)",
           "event": [
             {
@@ -2391,6 +2541,186 @@
               "originalRequest": {
                 "method": "GET",
                 "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Editar Cliente (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Cliente atualizado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data.razao_social).to.eql('Perfumaria Bela Vista Ltda — Atualizada');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/clientes/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "clientes", "1"]
+            },
+            "description": "Atualiza os dados de um cliente existente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — ID interno do cliente\n\n**Body:**\n```json\n{\n  \"cnpj\": \"12345678000199\",\n  \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"São Paulo\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Bela Vista\",\n  \"data_cadastro\": \"2023-05-10\"\n}\n```\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras), `data_cadastro` (formato `AAAA-MM-DD`).\n- `cliente_id_origem` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/clientes/{id}/inativar` para alterar `ativo`).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, ou campo obrigatório ausente/inválido (mesmas regras do `POST /api/clientes`)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — UF inválida",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"São Paulo\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1"]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"uf deve ter 2 letras\"\n}"
+            },
+            {
+              "name": "404 Not Found — Cliente inexistente",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"cliente não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10\"\n}"
+                },
                 "url": {
                   "raw": "{{base_url}}/api/clientes/1",
                   "host": ["{{base_url}}"],

@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"bytes"
 	"net/http"
 	"testing"
 	"time"
@@ -351,4 +352,318 @@ func TestToggleAtivoCliente_Forbidden_NaoAdmin(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+}
+
+// ---------------------------------------------------------------------------
+// CreateCliente POST /api/clientes
+// ---------------------------------------------------------------------------
+
+func validClientePayload() map[string]any {
+	return map[string]any{
+		"cnpj":          "12345678000199",
+		"razao_social":  "Empresa Teste LTDA",
+		"segmento":      "varejo",
+		"cidade":        "São Paulo",
+		"uf":            "SP",
+		"bairro":        "Centro",
+		"data_cadastro": "2024-01-15",
+	}
+}
+
+func TestCreateCliente_Success(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(`SELECT COALESCE\(MAX\(cliente_id_origem\), 0\) \+ 1 FROM clientes`).
+		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(int64(101)))
+	mock.ExpectExec(`INSERT INTO clientes \(cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo\)`).
+		WithArgs(int64(101), "12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), true).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/clientes", makeJSON(validClientePayload()))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, "Empresa Teste LTDA", data["razao_social"])
+	assert.Equal(t, float64(1), data["id"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCreateCliente_Forbidden_NaoAdmin(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/clientes", makeJSON(validClientePayload()))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "acesso restrito a administradores", body["error"])
+}
+
+func TestCreateCliente_JSONInvalido(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/clientes", bytes.NewBufferString("{invalido"))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "body JSON inválido", body["error"])
+}
+
+func TestCreateCliente_ValidacaoNegocio(t *testing.T) {
+	testCases := []struct {
+		nome    string
+		payload func() map[string]any
+		wantMsg string
+	}{
+		{
+			nome: "razao_social vazia",
+			payload: func() map[string]any {
+				p := validClientePayload()
+				p["razao_social"] = ""
+				return p
+			},
+			wantMsg: "razão social é obrigatória",
+		},
+		{
+			nome: "cnpj vazio",
+			payload: func() map[string]any {
+				p := validClientePayload()
+				p["cnpj"] = ""
+				return p
+			},
+			wantMsg: "cnpj é obrigatório",
+		},
+		{
+			nome: "segmento vazio",
+			payload: func() map[string]any {
+				p := validClientePayload()
+				p["segmento"] = ""
+				return p
+			},
+			wantMsg: "segmento é obrigatório",
+		},
+		{
+			nome: "cidade vazia",
+			payload: func() map[string]any {
+				p := validClientePayload()
+				p["cidade"] = ""
+				return p
+			},
+			wantMsg: "cidade é obrigatória",
+		},
+		{
+			nome: "uf inválida",
+			payload: func() map[string]any {
+				p := validClientePayload()
+				p["uf"] = "S"
+				return p
+			},
+			wantMsg: "uf deve ter 2 letras",
+		},
+		{
+			nome: "data_cadastro inválida",
+			payload: func() map[string]any {
+				p := validClientePayload()
+				p["data_cadastro"] = "15/01/2024"
+				return p
+			},
+			wantMsg: "data_cadastro inválida (use o formato AAAA-MM-DD)",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.nome, func(t *testing.T) {
+			server, db, _ := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+
+			cfg := testCfg()
+			adminToken := generateToken(t, cfg, 1, "admin")
+
+			req, _ := http.NewRequest("POST", server.URL+"/api/clientes", makeJSON(tc.payload()))
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			body := decodeResponse(t, readBody(t, resp))
+			assert.Equal(t, tc.wantMsg, body["error"])
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UpdateCliente PUT /api/clientes/{id}
+// ---------------------------------------------------------------------------
+
+func TestUpdateCliente_Success(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE id = \?`).
+		WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(clienteRowsForHandler())
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/clientes/1", makeJSON(validClientePayload()))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, "Empresa Teste LTDA", data["razao_social"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateCliente_Forbidden_NaoAdmin(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/clientes/1", makeJSON(validClientePayload()))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+}
+
+func TestUpdateCliente_IDInvalido(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/clientes/abc", makeJSON(validClientePayload()))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "id inválido", body["error"])
+}
+
+func TestUpdateCliente_JSONInvalido(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/clientes/1", bytes.NewBufferString("{invalido"))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "body JSON inválido", body["error"])
+}
+
+func TestUpdateCliente_ValidacaoNegocio(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	payload := validClientePayload()
+	payload["uf"] = "SPX"
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/clientes/1", makeJSON(payload))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "uf deve ter 2 letras", body["error"])
+}
+
+func TestUpdateCliente_NaoEncontrado(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE id = \?`).
+		WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(999)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/clientes/999", makeJSON(validClientePayload()))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "cliente não encontrado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

@@ -168,9 +168,20 @@ Exemplos:
 - **Query (todos opcionais):** `?page=1&limit=20&uf=SP&segmento=Varejo&ativo=true&q=perfumaria`
 - **Descrição:** Lista clientes paginada (total + pages), com filtros exatos por `uf`/`segmento`, filtro por status (`ativo=true|false`) e busca livre (`q`) em `razao_social` OU `cnpj`
 
+#### POST /api/clientes
+- **Auth:** Bearer Token (admin)
+- **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" (opcional, "AAAA-MM-DD", default hoje) }`
+- **Descrição:** Cria um novo cliente. `cliente_id_origem` é gerado automaticamente pelo sistema (`MAX + 1`) e `ativo` é sempre `true` na criação — nenhum dos dois é aceito no body. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação.
+- **Débito técnico conhecido:** o próximo `cliente_id_origem` é calculado via `MAX(cliente_id_origem) + 1` sem transação/lock explícito no banco. Em criações concorrentes simultâneas (ex.: dois admins criando clientes ao mesmo tempo) existe risco teórico de colisão. Risco considerado baixo dado o baixo volume de uso desta tela (admin only), mas registrado aqui como débito técnico conhecido para eventual revisão futura (ex.: usar transação com `SELECT ... FOR UPDATE` ou coluna `AUTO_INCREMENT` dedicada).
+
 #### GET /api/clientes/{id}
 - **Auth:** Bearer Token (admin)
 - **Descrição:** Retorna o detalhe de um cliente pelo `id` interno (não confundir com `cliente_id_origem`, o ID do CSV de origem)
+
+#### PUT /api/clientes/{id}
+- **Auth:** Bearer Token (admin)
+- **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" ("AAAA-MM-DD") }`
+- **Descrição:** Atualiza os dados de um cliente existente. `cliente_id_origem` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/clientes/{id}/inativar` para alterar `ativo`). Retorna `200` com o cliente atualizado, `404` se não existir, `400` se o payload for inválido.
 
 #### PATCH /api/clientes/{id}/inativar
 - **Auth:** Bearer Token (admin)
@@ -274,9 +285,17 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Lista retornada`
 - `Paginação presente`
 
+### Criar Cliente
+- `Status 201 Created`
+- `Cliente criado com dados corretos` (`id`, `cliente_id_origem`, `razao_social`, `ativo === true`)
+
 ### Detalhe do Cliente
 - `Status 200`
 - `Dados do cliente presentes`
+
+### Editar Cliente
+- `Status 200 OK`
+- `Cliente atualizado com dados corretos`
 
 ### Ativar/Inativar Cliente
 - `Status 200 OK`
@@ -309,7 +328,9 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Histórico — Todos | 3 | — |
 | Histórico — Por Usuário | 3 | — |
 | Listar Clientes | 2 | — |
+| Criar Cliente | 2 | — |
 | Detalhe do Cliente | 1 | — |
+| Editar Cliente | 2 | — |
 | Ativar/Inativar Cliente | 1 | — |
 | Dashboard — Clientes | 2 | — |
 
