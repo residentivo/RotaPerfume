@@ -575,15 +575,20 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 		if v.Meta > 0 {
 			percentual = (venda.total / v.Meta) * 100
 		}
+		ticketMedio := 0.0
+		if venda.qtd > 0 {
+			ticketMedio = venda.total / float64(venda.qtd)
+		}
 		result = append(result, map[string]any{
-			"id":                v.ID,
-			"nome":              v.Nome,
-			"regiao":            v.Regiao,
-			"uf":                v.UF,
-			"total_vendas":      venda.total,
-			"quantidade_vendas": venda.qtd,
-			"meta":              v.Meta,
-			"percentual_meta":   mathRound(percentual, 2),
+			"vendedor_id":      v.ID,
+			"vendedor_nome":    v.Nome,
+			"regiao":           v.Regiao,
+			"uf":               v.UF,
+			"total_vendas":     venda.total,
+			"total_pedidos":    venda.qtd,
+			"ticket_medio":     mathRound(ticketMedio, 2),
+			"meta":             v.Meta,
+			"atingimento_meta": mathRound(percentual, 2),
 		})
 	}
 

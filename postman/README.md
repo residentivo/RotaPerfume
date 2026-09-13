@@ -159,6 +159,29 @@ Exemplos:
 - **Query:** `?page=1&limit=20`
 - **Descrição:** Histórico de senhas de um usuário específico
 
+### Clientes (`/api/clientes/*` e `/api/dashboard/clientes`) — admin only
+
+> Base de clientes importada de `dados/crm/clientes.csv` para a tabela `clientes` (ver seção "Importação de clientes (CRM)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Clientes"** da collection.
+
+#### GET /api/clientes
+- **Auth:** Bearer Token (admin)
+- **Query (todos opcionais):** `?page=1&limit=20&uf=SP&segmento=Varejo&ativo=true&q=perfumaria`
+- **Descrição:** Lista clientes paginada (total + pages), com filtros exatos por `uf`/`segmento`, filtro por status (`ativo=true|false`) e busca livre (`q`) em `razao_social` OU `cnpj`
+
+#### GET /api/clientes/{id}
+- **Auth:** Bearer Token (admin)
+- **Descrição:** Retorna o detalhe de um cliente pelo `id` interno (não confundir com `cliente_id_origem`, o ID do CSV de origem)
+
+#### PATCH /api/clientes/{id}/inativar
+- **Auth:** Bearer Token (admin)
+- **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
+- **Descrição:** Ativa ou inativa o cliente
+
+#### GET /api/dashboard/clientes
+- **Auth:** Bearer Token (admin)
+- **Query:** `?periodo=today|month` (padrão: `month`)
+- **Descrição:** Métricas agregadas da base de clientes: `total_clientes`, `total_ativos`, `total_inativos`, `novos_no_periodo`, `por_segmento` (array `{segmento, total}`) e `por_uf` (array `{uf, total}`)
+
 ## Testes automatizados (Postman)
 
 A collection inclui scripts de teste em JavaScript em cada request. Os testes verificam:
@@ -246,6 +269,24 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Lista de histórico do usuário retornada`
 - `Todos os itens são do usuário correto`
 
+### Listar Clientes
+- `Status 200`
+- `Lista retornada`
+- `Paginação presente`
+
+### Detalhe do Cliente
+- `Status 200`
+- `Dados do cliente presentes`
+
+### Ativar/Inativar Cliente
+- `Status 200 OK`
+- `Cliente com campo ativo retornado`
+
+### Dashboard — Clientes
+- `Status 200`
+- `Métricas de clientes presentes` (`periodo`, `total_clientes`, `total_ativos`, `total_inativos`, `novos_no_periodo`, `por_segmento`, `por_uf`)
+- `por_segmento e por_uf são arrays`
+
 ## Resumo de testes por endpoint
 
 | Request | # Testes | Salva variáveis |
@@ -267,6 +308,10 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Dashboard — Vendedores | 4 | — |
 | Histórico — Todos | 3 | — |
 | Histórico — Por Usuário | 3 | — |
+| Listar Clientes | 2 | — |
+| Detalhe do Cliente | 1 | — |
+| Ativar/Inativar Cliente | 1 | — |
+| Dashboard — Clientes | 2 | — |
 
 ## Códigos de erro comuns
 
@@ -295,6 +340,16 @@ make dev-api
 ### Envio de email (senha inicial / reset de senha)
 
 Copie `.env.example` (raiz do projeto) para `.env` e preencha as variáveis `SMTP_*` (Gmail com "senha de app") para que `POST /api/usuarios` e `POST /api/admin/reset-password` realmente enviem a senha gerada por email. Se essas variáveis não forem preenchidas, a API sobe normalmente e usa um serviço de email "noop" (apenas loga que o envio foi pulado, sem nunca logar a senha em texto claro) — útil para dev local, mas nesse caso `email_enviado` retorna `false` e o usuário não recebe a nova senha por nenhum canal (o admin precisaria providenciá-la manualmente).
+
+### Importação de clientes (CRM)
+
+`make db-seed`/`make db-reset` criam a tabela `clientes` (via `sql/09_ddl_clientes.sql`), mas **não** carregam os dados nela. Para popular a tabela `clientes` a partir de `dados/crm/clientes.csv` (~3040 registros), rode adicionalmente:
+
+```bash
+make db-up && make db-import-clientes
+```
+
+O importador (`apis/shared/cmd/importclientes`) é idempotente (upsert por `cliente_id_origem`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/clientes`, `GET /api/clientes/{id}`, `PATCH /api/clientes/{id}/inativar` e `GET /api/dashboard/clientes` funcionam normalmente, mas retornam base vazia/zerada.
 
 Depois, em outro terminal:
 

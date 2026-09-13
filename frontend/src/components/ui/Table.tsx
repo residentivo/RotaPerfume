@@ -18,6 +18,12 @@ interface TableProps<T> {
   keyExtractor: (row: T) => string | number;
   emptyMessage?: string;
   loading?: boolean;
+  /** Chave da coluna atualmente ordenada (habilita indicador visual no cabecalho) */
+  sortKey?: keyof T | string;
+  /** Direcao da ordenacao atual */
+  sortDir?: "asc" | "desc";
+  /** Chamado quando o usuario clica em um cabecalho `sortable` */
+  onSort?: (key: keyof T | string) => void;
 }
 
 export function Table<T>({
@@ -26,6 +32,9 @@ export function Table<T>({
   keyExtractor,
   emptyMessage = "Nenhum registro encontrado.",
   loading = false,
+  sortKey,
+  sortDir,
+  onSort,
 }: TableProps<T>) {
   if (loading) {
     return (
@@ -62,7 +71,20 @@ export function Table<T>({
                     : "text-left",
                 ].join(" ")}
               >
-                {col.header}
+                {col.sortable && onSort ? (
+                  <button
+                    type="button"
+                    onClick={() => onSort(col.key)}
+                    className="inline-flex items-center gap-1 hover:text-slate-900"
+                  >
+                    {col.header}
+                    <span className="text-slate-400">
+                      {sortKey === col.key ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+                    </span>
+                  </button>
+                ) : (
+                  col.header
+                )}
               </th>
             ))}
           </tr>

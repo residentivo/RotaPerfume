@@ -56,7 +56,8 @@ func main() {
 	dashboardHandler := handlers.NewDashboardHandler(conn, cfg)
 	senhaHandler := handlers.NewSenhaHistoricoHandler(conn)
 	vendedorHandler := handlers.NewVendedorHandler(conn, cfg)
-	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler)
+	clienteHandler := handlers.NewClienteHandler(conn, cfg)
+	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler)
 
 	srv := &http.Server{
 		Addr:         ":8080",

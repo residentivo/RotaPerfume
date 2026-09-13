@@ -104,3 +104,40 @@ export interface VendedorRanking {
   atingimento_meta?: number; // 0..100
   posicao?: number;
 }
+
+// === Clientes ===
+
+export interface Cliente {
+  id: number;
+  cliente_id_origem: number;
+  cnpj: string;
+  razao_social: string;
+  segmento: string;
+  cidade: string;
+  uf: string;
+  bairro: string;
+  data_cadastro: string;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClienteSegmentoTotal {
+  segmento: string;
+  total: number;
+}
+
+export interface ClienteUfTotal {
+  uf: string;
+  total: number;
+}
+
+export interface ClienteDashboardMetrics {
+  periodo: DashboardPeriodo;
+  total_clientes: number;
+  total_ativos: number;
+  total_inativos: number;
+  novos_no_periodo: number;
+  por_segmento: ClienteSegmentoTotal[];
+  por_uf: ClienteUfTotal[];
+}

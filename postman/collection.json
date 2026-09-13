@@ -2157,6 +2157,587 @@
           "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
         }
       ]
+    },
+    {
+      "name": "Clientes",
+      "item": [
+        {
+          "name": "Listar Clientes (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Lista retornada', function() {",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "pm.test('Paginação presente', function() {",
+                  "    pm.expect(jsonData).to.have.property('pagination');",
+                  "    pm.expect(jsonData.pagination).to.have.property('page');",
+                  "    pm.expect(jsonData.pagination).to.have.property('limit');",
+                  "    pm.expect(jsonData.pagination).to.have.property('total');",
+                  "    pm.expect(jsonData.pagination).to.have.property('pages');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clientes?page=1&limit=20&uf=SP&segmento=Varejo&ativo=true&q=perfumaria",
+              "host": ["{{base_url}}"],
+              "path": ["api", "clientes"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número da página (padrão: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Itens por página (padrão: 20, máx: 100)"
+                },
+                {
+                  "key": "uf",
+                  "value": "SP",
+                  "description": "Filtro exato por UF (opcional)"
+                },
+                {
+                  "key": "segmento",
+                  "value": "Varejo",
+                  "description": "Filtro exato por segmento (opcional)"
+                },
+                {
+                  "key": "ativo",
+                  "value": "true",
+                  "description": "true|false — filtra por status. Qualquer outro valor (ou ausente) = sem filtro"
+                },
+                {
+                  "key": "q",
+                  "value": "perfumaria",
+                  "description": "Busca em razao_social OU cnpj (opcional)"
+                }
+              ]
+            },
+            "description": "Lista clientes com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `uf` (string) — filtro exato\n- `segmento` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `razao_social` OU `cnpj`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/clientes?page=1&limit=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Detalhe do Cliente (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Dados do cliente presentes', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data).to.have.property('razao_social');",
+                  "    pm.expect(jsonData.data).to.have.property('cnpj');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clientes/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "clientes", "1"]
+            },
+            "description": "Retorna o detalhe de um cliente pelo `id` interno (não é o `cliente_id_origem` do CSV).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do cliente\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Cliente inexistente",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"cliente não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Ativar/Inativar Cliente (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Cliente com campo ativo retornado', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('ativo');",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ativo\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/clientes/1/inativar",
+              "host": ["{{base_url}}"],
+              "path": ["api", "clientes", "1", "inativar"]
+            },
+            "description": "Ativa ou inativa um cliente (apenas admin).\n\n- **Body omitido:** faz toggle (inverte o estado atual)\n- **Body `{ \"ativo\": true }`:** ativa o cliente\n- **Body `{ \"ativo\": false }`:** inativa o cliente\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do cliente\n\n**Body (opcional):**\n- `ativo` (bool) — estado desejado. Se omitido, faz toggle.\n\n**Resposta de sucesso (200):** cliente atualizado (mesmo formato de `GET /api/clientes/{id}`).\n\n**Códigos de erro:**\n- `400` — `id` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK — Inativar",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"ativo\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1/inativar",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1", "inativar"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": false,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "200 OK — Toggle (body omitido)",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1/inativar",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1", "inativar"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"ativo\": true\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Cliente inexistente",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"ativo\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/999999/inativar",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "999999", "inativar"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"cliente não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"ativo\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1/inativar",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1", "inativar"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Dashboard — Clientes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Métricas de clientes presentes', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('periodo');",
+                  "    pm.expect(jsonData.data).to.have.property('total_clientes');",
+                  "    pm.expect(jsonData.data).to.have.property('total_ativos');",
+                  "    pm.expect(jsonData.data).to.have.property('total_inativos');",
+                  "    pm.expect(jsonData.data).to.have.property('novos_no_periodo');",
+                  "    pm.expect(jsonData.data).to.have.property('por_segmento');",
+                  "    pm.expect(jsonData.data).to.have.property('por_uf');",
+                  "});",
+                  "pm.test('por_segmento e por_uf são arrays', function() {",
+                  "    pm.expect(jsonData.data.por_segmento).to.be.an('array');",
+                  "    pm.expect(jsonData.data.por_uf).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/clientes?periodo=month",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "clientes"],
+              "query": [
+                {
+                  "key": "periodo",
+                  "value": "month",
+                  "description": "today | month (padrão: month)"
+                }
+              ]
+            },
+            "description": "Retorna métricas agregadas da base de clientes (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `periodo` (string, opcional) — `today` ou `month` (padrão: `month`)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_clientes\": 3040,\n    \"total_ativos\": 2870,\n    \"total_inativos\": 170,\n    \"novos_no_periodo\": 42,\n    \"por_segmento\": [\n      { \"segmento\": \"Varejo\", \"total\": 1500 },\n      { \"segmento\": \"Atacado\", \"total\": 900 }\n    ],\n    \"por_uf\": [\n      { \"uf\": \"SP\", \"total\": 1200 },\n      { \"uf\": \"RJ\", \"total\": 480 }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `periodo` inválido (diferente de `today`/`month`)\n- `401` — não autenticado\n- `403` — não é admin"
+          },
+          "response": [
+            {
+              "name": "200 OK — Métricas do mês",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/dashboard/clientes?periodo=month",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "dashboard", "clientes"],
+                  "query": [
+                    {
+                      "key": "periodo",
+                      "value": "month"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_clientes\": 3040,\n    \"total_ativos\": 2870,\n    \"total_inativos\": 170,\n    \"novos_no_periodo\": 42,\n    \"por_segmento\": [\n      { \"segmento\": \"Varejo\", \"total\": 1500 },\n      { \"segmento\": \"Atacado\", \"total\": 900 }\n    ],\n    \"por_uf\": [\n      { \"uf\": \"SP\", \"total\": 1200 },\n      { \"uf\": \"RJ\", \"total\": 480 }\n    ]\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — periodo inválido",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/dashboard/clientes?periodo=ano",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "dashboard", "clientes"],
+                  "query": [
+                    {
+                      "key": "periodo",
+                      "value": "ano"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"periodo deve ser 'today' ou 'month'\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/dashboard/clientes?periodo=month",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "dashboard", "clientes"],
+                  "query": [
+                    {
+                      "key": "periodo",
+                      "value": "month"
+                    }
+                  ]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

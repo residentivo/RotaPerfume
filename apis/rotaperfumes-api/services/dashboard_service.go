@@ -12,15 +12,17 @@ import (
 
 // DashboardService agrega metricas de dashboard.
 type DashboardService struct {
-	repo *repositories.DashboardRepository
-	Cfg  *config.Config
+	repo        *repositories.DashboardRepository
+	clienteRepo *repositories.ClienteRepository
+	Cfg         *config.Config
 }
 
 // NewDashboardService cria um DashboardService com pool de conexao injetado.
 func NewDashboardService(db *sql.DB, cfg *config.Config) *DashboardService {
 	return &DashboardService{
-		repo: repositories.NewDashboardRepository(),
-		Cfg:  cfg,
+		repo:        repositories.NewDashboardRepository(),
+		clienteRepo: repositories.NewClienteRepository(),
+		Cfg:         cfg,
 	}
 }
 
@@ -86,4 +88,49 @@ func (s *DashboardService) GetVendedoresRanking(ctx context.Context, db *sql.DB,
 		log.Printf("[dashboard] GetVendedoresRanking page=%d limit=%d", page, limit)
 	}
 	return s.repo.GetVendedoresRanking(ctx, db, page, limit)
+}
+
+// GetClienteMetrics retorna metricas agregadas da base de clientes: totais
+// (geral, ativos, inativos), novos cadastros no periodo informado e a
+// distribuicao por segmento e por UF.
+// periodo: "today" (dia atual) ou "month" (mes atual).
+func (s *DashboardService) GetClienteMetrics(ctx context.Context, db *sql.DB, periodo string) (map[string]any, error) {
+	if s.Cfg.Verbose {
+		log.Printf("[dashboard] GetClienteMetrics periodo=%s", periodo)
+	}
+
+	total, err := s.clienteRepo.CountTotal(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	totalAtivos, err := s.clienteRepo.CountPorAtivo(ctx, db, true)
+	if err != nil {
+		return nil, err
+	}
+	totalInativos, err := s.clienteRepo.CountPorAtivo(ctx, db, false)
+	if err != nil {
+		return nil, err
+	}
+	novosNoPeriodo, err := s.clienteRepo.CountNovosNoPeriodo(ctx, db, periodo)
+	if err != nil {
+		return nil, err
+	}
+	porSegmento, err := s.clienteRepo.CountPorSegmento(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	porUF, err := s.clienteRepo.CountPorUF(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"periodo":          periodo,
+		"total_clientes":   total,
+		"total_ativos":     totalAtivos,
+		"total_inativos":   totalInativos,
+		"novos_no_periodo": novosNoPeriodo,
+		"por_segmento":     porSegmento,
+		"por_uf":           porUF,
+	}, nil
 }

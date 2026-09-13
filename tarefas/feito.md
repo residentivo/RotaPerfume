@@ -4,6 +4,31 @@
 
 ---
 
+## [Gestão de Clientes] — 2026-09-13
+**Agentes:** 🌸 DataBrain + 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** Nova área de gerenciamento de clientes: importação de `dados/crm/clientes.csv` (3040 registros) para uma nova tabela `clientes`, endpoints de listagem/detalhe/ativação e endpoints de dashboard com métricas da base de clientes (total, ativos/inativos, novos no período, distribuição por segmento/UF).
+
+**Camadas:**
+- [x] Database (🌸 DataBrain) — `sql/09_ddl_clientes.sql` (tabela `clientes`), `apis/shared/models/cliente.go`, importador `apis/shared/cmd/importclientes/main.go` (lê o CSV, normaliza CNPJ, parseia datas em 2 formatos, upsert idempotente por `cliente_id_origem`). Novo alvo `make db-import-clientes` no `Makefile` (e `sql/09_ddl_clientes.sql` incluído em `make db-up`).
+- [x] Backend (🟡 BackBrain) — `apis/shared/repositories/cliente_repository.go`, `apis/rotaperfumes-api/services/cliente_service.go`, `apis/rotaperfumes-api/handlers/cliente_handler.go`, `GetClienteMetrics`/`GetClientes` em `dashboard_service.go`/`dashboard_handler.go`. Rotas novas (todas admin only): `GET /api/clientes` (paginado, filtros uf/segmento/ativo/q), `GET /api/clientes/{id}`, `PATCH /api/clientes/{id}/inativar`, `GET /api/dashboard/clientes?periodo=today|month`. Build/vet OK.
+- [x] Frontend (🟢 FrontBrain) — `frontend/src/app/admin/clientes/page.tsx` (tabela paginada/ordenável, filtros, ativar/inativar inline), item de menu em `admin/layout.tsx`, seção de KPIs/gráficos de clientes em `frontend/src/app/dashboard/page.tsx`. Build/tsc OK.
+- [x] Teste (🔴 TestBrain) — `cliente_service_test.go`, `cliente_handler_test.go`, `importclientes/main_test.go`. `go test`/`go vet` OK em ambos os módulos, sem bugs encontrados.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — nova pasta "Clientes" com os 4 endpoints (`Listar Clientes`, `Detalhe do Cliente`, `Ativar/Inativar Cliente`, `Dashboard — Clientes`), com exemplos de query params, respostas de sucesso/erro e testes automatizados, seguindo o padrão já usado nas demais requests.
+- `postman/README.md` — seção "Clientes" adicionada em Endpoints, testes automatizados e tabela de resumo; nova seção "Importação de clientes (CRM)" em "Subindo o ambiente" documentando que `make db-seed`/`make db-reset` não populam a tabela `clientes` automaticamente e que é necessário rodar `make db-up && make db-import-clientes` à parte.
+- Não havia `README.md` na raiz do projeto nem em `apis/rotaperfumes-api/` (nem changelog/lista de features equivalente fora do próprio `postman/README.md` e deste Kanban) — nenhum manual novo foi criado além do estritamente necessário, conforme instrução.
+- `Makefile` já continha o alvo `db-import-clientes` e a aplicação de `sql/09_ddl_clientes.sql` em `db-up` (feito pelo DataBrain) — nenhuma duplicação adicionada.
+
+**Nota importante — ação pendente do usuário:** a importação do CSV para o banco **ainda não foi executada** em nenhum ambiente (o sandbox dos agentes não tem `mysql`/`make` disponíveis). Antes de usar a feature em um ambiente novo ou já existente, rodar manualmente:
+```bash
+make db-up && make db-import-clientes
+```
+
+---
+
 ## [REVERTIDO] Normalização de e-mails para padrão plus-addressing — 2026-09-13
 **Agente:** 🌸 DataBrain (script) → documentação/reversão por 🔵 SubBrain
 

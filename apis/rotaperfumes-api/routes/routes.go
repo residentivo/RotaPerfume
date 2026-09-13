@@ -29,8 +29,12 @@ import (
 //	GET  /api/dashboard/metrics         — admin only — métricas gerais (vendas, pedidos, ticket medio)
 //	GET  /api/dashboard/vendas          — admin only — serie temporal de vendas (ultimos N dias)
 //	GET  /api/dashboard/vendedores      — admin only — ranking de vendedores com meta
+//	GET  /api/dashboard/clientes        — admin only — métricas da base de clientes (totais, novos, por segmento, por uf)
+//	GET  /api/clientes                  — admin only — lista clientes (paginado, filtros uf/segmento/ativo/q)
+//	GET  /api/clientes/{id}             — admin only — detalhe de um cliente
+//	PATCH /api/clientes/{id}/inativar   — admin only — ativar/inativar cliente
 //	GET  /health                        — público
-func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler) http.Handler {
+func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Login: middleware "não-protegido" (não exige token). Mas usamos um middleware
@@ -98,6 +102,22 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Lista de vendedores (para popular selects no admin de usuários): admin only.
 	listVendedoresChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.ListVendedores))
 	mux.Handle("GET /api/vendedores", listVendedoresChain)
+
+	// Dashboard clientes (métricas da base de clientes): admin only.
+	dashboardClientesChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(dashboardH.GetClientes))
+	mux.Handle("/api/dashboard/clientes", dashboardClientesChain)
+
+	// Lista de clientes: admin only.
+	listClientesChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.ListClientes))
+	mux.Handle("GET /api/clientes", listClientesChain)
+
+	// Detalhe de cliente: admin only.
+	getClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.GetCliente))
+	mux.Handle("GET /api/clientes/{id}", getClienteChain)
+
+	// Toggle ativo/inativo de cliente: admin only.
+	toggleAtivoClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.ToggleAtivoCliente))
+	mux.Handle("PATCH /api/clientes/{id}/inativar", toggleAtivoClienteChain)
 
 	// Healthcheck.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

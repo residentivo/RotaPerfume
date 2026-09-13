@@ -11,6 +11,8 @@ import {
   SenhaHistoricoResponse,
   TipoReset,
   Vendedor,
+  Cliente,
+  ClienteDashboardMetrics,
 } from "./types";
 import { fetchWithAuth } from "./apiClient";
 
@@ -379,6 +381,113 @@ export async function apiListVendedores(): Promise<Vendedor[]> {
   return fetchWithAuth<Vendedor[]>("/api/vendedores", {
     method: "GET",
   });
+}
+
+// === Clientes ===
+
+export interface ListClientesFilters {
+  uf?: string;
+  segmento?: string;
+  ativo?: boolean;
+  q?: string;
+}
+
+export interface ListClientesResponse {
+  data: Cliente[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+// GET /api/clientes — lista paginada com filtros. Envelope
+// {success, data, pagination: {page, limit, total, pages}, error}.
+export async function apiListClientes(
+  page = 1,
+  limit = 20,
+  filters: ListClientesFilters = {}
+): Promise<ListClientesResponse> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.uf) qs.set("uf", filters.uf);
+  if (filters.segmento) qs.set("segmento", filters.segmento);
+  if (filters.ativo !== undefined) qs.set("ativo", String(filters.ativo));
+  if (filters.q) qs.set("q", filters.q);
+
+  const res = await fetch(`${API_BASE}/api/clientes?${qs.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+
+  const raw = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = raw;
+  }
+
+  if (!res.ok) {
+    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
+    if (parsed && typeof parsed === "object") {
+      const d = parsed as Record<string, unknown>;
+      if ("error" in d) errorMessage = String(d.error);
+      else if ("message" in d) errorMessage = String(d.message);
+    }
+    throw new Error(errorMessage);
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const d = parsed as Record<string, unknown>;
+    if ("data" in d && Array.isArray(d.data)) {
+      const pag = (d.pagination && typeof d.pagination === "object"
+        ? (d.pagination as Record<string, unknown>)
+        : d) as Record<string, unknown>;
+      return {
+        data: d.data as Cliente[],
+        page: Number(pag.page ?? page),
+        limit: Number(pag.limit ?? limit),
+        total: Number(pag.total ?? (d.data as unknown[]).length),
+        pages: Number(pag.pages ?? 1),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return { data: parsed as Cliente[], page, limit, total: parsed.length, pages: 1 };
+  }
+  return { data: [], page, limit, total: 0, pages: 0 };
+}
+
+// GET /api/clientes/{id} — detalhe de um cliente
+export async function apiGetCliente(id: number): Promise<Cliente> {
+  return fetchWithAuth<Cliente>(`/api/clientes/${id}`, {
+    method: "GET",
+  });
+}
+
+// PATCH /api/clientes/{id}/inativar — alterna (ou define) o status ativo
+export async function apiToggleClienteStatus(
+  id: number,
+  ativo?: boolean
+): Promise<Cliente> {
+  return fetchWithAuth<Cliente>(`/api/clientes/${id}/inativar`, {
+    method: "PATCH",
+    body: ativo === undefined ? undefined : JSON.stringify({ ativo }),
+  });
+}
+
+// GET /api/dashboard/clientes — metricas de clientes para o dashboard
+export async function apiDashboardClientes(
+  periodo: DashboardPeriodo = "month"
+): Promise<ClienteDashboardMetrics> {
+  const qs = new URLSearchParams({ periodo });
+  return fetchWithAuth<ClienteDashboardMetrics>(
+    `/api/dashboard/clientes?${qs.toString()}`,
+    {
+      method: "GET",
+    }
+  );
 }
 
 // Re-exporta API_BASE para uso externo se necessário

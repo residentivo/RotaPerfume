@@ -10,6 +10,7 @@ import {
   apiDashboardMetrics,
   apiDashboardVendas,
   apiDashboardVendedores,
+  apiDashboardClientes,
 } from "@/lib/api";
 import {
   DashboardMetrics,
@@ -17,6 +18,7 @@ import {
   VendasSeries,
   VendaDiaria,
   VendedorRanking,
+  ClienteDashboardMetrics,
 } from "@/lib/types";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -294,6 +296,48 @@ function RankingTable({ vendedores }: { vendedores: VendedorRanking[] }) {
   );
 }
 
+// ─── Simple Horizontal Bar List (segmento / UF) ────────────────────────────────
+
+function HorizontalBarList({
+  items,
+  colorClass = "bg-primary-500",
+}: {
+  items: { label: string; total: number }[];
+  colorClass?: string;
+}) {
+  if (!items.length) {
+    return (
+      <div className="py-6 text-center text-sm text-slate-400">
+        Sem dados disponiveis
+      </div>
+    );
+  }
+
+  const max = Math.max(...items.map((i) => i.total), 1);
+
+  return (
+    <div className="space-y-3">
+      {items.map((item) => {
+        const pct = (item.total / max) * 100;
+        return (
+          <div key={item.label}>
+            <div className="mb-1 flex items-center justify-between text-xs">
+              <span className="font-medium text-slate-700">{item.label}</span>
+              <span className="text-slate-500">{fmtNumber(item.total)}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={["h-full rounded-full transition-all", colorClass].join(" ")}
+                style={{ width: `${Math.max(2, pct)}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Goal Progress Card ───────────────────────────────────────────────────────
 
 function GoalProgress({
@@ -421,6 +465,24 @@ function IconRanking() {
   );
 }
 
+function IconUsers() {
+  return (
+    <svg
+      className="h-5 w-5"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"
+      />
+    </svg>
+  );
+}
+
 // ─── Content ─────────────────────────────────────────────────────────────────
 
 function DashboardContent() {
@@ -428,6 +490,7 @@ function DashboardContent() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [vendasSeries, setVendasSeries] = useState<VendasSeries | null>(null);
   const [vendedores, setVendedores] = useState<VendedorRanking[]>([]);
+  const [clienteMetrics, setClienteMetrics] = useState<ClienteDashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartsDias, setChartsDias] = useState(30);
@@ -438,14 +501,16 @@ function DashboardContent() {
     setLoading(true);
     setError(null);
     try {
-      const [m, v, vd] = await Promise.all([
+      const [m, v, vd, cm] = await Promise.all([
         apiDashboardMetrics(apiPeriodo),
         apiDashboardVendas(chartsDias),
         apiDashboardVendedores(1, 10),
+        apiDashboardClientes(apiPeriodo),
       ]);
       setMetrics(m);
       setVendasSeries(v);
       setVendedores(vd.data.slice(0, 10));
+      setClienteMetrics(cm);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar dados");
     } finally {
@@ -644,6 +709,79 @@ function DashboardContent() {
             ]} />
           )}
         </Card>
+
+        {/* Clientes */}
+        <div className="mt-6">
+          <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Total de Clientes"
+              value={fmtNumber(clienteMetrics?.total_clientes ?? 0)}
+              sub={`Periodo: ${PERIOD_LABELS[periodo]}`}
+              icon={<IconUsers />}
+            />
+            <KpiCard
+              label="Clientes Ativos"
+              value={fmtNumber(clienteMetrics?.total_ativos ?? 0)}
+              sub="Situacao ativa"
+              accent
+              icon={<IconUsers />}
+            />
+            <KpiCard
+              label="Clientes Inativos"
+              value={fmtNumber(clienteMetrics?.total_inativos ?? 0)}
+              sub="Situacao inativa"
+              icon={<IconUsers />}
+            />
+            <KpiCard
+              label="Novos no Periodo"
+              value={fmtNumber(clienteMetrics?.novos_no_periodo ?? 0)}
+              sub={`Cadastrados em: ${PERIOD_LABELS[periodo]}`}
+              icon={<IconUsers />}
+            />
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader
+                title="Clientes por Segmento"
+                subtitle="Distribuicao por segmento de mercado"
+              />
+              {loading && clienteMetrics === null ? (
+                <div className="flex h-32 items-center justify-center">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
+                </div>
+              ) : (
+                <HorizontalBarList
+                  items={(clienteMetrics?.por_segmento ?? []).map((s) => ({
+                    label: s.segmento || "Nao informado",
+                    total: s.total,
+                  }))}
+                  colorClass="bg-primary-500"
+                />
+              )}
+            </Card>
+
+            <Card>
+              <CardHeader
+                title="Clientes por UF"
+                subtitle="Distribuicao por estado"
+              />
+              {loading && clienteMetrics === null ? (
+                <div className="flex h-32 items-center justify-center">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
+                </div>
+              ) : (
+                <HorizontalBarList
+                  items={(clienteMetrics?.por_uf ?? []).map((u) => ({
+                    label: u.uf || "Nao informado",
+                    total: u.total,
+                  }))}
+                  colorClass="bg-emerald-500"
+                />
+              )}
+            </Card>
+          </div>
+        </div>
 
         {/* Loading overlay when refreshing */}
         {loading && !error && (

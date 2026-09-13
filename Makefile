@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-import-clientes test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -33,6 +33,8 @@ db-up: db-create ## Cria o schema (tabelas vazias)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/06_ddl_refresh_tokens.sql
 	@echo "=== Aplicando DDL de senha_historico ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/07_ddl_senha_historico.sql
+	@echo "=== Aplicando DDL de clientes ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/09_ddl_clientes.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
@@ -57,6 +59,9 @@ db-reset: db-down db-seed ## Recria o banco do zero com hashes validos
 
 db-fix-deve-trocar-senha: ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
+
+db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
+	cd apis/shared && go run ./cmd/importclientes
 
 # =============================================================================
 # Build

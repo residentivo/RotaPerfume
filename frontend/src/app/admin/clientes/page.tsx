@@ -1,0 +1,439 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Alert } from "@/components/ui/Alert";
+import { Select } from "@/components/ui/Select";
+import { Table, Badge, Column } from "@/components/ui/Table";
+import { apiListClientes, apiToggleClienteStatus } from "@/lib/api";
+import { Cliente } from "@/lib/types";
+
+type SortKey =
+  | "id"
+  | "razao_social"
+  | "cnpj"
+  | "segmento"
+  | "cidade"
+  | "data_cadastro"
+  | "ativo";
+type SortDir = "asc" | "desc";
+
+type ActionState = {
+  type: "toggle" | null;
+  clienteId: number | null;
+};
+
+const STATUS_OPTIONS: { value: "" | "ativo" | "inativo"; label: string }[] = [
+  { value: "", label: "Todos os status" },
+  { value: "ativo", label: "Ativo" },
+  { value: "inativo", label: "Inativo" },
+];
+
+const LIMIT_OPTIONS = [
+  { value: "10", label: "10 por pagina" },
+  { value: "20", label: "20 por pagina" },
+  { value: "50", label: "50 por pagina" },
+  { value: "100", label: "100 por pagina" },
+];
+
+function fmtDate(dateStr: string): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString("pt-BR");
+}
+
+function fmtCnpj(cnpj: string): string {
+  const digits = (cnpj || "").replace(/\D/g, "");
+  if (digits.length !== 14) return cnpj;
+  return digits.replace(
+    /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
+    "$1.$2.$3/$4-$5"
+  );
+}
+
+export default function ClientesPage() {
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [ufFilter, setUfFilter] = useState("");
+  const [segmentoFilter, setSegmentoFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"" | "ativo" | "inativo">("");
+  const [sortKey, setSortKey] = useState<SortKey>("id");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [action, setAction] = useState<ActionState>({ type: null, clienteId: null });
+
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(0);
+
+  const loadClientes = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiListClientes(page, limit, {
+        uf: ufFilter || undefined,
+        segmento: segmentoFilter || undefined,
+        ativo:
+          statusFilter === ""
+            ? undefined
+            : statusFilter === "ativo",
+        q: search.trim() || undefined,
+      });
+      setClientes(res.data);
+      setTotal(res.total);
+      setPages(res.pages);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Erro ao carregar clientes. O endpoint /api/clientes pode nao existir no backend.";
+      setError(message);
+      setClientes([]);
+      setTotal(0);
+      setPages(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadClientes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, limit]);
+
+  // Debounce da busca textual e reset para pagina 1 quando filtros mudam
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (page !== 1) {
+        setPage(1);
+      } else {
+        loadClientes();
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, ufFilter, segmentoFilter, statusFilter]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sorted = useMemo(() => {
+    const list = [...clientes];
+    list.sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (av === undefined || bv === undefined) return 0;
+      let cmp = 0;
+      if (typeof av === "number" && typeof bv === "number") {
+        cmp = av - bv;
+      } else if (typeof av === "boolean" && typeof bv === "boolean") {
+        cmp = Number(av) - Number(bv);
+      } else {
+        cmp = String(av).localeCompare(String(bv), "pt-BR");
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return list;
+  }, [clientes, sortKey, sortDir]);
+
+  const handleToggleStatus = async (cliente: Cliente) => {
+    const novoStatus = !cliente.ativo;
+    const acao = novoStatus ? "reativar" : "inativar";
+    const ok = window.confirm(
+      `Tem certeza que deseja ${acao} o cliente "${cliente.razao_social}"?`
+    );
+    if (!ok) return;
+
+    setAction({ type: "toggle", clienteId: cliente.id });
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await apiToggleClienteStatus(cliente.id, novoStatus);
+      setClientes((prev) =>
+        prev.map((c) => (c.id === updated.id ? updated : c))
+      );
+      setSuccess(
+        `Cliente ${novoStatus ? "reativado" : "inativado"} com sucesso.`
+      );
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erro ao alterar status.";
+      setError(message);
+    } finally {
+      setAction({ type: null, clienteId: null });
+    }
+  };
+
+  const columns: Column<Cliente>[] = [
+    {
+      key: "razao_social",
+      header: "Razao Social",
+      sortable: true,
+      render: (c) => (
+        <span className="font-medium text-slate-900">
+          #{c.id} - {c.razao_social}
+        </span>
+      ),
+    },
+    {
+      key: "cnpj",
+      header: "CNPJ",
+      width: "180px",
+      sortable: true,
+      render: (c) => (
+        <span className="font-mono text-xs text-slate-600">
+          {fmtCnpj(c.cnpj)}
+        </span>
+      ),
+    },
+    {
+      key: "segmento",
+      header: "Segmento",
+      width: "160px",
+      sortable: true,
+      render: (c) => <span className="text-slate-600">{c.segmento || "-"}</span>,
+    },
+    {
+      key: "cidade",
+      header: "Cidade/UF",
+      width: "180px",
+      sortable: true,
+      render: (c) => (
+        <span className="text-slate-600">
+          {c.cidade}
+          {c.uf ? `/${c.uf}` : ""}
+        </span>
+      ),
+    },
+    {
+      key: "data_cadastro",
+      header: "Cadastro",
+      width: "120px",
+      align: "center",
+      sortable: true,
+      render: (c) => (
+        <span className="text-slate-600">{fmtDate(c.data_cadastro)}</span>
+      ),
+    },
+    {
+      key: "ativo",
+      header: "Status",
+      width: "140px",
+      sortable: true,
+      align: "center",
+      render: (c) => (
+        <button
+          type="button"
+          onClick={() => handleToggleStatus(c)}
+          disabled={action.type === "toggle" && action.clienteId === c.id}
+          title={c.ativo ? "Clique para inativar" : "Clique para reativar"}
+          className={[
+            "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+            "disabled:cursor-not-allowed disabled:opacity-60",
+            c.ativo
+              ? "bg-green-100 text-green-700 hover:bg-green-200"
+              : "bg-red-100 text-red-700 hover:bg-red-200",
+          ].join(" ")}
+        >
+          <span
+            className={[
+              "h-2 w-2 rounded-full",
+              c.ativo ? "bg-green-500" : "bg-red-500",
+            ].join(" ")}
+          />
+          {c.ativo ? "Ativo" : "Inativo"}
+        </button>
+      ),
+    },
+  ];
+
+  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
+  const endItem = Math.min(page * limit, total);
+
+  return (
+    <div>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Clientes</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Consulte e gerencie os clientes cadastrados no CRM.
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4">
+          <Alert variant="error" onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        </div>
+      )}
+
+      {success && (
+        <div className="mb-4">
+          <Alert variant="success" onClose={() => setSuccess(null)}>
+            {success}
+          </Alert>
+        </div>
+      )}
+
+      <Card padded={false}>
+        <div className="border-b border-slate-200 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
+              <div className="flex-1 sm:max-w-xs">
+                <Input
+                  label="Buscar"
+                  placeholder="Razao social ou CNPJ..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  icon={
+                    <svg
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"
+                      />
+                    </svg>
+                  }
+                />
+              </div>
+              <div className="sm:w-32">
+                <Input
+                  label="UF"
+                  placeholder="Ex: SP"
+                  maxLength={2}
+                  value={ufFilter}
+                  onChange={(e) => setUfFilter(e.target.value.toUpperCase())}
+                />
+              </div>
+              <div className="sm:w-56">
+                <Input
+                  label="Segmento"
+                  placeholder="Ex: Varejo"
+                  value={segmentoFilter}
+                  onChange={(e) => setSegmentoFilter(e.target.value)}
+                />
+              </div>
+              <div className="sm:w-48">
+                <Select
+                  label="Status"
+                  options={STATUS_OPTIONS}
+                  value={statusFilter}
+                  onChange={(e) =>
+                    setStatusFilter(e.target.value as "" | "ativo" | "inativo")
+                  }
+                />
+              </div>
+              <div className="sm:w-44">
+                <Select
+                  label="Itens por pagina"
+                  options={LIMIT_OPTIONS}
+                  value={String(limit)}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                />
+              </div>
+            </div>
+            <div className="text-sm text-slate-500">
+              {total === 0
+                ? "0 clientes"
+                : `${startItem}-${endItem} de ${total} ${
+                    total === 1 ? "cliente" : "clientes"
+                  }`}
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4">
+          <Table
+            columns={columns}
+            data={sorted}
+            keyExtractor={(c) => c.id}
+            loading={loading}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={(key) => handleSort(key as SortKey)}
+            emptyMessage={
+              search || ufFilter || segmentoFilter || statusFilter
+                ? "Nenhum cliente encontrado para os filtros aplicados."
+                : "Nenhum cliente cadastrado."
+            }
+          />
+        </div>
+
+        {pages > 1 && (
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
+            <div className="text-sm text-slate-500">
+              Pagina <strong>{page}</strong> de <strong>{pages}</strong>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page <= 1}
+                onClick={() => setPage(1)}
+                title="Primeira pagina"
+              >
+                {"<<"}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                title="Pagina anterior"
+              >
+                {"<"}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page >= pages}
+                onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                title="Proxima pagina"
+              >
+                {">"}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page >= pages}
+                onClick={() => setPage(pages)}
+                title="Ultima pagina"
+              >
+                {">>"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <div className="mt-4 text-xs text-slate-400">
+        <strong>Nota:</strong> A busca e os filtros de UF/segmento/status sao
+        aplicados via API. Caso a lista esteja vazia ou retorne erro, verifique
+        se os endpoints <code>GET /api/clientes</code> e{" "}
+        <code>PATCH /api/clientes/&#123;id&#125;/inativar</code> estao
+        implementados no backend.
+      </div>
+    </div>
+  );
+}

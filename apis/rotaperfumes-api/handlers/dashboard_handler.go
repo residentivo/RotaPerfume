@@ -92,6 +92,31 @@ func (h *DashboardHandler) GetVendedores(w http.ResponseWriter, r *http.Request)
 	writeJSONWithPagination(w, http.StatusOK, vendedores, page, limit, total, pages)
 }
 
+// GetClientes GET /api/dashboard/clientes
+// Query params (opcionais): periodo (today|month).
+// Resposta: {periodo, total_clientes, total_ativos, total_inativos,
+//
+//	novos_no_periodo, por_segmento: [{segmento, total}], por_uf: [{uf, total}]}
+func (h *DashboardHandler) GetClientes(w http.ResponseWriter, r *http.Request) {
+	periodo := r.URL.Query().Get("periodo")
+	if periodo == "" {
+		periodo = "month"
+	}
+	if periodo != "today" && periodo != "month" {
+		writeJSON(w, http.StatusBadRequest, nil, "periodo deve ser 'today' ou 'month'")
+		return
+	}
+
+	metrics, err := h.svc.GetClienteMetrics(r.Context(), h.db, periodo)
+	if err != nil {
+		log.Printf("[dashboard] GetClientes: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, metrics, "")
+}
+
 func parseIntDefault(s string, fallback int) int {
 	n := 0
 	for _, c := range s {
