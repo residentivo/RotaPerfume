@@ -1,149 +1,25 @@
 import { User } from "./types";
 
 // ============================================
-// SEGURANCA: Tokens agora usam cookies HttpOnly
-// Migração de localStorage -> cookies
-// Importante: O HttpOnly deve ser setado pelo BACKEND via Set-Cookie header
+// SEGURANCA: access_token e refresh_token sao cookies HttpOnly
+// definidos pelo BACKEND via Set-Cookie. Por serem HttpOnly, o
+// JavaScript do frontend NÃO consegue ler nem escrever esses cookies
+// (document.cookie nunca os expõe) — o navegador os envia sozinho em
+// toda requisição para a API (ver credentials: "include" em apiClient.ts).
+// A sessão real é sempre validada pelo backend; o client só guarda
+// o User (não sensível) para decisões de UI.
 // ============================================
 
-const ACCESS_TOKEN_COOKIE = "access_token";
-const REFRESH_TOKEN_COOKIE = "refresh_token";
-const USER_STORAGE_KEY = "auth_user"; // User permanece em localStorage (não é sensível)
+const USER_STORAGE_KEY = "auth_user";
 
 // ============================================
-// Funções utilitárias para gerenciamento de cookies
+// Gerenciamento de tokens — limpeza client-side
 // ============================================
 
-/**
- * Lê um cookie pelo nome
- * Retorna null se não encontrar ou se estiver em ambiente SSR
- */
-export function getCookie(name: string): string | null {
-  if (typeof window === "undefined") return null;
-
-  const match = document.cookie.match(
-    new RegExp("(^| )" + name + "=([^;]+)")
-  );
-  return match ? decodeURIComponent(match[2]) : null;
-}
-
-/**
- * Define um cookie com flags de segurança
- * NOTA: Para HttpOnly real, o BACKEND deve enviar Set-Cookie header
- * Este método é usado para transição ou quando HttpOnly não está disponível
- */
-export function setCookie(
-  name: string,
-  value: string,
-  options: {
-    secure?: boolean;
-    sameSite?: "Strict" | "Lax" | "None";
-    path?: string;
-    maxAge?: number; // em segundos
-  } = {}
-): void {
-  if (typeof window === "undefined") return;
-
-  const {
-    secure = true,
-    sameSite = "Strict",
-    path = "/",
-    maxAge,
-  } = options;
-
-  let cookie = `${name}=${encodeURIComponent(value)}`;
-  cookie += `; Path=${path}`;
-  cookie += `; SameSite=${sameSite}`;
-
-  if (secure) {
-    cookie += "; Secure";
-  }
-
-  if (maxAge !== undefined) {
-    cookie += `; Max-Age=${maxAge}`;
-  }
-
-  document.cookie = cookie;
-}
-
-/**
- * Remove um cookie definindo expiração no passado
- */
-export function clearCookie(name: string, path = "/"): void {
-  if (typeof window === "undefined") return;
-  document.cookie = `${name}=; Path=${path}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-}
-
-// ============================================
-// Gerenciamento de Access Token (via Cookie)
-// ============================================
-
-export function getAccessToken(): string | null {
-  return getCookie(ACCESS_TOKEN_COOKIE);
-}
-
-export function setAccessToken(token: string, maxAgeSeconds = 3600): void {
-  setCookie(ACCESS_TOKEN_COOKIE, token, {
-    secure: true,
-    sameSite: "Strict",
-    path: "/",
-    maxAge: maxAgeSeconds,
-  });
-}
-
-export function clearAccessToken(): void {
-  clearCookie(ACCESS_TOKEN_COOKIE);
-}
-
-// ============================================
-// Gerenciamento de Refresh Token (via Cookie)
-// ============================================
-
-export function getRefreshToken(): string | null {
-  return getCookie(REFRESH_TOKEN_COOKIE);
-}
-
-export function setRefreshToken(token: string, maxAgeSeconds = 604800): void {
-  // 7 dias por padrão
-  setCookie(REFRESH_TOKEN_COOKIE, token, {
-    secure: true,
-    sameSite: "Lax", // Lax para permitir redirect после login
-    path: "/",
-    maxAge: maxAgeSeconds,
-  });
-}
-
-export function clearRefreshToken(): void {
-  clearCookie(REFRESH_TOKEN_COOKIE);
-}
-
-// ============================================
-// Gerenciamento combinado de tokens
-// ============================================
-
-export function setTokens(
-  access_token: string,
-  refresh_token: string
-): void {
-  setAccessToken(access_token);
-  if (refresh_token) {
-    setRefreshToken(refresh_token);
-  }
-}
-
-export function getTokens(): { access_token: string; refresh_token: string } | null {
-  const access = getAccessToken();
-  const refresh = getRefreshToken();
-  if (!access && !refresh) return null;
-  return {
-    access_token: access || "",
-    refresh_token: refresh || "",
-  };
-}
-
+// Não é possível limpar cookies HttpOnly via JS; a limpeza real
+// acontece no backend (POST /api/auth/logout). Aqui só limpamos o
+// que o client de fato controla: o usuário em localStorage.
 export function clearTokens(): void {
-  clearAccessToken();
-  clearRefreshToken();
   clearUser();
 }
 
@@ -182,25 +58,18 @@ export function isAdmin(): boolean {
 }
 
 export function isAuthenticated(): boolean {
-  return !!getAccessToken();
+  return !!getUser();
 }
 
 export function logout(): void {
   clearTokens();
   if (typeof window !== "undefined") {
-    window.location.href = "/login";
-  }
-}
-
-export function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const payload = parts[1];
-    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
-    const decoded = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
-    return JSON.parse(decoded);
-  } catch {
-    return null;
+    // Revoga o refresh token e limpa os cookies HttpOnly no backend.
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    }).finally(() => {
+      window.location.href = "/login";
+    });
   }
 }

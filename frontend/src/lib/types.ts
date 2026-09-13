@@ -21,7 +21,7 @@ export interface SenhaHistoricoResponse {
   pages: number;
 }
 
-export type UserRole = "admin" | "user" | "vendedor";
+export type UserRole = "admin" | "normal";
 
 export interface User {
   id: number;
@@ -31,6 +31,15 @@ export interface User {
   ativo: boolean;
   created_at?: string;
   updated_at?: string;
+  id_vendedor?: number | null;
+  vendedor_nome?: string | null;
+}
+
+export interface Vendedor {
+  id: number;
+  nome: string;
+  regiao: string;
+  uf: string;
 }
 
 export interface LoginRequest {

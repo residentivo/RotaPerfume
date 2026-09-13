@@ -2,14 +2,13 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getAccessToken } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 
 export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (token) {
+    if (getUser()) {
       router.replace("/dashboard");
     } else {
       router.replace("/login");

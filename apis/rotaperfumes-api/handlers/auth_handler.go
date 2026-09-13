@@ -13,13 +13,9 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
-
-// DefaultPassword é a senha padrão para novos vendedores (primeiro acesso).
-const DefaultPassword = "Mudar@123"
 
 // AuthHandler trata as rotas /api/auth/*.
 type AuthHandler struct {
@@ -180,8 +176,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Atualiza ultimo_login_at (não falha o login se falhar).
 	_ = h.repo.UpdateUltimoLogin(ctx, h.db, u.ID, time.Now())
 
-	// Flag de primeiro acesso: vendedor (role normal) com senha padrão deve trocar.
-	trocarSenha := u.Role == models.RoleNormal && req.Password == DefaultPassword
+	// Flag de primeiro acesso / senha gerada pelo sistema, persistida na coluna
+	// deve_trocar_senha e populada pelo repositório em GetByEmail.
+	trocarSenha := u.DeveTrocarSenha
 
 	log.Printf("[auth] login OK: user_id=%d role=%s trocar_senha=%t", u.ID, u.Role, trocarSenha)
 
@@ -358,7 +355,8 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	userAgent := r.UserAgent()
 	_ = h.senhaSvc.Registrar(ctx, h.db, uid, nil, u.PasswordHash, ipOrigem, userAgent, "usuario")
 
-	if err := h.repo.UpdatePasswordHash(ctx, h.db, uid, newHash); err != nil {
+	// Troca voluntária pelo próprio usuário — não é mais primeiro acesso.
+	if err := h.repo.UpdatePasswordHash(ctx, h.db, uid, newHash, false); err != nil {
 		log.Printf("[auth] reset-password: UpdatePasswordHash: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return

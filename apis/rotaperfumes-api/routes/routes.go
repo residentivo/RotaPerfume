@@ -23,13 +23,14 @@ import (
 //	PUT  /api/usuarios/{id}             — admin only — atualizar usuário
 //	PATCH /api/usuarios/{id}/inativar   — admin only — ativar/inativar
 //	POST /api/admin/reset-password      — admin only — resetar senha de outro usuário
+//	GET  /api/vendedores                — admin only — lista vendedores ativos (sem paginação)
 //	GET  /api/senha-historico           — admin only — todo histórico de senhas (paginado)
 //	GET  /api/senha-historico/{user_id} — admin only — histórico de um usuário (paginado)
 //	GET  /api/dashboard/metrics         — admin only — métricas gerais (vendas, pedidos, ticket medio)
 //	GET  /api/dashboard/vendas          — admin only — serie temporal de vendas (ultimos N dias)
 //	GET  /api/dashboard/vendedores      — admin only — ranking de vendedores com meta
 //	GET  /health                        — público
-func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler) http.Handler {
+func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Login: middleware "não-protegido" (não exige token). Mas usamos um middleware
@@ -93,6 +94,10 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Dashboard vendedores (ranking): admin only.
 	vendedoresChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(dashboardH.GetVendedores))
 	mux.Handle("/api/dashboard/vendedores", vendedoresChain)
+
+	// Lista de vendedores (para popular selects no admin de usuários): admin only.
+	listVendedoresChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.ListVendedores))
+	mux.Handle("GET /api/vendedores", listVendedoresChain)
 
 	// Healthcheck.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

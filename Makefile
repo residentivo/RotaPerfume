@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -46,6 +46,9 @@ db-down: ## Dropa o banco de dados (CUIDADO!)
 	mysql $(MYSQL_OPTS) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
 
 db-reset: db-down db-seed ## Recria o banco do zero com hashes validos
+
+db-fix-deve-trocar-senha: ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
 
 # =============================================================================
 # Build

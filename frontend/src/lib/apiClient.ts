@@ -1,20 +1,19 @@
 /**
  * apiClient.ts - Cliente HTTP com interceptador de 401 + refresh automático
  *
+ * access_token e refresh_token são cookies HttpOnly definidos pelo backend:
+ * o JS nunca os lê nem os envia manualmente — o navegador os anexa sozinho
+ * em toda requisição feita com `credentials: "include"`.
+ *
  * Fluxo:
- * 1. fetchWithAuth() adiciona Authorization automaticamente
- * 2. Se resposta 401 -> tenta refresh do token
- * 3. Se refresh OK -> atualiza tokens e reenvia requisição original
+ * 1. fetchWithAuth() chama a API com credentials: "include" (cookie vai sozinho)
+ * 2. Se resposta 401 -> tenta POST /api/auth/refresh (também via cookie)
+ * 3. Se refresh OK -> backend seta novos cookies e reenviamos a requisição original
  * 4. Se refresh falhar -> redireciona para /login
  * 5. Lock/fila garante que apenas uma chamada de refresh aconteça por vez
  */
 
-import {
-  getAccessToken,
-  setTokens,
-  clearTokens,
-  getRefreshToken,
-} from "./auth";
+import { clearTokens } from "./auth";
 
 // ============================================
 // Configuração
@@ -30,14 +29,14 @@ const REFRESH_TIMEOUT = 10000;
 // ============================================
 
 let isRefreshing = false;
-let refreshSubscribers: Array<(token: string) => void> = [];
+let refreshSubscribers: Array<(success: boolean) => void> = [];
 
-function subscribeTokenRefresh(callback: (token: string) => void): void {
+function subscribeTokenRefresh(callback: (success: boolean) => void): void {
   refreshSubscribers.push(callback);
 }
 
-function onRefreshComplete(newToken: string): void {
-  refreshSubscribers.forEach((callback) => callback(newToken));
+function onRefreshComplete(success: boolean): void {
+  refreshSubscribers.forEach((callback) => callback(success));
   refreshSubscribers = [];
 }
 
@@ -45,25 +44,19 @@ function onRefreshComplete(newToken: string): void {
 // API Call para refresh
 // ============================================
 
-interface RefreshResponse {
-  access_token: string;
-  refresh_token?: string;
-}
-
-async function callRefreshToken(): Promise<{ token: string; refresh_token?: string } | null> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
-
+async function callRefreshToken(): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REFRESH_TIMEOUT);
 
+    // refresh_token vai via cookie HttpOnly (credentials: "include");
+    // backend responde com novos Set-Cookie para access_token/refresh_token.
     const res = await fetch(`${API_BASE}/api/auth/refresh`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      credentials: "include",
       signal: controller.signal,
     });
 
@@ -71,48 +64,17 @@ async function callRefreshToken(): Promise<{ token: string; refresh_token?: stri
 
     if (!res.ok) {
       console.warn("[apiClient] Refresh falhou com status:", res.status);
-      return null;
+      return false;
     }
 
-    const text = await res.text();
-    let data: unknown = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = text;
-    }
-
-    // Extrai token do envelope {data: {access_token: ...}} ou direto
-    let newAccessToken: string | null = null;
-    let newRefreshToken: string | undefined = undefined;
-
-    if (data && typeof data === "object") {
-      const d = data as Record<string, unknown>;
-      if ("access_token" in d) {
-        newAccessToken = String(d.access_token);
-        newRefreshToken = d.refresh_token ? String(d.refresh_token) : undefined;
-      } else if ("data" in d && typeof d.data === "object") {
-        const inner = d.data as Record<string, unknown>;
-        if ("access_token" in inner) {
-          newAccessToken = String(inner.access_token);
-          newRefreshToken = inner.refresh_token ? String(inner.refresh_token) : undefined;
-        }
-      }
-    }
-
-    if (!newAccessToken) {
-      console.warn("[apiClient] Refresh não retornou access_token");
-      return null;
-    }
-
-    return { token: newAccessToken, refresh_token: newRefreshToken };
+    return true;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       console.warn("[apiClient] Refresh timeout");
     } else {
       console.error("[apiClient] Erro no refresh:", error);
     }
-    return null;
+    return false;
   }
 }
 
@@ -188,39 +150,39 @@ export async function fetchWithAuth<T = unknown>(
 ): Promise<T> {
   const { noRefresh = false, headers: customHeaders, ...fetchOptions } = options;
 
-  const makeRequest = async (token: string | null): Promise<Response> => {
+  const makeRequest = async (): Promise<Response> => {
     const url = endpoint.startsWith("http") ? endpoint : `${API_BASE}${endpoint}`;
 
     const defaultHeaders: HeadersInit = {
       "Content-Type": "application/json",
     };
 
-    // Adiciona Authorization se tiver token
-    if (token) {
-      (defaultHeaders as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-    }
-
     // Merge com headers customizados
     const mergedHeaders = { ...defaultHeaders, ...customHeaders };
 
+    // access_token vai via cookie HttpOnly — o navegador o anexa sozinho.
     return fetch(url, {
       ...fetchOptions,
       headers: mergedHeaders,
+      credentials: "include",
     });
   };
 
   // Primeira tentativa
-  const token = getAccessToken();
-  let response = await makeRequest(token);
+  let response = await makeRequest();
 
   // Se 401 e pode fazer refresh
-  if (response.status === 401 && !noRefresh && token) {
+  if (response.status === 401 && !noRefresh) {
     // Se já está fazendo refresh, aguarda resultado
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
-        subscribeTokenRefresh(async (newToken) => {
+        subscribeTokenRefresh(async (success) => {
+          if (!success) {
+            reject(new Error("Sessão expirada. Faça login novamente."));
+            return;
+          }
           try {
-            const retryResponse = await makeRequest(newToken);
+            const retryResponse = await makeRequest();
             if (!retryResponse.ok) {
               const error = await parseError(retryResponse);
               reject(new Error(error));
@@ -240,19 +202,16 @@ export async function fetchWithAuth<T = unknown>(
     showRefreshIndicator();
 
     try {
-      const refreshResult = await callRefreshToken();
+      const refreshed = await callRefreshToken();
 
-      if (refreshResult) {
-        // Atualiza tokens
-        setTokens(refreshResult.token, refreshResult.refresh_token || getRefreshToken() || "");
-
+      if (refreshed) {
         // Notifica todas as requisições pendentes
-        onRefreshComplete(refreshResult.token);
+        onRefreshComplete(true);
         isRefreshing = false;
         hideRefreshIndicator();
 
-        // Reenvia requisição original com novo token
-        const retryResponse = await makeRequest(refreshResult.token);
+        // Reenvia requisição original (cookies já atualizados pelo backend)
+        const retryResponse = await makeRequest();
 
         if (!retryResponse.ok) {
           const error = await parseError(retryResponse);
@@ -262,7 +221,7 @@ export async function fetchWithAuth<T = unknown>(
         return parseResponse<T>(retryResponse);
       } else {
         // Refresh falhou
-        onRefreshComplete("");
+        onRefreshComplete(false);
         isRefreshing = false;
         hideRefreshIndicator();
         clearTokens();
@@ -338,16 +297,20 @@ function redirectToLogin(): void {
   if (redirecting || typeof window === "undefined") return;
   redirecting = true;
 
-  // Limpa estado antes de redirecionar
+  // Limpa estado local e pede ao backend para limpar os cookies HttpOnly.
   clearTokens();
 
-  // Salva URL atual para voltar depois do login
   const currentUrl = window.location.href;
   const loginUrl = currentUrl.includes("/login")
     ? "/login"
     : `/login?redirect=${encodeURIComponent(currentUrl)}`;
 
-  window.location.href = loginUrl;
+  fetch(`${API_BASE}/api/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  }).finally(() => {
+    window.location.href = loginUrl;
+  });
 }
 
 // ============================================
@@ -358,42 +321,11 @@ export function forceLogout(message = "Sessão expirada"): void {
   clearTokens();
   if (typeof window !== "undefined") {
     alert(message);
-    window.location.href = "/login";
+    fetch(`${API_BASE}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    }).finally(() => {
+      window.location.href = "/login";
+    });
   }
 }
-
-// ============================================
-// Verifica se precisa de refresh (útil para inicialização)
-// ============================================
-
-export function needsRefresh(): boolean {
-  const token = getAccessToken();
-  const refresh = getRefreshToken();
-
-  if (!refresh) return false;
-  if (!token) return true;
-
-  // Verifica se token está expirado (se conseguir decodificar)
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return true;
-
-    const payload = parts[1];
-    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
-    const decoded = JSON.parse(atob(padded.replace(/-/g, "+").replace(/_/g, "/")));
-
-    // Se tem exp e está a menos de 5 minutos, já renova
-    if (decoded.exp) {
-      const now = Math.floor(Date.now() / 1000);
-      const fiveMinutes = 5 * 60;
-      return decoded.exp - now < fiveMinutes;
-    }
-  } catch {
-    return true;
-  }
-
-  return false;
-}
-
-// Re-export getAccessToken para conveniência
-export { getAccessToken };

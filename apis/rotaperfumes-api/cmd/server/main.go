@@ -14,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/db"
+	sharedsvc "github.com/rotaperfumes/shared/services"
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 	"github.com/rotaperfumes/rotaperfumes-api/routes"
@@ -44,12 +45,18 @@ func main() {
 	}
 	log.Printf("[server] db ping OK")
 
+	// EmailService: usa SMTP real se as credenciais estiverem configuradas,
+	// caso contrário cai no fallback noop (log-only) — permite `make dev-api`
+	// funcionar sem SMTP configurado.
+	emailSvc := newEmailService(cfg)
+
 	// Handler + rotas (injetam o pool de conexão).
 	authHandler := handlers.NewAuthHandler(conn, cfg)
-	userHandler := handlers.NewUsuarioHandler(conn, cfg)
+	userHandler := handlers.NewUsuarioHandler(conn, cfg, emailSvc)
 	dashboardHandler := handlers.NewDashboardHandler(conn, cfg)
 	senhaHandler := handlers.NewSenhaHistoricoHandler(conn)
-	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler)
+	vendedorHandler := handlers.NewVendedorHandler(conn, cfg)
+	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler)
 
 	srv := &http.Server{
 		Addr:         ":8080",
@@ -79,6 +86,20 @@ func main() {
 	}
 	_ = conn.Close()
 	log.Printf("[server] bye")
+}
+
+// newEmailService escolhe a implementação de EmailService com base na config:
+// SMTP real quando SMTP_USER/SMTP_PASSWORD/SMTP_FROM estão presentes, ou o
+// fallback noop (log-only) caso contrário — assim `make dev-api` funciona
+// mesmo sem SMTP configurado.
+func newEmailService(cfg *config.Config) sharedsvc.EmailService {
+	svc, err := sharedsvc.NewSMTPEmailService(cfg)
+	if err != nil {
+		log.Printf("[server] SMTP não configurado — emails de senha inicial/reset serão apenas logados (%v)", err)
+		return sharedsvc.NewNoopEmailService()
+	}
+	log.Printf("[server] EmailService SMTP configurado: host=%s port=%s from=%s", cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
+	return svc
 }
 
 // withLogging envolve o mux com log mínimo de cada request.

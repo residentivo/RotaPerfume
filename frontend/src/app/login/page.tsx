@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { apiLogin } from "@/lib/api";
-import { setTokens, saveUser, getAccessToken, getUser } from "@/lib/auth";
+import { saveUser, getUser } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,7 +18,7 @@ export default function LoginPage() {
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; senha?: string }>({});
 
   useEffect(() => {
-    if (getAccessToken() && getUser()) {
+    if (getUser()) {
       router.replace("/dashboard");
     }
   }, [router]);
@@ -47,10 +47,8 @@ export default function LoginPage() {
     try {
       const res = await apiLogin(email, senha);
 
-      // Salva access_token e refresh_token (suporta novo e antigo formato)
-      const accessToken = res.access_token || res.token;
-      const refreshToken = res.refresh_token || "";
-      setTokens(accessToken, refreshToken);
+      // Tokens sao definidos pelo backend via Set-Cookie HttpOnly (nao acessiveis via JS).
+      // Apenas o usuario e persistido no client para controle de UI.
       saveUser(res.user);
 
       // Verificar se precisa trocar a senha

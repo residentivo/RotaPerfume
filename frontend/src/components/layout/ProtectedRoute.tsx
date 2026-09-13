@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAccessToken, getUser, isAdmin } from "@/lib/auth";
+import { getUser, isAdmin } from "@/lib/auth";
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -15,10 +15,11 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    const token = getAccessToken();
     const user = getUser();
 
-    if (!token || !user) {
+    // O access_token é HttpOnly (não legível via JS); a sessão real é
+    // validada pelo backend em cada chamada de API (fetchWithAuth trata 401).
+    if (!user) {
       router.replace("/login");
       return;
     }

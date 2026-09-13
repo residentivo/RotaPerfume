@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -18,32 +19,83 @@ import (
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
-// DefaultPassword é a senha padrão atribuída a novos usuários.
-const DefaultPassword = "Mudar@123"
+// tamanhoSenhaGerada é o tamanho da senha aleatória gerada para novos
+// usuários e resets administrativos.
+const tamanhoSenhaGerada = 16
 
 // Erros exportados para uso em handlers.
 var (
-	ErrUsuarioNaoEncontrado = errors.New("usuário não encontrado")
-	ErrEmailDuplicado       = errors.New("email já cadastrado")
-	ErrRoleInvalido         = errors.New("role inválido (admin|normal)")
-	ErrEmailInvalido        = errors.New("email inválido")
-	ErrNomeObrigatorio      = errors.New("nome é obrigatório")
+	ErrUsuarioNaoEncontrado  = errors.New("usuário não encontrado")
+	ErrEmailDuplicado        = errors.New("email já cadastrado")
+	ErrRoleInvalido          = errors.New("role inválido (admin|normal)")
+	ErrEmailInvalido         = errors.New("email inválido")
+	ErrNomeObrigatorio       = errors.New("nome é obrigatório")
+	ErrVendedorNaoEncontrado = errors.New("vendedor não encontrado")
 )
 
 // UsuarioService agrega regras de negócio sobre usuários.
 type UsuarioService struct {
-	repo *repositories.UsuarioRepository
-	auth *sharedsvc.AuthService
-	Cfg  *config.Config // exportado para handlers acessarem o DSN
+	repo         *repositories.UsuarioRepository
+	vendedorRepo *repositories.VendedorRepository
+	auth         *sharedsvc.AuthService
+	email        sharedsvc.EmailService
+	Cfg          *config.Config // exportado para handlers acessarem o DSN
 }
 
 // NewUsuarioService cria um UsuarioService com pool de conexão injetado.
-func NewUsuarioService(db *sql.DB, cfg *config.Config) *UsuarioService {
+// emailSvc é obrigatório (injete sharedsvc.NewNoopEmailService() quando SMTP
+// não estiver configurado — nunca deixe nil).
+func NewUsuarioService(db *sql.DB, cfg *config.Config, emailSvc sharedsvc.EmailService) *UsuarioService {
 	return &UsuarioService{
-		repo: repositories.NewUsuarioRepository(),
-		auth: sharedsvc.NewAuthService(),
-		Cfg:  cfg,
+		repo:         repositories.NewUsuarioRepository(),
+		vendedorRepo: repositories.NewVendedorRepository(),
+		auth:         sharedsvc.NewAuthService(),
+		email:        emailSvc,
+		Cfg:          cfg,
 	}
+}
+
+// gerarSenhaEHash gera uma senha aleatória e retorna a senha em texto claro
+// (para envio por email logo em seguida) junto com seu hash bcrypt (para
+// persistência). O chamador é responsável por nunca logar/retornar a senha
+// em texto claro — apenas usá-la imediatamente para envio de email.
+func (s *UsuarioService) gerarSenhaEHash() (senha, hash string, err error) {
+	senha, err = sharedsvc.GerarSenhaAleatoria(tamanhoSenhaGerada)
+	if err != nil {
+		return "", "", fmt.Errorf("gerar senha aleatória: %w", err)
+	}
+	hash, err = s.auth.HashPassword(s.Cfg, senha)
+	if err != nil {
+		return "", "", err
+	}
+	return senha, hash, nil
+}
+
+// enviarSenhaInicial dispara o envio da senha por email (best-effort — falha
+// de envio nunca é fatal para o fluxo que a chamou, apenas é logada e
+// refletida no retorno emailEnviado).
+func (s *UsuarioService) enviarSenhaInicial(ctx context.Context, destinatario, nomeUsuario, senha string) (emailEnviado bool) {
+	if err := s.email.EnviarSenhaInicial(ctx, destinatario, nomeUsuario, senha); err != nil {
+		log.Printf("[usuarios] falha ao enviar email de senha inicial para %s: %v", destinatario, err)
+		return false
+	}
+	return true
+}
+
+// validarVendedor confere se idVendedor (quando informado) existe na base.
+// idVendedor nil é válido (usuário sem vendedor vinculado).
+func (s *UsuarioService) validarVendedor(ctx context.Context, db *sql.DB, idVendedor *int64) error {
+	if idVendedor == nil {
+		return nil
+	}
+	existe, err := s.vendedorRepo.ExistsByID(ctx, db, *idVendedor)
+	if err != nil {
+		return err
+	}
+	if !existe {
+		return ErrVendedorNaoEncontrado
+	}
+	return nil
 }
 
 // GetUsuarioByEmail busca por email. Retorna ErrUsuarioNaoEncontrado se não existir.
@@ -78,13 +130,14 @@ func (s *UsuarioService) ListUsuarios(ctx context.Context, db *sql.DB, page, lim
 	return s.repo.List(ctx, db, page, limit)
 }
 
-// ResetSenha redefine a senha de um usuário. Retorna ErrUsuarioNaoEncontrado se não existir.
+// ResetSenha redefine a senha de um usuário para um valor explícito (uso
+// interno/testes). Retorna ErrUsuarioNaoEncontrado se não existir.
 func (s *UsuarioService) ResetSenha(ctx context.Context, db *sql.DB, id int64, novaSenha string) error {
 	hash, err := s.auth.HashPassword(s.Cfg, novaSenha)
 	if err != nil {
 		return err
 	}
-	if err := s.repo.UpdatePasswordHash(ctx, db, id, hash); err != nil {
+	if err := s.repo.UpdatePasswordHash(ctx, db, id, hash, false); err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrUsuarioNaoEncontrado
 		}
@@ -94,54 +147,112 @@ func (s *UsuarioService) ResetSenha(ctx context.Context, db *sql.DB, id int64, n
 	return nil
 }
 
-// CreateUsuario cria um novo usuário validando role e email duplicado.
+// AdminResetPassword gera uma senha aleatória para o usuário identificado por
+// id (email e nome já resolvidos pelo chamador — o handler já fez sua própria
+// consulta para capturar o hash anterior com fins de auditoria, então evitamos
+// uma segunda leitura redundante aqui), atualiza o hash e envia a nova senha
+// por email ao endereço cadastrado. A senha nunca é retornada nem logada em
+// texto claro.
+//
+// Retorna emailEnviado=false (sem erro) quando o envio de email falha — o
+// reset de senha já foi persistido com sucesso e não deve ser desfeito;
+// cabe ao handler avisar o admin que o email não chegou.
+// Retorna ErrUsuarioNaoEncontrado se o usuário não existir.
+func (s *UsuarioService) AdminResetPassword(ctx context.Context, db *sql.DB, id int64, email, nome string) (emailEnviado bool, err error) {
+	senha, hash, err := s.gerarSenhaEHash()
+	if err != nil {
+		return false, err
+	}
+
+	// Senha gerada pelo sistema (não escolhida pelo admin ou pelo usuário) —
+	// força a troca no próximo login.
+	if err := s.repo.UpdatePasswordHash(ctx, db, id, hash, true); err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return false, ErrUsuarioNaoEncontrado
+		}
+		return false, err
+	}
+
+	// Senha já foi persistida com sucesso — falha no envio de email não desfaz
+	// o reset, apenas é refletida em emailEnviado para o handler avisar o admin.
+	emailEnviado = s.enviarSenhaInicial(ctx, email, nome, senha)
+
+	log.Printf("[usuarios] admin reset: senha redefinida: id=%d email_enviado=%t", id, emailEnviado)
+	return emailEnviado, nil
+}
+
+// CreateUsuario cria um novo usuário validando role, email duplicado e
+// vendedor vinculado. A senha inicial é gerada aleatoriamente e enviada por
+// email ao endereço cadastrado — nunca é retornada nem logada em texto claro.
+//
+// emailEnviado indica se o email com a senha inicial foi entregue com
+// sucesso. Se o envio falhar, o usuário já foi criado com sucesso mesmo
+// assim (a criação não é desfeita) — o handler deve avisar o admin.
 func (s *UsuarioService) CreateUsuario(ctx context.Context, db *sql.DB, input struct {
-	Nome  string
-	Email string
-	Role  string
-}) (*models.Usuario, error) {
+	Nome       string
+	Email      string
+	Role       string
+	IDVendedor *int64
+}) (usuario *models.Usuario, emailEnviado bool, err error) {
 	if input.Nome == "" {
-		return nil, ErrNomeObrigatorio
+		return nil, false, ErrNomeObrigatorio
 	}
 	if input.Email == "" {
-		return nil, ErrEmailInvalido
+		return nil, false, ErrEmailInvalido
 	}
 	if input.Role != models.RoleAdmin && input.Role != models.RoleNormal {
-		return nil, ErrRoleInvalido
+		return nil, false, ErrRoleInvalido
 	}
-	// Gera hash da senha padrão.
-	hash, err := s.auth.HashPassword(s.Cfg, DefaultPassword)
+	if err := s.validarVendedor(ctx, db, input.IDVendedor); err != nil {
+		return nil, false, err
+	}
+
+	emailNormalizado := strings.TrimSpace(strings.ToLower(input.Email))
+
+	senha, hash, err := s.gerarSenhaEHash()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
+
 	u := &models.Usuario{
-		Nome:         input.Nome,
-		Email:        strings.TrimSpace(strings.ToLower(input.Email)),
-		PasswordHash: hash,
-		Role:         input.Role,
-		Ativo:        true,
+		Nome:            input.Nome,
+		Email:           emailNormalizado,
+		PasswordHash:    hash,
+		Role:            input.Role,
+		IDVendedor:      input.IDVendedor,
+		Ativo:           true,
+		DeveTrocarSenha: true, // senha aleatória gerada pelo sistema — força troca no primeiro acesso
 	}
 	if err := s.repo.Create(ctx, db, u); err != nil {
 		if errors.Is(err, repositories.ErrEmailDuplicado) {
-			return nil, ErrEmailDuplicado
+			return nil, false, ErrEmailDuplicado
 		}
-		return nil, err
+		return nil, false, err
 	}
+
+	// Usuário já foi criado com sucesso — falha no envio de email não desfaz
+	// a criação, apenas é refletida em emailEnviado para o handler avisar o admin.
+	emailEnviado = s.enviarSenhaInicial(ctx, u.Email, u.Nome, senha)
+
 	if s.Cfg.Verbose {
-		log.Printf("[usuarios] criado: id=%d email=%s role=%s", u.ID, u.Email, u.Role)
+		log.Printf("[usuarios] criado: id=%d email=%s role=%s email_enviado=%t", u.ID, u.Email, u.Role, emailEnviado)
 	}
-	return u, nil
+	return u, emailEnviado, nil
 }
 
-// UpdateUsuario atualiza nome e role. Retorna ErrUsuarioNaoEncontrado se não existir.
-func (s *UsuarioService) UpdateUsuario(ctx context.Context, db *sql.DB, id int64, nome, role string) (*models.Usuario, error) {
+// UpdateUsuario atualiza nome, role e vendedor vinculado.
+// Retorna ErrUsuarioNaoEncontrado se não existir.
+func (s *UsuarioService) UpdateUsuario(ctx context.Context, db *sql.DB, id int64, nome, role string, idVendedor *int64) (*models.Usuario, error) {
 	if nome == "" {
 		return nil, ErrNomeObrigatorio
 	}
 	if role != models.RoleAdmin && role != models.RoleNormal {
 		return nil, ErrRoleInvalido
 	}
-	if err := s.repo.Update(ctx, db, id, nome, role); err != nil {
+	if err := s.validarVendedor(ctx, db, idVendedor); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, db, id, nome, role, idVendedor); err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrUsuarioNaoEncontrado
 		}

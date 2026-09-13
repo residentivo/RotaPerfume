@@ -23,13 +23,15 @@ func newMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 }
 
 // baseColumns são as colunas retornadas por todas as queries SELECT neste package.
+// vendedor_nome vem do LEFT JOIN com a tabela vendedores.
 var baseColumns = []string{
 	"id", "nome", "email", "password_hash", "role",
-	"id_vendedor", "ativo", "created_at", "updated_at", "ultimo_login_at",
+	"id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome",
 }
 
 // baseRow cria uma []driver.Value na ordem de baseColumns.
 // idVendedor e ultimoLogin são convertidos para driver.Value via sql.Null*.
+// vendedorNome é sempre nil (não testado neste helper — ver testes específicos de JOIN).
 func baseRow(id int64, nome, email, hash, role string, idVendedor *int64, ativo bool, created, updated time.Time, ultimoLogin *time.Time) []driver.Value {
 	var iv driver.Value = nil
 	if idVendedor != nil {
@@ -39,7 +41,7 @@ func baseRow(id int64, nome, email, hash, role string, idVendedor *int64, ativo 
 	if ultimoLogin != nil {
 		ul = *ultimoLogin
 	}
-	return []driver.Value{id, nome, email, hash, role, iv, ativo, created, updated, ul}
+	return []driver.Value{id, nome, email, hash, role, iv, ativo, false, created, updated, ul, nil}
 }
 
 func TestGetByEmail_Success(t *testing.T) {
@@ -50,7 +52,7 @@ func TestGetByEmail_Success(t *testing.T) {
 	rows := sqlmock.NewRows(baseColumns).
 		AddRow(baseRow(1, "Admin Test", email, "hash123", "admin", nil, true, time.Now(), time.Now(), nil)...)
 
-	mock.ExpectQuery("SELECT .+ FROM usuarios WHERE email = ?").
+	mock.ExpectQuery("SELECT .+ FROM usuarios u LEFT JOIN vendedores v ON v.id = u.id_vendedor WHERE u.email = ?").
 		WithArgs(email).
 		WillReturnRows(rows)
 
@@ -71,7 +73,7 @@ func TestGetByEmail_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT .+ FROM usuarios WHERE email = ?").
+	mock.ExpectQuery("SELECT .+ FROM usuarios u LEFT JOIN vendedores v ON v.id = u.id_vendedor WHERE u.email = ?").
 		WithArgs("naoexiste@test.com").
 		WillReturnError(sql.ErrNoRows)
 
@@ -94,7 +96,7 @@ func TestGetByID_Success(t *testing.T) {
 	rows := sqlmock.NewRows(baseColumns).
 		AddRow(baseRow(id, "Vendedor Joe", "joe@test.com", "hash-bcrypt", "normal", &vID, true, now, now, nil)...)
 
-	mock.ExpectQuery("SELECT .+ FROM usuarios WHERE id = ?").
+	mock.ExpectQuery("SELECT .+ FROM usuarios u LEFT JOIN vendedores v ON v.id = u.id_vendedor WHERE u.id = ?").
 		WithArgs(id).
 		WillReturnRows(rows)
 
@@ -114,7 +116,7 @@ func TestGetByID_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT .+ FROM usuarios WHERE id = ?").
+	mock.ExpectQuery("SELECT .+ FROM usuarios u LEFT JOIN vendedores v ON v.id = u.id_vendedor WHERE u.id = ?").
 		WithArgs(int64(99999)).
 		WillReturnError(sql.ErrNoRows)
 
@@ -221,13 +223,13 @@ func TestUpdatePasswordHash_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \? WHERE id = \?`).
-		WithArgs("novo-hash-bcrypt", int64(7)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
+		WithArgs("novo-hash-bcrypt", false, int64(7)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	repo := repositories.NewUsuarioRepository()
 	ctx := context.Background()
-	err := repo.UpdatePasswordHash(ctx, db, 7, "novo-hash-bcrypt")
+	err := repo.UpdatePasswordHash(ctx, db, 7, "novo-hash-bcrypt", false)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -237,13 +239,13 @@ func TestUpdatePasswordHash_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \? WHERE id = \?`).
-		WithArgs("hash", int64(99999)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
+		WithArgs("hash", false, int64(99999)).
 		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 linhas afetadas
 
 	repo := repositories.NewUsuarioRepository()
 	ctx := context.Background()
-	err := repo.UpdatePasswordHash(ctx, db, 99999, "hash")
+	err := repo.UpdatePasswordHash(ctx, db, 99999, "hash", false)
 
 	assert.ErrorIs(t, err, repositories.ErrNotFound)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -253,13 +255,13 @@ func TestUpdatePasswordHash_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \? WHERE id = \?`).
-		WithArgs("hash", int64(1)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
+		WithArgs("hash", false, int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewUsuarioRepository()
 	ctx := context.Background()
-	err := repo.UpdatePasswordHash(ctx, db, 1, "hash")
+	err := repo.UpdatePasswordHash(ctx, db, 1, "hash", false)
 
 	assert.Error(t, err)
 	assert.NotErrorIs(t, err, repositories.ErrNotFound, "erro de DB não é ErrNotFound")
@@ -327,7 +329,7 @@ func TestGetByEmail_ComUltimoLogin(t *testing.T) {
 	rows := sqlmock.NewRows(baseColumns).
 		AddRow(baseRow(2, "User", "user@test.com", "hash", "normal", nil, true, time.Now(), time.Now(), &ultimoLogin)...)
 
-	mock.ExpectQuery("SELECT .+ FROM usuarios WHERE email = ?").
+	mock.ExpectQuery("SELECT .+ FROM usuarios u LEFT JOIN vendedores v ON v.id = u.id_vendedor WHERE u.email = ?").
 		WithArgs("user@test.com").
 		WillReturnRows(rows)
 

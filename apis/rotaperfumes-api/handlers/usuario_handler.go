@@ -14,21 +14,24 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/models"
+	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
 // UsuarioHandler trata as rotas /api/usuarios/*.
 type UsuarioHandler struct {
-	db        *sql.DB
-	svc       *services.UsuarioService
-	senhaSvc  *services.SenhaHistoricoService
+	db         *sql.DB
+	svc        *services.UsuarioService
+	senhaSvc   *services.SenhaHistoricoService
 	refreshSvc *services.RefreshTokenService
 }
 
 // NewUsuarioHandler cria um UsuarioHandler com pool de conexão injetado.
-func NewUsuarioHandler(db *sql.DB, cfg *config.Config) *UsuarioHandler {
+// emailSvc é o serviço usado para enviar a senha inicial/reset por email
+// (injete sharedsvc.NewNoopEmailService() quando SMTP não estiver configurado).
+func NewUsuarioHandler(db *sql.DB, cfg *config.Config, emailSvc sharedsvc.EmailService) *UsuarioHandler {
 	return &UsuarioHandler{
 		db:         db,
-		svc:        services.NewUsuarioService(db, cfg),
+		svc:        services.NewUsuarioService(db, cfg, emailSvc),
 		senhaSvc:   services.NewSenhaHistoricoService(),
 		refreshSvc: services.NewRefreshTokenService(),
 	}
@@ -37,7 +40,7 @@ func NewUsuarioHandler(db *sql.DB, cfg *config.Config) *UsuarioHandler {
 // ListUsuarios GET /api/usuarios
 //
 // Query params: page (default 1), limit (default 20, max 100).
-// Response: {success, data: [{id, id_vendedor, email, role, ativo, nome, created_at, ultimo_login_at}], error, pagination: {page, limit, total, pages}}
+// Response: {success, data: [{id, id_vendedor, vendedor_nome, email, role, ativo, nome, created_at, ultimo_login_at}], error, pagination: {page, limit, total, pages}}
 //
 // Exclui password_hash de todas as respostas.
 func (h *UsuarioHandler) ListUsuarios(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +73,7 @@ func (h *UsuarioHandler) ListUsuarios(w http.ResponseWriter, r *http.Request) {
 		out = append(out, map[string]any{
 			"id":              u.ID,
 			"id_vendedor":     u.IDVendedor,
+			"vendedor_nome":   vendedorNomeOuVazio(u.VendedorNome),
 			"email":           u.Email,
 			"role":            u.Role,
 			"ativo":           u.Ativo,
@@ -88,15 +92,17 @@ func (h *UsuarioHandler) ListUsuarios(w http.ResponseWriter, r *http.Request) {
 
 // CreateUsuarioRequest body do POST /api/usuarios.
 type CreateUsuarioRequest struct {
-	Nome  string `json:"nome"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Nome       string `json:"nome"`
+	Email      string `json:"email"`
+	Role       string `json:"role"`
+	IDVendedor *int64 `json:"id_vendedor"` // opcional: null/omitido = sem vendedor
 }
 
 // UpdateUsuarioRequest body do PUT /api/usuarios/{id}.
 type UpdateUsuarioRequest struct {
-	Nome string `json:"nome"`
-	Role string `json:"role"`
+	Nome       string `json:"nome"`
+	Role       string `json:"role"`
+	IDVendedor *int64 `json:"id_vendedor"` // opcional: null/omitido = sem vendedor
 }
 
 // SetAtivoRequest body do PATCH /api/usuarios/{id}/inativar.
@@ -118,6 +124,7 @@ func usuarioToMap(u *models.Usuario) map[string]any {
 	return map[string]any{
 		"id":              u.ID,
 		"id_vendedor":     u.IDVendedor,
+		"vendedor_nome":   vendedorNomeOuVazio(u.VendedorNome),
 		"email":           u.Email,
 		"role":            u.Role,
 		"ativo":           u.Ativo,
@@ -128,10 +135,21 @@ func usuarioToMap(u *models.Usuario) map[string]any {
 	}
 }
 
+// vendedorNomeOuVazio retorna o nome do vendedor vinculado ou string vazia
+// quando o usuário não tem vendedor associado.
+func vendedorNomeOuVazio(nome *string) string {
+	if nome == nil {
+		return ""
+	}
+	return *nome
+}
+
 // CreateUsuario POST /api/usuarios
 //
-// Body: { "nome": string, "email": string, "role": "admin"|"normal" }
-// Retorna: { id, id_vendedor, email, role, ativo, nome, created_at, updated_at, ultimo_login_at }
+// Body: { "nome": string, "email": string, "role": "admin"|"normal", "id_vendedor": int|null }
+// A senha inicial é gerada aleatoriamente e enviada por email ao endereço
+// cadastrado — nunca é retornada nesta resposta.
+// Retorna: { id, id_vendedor, vendedor_nome, email, role, ativo, nome, created_at, updated_at, ultimo_login_at, email_enviado }
 func (h *UsuarioHandler) CreateUsuario(w http.ResponseWriter, r *http.Request) {
 	role, ok := middleware.GetRole(r.Context())
 	if !ok || role != models.RoleAdmin {
@@ -162,11 +180,12 @@ func (h *UsuarioHandler) CreateUsuario(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	u, err := h.svc.CreateUsuario(ctx, h.db, struct {
-		Nome  string
-		Email string
-		Role  string
-	}{req.Nome, req.Email, req.Role})
+	u, emailEnviado, err := h.svc.CreateUsuario(ctx, h.db, struct {
+		Nome       string
+		Email      string
+		Role       string
+		IDVendedor *int64
+	}{req.Nome, req.Email, req.Role, req.IDVendedor})
 	if err != nil {
 		if errors.Is(err, services.ErrEmailDuplicado) {
 			writeJSON(w, http.StatusConflict, nil, "email já cadastrado")
@@ -180,18 +199,28 @@ func (h *UsuarioHandler) CreateUsuario(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, nil, "email inválido")
 			return
 		}
+		if errors.Is(err, services.ErrVendedorNaoEncontrado) {
+			writeJSON(w, http.StatusBadRequest, nil, "vendedor não encontrado")
+			return
+		}
 		log.Printf("[usuarios] CreateUsuario: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
 
-	log.Printf("[usuarios] criado: id=%d por admin=%s", u.ID, role)
-	writeJSON(w, http.StatusCreated, usuarioToMap(u), "")
+	if !emailEnviado {
+		log.Printf("[usuarios] ATENÇÃO: usuário id=%d criado, mas email com senha inicial NÃO foi enviado", u.ID)
+	}
+
+	log.Printf("[usuarios] criado: id=%d por admin=%s email_enviado=%t", u.ID, role, emailEnviado)
+	out := usuarioToMap(u)
+	out["email_enviado"] = emailEnviado
+	writeJSON(w, http.StatusCreated, out, "")
 }
 
 // UpdateUsuario PUT /api/usuarios/{id}
 //
-// Body: { "nome": string, "role": "admin"|"normal" }
+// Body: { "nome": string, "role": "admin"|"normal", "id_vendedor": int|null }
 // Retorna: usuário atualizado
 func (h *UsuarioHandler) UpdateUsuario(w http.ResponseWriter, r *http.Request) {
 	role, ok := middleware.GetRole(r.Context())
@@ -224,7 +253,7 @@ func (h *UsuarioHandler) UpdateUsuario(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	u, err := h.svc.UpdateUsuario(ctx, h.db, id, req.Nome, req.Role)
+	u, err := h.svc.UpdateUsuario(ctx, h.db, id, req.Nome, req.Role, req.IDVendedor)
 	if err != nil {
 		if errors.Is(err, services.ErrUsuarioNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "usuário não encontrado")
@@ -232,6 +261,10 @@ func (h *UsuarioHandler) UpdateUsuario(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, services.ErrRoleInvalido) {
 			writeJSON(w, http.StatusBadRequest, nil, "role deve ser 'admin' ou 'normal'")
+			return
+		}
+		if errors.Is(err, services.ErrVendedorNaoEncontrado) {
+			writeJSON(w, http.StatusBadRequest, nil, "vendedor não encontrado")
 			return
 		}
 		log.Printf("[usuarios] UpdateUsuario: %v", err)
@@ -282,8 +315,9 @@ func (h *UsuarioHandler) ToggleAtivoUsuario(w http.ResponseWriter, r *http.Reque
 // AdminResetPassword POST /api/admin/reset-password
 //
 // Body: { "usuario_id": int }
-// Nova senha: "Mudar@123" (padrão)
-// Retorna: { sucesso: true, mensagem: "Senha resetada para padrão" }
+// Nova senha: gerada aleatoriamente e enviada por email ao endereço
+// cadastrado do usuário — nunca é retornada nesta resposta.
+// Retorna: { sucesso: true, mensagem: "...", email_enviado: bool }
 func (h *UsuarioHandler) AdminResetPassword(w http.ResponseWriter, r *http.Request) {
 	role, ok := middleware.GetRole(r.Context())
 	if !ok || role != models.RoleAdmin {
@@ -320,7 +354,8 @@ func (h *UsuarioHandler) AdminResetPassword(w http.ResponseWriter, r *http.Reque
 	ipOrigem := getClientIP(r)
 	userAgent := r.UserAgent()
 
-	if err := h.svc.ResetSenha(ctx, h.db, req.UsuarioID, DefaultPassword); err != nil {
+	emailEnviado, err := h.svc.AdminResetPassword(ctx, h.db, req.UsuarioID, targetUser.Email, targetUser.Nome)
+	if err != nil {
 		if errors.Is(err, services.ErrUsuarioNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "usuário não encontrado")
 			return
@@ -336,9 +371,14 @@ func (h *UsuarioHandler) AdminResetPassword(w http.ResponseWriter, r *http.Reque
 	// Revoga todos os refresh tokens do usuário após reset (security best practice).
 	_ = h.refreshSvc.RevokeAllUserTokens(ctx, h.db, req.UsuarioID)
 
-	log.Printf("[usuarios] admin resetou senha: usuario_id=%d por admin=%s", req.UsuarioID, role)
+	if !emailEnviado {
+		log.Printf("[usuarios] ATENÇÃO: senha de usuario_id=%d resetada, mas email NÃO foi enviado", req.UsuarioID)
+	}
+
+	log.Printf("[usuarios] admin resetou senha: usuario_id=%d por admin=%s email_enviado=%t", req.UsuarioID, role, emailEnviado)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"sucesso":  true,
-		"mensagem": "Senha resetada para padrão",
+		"sucesso":       true,
+		"mensagem":      "Senha resetada e enviada por email ao usuário",
+		"email_enviado": emailEnviado,
 	}, "")
 }

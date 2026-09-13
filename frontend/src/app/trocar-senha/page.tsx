@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { apiChangePassword } from "@/lib/api";
-import { getAccessToken, getUser } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 
 export default function TrocarSenhaPage() {
   const router = useRouter();
@@ -25,7 +25,7 @@ export default function TrocarSenhaPage() {
 
   useEffect(() => {
     // Verificar se o usuário está logado
-    if (!getAccessToken() || !getUser()) {
+    if (!getUser()) {
       router.replace("/login");
       return;
     }

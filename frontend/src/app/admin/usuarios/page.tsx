@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
+import { Select } from "@/components/ui/Select";
 import { Table, Badge, Column } from "@/components/ui/Table";
 import { UserModal } from "@/components/admin/UserModal";
 import {
@@ -24,15 +25,52 @@ type ActionState = {
   userId: number | null;
 };
 
+const ROLE_FILTER_OPTIONS: { value: "" | UserRole; label: string }[] = [
+  { value: "", label: "Todos os perfis" },
+  { value: "admin", label: "Administrador" },
+  { value: "normal", label: "Usuario Padrao" },
+];
+
+const STATUS_OPTIONS: { value: "" | "ativo" | "inativo"; label: string }[] = [
+  { value: "", label: "Todos os status" },
+  { value: "ativo", label: "Ativo" },
+  { value: "inativo", label: "Inativo" },
+];
+
+const VENDEDOR_FILTER_OPTIONS: { value: "" | "sim" | "nao"; label: string }[] = [
+  { value: "", label: "Todos" },
+  { value: "sim", label: "Sim" },
+  { value: "nao", label: "Nao" },
+];
+
+const LIMIT_OPTIONS = [
+  { value: "10", label: "10 por pagina" },
+  { value: "20", label: "20 por pagina" },
+  { value: "50", label: "50 por pagina" },
+  { value: "100", label: "100 por pagina" },
+];
+
+function roleLabel(role: UserRole): string {
+  return role === "admin" ? "Administrador" : "Usuario Padrao";
+}
+
 export default function UsuariosPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"" | UserRole>("");
+  const [statusFilter, setStatusFilter] = useState<"" | "ativo" | "inativo">("");
+  const [vendedorFilter, setVendedorFilter] = useState<"" | "sim" | "nao">("");
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [action, setAction] = useState<ActionState>({ type: null, userId: null });
+
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(0);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -43,8 +81,10 @@ export default function UsuariosPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiListUsers();
-      setUsers(data);
+      const res = await apiListUsers(page, limit);
+      setUsers(res.data);
+      setTotal(res.total);
+      setPages(res.pages);
     } catch (err) {
       const message =
         err instanceof Error
@@ -52,6 +92,8 @@ export default function UsuariosPage() {
           : "Erro ao carregar usuarios. O endpoint /api/usuarios pode nao existir no backend.";
       setError(message);
       setUsers([]);
+      setTotal(0);
+      setPages(0);
     } finally {
       setLoading(false);
     }
@@ -59,7 +101,13 @@ export default function UsuariosPage() {
 
   useEffect(() => {
     loadUsers();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, limit]);
+
+  // Reset para pagina 1 quando filtros mudam
+  useEffect(() => {
+    setPage(1);
+  }, [search, roleFilter, statusFilter, vendedorFilter]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -77,7 +125,23 @@ export default function UsuariosPage() {
       list = list.filter(
         (u) =>
           u.nome.toLowerCase().includes(term) ||
-          u.email.toLowerCase().includes(term)
+          u.email.toLowerCase().includes(term) ||
+          String(u.id).includes(term)
+      );
+    }
+    if (roleFilter) {
+      list = list.filter((u) => u.role === roleFilter);
+    }
+    if (statusFilter) {
+      const wantAtivo = statusFilter === "ativo";
+      list = list.filter((u) => u.ativo === wantAtivo);
+    }
+    if (vendedorFilter) {
+      const wantVinculado = vendedorFilter === "sim";
+      list = list.filter((u) =>
+        wantVinculado
+          ? u.id_vendedor !== null && u.id_vendedor !== undefined
+          : u.id_vendedor === null || u.id_vendedor === undefined
       );
     }
     const sorted = [...list].sort((a, b) => {
@@ -93,7 +157,7 @@ export default function UsuariosPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [users, search, sortKey, sortDir]);
+  }, [users, search, roleFilter, statusFilter, vendedorFilter, sortKey, sortDir]);
 
   // === Acoes ===
 
@@ -113,7 +177,7 @@ export default function UsuariosPage() {
     nome: string;
     email: string;
     role: UserRole;
-    senha?: string;
+    id_vendedor: number | null;
   }) => {
     setError(null);
     if (modalMode === "create") {
@@ -121,14 +185,21 @@ export default function UsuariosPage() {
         nome: data.nome,
         email: data.email,
         role: data.role,
-        senha: data.senha,
+        id_vendedor: data.id_vendedor,
       });
-      setUsers((prev) => [...prev, created]);
-      setSuccess(`Usuario "${created.nome}" criado com sucesso.`);
+      await loadUsers();
+      if (created.email_enviado) {
+        setSuccess(`Usuario "${created.nome}" criado com sucesso.`);
+      } else {
+        setError(
+          `Usuario "${created.nome}" foi criado, mas o email com a senha inicial NAO pode ser enviado — verifique a configuracao de SMTP.`
+        );
+      }
     } else if (editingUser) {
       const updated = await apiUpdateUser(editingUser.id, {
         nome: data.nome,
         role: data.role,
+        id_vendedor: data.id_vendedor,
       });
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
       setSuccess(`Usuario "${updated.nome}" atualizado com sucesso.`);
@@ -166,7 +237,7 @@ export default function UsuariosPage() {
 
   const handleResetPassword = async (user: User) => {
     const ok = window.confirm(
-      `Resetar a senha de "${user.nome}" para "Mudar@123"?`
+      `Resetar a senha de "${user.nome}"? Uma nova senha aleatoria sera enviada para o email cadastrado.`
     );
     if (!ok) return;
 
@@ -174,9 +245,15 @@ export default function UsuariosPage() {
     setError(null);
     setSuccess(null);
     try {
-      await apiAdminResetPassword(user.id, "Mudar@123");
-      setSuccess(`Senha de ${user.nome} resetada com sucesso.`);
-      setTimeout(() => setSuccess(null), 4000);
+      const result = await apiAdminResetPassword(user.id);
+      if (result.email_enviado) {
+        setSuccess(`Nova senha enviada para o email de ${user.nome}.`);
+        setTimeout(() => setSuccess(null), 4000);
+      } else {
+        setError(
+          `Senha de ${user.nome} foi resetada, mas o email NAO pode ser enviado — verifique a configuracao de SMTP.`
+        );
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro ao resetar senha.";
@@ -185,36 +262,6 @@ export default function UsuariosPage() {
       setAction({ type: null, userId: null });
     }
   };
-
-  const SortableHeader = ({
-    label,
-    sortKeyName,
-    align,
-  }: {
-    label: string;
-    sortKeyName: SortKey;
-    align?: "left" | "center" | "right";
-  }) => (
-    <button
-      type="button"
-      onClick={() => handleSort(sortKeyName)}
-      className={[
-        "inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-slate-600 hover:text-slate-900",
-        align === "center"
-          ? "justify-center"
-          : align === "right"
-          ? "justify-end"
-          : "",
-      ].join(" ")}
-    >
-      {label}
-      {sortKey === sortKeyName && (
-        <span className="text-primary-600">
-          {sortDir === "asc" ? "↑" : "↓"}
-        </span>
-      )}
-    </button>
-  );
 
   const columns: Column<User>[] = [
     {
@@ -238,7 +285,7 @@ export default function UsuariosPage() {
           className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
           title="Editar usuario"
         >
-          {u.nome}
+          #{u.id} - {u.nome}
         </button>
       ),
     },
@@ -252,14 +299,26 @@ export default function UsuariosPage() {
     {
       key: "role",
       header: "Perfil",
-      width: "120px",
+      width: "150px",
       align: "center",
       sortable: true,
       sortValue: (u) => u.role,
       render: (u) => (
         <Badge color={u.role === "admin" ? "blue" : "gray"}>
-          {u.role === "admin" ? "admin" : u.role}
+          {roleLabel(u.role)}
         </Badge>
+      ),
+    },
+    {
+      key: "vendedor",
+      header: "Vendedor",
+      sortable: false,
+      render: (u) => (
+        <span className="text-slate-600">
+          {u.id_vendedor && u.vendedor_nome
+            ? `#${u.id_vendedor} - ${u.vendedor_nome}`
+            : "—"}
+        </span>
       ),
     },
     {
@@ -324,6 +383,9 @@ export default function UsuariosPage() {
     },
   ];
 
+  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
+  const endItem = Math.min(page * limit, total);
+
   return (
     <div>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -354,32 +416,74 @@ export default function UsuariosPage() {
 
       <Card padded={false}>
         <div className="border-b border-slate-200 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex-1 sm:max-w-xs">
-              <Input
-                placeholder="Buscar por nome ou email..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                icon={
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"
-                    />
-                  </svg>
-                }
-              />
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex-1 sm:max-w-xs">
+                <Input
+                  label="Buscar"
+                  placeholder="Nome, email ou ID..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  icon={
+                    <svg
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"
+                      />
+                    </svg>
+                  }
+                />
+              </div>
+              <div className="sm:w-56">
+                <Select
+                  label="Perfil"
+                  options={ROLE_FILTER_OPTIONS}
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value as "" | UserRole)}
+                />
+              </div>
+              <div className="sm:w-48">
+                <Select
+                  label="Status"
+                  options={STATUS_OPTIONS}
+                  value={statusFilter}
+                  onChange={(e) =>
+                    setStatusFilter(e.target.value as "" | "ativo" | "inativo")
+                  }
+                />
+              </div>
+              <div className="sm:w-48">
+                <Select
+                  label="Vinculado a vendedor"
+                  options={VENDEDOR_FILTER_OPTIONS}
+                  value={vendedorFilter}
+                  onChange={(e) =>
+                    setVendedorFilter(e.target.value as "" | "sim" | "nao")
+                  }
+                />
+              </div>
+              <div className="sm:w-44">
+                <Select
+                  label="Itens por pagina"
+                  options={LIMIT_OPTIONS}
+                  value={String(limit)}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                />
+              </div>
             </div>
             <div className="text-sm text-slate-500">
-              {filteredAndSorted.length}{" "}
-              {filteredAndSorted.length === 1 ? "usuario" : "usuarios"}
+              {total === 0
+                ? "0 usuarios"
+                : `${startItem}-${endItem} de ${total} ${
+                    total === 1 ? "usuario" : "usuarios"
+                  }`}
             </div>
           </div>
         </div>
@@ -391,17 +495,65 @@ export default function UsuariosPage() {
             keyExtractor={(u) => u.id}
             loading={loading}
             emptyMessage={
-              search
-                ? "Nenhum usuario encontrado para a busca."
+              search || roleFilter || statusFilter || vendedorFilter
+                ? "Nenhum usuario encontrado para os filtros aplicados."
                 : "Nenhum usuario cadastrado."
             }
           />
         </div>
+
+        {pages > 1 && (
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
+            <div className="text-sm text-slate-500">
+              Pagina <strong>{page}</strong> de <strong>{pages}</strong>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page <= 1}
+                onClick={() => setPage(1)}
+                title="Primeira pagina"
+              >
+                {"<<"}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                title="Pagina anterior"
+              >
+                {"<"}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page >= pages}
+                onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                title="Proxima pagina"
+              >
+                {">"}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page >= pages}
+                onClick={() => setPage(pages)}
+                title="Ultima pagina"
+              >
+                {">>"}
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       <div className="mt-4 text-xs text-slate-400">
-        <strong>Nota:</strong> Caso a lista esteja vazia ou retorne erro,
-        verifique se os endpoints <code>GET/POST /api/usuarios</code>,
+        <strong>Nota:</strong> A busca e os filtros de perfil/status sao
+        aplicados sobre os itens da pagina atual. Caso a lista esteja vazia ou
+        retorne erro, verifique se os endpoints{" "}
+        <code>GET/POST /api/usuarios</code>,
         <code> PUT /api/usuarios/&#123;id&#125;</code>,
         <code> PATCH /api/usuarios/&#123;id&#125;/inativar</code> e
         <code> POST /api/admin/reset-password</code> estao implementados no

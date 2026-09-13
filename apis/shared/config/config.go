@@ -30,6 +30,13 @@ type Config struct {
 
 	// Logging / Debug
 	Verbose bool
+
+	// SMTP (envio de emails transacionais, ex: senha inicial/reset)
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUser     string
+	SMTPPassword string
+	SMTPFrom     string
 }
 
 // Load lê as variáveis de ambiente e retorna uma Config preenchida.
@@ -65,6 +72,15 @@ func Load() (*Config, error) {
 
 	cfg.Verbose = getEnv("VERBOSE", "false") == "true" ||
 		getEnv("LOG_LEVEL", "info") == "debug"
+
+	// SMTP: sem defaults para user/password/from — quando ausentes, a
+	// aplicação usa um EmailService "noop" (log-only). Host/porta têm
+	// defaults compatíveis com Gmail.
+	cfg.SMTPHost = getEnv("SMTP_HOST", "smtp.gmail.com")
+	cfg.SMTPPort = getEnv("SMTP_PORT", "587")
+	cfg.SMTPUser = os.Getenv("SMTP_USER")
+	cfg.SMTPPassword = os.Getenv("SMTP_PASSWORD")
+	cfg.SMTPFrom = os.Getenv("SMTP_FROM")
 
 	return cfg, nil
 }

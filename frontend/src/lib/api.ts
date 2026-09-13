@@ -10,6 +10,7 @@ import {
   DashboardPeriodo,
   SenhaHistoricoResponse,
   TipoReset,
+  Vendedor,
 } from "./types";
 import { fetchWithAuth } from "./apiClient";
 
@@ -17,12 +18,34 @@ export interface CreateUserRequest {
   nome: string;
   email: string;
   role: UserRole;
-  senha?: string;
+  id_vendedor?: number | null;
 }
 
 export interface UpdateUserRequest {
   nome?: string;
   role?: UserRole;
+  id_vendedor?: number | null;
+}
+
+// Resposta de POST /api/usuarios: usuário criado + flag de envio do email
+// com a senha inicial gerada aleatoriamente pelo backend.
+export interface CreateUserResponse extends User {
+  email_enviado: boolean;
+}
+
+// Resposta de POST /api/admin/reset-password.
+export interface AdminResetPasswordResponse {
+  sucesso: boolean;
+  mensagem: string;
+  email_enviado: boolean;
+}
+
+export interface ListUsersResponse {
+  data: User[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -90,25 +113,68 @@ export async function apiChangePassword(
   });
 }
 
-// PLACEHOLDER: endpoint de listagem de usuarios pode nao existir no backend ainda.
-// Esperado: GET /api/usuarios  -> { usuarios: User[] } ou User[]
-export async function apiListUsers(): Promise<User[]> {
-  const data = await fetchWithAuth<User[] | { usuarios: User[] }>(
-    "/api/usuarios",
-    {
-      method: "GET",
-    }
-  );
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray((data as { usuarios: User[] }).usuarios)) {
-    return (data as { usuarios: User[] }).usuarios;
+// GET /api/usuarios — lista paginada. Retorna envelope {data, page, limit, total, pages}.
+export async function apiListUsers(
+  page = 1,
+  limit = 20
+): Promise<ListUsersResponse> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+
+  const res = await fetch(`${API_BASE}/api/usuarios?${qs.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+
+  const raw = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = raw;
   }
-  return [];
+
+  if (!res.ok) {
+    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
+    if (parsed && typeof parsed === "object") {
+      const d = parsed as Record<string, unknown>;
+      if ("error" in d) errorMessage = String(d.error);
+      else if ("message" in d) errorMessage = String(d.message);
+    }
+    throw new Error(errorMessage);
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const d = parsed as Record<string, unknown>;
+    if ("data" in d && Array.isArray(d.data)) {
+      // Envelope do backend: { success, data, pagination: {page, limit, total, pages} }
+      const pag = (d.pagination && typeof d.pagination === "object"
+        ? (d.pagination as Record<string, unknown>)
+        : d) as Record<string, unknown>;
+      return {
+        data: d.data as User[],
+        page: Number(pag.page ?? page),
+        limit: Number(pag.limit ?? limit),
+        total: Number(pag.total ?? (d.data as unknown[]).length),
+        pages: Number(pag.pages ?? 1),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return { data: parsed as User[], page, limit, total: parsed.length, pages: 1 };
+  }
+  return { data: [], page, limit, total: 0, pages: 0 };
 }
 
 // POST /api/usuarios — admin cria novo usuario
-export async function apiCreateUser(data: CreateUserRequest): Promise<User> {
-  return fetchWithAuth<User>("/api/usuarios", {
+// A senha inicial é gerada aleatoriamente pelo backend e enviada por email
+// ao endereço cadastrado — nunca retornada pela API. `email_enviado` indica
+// se o envio deu certo.
+export async function apiCreateUser(
+  data: CreateUserRequest
+): Promise<CreateUserResponse> {
+  return fetchWithAuth<CreateUserResponse>("/api/usuarios", {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -136,15 +202,20 @@ export async function apiToggleUserStatus(
   });
 }
 
-// POST /api/admin/reset-password — admin reseta senha de um usuario
+// POST /api/admin/reset-password — admin reseta senha de um usuario.
+// A nova senha é gerada aleatoriamente pelo backend e enviada por email ao
+// endereço cadastrado do usuário — nunca retornada pela API. `email_enviado`
+// indica se o envio deu certo.
 export async function apiAdminResetPassword(
-  usuario_id: number,
-  nova_senha: string
-): Promise<{ message: string }> {
-  return fetchWithAuth<{ message: string }>("/api/admin/reset-password", {
-    method: "POST",
-    body: JSON.stringify({ usuario_id, nova_senha }),
-  });
+  usuario_id: number
+): Promise<AdminResetPasswordResponse> {
+  return fetchWithAuth<AdminResetPasswordResponse>(
+    "/api/admin/reset-password",
+    {
+      method: "POST",
+      body: JSON.stringify({ usuario_id }),
+    }
+  );
 }
 
 // === Dashboard ===
@@ -192,8 +263,8 @@ export async function apiDashboardVendedores(
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getAccessTokenForDirectFetch()}`,
       },
+      credentials: "include",
     }
   );
 
@@ -261,7 +332,8 @@ export async function apiListSenhaHistorico(
   const path = `/api/senha-historico${usuarioId ? `/${usuarioId}` : ""}`;
   const res = await fetch(`${API_BASE}${path}?${params.toString()}`, {
     method: "GET",
-    headers: getAuthHeaders(),
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
   });
 
   // Mesmo pattern de parse do dashboard vendedores
@@ -299,17 +371,15 @@ export async function apiListSenhaHistorico(
   return { data: [], page, limit, total: 0, pages: 0 };
 }
 
-// Helper usado pelo endpoint de vendedores que tem estrutura especial
-// SEGURANCA: Lê token do cookie (não localStorage para evitar XSS)
-function getAccessTokenForDirectFetch(): string {
-  if (typeof window === "undefined") return "";
-  const match = document.cookie.match(/(^| )access_token=([^;]+)/);
-  return match ? decodeURIComponent(match[2]) : "";
+// === Vendedores ===
+
+// GET /api/vendedores — lista simples (sem paginação) de vendedores ativos,
+// usada para popular selects. Envelope padrão {success, data, error}.
+export async function apiListVendedores(): Promise<Vendedor[]> {
+  return fetchWithAuth<Vendedor[]>("/api/vendedores", {
+    method: "GET",
+  });
 }
 
 // Re-exporta API_BASE para uso externo se necessário
 export { API_BASE };
-
-function getAuthHeaders(): HeadersInit | undefined {
-  throw new Error("Function not implemented.");
-}

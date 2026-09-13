@@ -520,7 +520,7 @@ function DashboardContent() {
 
         {/* Error */}
         {error && (
-          <Alert variant="danger" className="mb-4">
+          <Alert variant="error" className="mb-4">
             {error} — mostrando dados demonstracao.
           </Alert>
         )}

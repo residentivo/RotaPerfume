@@ -11,16 +11,22 @@ const (
 
 // Usuario representa um usuário do sistema (admin ou vendedor).
 type Usuario struct {
-	ID            int64      `json:"id"`
-	Nome          string     `json:"nome,omitempty"`
-	IDVendedor    *int64     `json:"id_vendedor,omitempty"`
-	Email         string     `json:"email"`
-	Role          string     `json:"role"`
-	PasswordHash  string     `json:"-"` // nunca serializar
-	Ativo         bool       `json:"ativo"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	UltimoLoginAt *time.Time `json:"ultimo_login_at,omitempty"`
+	ID              int64      `json:"id"`
+	Nome            string     `json:"nome,omitempty"`
+	IDVendedor      *int64     `json:"id_vendedor,omitempty"`
+	Email           string     `json:"email"`
+	Role            string     `json:"role"`
+	PasswordHash    string     `json:"-"` // nunca serializar
+	Ativo           bool       `json:"ativo"`
+	DeveTrocarSenha bool       `json:"deve_trocar_senha"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	UltimoLoginAt   *time.Time `json:"ultimo_login_at,omitempty"`
+
+	// VendedorNome não é persistido na tabela usuarios — é preenchido via
+	// LEFT JOIN com vendedores nas queries de leitura (List/GetByID/GetByEmail)
+	// para evitar N+1 queries ao exibir o vendedor vinculado.
+	VendedorNome *string `json:"vendedor_nome,omitempty"`
 }
 
 // IsAdmin retorna true se o usuário tem papel de administrador.

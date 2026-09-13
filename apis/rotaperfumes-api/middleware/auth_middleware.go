@@ -32,8 +32,26 @@ func JWTMiddleware(cfg *config.Config, protected bool, requireAdmin bool) func(h
 	auth := services.NewAuthService()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenString := ""
 			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
+			if authHeader != "" {
+				parts := strings.SplitN(authHeader, " ", 2)
+				if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+					if protected {
+						writeError(w, http.StatusUnauthorized, "authorization header mal formado")
+						return
+					}
+					next.ServeHTTP(w, r)
+					return
+				}
+				tokenString = parts[1]
+			} else if c, err := r.Cookie("access_token"); err == nil && c.Value != "" {
+				// Sem header Authorization: usa o cookie HttpOnly access_token
+				// (o frontend não consegue ler esse cookie via JS para montar o header).
+				tokenString = c.Value
+			}
+
+			if tokenString == "" {
 				if protected {
 					writeError(w, http.StatusUnauthorized, "authorization header ausente")
 					return
@@ -42,17 +60,7 @@ func JWTMiddleware(cfg *config.Config, protected bool, requireAdmin bool) func(h
 				return
 			}
 
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-				if protected {
-					writeError(w, http.StatusUnauthorized, "authorization header mal formado")
-					return
-				}
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			claims, err := auth.ValidateJWT(parts[1], cfg.JWTSecret)
+			claims, err := auth.ValidateJWT(tokenString, cfg.JWTSecret)
 			if err != nil {
 				if protected {
 					// Distingue token expirado de inválido para melhor UX no frontend.

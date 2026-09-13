@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { logout, getUser } from "@/lib/auth";
 import { User } from "@/lib/types";
@@ -32,6 +33,14 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-4">
+          {user?.role === "admin" && (
+            <Link
+              href="/admin/usuarios"
+              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
+            >
+              Administração
+            </Link>
+          )}
           {user && (
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium text-slate-900">{user.nome}</p>

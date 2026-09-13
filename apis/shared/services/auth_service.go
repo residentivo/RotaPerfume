@@ -86,9 +86,10 @@ func (s *AuthService) ValidateJWT(tokenString, secret string) (*AuthClaims, erro
 	return claims, nil
 }
 
-// ResetPassword atualiza o hash bcrypt de um usuário.
-func (s *AuthService) ResetPassword(ctx context.Context, db *sql.DB, userID int64, newHash string) error {
-	return s.repo.UpdatePasswordHash(ctx, db, userID, newHash)
+// ResetPassword atualiza o hash bcrypt de um usuário. deveTrocarSenha indica
+// se o usuário deve ser forçado a trocar a senha no próximo login.
+func (s *AuthService) ResetPassword(ctx context.Context, db *sql.DB, userID int64, newHash string, deveTrocarSenha bool) error {
+	return s.repo.UpdatePasswordHash(ctx, db, userID, newHash, deveTrocarSenha)
 }
 
 // HashPassword gera um hash bcrypt com o cost configurado.

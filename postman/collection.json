@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "RotaPerfumes API — Autenticação",
-    "description": "Coleção de endpoints da API de autenticação do SistemaCompleto.\n\n## Credenciais padrão\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedor 1: `v1.henrique_rodrigues@rotaperfumes.com.br` / `Mudar@123`\n\n## Configuração\n1. Importe esta coleção no Postman.\n2. Defina a variável `{{base_url}}` como `http://localhost:8080`.\n3. Para endpoints protegidos, primeiro faça login (POST /api/auth/login) e copie o `access_token` da resposta para a variável `{{token}}` — ou use o botão **Authorize** com o tipo Bearer Token.\n4. Para reset-password e listar usuarios, o token deve ser de um usuário com role=`admin`.\n\n## Inicialização\n```bash\nmake db-reset && make gen-hash && make dev-api\n```",
+    "description": "Coleção de endpoints da API de autenticação do SistemaCompleto.\n\n## Credenciais padrão\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedores (seed): senha inicial ainda usa hash `@HASH_MUDAR_123` no seed de banco (`Mudar@123`) — apenas para dados de teste já existentes no `make db-reset`. **A partir de agora, usuários criados via `POST /api/usuarios` ou resetados via `POST /api/admin/reset-password` NÃO usam mais senha fixa**: a senha é gerada aleatoriamente (crypto/rand, mín. 12 caracteres) e enviada por email (SMTP) ao endereço cadastrado — nunca é retornada pela API.\n\n## Configuração\n1. Importe esta coleção no Postman.\n2. Defina a variável `{{base_url}}` como `http://localhost:8080`.\n3. Para endpoints protegidos, primeiro faça login (POST /api/auth/login) e copie o `access_token` da resposta para a variável `{{token}}` — ou use o botão **Authorize** com o tipo Bearer Token.\n4. Para reset-password e listar usuarios, o token deve ser de um usuário com role=`admin`.\n5. Configure as variáveis `SMTP_*` (ver `.env.example` na raiz) para que a API realmente envie os emails de senha inicial/reset — sem elas, a API usa um serviço \"noop\" que apenas loga o envio (útil em dev).\n\n## Inicialização\n```bash\nmake db-reset && make gen-hash && make dev-api\n```",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -130,7 +130,7 @@
           "host": ["{{base_url}}"],
           "path": ["api", "auth", "login"]
         },
-        "description": "Faz login e retorna um JWT Bearer Token + refresh token.\n\n**Body:**\n- `email` (string, obrigatório) — e-mail do usuário\n- `password` (string, obrigatório) — senha em texto puro\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 1,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"nome\": \"Administrador Principal\"\n    },\n    \"trocar_senha\": false\n  }\n}\n```\n\n**Credenciais:**\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedor: `v1.henrique_rodrigues@rotaperfumes.com.br` / `Mudar@123`\n\n**Observação:** Para vendedores com senha padrão (`Mudar@123`), `trocar_senha` será `true`."
+        "description": "Faz login e retorna um JWT Bearer Token + refresh token.\n\n**Body:**\n- `email` (string, obrigatório) — e-mail do usuário\n- `password` (string, obrigatório) — senha em texto puro\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 1,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"nome\": \"Administrador Principal\"\n    },\n    \"trocar_senha\": false\n  }\n}\n```\n\n**Credenciais:**\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedor (seed): `henrique.rodrigues@rotaperfumes.com.br` / `Mudar@123`\n\n**Observação:** `trocar_senha` agora vem diretamente da coluna persistida `usuarios.deve_trocar_senha` (não é mais calculada comparando a senha digitada com uma constante fixa). Essa flag é setada como `true` sempre que o usuário é criado (`POST /api/usuarios`) ou tem a senha resetada pelo admin (`POST /api/admin/reset-password`), e volta a `false` quando o próprio usuário troca a senha (`POST /api/auth/reset-password`)."
       },
       "response": [
         {
@@ -285,7 +285,7 @@
               "pm.test('Role é normal', function() {",
               "    pm.expect(jsonData.data.user.role).to.eql('normal');",
               "});",
-              "pm.test('Flag trocar_senha é true (senha padrão)', function() {",
+              "pm.test('Flag trocar_senha é true (deve_trocar_senha=1 no banco)', function() {",
               "    pm.expect(jsonData.data.trocar_senha).to.eql(true);",
               "});",
               "pm.test('Contém access_token', function() {",
@@ -317,14 +317,14 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n    \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n    \"password\": \"Mudar@123\"\n}"
+          "raw": "{\n    \"email\": \"henrique.rodrigues@rotaperfumes.com.br\",\n    \"password\": \"Mudar@123\"\n}"
         },
         "url": {
           "raw": "{{base_url}}/api/auth/login",
           "host": ["{{base_url}}"],
           "path": ["api", "auth", "login"]
         },
-        "description": "Login de vendedor com senha padrão — deve retornar `trocar_senha: true`.\n\n**Body:**\n- `email` (string) — e-mail do vendedor\n- `password` (string) — `Mudar@123` (senha padrão)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 2,\n      \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n      \"role\": \"normal\",\n      \"nome\": \"Henrique Rodrigues\"\n    },\n    \"trocar_senha\": true\n  }\n}\n```\n\n**Vendedores (42 disponíveis):**\n- `v1.henrique_rodrigues@rotaperfumes.com.br` / `Mudar@123`\n- `v2.carla_carvalho@rotaperfumes.com.br` / `Mudar@123`\n- `v3.thiago_silva@rotaperfumes.com.br` / `Mudar@123`\n\n**Nota:** `trocar_senha: true` indica que o vendedor deve ser redirecionado para a tela de troca de senha no frontend."
+        "description": "Login de vendedor de seed (senha ainda definida via hash fixo `Mudar@123` no `sql/03_seed_vendedores.sql`, apenas para popular o banco de teste) — deve retornar `trocar_senha: true` porque a coluna `usuarios.deve_trocar_senha` vem `1` no seed.\n\n**Importante:** este exemplo reflete o estado inicial do seed. Para usuários criados via `POST /api/usuarios` ou resetados via `POST /api/admin/reset-password` a partir de agora, a senha real **não é** `Mudar@123` — é gerada aleatoriamente e enviada por email; o comportamento de `trocar_senha: true` é o mesmo (baseado na coluna `deve_trocar_senha`), mas a senha para logar deve ser obtida no email recebido.\n\n**Body:**\n- `email` (string) — e-mail do vendedor\n- `password` (string) — senha atual do usuário\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 2,\n      \"email\": \"henrique.rodrigues@rotaperfumes.com.br\",\n      \"role\": \"normal\",\n      \"nome\": \"Henrique Rodrigues\"\n    },\n    \"trocar_senha\": true\n  }\n}\n```\n\n**Vendedores de seed (42 disponíveis, formato `<slug-nome>@rotaperfumes.com.br`):**\n- `henrique.rodrigues@rotaperfumes.com.br` / `Mudar@123`\n- `carla.carvalho@rotaperfumes.com.br` / `Mudar@123`\n- `thiago.silva@rotaperfumes.com.br` / `Mudar@123`\n\n**Nota:** `trocar_senha: true` indica que o vendedor deve ser redirecionado para a tela de troca de senha no frontend."
       },
       "response": [
         {
@@ -339,7 +339,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n    \"password\": \"Mudar@123\"\n}"
+              "raw": "{\n    \"email\": \"henrique.rodrigues@rotaperfumes.com.br\",\n    \"password\": \"Mudar@123\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/login",
@@ -357,7 +357,7 @@
             }
           ],
           "cookie": [],
-          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 2,\n      \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n      \"role\": \"normal\",\n      \"nome\": \"Henrique Rodrigues\"\n    },\n    \"trocar_senha\": true\n  }\n}"
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 2,\n      \"email\": \"henrique.rodrigues@rotaperfumes.com.br\",\n      \"role\": \"normal\",\n      \"nome\": \"Henrique Rodrigues\"\n    },\n    \"trocar_senha\": true\n  }\n}"
         }
       ]
     },
@@ -965,6 +965,10 @@
               "    pm.expect(jsonData.data.email).to.eql('novo.vendedor@rotaperfumes.com.br');",
               "    pm.expect(jsonData.data.role).to.eql('normal');",
               "    pm.expect(jsonData.data.ativo).to.eql(true);",
+              "});",
+              "pm.test('Resposta informa se o email foi enviado', function() {",
+              "    pm.expect(jsonData.data).to.have.property('email_enviado');",
+              "    pm.expect(jsonData.data.email_enviado).to.be.a('boolean');",
               "});"
             ],
             "type": "text/javascript"
@@ -998,7 +1002,7 @@
           "host": ["{{base_url}}"],
           "path": ["api", "usuarios"]
         },
-        "description": "Cria um novo usuário (apenas admin).\n\nO usuário é criado com senha padrão `Mudar@123`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Body:**\n- `nome` (string, obrigatório) — nome completo\n- `email` (string, obrigatório) — e-mail único\n- `role` (string, obrigatório) — `admin` ou `normal`\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 44,\n    \"id_vendedor\": null,\n    \"email\": \"novo.vendedor@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": true,\n    \"nome\": \"Novo Vendedor\",\n    \"created_at\": \"2026-09-07T10:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — campos obrigatórios ausentes ou `role` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `409` — e-mail já cadastrado"
+        "description": "Cria um novo usuário (apenas admin).\n\n**Novo fluxo de senha:** o usuário **não** é mais criado com a senha fixa `Mudar@123`. A API gera uma senha aleatória (crypto/rand, mínimo 12 caracteres, com maiúscula/minúscula/dígito/símbolo garantidos) e a envia por email (SMTP) ao endereço cadastrado. A senha gerada **nunca** é retornada na resposta da API. `usuarios.deve_trocar_senha` é setada como `true`, então o próximo login do usuário retornará `trocar_senha: true`.\n\nSe as variáveis `SMTP_*` não estiverem configuradas (ver `.env.example`), a API usa um serviço de email \"noop\" que apenas loga o envio (sem enviar de fato) — útil em dev, mas nesse caso `email_enviado` retorna `false` mesmo com a criação bem-sucedida do usuário (a criação do usuário nunca falha por causa de erro de envio de email).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Body:**\n- `nome` (string, obrigatório) — nome completo\n- `email` (string, obrigatório) — e-mail único (é para esse endereço que a senha gerada é enviada)\n- `role` (string, obrigatório) — `admin` ou `normal`\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 44,\n    \"id_vendedor\": null,\n    \"email\": \"novo.vendedor@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": true,\n    \"nome\": \"Novo Vendedor\",\n    \"created_at\": \"2026-09-07T10:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null,\n    \"email_enviado\": true\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — campos obrigatórios ausentes ou `role` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `409` — e-mail já cadastrado"
       },
       "response": [
         {
@@ -1031,7 +1035,7 @@
             }
           ],
           "cookie": [],
-          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 44,\n    \"id_vendedor\": null,\n    \"email\": \"novo.vendedor@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": true,\n    \"nome\": \"Novo Vendedor\",\n    \"created_at\": \"2026-09-07T10:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null\n  }\n}"
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 44,\n    \"id_vendedor\": null,\n    \"email\": \"novo.vendedor@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": true,\n    \"nome\": \"Novo Vendedor\",\n    \"created_at\": \"2026-09-07T10:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null,\n    \"email_enviado\": true\n  }\n}"
         },
         {
           "name": "400 Bad Request — Campos ausentes",
@@ -1409,7 +1413,10 @@
               "var jsonData = pm.response.json();",
               "pm.test('Senha resetada com sucesso', function() {",
               "    pm.expect(jsonData.data.sucesso).to.eql(true);",
-              "    pm.expect(jsonData.data.mensagem).to.include('padrão');",
+              "});",
+              "pm.test('Resposta informa se o email foi enviado', function() {",
+              "    pm.expect(jsonData.data).to.have.property('email_enviado');",
+              "    pm.expect(jsonData.data.email_enviado).to.be.a('boolean');",
               "});"
             ],
             "type": "text/javascript"
@@ -1443,7 +1450,7 @@
           "host": ["{{base_url}}"],
           "path": ["api", "admin", "reset-password"]
         },
-        "description": "Admin reseta a senha de outro usuário para o padrão `Mudar@123`.\n\nO usuário afetado precisará trocar a senha no próximo login.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Body:**\n- `usuario_id` (int64, obrigatório) — ID do usuário alvo\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"sucesso\": true,\n    \"mensagem\": \"Senha resetada para padrão\"\n  }\n}\n```\n\n**Segurança:** Após o reset, todos os refresh tokens do usuário são revogados.\n\n**Códigos de erro:**\n- `400` — `usuario_id` ausente ou <= 0\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — usuário não encontrado"
+        "description": "Admin reseta a senha de outro usuário.\n\n**Novo fluxo de senha:** a senha **não** é mais resetada para o valor fixo `Mudar@123`. A API gera uma nova senha aleatória (crypto/rand, mín. 12 caracteres) e a envia por email ao endereço cadastrado do usuário. A senha gerada **nunca** é retornada na resposta. `usuarios.deve_trocar_senha` é setada como `true`, então o próximo login do usuário afetado retornará `trocar_senha: true`.\n\nO usuário afetado precisará trocar a senha no próximo login.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Body:**\n- `usuario_id` (int64, obrigatório) — ID do usuário alvo\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"sucesso\": true,\n    \"mensagem\": \"Senha redefinida e enviada por email\",\n    \"email_enviado\": true\n  }\n}\n```\n\n**Nota:** se `SMTP_*` não estiver configurado, `email_enviado` retorna `false` (serviço \"noop\" apenas loga), mas o reset da senha em si é sempre efetivado — o admin deve providenciar a senha ao usuário por outro meio nesse caso.\n\n**Segurança:** Após o reset, todos os refresh tokens do usuário são revogados.\n\n**Códigos de erro:**\n- `400` — `usuario_id` ausente ou <= 0\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — usuário não encontrado"
       },
       "response": [
         {
@@ -1476,7 +1483,7 @@
             }
           ],
           "cookie": [],
-          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"sucesso\": true,\n    \"mensagem\": \"Senha resetada para padrão\"\n  }\n}"
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"sucesso\": true,\n    \"mensagem\": \"Senha redefinida e enviada por email\",\n    \"email_enviado\": true\n  }\n}"
         },
         {
           "name": "400 Bad Request — usuario_id ausente",

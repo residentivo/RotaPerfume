@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
-import { User, UserRole } from "@/lib/types";
+import { User, UserRole, Vendedor } from "@/lib/types";
+import { apiListVendedores } from "@/lib/api";
 
 interface UserModalProps {
   open: boolean;
@@ -17,14 +18,13 @@ interface UserModalProps {
     nome: string;
     email: string;
     role: UserRole;
-    senha?: string;
+    id_vendedor: number | null;
   }) => Promise<void>;
 }
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Administrador" },
-  { value: "user", label: "Usuario" },
-  { value: "vendedor", label: "Vendedor" },
+  { value: "normal", label: "Usuario Padrao" },
 ];
 
 export function UserModal({
@@ -36,10 +36,14 @@ export function UserModal({
 }: UserModalProps) {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<UserRole>("user");
-  const [senha, setSenha] = useState("");
+  const [role, setRole] = useState<UserRole>("normal");
+  const [idVendedor, setIdVendedor] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [vendedores, setVendedores] = useState<Vendedor[]>([]);
+  const [vendedoresError, setVendedoresError] = useState<string | null>(null);
+  const [loadingVendedores, setLoadingVendedores] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -49,15 +53,53 @@ export function UserModal({
         setNome(user.nome);
         setEmail(user.email);
         setRole(user.role);
-        setSenha("");
+        setIdVendedor(
+          user.id_vendedor !== null && user.id_vendedor !== undefined
+            ? String(user.id_vendedor)
+            : ""
+        );
       } else {
         setNome("");
         setEmail("");
-        setRole("user");
-        setSenha("");
+        setRole("normal");
+        setIdVendedor("");
       }
     }
   }, [open, mode, user]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoadingVendedores(true);
+    setVendedoresError(null);
+    apiListVendedores()
+      .then((data) => {
+        if (!cancelled) setVendedores(data);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          const message =
+            err instanceof Error
+              ? err.message
+              : "Erro ao carregar vendedores.";
+          setVendedoresError(message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingVendedores(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const vendedorOptions = [
+    { value: "", label: "Nenhum" },
+    ...vendedores.map((v) => ({
+      value: String(v.id),
+      label: `${v.nome} — ${v.regiao}/${v.uf}`,
+    })),
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,10 +113,6 @@ export function UserModal({
       setError("Email e obrigatorio.");
       return;
     }
-    if (mode === "create" && !senha.trim()) {
-      setError("Senha inicial e obrigatoria.");
-      return;
-    }
 
     setSubmitting(true);
     try {
@@ -82,7 +120,7 @@ export function UserModal({
         nome: nome.trim(),
         email: email.trim(),
         role,
-        senha: senha.trim() || undefined,
+        id_vendedor: idVendedor ? Number(idVendedor) : null,
       });
     } catch (err) {
       const message =
@@ -141,16 +179,24 @@ export function UserModal({
           required
         />
 
+        <Select
+          label="Vendedor vinculado (opcional)"
+          value={idVendedor}
+          onChange={(e) => setIdVendedor(e.target.value)}
+          options={vendedorOptions}
+          disabled={loadingVendedores || !!vendedoresError}
+          error={
+            vendedoresError
+              ? "Nao foi possivel carregar a lista de vendedores."
+              : undefined
+          }
+        />
+
         {mode === "create" && (
-          <Input
-            label="Senha inicial"
-            type="password"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            placeholder="Defina uma senha temporaria"
-            required
-            helperText="O usuario podera altera-la no primeiro acesso."
-          />
+          <Alert variant="info">
+            Uma senha aleatoria sera gerada e enviada por email para o usuario
+            no endereco cadastrado. Ele devera troca-la no primeiro acesso.
+          </Alert>
         )}
 
         <div className="flex justify-end gap-2 pt-2">

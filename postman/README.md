@@ -34,7 +34,7 @@ A coleção inclui variáveis pré-definidas. Ajuste `{{base_url}}` se sua API e
 1. Abra a requisição **Login** (`POST /api/auth/login`) — usa `admin@rotaperfumes.com.br` por padrão.
 2. Clique em **Send**.
 3. Os tokens serão salvos automaticamente nas variáveis `token`, `admin_token` e `refresh_token` via script de testes.
-4. Para logar como vendedor, use a requisição **Login — Vendedor** (`POST /api/auth/login` com `v1.henrique_rodrigues@rotaperfumes.com.br` / `Mudar@123`). Isso salva em `vendedor_token` e verifica a flag `trocar_senha: true`.
+4. Para logar como vendedor, use a requisição **Login — Vendedor** (`POST /api/auth/login` com `henrique.rodrigues@rotaperfumes.com.br` / `Mudar@123`, credenciais de seed). Isso salva em `vendedor_token` e verifica a flag `trocar_senha: true`.
 
 ### 4. Acessar endpoints protegidos
 
@@ -52,16 +52,18 @@ Para testar endpoints que exigem **role admin**, alterne a variável `token` par
 | Senha | `Admin@123` |
 | Role | `admin` |
 
-### Vendedor (42 vendedores)
+### Vendedor (42 vendedores, dados de seed/dev)
 
-Formato de e-mail: `v<ID>.<slug-nome>@rotaperfumes.com.br`
+Formato de e-mail: `<slug-nome>@rotaperfumes.com.br`
 
 Exemplos:
-- `v1.henrique_rodrigues@rotaperfumes.com.br` / `Mudar@123`
-- `v2.carla_carvalho@rotaperfumes.com.br` / `Mudar@123`
-- `v3.thiago_silva@rotaperfumes.com.br` / `Mudar@123`
+- `henrique.rodrigues@rotaperfumes.com.br` / `Mudar@123`
+- `carla.carvalho@rotaperfumes.com.br` / `Mudar@123`
+- `thiago.silva@rotaperfumes.com.br` / `Mudar@123`
 
-> **Importante:** A senha padrão de todos os vendedores é `Mudar@123`. Ao logar com ela, a API retorna `trocar_senha: true` indicando que o frontend deve redirecionar para a tela de troca de senha.
+> **Importante:** essas senhas fixas (`Mudar@123`) existem **apenas nos dados de seed** carregados por `make db-reset` (para permitir login de teste sem precisar ler email). Ao logar com um vendedor de seed, a API retorna `trocar_senha: true` — vindo da coluna `usuarios.deve_trocar_senha` — indicando que o frontend deve redirecionar para a tela de troca de senha.
+>
+> **Fluxo real de senha (produção/novos usuários):** a partir da criação de usuário (`POST /api/usuarios`) ou reset de senha pelo admin (`POST /api/admin/reset-password`), a API **não usa mais senha fixa**. Ela gera uma senha aleatória segura (`crypto/rand`, mínimo 12 caracteres, com maiúscula/minúscula/dígito/símbolo garantidos) e a envia por email (SMTP) ao endereço cadastrado do usuário. A senha gerada nunca é exposta pela API — nem em logs, nem na resposta HTTP. Ambas as respostas (criação e reset) incluem um campo `email_enviado: boolean` informando se o envio de fato ocorreu (será `false` se o SMTP não estiver configurado, caso em que a API usa um serviço "noop" que apenas loga o envio, sem quebrar a operação de criação/reset).
 
 ## Endpoints
 
@@ -77,7 +79,7 @@ Exemplos:
 - **Auth:** nenhuma
 - **Body:** `{ "email": "...", "password": "..." }`
 - **Resposta:** `{ "success": true, "data": { "access_token", "refresh_token", "token_type", "expires_in", "user": {...}, "trocar_senha" } }`
-- **Nota:** Vendedores com senha padrão recebem `trocar_senha: true`
+- **Nota:** `trocar_senha` reflete diretamente a coluna `usuarios.deve_trocar_senha` (não é mais calculado comparando a senha digitada com uma constante fixa). Fica `true` quando o usuário foi criado ou teve a senha resetada pelo admin e ainda não trocou a senha voluntariamente; volta a `false` após `POST /api/auth/reset-password`.
 
 #### POST /api/auth/refresh
 - **Auth:** nenhuma (usa `refresh_token` no body)
@@ -109,7 +111,7 @@ Exemplos:
 #### POST /api/usuarios
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "nome", "email", "role": "admin"|"normal" }`
-- **Descrição:** Cria um novo usuário (senha padrão `Mudar@123`)
+- **Descrição:** Cria um novo usuário. A senha inicial é gerada aleatoriamente e enviada por email para o endereço cadastrado (nunca retornada pela API). `deve_trocar_senha` é setada para `true` no banco. Resposta inclui `email_enviado: boolean`.
 
 #### PUT /api/usuarios/{id}
 - **Auth:** Bearer Token (admin)
@@ -126,7 +128,7 @@ Exemplos:
 #### POST /api/admin/reset-password
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "usuario_id": <int64> }`
-- **Descrição:** Reseta a senha de um usuário para `Mudar@123` (revoga refresh tokens)
+- **Descrição:** Reseta a senha de um usuário para uma senha aleatória gerada pela API, enviada por email ao endereço cadastrado (revoga refresh tokens; `deve_trocar_senha` volta a `true`). Resposta inclui `email_enviado: boolean`.
 
 ### Dashboard (`/api/dashboard/*`) — admin only
 
@@ -171,7 +173,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 ### Login — Vendedor (primeiro acesso)
 - `Login de vendedor bem-sucedido` (status 200)
 - `Role é normal`
-- `Flag trocar_senha é true (senha padrão)` — **teste crítico para validação da feature de primeiro acesso**
+- `Flag trocar_senha é true (deve_trocar_senha=1 no banco)` — **teste crítico para validação da feature de primeiro acesso**
 - `Contém access_token`
 - `Contém refresh_token`
 - `Contém dados do usuário`
@@ -204,6 +206,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 ### Criar Usuário
 - `Status 201 Created`
 - `Usuário criado com dados corretos`
+- `Resposta informa se o email foi enviado` (`email_enviado` é booleano)
 
 ### Atualizar Usuário
 - `Status 200 OK`
@@ -216,6 +219,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 ### Reset Password Admin
 - `Status 200 OK`
 - `Senha resetada com sucesso`
+- `Resposta informa se o email foi enviado` (`email_enviado` é booleano)
 
 ### Dashboard — Métricas
 - `Status 200`
@@ -287,6 +291,10 @@ make gen-hash
 # 3. Iniciar a API
 make dev-api
 ```
+
+### Envio de email (senha inicial / reset de senha)
+
+Copie `.env.example` (raiz do projeto) para `.env` e preencha as variáveis `SMTP_*` (Gmail com "senha de app") para que `POST /api/usuarios` e `POST /api/admin/reset-password` realmente enviem a senha gerada por email. Se essas variáveis não forem preenchidas, a API sobe normalmente e usa um serviço de email "noop" (apenas loga que o envio foi pulado, sem nunca logar a senha em texto claro) — útil para dev local, mas nesse caso `email_enviado` retorna `false` e o usuário não recebe a nova senha por nenhum canal (o admin precisaria providenciá-la manualmente).
 
 Depois, em outro terminal:
 

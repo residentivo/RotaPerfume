@@ -3,6 +3,7 @@ package handlers_test
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -19,6 +20,17 @@ import (
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/services"
 )
+
+// fakeEmailService é um EmailService fake para testes — nunca faz chamadas
+// de rede reais, apenas registra que foi chamado.
+type fakeEmailService struct {
+	chamadas int
+}
+
+func (f *fakeEmailService) EnviarSenhaInicial(ctx context.Context, destinatario, nomeUsuario, senha string) error {
+	f.chamadas++
+	return nil
+}
 
 // config de teste.
 func testCfg() *config.Config {
@@ -68,12 +80,13 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock) 
 
 	// Handlers reais (recebem *sql.DB injetado)
 	authHandler := handlers.NewAuthHandler(db, cfg)
-	userHandler := handlers.NewUsuarioHandler(db, cfg)
+	userHandler := handlers.NewUsuarioHandler(db, cfg, &fakeEmailService{})
 	dashboardHandler := handlers.NewDashboardHandler(db, cfg)
 	senhaHandler := handlers.NewSenhaHistoricoHandler(db)
+	vendedorHandler := handlers.NewVendedorHandler(db, cfg)
 
 	// Router real com middlewares corretos
-	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler)
+	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler)
 
 	server := httptest.NewServer(mux)
 	return server, db, mock
@@ -95,10 +108,10 @@ func TestLogin_Success(t *testing.T) {
 	hash, err := services.NewAuthService().HashPassword(cfg, "senha-correta")
 	require.NoError(t, err)
 
-	mock.ExpectQuery(`SELECT id, nome, email, password_hash, role, id_vendedor, ativo, created_at, updated_at, ultimo_login_at FROM usuarios WHERE email = \? LIMIT 1`).
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs("admin@test.com").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "created_at", "updated_at", "ultimo_login_at"}).
-			AddRow(int64(1), "Admin User", "admin@test.com", hash, "admin", nil, true, time.Now(), time.Now(), nil))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(int64(1), "Admin User", "admin@test.com", hash, "admin", nil, true, false, time.Now(), time.Now(), nil, nil))
 
 	// Mock: insert refresh_token
 	mock.ExpectExec(`INSERT INTO refresh_tokens`).
@@ -157,10 +170,10 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	// Usuário existe, mas senha errada
-	mock.ExpectQuery(`SELECT id, nome, email, password_hash, role, id_vendedor, ativo, created_at, updated_at, ultimo_login_at FROM usuarios WHERE email = \? LIMIT 1`).
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs("admin@test.com").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "created_at", "updated_at", "ultimo_login_at"}).
-			AddRow(int64(1), "Admin User", "admin@test.com", hash, "admin", nil, true, time.Now(), time.Now(), nil))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(int64(1), "Admin User", "admin@test.com", hash, "admin", nil, true, false, time.Now(), time.Now(), nil, nil))
 
 	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
 		makeJSON(map[string]string{"email": "admin@test.com", "password": "senha-errada"}))
@@ -181,7 +194,7 @@ func TestLogin_UsuarioNaoExiste(t *testing.T) {
 	defer db.Close()
 
 	// Usuário não encontrado
-	mock.ExpectQuery(`SELECT id, nome, email, password_hash, role, id_vendedor, ativo, created_at, updated_at, ultimo_login_at FROM usuarios WHERE email = \? LIMIT 1`).
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs("naoexiste@test.com").
 		WillReturnError(sql.ErrNoRows)
 
@@ -208,10 +221,10 @@ func TestLogin_UsuarioInativo(t *testing.T) {
 	require.NoError(t, err)
 
 	// Usuário existe mas inativo
-	mock.ExpectQuery(`SELECT id, nome, email, password_hash, role, id_vendedor, ativo, created_at, updated_at, ultimo_login_at FROM usuarios WHERE email = \? LIMIT 1`).
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs("inativo@test.com").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "created_at", "updated_at", "ultimo_login_at"}).
-			AddRow(int64(1), "Inativo User", "inativo@test.com", hash, "normal", nil, false, time.Now(), time.Now(), nil))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(int64(1), "Inativo User", "inativo@test.com", hash, "normal", nil, false, false, time.Now(), time.Now(), nil, nil))
 
 	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
 		makeJSON(map[string]string{"email": "inativo@test.com", "password": "qualquer"}))
@@ -267,18 +280,18 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 
 	hash, _ := services.NewAuthService().HashPassword(cfg, "senha-atual")
 	// Mock: busca usuário (valida senha_atual)
-	mock.ExpectQuery(`SELECT id, nome, email, password_hash, role, id_vendedor, ativo, created_at, updated_at, ultimo_login_at FROM usuarios WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.id\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs(int64(2)).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "created_at", "updated_at", "ultimo_login_at"}).
-			AddRow(int64(2), "User 2", "user2@test.com", hash, "normal", nil, true, time.Now(), time.Now(), nil))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(int64(2), "User 2", "user2@test.com", hash, "normal", nil, true, true, time.Now(), time.Now(), nil, nil))
 
 	// Mock: insert senha_historico
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// Mock: update password_hash
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \? WHERE id = \?`).
-		WithArgs(sqlmock.AnyArg(), int64(2)).
+	// Mock: update password_hash + deve_trocar_senha (troca voluntária → false)
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), false, int64(2)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// Mock: revoga todos os refresh tokens
@@ -312,12 +325,12 @@ func TestAdminResetPassword_Success(t *testing.T) {
 
 	// Mock: busca usuário alvo para capturar hash anterior
 	hash, _ := services.NewAuthService().HashPassword(cfg, "senha-antiga")
-	mock.ExpectQuery(`SELECT id, nome, email, password_hash, role, id_vendedor, ativo, created_at, updated_at, ultimo_login_at FROM usuarios WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.id\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs(int64(5)).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "created_at", "updated_at", "ultimo_login_at"}).
-			AddRow(int64(5), "User 5", "user5@test.com", hash, "normal", nil, true, time.Now(), time.Now(), nil))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(int64(5), "User 5", "user5@test.com", hash, "normal", nil, true, false, time.Now(), time.Now(), nil, nil))
 
-	// Mock: update password_hash (seta senha padrão "Mudar@123")
+	// Mock: update password_hash + deve_trocar_senha (senha aleatória gerada pelo admin)
 	mock.ExpectExec(`UPDATE usuarios SET password_hash`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -382,10 +395,10 @@ func TestMe_Success(t *testing.T) {
 	userToken := generateToken(t, cfg, 3, "normal")
 
 	now := time.Now()
-	mock.ExpectQuery(`SELECT id, nome, email, password_hash, role, id_vendedor, ativo, created_at, updated_at, ultimo_login_at FROM usuarios WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.id\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs(int64(3)).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "created_at", "updated_at", "ultimo_login_at"}).
-			AddRow(int64(3), "João Silva", "joao@test.com", "hash", "normal", nil, true, now, now, &now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(int64(3), "João Silva", "joao@test.com", "hash", "normal", nil, true, false, now, now, &now, nil))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/auth/me", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
