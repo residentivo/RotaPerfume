@@ -27,12 +27,20 @@ db-create: ## Cria o banco de dados se não existir
 db-up: db-create ## Cria o schema (tabelas vazias)
 	@echo "=== Aplicando DDL de usuarios (vendedores + usuarios) ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/01_ddl_usuarios.sql
+	@echo "=== Aplicando DDL de pedidos ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/04_ddl_pedidos.sql
+	@echo "=== Aplicando DDL de refresh_tokens ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/06_ddl_refresh_tokens.sql
+	@echo "=== Aplicando DDL de senha_historico ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/07_ddl_senha_historico.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/02_seed_admin.sql
 	@echo "=== Seed: usuarios dos 42 vendedores ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/03_seed_vendedores.sql
+	@echo "=== Seed: pedidos ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/05_seed_pedidos.sql
 	@echo ""
 	@echo "=== Corrigindo hashes (placeholder -> bcrypt real) + criando admin ==="
 	cd apis/shared && go run ./cmd/resetpassword -list

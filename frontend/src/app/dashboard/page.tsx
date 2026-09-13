@@ -469,20 +469,23 @@ function DashboardContent() {
     periodo: apiPeriodo,
   };
 
-  const demoVendas: VendasSeries = vendasSeries ?? {
-    dias: chartsDias,
-    pontos: Array.from({ length: chartsDias }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (chartsDias - 1 - i));
-      const base = 4000 + Math.random() * 6000;
-      const spike = i === 15 || i === 22 ? 1.8 : 1;
-      return {
-        dia: d.toISOString().split("T")[0],
-        total_vendas: Math.round(base * spike),
-        total_pedidos: Math.round(base / 500),
-      };
-    }),
-  };
+  const demoVendas: VendasSeries =
+    vendasSeries && vendasSeries.pontos
+      ? vendasSeries
+      : {
+          dias: chartsDias,
+          pontos: Array.from({ length: chartsDias }, (_, i) => {
+            const d = new Date();
+            d.setDate(d.getDate() - (chartsDias - 1 - i));
+            const base = 4000 + Math.random() * 6000;
+            const spike = i === 15 || i === 22 ? 1.8 : 1;
+            return {
+              dia: d.toISOString().split("T")[0],
+              total_vendas: Math.round(base * spike),
+              total_pedidos: Math.round(base / 500),
+            };
+          }),
+        };
 
   return (
     <div className="min-h-screen bg-slate-50">
