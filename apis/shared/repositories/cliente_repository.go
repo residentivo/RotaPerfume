@@ -30,6 +30,29 @@ type ClienteFiltro struct {
 	Segmento string
 	Ativo    *bool
 	Q        string // busca textual em razao_social OU cnpj (LIKE)
+	OrderBy  string // campo de ordenação (whitelist: ver clienteOrderWhitelist); default "id"
+	OrderDir string // "asc" ou "desc" (case-insensitive); default "asc"
+}
+
+// clienteOrderWhitelist mapeia os campos de ordenação aceitos pela API para
+// as colunas SQL reais da tabela clientes.
+var clienteOrderWhitelist = map[string]string{
+	"id":            "id",
+	"razao_social":  "razao_social",
+	"cnpj":          "cnpj",
+	"segmento":      "segmento",
+	"cidade":        "cidade",
+	"uf":            "uf",
+	"data_cadastro": "data_cadastro",
+	"ativo":         "ativo",
+	"created_at":    "created_at",
+	"updated_at":    "updated_at",
+}
+
+// orderBy monta a cláusula ORDER BY a partir de OrderBy/OrderDir, com
+// default "id ASC" (comportamento atual).
+func (f ClienteFiltro) orderBy() string {
+	return buildOrderByClause(clienteOrderWhitelist, f.OrderBy, f.OrderDir, "id", "ASC")
 }
 
 // where monta a cláusula WHERE (sem a palavra "WHERE") e os args correspondentes.
@@ -84,7 +107,7 @@ func (r *ClienteRepository) List(ctx context.Context, db *sql.DB, page, limit in
 		return nil, 0, fmt.Errorf("repositories: count clientes: %w", err)
 	}
 
-	q := "SELECT " + clienteColunas + " FROM clientes" + whereClause + " ORDER BY id ASC LIMIT ? OFFSET ?"
+	q := "SELECT " + clienteColunas + " FROM clientes" + whereClause + filtro.orderBy() + " LIMIT ? OFFSET ?"
 	queryArgs := append(append([]any{}, args...), limit, offset)
 
 	rows, err := db.QueryContext(ctx, q, queryArgs...)

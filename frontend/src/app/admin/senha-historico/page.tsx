@@ -13,6 +13,16 @@ import { SenhaHistoricoItem, TipoReset } from "@/lib/types";
 type SortKey = "created_at" | "usuario_nome" | "tipo_reset" | "resetado_por_nome" | "ip_origem";
 type SortDir = "asc" | "desc";
 
+// Mapeia a sortKey interna do frontend para o campo aceito pelo backend em
+// order_by. Apenas id, usuario_id, tipo_reset e created_at estao na
+// whitelist do backend — usuario_nome, resetado_por_nome e ip_origem nao
+// existem la, entao nao enviamos order_by para essas colunas (a ordenacao
+// cai no default do backend: id desc).
+const ORDER_BY_MAP: Partial<Record<SortKey, string>> = {
+  created_at: "created_at",
+  tipo_reset: "tipo_reset",
+};
+
 const TIPO_OPTIONS: { value: "" | TipoReset; label: string }[] = [
   { value: "", label: "Todos os tipos" },
   { value: "proprio", label: "Proprio" },
@@ -76,7 +86,14 @@ export default function SenhaHistoricoPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiListSenhaHistorico(page, limit, undefined, tipo || undefined);
+      const res = await apiListSenhaHistorico(
+        page,
+        limit,
+        undefined,
+        tipo || undefined,
+        ORDER_BY_MAP[sortKey],
+        sortDir
+      );
       setItems(res.data);
       setTotal(res.total);
       setPages(res.pages);
@@ -97,7 +114,7 @@ export default function SenhaHistoricoPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit, tipo]);
+  }, [page, limit, tipo, sortKey, sortDir]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -117,7 +134,10 @@ export default function SenhaHistoricoPage() {
     setPage(1);
   }, [search, tipo]);
 
-  const filteredAndSorted = useMemo(() => {
+  // Busca continua client-side (aplicada sobre os itens da pagina atual);
+  // a ordenacao agora e feita pela API quando o campo esta na whitelist do
+  // backend (ver ORDER_BY_MAP e load()).
+  const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     let list = items;
     if (term) {
@@ -133,21 +153,8 @@ export default function SenhaHistoricoPage() {
         );
       });
     }
-    const sorted = [...list].sort((a, b) => {
-      const av = a[sortKey] ?? "";
-      const bv = b[sortKey] ?? "";
-      let cmp = 0;
-      if (sortKey === "created_at") {
-        const ad = new Date(String(av)).getTime();
-        const bd = new Date(String(bv)).getTime();
-        cmp = ad - bd;
-      } else {
-        cmp = String(av).localeCompare(String(bv), "pt-BR");
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return sorted;
-  }, [items, search, sortKey, sortDir]);
+    return list;
+  }, [items, search]);
 
   const SortableHeader = ({
     label,
@@ -354,9 +361,12 @@ export default function SenhaHistoricoPage() {
         <div className="p-4">
           <Table
             columns={columns}
-            data={filteredAndSorted}
+            data={filtered}
             keyExtractor={(it) => it.id}
             loading={loading}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={(key) => handleSort(key as SortKey)}
             emptyMessage={
               search || tipo
                 ? "Nenhum registro encontrado para os filtros aplicados."

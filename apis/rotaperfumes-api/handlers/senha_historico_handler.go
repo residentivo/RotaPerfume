@@ -29,7 +29,9 @@ func NewSenhaHistoricoHandler(db *sql.DB) *SenhaHistoricoHandler {
 
 // ListarTodos GET /api/senha-historico
 //
-// Query params: page (default 1), limit (default 20, max 100).
+// Query params: page (default 1), limit (default 20, max 100),
+// order_by (id|usuario_id|tipo_reset|created_at; default id),
+// order_dir (asc|desc; default desc).
 // Response: {success, data: [{id, usuario_id, resetado_por_id, ip_origem, user_agent, tipo_reset, created_at}], pagination}
 // Admin only.
 func (h *SenhaHistoricoHandler) ListarTodos(w http.ResponseWriter, r *http.Request) {
@@ -43,9 +45,11 @@ func (h *SenhaHistoricoHandler) ListarTodos(w http.ResponseWriter, r *http.Reque
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
+	orderBy := strings.TrimSpace(r.URL.Query().Get("order_by"))
+	orderDir := parseOrderDirQuery(r.URL.Query().Get("order_dir"))
 
 	ctx := r.Context()
-	historicos, total, err := h.svc.ListarTodos(ctx, h.db, page, limit)
+	historicos, total, err := h.svc.ListarTodos(ctx, h.db, page, limit, orderBy, orderDir)
 	if err != nil {
 		log.Printf("[senha-historico] ListarTodos: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
@@ -79,7 +83,9 @@ func (h *SenhaHistoricoHandler) ListarTodos(w http.ResponseWriter, r *http.Reque
 
 // ListarPorUsuario GET /api/senha-historico/{usuario_id}
 //
-// Query params: page (default 1), limit (default 20, max 100).
+// Query params: page (default 1), limit (default 20, max 100),
+// order_by (id|usuario_id|tipo_reset|created_at; default id),
+// order_dir (asc|desc; default desc).
 // Response: {success, data: [...], pagination}
 // Admin only.
 func (h *SenhaHistoricoHandler) ListarPorUsuario(w http.ResponseWriter, r *http.Request) {
@@ -114,9 +120,11 @@ func (h *SenhaHistoricoHandler) ListarPorUsuario(w http.ResponseWriter, r *http.
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
+	orderBy := strings.TrimSpace(r.URL.Query().Get("order_by"))
+	orderDir := parseOrderDirQuery(r.URL.Query().Get("order_dir"))
 
 	ctx := r.Context()
-	historicos, total, err := h.svc.ListarPorUsuario(ctx, h.db, usuarioID, page, limit)
+	historicos, total, err := h.svc.ListarPorUsuario(ctx, h.db, usuarioID, page, limit, orderBy, orderDir)
 	if err != nil {
 		log.Printf("[senha-historico] ListarPorUsuario: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")

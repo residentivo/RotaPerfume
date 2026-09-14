@@ -885,10 +885,22 @@
               "key": "limit",
               "value": "10",
               "description": "Itens por página (padrão: 20, máx: 100)"
+            },
+            {
+              "key": "order_by",
+              "value": "nome",
+              "disabled": true,
+              "description": "Coluna de ordenação (opcional). Aceitos: id, nome, email, role, ativo, created_at, updated_at, ultimo_login_at. Valor inválido/ausente cai no default (id)."
+            },
+            {
+              "key": "order_dir",
+              "value": "asc",
+              "disabled": true,
+              "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: asc."
             }
           ]
         },
-        "description": "Lista usuários com paginação (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"id_vendedor\": null,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"ativo\": true,\n      \"nome\": \"Administrador Principal\",\n      \"created_at\": \"2026-09-06T00:00:00Z\",\n      \"ultimo_login_at\": \"2026-09-06T12:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 10,\n    \"total\": 43,\n    \"pages\": 5\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+        "description": "Lista usuários com paginação (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n- `order_by` (opcional): id, nome, email, role, ativo, created_at, updated_at, ultimo_login_at. Default: id.\n- `order_dir` (opcional): asc|desc, case-insensitive. Default: asc. Valor inválido em `order_by`/`order_dir` cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"id_vendedor\": null,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"ativo\": true,\n      \"nome\": \"Administrador Principal\",\n      \"created_at\": \"2026-09-06T00:00:00Z\",\n      \"ultimo_login_at\": \"2026-09-06T12:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 10,\n    \"total\": 43,\n    \"pages\": 5\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
       },
       "response": [
         {
@@ -1977,10 +1989,22 @@
               "key": "limit",
               "value": "20",
               "description": "Itens por página (padrão: 20, máx: 100)"
+            },
+            {
+              "key": "order_by",
+              "value": "created_at",
+              "disabled": true,
+              "description": "Coluna de ordenação (opcional). Aceitos: id, usuario_id, tipo_reset, created_at. Valor inválido/ausente cai no default (id desc)."
+            },
+            {
+              "key": "order_dir",
+              "value": "desc",
+              "disabled": true,
+              "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: desc."
             }
           ]
         },
-        "description": "Lista todo o histórico de alterações de senha (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": 1,\n      \"ip_origem\": \"192.168.1.1\",\n      \"user_agent\": \"PostmanRuntime/7.29.0\",\n      \"tipo_reset\": \"admin\",\n      \"created_at\": \"2026-09-07T10:00:00Z\"\n    },\n    {\n      \"id\": 2,\n      \"usuario_id\": 3,\n      \"resetado_por_id\": null,\n      \"ip_origem\": \"192.168.1.5\",\n      \"user_agent\": \"Mozilla/5.0...\",\n      \"tipo_reset\": \"usuario\",\n      \"created_at\": \"2026-09-06T15:30:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 2,\n    \"pages\": 1\n  }\n}\n```\n\n**`tipo_reset` valores:**\n- `admin` — resetado por um administrador\n- `usuario` — alterado pelo próprio usuário\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+        "description": "Lista todo o histórico de alterações de senha (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n- `order_by` (opcional): id, usuario_id, tipo_reset, created_at. Default: id.\n- `order_dir` (opcional): asc|desc, case-insensitive. Default: desc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": 1,\n      \"ip_origem\": \"192.168.1.1\",\n      \"user_agent\": \"PostmanRuntime/7.29.0\",\n      \"tipo_reset\": \"admin\",\n      \"created_at\": \"2026-09-07T10:00:00Z\"\n    },\n    {\n      \"id\": 2,\n      \"usuario_id\": 3,\n      \"resetado_por_id\": null,\n      \"ip_origem\": \"192.168.1.5\",\n      \"user_agent\": \"Mozilla/5.0...\",\n      \"tipo_reset\": \"usuario\",\n      \"created_at\": \"2026-09-06T15:30:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 2,\n    \"pages\": 1\n  }\n}\n```\n\n**`tipo_reset` valores:**\n- `admin` — resetado por um administrador\n- `usuario` — alterado pelo próprio usuário\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
       },
       "response": [
         {
@@ -2094,10 +2118,22 @@
               "key": "limit",
               "value": "20",
               "description": "Itens por página (padrão: 20, máx: 100)"
+            },
+            {
+              "key": "order_by",
+              "value": "created_at",
+              "disabled": true,
+              "description": "Coluna de ordenação (opcional). Aceitos: id, usuario_id, tipo_reset, created_at. Valor inválido/ausente cai no default (id desc)."
+            },
+            {
+              "key": "order_dir",
+              "value": "desc",
+              "disabled": true,
+              "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: desc."
             }
           ]
         },
-        "description": "Lista o histórico de alterações de senha de um usuário específico (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `usuario_id` (int64) — ID do usuário\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": 1,\n      \"ip_origem\": \"192.168.1.1\",\n      \"user_agent\": \"PostmanRuntime/7.29.0\",\n      \"tipo_reset\": \"admin\",\n      \"created_at\": \"2026-09-07T10:00:00Z\"\n    },\n    {\n      \"id\": 5,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": null,\n      \"ip_origem\": \"192.168.1.10\",\n      \"user_agent\": \"Mozilla/5.0...\",\n      \"tipo_reset\": \"usuario\",\n      \"created_at\": \"2026-09-05T14:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 2,\n    \"pages\": 1\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `usuario_id` inválido na URL\n- `401` — não autenticado\n- `403` — não é admin"
+        "description": "Lista o histórico de alterações de senha de um usuário específico (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `usuario_id` (int64) — ID do usuário\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n- `order_by` (opcional): id, usuario_id, tipo_reset, created_at. Default: id.\n- `order_dir` (opcional): asc|desc, case-insensitive. Default: desc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": 1,\n      \"ip_origem\": \"192.168.1.1\",\n      \"user_agent\": \"PostmanRuntime/7.29.0\",\n      \"tipo_reset\": \"admin\",\n      \"created_at\": \"2026-09-07T10:00:00Z\"\n    },\n    {\n      \"id\": 5,\n      \"usuario_id\": 2,\n      \"resetado_por_id\": null,\n      \"ip_origem\": \"192.168.1.10\",\n      \"user_agent\": \"Mozilla/5.0...\",\n      \"tipo_reset\": \"usuario\",\n      \"created_at\": \"2026-09-05T14:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 2,\n    \"pages\": 1\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `usuario_id` inválido na URL\n- `401` — não autenticado\n- `403` — não é admin"
       },
       "response": [
         {
@@ -2234,10 +2270,22 @@
                   "key": "q",
                   "value": "perfumaria",
                   "description": "Busca em razao_social OU cnpj (opcional)"
+                },
+                {
+                  "key": "order_by",
+                  "value": "razao_social",
+                  "disabled": true,
+                  "description": "Coluna de ordenação (opcional). Aceitos: id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at. Valor inválido/ausente cai no default (id)."
+                },
+                {
+                  "key": "order_dir",
+                  "value": "asc",
+                  "disabled": true,
+                  "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: asc."
                 }
               ]
             },
-            "description": "Lista clientes com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `uf` (string) — filtro exato\n- `segmento` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `razao_social` OU `cnpj`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Lista clientes com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `uf` (string) — filtro exato\n- `segmento` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `razao_social` OU `cnpj`\n- `order_by`: id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
           },
           "response": [
             {
@@ -3145,10 +3193,22 @@
                   "key": "q",
                   "value": "intense",
                   "description": "Busca em descricao OU sku (opcional)"
+                },
+                {
+                  "key": "order_by",
+                  "value": "descricao",
+                  "disabled": true,
+                  "description": "Coluna de ordenação (opcional). Aceitos: id, sku, descricao, categoria, marca, preco_tabela, custo_unitario, data_lancamento, ativo, created_at, updated_at. Valor inválido/ausente cai no default (id)."
+                },
+                {
+                  "key": "order_dir",
+                  "value": "asc",
+                  "disabled": true,
+                  "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: asc."
                 }
               ]
             },
-            "description": "Lista produtos com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `categoria` (string) — filtro exato\n- `marca` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `descricao` OU `sku`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"sku\": \"ROT-0001\",\n      \"descricao\": \"Rota Intense Masculino 100ml\",\n      \"categoria\": \"Masculino\",\n      \"marca\": \"Rota\",\n      \"nota_olfativa\": \"Amadeirado\",\n      \"preco_tabela\": 189.9,\n      \"custo_unitario\": 65.4,\n      \"unidade\": \"UN\",\n      \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 540,\n    \"pages\": 27\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Lista produtos com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `categoria` (string) — filtro exato\n- `marca` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `descricao` OU `sku`\n- `order_by`: id, sku, descricao, categoria, marca, preco_tabela, custo_unitario, data_lancamento, ativo, created_at, updated_at. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"sku\": \"ROT-0001\",\n      \"descricao\": \"Rota Intense Masculino 100ml\",\n      \"categoria\": \"Masculino\",\n      \"marca\": \"Rota\",\n      \"nota_olfativa\": \"Amadeirado\",\n      \"preco_tabela\": 189.9,\n      \"custo_unitario\": 65.4,\n      \"unidade\": \"UN\",\n      \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 540,\n    \"pages\": 27\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
           },
           "response": [
             {
@@ -3892,10 +3952,22 @@
                   "key": "q",
                   "value": "perfumaria",
                   "description": "Busca livre pela razão social do cliente — opcional"
+                },
+                {
+                  "key": "order_by",
+                  "value": "data_pedido",
+                  "disabled": true,
+                  "description": "Coluna de ordenação (opcional). Aceitos: id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome. Valor inválido/ausente cai no default (id desc)."
+                },
+                {
+                  "key": "order_dir",
+                  "value": "desc",
+                  "disabled": true,
+                  "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: desc."
                 }
               ]
             },
-            "description": "Lista pedidos com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status` (string) — filtro exato: `Cancelado`, `Em separação`, `Entregue` ou `Faturado`\n- `canal` (string) — filtro exato: `App`, `Telefone`, `Visita` ou `WhatsApp`\n- `cliente_id` (int64) — filtro exato pelo id interno do cliente\n- `vendedor_id` (int64) — filtro exato pelo id interno do vendedor\n- `data_inicio` / `data_fim` (`AAAA-MM-DD`) — intervalo de `data_pedido`\n- `q` (string) — busca livre pela razão social do cliente\n\n**Resposta de sucesso (200):** cada item traz o cabeçalho do pedido + `cliente_nome`/`vendedor_nome` (via JOIN), sem os itens (para a lista de itens use `GET /api/pedidos/{id}`).\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Lista pedidos com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status` (string) — filtro exato: `Cancelado`, `Em separação`, `Entregue` ou `Faturado`\n- `canal` (string) — filtro exato: `App`, `Telefone`, `Visita` ou `WhatsApp`\n- `cliente_id` (int64) — filtro exato pelo id interno do cliente\n- `vendedor_id` (int64) — filtro exato pelo id interno do vendedor\n- `data_inicio` / `data_fim` (`AAAA-MM-DD`) — intervalo de `data_pedido`\n- `q` (string) — busca livre pela razão social do cliente\n- `order_by`: id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: desc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):** cada item traz o cabeçalho do pedido + `cliente_nome`/`vendedor_nome` (via JOIN), sem os itens (para a lista de itens use `GET /api/pedidos/{id}`).\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
           },
           "response": [
             {
@@ -4460,10 +4532,22 @@
                   "key": "vencimento_ate",
                   "value": "2026-12-31",
                   "description": "Data máxima de vencimento, formato AAAA-MM-DD — opcional"
+                },
+                {
+                  "key": "order_by",
+                  "value": "data_vencimento",
+                  "disabled": true,
+                  "description": "Coluna de ordenação (opcional). Aceitos: pagamento_id, pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento, created_at, updated_at. Valor inválido/ausente cai no default (pagamento_id asc)."
+                },
+                {
+                  "key": "order_dir",
+                  "value": "asc",
+                  "disabled": true,
+                  "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: asc."
                 }
               ]
             },
-            "description": "Lista pagamentos com paginação e filtros.\n\n**Acesso comum: diferente de Clientes/Produtos/Pedidos (admin only), este endpoint aceita qualquer usuário autenticado (`admin` ou `normal`).** Por isso o exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`) em vez de `{{admin_token}}`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status_pagamento` (string) — filtro exato: `Em aberto`, `Inadimplente`, `Pago` ou `Pago com atraso`\n- `forma_pagamento` (string) — filtro exato: `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro` ou `PIX`\n- `pedido_id` (int64) — filtro exato pelo id interno do pedido\n- `vencimento_de` / `vencimento_ate` (`AAAA-MM-DD`) — intervalo de `data_vencimento`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pagamento_id\": 1,\n      \"pedido_id\": 1,\n      \"forma_pagamento\": \"PIX\",\n      \"parcelas\": 1,\n      \"valor\": 459.7,\n      \"taxa_pct\": 0.99,\n      \"valor_liquido\": 455.15,\n      \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n      \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n      \"status_pagamento\": \"Pago\",\n      \"created_at\": \"2026-09-14T00:00:00Z\",\n      \"updated_at\": \"2026-09-14T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 27700,\n    \"pages\": 1385\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `pedido_id` inválido (não numérico)\n- `401` — não autenticado"
+            "description": "Lista pagamentos com paginação e filtros.\n\n**Acesso comum: diferente de Clientes/Produtos/Pedidos (admin only), este endpoint aceita qualquer usuário autenticado (`admin` ou `normal`).** Por isso o exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`) em vez de `{{admin_token}}`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status_pagamento` (string) — filtro exato: `Em aberto`, `Inadimplente`, `Pago` ou `Pago com atraso`\n- `forma_pagamento` (string) — filtro exato: `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro` ou `PIX`\n- `pedido_id` (int64) — filtro exato pelo id interno do pedido\n- `vencimento_de` / `vencimento_ate` (`AAAA-MM-DD`) — intervalo de `data_vencimento`\n- `order_by`: pagamento_id, pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento, created_at, updated_at. Default: pagamento_id.\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pagamento_id\": 1,\n      \"pedido_id\": 1,\n      \"forma_pagamento\": \"PIX\",\n      \"parcelas\": 1,\n      \"valor\": 459.7,\n      \"taxa_pct\": 0.99,\n      \"valor_liquido\": 455.15,\n      \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n      \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n      \"status_pagamento\": \"Pago\",\n      \"created_at\": \"2026-09-14T00:00:00Z\",\n      \"updated_at\": \"2026-09-14T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 27700,\n    \"pages\": 1385\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `pedido_id` inválido (não numérico)\n- `401` — não autenticado"
           },
           "response": [
             {

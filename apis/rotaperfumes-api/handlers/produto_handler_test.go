@@ -114,6 +114,46 @@ func TestListProdutos_ComFiltros(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestListProdutos_OrderBy(t *testing.T) {
+	testCases := []struct {
+		nome        string
+		query       string
+		orderRegexp string
+	}{
+		{"order_by e order_dir válidos", "order_by=preco_tabela&order_dir=desc", `ORDER BY preco_tabela DESC`},
+		{"order_dir maiúsculo (case-insensitive)", "order_by=marca&order_dir=DESC", `ORDER BY marca DESC`},
+		{"order_dir inválido cai no default", "order_by=marca&order_dir=sideways", `ORDER BY marca ASC`},
+		{"order_by fora da whitelist cai no default", "order_by=preco_secreto&order_dir=asc", `ORDER BY id ASC`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.nome, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+
+			cfg := testCfg()
+			adminToken := generateToken(t, cfg, 1, "admin")
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos`).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+			mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos ` + tc.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(20, 0).
+				WillReturnRows(produtoRowsForHandler())
+
+			req, _ := http.NewRequest("GET", server.URL+"/api/produtos?"+tc.query, nil)
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestListProdutos_ErroInterno(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()

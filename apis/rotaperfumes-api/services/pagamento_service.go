@@ -61,6 +61,8 @@ type PagamentoFiltro struct {
 	PedidoID        int64
 	VencimentoDe    string
 	VencimentoAte   string
+	OrderBy         string
+	OrderDir        string
 }
 
 // PagamentoService agrega regras de negócio sobre pagamentos.
@@ -92,6 +94,8 @@ func (s *PagamentoService) ListPagamentos(ctx context.Context, db *sql.DB, page,
 		PedidoID:        filtro.PedidoID,
 		VencimentoDe:    filtro.VencimentoDe,
 		VencimentoAte:   filtro.VencimentoAte,
+		OrderBy:         filtro.OrderBy,
+		OrderDir:        filtro.OrderDir,
 	}
 	return s.repo.List(ctx, db, page, limit, repoFiltro)
 }

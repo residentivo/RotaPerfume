@@ -4,6 +4,34 @@
 
 ---
 
+## Ordenação via API (server-side sort) — 2026-09-14
+**Agentes:** 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** A ordenação das tabelas de listagem (produtos, clientes, pedidos, pagamentos, usuários, senha-histórico) era feita apenas client-side (JS `.sort()` sobre a página atual), o que só ordenava os itens já carregados na página em vez do dataset inteiro. Passou a enviar parâmetros de ordenação (`order_by`/`order_dir`) para a API e ordenar no backend, com whitelist de colunas por entidade contra SQL injection.
+
+**Camadas:**
+- [ ] Database (N/A — sem mudança de schema)
+- [x] Backend (🟡 BackBrain) — os 6 endpoints de listagem (`GET /api/produtos`, `/api/clientes`, `/api/pedidos`, `/api/pagamentos`, `/api/usuarios`, `/api/senha-historico` e `/api/senha-historico/{usuario_id}`) passaram a aceitar `order_by`/`order_dir` (`asc`/`desc`, case-insensitive), com whitelist de colunas por entidade. Valor inválido ou ausente cai silenciosamente no default de cada entidade (sem erro 400). Novo helper compartilhado `apis/shared/repositories/sort.go`. `go build ./...` OK.
+- [x] Frontend (🟢 FrontBrain) — `frontend/src/lib/api.ts` e as 6 páginas de listagem (`admin/produtos`, `admin/clientes`, `admin/pedidos`, `pagamentos`, `admin/usuarios`, `admin/senha-historico`) passaram a enviar `order_by`/`order_dir` para a API em vez de ordenar localmente em JS — corrige o bug em que a ordenação client-side só ordenava os itens da página atual, não o dataset inteiro. Typecheck não pôde ser rodado no sandbox (sem Node); revisado manualmente pelo MegaBrain.
+- [x] Teste (🔴 TestBrain) — ~58 subtestes novos cobrindo ordenação válida, case-insensitive, whitelist bypass/SQL injection e `order_dir` inválido, nas camadas repository/handler das 6 entidades. `go build`, `go vet` e `go test` OK em ambos os módulos.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Contrato de `order_by`/default por endpoint:**
+- `GET /api/produtos`: id, sku, descricao, categoria, marca, preco_tabela, custo_unitario, data_lancamento, ativo, created_at, updated_at — default `id asc`
+- `GET /api/clientes`: id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at — default `id asc`
+- `GET /api/pedidos`: id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome — default `id desc`
+- `GET /api/pagamentos`: pagamento_id, pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento, created_at, updated_at — default `pagamento_id asc`
+- `GET /api/usuarios`: id, nome, email, role, ativo, created_at, updated_at, ultimo_login_at — default `id asc`
+- `GET /api/senha-historico` e `/{usuario_id}`: id, usuario_id, tipo_reset, created_at — default `id desc`
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — nas 6 requests "Listar ..." (Usuários, Clientes, Produtos, Pedidos, Pagamentos, Histórico de Senhas — Todos e Por Usuário), adicionados os query params `order_by`/`order_dir` (desabilitados por padrão, com descrição da whitelist de colunas e default de cada entidade), e as descrições dos requests atualizadas com a nova seção de ordenação.
+- `postman/README.md` — cada um dos 6 endpoints `GET` de listagem (`/api/usuarios`, `/api/clientes`, `/api/produtos`, `/api/pedidos`, `/api/pagamentos`, `/api/senha-historico` e `/{usuario_id}`) ganhou uma linha "Ordenação (`order_by`/`order_dir`, opcionais)" documentando a whitelist de colunas aceitas e o default.
+- `apis/rotaperfumes-api/routes/routes.go` — comentário de documentação de rotas no topo do arquivo atualizado para citar `order_by`/`order_dir opcionais` nos 6 endpoints de listagem afetados.
+- Não havia manual central do projeto (raiz/`docs/`) além do `Makefile` autoexplicativo via `make help` e do `postman/README.md` — nenhum documento novo foi criado além do estritamente necessário.
+
+---
+
 ## [Tela de Pagamentos (CRUD + Importação CSV)] — 2026-09-14
 **Agentes:** 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
 

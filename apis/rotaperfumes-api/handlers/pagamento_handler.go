@@ -39,7 +39,10 @@ func NewPagamentoHandler(db *sql.DB, cfg *config.Config) *PagamentoHandler {
 //
 // Query params (opcionais): page (default 1), limit (default 20, max 100),
 // status_pagamento, forma_pagamento, pedido_id, vencimento_de (AAAA-MM-DD),
-// vencimento_ate (AAAA-MM-DD).
+// vencimento_ate (AAAA-MM-DD),
+// order_by (pagamento_id|pedido_id|forma_pagamento|parcelas|valor|taxa_pct|
+// valor_liquido|data_vencimento|data_pagamento|status_pagamento|created_at|
+// updated_at; default pagamento_id), order_dir (asc|desc; default asc).
 // Response: {success, data: [pagamento...], error, pagination: {page, limit, total, pages}}
 // Acesso comum (qualquer usuário autenticado).
 func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +67,8 @@ func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request
 		PedidoID:        pedidoID,
 		VencimentoDe:    strings.TrimSpace(r.URL.Query().Get("vencimento_de")),
 		VencimentoAte:   strings.TrimSpace(r.URL.Query().Get("vencimento_ate")),
+		OrderBy:         strings.TrimSpace(r.URL.Query().Get("order_by")),
+		OrderDir:        parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
 
 	pagamentos, total, err := h.svc.ListPagamentos(r.Context(), h.db, page, limit, filtro)

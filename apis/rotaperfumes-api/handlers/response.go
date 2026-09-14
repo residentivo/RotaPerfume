@@ -4,7 +4,23 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
+
+// parseOrderDirQuery lê o query param "order_dir" ("asc"/"desc",
+// case-insensitive). Qualquer outro valor (incluindo ausente/vazio) é
+// tratado como "sem valor" (string vazia), deixando o default de cada
+// entidade prevalecer no repositório.
+func parseOrderDirQuery(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "asc":
+		return "asc"
+	case "desc":
+		return "desc"
+	default:
+		return ""
+	}
+}
 
 // writeJSON escreve uma resposta JSON padronizada.
 func writeJSON(w http.ResponseWriter, status int, data any, errMsg string) {

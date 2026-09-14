@@ -178,7 +178,7 @@ func TestUsuarioService_ListUsuarios(t *testing.T) {
 			tc.mock(mock)
 
 			svc := services.NewUsuarioService(db, usuarioTestCfg(true), &fakeEmailService{})
-			usuarios, total, err := svc.ListUsuarios(context.Background(), db, 1, 20)
+			usuarios, total, err := svc.ListUsuarios(context.Background(), db, 1, 20, "", "")
 
 			if tc.wantErr {
 				assert.Error(t, err)

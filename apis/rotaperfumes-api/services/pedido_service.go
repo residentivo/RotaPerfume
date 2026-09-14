@@ -46,6 +46,8 @@ type PedidoFiltro struct {
 	DataInicio string
 	DataFim    string
 	Q          string
+	OrderBy    string
+	OrderDir   string
 }
 
 // PedidoService agrega regras de negócio sobre pedidos e seus itens.
@@ -77,6 +79,8 @@ func (s *PedidoService) ListPedidos(ctx context.Context, db *sql.DB, page, limit
 		DataInicio: filtro.DataInicio,
 		DataFim:    filtro.DataFim,
 		Q:          filtro.Q,
+		OrderBy:    filtro.OrderBy,
+		OrderDir:   filtro.OrderDir,
 	}
 	return s.repo.List(ctx, db, page, limit, repoFiltro)
 }

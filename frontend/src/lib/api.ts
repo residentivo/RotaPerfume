@@ -128,9 +128,13 @@ export async function apiChangePassword(
 // GET /api/usuarios — lista paginada. Retorna envelope {data, page, limit, total, pages}.
 export async function apiListUsers(
   page = 1,
-  limit = 20
+  limit = 20,
+  orderBy?: string,
+  orderDir?: "asc" | "desc"
 ): Promise<ListUsersResponse> {
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (orderBy) qs.set("order_by", orderBy);
+  if (orderDir) qs.set("order_dir", orderDir);
 
   const res = await fetch(`${API_BASE}/api/usuarios?${qs.toString()}`, {
     method: "GET",
@@ -332,7 +336,9 @@ export async function apiListSenhaHistorico(
   page = 1,
   limit = 20,
   usuarioId?: number,
-  tipo?: TipoReset
+  tipo?: TipoReset,
+  orderBy?: string,
+  orderDir?: "asc" | "desc"
 ): Promise<SenhaHistoricoResponse> {
   const params = new URLSearchParams({
     page: String(page),
@@ -340,6 +346,8 @@ export async function apiListSenhaHistorico(
   });
   if (usuarioId) params.set("usuario_id", String(usuarioId));
   if (tipo) params.set("tipo", tipo);
+  if (orderBy) params.set("order_by", orderBy);
+  if (orderDir) params.set("order_dir", orderDir);
 
   const path = `/api/senha-historico${usuarioId ? `/${usuarioId}` : ""}`;
   const res = await fetch(`${API_BASE}${path}?${params.toString()}`, {
@@ -415,13 +423,17 @@ export interface ListClientesResponse {
 export async function apiListClientes(
   page = 1,
   limit = 20,
-  filters: ListClientesFilters = {}
+  filters: ListClientesFilters = {},
+  orderBy?: string,
+  orderDir?: "asc" | "desc"
 ): Promise<ListClientesResponse> {
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (filters.uf) qs.set("uf", filters.uf);
   if (filters.segmento) qs.set("segmento", filters.segmento);
   if (filters.ativo !== undefined) qs.set("ativo", String(filters.ativo));
   if (filters.q) qs.set("q", filters.q);
+  if (orderBy) qs.set("order_by", orderBy);
+  if (orderDir) qs.set("order_dir", orderDir);
 
   const res = await fetch(`${API_BASE}/api/clientes?${qs.toString()}`, {
     method: "GET",
@@ -543,13 +555,17 @@ export interface ListProdutosResponse {
 export async function apiListProdutos(
   page = 1,
   limit = 20,
-  filters: ListProdutosFilters = {}
+  filters: ListProdutosFilters = {},
+  orderBy?: string,
+  orderDir?: "asc" | "desc"
 ): Promise<ListProdutosResponse> {
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (filters.categoria) qs.set("categoria", filters.categoria);
   if (filters.marca) qs.set("marca", filters.marca);
   if (filters.ativo !== undefined) qs.set("ativo", String(filters.ativo));
   if (filters.q) qs.set("q", filters.q);
+  if (orderBy) qs.set("order_by", orderBy);
+  if (orderDir) qs.set("order_dir", orderDir);
 
   const res = await fetch(`${API_BASE}/api/produtos?${qs.toString()}`, {
     method: "GET",
@@ -660,7 +676,9 @@ export interface ListPedidosResponse {
 export async function apiListPedidos(
   page = 1,
   limit = 20,
-  filters: ListPedidosFilters = {}
+  filters: ListPedidosFilters = {},
+  orderBy?: string,
+  orderDir?: "asc" | "desc"
 ): Promise<ListPedidosResponse> {
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (filters.status) qs.set("status", filters.status);
@@ -670,6 +688,8 @@ export async function apiListPedidos(
   if (filters.data_inicio) qs.set("data_inicio", filters.data_inicio);
   if (filters.data_fim) qs.set("data_fim", filters.data_fim);
   if (filters.q) qs.set("q", filters.q);
+  if (orderBy) qs.set("order_by", orderBy);
+  if (orderDir) qs.set("order_dir", orderDir);
 
   const res = await fetch(`${API_BASE}/api/pedidos?${qs.toString()}`, {
     method: "GET",
@@ -766,7 +786,9 @@ export interface ListPagamentosResponse {
 export async function apiListPagamentos(
   page = 1,
   limit = 20,
-  filters: ListPagamentosFilters = {}
+  filters: ListPagamentosFilters = {},
+  orderBy?: string,
+  orderDir?: "asc" | "desc"
 ): Promise<ListPagamentosResponse> {
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (filters.status_pagamento) qs.set("status_pagamento", filters.status_pagamento);
@@ -774,6 +796,8 @@ export async function apiListPagamentos(
   if (filters.pedido_id) qs.set("pedido_id", String(filters.pedido_id));
   if (filters.vencimento_de) qs.set("vencimento_de", filters.vencimento_de);
   if (filters.vencimento_ate) qs.set("vencimento_ate", filters.vencimento_ate);
+  if (orderBy) qs.set("order_by", orderBy);
+  if (orderDir) qs.set("order_dir", orderDir);
 
   const res = await fetch(`${API_BASE}/api/pagamentos?${qs.toString()}`, {
     method: "GET",

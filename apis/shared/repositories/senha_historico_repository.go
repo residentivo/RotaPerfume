@@ -52,8 +52,19 @@ func (r *SenhaHistoricoRepository) Create(ctx context.Context, db *sql.DB, h *Se
 	return nil
 }
 
+// senhaHistoricoOrderWhitelist mapeia os campos de ordenação aceitos pela
+// API para as colunas SQL reais da tabela senha_historico.
+var senhaHistoricoOrderWhitelist = map[string]string{
+	"id":         "id",
+	"usuario_id": "usuario_id",
+	"tipo_reset": "tipo_reset",
+	"created_at": "created_at",
+}
+
 // FindByUsuario lista histórico de senhas de um usuário (paginado).
-func (r *SenhaHistoricoRepository) FindByUsuario(ctx context.Context, db *sql.DB, usuarioID int64, page, limit int) ([]SenhaHistorico, int, error) {
+// orderBy/orderDir controlam a ordenação (whitelist: ver
+// senhaHistoricoOrderWhitelist); default "id DESC" (comportamento atual).
+func (r *SenhaHistoricoRepository) FindByUsuario(ctx context.Context, db *sql.DB, usuarioID int64, page, limit int, orderBy, orderDir string) ([]SenhaHistorico, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -70,11 +81,11 @@ func (r *SenhaHistoricoRepository) FindByUsuario(ctx context.Context, db *sql.DB
 		return nil, 0, fmt.Errorf("repositories: count senha_historico: %w", err)
 	}
 
-	const q = `
+	orderClause := buildOrderByClause(senhaHistoricoOrderWhitelist, orderBy, orderDir, "id", "DESC")
+	q := `
 		SELECT id, usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset, created_at
 		FROM senha_historico
-		WHERE usuario_id = ?
-		ORDER BY id DESC
+		WHERE usuario_id = ?` + orderClause + `
 		LIMIT ? OFFSET ?`
 	rows, err := db.QueryContext(ctx, q, usuarioID, limit, offset)
 	if err != nil {
@@ -94,7 +105,9 @@ func (r *SenhaHistoricoRepository) FindByUsuario(ctx context.Context, db *sql.DB
 }
 
 // FindAll lista todos os históricos de senhas (paginado) — admin only.
-func (r *SenhaHistoricoRepository) FindAll(ctx context.Context, db *sql.DB, page, limit int) ([]SenhaHistorico, int, error) {
+// orderBy/orderDir controlam a ordenação (whitelist: ver
+// senhaHistoricoOrderWhitelist); default "id DESC" (comportamento atual).
+func (r *SenhaHistoricoRepository) FindAll(ctx context.Context, db *sql.DB, page, limit int, orderBy, orderDir string) ([]SenhaHistorico, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -111,10 +124,10 @@ func (r *SenhaHistoricoRepository) FindAll(ctx context.Context, db *sql.DB, page
 		return nil, 0, fmt.Errorf("repositories: count senha_historico: %w", err)
 	}
 
-	const q = `
+	orderClause := buildOrderByClause(senhaHistoricoOrderWhitelist, orderBy, orderDir, "id", "DESC")
+	q := `
 		SELECT id, usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset, created_at
-		FROM senha_historico
-		ORDER BY id DESC
+		FROM senha_historico` + orderClause + `
 		LIMIT ? OFFSET ?`
 	rows, err := db.QueryContext(ctx, q, limit, offset)
 	if err != nil {

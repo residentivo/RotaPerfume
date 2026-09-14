@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Card } from "@/components/ui/Card";
@@ -121,16 +121,22 @@ function PagamentosContent() {
       const pedidoIdNum = pedidoIdFilter.trim()
         ? Number(pedidoIdFilter.trim())
         : undefined;
-      const res = await apiListPagamentos(page, limit, {
-        status_pagamento: statusFilter || undefined,
-        forma_pagamento: formaFilter || undefined,
-        pedido_id:
-          pedidoIdNum !== undefined && !Number.isNaN(pedidoIdNum)
-            ? pedidoIdNum
-            : undefined,
-        vencimento_de: vencimentoDe || undefined,
-        vencimento_ate: vencimentoAte || undefined,
-      });
+      const res = await apiListPagamentos(
+        page,
+        limit,
+        {
+          status_pagamento: statusFilter || undefined,
+          forma_pagamento: formaFilter || undefined,
+          pedido_id:
+            pedidoIdNum !== undefined && !Number.isNaN(pedidoIdNum)
+              ? pedidoIdNum
+              : undefined,
+          vencimento_de: vencimentoDe || undefined,
+          vencimento_ate: vencimentoAte || undefined,
+        },
+        sortKey,
+        sortDir
+      );
       setPagamentos(res.data);
       setTotal(res.total);
       setPages(res.pages);
@@ -151,7 +157,7 @@ function PagamentosContent() {
   useEffect(() => {
     loadPagamentos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit]);
+  }, [page, limit, sortKey, sortDir]);
 
   // Debounce dos filtros e reset para pagina 1 quando eles mudam
   useEffect(() => {
@@ -174,26 +180,6 @@ function PagamentosContent() {
       setSortDir("asc");
     }
   };
-
-  const sorted = useMemo(() => {
-    const list = [...pagamentos];
-    list.sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (av === undefined || bv === undefined) return 0;
-      if (av === null && bv === null) return 0;
-      if (av === null) return sortDir === "asc" ? -1 : 1;
-      if (bv === null) return sortDir === "asc" ? 1 : -1;
-      let cmp = 0;
-      if (typeof av === "number" && typeof bv === "number") {
-        cmp = av - bv;
-      } else {
-        cmp = String(av).localeCompare(String(bv), "pt-BR");
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return list;
-  }, [pagamentos, sortKey, sortDir]);
 
   const openCreate = () => {
     setModalMode("create");
@@ -437,7 +423,7 @@ function PagamentosContent() {
           <div className="p-4">
             <Table
               columns={columns}
-              data={sorted}
+              data={pagamentos}
               keyExtractor={(p) => p.pagamento_id}
               loading={loading}
               sortKey={sortKey}

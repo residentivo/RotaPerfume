@@ -164,6 +164,47 @@ func TestListPedidos_ComFiltrosEPaginacao(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestListPedidos_OrderBy(t *testing.T) {
+	testCases := []struct {
+		nome        string
+		query       string
+		orderRegexp string
+	}{
+		{"order_by e order_dir válidos", "order_by=valor_total&order_dir=asc", `ORDER BY p\.valor_total ASC`},
+		{"order_by com alias de outra tabela (cliente_nome)", "order_by=cliente_nome&order_dir=asc", `ORDER BY c\.razao_social ASC`},
+		{"order_dir maiúsculo (case-insensitive)", "order_by=status&order_dir=ASC", `ORDER BY p\.status ASC`},
+		{"order_dir inválido cai no default (desc)", "order_by=status&order_dir=sideways", `ORDER BY p\.status DESC`},
+		{"order_by fora da whitelist cai no default", "order_by=id_secreto&order_dir=asc", `ORDER BY p\.id ASC`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.nome, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+
+			cfg := testCfg()
+			adminToken := generateToken(t, cfg, 1, "admin")
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\)` + pedidoFromRegexH).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+			mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` ` + tc.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(20, 0).
+				WillReturnRows(pedidoRowsForHandler(1, 230.0))
+
+			req, _ := http.NewRequest("GET", server.URL+"/api/pedidos?"+tc.query, nil)
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestListPedidos_Forbidden_NaoAdmin(t *testing.T) {
 	server, db, _ := setupTestServer(t)
 	defer server.Close()

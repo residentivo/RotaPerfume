@@ -149,7 +149,7 @@ func TestList_Pagination(t *testing.T) {
 
 	repo := repositories.NewUsuarioRepository()
 	ctx := context.Background()
-	usuarios, total, err := repo.List(ctx, db, 1, 10)
+	usuarios, total, err := repo.List(ctx, db, 1, 10, "", "")
 
 	require.NoError(t, err)
 	assert.Equal(t, 15, total, "total vem do COUNT")
@@ -173,7 +173,7 @@ func TestList_Pagination(t *testing.T) {
 		WillReturnRows(rowsPage2)
 
 	repo2 := repositories.NewUsuarioRepository()
-	usuarios2, total2, err2 := repo2.List(context.Background(), db2, 2, 10)
+	usuarios2, total2, err2 := repo2.List(context.Background(), db2, 2, 10, "", "")
 	require.NoError(t, err2)
 	assert.Equal(t, 15, total2)
 	assert.Len(t, usuarios2, 5)
@@ -194,7 +194,7 @@ func TestList_Defaults(t *testing.T) {
 
 	repo := repositories.NewUsuarioRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 0, 0) // valores inválidos devem ser corrigidos
+	_, _, err := repo.List(ctx, db, 0, 0, "", "") // valores inválidos devem ser corrigidos
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -213,7 +213,7 @@ func TestList_LimitCap(t *testing.T) {
 
 	repo := repositories.NewUsuarioRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 200)
+	_, _, err := repo.List(ctx, db, 1, 200, "", "")
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -285,6 +285,42 @@ func TestUpdateUltimoLogin_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestList_OrderBy(t *testing.T) {
+	testes := []struct {
+		nome        string
+		orderBy     string
+		orderDir    string
+		orderRegexp string
+	}{
+		{"order_by válido asc", "nome", "asc", `ORDER BY u\.nome ASC`},
+		{"order_by válido desc", "email", "desc", `ORDER BY u\.email DESC`},
+		{"order_by fora da whitelist cai no default", "password_hash", "asc", `ORDER BY u\.id ASC`},
+		{"order_by tentando SQL injection cai no default", "1; DROP TABLE usuarios;--", "asc", `ORDER BY u\.id ASC`},
+		{"order_dir inválido cai no default (asc)", "role", "invalido", `ORDER BY u\.role ASC`},
+		{"tudo vazio cai no default", "", "", `ORDER BY u\.id ASC`},
+	}
+
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+
+			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usuarios").
+				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+			mock.ExpectQuery(`SELECT .+ FROM usuarios .+ ` + tt.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(10, 0).
+				WillReturnRows(sqlmock.NewRows(baseColumns))
+
+			repo := repositories.NewUsuarioRepository()
+			ctx := context.Background()
+			_, _, err := repo.List(ctx, db, 1, 10, tt.orderBy, tt.orderDir)
+
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestList_CountError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
@@ -294,7 +330,7 @@ func TestList_CountError(t *testing.T) {
 
 	repo := repositories.NewUsuarioRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10)
+	_, _, err := repo.List(ctx, db, 1, 10, "", "")
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -315,7 +351,7 @@ func TestList_IterError(t *testing.T) {
 
 	repo := repositories.NewUsuarioRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10)
+	_, _, err := repo.List(ctx, db, 1, 10, "", "")
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

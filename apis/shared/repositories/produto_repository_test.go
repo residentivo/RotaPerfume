@@ -112,6 +112,72 @@ func TestProdutoList_ComFiltros(t *testing.T) {
 	}
 }
 
+func TestProdutoList_OrderBy(t *testing.T) {
+	testes := []struct {
+		nome        string
+		orderBy     string
+		orderDir    string
+		orderRegexp string
+	}{
+		{
+			nome:        "order_by válido asc",
+			orderBy:     "descricao",
+			orderDir:    "asc",
+			orderRegexp: "ORDER BY descricao ASC",
+		},
+		{
+			nome:        "order_by válido desc",
+			orderBy:     "preco_tabela",
+			orderDir:    "desc",
+			orderRegexp: "ORDER BY preco_tabela DESC",
+		},
+		{
+			nome:        "order_by case-insensitive",
+			orderBy:     "SKU",
+			orderDir:    "DESC",
+			orderRegexp: "ORDER BY sku DESC",
+		},
+		{
+			nome:        "order_by fora da whitelist cai no default",
+			orderBy:     "1; DROP TABLE produtos;--",
+			orderDir:    "asc",
+			orderRegexp: "ORDER BY id ASC",
+		},
+		{
+			nome:        "order_dir inválido cai no default (asc)",
+			orderBy:     "marca",
+			orderDir:    "sideways",
+			orderRegexp: "ORDER BY marca ASC",
+		},
+		{
+			nome:        "order_by vazio cai no default",
+			orderBy:     "",
+			orderDir:    "desc",
+			orderRegexp: "ORDER BY id DESC",
+		},
+	}
+
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+
+			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM produtos").
+				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+			mock.ExpectQuery("SELECT .+ FROM produtos " + tt.orderRegexp + " LIMIT \\? OFFSET \\?").
+				WithArgs(10, 0).
+				WillReturnRows(sqlmock.NewRows(produtoColumns))
+
+			repo := repositories.NewProdutoRepository()
+			ctx := context.Background()
+			_, _, err := repo.List(ctx, db, 1, 10, repositories.ProdutoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestProdutoList_CountError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()

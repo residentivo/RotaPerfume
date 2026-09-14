@@ -31,6 +31,31 @@ type PagamentoFiltro struct {
 	PedidoID        int64
 	VencimentoDe    string // formato AAAA-MM-DD (inclusive)
 	VencimentoAte   string // formato AAAA-MM-DD (inclusive)
+	OrderBy         string // campo de ordenação (whitelist: ver pagamentoOrderWhitelist); default "pagamento_id"
+	OrderDir        string // "asc" ou "desc" (case-insensitive); default "asc"
+}
+
+// pagamentoOrderWhitelist mapeia os campos de ordenação aceitos pela API
+// para as colunas SQL reais da tabela pagamentos.
+var pagamentoOrderWhitelist = map[string]string{
+	"pagamento_id":     "pagamento_id",
+	"pedido_id":        "pedido_id",
+	"forma_pagamento":  "forma_pagamento",
+	"parcelas":         "parcelas",
+	"valor":            "valor",
+	"taxa_pct":         "taxa_pct",
+	"valor_liquido":    "valor_liquido",
+	"data_vencimento":  "data_vencimento",
+	"data_pagamento":   "data_pagamento",
+	"status_pagamento": "status_pagamento",
+	"created_at":       "created_at",
+	"updated_at":       "updated_at",
+}
+
+// orderBy monta a cláusula ORDER BY a partir de OrderBy/OrderDir, com
+// default "pagamento_id ASC" (comportamento atual).
+func (f PagamentoFiltro) orderBy() string {
+	return buildOrderByClause(pagamentoOrderWhitelist, f.OrderBy, f.OrderDir, "pagamento_id", "ASC")
 }
 
 // where monta a cláusula WHERE (sem a palavra "WHERE") e os args correspondentes.
@@ -88,7 +113,7 @@ func (r *PagamentoRepository) List(ctx context.Context, db *sql.DB, page, limit 
 		return nil, 0, fmt.Errorf("repositories: count pagamentos: %w", err)
 	}
 
-	q := "SELECT " + pagamentoColunas + " FROM pagamentos" + whereClause + " ORDER BY pagamento_id ASC LIMIT ? OFFSET ?"
+	q := "SELECT " + pagamentoColunas + " FROM pagamentos" + whereClause + filtro.orderBy() + " LIMIT ? OFFSET ?"
 	queryArgs := append(append([]any{}, args...), limit, offset)
 
 	rows, err := db.QueryContext(ctx, q, queryArgs...)

@@ -68,6 +68,45 @@ func TestListUsuarios_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestListUsuarios_OrderBy(t *testing.T) {
+	testCases := []struct {
+		nome        string
+		query       string
+		orderRegexp string
+	}{
+		{"order_by e order_dir válidos", "order_by=nome&order_dir=desc", `ORDER BY u\.nome DESC`},
+		{"order_dir inválido cai no default (asc)", "order_by=email&order_dir=sideways", `ORDER BY u\.email ASC`},
+		{"order_by fora da whitelist cai no default", "order_by=password_hash&order_dir=asc", `ORDER BY u\.id ASC`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.nome, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+
+			cfg := testCfg()
+			adminToken := generateToken(t, cfg, 1, "admin")
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM usuarios`).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+			mock.ExpectQuery(usuarioSelectRegex + `\s+` + tc.orderRegexp + `\s+LIMIT \? OFFSET \?`).
+				WithArgs(20, 0).
+				WillReturnRows(usuarioRowsForHandler(1, true))
+
+			req, _ := http.NewRequest("GET", server.URL+"/api/usuarios?"+tc.query, nil)
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestListUsuarios_Forbidden_NaoAdmin(t *testing.T) {
 	server, db, _ := setupTestServer(t)
 	defer server.Close()

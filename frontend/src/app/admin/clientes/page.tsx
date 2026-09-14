@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -87,15 +87,21 @@ export default function ClientesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiListClientes(page, limit, {
-        uf: ufFilter || undefined,
-        segmento: segmentoFilter || undefined,
-        ativo:
-          statusFilter === ""
-            ? undefined
-            : statusFilter === "ativo",
-        q: search.trim() || undefined,
-      });
+      const res = await apiListClientes(
+        page,
+        limit,
+        {
+          uf: ufFilter || undefined,
+          segmento: segmentoFilter || undefined,
+          ativo:
+            statusFilter === ""
+              ? undefined
+              : statusFilter === "ativo",
+          q: search.trim() || undefined,
+        },
+        sortKey,
+        sortDir
+      );
       setClientes(res.data);
       setTotal(res.total);
       setPages(res.pages);
@@ -116,7 +122,7 @@ export default function ClientesPage() {
   useEffect(() => {
     loadClientes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit]);
+  }, [page, limit, sortKey, sortDir]);
 
   // Debounce da busca textual e reset para pagina 1 quando filtros mudam
   useEffect(() => {
@@ -139,25 +145,6 @@ export default function ClientesPage() {
       setSortDir("asc");
     }
   };
-
-  const sorted = useMemo(() => {
-    const list = [...clientes];
-    list.sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (av === undefined || bv === undefined) return 0;
-      let cmp = 0;
-      if (typeof av === "number" && typeof bv === "number") {
-        cmp = av - bv;
-      } else if (typeof av === "boolean" && typeof bv === "boolean") {
-        cmp = Number(av) - Number(bv);
-      } else {
-        cmp = String(av).localeCompare(String(bv), "pt-BR");
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return list;
-  }, [clientes, sortKey, sortDir]);
 
   const handleToggleStatus = async (cliente: Cliente) => {
     const novoStatus = !cliente.ativo;
@@ -430,7 +417,7 @@ export default function ClientesPage() {
         <div className="p-4">
           <Table
             columns={columns}
-            data={sorted}
+            data={clientes}
             keyExtractor={(c) => c.id}
             loading={loading}
             sortKey={sortKey}

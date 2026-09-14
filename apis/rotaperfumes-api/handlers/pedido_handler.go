@@ -33,7 +33,9 @@ func NewPedidoHandler(db *sql.DB, cfg *config.Config) *PedidoHandler {
 //
 // Query params (opcionais): page (default 1), limit (default 20, max 100),
 // status, canal, cliente_id, vendedor_id, data_inicio, data_fim (AAAA-MM-DD),
-// q (busca livre pela razão social do cliente).
+// q (busca livre pela razão social do cliente),
+// order_by (id|data_pedido|canal|status|valor_total|created_at|updated_at|
+// cliente_nome|vendedor_nome; default id), order_dir (asc|desc; default desc).
 // Response: {success, data: [pedido...], error, pagination: {page, limit, total, pages}}
 // Admin only.
 func (h *PedidoHandler) ListPedidos(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +58,8 @@ func (h *PedidoHandler) ListPedidos(w http.ResponseWriter, r *http.Request) {
 		DataInicio: strings.TrimSpace(r.URL.Query().Get("data_inicio")),
 		DataFim:    strings.TrimSpace(r.URL.Query().Get("data_fim")),
 		Q:          strings.TrimSpace(r.URL.Query().Get("q")),
+		OrderBy:    strings.TrimSpace(r.URL.Query().Get("order_by")),
+		OrderDir:   parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
 
 	pedidos, total, err := h.svc.ListPedidos(r.Context(), h.db, page, limit, filtro)

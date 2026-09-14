@@ -114,6 +114,41 @@ func TestClienteList_ComFiltros(t *testing.T) {
 	}
 }
 
+func TestClienteList_OrderBy(t *testing.T) {
+	testes := []struct {
+		nome        string
+		orderBy     string
+		orderDir    string
+		orderRegexp string
+	}{
+		{"order_by válido asc", "razao_social", "asc", "ORDER BY razao_social ASC"},
+		{"order_by válido desc", "data_cadastro", "desc", "ORDER BY data_cadastro DESC"},
+		{"order_by fora da whitelist cai no default", "1; DROP TABLE clientes;--", "asc", "ORDER BY id ASC"},
+		{"order_dir inválido cai no default (asc)", "cnpj", "invalido", "ORDER BY cnpj ASC"},
+		{"tudo vazio cai no default", "", "", "ORDER BY id ASC"},
+	}
+
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+
+			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM clientes").
+				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+			mock.ExpectQuery("SELECT .+ FROM clientes " + tt.orderRegexp + " LIMIT \\? OFFSET \\?").
+				WithArgs(10, 0).
+				WillReturnRows(sqlmock.NewRows(clienteColumns))
+
+			repo := repositories.NewClienteRepository()
+			ctx := context.Background()
+			_, _, err := repo.List(ctx, db, 1, 10, repositories.ClienteFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestClienteList_CountError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()

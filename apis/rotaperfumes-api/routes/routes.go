@@ -18,33 +18,33 @@ import (
 //	POST /api/auth/logout               — público (revoga refresh_token)
 //	POST /api/auth/reset-password       — protegido (JWT, qualquer role autenticado)
 //	GET  /api/auth/me                   — protegido (JWT)
-//	GET  /api/usuarios                  — admin only (JWT + role=admin) — listagem paginada
+//	GET  /api/usuarios                  — admin only (JWT + role=admin) — listagem paginada (order_by/order_dir opcionais)
 //	POST /api/usuarios                  — admin only — criar usuário
 //	PUT  /api/usuarios/{id}             — admin only — atualizar usuário
 //	PATCH /api/usuarios/{id}/inativar   — admin only — ativar/inativar
 //	POST /api/admin/reset-password      — admin only — resetar senha de outro usuário
 //	GET  /api/vendedores                — admin only — lista vendedores ativos (sem paginação)
-//	GET  /api/senha-historico           — admin only — todo histórico de senhas (paginado)
-//	GET  /api/senha-historico/{user_id} — admin only — histórico de um usuário (paginado)
+//	GET  /api/senha-historico           — admin only — todo histórico de senhas (paginado, order_by/order_dir opcionais)
+//	GET  /api/senha-historico/{user_id} — admin only — histórico de um usuário (paginado, order_by/order_dir opcionais)
 //	GET  /api/dashboard/metrics         — admin only — métricas gerais (vendas, pedidos, ticket medio)
 //	GET  /api/dashboard/vendas          — admin only — serie temporal de vendas (ultimos N dias)
 //	GET  /api/dashboard/vendedores      — admin only — ranking de vendedores com meta
 //	GET  /api/dashboard/clientes        — admin only — métricas da base de clientes (totais, novos, por segmento, por uf)
-//	GET  /api/clientes                  — admin only — lista clientes (paginado, filtros uf/segmento/ativo/q)
+//	GET  /api/clientes                  — admin only — lista clientes (paginado, filtros uf/segmento/ativo/q, order_by/order_dir opcionais)
 //	POST /api/clientes                  — admin only — criar cliente
 //	GET  /api/clientes/{id}             — admin only — detalhe de um cliente
 //	PUT  /api/clientes/{id}             — admin only — atualizar cliente
 //	PATCH /api/clientes/{id}/inativar   — admin only — ativar/inativar cliente
-//	GET  /api/produtos                  — admin only — lista produtos (paginado, filtros categoria/marca/ativo/q)
+//	GET  /api/produtos                  — admin only — lista produtos (paginado, filtros categoria/marca/ativo/q, order_by/order_dir opcionais)
 //	POST /api/produtos                  — admin only — criar produto
 //	GET  /api/produtos/{id}             — admin only — detalhe de um produto
 //	PUT  /api/produtos/{id}             — admin only — atualizar produto
 //	PATCH /api/produtos/{id}/inativar   — admin only — ativar/inativar produto
-//	GET  /api/pedidos                   — admin only — lista pedidos (paginado, filtros status/canal/cliente_id/vendedor_id/data_inicio/data_fim/q)
+//	GET  /api/pedidos                   — admin only — lista pedidos (paginado, filtros status/canal/cliente_id/vendedor_id/data_inicio/data_fim/q, order_by/order_dir opcionais)
 //	POST /api/pedidos                   — admin only — cria pedido com itens (calcula valor_bruto/valor_total)
 //	GET  /api/pedidos/{id}               — admin only — detalhe de um pedido (com itens)
 //	PUT  /api/pedidos/{id}               — admin only — atualiza pedido e substitui a lista de itens
-//	GET  /api/pagamentos                — acesso comum (qualquer usuário autenticado) — lista pagamentos (paginado, filtros status_pagamento/forma_pagamento/pedido_id/vencimento_de/vencimento_ate)
+//	GET  /api/pagamentos                — acesso comum (qualquer usuário autenticado) — lista pagamentos (paginado, filtros status_pagamento/forma_pagamento/pedido_id/vencimento_de/vencimento_ate, order_by/order_dir opcionais)
 //	POST /api/pagamentos                — acesso comum — cria pagamento
 //	GET  /api/pagamentos/{id}            — acesso comum — detalhe de um pagamento
 //	PUT  /api/pagamentos/{id}            — acesso comum — atualiza pagamento

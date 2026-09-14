@@ -59,11 +59,15 @@ func (s *SenhaHistoricoService) Registrar(ctx context.Context, db *sql.DB, usuar
 }
 
 // ListarPorUsuario retorna histórico de senhas de um usuário (paginado).
-func (s *SenhaHistoricoService) ListarPorUsuario(ctx context.Context, db *sql.DB, usuarioID int64, page, limit int) ([]repositories.SenhaHistorico, int, error) {
-	return s.repo.FindByUsuario(ctx, db, usuarioID, page, limit)
+// orderBy/orderDir controlam a ordenação (whitelist validada no
+// repositório); default "id desc".
+func (s *SenhaHistoricoService) ListarPorUsuario(ctx context.Context, db *sql.DB, usuarioID int64, page, limit int, orderBy, orderDir string) ([]repositories.SenhaHistorico, int, error) {
+	return s.repo.FindByUsuario(ctx, db, usuarioID, page, limit, orderBy, orderDir)
 }
 
 // ListarTodos retorna todo histórico de senhas (paginado) — admin only.
-func (s *SenhaHistoricoService) ListarTodos(ctx context.Context, db *sql.DB, page, limit int) ([]repositories.SenhaHistorico, int, error) {
-	return s.repo.FindAll(ctx, db, page, limit)
+// orderBy/orderDir controlam a ordenação (whitelist validada no
+// repositório); default "id desc".
+func (s *SenhaHistoricoService) ListarTodos(ctx context.Context, db *sql.DB, page, limit int, orderBy, orderDir string) ([]repositories.SenhaHistorico, int, error) {
+	return s.repo.FindAll(ctx, db, page, limit, orderBy, orderDir)
 }

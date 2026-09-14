@@ -128,6 +128,41 @@ func TestPagamentoList_ComFiltros(t *testing.T) {
 	}
 }
 
+func TestPagamentoList_OrderBy(t *testing.T) {
+	testes := []struct {
+		nome        string
+		orderBy     string
+		orderDir    string
+		orderRegexp string
+	}{
+		{"order_by válido asc", "valor", "asc", `ORDER BY valor ASC`},
+		{"order_by válido desc", "data_vencimento", "desc", `ORDER BY data_vencimento DESC`},
+		{"order_by fora da whitelist cai no default", "1; DROP TABLE pagamentos;--", "asc", `ORDER BY pagamento_id ASC`},
+		{"order_dir inválido cai no default (asc)", "status_pagamento", "invalido", `ORDER BY status_pagamento ASC`},
+		{"tudo vazio cai no default", "", "", `ORDER BY pagamento_id ASC`},
+	}
+
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pagamentoFromRegexp).
+				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+			mock.ExpectQuery(`SELECT .+ ` + pagamentoFromRegexp + ` ` + tt.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(10, 0).
+				WillReturnRows(sqlmock.NewRows(pagamentoColumns))
+
+			repo := repositories.NewPagamentoRepository()
+			ctx := context.Background()
+			_, _, err := repo.List(ctx, db, 1, 10, repositories.PagamentoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestPagamentoList_CountError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()

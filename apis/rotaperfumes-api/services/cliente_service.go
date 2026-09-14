@@ -35,6 +35,8 @@ type ClienteFiltro struct {
 	Segmento string
 	Ativo    *bool
 	Q        string
+	OrderBy  string
+	OrderDir string
 }
 
 // ClienteService agrega regras de negócio sobre clientes.
@@ -63,6 +65,8 @@ func (s *ClienteService) ListClientes(ctx context.Context, db *sql.DB, page, lim
 		Segmento: filtro.Segmento,
 		Ativo:    filtro.Ativo,
 		Q:        filtro.Q,
+		OrderBy:  filtro.OrderBy,
+		OrderDir: filtro.OrderDir,
 	}
 	return s.repo.List(ctx, db, page, limit, repoFiltro)
 }

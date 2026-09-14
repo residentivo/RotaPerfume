@@ -39,7 +39,9 @@ func NewUsuarioHandler(db *sql.DB, cfg *config.Config, emailSvc sharedsvc.EmailS
 
 // ListUsuarios GET /api/usuarios
 //
-// Query params: page (default 1), limit (default 20, max 100).
+// Query params: page (default 1), limit (default 20, max 100),
+// order_by (id|nome|email|role|ativo|created_at|updated_at|ultimo_login_at;
+// default id), order_dir (asc|desc; default asc).
 // Response: {success, data: [{id, id_vendedor, vendedor_nome, email, role, ativo, nome, created_at, ultimo_login_at}], error, pagination: {page, limit, total, pages}}
 //
 // Exclui password_hash de todas as respostas.
@@ -54,8 +56,10 @@ func (h *UsuarioHandler) ListUsuarios(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
+	orderBy := strings.TrimSpace(r.URL.Query().Get("order_by"))
+	orderDir := parseOrderDirQuery(r.URL.Query().Get("order_dir"))
 
-	usuarios, total, err := h.svc.ListUsuarios(r.Context(), h.db, page, limit)
+	usuarios, total, err := h.svc.ListUsuarios(r.Context(), h.db, page, limit, orderBy, orderDir)
 	if err != nil {
 		log.Printf("[usuarios] ListUsuarios: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")

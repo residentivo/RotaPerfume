@@ -131,6 +131,72 @@ func TestPedidoList_ComFiltros(t *testing.T) {
 	}
 }
 
+func TestPedidoList_OrderBy(t *testing.T) {
+	testes := []struct {
+		nome        string
+		orderBy     string
+		orderDir    string
+		orderRegexp string
+	}{
+		{
+			nome:        "order_by válido asc",
+			orderBy:     "valor_total",
+			orderDir:    "asc",
+			orderRegexp: `ORDER BY p\.valor_total ASC`,
+		},
+		{
+			nome:        "order_by com alias de outra tabela (cliente_nome)",
+			orderBy:     "cliente_nome",
+			orderDir:    "asc",
+			orderRegexp: `ORDER BY c\.razao_social ASC`,
+		},
+		{
+			nome:        "order_by com alias de outra tabela (vendedor_nome)",
+			orderBy:     "vendedor_nome",
+			orderDir:    "desc",
+			orderRegexp: `ORDER BY v\.nome DESC`,
+		},
+		{
+			nome:        "order_by fora da whitelist cai no default",
+			orderBy:     "1; DROP TABLE pedidos;--",
+			orderDir:    "desc",
+			orderRegexp: `ORDER BY p\.id DESC`,
+		},
+		{
+			nome:        "order_dir inválido cai no default (desc)",
+			orderBy:     "status",
+			orderDir:    "sideways",
+			orderRegexp: `ORDER BY p\.status DESC`,
+		},
+		{
+			nome:        "order_by e order_dir vazios caem no default",
+			orderBy:     "",
+			orderDir:    "",
+			orderRegexp: `ORDER BY p\.id DESC`,
+		},
+	}
+
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pedidoFromRegexp).
+				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+			mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` ` + tt.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(10, 0).
+				WillReturnRows(sqlmock.NewRows(pedidoColumns))
+
+			repo := repositories.NewPedidoRepository()
+			ctx := context.Background()
+			_, _, err := repo.List(ctx, db, 1, 10, repositories.PedidoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestPedidoList_CountError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()

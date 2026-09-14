@@ -68,6 +68,28 @@ type PedidoFiltro struct {
 	DataInicio string // formato AAAA-MM-DD (inclusive)
 	DataFim    string // formato AAAA-MM-DD (inclusive)
 	Q          string // busca textual na razão social do cliente (LIKE)
+	OrderBy    string // campo de ordenação (whitelist: ver pedidoOrderWhitelist); default "id"
+	OrderDir   string // "asc" ou "desc" (case-insensitive); default "desc"
+}
+
+// pedidoOrderWhitelist mapeia os campos de ordenação aceitos pela API para
+// as colunas SQL reais (com alias) da query de listagem de pedidos.
+var pedidoOrderWhitelist = map[string]string{
+	"id":            "p.id",
+	"data_pedido":   "p.data_pedido",
+	"canal":         "p.canal",
+	"status":        "p.status",
+	"valor_total":   "p.valor_total",
+	"created_at":    "p.created_at",
+	"updated_at":    "p.updated_at",
+	"cliente_nome":  "c.razao_social",
+	"vendedor_nome": "v.nome",
+}
+
+// orderBy monta a cláusula ORDER BY a partir de OrderBy/OrderDir, com
+// default "p.id DESC" (comportamento atual).
+func (f PedidoFiltro) orderBy() string {
+	return buildOrderByClause(pedidoOrderWhitelist, f.OrderBy, f.OrderDir, "p.id", "DESC")
 }
 
 // where monta a cláusula WHERE (sem a palavra "WHERE") e os args correspondentes.
@@ -133,7 +155,7 @@ func (r *PedidoRepository) List(ctx context.Context, db *sql.DB, page, limit int
 		return nil, 0, fmt.Errorf("repositories: count pedidos: %w", err)
 	}
 
-	q := "SELECT " + pedidoColunas + pedidoFrom + whereClause + " ORDER BY p.id DESC LIMIT ? OFFSET ?"
+	q := "SELECT " + pedidoColunas + pedidoFrom + whereClause + filtro.orderBy() + " LIMIT ? OFFSET ?"
 	queryArgs := append(append([]any{}, args...), limit, offset)
 
 	rows, err := db.QueryContext(ctx, q, queryArgs...)

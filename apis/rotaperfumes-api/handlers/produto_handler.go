@@ -32,7 +32,10 @@ func NewProdutoHandler(db *sql.DB, cfg *config.Config) *ProdutoHandler {
 // ListProdutos GET /api/produtos
 //
 // Query params (opcionais): page (default 1), limit (default 20, max 100),
-// categoria, marca, ativo (true|false), q (busca em descricao OU sku).
+// categoria, marca, ativo (true|false), q (busca em descricao OU sku),
+// order_by (id|sku|descricao|categoria|marca|preco_tabela|custo_unitario|
+// data_lancamento|ativo|created_at|updated_at; default id),
+// order_dir (asc|desc; default asc).
 // Response: {success, data: [produto...], error, pagination: {page, limit, total, pages}}
 // Admin only.
 func (h *ProdutoHandler) ListProdutos(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +55,8 @@ func (h *ProdutoHandler) ListProdutos(w http.ResponseWriter, r *http.Request) {
 		Marca:     strings.TrimSpace(r.URL.Query().Get("marca")),
 		Ativo:     parseAtivoQuery(r.URL.Query().Get("ativo")),
 		Q:         strings.TrimSpace(r.URL.Query().Get("q")),
+		OrderBy:   strings.TrimSpace(r.URL.Query().Get("order_by")),
+		OrderDir:  parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
 
 	produtos, total, err := h.svc.ListProdutos(r.Context(), h.db, page, limit, filtro)

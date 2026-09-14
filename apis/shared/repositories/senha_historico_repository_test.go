@@ -111,7 +111,7 @@ func TestSenhaHistoricoFindByUsuario_Success(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	historico, total, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
+	historico, total, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
@@ -139,13 +139,49 @@ func TestSenhaHistoricoFindByUsuario_ComResetadoPor(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	historico, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
+	historico, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
 
 	require.NoError(t, err)
 	require.Len(t, historico, 1)
 	assert.True(t, historico[0].ResetadoPorID.Valid)
 	assert.Equal(t, int64(2), historico[0].ResetadoPorID.Int64)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSenhaHistoricoFindByUsuario_OrderBy(t *testing.T) {
+	testes := []struct {
+		nome        string
+		orderBy     string
+		orderDir    string
+		orderRegexp string
+	}{
+		{"order_by válido asc", "tipo_reset", "asc", `ORDER BY tipo_reset ASC`},
+		{"order_by válido desc", "usuario_id", "desc", `ORDER BY usuario_id DESC`},
+		{"order_by fora da whitelist cai no default", "1; DROP TABLE senha_historico;--", "asc", `ORDER BY id ASC`},
+		{"order_dir inválido cai no default (desc)", "tipo_reset", "invalido", `ORDER BY tipo_reset DESC`},
+		{"tudo vazio cai no default", "", "", `ORDER BY id DESC`},
+	}
+
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`).
+				WithArgs(int64(1)).
+				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+			mock.ExpectQuery(`SELECT .+ FROM senha_historico WHERE usuario_id = \? ` + tt.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(int64(1), 10, 0).
+				WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
+
+			repo := repositories.NewSenhaHistoricoRepository()
+			ctx := context.Background()
+			_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, tt.orderBy, tt.orderDir)
+
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestSenhaHistoricoFindByUsuario_CountError(t *testing.T) {
@@ -158,7 +194,7 @@ func TestSenhaHistoricoFindByUsuario_CountError(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
+	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -177,7 +213,7 @@ func TestSenhaHistoricoFindByUsuario_QueryError(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
+	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -196,7 +232,7 @@ func TestSenhaHistoricoFindByUsuario_Defaults(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 0, 0)
+	_, _, err := repo.FindByUsuario(ctx, db, 1, 0, 0, "", "")
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -215,7 +251,7 @@ func TestSenhaHistoricoFindByUsuario_LimitCap(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 200)
+	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 200, "", "")
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -239,12 +275,46 @@ func TestSenhaHistoricoFindAll_Success(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	historico, total, err := repo.FindAll(ctx, db, 1, 10)
+	historico, total, err := repo.FindAll(ctx, db, 1, 10, "", "")
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
 	assert.Len(t, historico, 2)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSenhaHistoricoFindAll_OrderBy(t *testing.T) {
+	testes := []struct {
+		nome        string
+		orderBy     string
+		orderDir    string
+		orderRegexp string
+	}{
+		{"order_by válido asc", "usuario_id", "asc", `ORDER BY usuario_id ASC`},
+		{"order_by fora da whitelist cai no default", "1; DROP TABLE senha_historico;--", "asc", `ORDER BY id ASC`},
+		{"order_dir inválido cai no default (desc)", "id", "invalido", `ORDER BY id DESC`},
+		{"tudo vazio cai no default", "", "", `ORDER BY id DESC`},
+	}
+
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico$`).
+				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+			mock.ExpectQuery(`SELECT .+ FROM senha_historico ` + tt.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(10, 0).
+				WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
+
+			repo := repositories.NewSenhaHistoricoRepository()
+			ctx := context.Background()
+			_, _, err := repo.FindAll(ctx, db, 1, 10, tt.orderBy, tt.orderDir)
+
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestSenhaHistoricoFindAll_CountError(t *testing.T) {
@@ -256,7 +326,7 @@ func TestSenhaHistoricoFindAll_CountError(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	_, _, err := repo.FindAll(ctx, db, 1, 10)
+	_, _, err := repo.FindAll(ctx, db, 1, 10, "", "")
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -274,7 +344,7 @@ func TestSenhaHistoricoFindAll_QueryError(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	_, _, err := repo.FindAll(ctx, db, 1, 10)
+	_, _, err := repo.FindAll(ctx, db, 1, 10, "", "")
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -292,7 +362,7 @@ func TestSenhaHistoricoFindAll_Defaults(t *testing.T) {
 
 	repo := repositories.NewSenhaHistoricoRepository()
 	ctx := context.Background()
-	_, _, err := repo.FindAll(ctx, db, 0, 0)
+	_, _, err := repo.FindAll(ctx, db, 0, 0, "", "")
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

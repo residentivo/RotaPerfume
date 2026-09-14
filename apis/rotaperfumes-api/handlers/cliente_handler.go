@@ -48,7 +48,9 @@ func parseAtivoQuery(v string) *bool {
 // ListClientes GET /api/clientes
 //
 // Query params (opcionais): page (default 1), limit (default 20, max 100),
-// uf, segmento, ativo (true|false), q (busca em razao_social OU cnpj).
+// uf, segmento, ativo (true|false), q (busca em razao_social OU cnpj),
+// order_by (id|razao_social|cnpj|segmento|cidade|uf|data_cadastro|ativo|
+// created_at|updated_at; default id), order_dir (asc|desc; default asc).
 // Response: {success, data: [cliente...], error, pagination: {page, limit, total, pages}}
 // Admin only.
 func (h *ClienteHandler) ListClientes(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +70,8 @@ func (h *ClienteHandler) ListClientes(w http.ResponseWriter, r *http.Request) {
 		Segmento: strings.TrimSpace(r.URL.Query().Get("segmento")),
 		Ativo:    parseAtivoQuery(r.URL.Query().Get("ativo")),
 		Q:        strings.TrimSpace(r.URL.Query().Get("q")),
+		OrderBy:  strings.TrimSpace(r.URL.Query().Get("order_by")),
+		OrderDir: parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
 
 	clientes, total, err := h.svc.ListClientes(r.Context(), h.db, page, limit, filtro)

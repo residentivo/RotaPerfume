@@ -60,6 +60,45 @@ func TestListarTodos_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestListarTodos_OrderBy(t *testing.T) {
+	testCases := []struct {
+		nome        string
+		query       string
+		orderRegexp string
+	}{
+		{"order_by e order_dir válidos", "order_by=tipo_reset&order_dir=asc", `ORDER BY tipo_reset ASC`},
+		{"order_dir inválido cai no default (desc)", "order_by=usuario_id&order_dir=sideways", `ORDER BY usuario_id DESC`},
+		{"order_by fora da whitelist cai no default", "order_by=ip_origem&order_dir=asc", `ORDER BY id ASC`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.nome, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+
+			cfg := testCfg()
+			adminToken := generateToken(t, cfg, 1, "admin")
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico`).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+			mock.ExpectQuery(`SELECT `+senhaHistoricoColunas+`\s+FROM senha_historico\s+`+tc.orderRegexp+`\s+LIMIT \? OFFSET \?`).
+				WithArgs(20, 0).
+				WillReturnRows(senhaHistoricoRows())
+
+			req, _ := http.NewRequest("GET", server.URL+"/api/senha-historico?"+tc.query, nil)
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestListarTodos_Forbidden_NaoAdmin(t *testing.T) {
 	server, db, _ := setupTestServer(t)
 	defer server.Close()

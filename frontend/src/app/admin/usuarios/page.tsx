@@ -81,7 +81,7 @@ export default function UsuariosPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiListUsers(page, limit);
+      const res = await apiListUsers(page, limit, sortKey, sortDir);
       setUsers(res.data);
       setTotal(res.total);
       setPages(res.pages);
@@ -102,7 +102,7 @@ export default function UsuariosPage() {
   useEffect(() => {
     loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit]);
+  }, [page, limit, sortKey, sortDir]);
 
   // Reset para pagina 1 quando filtros mudam
   useEffect(() => {
@@ -118,7 +118,9 @@ export default function UsuariosPage() {
     }
   };
 
-  const filteredAndSorted = useMemo(() => {
+  // Busca e filtros continuam client-side (aplicados sobre os itens da
+  // pagina atual); a ordenacao agora e feita pela API (ver loadUsers).
+  const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     let list = users;
     if (term) {
@@ -144,20 +146,8 @@ export default function UsuariosPage() {
           : u.id_vendedor === null || u.id_vendedor === undefined
       );
     }
-    const sorted = [...list].sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (av === undefined || bv === undefined) return 0;
-      let cmp = 0;
-      if (typeof av === "number" && typeof bv === "number") {
-        cmp = av - bv;
-      } else {
-        cmp = String(av).localeCompare(String(bv), "pt-BR");
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return sorted;
-  }, [users, search, roleFilter, statusFilter, vendedorFilter, sortKey, sortDir]);
+    return list;
+  }, [users, search, roleFilter, statusFilter, vendedorFilter]);
 
   // === Acoes ===
 
@@ -491,9 +481,12 @@ export default function UsuariosPage() {
         <div className="p-4">
           <Table
             columns={columns}
-            data={filteredAndSorted}
+            data={filtered}
             keyExtractor={(u) => u.id}
             loading={loading}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={(key) => handleSort(key as SortKey)}
             emptyMessage={
               search || roleFilter || statusFilter || vendedorFilter
                 ? "Nenhum usuario encontrado para os filtros aplicados."

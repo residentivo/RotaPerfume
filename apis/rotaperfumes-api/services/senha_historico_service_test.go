@@ -159,7 +159,7 @@ func TestSenhaHistoricoService_ListarPorUsuario(t *testing.T) {
 			tc.mock(mock)
 
 			svc := services.NewSenhaHistoricoService()
-			historico, total, err := svc.ListarPorUsuario(context.Background(), db, 10, 1, 20)
+			historico, total, err := svc.ListarPorUsuario(context.Background(), db, 10, 1, 20, "", "")
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -216,7 +216,7 @@ func TestSenhaHistoricoService_ListarTodos(t *testing.T) {
 			tc.mock(mock)
 
 			svc := services.NewSenhaHistoricoService()
-			historico, total, err := svc.ListarTodos(context.Background(), db, 1, 20)
+			historico, total, err := svc.ListarTodos(context.Background(), db, 1, 20, "", "")
 
 			if tc.wantErr {
 				assert.Error(t, err)

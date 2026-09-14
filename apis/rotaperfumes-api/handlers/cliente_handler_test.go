@@ -66,6 +66,45 @@ func TestListClientes_Success_Admin(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestListClientes_OrderBy(t *testing.T) {
+	testCases := []struct {
+		nome        string
+		query       string
+		orderRegexp string
+	}{
+		{"order_by e order_dir válidos", "order_by=razao_social&order_dir=desc", `ORDER BY razao_social DESC`},
+		{"order_dir inválido cai no default (asc)", "order_by=cnpj&order_dir=sideways", `ORDER BY cnpj ASC`},
+		{"order_by fora da whitelist cai no default", "order_by=segredo&order_dir=asc", `ORDER BY id ASC`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.nome, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+
+			cfg := testCfg()
+			adminToken := generateToken(t, cfg, 1, "admin")
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes`).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+			mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes ` + tc.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(20, 0).
+				WillReturnRows(clienteRowsForHandler())
+
+			req, _ := http.NewRequest("GET", server.URL+"/api/clientes?"+tc.query, nil)
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestListClientes_Forbidden_NaoAdmin(t *testing.T) {
 	server, db, _ := setupTestServer(t)
 	defer server.Close()

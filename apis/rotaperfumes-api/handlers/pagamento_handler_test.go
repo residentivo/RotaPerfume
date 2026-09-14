@@ -83,6 +83,45 @@ func TestListPagamentos_Success_UsuarioComum(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestListPagamentos_OrderBy(t *testing.T) {
+	testCases := []struct {
+		nome        string
+		query       string
+		orderRegexp string
+	}{
+		{"order_by e order_dir válidos", "order_by=valor&order_dir=desc", `ORDER BY valor DESC`},
+		{"order_dir inválido cai no default (asc)", "order_by=status_pagamento&order_dir=sideways", `ORDER BY status_pagamento ASC`},
+		{"order_by fora da whitelist cai no default", "order_by=segredo&order_dir=asc", `ORDER BY pagamento_id ASC`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.nome, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+
+			cfg := testCfg()
+			userToken := generateToken(t, cfg, 2, "normal")
+
+			mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` ` + tc.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(20, 0).
+				WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
+
+			req, _ := http.NewRequest("GET", server.URL+"/api/pagamentos?"+tc.query, nil)
+			req.Header.Set("Authorization", "Bearer "+userToken)
+
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestListPagamentos_ComFiltrosEPaginacao(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()

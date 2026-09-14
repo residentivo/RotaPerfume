@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS senha_historico (
     senha_hash_anterior VARCHAR(255) NOT NULL,
     ip_origem VARCHAR(45),
     user_agent TEXT,
-    tipo_reset ENUM('proprio','admin','primeiro_login') NOT NULL,
+    tipo_reset ENUM('usuario','admin','primeiro_acesso','esquecimento') NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
     FOREIGN KEY (resetado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL,

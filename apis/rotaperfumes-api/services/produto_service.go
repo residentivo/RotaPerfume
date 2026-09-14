@@ -37,6 +37,8 @@ type ProdutoFiltro struct {
 	Marca     string
 	Ativo     *bool
 	Q         string
+	OrderBy   string
+	OrderDir  string
 }
 
 // ProdutoService agrega regras de negócio sobre produtos.
@@ -65,6 +67,8 @@ func (s *ProdutoService) ListProdutos(ctx context.Context, db *sql.DB, page, lim
 		Marca:     filtro.Marca,
 		Ativo:     filtro.Ativo,
 		Q:         filtro.Q,
+		OrderBy:   filtro.OrderBy,
+		OrderDir:  filtro.OrderDir,
 	}
 	return s.repo.List(ctx, db, page, limit, repoFiltro)
 }

@@ -53,8 +53,23 @@ func (r *UsuarioRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (
 	return scanUsuario(row)
 }
 
+// usuarioOrderWhitelist mapeia os campos de ordenação aceitos pela API para
+// as colunas SQL reais (com alias) da query de listagem de usuários.
+var usuarioOrderWhitelist = map[string]string{
+	"id":              "u.id",
+	"nome":            "u.nome",
+	"email":           "u.email",
+	"role":            "u.role",
+	"ativo":           "u.ativo",
+	"created_at":      "u.created_at",
+	"updated_at":      "u.updated_at",
+	"ultimo_login_at": "u.ultimo_login_at",
+}
+
 // List retorna usuários paginados, mais o total para meta-dados de paginação.
-func (r *UsuarioRepository) List(ctx context.Context, db *sql.DB, page, limit int) ([]models.Usuario, int, error) {
+// orderBy/orderDir controlam a ordenação (whitelist: ver
+// usuarioOrderWhitelist); default "u.id ASC" (comportamento atual).
+func (r *UsuarioRepository) List(ctx context.Context, db *sql.DB, page, limit int, orderBy, orderDir string) ([]models.Usuario, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -71,8 +86,8 @@ func (r *UsuarioRepository) List(ctx context.Context, db *sql.DB, page, limit in
 		return nil, 0, fmt.Errorf("repositories: count falhou: %w", err)
 	}
 
-	q := usuarioSelectComVendedor + `
-		ORDER BY u.id ASC
+	orderClause := buildOrderByClause(usuarioOrderWhitelist, orderBy, orderDir, "u.id", "ASC")
+	q := usuarioSelectComVendedor + orderClause + `
 		LIMIT ? OFFSET ?`
 	rows, err := db.QueryContext(ctx, q, limit, offset)
 	if err != nil {

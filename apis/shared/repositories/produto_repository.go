@@ -33,6 +33,30 @@ type ProdutoFiltro struct {
 	Marca     string
 	Ativo     *bool
 	Q         string // busca textual em descricao OU sku (LIKE)
+	OrderBy   string // campo de ordenação (whitelist: ver produtoOrderWhitelist); default "id"
+	OrderDir  string // "asc" ou "desc" (case-insensitive); default "asc"
+}
+
+// produtoOrderWhitelist mapeia os campos de ordenação aceitos pela API para
+// as colunas SQL reais da tabela produtos.
+var produtoOrderWhitelist = map[string]string{
+	"id":              "id",
+	"sku":             "sku",
+	"descricao":       "descricao",
+	"categoria":       "categoria",
+	"marca":           "marca",
+	"preco_tabela":    "preco_tabela",
+	"custo_unitario":  "custo_unitario",
+	"data_lancamento": "data_lancamento",
+	"ativo":           "ativo",
+	"created_at":      "created_at",
+	"updated_at":      "updated_at",
+}
+
+// orderBy monta a cláusula ORDER BY a partir de OrderBy/OrderDir, com
+// default "id ASC" (comportamento atual).
+func (f ProdutoFiltro) orderBy() string {
+	return buildOrderByClause(produtoOrderWhitelist, f.OrderBy, f.OrderDir, "id", "ASC")
 }
 
 // where monta a cláusula WHERE (sem a palavra "WHERE") e os args correspondentes.
@@ -87,7 +111,7 @@ func (r *ProdutoRepository) List(ctx context.Context, db *sql.DB, page, limit in
 		return nil, 0, fmt.Errorf("repositories: count produtos: %w", err)
 	}
 
-	q := "SELECT " + produtoColunas + " FROM produtos" + whereClause + " ORDER BY id ASC LIMIT ? OFFSET ?"
+	q := "SELECT " + produtoColunas + " FROM produtos" + whereClause + filtro.orderBy() + " LIMIT ? OFFSET ?"
 	queryArgs := append(append([]any{}, args...), limit, offset)
 
 	rows, err := db.QueryContext(ctx, q, queryArgs...)

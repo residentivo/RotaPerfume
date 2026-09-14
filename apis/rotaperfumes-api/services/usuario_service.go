@@ -123,11 +123,13 @@ func (s *UsuarioService) GetUsuarioByID(ctx context.Context, db *sql.DB, id int6
 }
 
 // ListUsuarios pagina usuários. page/limit são validados (limit max 100).
-func (s *UsuarioService) ListUsuarios(ctx context.Context, db *sql.DB, page, limit int) ([]models.Usuario, int, error) {
+// orderBy/orderDir controlam a ordenação (whitelist validada no
+// repositório); default "id asc".
+func (s *UsuarioService) ListUsuarios(ctx context.Context, db *sql.DB, page, limit int, orderBy, orderDir string) ([]models.Usuario, int, error) {
 	if s.Cfg.Verbose {
-		log.Printf("[usuarios] list page=%d limit=%d", page, limit)
+		log.Printf("[usuarios] list page=%d limit=%d order_by=%q order_dir=%q", page, limit, orderBy, orderDir)
 	}
-	return s.repo.List(ctx, db, page, limit)
+	return s.repo.List(ctx, db, page, limit, orderBy, orderDir)
 }
 
 // ResetSenha redefine a senha de um usuário para um valor explícito (uso

@@ -105,8 +105,9 @@ Exemplos:
 
 #### GET /api/usuarios
 - **Auth:** Bearer Token (admin)
-- **Query:** `?page=1&limit=20`
+- **Query:** `?page=1&limit=20&order_by=nome&order_dir=asc`
 - **Descrição:** Lista usuários paginada (total + pages)
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, nome, email, role, ativo, created_at, updated_at, ultimo_login_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/usuarios
 - **Auth:** Bearer Token (admin)
@@ -151,13 +152,15 @@ Exemplos:
 
 #### GET /api/senha-historico
 - **Auth:** Bearer Token (admin)
-- **Query:** `?page=1&limit=20`
+- **Query:** `?page=1&limit=20&order_by=created_at&order_dir=desc`
 - **Descrição:** Lista global paginada de alterações de senha (com tipo, IP, user agent)
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, usuario_id, tipo_reset, created_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### GET /api/senha-historico/{usuario_id}
 - **Auth:** Bearer Token (admin)
-- **Query:** `?page=1&limit=20`
+- **Query:** `?page=1&limit=20&order_by=created_at&order_dir=desc`
 - **Descrição:** Histórico de senhas de um usuário específico
+- **Ordenação:** mesmas regras de `GET /api/senha-historico` acima (`order_by`/`order_dir`).
 
 ### Clientes (`/api/clientes/*` e `/api/dashboard/clientes`) — admin only
 
@@ -165,8 +168,9 @@ Exemplos:
 
 #### GET /api/clientes
 - **Auth:** Bearer Token (admin)
-- **Query (todos opcionais):** `?page=1&limit=20&uf=SP&segmento=Varejo&ativo=true&q=perfumaria`
+- **Query (todos opcionais):** `?page=1&limit=20&uf=SP&segmento=Varejo&ativo=true&q=perfumaria&order_by=razao_social&order_dir=asc`
 - **Descrição:** Lista clientes paginada (total + pages), com filtros exatos por `uf`/`segmento`, filtro por status (`ativo=true|false`) e busca livre (`q`) em `razao_social` OU `cnpj`
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/clientes
 - **Auth:** Bearer Token (admin)
@@ -199,8 +203,9 @@ Exemplos:
 
 #### GET /api/produtos
 - **Auth:** Bearer Token (admin)
-- **Query (todos opcionais):** `?page=1&limit=20&categoria=Masculino&marca=Rota&ativo=true&q=intense`
+- **Query (todos opcionais):** `?page=1&limit=20&categoria=Masculino&marca=Rota&ativo=true&q=intense&order_by=descricao&order_dir=asc`
 - **Descrição:** Lista produtos paginada (total + pages), com filtros exatos por `categoria`/`marca`, filtro por status (`ativo=true|false`) e busca livre (`q`) em `descricao` OU `sku`
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, sku, descricao, categoria, marca, preco_tabela, custo_unitario, data_lancamento, ativo, created_at, updated_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/produtos
 - **Auth:** Bearer Token (admin)
@@ -227,8 +232,9 @@ Exemplos:
 
 #### GET /api/pedidos
 - **Auth:** Bearer Token (admin)
-- **Query (todos opcionais):** `?page=1&limit=20&status=Faturado&canal=App&cliente_id=1&vendedor_id=1&data_inicio=2026-01-01&data_fim=2026-12-31&q=perfumaria`
+- **Query (todos opcionais):** `?page=1&limit=20&status=Faturado&canal=App&cliente_id=1&vendedor_id=1&data_inicio=2026-01-01&data_fim=2026-12-31&q=perfumaria&order_by=data_pedido&order_dir=desc`
 - **Descrição:** Lista pedidos paginada (total + pages), com filtros exatos por `status` (`Cancelado`|`Em separação`|`Entregue`|`Faturado`), `canal` (`App`|`Telefone`|`Visita`|`WhatsApp`), `cliente_id`, `vendedor_id`, intervalo `data_inicio`/`data_fim` (`AAAA-MM-DD`) e busca livre (`q`) pela razão social do cliente. Cada item traz o cabeçalho do pedido enriquecido com `cliente_nome`/`vendedor_nome`, sem os itens.
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/pedidos
 - **Auth:** Bearer Token (admin)
@@ -252,8 +258,9 @@ Exemplos:
 
 #### GET /api/pagamentos
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
-- **Query (todos opcionais):** `?page=1&limit=20&status_pagamento=Em aberto&forma_pagamento=PIX&pedido_id=1&vencimento_de=2026-01-01&vencimento_ate=2026-12-31`
+- **Query (todos opcionais):** `?page=1&limit=20&status_pagamento=Em aberto&forma_pagamento=PIX&pedido_id=1&vencimento_de=2026-01-01&vencimento_ate=2026-12-31&order_by=data_vencimento&order_dir=asc`
 - **Descrição:** Lista pagamentos paginada (total + pages), com filtros exatos por `status_pagamento` (`Em aberto`|`Inadimplente`|`Pago`|`Pago com atraso`), `forma_pagamento` (`Boleto 14 dias`|`Boleto 28 dias`|`Cartão de crédito`|`Cartão de débito`|`Cheque a prazo`|`Dinheiro`|`PIX`), `pedido_id` e intervalo `vencimento_de`/`vencimento_ate` (`AAAA-MM-DD`).
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `pagamento_id, pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento, created_at, updated_at` (default: `pagamento_id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/pagamentos
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)

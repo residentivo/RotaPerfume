@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -66,6 +66,19 @@ function fmtDate(dateStr: string): string {
   return d.toLocaleDateString("pt-BR");
 }
 
+// Mapeia a sortKey interna do frontend para o campo aceito pelo backend em
+// order_by. `pedido_id_origem` nao esta na whitelist do backend, entao nao
+// enviamos order_by nesse caso (cai no default do backend: id desc).
+const ORDER_BY_MAP: Partial<Record<SortKey, string>> = {
+  id: "id",
+  cliente_nome: "cliente_nome",
+  vendedor_nome: "vendedor_nome",
+  data_pedido: "data_pedido",
+  canal: "canal",
+  status: "status",
+  valor_total: "valor_total",
+};
+
 const statusColor: Record<string, string> = {
   Faturado: "bg-green-100 text-green-700",
   Entregue: "bg-blue-100 text-blue-700",
@@ -111,13 +124,19 @@ export default function PedidosPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiListPedidos(page, limit, {
-        status: statusFilter || undefined,
-        canal: canalFilter || undefined,
-        data_inicio: dataInicio || undefined,
-        data_fim: dataFim || undefined,
-        q: search.trim() || undefined,
-      });
+      const res = await apiListPedidos(
+        page,
+        limit,
+        {
+          status: statusFilter || undefined,
+          canal: canalFilter || undefined,
+          data_inicio: dataInicio || undefined,
+          data_fim: dataFim || undefined,
+          q: search.trim() || undefined,
+        },
+        ORDER_BY_MAP[sortKey],
+        sortDir
+      );
       setPedidos(res.data);
       setTotal(res.total);
       setPages(res.pages);
@@ -138,7 +157,7 @@ export default function PedidosPage() {
   useEffect(() => {
     loadPedidos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit]);
+  }, [page, limit, sortKey, sortDir]);
 
   // Debounce da busca textual e reset para pagina 1 quando filtros mudam
   useEffect(() => {
@@ -161,23 +180,6 @@ export default function PedidosPage() {
       setSortDir("asc");
     }
   };
-
-  const sorted = useMemo(() => {
-    const list = [...pedidos];
-    list.sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (av === undefined || bv === undefined) return 0;
-      let cmp = 0;
-      if (typeof av === "number" && typeof bv === "number") {
-        cmp = av - bv;
-      } else {
-        cmp = String(av).localeCompare(String(bv), "pt-BR");
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return list;
-  }, [pedidos, sortKey, sortDir]);
 
   const loadItens = async (id: number) => {
     setLoadingItens(true);
@@ -471,7 +473,7 @@ export default function PedidosPage() {
         <div className="p-4">
           <Table
             columns={columns}
-            data={sorted}
+            data={pedidos}
             keyExtractor={(p) => p.id}
             loading={loading}
             sortKey={sortKey}

@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -63,6 +63,9 @@ db-reset: db-down db-seed ## Recria o banco do zero com hashes validos
 
 db-fix-deve-trocar-senha: ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
+
+db-fix-tipo-reset: ## Corrige o ENUM de senha_historico.tipo_reset em bancos existentes (nao destrutivo, sem apagar dados)
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/13_alter_senha_historico_tipo_reset.sql
 
 db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
 	cd apis/shared && go run ./cmd/importclientes
