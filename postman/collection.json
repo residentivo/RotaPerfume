@@ -3068,6 +3068,738 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Produtos",
+      "item": [
+        {
+          "name": "Listar Produtos (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Lista retornada', function() {",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "pm.test('Paginação presente', function() {",
+                  "    pm.expect(jsonData).to.have.property('pagination');",
+                  "    pm.expect(jsonData.pagination).to.have.property('page');",
+                  "    pm.expect(jsonData.pagination).to.have.property('limit');",
+                  "    pm.expect(jsonData.pagination).to.have.property('total');",
+                  "    pm.expect(jsonData.pagination).to.have.property('pages');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/produtos?page=1&limit=20&categoria=Masculino&marca=Rota&ativo=true&q=intense",
+              "host": ["{{base_url}}"],
+              "path": ["api", "produtos"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número da página (padrão: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Itens por página (padrão: 20, máx: 100)"
+                },
+                {
+                  "key": "categoria",
+                  "value": "Masculino",
+                  "description": "Filtro exato por categoria (opcional)"
+                },
+                {
+                  "key": "marca",
+                  "value": "Rota",
+                  "description": "Filtro exato por marca (opcional)"
+                },
+                {
+                  "key": "ativo",
+                  "value": "true",
+                  "description": "true|false — filtra por status. Qualquer outro valor (ou ausente) = sem filtro"
+                },
+                {
+                  "key": "q",
+                  "value": "intense",
+                  "description": "Busca em descricao OU sku (opcional)"
+                }
+              ]
+            },
+            "description": "Lista produtos com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `categoria` (string) — filtro exato\n- `marca` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `descricao` OU `sku`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"sku\": \"ROT-0001\",\n      \"descricao\": \"Rota Intense Masculino 100ml\",\n      \"categoria\": \"Masculino\",\n      \"marca\": \"Rota\",\n      \"nota_olfativa\": \"Amadeirado\",\n      \"preco_tabela\": 189.9,\n      \"custo_unitario\": 65.4,\n      \"unidade\": \"UN\",\n      \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 540,\n    \"pages\": 27\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/produtos?page=1&limit=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"sku\": \"ROT-0001\",\n      \"descricao\": \"Rota Intense Masculino 100ml\",\n      \"categoria\": \"Masculino\",\n      \"marca\": \"Rota\",\n      \"nota_olfativa\": \"Amadeirado\",\n      \"preco_tabela\": 189.9,\n      \"custo_unitario\": 65.4,\n      \"unidade\": \"UN\",\n      \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 540,\n    \"pages\": 27\n  }\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/produtos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Criar Produto (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Produto criado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data.descricao).to.eql('Rota Fresh Feminino 75ml');",
+                  "    pm.expect(jsonData.data.ativo).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"sku\": \"ROT-0002\",\n    \"descricao\": \"Rota Fresh Feminino 75ml\",\n    \"categoria\": \"Feminino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Floral\",\n    \"preco_tabela\": 159.9,\n    \"custo_unitario\": 52.3,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2026-09-13\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/produtos",
+              "host": ["{{base_url}}"],
+              "path": ["api", "produtos"]
+            },
+            "description": "Cria um novo produto (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"sku\": \"ROT-0002\",\n  \"descricao\": \"Rota Fresh Feminino 75ml\",\n  \"categoria\": \"Feminino\",\n  \"marca\": \"Rota\",\n  \"nota_olfativa\": \"Floral\",\n  \"preco_tabela\": 159.9,\n  \"custo_unitario\": 52.3,\n  \"unidade\": \"UN\",\n  \"data_lancamento\": \"2026-09-13\"\n}\n```\n- `data_lancamento` é opcional (formato `AAAA-MM-DD`); se omitido, fica `null`.\n- Campos obrigatórios: `sku`, `descricao`, `categoria`, `marca`, `unidade`. `preco_tabela` e `custo_unitario` devem ser `>= 0`.\n- `ativo` é sempre `true` na criação — não é aceito no body.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 541,\n    \"sku\": \"ROT-0002\",\n    \"descricao\": \"Rota Fresh Feminino 75ml\",\n    \"categoria\": \"Feminino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Floral\",\n    \"preco_tabela\": 159.9,\n    \"custo_unitario\": 52.3,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, ou campo obrigatório ausente (`sku`, `descricao`, `categoria`, `marca`, `unidade`), `preco_tabela`/`custo_unitario` negativos, ou `data_lancamento` em formato inválido\n- `401` — não autenticado\n- `403` — não é admin"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"sku\": \"ROT-0002\",\n    \"descricao\": \"Rota Fresh Feminino 75ml\",\n    \"categoria\": \"Feminino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Floral\",\n    \"preco_tabela\": 159.9,\n    \"custo_unitario\": 52.3,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2026-09-13\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 541,\n    \"sku\": \"ROT-0002\",\n    \"descricao\": \"Rota Fresh Feminino 75ml\",\n    \"categoria\": \"Feminino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Floral\",\n    \"preco_tabela\": 159.9,\n    \"custo_unitario\": 52.3,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — Campo obrigatório ausente",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"sku\": \"ROT-0002\",\n    \"categoria\": \"Feminino\",\n    \"marca\": \"Rota\",\n    \"unidade\": \"UN\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos"]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"descrição é obrigatória\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"sku\": \"ROT-0002\",\n    \"descricao\": \"Rota Fresh Feminino 75ml\",\n    \"categoria\": \"Feminino\",\n    \"marca\": \"Rota\",\n    \"unidade\": \"UN\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Detalhe do Produto (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Dados do produto presentes', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data).to.have.property('sku');",
+                  "    pm.expect(jsonData.data).to.have.property('descricao');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/produtos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "produtos", "1"]
+            },
+            "description": "Retorna o detalhe de um produto pelo `id` interno.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do produto\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"sku\": \"ROT-0001\",\n    \"descricao\": \"Rota Intense Masculino 100ml\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 189.9,\n    \"custo_unitario\": 65.4,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — produto não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"sku\": \"ROT-0001\",\n    \"descricao\": \"Rota Intense Masculino 100ml\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 189.9,\n    \"custo_unitario\": 65.4,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Produto inexistente",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"produto não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "1"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Editar Produto (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Produto atualizado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data.descricao).to.eql('Rota Intense Masculino 100ml — Atualizado');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"descricao\": \"Rota Intense Masculino 100ml — Atualizado\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 199.9,\n    \"custo_unitario\": 68.0,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/produtos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "produtos", "1"]
+            },
+            "description": "Atualiza os dados de um produto existente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — ID interno do produto\n\n**Body:**\n```json\n{\n  \"descricao\": \"Rota Intense Masculino 100ml — Atualizado\",\n  \"categoria\": \"Masculino\",\n  \"marca\": \"Rota\",\n  \"nota_olfativa\": \"Amadeirado\",\n  \"preco_tabela\": 199.9,\n  \"custo_unitario\": 68.0,\n  \"unidade\": \"UN\",\n  \"data_lancamento\": \"2023-05-10\"\n}\n```\n- Campos obrigatórios: `descricao`, `categoria`, `marca`, `unidade`. `preco_tabela`/`custo_unitario` devem ser `>= 0`.\n- `sku` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/produtos/{id}/inativar` para alterar `ativo`).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"sku\": \"ROT-0001\",\n    \"descricao\": \"Rota Intense Masculino 100ml — Atualizado\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 199.9,\n    \"custo_unitario\": 68.0,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, campo obrigatório ausente, `preco_tabela`/`custo_unitario` negativos, ou `data_lancamento` inválida\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — produto não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"descricao\": \"Rota Intense Masculino 100ml — Atualizado\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 199.9,\n    \"custo_unitario\": 68.0,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"sku\": \"ROT-0001\",\n    \"descricao\": \"Rota Intense Masculino 100ml — Atualizado\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 199.9,\n    \"custo_unitario\": 68.0,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Produto inexistente",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"descricao\": \"Rota Intense Masculino 100ml\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 199.9,\n    \"custo_unitario\": 68.0,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"produto não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"descricao\": \"Rota Intense Masculino 100ml\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"unidade\": \"UN\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "1"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Ativar/Inativar Produto (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Produto com campo ativo retornado', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('ativo');",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ativo\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/produtos/1/inativar",
+              "host": ["{{base_url}}"],
+              "path": ["api", "produtos", "1", "inativar"]
+            },
+            "description": "Ativa ou inativa um produto — exclusão lógica (apenas admin).\n\n- **Body omitido:** faz toggle (inverte o estado atual)\n- **Body `{ \"ativo\": true }`:** ativa o produto\n- **Body `{ \"ativo\": false }`:** inativa o produto\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do produto\n\n**Body (opcional):**\n- `ativo` (bool) — estado desejado. Se omitido, faz toggle.\n\n**Resposta de sucesso (200):** produto atualizado (mesmo formato de `GET /api/produtos/{id}`).\n\n**Códigos de erro:**\n- `400` — `id` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — produto não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK — Inativar (valor explícito)",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"ativo\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/1/inativar",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "1", "inativar"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"sku\": \"ROT-0001\",\n    \"descricao\": \"Rota Intense Masculino 100ml\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 189.9,\n    \"custo_unitario\": 65.4,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": false,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "200 OK — Toggle (body omitido)",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": ""
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/1/inativar",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "1", "inativar"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"ativo\": true\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Produto inexistente",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"ativo\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/999999/inativar",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "999999", "inativar"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"produto não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"ativo\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/1/inativar",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "1", "inativar"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

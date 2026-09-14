@@ -14,6 +14,8 @@ import {
   Cliente,
   ClienteInput,
   ClienteDashboardMetrics,
+  Produto,
+  ProdutoInput,
 } from "./types";
 import { fetchWithAuth } from "./apiClient";
 
@@ -510,6 +512,120 @@ export async function apiDashboardClientes(
       method: "GET",
     }
   );
+}
+
+// === Produtos ===
+
+export interface ListProdutosFilters {
+  categoria?: string;
+  marca?: string;
+  ativo?: boolean;
+  q?: string;
+}
+
+export interface ListProdutosResponse {
+  data: Produto[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+// GET /api/produtos — lista paginada com filtros. Envelope
+// {success, data, pagination: {page, limit, total, pages}, error}.
+export async function apiListProdutos(
+  page = 1,
+  limit = 20,
+  filters: ListProdutosFilters = {}
+): Promise<ListProdutosResponse> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.categoria) qs.set("categoria", filters.categoria);
+  if (filters.marca) qs.set("marca", filters.marca);
+  if (filters.ativo !== undefined) qs.set("ativo", String(filters.ativo));
+  if (filters.q) qs.set("q", filters.q);
+
+  const res = await fetch(`${API_BASE}/api/produtos?${qs.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+
+  const raw = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = raw;
+  }
+
+  if (!res.ok) {
+    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
+    if (parsed && typeof parsed === "object") {
+      const d = parsed as Record<string, unknown>;
+      if ("error" in d) errorMessage = String(d.error);
+      else if ("message" in d) errorMessage = String(d.message);
+    }
+    throw new Error(errorMessage);
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const d = parsed as Record<string, unknown>;
+    if ("data" in d && Array.isArray(d.data)) {
+      const pag = (d.pagination && typeof d.pagination === "object"
+        ? (d.pagination as Record<string, unknown>)
+        : d) as Record<string, unknown>;
+      return {
+        data: d.data as Produto[],
+        page: Number(pag.page ?? page),
+        limit: Number(pag.limit ?? limit),
+        total: Number(pag.total ?? (d.data as unknown[]).length),
+        pages: Number(pag.pages ?? 1),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return { data: parsed as Produto[], page, limit, total: parsed.length, pages: 1 };
+  }
+  return { data: [], page, limit, total: 0, pages: 0 };
+}
+
+// GET /api/produtos/{id} — detalhe de um produto
+export async function apiGetProduto(id: number): Promise<Produto> {
+  return fetchWithAuth<Produto>(`/api/produtos/${id}`, {
+    method: "GET",
+  });
+}
+
+// POST /api/produtos — admin cria novo produto. ativo e sempre TRUE no create.
+export async function apiCreateProduto(input: ProdutoInput): Promise<Produto> {
+  return fetchWithAuth<Produto>("/api/produtos", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// PUT /api/produtos/{id} — admin atualiza dados cadastrais do produto.
+// Nao permite editar sku nem ativo (use apiToggleProdutoStatus).
+export async function apiUpdateProduto(
+  id: number,
+  input: ProdutoInput
+): Promise<Produto> {
+  return fetchWithAuth<Produto>(`/api/produtos/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+// PATCH /api/produtos/{id}/inativar — alterna (ou define) o status ativo
+export async function apiToggleProdutoStatus(
+  id: number,
+  ativo?: boolean
+): Promise<Produto> {
+  return fetchWithAuth<Produto>(`/api/produtos/${id}/inativar`, {
+    method: "PATCH",
+    body: ativo === undefined ? undefined : JSON.stringify({ ativo }),
+  });
 }
 
 // Re-exporta API_BASE para uso externo se necessário

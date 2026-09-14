@@ -193,6 +193,34 @@ Exemplos:
 - **Query:** `?periodo=today|month` (padrão: `month`)
 - **Descrição:** Métricas agregadas da base de clientes: `total_clientes`, `total_ativos`, `total_inativos`, `novos_no_periodo`, `por_segmento` (array `{segmento, total}`) e `por_uf` (array `{uf, total}`)
 
+### Produtos (`/api/produtos/*`) — admin only
+
+> Base de produtos importada de `dados/erp/produtos.csv` (293 linhas) para a tabela `produtos` (ver seção "Importação de produtos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Produtos"** da collection. A exclusão de produtos é sempre **lógica** (flag `ativo`) — não existe endpoint de `DELETE`.
+
+#### GET /api/produtos
+- **Auth:** Bearer Token (admin)
+- **Query (todos opcionais):** `?page=1&limit=20&categoria=Masculino&marca=Rota&ativo=true&q=intense`
+- **Descrição:** Lista produtos paginada (total + pages), com filtros exatos por `categoria`/`marca`, filtro por status (`ativo=true|false`) e busca livre (`q`) em `descricao` OU `sku`
+
+#### POST /api/produtos
+- **Auth:** Bearer Token (admin)
+- **Body:** `{ "sku", "descricao", "categoria", "marca", "nota_olfativa", "preco_tabela", "custo_unitario", "unidade", "data_lancamento" (opcional, "AAAA-MM-DD") }`
+- **Descrição:** Cria um novo produto. `ativo` é sempre `true` na criação — não é aceito no body. Campos obrigatórios: `sku`, `descricao`, `categoria`, `marca`, `unidade`; `preco_tabela`/`custo_unitario` devem ser `>= 0`. Retorna `201` com o produto criado; `400` em caso de validação.
+
+#### GET /api/produtos/{id}
+- **Auth:** Bearer Token (admin)
+- **Descrição:** Retorna o detalhe de um produto pelo `id` interno
+
+#### PUT /api/produtos/{id}
+- **Auth:** Bearer Token (admin)
+- **Body:** `{ "descricao", "categoria", "marca", "nota_olfativa", "preco_tabela", "custo_unitario", "unidade", "data_lancamento" (opcional, "AAAA-MM-DD") }`
+- **Descrição:** Atualiza os dados de um produto existente. `sku` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/produtos/{id}/inativar` para alterar `ativo`). Retorna `200` com o produto atualizado, `404` se não existir, `400` se o payload for inválido.
+
+#### PATCH /api/produtos/{id}/inativar
+- **Auth:** Bearer Token (admin)
+- **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
+- **Descrição:** Ativa ou inativa o produto (exclusão lógica)
+
 ## Testes automatizados (Postman)
 
 A collection inclui scripts de teste em JavaScript em cada request. Os testes verificam:
@@ -306,6 +334,27 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Métricas de clientes presentes` (`periodo`, `total_clientes`, `total_ativos`, `total_inativos`, `novos_no_periodo`, `por_segmento`, `por_uf`)
 - `por_segmento e por_uf são arrays`
 
+### Listar Produtos
+- `Status 200`
+- `Lista retornada`
+- `Paginação presente`
+
+### Criar Produto
+- `Status 201 Created`
+- `Produto criado com dados corretos` (`id`, `descricao`, `ativo === true`)
+
+### Detalhe do Produto
+- `Status 200`
+- `Dados do produto presentes`
+
+### Editar Produto
+- `Status 200 OK`
+- `Produto atualizado com dados corretos`
+
+### Ativar/Inativar Produto
+- `Status 200 OK`
+- `Produto com campo ativo retornado`
+
 ## Resumo de testes por endpoint
 
 | Request | # Testes | Salva variáveis |
@@ -333,6 +382,11 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Editar Cliente | 2 | — |
 | Ativar/Inativar Cliente | 1 | — |
 | Dashboard — Clientes | 2 | — |
+| Listar Produtos | 2 | — |
+| Criar Produto | 2 | — |
+| Detalhe do Produto | 1 | — |
+| Editar Produto | 2 | — |
+| Ativar/Inativar Produto | 2 | — |
 
 ## Códigos de erro comuns
 
@@ -371,6 +425,16 @@ make db-up && make db-import-clientes
 ```
 
 O importador (`apis/shared/cmd/importclientes`) é idempotente (upsert por `cliente_id_origem`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/clientes`, `GET /api/clientes/{id}`, `PATCH /api/clientes/{id}/inativar` e `GET /api/dashboard/clientes` funcionam normalmente, mas retornam base vazia/zerada.
+
+### Importação de produtos (ERP)
+
+`make db-up`/`make db-reset` criam a tabela `produtos` (via `sql/10_ddl_produtos.sql`), mas **não** carregam os dados nela. Para popular a tabela `produtos` a partir de `dados/erp/produtos.csv` (293 registros), rode adicionalmente:
+
+```bash
+make db-up && make db-import-produtos
+```
+
+O importador (`apis/shared/cmd/importprodutos`) é idempotente (upsert por `sku`) e pode ser executado quantas vezes for necessário sem duplicar registros. Itens do CSV são importados com `ativo = true` por padrão. Sem esse passo, os endpoints `GET /api/produtos`, `GET /api/produtos/{id}`, `POST/PUT /api/produtos` e `PATCH /api/produtos/{id}/inativar` funcionam normalmente, mas retornam/operam sobre base vazia.
 
 Depois, em outro terminal:
 

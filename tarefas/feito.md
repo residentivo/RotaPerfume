@@ -4,6 +4,30 @@
 
 ---
 
+## [Produtos (CRUD + Importação CSV + Exclusão lógica)] — 2026-09-13
+**Agentes:** 🌸 DataBrain + 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** Nova área de gerenciamento de produtos: importação de `dados/erp/produtos.csv` (293 linhas, colunas `sku,descricao,categoria,marca,nota_olfativa,preco_tabela,custo_unitario,unidade,ativo,data_lancamento`) para a tabela `produtos`, com tela completa de gerenciamento (listar/incluir/editar/excluir logicamente via flag `ativo`). Padrão: `ativo = true` para itens importados (default quando CSV não trouxer valor válido). Segue o mesmo padrão já implementado para Clientes (model/repository/service/handler/importer/frontend).
+
+**Camadas:**
+- [x] Database (🌸 DataBrain) — `sql/10_ddl_produtos.sql` (tabela `produtos`), aplicado em `make db-up`.
+- [x] Backend (🟡 BackBrain) — `apis/shared/models/produto.go`, `apis/shared/repositories/produto_repository.go`, importador `apis/shared/cmd/importprodutos` (lê `dados/erp/produtos.csv`, upsert idempotente por `sku` via `INSERT ... ON DUPLICATE KEY UPDATE`), `apis/rotaperfumes-api/services/produto_service.go`, `apis/rotaperfumes-api/handlers/produto_handler.go`. Rotas novas (todas admin only): `GET /api/produtos` (paginado, filtros `categoria`/`marca`/`ativo`/`q`), `POST /api/produtos`, `GET /api/produtos/{id}`, `PUT /api/produtos/{id}`, `PATCH /api/produtos/{id}/inativar`. Novo alvo `make db-import-produtos` no `Makefile` (e `.PHONY`).
+- [x] Frontend (🟢 FrontBrain) — `frontend/src/app/admin/produtos` (listagem, paginação, filtros, ativar/inativar inline), `frontend/src/components/admin/ProdutoModal.tsx` (criar/editar), item de menu em `admin/layout.tsx`.
+- [x] Teste (🔴 TestBrain) — `produto_service_test.go`, `produto_handler_test.go` (validações, sucesso e erros de `CreateProduto`/`UpdateProduto`/`ToggleAtivoProduto`/`ListProdutos`/`GetProdutoByID`).
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — nova pasta "Produtos" com os 5 endpoints (`Listar Produtos`, `Criar Produto`, `Detalhe do Produto`, `Editar Produto`, `Ativar/Inativar Produto`), com exemplos de query params, respostas de sucesso/erro (`201`/`200`/`400`/`403`/`404`) e testes automatizados, seguindo o mesmo padrão das demais pastas da collection (ex.: "Clientes").
+- `postman/README.md` — seção "Produtos" adicionada em Endpoints (com nota sobre exclusão lógica via `ativo`, sem `DELETE`), testes automatizados, tabela "Resumo de testes por endpoint" e nova seção "Importação de produtos (ERP)" em "Subindo o ambiente" documentando `make db-up && make db-import-produtos`.
+- `Makefile` já continha o alvo `db-import-produtos` e a aplicação de `sql/10_ddl_produtos.sql` em `db-up` (feito pelo BackBrain/DataBrain) — nenhuma duplicação adicionada. Não havia manual central do projeto (raiz/`docs/`) além do `Makefile` autoexplicativo via `make help` e do `postman/README.md` — nenhum documento novo foi criado além do estritamente necessário.
+
+**Nota importante — ação pendente do usuário:** a importação do CSV para o banco **ainda não foi executada** em nenhum ambiente (o sandbox dos agentes não tem `mysql`/`make` disponíveis). Antes de usar a feature em um ambiente novo ou já existente, rodar manualmente:
+```bash
+make db-up && make db-import-produtos
+```
+
+---
+
 ## [Clientes — Criação e Edição] — 2026-09-13
 **Agentes:** 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
 

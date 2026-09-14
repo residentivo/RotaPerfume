@@ -154,3 +154,36 @@ export interface ClienteDashboardMetrics {
   por_segmento: ClienteSegmentoTotal[];
   por_uf: ClienteUfTotal[];
 }
+
+// === Produtos ===
+
+export interface Produto {
+  id: number;
+  sku: string;
+  descricao: string;
+  categoria: string;
+  marca: string;
+  nota_olfativa: string;
+  preco_tabela: number;
+  custo_unitario: number;
+  unidade: string;
+  data_lancamento: string | null;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Payload usado tanto para POST /api/produtos (criar) quanto para
+// PUT /api/produtos/{id} (editar). sku e obrigatorio apenas na criacao
+// (a rota de edicao nao permite alterar sku).
+export interface ProdutoInput {
+  sku: string;
+  descricao: string;
+  categoria: string;
+  marca: string;
+  nota_olfativa?: string;
+  preco_tabela: number;
+  custo_unitario: number;
+  unidade: string;
+  data_lancamento?: string; // formato AAAA-MM-DD
+}

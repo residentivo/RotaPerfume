@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-import-clientes test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-import-clientes db-import-produtos test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -35,6 +35,8 @@ db-up: db-create ## Cria o schema (tabelas vazias)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/07_ddl_senha_historico.sql
 	@echo "=== Aplicando DDL de clientes ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/09_ddl_clientes.sql
+	@echo "=== Aplicando DDL de produtos ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/10_ddl_produtos.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
@@ -62,6 +64,9 @@ db-fix-deve-trocar-senha: ## Adiciona a coluna deve_trocar_senha em bancos exist
 
 db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
 	cd apis/shared && go run ./cmd/importclientes
+
+db-import-produtos: ## Importa dados/erp/produtos.csv para a tabela produtos (upsert idempotente)
+	cd apis/shared && go run ./cmd/importprodutos
 
 # =============================================================================
 # Build

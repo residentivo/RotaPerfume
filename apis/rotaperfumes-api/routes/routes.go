@@ -35,8 +35,13 @@ import (
 //	GET  /api/clientes/{id}             — admin only — detalhe de um cliente
 //	PUT  /api/clientes/{id}             — admin only — atualizar cliente
 //	PATCH /api/clientes/{id}/inativar   — admin only — ativar/inativar cliente
+//	GET  /api/produtos                  — admin only — lista produtos (paginado, filtros categoria/marca/ativo/q)
+//	POST /api/produtos                  — admin only — criar produto
+//	GET  /api/produtos/{id}             — admin only — detalhe de um produto
+//	PUT  /api/produtos/{id}             — admin only — atualizar produto
+//	PATCH /api/produtos/{id}/inativar   — admin only — ativar/inativar produto
 //	GET  /health                        — público
-func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler) http.Handler {
+func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Login: middleware "não-protegido" (não exige token). Mas usamos um middleware
@@ -128,6 +133,26 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Toggle ativo/inativo de cliente: admin only.
 	toggleAtivoClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.ToggleAtivoCliente))
 	mux.Handle("PATCH /api/clientes/{id}/inativar", toggleAtivoClienteChain)
+
+	// Lista de produtos: admin only.
+	listProdutosChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.ListProdutos))
+	mux.Handle("GET /api/produtos", listProdutosChain)
+
+	// Cria produto: admin only.
+	createProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.CreateProduto))
+	mux.Handle("POST /api/produtos", createProdutoChain)
+
+	// Detalhe de produto: admin only.
+	getProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.GetProduto))
+	mux.Handle("GET /api/produtos/{id}", getProdutoChain)
+
+	// Atualiza produto: admin only.
+	updateProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.UpdateProduto))
+	mux.Handle("PUT /api/produtos/{id}", updateProdutoChain)
+
+	// Toggle ativo/inativo de produto: admin only.
+	toggleAtivoProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.ToggleAtivoProduto))
+	mux.Handle("PATCH /api/produtos/{id}/inativar", toggleAtivoProdutoChain)
 
 	// Healthcheck.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

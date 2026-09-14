@@ -22,7 +22,7 @@
 
 ## Tarefas Pendentes
 
-Nenhuma tarefa pendente — todas as tarefas foram concluídas.
+Nenhuma tarefa pendente no momento. `fazendo.md` também está vazio (sem tarefas em execução) — ver `feito.md` para o histórico completo.
 
 ## Histórico de Conclusões
 
