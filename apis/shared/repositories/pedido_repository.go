@@ -8,6 +8,7 @@ package repositories
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -185,6 +186,21 @@ func (r *PedidoRepository) ListItensByPedidoID(ctx context.Context, db *sql.DB, 
 		return nil, fmt.Errorf("repositories: list itens_pedido iteração: %w", err)
 	}
 	return out, nil
+}
+
+// ExistsByID verifica se existe um pedido com o id informado. Usado pelo
+// serviço de Pagamentos para validar pedido_id antes de criar um pagamento.
+func (r *PedidoRepository) ExistsByID(ctx context.Context, db *sql.DB, id int64) (bool, error) {
+	const q = `SELECT 1 FROM pedidos WHERE id = ? LIMIT 1`
+	var one int
+	err := db.QueryRowContext(ctx, q, id).Scan(&one)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("repositories: exists pedido: %w", err)
+	}
+	return true, nil
 }
 
 // NextPedidoIDOrigem retorna o próximo valor disponível para

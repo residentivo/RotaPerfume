@@ -244,6 +244,31 @@ Exemplos:
 - **Body:** mesmo formato do `POST /api/pedidos`
 - **Descrição:** Atualiza os dados de um pedido existente e substitui integralmente a lista de itens (delete + insert). `valor_bruto`/`valor_total` são recalculados no backend. Retorna `200` com o pedido atualizado (incluindo itens), `404` se não existir, `400` se o payload for inválido.
 
+### Pagamentos (`/api/pagamentos/*`) — **acesso comum (não é admin only)**
+
+> **Diferente de Clientes/Produtos/Pedidos (todos admin only), Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`.** A cadeia de middleware usada é `middleware.JWTMiddleware(cfg, true, false)` (`requireAuth=true`, `requireAdmin=false`), enquanto as demais telas usam `(cfg, true, true)`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum. Não existe endpoint de `DELETE`.
+>
+> **Nota de schema:** a chave primária da tabela é literalmente `pagamento_id` (BIGINT AUTO_INCREMENT), não o padrão `id` desacoplado usado nas demais tabelas — decisão explícita do usuário, alinhada 1:1 ao `pagamento_id` do CSV de origem.
+
+#### GET /api/pagamentos
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Query (todos opcionais):** `?page=1&limit=20&status_pagamento=Em aberto&forma_pagamento=PIX&pedido_id=1&vencimento_de=2026-01-01&vencimento_ate=2026-12-31`
+- **Descrição:** Lista pagamentos paginada (total + pages), com filtros exatos por `status_pagamento` (`Em aberto`|`Inadimplente`|`Pago`|`Pago com atraso`), `forma_pagamento` (`Boleto 14 dias`|`Boleto 28 dias`|`Cartão de crédito`|`Cartão de débito`|`Cheque a prazo`|`Dinheiro`|`PIX`), `pedido_id` e intervalo `vencimento_de`/`vencimento_ate` (`AAAA-MM-DD`).
+
+#### POST /api/pagamentos
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Body:** `{ "pedido_id", "forma_pagamento", "parcelas", "valor", "taxa_pct", "valor_liquido", "data_vencimento" ("AAAA-MM-DD"), "data_pagamento" (opcional, "AAAA-MM-DD"), "status_pagamento" }`
+- **Descrição:** Cria um novo pagamento. `pedido_id` deve existir em `pedidos`. `valor_liquido` é sempre exigido explicitamente no payload — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento em relação ao cálculo direto). `pagamento_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com o pagamento criado; `400` em caso de validação (inclusive `pedido_id` inexistente).
+
+#### GET /api/pagamentos/{id}
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Descrição:** Retorna o detalhe de um pagamento pelo `pagamento_id`.
+
+#### PUT /api/pagamentos/{id}
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Body:** mesmo formato do `POST /api/pagamentos`, exceto `pedido_id`
+- **Descrição:** Atualiza os campos editáveis de um pagamento existente. `pagamento_id` e `pedido_id` **não** são editáveis por esta rota (o vínculo com o pedido de origem é definitivo — para reatribuir a outro pedido, o fluxo correto é excluir/recriar). Retorna `200` com o pagamento atualizado, `404` se não existir, `400` se o payload for inválido.
+
 ## Testes automatizados (Postman)
 
 A collection inclui scripts de teste em JavaScript em cada request. Os testes verificam:
@@ -397,6 +422,26 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Status 200 OK`
 - `Pedido atualizado com dados corretos` (`id`, `status`, `itens` array)
 
+### Listar Pagamentos
+- `Status 200`
+- `Usuário NORMAL consegue acessar (não é 403)` — **valida explicitamente que o acesso é comum, não admin only**
+- `Lista retornada`
+- `Paginação presente`
+
+### Criar Pagamento
+- `Status 201 Created`
+- `Usuário NORMAL consegue criar (não é 403)`
+- `Pagamento criado com dados corretos` (`pagamento_id`, `pedido_id`, `status_pagamento`)
+
+### Detalhe do Pagamento
+- `Status 200`
+- `Dados do pagamento presentes` (`pagamento_id`, `pedido_id`, `status_pagamento`)
+
+### Editar Pagamento
+- `Status 200 OK`
+- `Usuário NORMAL consegue editar (não é 403)`
+- `Pagamento atualizado com dados corretos` (`pagamento_id`, `status_pagamento`)
+
 ## Resumo de testes por endpoint
 
 | Request | # Testes | Salva variáveis |
@@ -433,6 +478,10 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Criar Pedido | 2 | — |
 | Detalhe do Pedido | 2 | — |
 | Editar Pedido | 1 | — |
+| Listar Pagamentos | 4 | — |
+| Criar Pagamento | 3 | — |
+| Detalhe do Pagamento | 1 | — |
+| Editar Pagamento | 3 | — |
 
 ## Códigos de erro comuns
 
@@ -491,6 +540,16 @@ make db-up && make db-import-pedidos
 ```
 
 O importador (`apis/shared/cmd/importpedidos`) é idempotente (upsert por `pedido_id_origem`/`item_id_origem`) e importa primeiro os pedidos e depois os itens (nessa ordem, por causa da FK `itens_pedido.pedido_id`). Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/pedidos`, `GET /api/pedidos/{id}`, `POST/PUT /api/pedidos` funcionam normalmente, mas retornam/operam sobre base vazia.
+
+### Importação de pagamentos (ERP)
+
+`make db-up`/`make db-reset` criam a tabela `pagamentos` (via `sql/12_ddl_pagamentos.sql`), mas **não** carregam os dados nela. Para popular a tabela a partir de `dados/erp/pagamentos.csv` (~27,7 mil linhas), rode adicionalmente:
+
+```bash
+make db-up && make db-import-pagamentos
+```
+
+O importador (`apis/shared/cmd/importpagamentos`) é idempotente (upsert por `pagamento_id`, a própria PK da tabela) e resolve `pedido_id` via lookup em `pedidos.pedido_id_origem` — pagamentos cujo `pedido_id` do CSV não corresponda a nenhum pedido importado são pulados com log de aviso. Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/pagamentos`, `GET /api/pagamentos/{id}`, `POST/PUT /api/pagamentos` funcionam normalmente (inclusive para usuários `normal`, já que o acesso é comum), mas retornam/operam sobre base vazia — exceto pagamentos criados manualmente via `POST`, que exigem que o `pedido_id` informado já exista (rode `make db-import-pedidos` antes, se necessário).
 
 Depois, em outro terminal:
 

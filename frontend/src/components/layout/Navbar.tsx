@@ -41,6 +41,14 @@ export function Navbar() {
               Dashboard
             </Link>
           )}
+          {user && (
+            <Link
+              href="/pagamentos"
+              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
+            >
+              Pagamentos
+            </Link>
+          )}
           {user?.role === "admin" && (
             <Link
               href="/admin/clientes"

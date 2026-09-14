@@ -4,6 +4,33 @@
 
 ---
 
+## [Tela de Pagamentos (CRUD + Importação CSV)] — 2026-09-14
+**Agentes:** 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** Nova tela de cadastro e gerenciamento de Pagamentos, baseada em `dados/erp/pagamentos.csv` (colunas: `pagamento_id,pedido_id,forma_pagamento,parcelas,valor,taxa_pct,valor_liquido,data_vencimento,data_pagamento,status_pagamento`, ~27.7k linhas). Diferente das telas anteriores (Clientes/Produtos/Pedidos, todas admin only), esta é de **acesso comum** — qualquer usuário autenticado (`admin` ou `normal`) pode acessar, não só admin.
+
+**Decisão de schema (instrução explícita do usuário):** a chave primária da tabela é `pagamento_id` (BIGINT AUTO_INCREMENT), não o padrão `id` desacoplado usado em Clientes/Produtos/Pedidos — alinhado 1:1 ao `pagamento_id` do CSV de origem, que já é sequencial e único.
+
+**Camadas:**
+- [x] Database (🌸 DataBrain) — `sql/12_ddl_pagamentos.sql` (tabela `pagamentos`, PK `pagamento_id` BIGINT AUTO_INCREMENT, ENUMs `forma_pagamento`/`status_pagamento`, FK para `pedidos`), `apis/shared/cmd/importpagamentos/main.go` (importador de `dados/erp/pagamentos.csv`, upsert idempotente por `pagamento_id`, resolve `pedido_id` via lookup em `pedidos.pedido_id_origem`), `Makefile` (`sql/12_ddl_pagamentos.sql` adicionado em `db-up`, novo target `make db-import-pagamentos`). `go build ./...` OK; importação real não executada (sem MySQL no sandbox).
+- [x] Backend (🟡 BackBrain) — `apis/shared/models/pagamento.go`, `apis/shared/repositories/pagamento_repository.go` (+ `ExistsByID` adicionado em `pedido_repository.go`), `apis/rotaperfumes-api/services/pagamento_service.go`, `apis/rotaperfumes-api/handlers/pagamento_handler.go`. Rotas registradas em `routes.go`/`main.go` com **acesso comum** (`middleware.JWTMiddleware(cfg, true, false)`, qualquer usuário autenticado — NÃO admin only, diferente de Clientes/Produtos/Pedidos): `GET /api/pagamentos` (paginado, filtros `status_pagamento`/`forma_pagamento`/`pedido_id`/`vencimento_de`/`vencimento_ate`), `POST /api/pagamentos`, `GET /api/pagamentos/{id}`, `PUT /api/pagamentos/{id}` (não permite alterar `pagamento_id`/`pedido_id`). `go build ./...` e `go vet ./...` OK em `apis/shared` e `apis/rotaperfumes-api`.
+- [x] Frontend (🟢 FrontBrain) — `frontend/src/app/pagamentos/page.tsx` (fora de `admin/`, envolto em `<ProtectedRoute>` sem `requireAdmin` — acesso comum), `frontend/src/components/PagamentoModal.tsx` (criar/editar), tipos/API client em `frontend/src/lib/types.ts`/`frontend/src/lib/api.ts`, link "Pagamentos" no `Navbar.tsx` visível para todo usuário autenticado (não só admin).
+- [x] Teste (🔴 TestBrain) — `apis/rotaperfumes-api/services/pagamento_service_test.go`, `apis/rotaperfumes-api/handlers/pagamento_handler_test.go`, `apis/shared/repositories/pagamento_repository_test.go`. Cobertura 100% no service, 85-100% no repository, 77-100% no handler. `go build ./...`, `go vet ./...` e `go test ./... -cover` OK, nenhum bug encontrado no código de produção.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — nova pasta "Pagamentos" com os 4 endpoints (`Listar Pagamentos`, `Criar Pagamento`, `Detalhe do Pagamento`, `Editar Pagamento`), com exemplos de query params/body, respostas de sucesso (`201`/`200`) e erro (`400`/`404`) e testes automatizados, seguindo o mesmo padrão das demais pastas (ex.: "Produtos"/"Pedidos"). **Diferença importante:** ao contrário das demais pastas (que usam `{{admin_token}}`), os requests de Pagamentos usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, já que a rota aceita ambos os perfis — cada request inclui um teste explícito validando que o usuário `normal` recebe `200`/`201` e não `403`.
+- `postman/README.md` — seção "Pagamentos" adicionada em Endpoints (destacando explicitamente que é **acesso comum, não admin-only**, diferente das demais telas), testes automatizados, tabela "Resumo de testes por endpoint" e nova seção "Importação de pagamentos (ERP)" em "Subindo o ambiente" documentando `make db-up && make db-import-pagamentos`.
+
+**Nota importante — ação pendente do usuário:**
+1. A importação do CSV para o banco **ainda não foi executada** em nenhum ambiente (o sandbox dos agentes não tem `mysql`/`make` disponíveis). Antes de usar a feature em um ambiente novo ou já existente, rodar manualmente:
+```bash
+make db-up && make db-import-pagamentos
+```
+2. O sandbox não tem Node disponível para rodar `npx tsc --noEmit` do frontend (`pagamentos/page.tsx`, `PagamentoModal.tsx`). Revisão manual de tipos foi feita pelo FrontBrain, mas recomenda-se rodar o typecheck localmente antes do merge definitivo.
+
+---
+
 ## Cobertura de Testes — shared/repositories — 2026-09-14
 **Agente:** 🔴 TestBrain (delegado por 🤍 MegaBrain) → validado e Kanban atualizado por 🔵 SubBrain
 

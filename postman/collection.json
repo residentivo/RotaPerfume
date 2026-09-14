@@ -4375,6 +4375,438 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Pagamentos",
+      "item": [
+        {
+          "name": "Listar Pagamentos (acesso comum)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Usuário NORMAL consegue acessar (não é 403)', function() {",
+                  "    pm.expect(pm.response.code).to.not.eql(403);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Lista retornada', function() {",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "pm.test('Paginação presente', function() {",
+                  "    pm.expect(jsonData).to.have.property('pagination');",
+                  "    pm.expect(jsonData.pagination).to.have.property('page');",
+                  "    pm.expect(jsonData.pagination).to.have.property('limit');",
+                  "    pm.expect(jsonData.pagination).to.have.property('total');",
+                  "    pm.expect(jsonData.pagination).to.have.property('pages');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendedor_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pagamentos?page=1&limit=20&status_pagamento=Em aberto&forma_pagamento=PIX&pedido_id=1&vencimento_de=2026-01-01&vencimento_ate=2026-12-31",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pagamentos"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número da página (padrão: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Itens por página (padrão: 20, máx: 100)"
+                },
+                {
+                  "key": "status_pagamento",
+                  "value": "Em aberto",
+                  "description": "Filtro exato (Em aberto|Inadimplente|Pago|Pago com atraso) — opcional"
+                },
+                {
+                  "key": "forma_pagamento",
+                  "value": "PIX",
+                  "description": "Filtro exato (Boleto 14 dias|Boleto 28 dias|Cartão de crédito|Cartão de débito|Cheque a prazo|Dinheiro|PIX) — opcional"
+                },
+                {
+                  "key": "pedido_id",
+                  "value": "1",
+                  "description": "Filtro exato pelo id interno do pedido — opcional"
+                },
+                {
+                  "key": "vencimento_de",
+                  "value": "2026-01-01",
+                  "description": "Data mínima de vencimento, formato AAAA-MM-DD — opcional"
+                },
+                {
+                  "key": "vencimento_ate",
+                  "value": "2026-12-31",
+                  "description": "Data máxima de vencimento, formato AAAA-MM-DD — opcional"
+                }
+              ]
+            },
+            "description": "Lista pagamentos com paginação e filtros.\n\n**Acesso comum: diferente de Clientes/Produtos/Pedidos (admin only), este endpoint aceita qualquer usuário autenticado (`admin` ou `normal`).** Por isso o exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`) em vez de `{{admin_token}}`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status_pagamento` (string) — filtro exato: `Em aberto`, `Inadimplente`, `Pago` ou `Pago com atraso`\n- `forma_pagamento` (string) — filtro exato: `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro` ou `PIX`\n- `pedido_id` (int64) — filtro exato pelo id interno do pedido\n- `vencimento_de` / `vencimento_ate` (`AAAA-MM-DD`) — intervalo de `data_vencimento`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pagamento_id\": 1,\n      \"pedido_id\": 1,\n      \"forma_pagamento\": \"PIX\",\n      \"parcelas\": 1,\n      \"valor\": 459.7,\n      \"taxa_pct\": 0.99,\n      \"valor_liquido\": 455.15,\n      \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n      \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n      \"status_pagamento\": \"Pago\",\n      \"created_at\": \"2026-09-14T00:00:00Z\",\n      \"updated_at\": \"2026-09-14T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 27700,\n    \"pages\": 1385\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `pedido_id` inválido (não numérico)\n- `401` — não autenticado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos?page=1&limit=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pagamento_id\": 1,\n      \"pedido_id\": 1,\n      \"forma_pagamento\": \"PIX\",\n      \"parcelas\": 1,\n      \"valor\": 459.7,\n      \"taxa_pct\": 0.99,\n      \"valor_liquido\": 455.15,\n      \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n      \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n      \"status_pagamento\": \"Pago\",\n      \"created_at\": \"2026-09-14T00:00:00Z\",\n      \"updated_at\": \"2026-09-14T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 27700,\n    \"pages\": 1385\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — pedido_id inválido",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos?pedido_id=abc",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos"],
+                  "query": [{ "key": "pedido_id", "value": "abc" }]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido_id inválido\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Criar Pagamento (acesso comum)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Usuário NORMAL consegue criar (não é 403)', function() {",
+                  "    pm.expect(pm.response.code).to.not.eql(403);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Pagamento criado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('pagamento_id');",
+                  "    pm.expect(jsonData.data.pedido_id).to.eql(1);",
+                  "    pm.expect(jsonData.data.status_pagamento).to.eql('Em aberto');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendedor_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-09-20\",\n    \"data_pagamento\": \"\",\n    \"status_pagamento\": \"Em aberto\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pagamentos",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pagamentos"]
+            },
+            "description": "Cria um novo pagamento.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`) pode criar — não é admin only.** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"pedido_id\": 1,\n  \"forma_pagamento\": \"PIX\",\n  \"parcelas\": 1,\n  \"valor\": 459.7,\n  \"taxa_pct\": 0.99,\n  \"valor_liquido\": 455.15,\n  \"data_vencimento\": \"2026-09-20\",\n  \"data_pagamento\": \"\",\n  \"status_pagamento\": \"Em aberto\"\n}\n```\n- `pedido_id` obrigatório — deve existir em `pedidos`.\n- `forma_pagamento` — um de `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro`, `PIX`.\n- `status_pagamento` — um de `Em aberto`, `Inadimplente`, `Pago`, `Pago com atraso`.\n- `parcelas` >= 1; `valor`/`taxa_pct`/`valor_liquido` >= 0.\n- `data_vencimento` obrigatória (`AAAA-MM-DD`); `data_pagamento` opcional (vazio = NULL).\n- **`valor_liquido` é sempre exigido explicitamente no payload** — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento).\n- `pagamento_id` é gerado automaticamente (AUTO_INCREMENT).\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 27701,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-09-20T00:00:00Z\",\n    \"data_pagamento\": null,\n    \"status_pagamento\": \"Em aberto\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `pedido_id` ausente/inexistente, `forma_pagamento`/`status_pagamento` inválidos, `parcelas`/`valor`/`taxa_pct`/`valor_liquido` inválidos, `data_vencimento`/`data_pagamento` ausente ou em formato inválido\n- `401` — não autenticado"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-09-20\",\n    \"status_pagamento\": \"Em aberto\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 27701,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-09-20T00:00:00Z\",\n    \"data_pagamento\": null,\n    \"status_pagamento\": \"Em aberto\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — pedido não encontrado",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"pedido_id\": 999999,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 100,\n    \"taxa_pct\": 0,\n    \"valor_liquido\": 100,\n    \"data_vencimento\": \"2026-09-20\",\n    \"status_pagamento\": \"Em aberto\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos"]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido não encontrado\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Detalhe do Pagamento (acesso comum)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Dados do pagamento presentes', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('pagamento_id');",
+                  "    pm.expect(jsonData.data).to.have.property('pedido_id');",
+                  "    pm.expect(jsonData.data).to.have.property('status_pagamento');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendedor_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pagamentos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pagamentos", "1"]
+            },
+            "description": "Retorna o detalhe de um pagamento pelo `pagamento_id`.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pagamento_id`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 1,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n    \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n    \"status_pagamento\": \"Pago\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — pagamento não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 1,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n    \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n    \"status_pagamento\": \"Pago\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Pagamento inexistente",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pagamento não encontrado\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Editar Pagamento (acesso comum)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Usuário NORMAL consegue editar (não é 403)', function() {",
+                  "    pm.expect(pm.response.code).to.not.eql(403);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Pagamento atualizado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data.pagamento_id).to.eql(1);",
+                  "    pm.expect(jsonData.data.status_pagamento).to.eql('Pago');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendedor_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10\",\n    \"data_pagamento\": \"2026-03-10\",\n    \"status_pagamento\": \"Pago\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pagamentos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pagamentos", "1"]
+            },
+            "description": "Atualiza os campos editáveis de um pagamento existente.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — `pagamento_id`\n\n**Body:** mesmo formato do `POST /api/pagamentos`, exceto `pedido_id`.\n- `pagamento_id` e `pedido_id` **não são editáveis** por esta rota (o vínculo com o pedido de origem é definitivo).\n\n**Resposta de sucesso (200):** pagamento atualizado (mesmo formato de `GET /api/pagamentos/{id}`).\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, `forma_pagamento`/`status_pagamento` inválidos, `parcelas`/`valor`/`taxa_pct`/`valor_liquido` inválidos, `data_vencimento`/`data_pagamento` ausente ou em formato inválido\n- `401` — não autenticado\n- `404` — pagamento não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10\",\n    \"data_pagamento\": \"2026-03-10\",\n    \"status_pagamento\": \"Pago\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 1,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n    \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n    \"status_pagamento\": \"Pago\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Pagamento inexistente",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10\",\n    \"status_pagamento\": \"Pago\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pagamento não encontrado\"\n}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

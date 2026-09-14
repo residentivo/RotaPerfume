@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-import-clientes db-import-produtos db-import-pedidos test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -39,6 +39,8 @@ db-up: db-create ## Cria o schema (tabelas vazias)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/04_ddl_pedidos.sql
 	@echo "=== Aplicando DDL de itens_pedido (depende de pedidos + produtos) ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/11_ddl_itens_pedido.sql
+	@echo "=== Aplicando DDL de pagamentos (depende de pedidos) ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/12_ddl_pagamentos.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
@@ -70,6 +72,9 @@ db-import-produtos: ## Importa dados/erp/produtos.csv para a tabela produtos (up
 
 db-import-pedidos: ## Importa dados/erp/pedidos.csv e itens_pedido.csv (upsert idempotente, nesta ordem)
 	cd apis/shared && go run ./cmd/importpedidos
+
+db-import-pagamentos: ## Importa dados/erp/pagamentos.csv para a tabela pagamentos (upsert idempotente, depende de pedidos já importados)
+	cd apis/shared && go run ./cmd/importpagamentos
 
 # =============================================================================
 # Build

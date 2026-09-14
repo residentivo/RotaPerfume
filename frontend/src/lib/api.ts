@@ -19,6 +19,10 @@ import {
   Pedido,
   PedidoDetalhe,
   PedidoInput,
+  Pagamento,
+  PagamentoCreateInput,
+  PagamentoUpdateInput,
+  ListPagamentosFilters,
 } from "./types";
 import { fetchWithAuth } from "./apiClient";
 
@@ -739,6 +743,110 @@ export async function apiUpdatePedido(
   input: PedidoInput
 ): Promise<PedidoDetalhe> {
   return fetchWithAuth<PedidoDetalhe>(`/api/pedidos/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+// === Pagamentos ===
+//
+// Acesso comum (qualquer usuário autenticado, admin ou normal) — ver
+// apis/rotaperfumes-api/handlers/pagamento_handler.go.
+
+export interface ListPagamentosResponse {
+  data: Pagamento[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+// GET /api/pagamentos — lista paginada com filtros. Envelope
+// {success, data, pagination: {page, limit, total, pages}, error}.
+export async function apiListPagamentos(
+  page = 1,
+  limit = 20,
+  filters: ListPagamentosFilters = {}
+): Promise<ListPagamentosResponse> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.status_pagamento) qs.set("status_pagamento", filters.status_pagamento);
+  if (filters.forma_pagamento) qs.set("forma_pagamento", filters.forma_pagamento);
+  if (filters.pedido_id) qs.set("pedido_id", String(filters.pedido_id));
+  if (filters.vencimento_de) qs.set("vencimento_de", filters.vencimento_de);
+  if (filters.vencimento_ate) qs.set("vencimento_ate", filters.vencimento_ate);
+
+  const res = await fetch(`${API_BASE}/api/pagamentos?${qs.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+
+  const raw = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = raw;
+  }
+
+  if (!res.ok) {
+    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
+    if (parsed && typeof parsed === "object") {
+      const d = parsed as Record<string, unknown>;
+      if ("error" in d) errorMessage = String(d.error);
+      else if ("message" in d) errorMessage = String(d.message);
+    }
+    throw new Error(errorMessage);
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const d = parsed as Record<string, unknown>;
+    if ("data" in d && Array.isArray(d.data)) {
+      const pag = (d.pagination && typeof d.pagination === "object"
+        ? (d.pagination as Record<string, unknown>)
+        : d) as Record<string, unknown>;
+      return {
+        data: d.data as Pagamento[],
+        page: Number(pag.page ?? page),
+        limit: Number(pag.limit ?? limit),
+        total: Number(pag.total ?? (d.data as unknown[]).length),
+        pages: Number(pag.pages ?? 1),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return { data: parsed as Pagamento[], page, limit, total: parsed.length, pages: 1 };
+  }
+  return { data: [], page, limit, total: 0, pages: 0 };
+}
+
+// GET /api/pagamentos/{id} — detalhe de um pagamento (id = pagamento_id)
+export async function apiGetPagamento(id: number): Promise<Pagamento> {
+  return fetchWithAuth<Pagamento>(`/api/pagamentos/${id}`, {
+    method: "GET",
+  });
+}
+
+// POST /api/pagamentos — cria novo pagamento. valor_liquido e exigido
+// explicitamente no payload (nao e calculado automaticamente pelo backend).
+export async function apiCreatePagamento(
+  input: PagamentoCreateInput
+): Promise<Pagamento> {
+  return fetchWithAuth<Pagamento>("/api/pagamentos", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// PUT /api/pagamentos/{id} — atualiza um pagamento existente. pagamento_id
+// e pedido_id nao sao editaveis por esta rota (vinculo com o pedido de
+// origem e definitivo).
+export async function apiUpdatePagamento(
+  id: number,
+  input: PagamentoUpdateInput
+): Promise<Pagamento> {
+  return fetchWithAuth<Pagamento>(`/api/pagamentos/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });

@@ -256,3 +256,82 @@ export interface PedidoInput {
   status: string;
   itens: ItemPedidoInput[];
 }
+
+// === Pagamentos ===
+//
+// Tela de acesso comum (qualquer usuário autenticado, admin ou normal) —
+// ver frontend/src/app/pagamentos/page.tsx. Diferente das demais telas
+// administrativas (Clientes/Produtos/Pedidos/Usuários), que ficam sob
+// /admin/* e exigem role admin.
+
+// Valores de ENUM aceitos pelo backend (ver
+// apis/rotaperfumes-api/services/pagamento_service.go).
+export type FormaPagamento =
+  | "Boleto 14 dias"
+  | "Boleto 28 dias"
+  | "Cartão de crédito"
+  | "Cartão de débito"
+  | "Cheque a prazo"
+  | "Dinheiro"
+  | "PIX";
+
+export type StatusPagamento =
+  | "Em aberto"
+  | "Inadimplente"
+  | "Pago"
+  | "Pago com atraso";
+
+// Pagamento, como retornado por GET /api/pagamentos e GET /api/pagamentos/{id}.
+// Diferente das demais tabelas, a PK e literalmente pagamento_id (nao ha
+// coluna id separada) — ver apis/shared/models/pagamento.go.
+export interface Pagamento {
+  pagamento_id: number;
+  pedido_id: number;
+  forma_pagamento: string;
+  parcelas: number;
+  valor: number;
+  taxa_pct: number;
+  valor_liquido: number;
+  data_vencimento: string; // formato AAAA-MM-DD
+  data_pagamento: string | null; // formato AAAA-MM-DD ou null
+  status_pagamento: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Payload de POST /api/pagamentos (criar). pedido_id e obrigatorio e
+// imutavel apos a criacao.
+export interface PagamentoCreateInput {
+  pedido_id: number;
+  forma_pagamento: string;
+  parcelas: number;
+  valor: number;
+  taxa_pct: number;
+  valor_liquido: number;
+  data_vencimento: string; // formato AAAA-MM-DD, obrigatorio
+  data_pagamento?: string; // formato AAAA-MM-DD, opcional
+  status_pagamento: string;
+}
+
+// Payload de PUT /api/pagamentos/{id} (editar). pagamento_id e pedido_id
+// NAO sao aceitos/editaveis por esta rota (o backend rejeita alteracao do
+// vinculo com o pedido de origem).
+export interface PagamentoUpdateInput {
+  forma_pagamento: string;
+  parcelas: number;
+  valor: number;
+  taxa_pct: number;
+  valor_liquido: number;
+  data_vencimento: string; // formato AAAA-MM-DD, obrigatorio
+  data_pagamento?: string; // formato AAAA-MM-DD, opcional
+  status_pagamento: string;
+}
+
+// Filtros aceitos por GET /api/pagamentos.
+export interface ListPagamentosFilters {
+  status_pagamento?: string;
+  forma_pagamento?: string;
+  pedido_id?: number;
+  vencimento_de?: string; // formato AAAA-MM-DD
+  vencimento_ate?: string; // formato AAAA-MM-DD
+}

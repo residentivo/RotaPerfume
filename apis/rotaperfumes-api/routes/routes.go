@@ -44,8 +44,12 @@ import (
 //	POST /api/pedidos                   — admin only — cria pedido com itens (calcula valor_bruto/valor_total)
 //	GET  /api/pedidos/{id}               — admin only — detalhe de um pedido (com itens)
 //	PUT  /api/pedidos/{id}               — admin only — atualiza pedido e substitui a lista de itens
+//	GET  /api/pagamentos                — acesso comum (qualquer usuário autenticado) — lista pagamentos (paginado, filtros status_pagamento/forma_pagamento/pedido_id/vencimento_de/vencimento_ate)
+//	POST /api/pagamentos                — acesso comum — cria pagamento
+//	GET  /api/pagamentos/{id}            — acesso comum — detalhe de um pagamento
+//	PUT  /api/pagamentos/{id}            — acesso comum — atualiza pagamento
 //	GET  /health                        — público
-func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler) http.Handler {
+func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Login: middleware "não-protegido" (não exige token). Mas usamos um middleware
@@ -173,6 +177,23 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Atualiza pedido (substitui itens): admin only.
 	updatePedidoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(pedidoH.UpdatePedido))
 	mux.Handle("PUT /api/pedidos/{id}", updatePedidoChain)
+
+	// Lista de pagamentos: acesso comum (qualquer usuário autenticado, sem
+	// exigir admin) — requireAuth=true, requireAdmin=false.
+	listPagamentosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.ListPagamentos))
+	mux.Handle("GET /api/pagamentos", listPagamentosChain)
+
+	// Cria pagamento: acesso comum.
+	createPagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.CreatePagamento))
+	mux.Handle("POST /api/pagamentos", createPagamentoChain)
+
+	// Detalhe de pagamento: acesso comum.
+	getPagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.GetPagamento))
+	mux.Handle("GET /api/pagamentos/{id}", getPagamentoChain)
+
+	// Atualiza pagamento: acesso comum.
+	updatePagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.UpdatePagamento))
+	mux.Handle("PUT /api/pagamentos/{id}", updatePagamentoChain)
 
 	// Healthcheck.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
