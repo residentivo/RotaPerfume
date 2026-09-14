@@ -3800,6 +3800,581 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Pedidos",
+      "item": [
+        {
+          "name": "Listar Pedidos (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Lista retornada', function() {",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "pm.test('Paginação presente', function() {",
+                  "    pm.expect(jsonData).to.have.property('pagination');",
+                  "    pm.expect(jsonData.pagination).to.have.property('page');",
+                  "    pm.expect(jsonData.pagination).to.have.property('limit');",
+                  "    pm.expect(jsonData.pagination).to.have.property('total');",
+                  "    pm.expect(jsonData.pagination).to.have.property('pages');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pedidos?page=1&limit=20&status=Faturado&canal=App&cliente_id=1&vendedor_id=1&data_inicio=2026-01-01&data_fim=2026-12-31&q=perfumaria",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pedidos"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número da página (padrão: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Itens por página (padrão: 20, máx: 100)"
+                },
+                {
+                  "key": "status",
+                  "value": "Faturado",
+                  "description": "Filtro exato por status (Cancelado|Em separação|Entregue|Faturado) — opcional"
+                },
+                {
+                  "key": "canal",
+                  "value": "App",
+                  "description": "Filtro exato por canal (App|Telefone|Visita|WhatsApp) — opcional"
+                },
+                {
+                  "key": "cliente_id",
+                  "value": "1",
+                  "description": "Filtro exato pelo id interno do cliente — opcional"
+                },
+                {
+                  "key": "vendedor_id",
+                  "value": "1",
+                  "description": "Filtro exato pelo id interno do vendedor — opcional"
+                },
+                {
+                  "key": "data_inicio",
+                  "value": "2026-01-01",
+                  "description": "Data mínima do pedido, formato AAAA-MM-DD — opcional"
+                },
+                {
+                  "key": "data_fim",
+                  "value": "2026-12-31",
+                  "description": "Data máxima do pedido, formato AAAA-MM-DD — opcional"
+                },
+                {
+                  "key": "q",
+                  "value": "perfumaria",
+                  "description": "Busca livre pela razão social do cliente — opcional"
+                }
+              ]
+            },
+            "description": "Lista pedidos com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status` (string) — filtro exato: `Cancelado`, `Em separação`, `Entregue` ou `Faturado`\n- `canal` (string) — filtro exato: `App`, `Telefone`, `Visita` ou `WhatsApp`\n- `cliente_id` (int64) — filtro exato pelo id interno do cliente\n- `vendedor_id` (int64) — filtro exato pelo id interno do vendedor\n- `data_inicio` / `data_fim` (`AAAA-MM-DD`) — intervalo de `data_pedido`\n- `q` (string) — busca livre pela razão social do cliente\n\n**Resposta de sucesso (200):** cada item traz o cabeçalho do pedido + `cliente_nome`/`vendedor_nome` (via JOIN), sem os itens (para a lista de itens use `GET /api/pedidos/{id}`).\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos?page=1&limit=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Criar Pedido (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Pedido criado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data).to.have.property('pedido_id_origem');",
+                  "    pm.expect(jsonData.data.itens).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "pm.test('valor_total e valor_bruto calculados pelo backend', function() {",
+                  "    pm.expect(jsonData.data.valor_total).to.be.a('number');",
+                  "    pm.expect(jsonData.data.itens[0].valor_bruto).to.be.a('number');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 2,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 5\n        },\n        {\n            \"produto_id\": 2,\n            \"quantidade\": 1,\n            \"preco_praticado\": 159.9,\n            \"desconto_pct\": 0\n        }\n    ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pedidos",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pedidos"]
+            },
+            "description": "Cria um novo pedido com seus itens (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cliente_id\": 1,\n  \"vendedor_id\": 1,\n  \"data_pedido\": \"2026-09-13\",\n  \"canal\": \"App\",\n  \"status\": \"Em separação\",\n  \"itens\": [\n    { \"produto_id\": 1, \"quantidade\": 2, \"preco_praticado\": 189.9, \"desconto_pct\": 5 },\n    { \"produto_id\": 2, \"quantidade\": 1, \"preco_praticado\": 159.9, \"desconto_pct\": 0 }\n  ]\n}\n```\n- Campos obrigatórios: `cliente_id`, `vendedor_id`, `data_pedido` (`AAAA-MM-DD`), `canal` (`App`|`Telefone`|`Visita`|`WhatsApp`), `status` (`Cancelado`|`Em separação`|`Entregue`|`Faturado`) e ao menos um item.\n- Em cada item: `produto_id` obrigatório, `quantidade` > 0, `preco_praticado` >= 0, `desconto_pct` entre 0 e 100.\n- `valor_bruto` de cada item e `valor_total` do pedido são **calculados no backend** (não são aceitos no body).\n- `pedido_id_origem` é gerado automaticamente pelo sistema.\n\n**Resposta de sucesso (201):** pedido criado, incluindo os itens (formato igual ao de `GET /api/pedidos/{id}`).\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 28730,\n    \"pedido_id_origem\": 128730,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"valor_total\": 520.71,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 197725,\n        \"item_id_origem\": 197725,\n        \"pedido_id\": 28730,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      },\n      {\n        \"id\": 197726,\n        \"item_id_origem\": 197726,\n        \"pedido_id\": 28730,\n        \"produto_id\": 2,\n        \"quantidade\": 1,\n        \"preco_praticado\": 159.9,\n        \"desconto_pct\": 0,\n        \"valor_bruto\": 159.9,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0002\",\n        \"produto_descricao\": \"Rota Fresh Feminino 75ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `cliente_id`/`vendedor_id` ausentes, `data_pedido` inválida, `canal`/`status` inválidos, sem itens, ou item com `produto_id`/`quantidade`/`preco_praticado`/`desconto_pct` inválidos\n- `401` — não autenticado\n- `403` — não é admin"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 2,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 5\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 28730,\n    \"pedido_id_origem\": 128730,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"valor_total\": 360.81,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 197725,\n        \"item_id_origem\": 197725,\n        \"pedido_id\": 28730,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — Sem itens",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"itens\": []\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos"]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"o pedido deve ter ao menos um item\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 2,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 5\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Detalhe do Pedido (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Dados do pedido presentes', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data).to.have.property('pedido_id_origem');",
+                  "    pm.expect(jsonData.data).to.have.property('itens');",
+                  "});",
+                  "pm.test('Itens é um array', function() {",
+                  "    pm.expect(jsonData.data.itens).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pedidos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pedidos", "1"]
+            },
+            "description": "Retorna o detalhe de um pedido pelo `id` interno, incluindo a lista de itens (master-detail).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do pedido\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 1,\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — pedido não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 1,\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Pedido inexistente",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Editar Pedido (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Pedido atualizado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data.id).to.eql(1);",
+                  "    pm.expect(jsonData.data.status).to.eql('Entregue');",
+                  "    pm.expect(jsonData.data.itens).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 3,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 10\n        }\n    ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pedidos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pedidos", "1"]
+            },
+            "description": "Atualiza os dados de um pedido existente e substitui integralmente a lista de itens (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — ID interno do pedido\n\n**Body:** mesmo formato do `POST /api/pedidos` (`cliente_id`, `vendedor_id`, `data_pedido`, `canal`, `status`, `itens`).\n- A lista de itens enviada **substitui** integralmente a existente (delete + insert).\n- `valor_bruto` de cada item e `valor_total` do pedido são recalculados no backend.\n- `pedido_id_origem` não é alterado.\n\n**Resposta de sucesso (200):** pedido atualizado, incluindo os itens (mesmo formato de `GET /api/pedidos/{id}`).\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, campo obrigatório ausente, `canal`/`status` inválidos, sem itens, ou item inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — pedido não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 3,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 10\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"valor_total\": 512.73,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 2,\n        \"item_id_origem\": 2,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 3,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 10,\n        \"valor_bruto\": 512.73,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Pedido inexistente",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 3,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 10\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 3,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 10\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

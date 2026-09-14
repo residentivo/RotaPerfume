@@ -40,8 +40,12 @@ import (
 //	GET  /api/produtos/{id}             — admin only — detalhe de um produto
 //	PUT  /api/produtos/{id}             — admin only — atualizar produto
 //	PATCH /api/produtos/{id}/inativar   — admin only — ativar/inativar produto
+//	GET  /api/pedidos                   — admin only — lista pedidos (paginado, filtros status/canal/cliente_id/vendedor_id/data_inicio/data_fim/q)
+//	POST /api/pedidos                   — admin only — cria pedido com itens (calcula valor_bruto/valor_total)
+//	GET  /api/pedidos/{id}               — admin only — detalhe de um pedido (com itens)
+//	PUT  /api/pedidos/{id}               — admin only — atualiza pedido e substitui a lista de itens
 //	GET  /health                        — público
-func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler) http.Handler {
+func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Login: middleware "não-protegido" (não exige token). Mas usamos um middleware
@@ -153,6 +157,22 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Toggle ativo/inativo de produto: admin only.
 	toggleAtivoProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.ToggleAtivoProduto))
 	mux.Handle("PATCH /api/produtos/{id}/inativar", toggleAtivoProdutoChain)
+
+	// Lista de pedidos: admin only.
+	listPedidosChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(pedidoH.ListPedidos))
+	mux.Handle("GET /api/pedidos", listPedidosChain)
+
+	// Cria pedido (com itens): admin only.
+	createPedidoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(pedidoH.CreatePedido))
+	mux.Handle("POST /api/pedidos", createPedidoChain)
+
+	// Detalhe de pedido (com itens): admin only.
+	getPedidoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(pedidoH.GetPedido))
+	mux.Handle("GET /api/pedidos/{id}", getPedidoChain)
+
+	// Atualiza pedido (substitui itens): admin only.
+	updatePedidoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(pedidoH.UpdatePedido))
+	mux.Handle("PUT /api/pedidos/{id}", updatePedidoChain)
 
 	// Healthcheck.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

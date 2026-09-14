@@ -187,3 +187,72 @@ export interface ProdutoInput {
   unidade: string;
   data_lancamento?: string; // formato AAAA-MM-DD
 }
+
+// === Pedidos ===
+
+// Canais e status aceitos pelo backend (ver services.canaisValidos /
+// statusValidos em apis/rotaperfumes-api/services/pedido_service.go).
+export type PedidoCanal = "App" | "Telefone" | "Visita" | "WhatsApp";
+export type PedidoStatus =
+  | "Cancelado"
+  | "Em separação"
+  | "Entregue"
+  | "Faturado";
+
+// Pedido (cabecalho), como retornado por GET /api/pedidos e no cabecalho de
+// GET /api/pedidos/{id}. cliente_nome/vendedor_nome vem via JOIN no backend.
+export interface Pedido {
+  id: number;
+  pedido_id_origem: number;
+  cliente_id: number;
+  vendedor_id: number;
+  data_pedido: string; // formato AAAA-MM-DD
+  canal: string;
+  status: string;
+  valor_total: number;
+  created_at: string;
+  updated_at: string;
+  cliente_nome: string;
+  vendedor_nome: string;
+}
+
+// Item de pedido, como retornado dentro de itens de GET /api/pedidos/{id}.
+// produto_sku/produto_descricao vem via JOIN no backend.
+export interface ItemPedido {
+  id: number;
+  item_id_origem: number;
+  pedido_id: number;
+  produto_id: number;
+  quantidade: number;
+  preco_praticado: number;
+  desconto_pct: number;
+  valor_bruto: number;
+  created_at: string;
+  updated_at: string;
+  produto_sku: string;
+  produto_descricao: string;
+}
+
+// Pedido com itens, retornado por GET /api/pedidos/{id} (e pelo POST/PUT).
+export interface PedidoDetalhe extends Pedido {
+  itens: ItemPedido[];
+}
+
+// Item no payload de criacao/edicao de pedido (POST/PUT /api/pedidos).
+export interface ItemPedidoInput {
+  produto_id: number;
+  quantidade: number;
+  preco_praticado: number;
+  desconto_pct: number;
+}
+
+// Payload usado tanto para POST /api/pedidos (criar) quanto para
+// PUT /api/pedidos/{id} (editar, substitui a lista de itens integralmente).
+export interface PedidoInput {
+  cliente_id: number;
+  vendedor_id: number;
+  data_pedido: string; // formato AAAA-MM-DD
+  canal: string;
+  status: string;
+  itens: ItemPedidoInput[];
+}

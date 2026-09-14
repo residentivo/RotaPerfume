@@ -16,6 +16,9 @@ import {
   ClienteDashboardMetrics,
   Produto,
   ProdutoInput,
+  Pedido,
+  PedidoDetalhe,
+  PedidoInput,
 } from "./types";
 import { fetchWithAuth } from "./apiClient";
 
@@ -625,6 +628,119 @@ export async function apiToggleProdutoStatus(
   return fetchWithAuth<Produto>(`/api/produtos/${id}/inativar`, {
     method: "PATCH",
     body: ativo === undefined ? undefined : JSON.stringify({ ativo }),
+  });
+}
+
+// === Pedidos ===
+
+export interface ListPedidosFilters {
+  status?: string;
+  canal?: string;
+  cliente_id?: number;
+  vendedor_id?: number;
+  data_inicio?: string; // AAAA-MM-DD
+  data_fim?: string; // AAAA-MM-DD
+  q?: string;
+}
+
+export interface ListPedidosResponse {
+  data: Pedido[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+// GET /api/pedidos — lista paginada com filtros. Envelope
+// {success, data, pagination: {page, limit, total, pages}, error}.
+export async function apiListPedidos(
+  page = 1,
+  limit = 20,
+  filters: ListPedidosFilters = {}
+): Promise<ListPedidosResponse> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.status) qs.set("status", filters.status);
+  if (filters.canal) qs.set("canal", filters.canal);
+  if (filters.cliente_id) qs.set("cliente_id", String(filters.cliente_id));
+  if (filters.vendedor_id) qs.set("vendedor_id", String(filters.vendedor_id));
+  if (filters.data_inicio) qs.set("data_inicio", filters.data_inicio);
+  if (filters.data_fim) qs.set("data_fim", filters.data_fim);
+  if (filters.q) qs.set("q", filters.q);
+
+  const res = await fetch(`${API_BASE}/api/pedidos?${qs.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+
+  const raw = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = raw;
+  }
+
+  if (!res.ok) {
+    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
+    if (parsed && typeof parsed === "object") {
+      const d = parsed as Record<string, unknown>;
+      if ("error" in d) errorMessage = String(d.error);
+      else if ("message" in d) errorMessage = String(d.message);
+    }
+    throw new Error(errorMessage);
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const d = parsed as Record<string, unknown>;
+    if ("data" in d && Array.isArray(d.data)) {
+      const pag = (d.pagination && typeof d.pagination === "object"
+        ? (d.pagination as Record<string, unknown>)
+        : d) as Record<string, unknown>;
+      return {
+        data: d.data as Pedido[],
+        page: Number(pag.page ?? page),
+        limit: Number(pag.limit ?? limit),
+        total: Number(pag.total ?? (d.data as unknown[]).length),
+        pages: Number(pag.pages ?? 1),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return { data: parsed as Pedido[], page, limit, total: parsed.length, pages: 1 };
+  }
+  return { data: [], page, limit, total: 0, pages: 0 };
+}
+
+// GET /api/pedidos/{id} — detalhe de um pedido (cabecalho + itens)
+export async function apiGetPedido(id: number): Promise<PedidoDetalhe> {
+  return fetchWithAuth<PedidoDetalhe>(`/api/pedidos/${id}`, {
+    method: "GET",
+  });
+}
+
+// POST /api/pedidos — admin cria novo pedido com itens. valor_bruto de cada
+// item e valor_total do pedido sao calculados no backend. pedido_id_origem e
+// gerado automaticamente.
+export async function apiCreatePedido(
+  input: PedidoInput
+): Promise<PedidoDetalhe> {
+  return fetchWithAuth<PedidoDetalhe>("/api/pedidos", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// PUT /api/pedidos/{id} — admin atualiza cabecalho do pedido e substitui a
+// lista de itens integralmente (delete + insert no backend).
+export async function apiUpdatePedido(
+  id: number,
+  input: PedidoInput
+): Promise<PedidoDetalhe> {
+  return fetchWithAuth<PedidoDetalhe>(`/api/pedidos/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
   });
 }
 

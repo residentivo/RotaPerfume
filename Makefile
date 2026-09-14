@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-import-clientes db-import-produtos test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-import-clientes db-import-produtos db-import-pedidos test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -27,8 +27,6 @@ db-create: ## Cria o banco de dados se não existir
 db-up: db-create ## Cria o schema (tabelas vazias)
 	@echo "=== Aplicando DDL de usuarios (vendedores + usuarios) ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/01_ddl_usuarios.sql
-	@echo "=== Aplicando DDL de pedidos ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/04_ddl_pedidos.sql
 	@echo "=== Aplicando DDL de refresh_tokens ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/06_ddl_refresh_tokens.sql
 	@echo "=== Aplicando DDL de senha_historico ==="
@@ -37,14 +35,16 @@ db-up: db-create ## Cria o schema (tabelas vazias)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/09_ddl_clientes.sql
 	@echo "=== Aplicando DDL de produtos ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/10_ddl_produtos.sql
+	@echo "=== Aplicando DDL de pedidos (depende de clientes + vendedores) ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/04_ddl_pedidos.sql
+	@echo "=== Aplicando DDL de itens_pedido (depende de pedidos + produtos) ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/11_ddl_itens_pedido.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/02_seed_admin.sql
 	@echo "=== Seed: usuarios dos 42 vendedores ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/03_seed_vendedores.sql
-	@echo "=== Seed: pedidos ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/05_seed_pedidos.sql
 	@echo ""
 	@echo "=== Corrigindo hashes (placeholder -> bcrypt real) + criando admin ==="
 	cd apis/shared && go run ./cmd/resetpassword -list
@@ -67,6 +67,9 @@ db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (up
 
 db-import-produtos: ## Importa dados/erp/produtos.csv para a tabela produtos (upsert idempotente)
 	cd apis/shared && go run ./cmd/importprodutos
+
+db-import-pedidos: ## Importa dados/erp/pedidos.csv e itens_pedido.csv (upsert idempotente, nesta ordem)
+	cd apis/shared && go run ./cmd/importpedidos
 
 # =============================================================================
 # Build

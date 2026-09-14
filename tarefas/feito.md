@@ -4,6 +4,27 @@
 
 ---
 
+## Tela de Pedidos — 2026-09-13
+**Agentes:** 🌸 DataBrain + 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** Tela de Pedidos (master-detail): lista de pedidos, ao selecionar uma linha mostra sub-lista de itens do pedido (produtos); criação/edição de pedido na mesma tela. Dados de referência: `dados/erp/pedidos.csv` (28.729 linhas) e `dados/erp/itens_pedido.csv` (197.724 linhas). Link no menu superior.
+
+**Camadas:**
+- [x] Database (🌸 DataBrain) — `sql/04_ddl_pedidos.sql` (tabela `pedidos` alinhada ao CSV: `cliente_id_origem`, canal, status reais Cancelado/Em separação/Entregue/Faturado), `sql/05_seed_pedidos.sql`, nova tabela `sql/11_ddl_itens_pedido.sql` (`itens_pedido`).
+- [x] Backend (🟡 BackBrain) — `apis/shared/models/pedido.go`, `apis/shared/models/item_pedido.go`, `apis/shared/repositories/pedido_repository.go`, importador `apis/shared/cmd/importpedidos` (upsert idempotente por `pedido_id_origem`/`item_id_origem`), `apis/rotaperfumes-api/services/pedido_service.go`, `apis/rotaperfumes-api/handlers/pedido_handler.go`. Rotas novas (todas admin only): `GET /api/pedidos` (paginado, filtros `status`/`canal`/`cliente_id`/`vendedor_id`/`data_inicio`/`data_fim`/`q`), `POST /api/pedidos` (cria pedido + itens, calcula `valor_bruto`/`valor_total`), `GET /api/pedidos/{id}` (detalhe com itens), `PUT /api/pedidos/{id}` (substitui itens). Alvo `make db-import-pedidos` já presente no `Makefile`.
+- [x] Frontend (🟢 FrontBrain) — `frontend/src/app/admin/pedidos` (tela master-detail: lista de pedidos + sub-lista de itens ao selecionar linha), `frontend/src/components/admin/PedidoModal.tsx` (criação/edição com itens), link no `Navbar.tsx`.
+- [x] Teste (🔴 TestBrain) — `pedido_service_test.go`, `pedido_handler_test.go`: 63 testes cobrindo validações, sucesso e erros de `ListPedidos`/`CreatePedido`/`UpdatePedido`/`GetPedidoDetalhe`, com 100% de cobertura no `pedido_service.go`.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Resumo:** schema (`pedidos` + `itens_pedido`) alinhado ao ERP, 4 endpoints REST (`GET/POST /api/pedidos`, `GET/PUT /api/pedidos/{id}`) admin only, tela master-detail completa no frontend, 63 testes com 100% de cobertura no service.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — nova pasta "Pedidos" com os 4 endpoints (`Listar Pedidos`, `Criar Pedido`, `Detalhe do Pedido`, `Editar Pedido`), com exemplos de query params/payload com itens, respostas de sucesso/erro (`201`/`200`/`400`/`403`/`404`) e testes automatizados, seguindo o mesmo padrão das demais pastas da collection (ex.: "Produtos").
+- `postman/README.md` — seção "Pedidos" adicionada em Endpoints, testes automatizados, tabela "Resumo de testes por endpoint" e nova seção "Importação de pedidos (ERP)" em "Subindo o ambiente" documentando `make db-up && make db-import-pedidos`.
+- `Makefile` já continha o alvo `db-import-pedidos`; nenhuma duplicação adicionada. Não havia manual central do projeto (raiz/`docs/`) além do `Makefile` autoexplicativo via `make help` e do `postman/README.md` — nenhum documento novo foi criado além do estritamente necessário.
+
+---
+
 ## [Produtos (CRUD + Importação CSV + Exclusão lógica)] — 2026-09-13
 **Agentes:** 🌸 DataBrain + 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
 

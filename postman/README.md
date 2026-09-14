@@ -221,6 +221,29 @@ Exemplos:
 - **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
 - **Descrição:** Ativa ou inativa o produto (exclusão lógica)
 
+### Pedidos (`/api/pedidos/*`) — admin only
+
+> Tela master-detail: lista de pedidos + sub-lista de itens (produtos) de cada pedido. Base importada de `dados/erp/pedidos.csv` (28.729 linhas) e `dados/erp/itens_pedido.csv` (197.724 linhas) para as tabelas `pedidos`/`itens_pedido` (ver seção "Importação de pedidos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pedidos"** da collection. Não existe endpoint de `DELETE` nem de exclusão lógica para pedidos.
+
+#### GET /api/pedidos
+- **Auth:** Bearer Token (admin)
+- **Query (todos opcionais):** `?page=1&limit=20&status=Faturado&canal=App&cliente_id=1&vendedor_id=1&data_inicio=2026-01-01&data_fim=2026-12-31&q=perfumaria`
+- **Descrição:** Lista pedidos paginada (total + pages), com filtros exatos por `status` (`Cancelado`|`Em separação`|`Entregue`|`Faturado`), `canal` (`App`|`Telefone`|`Visita`|`WhatsApp`), `cliente_id`, `vendedor_id`, intervalo `data_inicio`/`data_fim` (`AAAA-MM-DD`) e busca livre (`q`) pela razão social do cliente. Cada item traz o cabeçalho do pedido enriquecido com `cliente_nome`/`vendedor_nome`, sem os itens.
+
+#### POST /api/pedidos
+- **Auth:** Bearer Token (admin)
+- **Body:** `{ "cliente_id", "vendedor_id", "data_pedido" ("AAAA-MM-DD"), "canal", "status", "itens": [{ "produto_id", "quantidade", "preco_praticado", "desconto_pct" }] }`
+- **Descrição:** Cria um novo pedido com seus itens. `valor_bruto` de cada item e `valor_total` do pedido são calculados no backend (não aceitos no body). `pedido_id_origem` é gerado automaticamente pelo sistema. Exige ao menos um item. Retorna `201` com o pedido criado (incluindo itens); `400` em caso de validação.
+
+#### GET /api/pedidos/{id}
+- **Auth:** Bearer Token (admin)
+- **Descrição:** Retorna o detalhe de um pedido pelo `id` interno, incluindo a lista de itens (`itens`, cada um enriquecido com `produto_sku`/`produto_descricao` via JOIN) — usado na tela master-detail.
+
+#### PUT /api/pedidos/{id}
+- **Auth:** Bearer Token (admin)
+- **Body:** mesmo formato do `POST /api/pedidos`
+- **Descrição:** Atualiza os dados de um pedido existente e substitui integralmente a lista de itens (delete + insert). `valor_bruto`/`valor_total` são recalculados no backend. Retorna `200` com o pedido atualizado (incluindo itens), `404` se não existir, `400` se o payload for inválido.
+
 ## Testes automatizados (Postman)
 
 A collection inclui scripts de teste em JavaScript em cada request. Os testes verificam:
@@ -355,6 +378,25 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Status 200 OK`
 - `Produto com campo ativo retornado`
 
+### Listar Pedidos
+- `Status 200`
+- `Lista retornada`
+- `Paginação presente`
+
+### Criar Pedido
+- `Status 201 Created`
+- `Pedido criado com dados corretos` (`id`, `pedido_id_origem`, `itens` array não vazio)
+- `valor_total e valor_bruto calculados pelo backend`
+
+### Detalhe do Pedido
+- `Status 200`
+- `Dados do pedido presentes` (`id`, `pedido_id_origem`, `itens`)
+- `Itens é um array`
+
+### Editar Pedido
+- `Status 200 OK`
+- `Pedido atualizado com dados corretos` (`id`, `status`, `itens` array)
+
 ## Resumo de testes por endpoint
 
 | Request | # Testes | Salva variáveis |
@@ -387,6 +429,10 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Detalhe do Produto | 1 | — |
 | Editar Produto | 2 | — |
 | Ativar/Inativar Produto | 2 | — |
+| Listar Pedidos | 2 | — |
+| Criar Pedido | 2 | — |
+| Detalhe do Pedido | 2 | — |
+| Editar Pedido | 1 | — |
 
 ## Códigos de erro comuns
 
@@ -435,6 +481,16 @@ make db-up && make db-import-produtos
 ```
 
 O importador (`apis/shared/cmd/importprodutos`) é idempotente (upsert por `sku`) e pode ser executado quantas vezes for necessário sem duplicar registros. Itens do CSV são importados com `ativo = true` por padrão. Sem esse passo, os endpoints `GET /api/produtos`, `GET /api/produtos/{id}`, `POST/PUT /api/produtos` e `PATCH /api/produtos/{id}/inativar` funcionam normalmente, mas retornam/operam sobre base vazia.
+
+### Importação de pedidos (ERP)
+
+`make db-up`/`make db-reset` criam as tabelas `pedidos` e `itens_pedido` (via `sql/04_ddl_pedidos.sql` e `sql/11_ddl_itens_pedido.sql`), mas **não** carregam os dados nelas. Para popular as tabelas a partir de `dados/erp/pedidos.csv` (28.729 linhas) e `dados/erp/itens_pedido.csv` (197.724 linhas), rode adicionalmente:
+
+```bash
+make db-up && make db-import-pedidos
+```
+
+O importador (`apis/shared/cmd/importpedidos`) é idempotente (upsert por `pedido_id_origem`/`item_id_origem`) e importa primeiro os pedidos e depois os itens (nessa ordem, por causa da FK `itens_pedido.pedido_id`). Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/pedidos`, `GET /api/pedidos/{id}`, `POST/PUT /api/pedidos` funcionam normalmente, mas retornam/operam sobre base vazia.
 
 Depois, em outro terminal:
 
