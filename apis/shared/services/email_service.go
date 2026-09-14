@@ -96,7 +96,10 @@ func (s *SMTPEmailService) enviar(ctx context.Context, to, subject, body string)
 		if err := client.StartTLS(tlsConfig); err != nil {
 			return fmt.Errorf("services: smtp starttls: %w", err)
 		}
-	}
+	}else {
+    // Se o servidor não suporta STARTTLS, interrompe a execução por segurança
+    return fmt.Errorf("services: smtp: servidor nao suporta STARTTLS")
+}
 
 	auth := smtp.PlainAuth("", s.user, s.pass, s.host)
 	if ok, _ := client.Extension("AUTH"); ok {
