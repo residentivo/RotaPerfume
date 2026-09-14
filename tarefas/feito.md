@@ -4,6 +4,48 @@
 
 ---
 
+## Cobertura de Testes — shared/repositories — 2026-09-14
+**Agente:** 🔴 TestBrain (delegado por 🤍 MegaBrain) → validado e Kanban atualizado por 🔵 SubBrain
+
+**Descrição:** `apis/shared/repositories` estava com 6.6% de cobertura (só `usuario_repository_test.go` existia). Pendência identificada na tarefa "Cobertura de Testes Backend — 2026-09-14" (abaixo). Escritos testes para os 7 repositórios restantes.
+
+**Camadas:**
+- [ ] Database
+- [ ] Backend
+- [ ] Frontend
+- [x] Teste
+
+**Arquivos de teste criados:**
+- `apis/shared/repositories/`: `cliente_repository_test.go`, `dashboard_repository_test.go`, `pedido_repository_test.go`, `produto_repository_test.go`, `refresh_token_repository_test.go`, `senha_historico_repository_test.go`, `vendedor_repository_test.go`
+
+**Resultado:** `go build ./...` e `go test ./... -cover` limpos em `apis/shared`. Cobertura do pacote `repositories` foi de 6.6% para 88.1% (149 testes, todos passando). Nenhum bug encontrado no código de produção.
+
+**Documentação (SubBrain):** não foi necessário gerar/atualizar Postman ou manuais para esta tarefa — trata-se apenas de testes internos de backend, sem mudança de contrato de API ou de schema.
+
+---
+
+## Cobertura de Testes Backend — 2026-09-14
+**Agente:** 🔴 TestBrain (delegado por 🤍 MegaBrain) → Kanban atualizado por 🔵 SubBrain
+
+**Descrição:** Backend Go (apis/rotaperfumes-api e apis/shared) tinha cobertura de testes incompleta. Foram criados testes para os arquivos que ainda não possuíam.
+
+**Camadas:**
+- [ ] Database
+- [x] Backend
+- [ ] Frontend
+- [x] Teste
+
+**Arquivos de teste criados:**
+- `apis/rotaperfumes-api/handlers/`: `dashboard_handler_test.go`, `senha_historico_handler_test.go`, `usuario_handler_test.go`, `vendedor_handler_test.go`
+- `apis/rotaperfumes-api/services/`: `dashboard_service_test.go`, `refresh_token_service_test.go`, `senha_historico_service_test.go`, `usuario_service_test.go`, `vendedor_service_test.go`
+- `apis/shared/services/`: `password_generator_test.go`, `email_service_test.go`
+
+**Resultado:** `go build ./...` e `go test ./... -cover` limpos em `apis/rotaperfumes-api` e `apis/shared`. Cobertura final: handlers 74.3%, middleware 52.6%, services (rotaperfumes-api) 95.0%, shared/services 46.9% (limitado pela parte SMTP não testável sem rede — documentado em comentário no próprio arquivo de teste), shared/models 100%, shared/repositories 6.6% (repositórios não foram alvo desta tarefa; ficam para uma tarefa futura, se desejado).
+
+**Documentação (SubBrain):** não foi necessário gerar/atualizar Postman ou manuais para esta tarefa — trata-se apenas de testes internos de backend, sem mudança de contrato de API ou de schema.
+
+---
+
 ## Tela de Pedidos — 2026-09-13
 **Agentes:** 🌸 DataBrain + 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
 
