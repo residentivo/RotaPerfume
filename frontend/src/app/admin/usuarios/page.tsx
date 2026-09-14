@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -54,7 +55,7 @@ function roleLabel(role: UserRole): string {
   return role === "admin" ? "Administrador" : "Usuario Padrao";
 }
 
-export default function UsuariosPage() {
+function UsuariosPageContent() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -561,5 +562,13 @@ export default function UsuariosPage() {
         onSubmit={handleModalSubmit}
       />
     </div>
+  );
+}
+
+export default function UsuariosPage() {
+  return (
+    <ProtectedRoute requireAdmin>
+      <UsuariosPageContent />
+    </ProtectedRoute>
   );
 }

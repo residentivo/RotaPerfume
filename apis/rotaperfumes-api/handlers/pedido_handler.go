@@ -12,7 +12,6 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/models"
 )
 
 // PedidoHandler trata as rotas /api/pedidos/*.
@@ -37,14 +36,8 @@ func NewPedidoHandler(db *sql.DB, cfg *config.Config) *PedidoHandler {
 // order_by (id|data_pedido|canal|status|valor_total|created_at|updated_at|
 // cliente_nome|vendedor_nome; default id), order_dir (asc|desc; default desc).
 // Response: {success, data: [pedido...], error, pagination: {page, limit, total, pages}}
-// Admin only.
+// Acesso comum.
 func (h *PedidoHandler) ListPedidos(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
@@ -94,14 +87,8 @@ func parseInt64Query(v string) int64 {
 // GetPedido GET /api/pedidos/{id}
 //
 // Response: {success, data: pedido com itens, error}
-// Admin only.
+// Acesso comum.
 func (h *PedidoHandler) GetPedido(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
@@ -207,14 +194,8 @@ func pedidoErroParaStatus(err error) (status int, msg string, ok bool) {
 // valor_bruto de cada item e valor_total do pedido são calculados no backend.
 // pedido_id_origem é gerado automaticamente pelo sistema.
 // Retorna: 201 com o pedido criado (incluindo itens).
-// Admin only.
+// Acesso comum.
 func (h *PedidoHandler) CreatePedido(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	var req CreatePedidoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
@@ -241,7 +222,8 @@ func (h *PedidoHandler) CreatePedido(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[pedidos] criado: id=%d por admin=%s", pedido.ID, role)
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[pedidos] criado: id=%d por usuario role=%s", pedido.ID, role)
 	writeJSON(w, http.StatusCreated, pedido, "")
 }
 
@@ -252,14 +234,8 @@ func (h *PedidoHandler) CreatePedido(w http.ResponseWriter, r *http.Request) {
 // e valor_total são recalculados no backend.
 // Retorna: 200 com o pedido atualizado (incluindo itens), 404 se não existir,
 // 400 se o payload for inválido.
-// Admin only.
+// Acesso comum.
 func (h *PedidoHandler) UpdatePedido(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
@@ -292,6 +268,7 @@ func (h *PedidoHandler) UpdatePedido(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[pedidos] atualizado: id=%d por admin=%s", id, role)
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[pedidos] atualizado: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, pedido, "")
 }

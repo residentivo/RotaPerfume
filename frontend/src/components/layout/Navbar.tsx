@@ -49,7 +49,7 @@ export function Navbar() {
               Pagamentos
             </Link>
           )}
-          {user?.role === "admin" && (
+          {user && (
             <Link
               href="/admin/clientes"
               className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
@@ -57,7 +57,7 @@ export function Navbar() {
               Clientes
             </Link>
           )}
-          {user?.role === "admin" && (
+          {user && (
             <Link
               href="/admin/produtos"
               className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
@@ -65,7 +65,7 @@ export function Navbar() {
               Produtos
             </Link>
           )}
-          {user?.role === "admin" && (
+          {user && (
             <Link
               href="/admin/pedidos"
               className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"

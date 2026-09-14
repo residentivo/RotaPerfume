@@ -93,13 +93,18 @@ func TestListVendedores_ErroInterno(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestListVendedores_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestListVendedores_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf\s+FROM vendedores\s+WHERE data_desligamento IS NULL\s+ORDER BY nome ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf"}).
+			AddRow(int64(1), "Vendedor Um", "Sudeste", "SP").
+			AddRow(int64(2), "Vendedor Dois", "Sul", "PR"))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -108,9 +113,11 @@ func TestListVendedores_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "acesso restrito a administradores", body["error"])
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestListVendedores_NaoAutenticado(t *testing.T) {

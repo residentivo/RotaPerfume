@@ -6,10 +6,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/models"
 )
 
 // VendedorHandler trata as rotas /api/vendedores/*.
@@ -31,14 +29,8 @@ func NewVendedorHandler(db *sql.DB, cfg *config.Config) *VendedorHandler {
 // Sem paginação: usado para popular listas de seleção (ex: combobox no
 // admin de usuários). Retorna apenas vendedores ativos.
 // Response: {success, data: [{id, nome, regiao, uf}], error}
-// Admin only.
+// Acesso comum.
 func (h *VendedorHandler) ListVendedores(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	vendedores, err := h.svc.ListVendedores(r.Context(), h.db)
 	if err != nil {
 		log.Printf("[vendedores] ListVendedores: %v", err)

@@ -205,13 +205,19 @@ func TestListPedidos_OrderBy(t *testing.T) {
 	}
 }
 
-func TestListPedidos_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestListPedidos_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pedidoFromRegexH).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` ORDER BY p\.id DESC LIMIT \? OFFSET \?`).
+		WithArgs(20, 0).
+		WillReturnRows(pedidoRowsForHandler(1, 230.0))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/pedidos", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -220,9 +226,11 @@ func TestListPedidos_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "acesso restrito a administradores", body["error"])
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestListPedidos_ErroInterno(t *testing.T) {
@@ -330,13 +338,20 @@ func TestGetPedido_IDInvalido(t *testing.T) {
 	assert.Equal(t, "id inválido", body["error"])
 }
 
-func TestGetPedido_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestGetPedido_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 230.0))
+	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.id ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(itemPedidoRowsForHandler())
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/pedidos/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -345,7 +360,11 @@ func TestGetPedido_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------
@@ -379,13 +398,15 @@ func TestCreatePedido_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCreatePedido_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestCreatePedido_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	expectCreatePedidoSuccessH(mock)
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/pedidos", makeJSON(validPedidoPayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -394,9 +415,11 @@ func TestCreatePedido_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "acesso restrito a administradores", body["error"])
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestCreatePedido_JSONInvalido(t *testing.T) {
@@ -592,13 +615,37 @@ func TestUpdatePedido_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUpdatePedido_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestUpdatePedido_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE pedidos\s+SET cliente_id = \?, vendedor_id = \?, data_pedido = \?, canal = \?, status = \?, valor_total = \?\s+WHERE id = \?`).
+		WithArgs(int64(1), int64(2), sqlmock.AnyArg(), "App", "Faturado", 230.0, int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`DELETE FROM itens_pedido WHERE pedido_id = \?`).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectQuery(`SELECT COALESCE\(MAX\(item_id_origem\), 0\) \+ 1 FROM itens_pedido`).
+		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(int64(1)))
+	mock.ExpectExec(`INSERT INTO itens_pedido \(item_id_origem, pedido_id, produto_id, quantidade, preco_praticado, desconto_pct, valor_bruto\)`).
+		WithArgs(int64(1), int64(1), int64(10), 2, 100.0, 10.0, 180.0).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`INSERT INTO itens_pedido \(item_id_origem, pedido_id, produto_id, quantidade, preco_praticado, desconto_pct, valor_bruto\)`).
+		WithArgs(int64(2), int64(1), int64(11), 1, 50.0, 0.0, 50.0).
+		WillReturnResult(sqlmock.NewResult(2, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 230.0))
+	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.id ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(itemPedidoRowsForHandler())
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/pedidos/1", makeJSON(validPedidoPayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -607,7 +654,11 @@ func TestUpdatePedido_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestUpdatePedido_IDInvalido(t *testing.T) {

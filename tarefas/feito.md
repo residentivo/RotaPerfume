@@ -4,6 +4,30 @@
 
 ---
 
+## [BUG] Dashboard não carrega para vendedores — 2026-09-14
+**Agentes:** 🟡 BackBrain + 🟢 FrontBrain (investigação paralela, delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** Usuário reportou que ao logar como vendedor, a tela de dashboard não carregava (ficava travada em "Verificando autenticação...").
+
+**Causa raiz (dupla):**
+1. **Não é bug de permissão de API.** Por design, toda a API `/api/dashboard/*` é `admin only` (`apis/rotaperfumes-api/routes/routes.go:105-123` + `apis/rotaperfumes-api/middleware/auth_middleware.go:86-89`, `JWTMiddleware` com `requireAdmin=true`). O role "vendedor" nunca teve acesso a essas rotas — comportamento intencional.
+2. **Bug real no frontend, causando loop infinito de redirecionamento:** `frontend/src/app/login/page.tsx` redirecionava TODO usuário (inclusive vendedor) para `/dashboard` após login, sem checar role. Como a página `/dashboard` exige `requireAdmin=true` via `ProtectedRoute.tsx`, e o `ProtectedRoute` antigo redirecionava usuário rejeitado de volta para a própria `/dashboard`, o vendedor entrava em loop de redirect — tela travada em "Verificando autenticação...", dando a impressão de "dashboard não carrega".
+
+**Correção (🟢 FrontBrain):**
+- `frontend/src/components/layout/ProtectedRoute.tsx` — ao rejeitar usuário não-admin, agora redireciona para `/pagamentos` (rota de acesso comum) em vez de `/dashboard`, eliminando o loop.
+- `frontend/src/app/login/page.tsx` — redirect pós-login (e redirect quando já logado) passa a usar `isAdmin() ? "/dashboard" : "/pagamentos"` em vez de sempre `/dashboard`.
+
+**Camadas:**
+- [x] Backend — investigado, sem alteração (comportamento admin-only confirmado como intencional, não bug)
+- [x] Frontend (🟢 FrontBrain) — correção acima
+- [ ] Database (N/A)
+- [ ] Teste (N/A — correção de guard de rota simples, sem novo teste automatizado dedicado)
+- [x] Documentação (🔵 SubBrain) — este registro
+
+**Possível melhoria futura (não aberta no backlog, aguardando decisão do usuário):** hoje não existe uma tela "dashboard"/home dedicada para o role vendedor — ele cai em `/pagamentos` após login. Se o usuário desejar uma dashboard própria para vendedor (ex.: métricas dos próprios pedidos/vendas), isso seria uma feature nova (Database → Backend → Frontend → Teste), a ser priorizada em `tarefas/afazer.md` somente se solicitado.
+
+---
+
 ## Ordenação via API (server-side sort) — 2026-09-14
 **Agentes:** 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
 

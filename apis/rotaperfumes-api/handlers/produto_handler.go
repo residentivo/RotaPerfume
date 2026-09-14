@@ -12,7 +12,6 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/models"
 )
 
 // ProdutoHandler trata as rotas /api/produtos/*.
@@ -37,14 +36,8 @@ func NewProdutoHandler(db *sql.DB, cfg *config.Config) *ProdutoHandler {
 // data_lancamento|ativo|created_at|updated_at; default id),
 // order_dir (asc|desc; default asc).
 // Response: {success, data: [produto...], error, pagination: {page, limit, total, pages}}
-// Admin only.
+// Acesso comum.
 func (h *ProdutoHandler) ListProdutos(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
@@ -77,14 +70,8 @@ func (h *ProdutoHandler) ListProdutos(w http.ResponseWriter, r *http.Request) {
 // GetProduto GET /api/produtos/{id}
 //
 // Response: {success, data: produto, error}
-// Admin only.
+// Acesso comum.
 func (h *ProdutoHandler) GetProduto(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
@@ -114,14 +101,8 @@ type ToggleAtivoProdutoRequest struct {
 //
 // Body opcional: { "ativo": bool } — omitido = toggle
 // Response: {success, data: produto atualizado, error}
-// Admin only.
+// Acesso comum.
 func (h *ProdutoHandler) ToggleAtivoProduto(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
@@ -142,7 +123,8 @@ func (h *ProdutoHandler) ToggleAtivoProduto(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	log.Printf("[produtos] ativo=%t: id=%d por admin=%s", produto.Ativo, id, role)
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[produtos] ativo=%t: id=%d por usuario role=%s", produto.Ativo, id, role)
 	writeJSON(w, http.StatusOK, produto, "")
 }
 
@@ -208,14 +190,8 @@ func produtoErroParaStatus(err error) (status int, msg string, ok bool) {
 // Body: { "sku": string, "descricao": string, "categoria": string, "marca": string, "nota_olfativa": string, "preco_tabela": number, "custo_unitario": number, "unidade": string, "data_lancamento": "AAAA-MM-DD" (opcional) }
 // ativo é sempre TRUE na criação (regra de negócio: default ativo).
 // Retorna: 201 com o produto criado.
-// Admin only.
+// Acesso comum.
 func (h *ProdutoHandler) CreateProduto(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	var req CreateProdutoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
@@ -245,7 +221,8 @@ func (h *ProdutoHandler) CreateProduto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[produtos] criado: id=%d por admin=%s", produto.ID, role)
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[produtos] criado: id=%d por usuario role=%s", produto.ID, role)
 	writeJSON(w, http.StatusCreated, produto, "")
 }
 
@@ -254,14 +231,8 @@ func (h *ProdutoHandler) CreateProduto(w http.ResponseWriter, r *http.Request) {
 // Body: { "descricao": string, "categoria": string, "marca": string, "nota_olfativa": string, "preco_tabela": number, "custo_unitario": number, "unidade": string, "data_lancamento": "AAAA-MM-DD" (opcional) }
 // sku e ativo não são editáveis por esta rota.
 // Retorna: 200 com o produto atualizado, 404 se não existir, 400 se o payload for inválido.
-// Admin only.
+// Acesso comum.
 func (h *ProdutoHandler) UpdateProduto(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
@@ -296,6 +267,7 @@ func (h *ProdutoHandler) UpdateProduto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[produtos] atualizado: id=%d por admin=%s", id, role)
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[produtos] atualizado: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, produto, "")
 }

@@ -103,13 +103,15 @@ func TestGetMetrics_PeriodoInvalido(t *testing.T) {
 	assert.Equal(t, "periodo deve ser 'today' ou 'month'", body["error"])
 }
 
-func TestGetMetrics_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestGetMetrics_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mockDashboardMetricsQueries(mock)
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/metrics", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -118,9 +120,11 @@ func TestGetMetrics_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "acesso restrito a administradores", body["error"])
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestGetMetrics_ErroInterno(t *testing.T) {
@@ -250,13 +254,17 @@ func TestGetVendas_ErroInterno(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestGetVendas_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestGetVendas_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT DATE\(data_pedido\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
+		WithArgs(30).
+		WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/vendas", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -265,7 +273,12 @@ func TestGetVendas_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	data := body["data"].([]any)
+	assert.Len(t, data, 30)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------
@@ -323,13 +336,19 @@ func TestGetVendedores_ErroInterno(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestGetVendedores_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestGetVendedores_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, meta_mensal\s+FROM vendedores\s+WHERE data_desligamento IS NULL\s+ORDER BY meta_mensal DESC\s+LIMIT \? OFFSET \?`).
+		WithArgs(20, 0).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal"}))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/vendedores", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -338,7 +357,12 @@ func TestGetVendedores_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	pagination := body["pagination"].(map[string]any)
+	assert.Equal(t, float64(0), pagination["total"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------
@@ -432,13 +456,15 @@ func TestGetClientes_ErroInterno(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestGetClientes_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestGetClientes_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mockDashboardClientesQueries(mock)
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/clientes", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -447,5 +473,10 @@ func TestGetClientes_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, "month", data["periodo"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

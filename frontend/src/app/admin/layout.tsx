@@ -1,15 +1,17 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { isAdmin } from "@/lib/auth";
 
 interface NavItem {
   label: string;
   href: string;
   icon: ReactNode;
+  adminOnly?: boolean;
 }
 
 const adminNav: NavItem[] = [
@@ -26,6 +28,7 @@ const adminNav: NavItem[] = [
   {
     label: "Usuarios",
     href: "/admin/usuarios",
+    adminOnly: true,
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -69,16 +72,23 @@ const adminNav: NavItem[] = [
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const [admin, setAdmin] = useState(false);
+
+  useEffect(() => {
+    setAdmin(isAdmin());
+  }, []);
+
+  const visibleNav = adminNav.filter((item) => !item.adminOnly || admin);
 
   return (
-    <ProtectedRoute requireAdmin>
+    <ProtectedRoute>
       <div className="min-h-screen bg-slate-50">
         <Navbar />
         <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:px-8">
           {/* Sidebar de navegacao admin */}
           <aside className="w-52 flex-shrink-0">
             <nav className="space-y-1" aria-label="Navegacao Admin">
-              {adminNav.map((item) => {
+              {visibleNav.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(item.href + "/");
                 return (
                   <Link

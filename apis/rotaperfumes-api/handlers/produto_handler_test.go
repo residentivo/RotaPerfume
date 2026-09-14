@@ -68,13 +68,19 @@ func TestListProdutos_Success_Admin(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestListProdutos_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestListProdutos_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos ORDER BY id ASC LIMIT \? OFFSET \?`).
+		WithArgs(20, 0).
+		WillReturnRows(produtoRowsForHandler())
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/produtos", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -83,9 +89,11 @@ func TestListProdutos_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "acesso restrito a administradores", body["error"])
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestListProdutos_ComFiltros(t *testing.T) {
@@ -254,13 +262,17 @@ func TestGetProduto_IDInvalido(t *testing.T) {
 	assert.Equal(t, "id inválido", body["error"])
 }
 
-func TestGetProduto_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestGetProduto_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(produtoRowsForHandler())
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/produtos/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -269,7 +281,11 @@ func TestGetProduto_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------
@@ -378,13 +394,20 @@ func TestToggleAtivoProduto_IDInvalido(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
-func TestToggleAtivoProduto_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestToggleAtivoProduto_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(produtoRowsForHandler())
+	mock.ExpectExec(`UPDATE produtos SET ativo = \? WHERE id = \?`).
+		WithArgs(false, int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/produtos/1/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -393,7 +416,12 @@ func TestToggleAtivoProduto_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, false, data["ativo"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------
@@ -443,13 +471,17 @@ func TestCreateProduto_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCreateProduto_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestCreateProduto_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectExec(`INSERT INTO produtos \(sku, descricao, categoria, marca, nota_olfativa, preco_tabela, custo_unitario, unidade, data_lancamento, ativo\)`).
+		WithArgs("SKU-001", "Perfume Teste", "Perfumaria", "Marca X", "Cítrico", 99.90, 45.00, "UN", sqlmock.AnyArg(), true).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/produtos", makeJSON(validProdutoPayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -458,9 +490,11 @@ func TestCreateProduto_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "acesso restrito a administradores", body["error"])
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestCreateProduto_JSONInvalido(t *testing.T) {
@@ -621,13 +655,20 @@ func TestUpdateProduto_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUpdateProduto_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestUpdateProduto_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectExec(`UPDATE produtos\s+SET descricao = \?, categoria = \?, marca = \?, nota_olfativa = \?, preco_tabela = \?, custo_unitario = \?, unidade = \?, data_lancamento = \?\s+WHERE id = \?`).
+		WithArgs("Perfume Teste", "Perfumaria", "Marca X", "Cítrico", 99.90, 45.00, "UN", sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(produtoRowsForHandler())
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/produtos/1", makeJSON(validProdutoPayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -636,7 +677,11 @@ func TestUpdateProduto_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestUpdateProduto_IDInvalido(t *testing.T) {

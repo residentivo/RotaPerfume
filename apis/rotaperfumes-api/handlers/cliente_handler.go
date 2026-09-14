@@ -13,7 +13,6 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/models"
 )
 
 // ClienteHandler trata as rotas /api/clientes/*.
@@ -52,14 +51,8 @@ func parseAtivoQuery(v string) *bool {
 // order_by (id|razao_social|cnpj|segmento|cidade|uf|data_cadastro|ativo|
 // created_at|updated_at; default id), order_dir (asc|desc; default asc).
 // Response: {success, data: [cliente...], error, pagination: {page, limit, total, pages}}
-// Admin only.
+// Acesso comum.
 func (h *ClienteHandler) ListClientes(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
@@ -92,14 +85,8 @@ func (h *ClienteHandler) ListClientes(w http.ResponseWriter, r *http.Request) {
 // GetCliente GET /api/clientes/{id}
 //
 // Response: {success, data: cliente, error}
-// Admin only.
+// Acesso comum.
 func (h *ClienteHandler) GetCliente(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
@@ -129,14 +116,8 @@ type ToggleAtivoClienteRequest struct {
 //
 // Body opcional: { "ativo": bool } — omitido = toggle
 // Response: {success, data: cliente atualizado, error}
-// Admin only.
+// Acesso comum.
 func (h *ClienteHandler) ToggleAtivoCliente(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
@@ -157,7 +138,8 @@ func (h *ClienteHandler) ToggleAtivoCliente(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	log.Printf("[clientes] ativo=%t: id=%d por admin=%s", cliente.Ativo, id, role)
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[clientes] ativo=%t: id=%d por usuario role=%s", cliente.Ativo, id, role)
 	writeJSON(w, http.StatusOK, cliente, "")
 }
 
@@ -216,13 +198,9 @@ func clienteErroParaStatus(err error) (status int, msg string, ok bool) {
 // Body: { "cnpj": string, "razao_social": string, "segmento": string, "cidade": string, "uf": string, "bairro": string, "data_cadastro": "AAAA-MM-DD" (opcional, default hoje) }
 // cliente_id_origem é gerado automaticamente pelo sistema.
 // Retorna: 201 com o cliente criado.
-// Admin only.
+// Acesso comum.
 func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
+	role, _ := middleware.GetRole(r.Context())
 
 	var req CreateClienteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -251,7 +229,7 @@ func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[clientes] criado: id=%d por admin=%s", cliente.ID, role)
+	log.Printf("[clientes] criado: id=%d por usuario role=%s", cliente.ID, role)
 	writeJSON(w, http.StatusCreated, cliente, "")
 }
 
@@ -260,14 +238,8 @@ func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
 // Body: { "cnpj": string, "razao_social": string, "segmento": string, "cidade": string, "uf": string, "bairro": string, "data_cadastro": "AAAA-MM-DD" }
 // cliente_id_origem e ativo não são editáveis por esta rota.
 // Retorna: 200 com o cliente atualizado, 404 se não existir, 400 se o payload for inválido.
-// Admin only.
+// Acesso comum.
 func (h *ClienteHandler) UpdateCliente(w http.ResponseWriter, r *http.Request) {
-	role, ok := middleware.GetRole(r.Context())
-	if !ok || role != models.RoleAdmin {
-		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
-		return
-	}
-
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
@@ -301,6 +273,7 @@ func (h *ClienteHandler) UpdateCliente(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[clientes] atualizado: id=%d por admin=%s", id, role)
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[clientes] atualizado: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, cliente, "")
 }

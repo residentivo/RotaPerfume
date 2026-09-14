@@ -25,7 +25,12 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
     }
 
     if (requireAdmin && !isAdmin()) {
-      router.replace("/dashboard");
+      // Nao redirecionar para /dashboard aqui: a pagina de dashboard tambem
+      // exige requireAdmin, o que causava um loop infinito de redirect para
+      // usuarios nao-admin (ex.: role "vendedor"), deixando a tela travada
+      // em "Verificando autenticacao...". Redireciona para uma rota
+      // acessivel a qualquer usuario autenticado.
+      router.replace("/pagamentos");
       return;
     }
 

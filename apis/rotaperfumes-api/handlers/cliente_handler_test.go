@@ -105,13 +105,19 @@ func TestListClientes_OrderBy(t *testing.T) {
 	}
 }
 
-func TestListClientes_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestListClientes_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes ORDER BY id ASC LIMIT \? OFFSET \?`).
+		WithArgs(20, 0).
+		WillReturnRows(clienteRowsForHandler())
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/clientes", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -120,9 +126,11 @@ func TestListClientes_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "acesso restrito a administradores", body["error"])
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestListClientes_ComFiltros(t *testing.T) {
@@ -251,13 +259,17 @@ func TestGetCliente_IDInvalido(t *testing.T) {
 	assert.Equal(t, "id inválido", body["error"])
 }
 
-func TestGetCliente_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestGetCliente_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(clienteRowsForHandler())
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/clientes/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -266,7 +278,11 @@ func TestGetCliente_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------
@@ -375,13 +391,20 @@ func TestToggleAtivoCliente_IDInvalido(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
-func TestToggleAtivoCliente_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestToggleAtivoCliente_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(clienteRowsForHandler())
+	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE id = \?`).
+		WithArgs(false, int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/clientes/1/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -390,7 +413,12 @@ func TestToggleAtivoCliente_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, false, data["ativo"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------
@@ -440,13 +468,19 @@ func TestCreateCliente_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCreateCliente_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestCreateCliente_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT COALESCE\(MAX\(cliente_id_origem\), 0\) \+ 1 FROM clientes`).
+		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(int64(101)))
+	mock.ExpectExec(`INSERT INTO clientes \(cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo\)`).
+		WithArgs(int64(101), "12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), true).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/clientes", makeJSON(validClientePayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -455,9 +489,11 @@ func TestCreateCliente_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "acesso restrito a administradores", body["error"])
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestCreateCliente_JSONInvalido(t *testing.T) {
@@ -600,13 +636,20 @@ func TestUpdateCliente_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUpdateCliente_Forbidden_NaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+func TestUpdateCliente_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE id = \?`).
+		WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(clienteRowsForHandler())
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/clientes/1", makeJSON(validClientePayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -615,7 +658,11 @@ func TestUpdateCliente_Forbidden_NaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestUpdateCliente_IDInvalido(t *testing.T) {

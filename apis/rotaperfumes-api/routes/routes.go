@@ -23,27 +23,27 @@ import (
 //	PUT  /api/usuarios/{id}             — admin only — atualizar usuário
 //	PATCH /api/usuarios/{id}/inativar   — admin only — ativar/inativar
 //	POST /api/admin/reset-password      — admin only — resetar senha de outro usuário
-//	GET  /api/vendedores                — admin only — lista vendedores ativos (sem paginação)
+//	GET  /api/vendedores                — acesso comum — lista vendedores ativos (sem paginação)
 //	GET  /api/senha-historico           — admin only — todo histórico de senhas (paginado, order_by/order_dir opcionais)
 //	GET  /api/senha-historico/{user_id} — admin only — histórico de um usuário (paginado, order_by/order_dir opcionais)
-//	GET  /api/dashboard/metrics         — admin only — métricas gerais (vendas, pedidos, ticket medio)
-//	GET  /api/dashboard/vendas          — admin only — serie temporal de vendas (ultimos N dias)
-//	GET  /api/dashboard/vendedores      — admin only — ranking de vendedores com meta
-//	GET  /api/dashboard/clientes        — admin only — métricas da base de clientes (totais, novos, por segmento, por uf)
-//	GET  /api/clientes                  — admin only — lista clientes (paginado, filtros uf/segmento/ativo/q, order_by/order_dir opcionais)
-//	POST /api/clientes                  — admin only — criar cliente
-//	GET  /api/clientes/{id}             — admin only — detalhe de um cliente
-//	PUT  /api/clientes/{id}             — admin only — atualizar cliente
-//	PATCH /api/clientes/{id}/inativar   — admin only — ativar/inativar cliente
-//	GET  /api/produtos                  — admin only — lista produtos (paginado, filtros categoria/marca/ativo/q, order_by/order_dir opcionais)
-//	POST /api/produtos                  — admin only — criar produto
-//	GET  /api/produtos/{id}             — admin only — detalhe de um produto
-//	PUT  /api/produtos/{id}             — admin only — atualizar produto
-//	PATCH /api/produtos/{id}/inativar   — admin only — ativar/inativar produto
-//	GET  /api/pedidos                   — admin only — lista pedidos (paginado, filtros status/canal/cliente_id/vendedor_id/data_inicio/data_fim/q, order_by/order_dir opcionais)
-//	POST /api/pedidos                   — admin only — cria pedido com itens (calcula valor_bruto/valor_total)
-//	GET  /api/pedidos/{id}               — admin only — detalhe de um pedido (com itens)
-//	PUT  /api/pedidos/{id}               — admin only — atualiza pedido e substitui a lista de itens
+//	GET  /api/dashboard/metrics         — acesso comum — métricas gerais (vendas, pedidos, ticket medio)
+//	GET  /api/dashboard/vendas          — acesso comum — serie temporal de vendas (ultimos N dias)
+//	GET  /api/dashboard/vendedores      — acesso comum — ranking de vendedores com meta
+//	GET  /api/dashboard/clientes        — acesso comum — métricas da base de clientes (totais, novos, por segmento, por uf)
+//	GET  /api/clientes                  — acesso comum — lista clientes (paginado, filtros uf/segmento/ativo/q, order_by/order_dir opcionais)
+//	POST /api/clientes                  — acesso comum — criar cliente
+//	GET  /api/clientes/{id}             — acesso comum — detalhe de um cliente
+//	PUT  /api/clientes/{id}             — acesso comum — atualizar cliente
+//	PATCH /api/clientes/{id}/inativar   — acesso comum — ativar/inativar cliente
+//	GET  /api/produtos                  — acesso comum — lista produtos (paginado, filtros categoria/marca/ativo/q, order_by/order_dir opcionais)
+//	POST /api/produtos                  — acesso comum — criar produto
+//	GET  /api/produtos/{id}             — acesso comum — detalhe de um produto
+//	PUT  /api/produtos/{id}             — acesso comum — atualizar produto
+//	PATCH /api/produtos/{id}/inativar   — acesso comum — ativar/inativar produto
+//	GET  /api/pedidos                   — acesso comum — lista pedidos (paginado, filtros status/canal/cliente_id/vendedor_id/data_inicio/data_fim/q, order_by/order_dir opcionais)
+//	POST /api/pedidos                   — acesso comum — cria pedido com itens (calcula valor_bruto/valor_total)
+//	GET  /api/pedidos/{id}               — acesso comum — detalhe de um pedido (com itens)
+//	PUT  /api/pedidos/{id}               — acesso comum — atualiza pedido e substitui a lista de itens
 //	GET  /api/pagamentos                — acesso comum (qualquer usuário autenticado) — lista pagamentos (paginado, filtros status_pagamento/forma_pagamento/pedido_id/vencimento_de/vencimento_ate, order_by/order_dir opcionais)
 //	POST /api/pagamentos                — acesso comum — cria pagamento
 //	GET  /api/pagamentos/{id}            — acesso comum — detalhe de um pagamento
@@ -102,80 +102,80 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	senhaTodosChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(senhaH.ListarTodos))
 	mux.Handle("/api/senha-historico", senhaTodosChain)
 
-	// Dashboard metrics: admin only.
-	metricsChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(dashboardH.GetMetrics))
+	// Dashboard metrics: acesso comum (qualquer usuário autenticado).
+	metricsChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetMetrics))
 	mux.Handle("/api/dashboard/metrics", metricsChain)
 
-	// Dashboard vendas (serie temporal): admin only.
-	vendasChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(dashboardH.GetVendas))
+	// Dashboard vendas (serie temporal): acesso comum.
+	vendasChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetVendas))
 	mux.Handle("/api/dashboard/vendas", vendasChain)
 
-	// Dashboard vendedores (ranking): admin only.
-	vendedoresChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(dashboardH.GetVendedores))
+	// Dashboard vendedores (ranking): acesso comum.
+	vendedoresChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetVendedores))
 	mux.Handle("/api/dashboard/vendedores", vendedoresChain)
 
-	// Lista de vendedores (para popular selects no admin de usuários): admin only.
-	listVendedoresChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.ListVendedores))
+	// Lista de vendedores (para popular selects): acesso comum.
+	listVendedoresChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.ListVendedores))
 	mux.Handle("GET /api/vendedores", listVendedoresChain)
 
-	// Dashboard clientes (métricas da base de clientes): admin only.
-	dashboardClientesChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(dashboardH.GetClientes))
+	// Dashboard clientes (métricas da base de clientes): acesso comum.
+	dashboardClientesChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetClientes))
 	mux.Handle("/api/dashboard/clientes", dashboardClientesChain)
 
-	// Lista de clientes: admin only.
-	listClientesChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.ListClientes))
+	// Lista de clientes: acesso comum.
+	listClientesChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.ListClientes))
 	mux.Handle("GET /api/clientes", listClientesChain)
 
-	// Cria cliente: admin only.
-	createClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.CreateCliente))
+	// Cria cliente: acesso comum.
+	createClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.CreateCliente))
 	mux.Handle("POST /api/clientes", createClienteChain)
 
-	// Detalhe de cliente: admin only.
-	getClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.GetCliente))
+	// Detalhe de cliente: acesso comum.
+	getClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.GetCliente))
 	mux.Handle("GET /api/clientes/{id}", getClienteChain)
 
-	// Atualiza cliente: admin only.
-	updateClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.UpdateCliente))
+	// Atualiza cliente: acesso comum.
+	updateClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.UpdateCliente))
 	mux.Handle("PUT /api/clientes/{id}", updateClienteChain)
 
-	// Toggle ativo/inativo de cliente: admin only.
-	toggleAtivoClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(clienteH.ToggleAtivoCliente))
+	// Toggle ativo/inativo de cliente: acesso comum.
+	toggleAtivoClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.ToggleAtivoCliente))
 	mux.Handle("PATCH /api/clientes/{id}/inativar", toggleAtivoClienteChain)
 
-	// Lista de produtos: admin only.
-	listProdutosChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.ListProdutos))
+	// Lista de produtos: acesso comum.
+	listProdutosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.ListProdutos))
 	mux.Handle("GET /api/produtos", listProdutosChain)
 
-	// Cria produto: admin only.
-	createProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.CreateProduto))
+	// Cria produto: acesso comum.
+	createProdutoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.CreateProduto))
 	mux.Handle("POST /api/produtos", createProdutoChain)
 
-	// Detalhe de produto: admin only.
-	getProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.GetProduto))
+	// Detalhe de produto: acesso comum.
+	getProdutoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.GetProduto))
 	mux.Handle("GET /api/produtos/{id}", getProdutoChain)
 
-	// Atualiza produto: admin only.
-	updateProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.UpdateProduto))
+	// Atualiza produto: acesso comum.
+	updateProdutoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.UpdateProduto))
 	mux.Handle("PUT /api/produtos/{id}", updateProdutoChain)
 
-	// Toggle ativo/inativo de produto: admin only.
-	toggleAtivoProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.ToggleAtivoProduto))
+	// Toggle ativo/inativo de produto: acesso comum.
+	toggleAtivoProdutoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.ToggleAtivoProduto))
 	mux.Handle("PATCH /api/produtos/{id}/inativar", toggleAtivoProdutoChain)
 
-	// Lista de pedidos: admin only.
-	listPedidosChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(pedidoH.ListPedidos))
+	// Lista de pedidos: acesso comum.
+	listPedidosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.ListPedidos))
 	mux.Handle("GET /api/pedidos", listPedidosChain)
 
-	// Cria pedido (com itens): admin only.
-	createPedidoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(pedidoH.CreatePedido))
+	// Cria pedido (com itens): acesso comum.
+	createPedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.CreatePedido))
 	mux.Handle("POST /api/pedidos", createPedidoChain)
 
-	// Detalhe de pedido (com itens): admin only.
-	getPedidoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(pedidoH.GetPedido))
+	// Detalhe de pedido (com itens): acesso comum.
+	getPedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.GetPedido))
 	mux.Handle("GET /api/pedidos/{id}", getPedidoChain)
 
-	// Atualiza pedido (substitui itens): admin only.
-	updatePedidoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(pedidoH.UpdatePedido))
+	// Atualiza pedido (substitui itens): acesso comum.
+	updatePedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.UpdatePedido))
 	mux.Handle("PUT /api/pedidos/{id}", updatePedidoChain)
 
 	// Lista de pagamentos: acesso comum (qualquer usuário autenticado, sem

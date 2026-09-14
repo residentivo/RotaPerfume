@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { apiLogin } from "@/lib/api";
-import { saveUser, getUser } from "@/lib/auth";
+import { saveUser, getUser, isAdmin } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,7 +19,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (getUser()) {
-      router.replace("/dashboard");
+      router.replace(isAdmin() ? "/dashboard" : "/pagamentos");
     }
   }, [router]);
 
@@ -55,7 +55,7 @@ export default function LoginPage() {
       if (res.trocar_senha) {
         router.replace("/trocar-senha");
       } else {
-        router.replace("/dashboard");
+        router.replace(isAdmin() ? "/dashboard" : "/pagamentos");
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao fazer login";
