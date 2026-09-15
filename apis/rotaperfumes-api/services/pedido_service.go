@@ -218,29 +218,23 @@ func calcularValorBruto(quantidade int, precoPraticado, descontoPct float64) flo
 
 // CreatePedido cria um novo pedido com seus itens, calculando valor_bruto de
 // cada item e valor_total do pedido no backend. pedido_id_origem é gerado
-// automaticamente (próximo valor disponível).
+// nativamente pelo AUTO_INCREMENT do MySQL.
 func (s *PedidoService) CreatePedido(ctx context.Context, db *sql.DB, input PedidoInput) (*repositories.PedidoDetalhe, error) {
 	pedido, itens, err := validarPedidoInput(input)
 	if err != nil {
 		return nil, err
 	}
 
-	proximoIDOrigem, err := s.repo.NextPedidoIDOrigem(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	pedido.PedidoIDOrigem = proximoIDOrigem
-
 	if err := s.repo.CreateComItens(ctx, db, &pedido, itens); err != nil {
 		return nil, err
 	}
 
 	if s.Cfg.Verbose {
-		log.Printf("[pedidos] criado: id=%d pedido_id_origem=%d cliente_id=%d valor_total=%.2f itens=%d",
-			pedido.ID, pedido.PedidoIDOrigem, pedido.ClienteID, pedido.ValorTotal, len(itens))
+		log.Printf("[pedidos] criado: pedido_id_origem=%d cliente_id=%d valor_total=%.2f itens=%d",
+			pedido.PedidoIDOrigem, pedido.ClienteID, pedido.ValorTotal, len(itens))
 	}
 
-	return s.GetPedidoDetalhe(ctx, db, pedido.ID)
+	return s.GetPedidoDetalhe(ctx, db, pedido.PedidoIDOrigem)
 }
 
 // UpdatePedido atualiza o cabeçalho de um pedido existente e substitui

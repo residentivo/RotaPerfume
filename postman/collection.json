@@ -2285,7 +2285,7 @@
                 }
               ]
             },
-            "description": "Lista clientes com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `uf` (string) — filtro exato\n- `segmento` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `razao_social` OU `cnpj`\n- `order_by`: id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Lista clientes com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `uf` (string) — filtro exato\n- `segmento` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `razao_social` OU `cnpj`\n- `order_by`: id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at. Default: id (alias de coluna aceito pela API; o campo retornado no JSON é `cliente_id_origem` — não existe mais `id`).\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
           },
           "response": [
             {
@@ -2319,7 +2319,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}"
             },
             {
               "name": "403 Forbidden — Não é admin",
@@ -2358,7 +2358,6 @@
                   "});",
                   "var jsonData = pm.response.json();",
                   "pm.test('Cliente criado com dados corretos', function() {",
-                  "    pm.expect(jsonData.data).to.have.property('id');",
                   "    pm.expect(jsonData.data).to.have.property('cliente_id_origem');",
                   "    pm.expect(jsonData.data.razao_social).to.eql('Perfumaria Nova Ltda');",
                   "    pm.expect(jsonData.data.ativo).to.eql(true);",
@@ -2395,7 +2394,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "clientes"]
             },
-            "description": "Cria um novo cliente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cnpj\": \"98765432000188\",\n  \"razao_social\": \"Perfumaria Nova Ltda\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"Campinas\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Centro\",\n  \"data_cadastro\": \"2026-09-13\"\n}\n```\n- `data_cadastro` é opcional (formato `AAAA-MM-DD`); se omitido, usa a data de hoje.\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras).\n- `cliente_id_origem` é gerado automaticamente pelo sistema (`MAX + 1`) e `ativo` é sempre `true` na criação — não são aceitos no body.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 3041,\n    \"cliente_id_origem\": 13041,\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, ou campo obrigatório ausente (`razao_social`, `cnpj`, `segmento`, `cidade`) ou `uf` com formato inválido (deve ter 2 letras), ou `data_cadastro` em formato inválido\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Cria um novo cliente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cnpj\": \"98765432000188\",\n  \"razao_social\": \"Perfumaria Nova Ltda\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"Campinas\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Centro\",\n  \"data_cadastro\": \"2026-09-13\"\n}\n```\n- `data_cadastro` é opcional (formato `AAAA-MM-DD`); se omitido, usa a data de hoje.\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras).\n- `cliente_id_origem` é a PK gerada automaticamente pelo MySQL (AUTO_INCREMENT) e `ativo` é sempre `true` na criação — não são aceitos no body. Não existe mais campo `id`.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 13041,\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, ou campo obrigatório ausente (`razao_social`, `cnpj`, `segmento`, `cidade`) ou `uf` com formato inválido (deve ter 2 letras), ou `data_cadastro` em formato inválido\n- `401` — não autenticado\n- `403` — não é admin"
           },
           "response": [
             {
@@ -2428,7 +2427,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 3041,\n    \"cliente_id_origem\": 13041,\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 13041,\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
             },
             {
               "name": "400 Bad Request — Campo obrigatório ausente",
@@ -2535,7 +2534,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "clientes", "1"]
             },
-            "description": "Retorna o detalhe de um cliente pelo `id` interno (não é o `cliente_id_origem` do CSV).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do cliente\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
+            "description": "Retorna o detalhe de um cliente pelo `cliente_id_origem` (PK). Não existe mais campo `id`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
           },
           "response": [
             {
@@ -2559,7 +2558,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
             },
             {
               "name": "404 Not Found — Cliente inexistente",
@@ -2656,7 +2655,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "clientes", "1"]
             },
-            "description": "Atualiza os dados de um cliente existente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — ID interno do cliente\n\n**Body:**\n```json\n{\n  \"cnpj\": \"12345678000199\",\n  \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"São Paulo\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Bela Vista\",\n  \"data_cadastro\": \"2023-05-10\"\n}\n```\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras), `data_cadastro` (formato `AAAA-MM-DD`).\n- `cliente_id_origem` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/clientes/{id}/inativar` para alterar `ativo`).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, ou campo obrigatório ausente/inválido (mesmas regras do `POST /api/clientes`)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
+            "description": "Atualiza os dados de um cliente existente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Body:**\n```json\n{\n  \"cnpj\": \"12345678000199\",\n  \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"São Paulo\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Bela Vista\",\n  \"data_cadastro\": \"2023-05-10\"\n}\n```\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras), `data_cadastro` (formato `AAAA-MM-DD`).\n- `cliente_id_origem` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/clientes/{id}/inativar` para alterar `ativo`).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, ou campo obrigatório ausente/inválido (mesmas regras do `POST /api/clientes`)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
           },
           "response": [
             {
@@ -2689,7 +2688,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
             },
             {
               "name": "400 Bad Request — UF inválida",
@@ -2802,7 +2801,7 @@
                   "var jsonData = pm.response.json();",
                   "pm.test('Cliente com campo ativo retornado', function() {",
                   "    pm.expect(jsonData.data).to.have.property('ativo');",
-                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data).to.have.property('cliente_id_origem');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -2836,7 +2835,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "clientes", "1", "inativar"]
             },
-            "description": "Ativa ou inativa um cliente (apenas admin).\n\n- **Body omitido:** faz toggle (inverte o estado atual)\n- **Body `{ \"ativo\": true }`:** ativa o cliente\n- **Body `{ \"ativo\": false }`:** inativa o cliente\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do cliente\n\n**Body (opcional):**\n- `ativo` (bool) — estado desejado. Se omitido, faz toggle.\n\n**Resposta de sucesso (200):** cliente atualizado (mesmo formato de `GET /api/clientes/{id}`).\n\n**Códigos de erro:**\n- `400` — `id` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
+            "description": "Ativa ou inativa um cliente (apenas admin).\n\n- **Body omitido:** faz toggle (inverte o estado atual)\n- **Body `{ \"ativo\": true }`:** ativa o cliente\n- **Body `{ \"ativo\": false }`:** inativa o cliente\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Body (opcional):**\n- `ativo` (bool) — estado desejado. Se omitido, faz toggle.\n\n**Resposta de sucesso (200):** cliente atualizado (mesmo formato de `GET /api/clientes/{cliente_id_origem}`, sem campo `id`).\n\n**Códigos de erro:**\n- `400` — `id` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
           },
           "response": [
             {
@@ -2869,7 +2868,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": false,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": false,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
             },
             {
               "name": "200 OK — Toggle (body omitido)",
@@ -2901,7 +2900,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"ativo\": true\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"ativo\": true\n  }\n}"
             },
             {
               "name": "404 Not Found — Cliente inexistente",
@@ -3957,7 +3956,7 @@
                   "key": "order_by",
                   "value": "data_pedido",
                   "disabled": true,
-                  "description": "Coluna de ordenação (opcional). Aceitos: id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome. Valor inválido/ausente cai no default (id desc)."
+                  "description": "Coluna de ordenação (opcional). Aceitos: id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome. Valor inválido/ausente cai no default (id desc). Nota: 'id' aqui é alias de coluna aceito pela API, mas o campo retornado no JSON é pedido_id_origem (não existe mais campo 'id' na resposta)."
                 },
                 {
                   "key": "order_dir",
@@ -3967,7 +3966,7 @@
                 }
               ]
             },
-            "description": "Lista pedidos com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status` (string) — filtro exato: `Cancelado`, `Em separação`, `Entregue` ou `Faturado`\n- `canal` (string) — filtro exato: `App`, `Telefone`, `Visita` ou `WhatsApp`\n- `cliente_id` (int64) — filtro exato pelo id interno do cliente\n- `vendedor_id` (int64) — filtro exato pelo id interno do vendedor\n- `data_inicio` / `data_fim` (`AAAA-MM-DD`) — intervalo de `data_pedido`\n- `q` (string) — busca livre pela razão social do cliente\n- `order_by`: id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: desc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):** cada item traz o cabeçalho do pedido + `cliente_nome`/`vendedor_nome` (via JOIN), sem os itens (para a lista de itens use `GET /api/pedidos/{id}`).\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Lista pedidos com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status` (string) — filtro exato: `Cancelado`, `Em separação`, `Entregue` ou `Faturado`\n- `canal` (string) — filtro exato: `App`, `Telefone`, `Visita` ou `WhatsApp`\n- `cliente_id` (int64) — filtro exato pelo id interno do cliente\n- `vendedor_id` (int64) — filtro exato pelo id interno do vendedor\n- `data_inicio` / `data_fim` (`AAAA-MM-DD`) — intervalo de `data_pedido`\n- `q` (string) — busca livre pela razão social do cliente\n- `order_by`: id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: desc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):** cada item traz o cabeçalho do pedido + `cliente_nome`/`vendedor_nome` (via JOIN), sem os itens (para a lista de itens use `GET /api/pedidos/{pedido_id_origem}`). `pedido_id_origem` é a PK (não existe mais campo `id`).\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
           },
           "response": [
             {
@@ -4001,7 +4000,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}"
             },
             {
               "name": "403 Forbidden — Não é admin",
@@ -4040,7 +4039,6 @@
                   "});",
                   "var jsonData = pm.response.json();",
                   "pm.test('Pedido criado com dados corretos', function() {",
-                  "    pm.expect(jsonData.data).to.have.property('id');",
                   "    pm.expect(jsonData.data).to.have.property('pedido_id_origem');",
                   "    pm.expect(jsonData.data.itens).to.be.an('array').that.is.not.empty;",
                   "});",
@@ -4080,7 +4078,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pedidos"]
             },
-            "description": "Cria um novo pedido com seus itens (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cliente_id\": 1,\n  \"vendedor_id\": 1,\n  \"data_pedido\": \"2026-09-13\",\n  \"canal\": \"App\",\n  \"status\": \"Em separação\",\n  \"itens\": [\n    { \"produto_id\": 1, \"quantidade\": 2, \"preco_praticado\": 189.9, \"desconto_pct\": 5 },\n    { \"produto_id\": 2, \"quantidade\": 1, \"preco_praticado\": 159.9, \"desconto_pct\": 0 }\n  ]\n}\n```\n- Campos obrigatórios: `cliente_id`, `vendedor_id`, `data_pedido` (`AAAA-MM-DD`), `canal` (`App`|`Telefone`|`Visita`|`WhatsApp`), `status` (`Cancelado`|`Em separação`|`Entregue`|`Faturado`) e ao menos um item.\n- Em cada item: `produto_id` obrigatório, `quantidade` > 0, `preco_praticado` >= 0, `desconto_pct` entre 0 e 100.\n- `valor_bruto` de cada item e `valor_total` do pedido são **calculados no backend** (não são aceitos no body).\n- `pedido_id_origem` é gerado automaticamente pelo sistema.\n\n**Resposta de sucesso (201):** pedido criado, incluindo os itens (formato igual ao de `GET /api/pedidos/{id}`).\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 28730,\n    \"pedido_id_origem\": 128730,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"valor_total\": 520.71,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 197725,\n        \"item_id_origem\": 197725,\n        \"pedido_id\": 28730,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      },\n      {\n        \"id\": 197726,\n        \"item_id_origem\": 197726,\n        \"pedido_id\": 28730,\n        \"produto_id\": 2,\n        \"quantidade\": 1,\n        \"preco_praticado\": 159.9,\n        \"desconto_pct\": 0,\n        \"valor_bruto\": 159.9,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0002\",\n        \"produto_descricao\": \"Rota Fresh Feminino 75ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `cliente_id`/`vendedor_id` ausentes, `data_pedido` inválida, `canal`/`status` inválidos, sem itens, ou item com `produto_id`/`quantidade`/`preco_praticado`/`desconto_pct` inválidos\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Cria um novo pedido com seus itens (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cliente_id\": 1,\n  \"vendedor_id\": 1,\n  \"data_pedido\": \"2026-09-13\",\n  \"canal\": \"App\",\n  \"status\": \"Em separação\",\n  \"itens\": [\n    { \"produto_id\": 1, \"quantidade\": 2, \"preco_praticado\": 189.9, \"desconto_pct\": 5 },\n    { \"produto_id\": 2, \"quantidade\": 1, \"preco_praticado\": 159.9, \"desconto_pct\": 0 }\n  ]\n}\n```\n- Campos obrigatórios: `cliente_id`, `vendedor_id`, `data_pedido` (`AAAA-MM-DD`), `canal` (`App`|`Telefone`|`Visita`|`WhatsApp`), `status` (`Cancelado`|`Em separação`|`Entregue`|`Faturado`) e ao menos um item.\n- Em cada item: `produto_id` obrigatório, `quantidade` > 0, `preco_praticado` >= 0, `desconto_pct` entre 0 e 100.\n- `valor_bruto` de cada item e `valor_total` do pedido são **calculados no backend** (não são aceitos no body).\n- `pedido_id_origem` é gerado automaticamente pelo sistema.\n\n**Resposta de sucesso (201):** pedido criado, incluindo os itens (formato igual ao de `GET /api/pedidos/{pedido_id_origem}`). Não há mais campo `id` — `pedido_id_origem`/`item_id_origem` são as PKs.\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 128730,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"valor_total\": 520.71,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 197725,\n        \"pedido_id\": 28730,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      },\n      {\n        \"item_id_origem\": 197726,\n        \"pedido_id\": 28730,\n        \"produto_id\": 2,\n        \"quantidade\": 1,\n        \"preco_praticado\": 159.9,\n        \"desconto_pct\": 0,\n        \"valor_bruto\": 159.9,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0002\",\n        \"produto_descricao\": \"Rota Fresh Feminino 75ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `cliente_id`/`vendedor_id` ausentes, `data_pedido` inválida, `canal`/`status` inválidos, sem itens, ou item com `produto_id`/`quantidade`/`preco_praticado`/`desconto_pct` inválidos\n- `401` — não autenticado\n- `403` — não é admin"
           },
           "response": [
             {
@@ -4113,7 +4111,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 28730,\n    \"pedido_id_origem\": 128730,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"valor_total\": 360.81,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 197725,\n        \"item_id_origem\": 197725,\n        \"pedido_id\": 28730,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 128730,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"valor_total\": 360.81,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 197725,\n        \"pedido_id\": 28730,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
             },
             {
               "name": "400 Bad Request — Sem itens",
@@ -4193,7 +4191,6 @@
                   "});",
                   "var jsonData = pm.response.json();",
                   "pm.test('Dados do pedido presentes', function() {",
-                  "    pm.expect(jsonData.data).to.have.property('id');",
                   "    pm.expect(jsonData.data).to.have.property('pedido_id_origem');",
                   "    pm.expect(jsonData.data).to.have.property('itens');",
                   "});",
@@ -4223,7 +4220,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pedidos", "1"]
             },
-            "description": "Retorna o detalhe de um pedido pelo `id` interno, incluindo a lista de itens (master-detail).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do pedido\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 1,\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — pedido não encontrado"
+            "description": "Retorna o detalhe de um pedido pelo `pedido_id_origem` (PK), incluindo a lista de itens (master-detail). Não existe mais campo `id` na resposta.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — corresponde a `pedido_id_origem` do pedido\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — pedido não encontrado"
           },
           "response": [
             {
@@ -4247,7 +4244,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 1,\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
             },
             {
               "name": "404 Not Found — Pedido inexistente",
@@ -4309,7 +4306,7 @@
                   "});",
                   "var jsonData = pm.response.json();",
                   "pm.test('Pedido atualizado com dados corretos', function() {",
-                  "    pm.expect(jsonData.data.id).to.eql(1);",
+                  "    pm.expect(jsonData.data.pedido_id_origem).to.eql(100001);",
                   "    pm.expect(jsonData.data.status).to.eql('Entregue');",
                   "    pm.expect(jsonData.data.itens).to.be.an('array');",
                   "});"
@@ -4345,7 +4342,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pedidos", "1"]
             },
-            "description": "Atualiza os dados de um pedido existente e substitui integralmente a lista de itens (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — ID interno do pedido\n\n**Body:** mesmo formato do `POST /api/pedidos` (`cliente_id`, `vendedor_id`, `data_pedido`, `canal`, `status`, `itens`).\n- A lista de itens enviada **substitui** integralmente a existente (delete + insert).\n- `valor_bruto` de cada item e `valor_total` do pedido são recalculados no backend.\n- `pedido_id_origem` não é alterado.\n\n**Resposta de sucesso (200):** pedido atualizado, incluindo os itens (mesmo formato de `GET /api/pedidos/{id}`).\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, campo obrigatório ausente, `canal`/`status` inválidos, sem itens, ou item inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — pedido não encontrado"
+            "description": "Atualiza os dados de um pedido existente e substitui integralmente a lista de itens (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — ID interno do pedido\n\n**Body:** mesmo formato do `POST /api/pedidos` (`cliente_id`, `vendedor_id`, `data_pedido`, `canal`, `status`, `itens`).\n- A lista de itens enviada **substitui** integralmente a existente (delete + insert).\n- `valor_bruto` de cada item e `valor_total` do pedido são recalculados no backend.\n- `pedido_id_origem` não é alterado.\n\n**Resposta de sucesso (200):** pedido atualizado, incluindo os itens (mesmo formato de `GET /api/pedidos/{pedido_id_origem}`). Não há mais campo `id`.\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, campo obrigatório ausente, `canal`/`status` inválidos, sem itens, ou item inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — pedido não encontrado"
           },
           "response": [
             {
@@ -4378,7 +4375,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"valor_total\": 512.73,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"id\": 2,\n        \"item_id_origem\": 2,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 3,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 10,\n        \"valor_bruto\": 512.73,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"valor_total\": 512.73,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 2,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 3,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 10,\n        \"valor_bruto\": 512.73,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
             },
             {
               "name": "404 Not Found — Pedido inexistente",
@@ -4887,6 +4884,537 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"pagamento não encontrado\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Oportunidades",
+      "item": [
+        {
+          "name": "Listar Oportunidades (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Lista retornada', function() {",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "pm.test('Paginação presente', function() {",
+                  "    pm.expect(jsonData).to.have.property('pagination');",
+                  "    pm.expect(jsonData.pagination).to.have.property('page');",
+                  "    pm.expect(jsonData.pagination).to.have.property('limit');",
+                  "    pm.expect(jsonData.pagination).to.have.property('total');",
+                  "    pm.expect(jsonData.pagination).to.have.property('pages');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/oportunidades?page=1&limit=20&cliente_id=1&vendedor_id=1&etapa=Proposta enviada&origem=Indicação&data_abertura_de=2026-01-01&data_abertura_ate=2026-12-31&q=indica",
+              "host": ["{{base_url}}"],
+              "path": ["api", "oportunidades"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número da página (padrão: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Itens por página (padrão: 20, máx: 100)"
+                },
+                {
+                  "key": "cliente_id",
+                  "value": "1",
+                  "description": "Filtro exato pelo cliente_id_origem — opcional"
+                },
+                {
+                  "key": "vendedor_id",
+                  "value": "1",
+                  "description": "Filtro exato pelo id do vendedor — opcional"
+                },
+                {
+                  "key": "etapa",
+                  "value": "Proposta enviada",
+                  "description": "Filtro exato pela etapa do funil — opcional"
+                },
+                {
+                  "key": "origem",
+                  "value": "Indicação",
+                  "description": "Filtro exato pela origem da oportunidade — opcional"
+                },
+                {
+                  "key": "data_abertura_de",
+                  "value": "2026-01-01",
+                  "description": "Data mínima de abertura, formato AAAA-MM-DD — opcional"
+                },
+                {
+                  "key": "data_abertura_ate",
+                  "value": "2026-12-31",
+                  "description": "Data máxima de abertura, formato AAAA-MM-DD — opcional"
+                },
+                {
+                  "key": "q",
+                  "value": "indica",
+                  "description": "Busca livre em origem OU etapa — opcional"
+                },
+                {
+                  "key": "order_by",
+                  "value": "data_abertura",
+                  "disabled": true,
+                  "description": "Coluna de ordenação (opcional). Aceitos: id, data_abertura, valor_estimado, probabilidade_pct, etapa, origem, created_at, updated_at. Default: id."
+                },
+                {
+                  "key": "order_dir",
+                  "value": "desc",
+                  "disabled": true,
+                  "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: asc."
+                }
+              ]
+            },
+            "description": "Lista oportunidades com paginação e filtros.\n\n**Acesso admin only.**\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `cliente_id` (int64) — filtro exato\n- `vendedor_id` (int64) — filtro exato\n- `etapa` (string) — filtro exato\n- `origem` (string) — filtro exato\n- `data_abertura_de` / `data_abertura_ate` (`AAAA-MM-DD`) — intervalo de `data_abertura`\n- `q` (string) — busca livre em `origem` OU `etapa`\n- `order_by`: id, data_abertura, valor_estimado, probabilidade_pct, etapa, origem, created_at, updated_at. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"oportunidade_id\": 1,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"origem\": \"Indicação\",\n      \"data_abertura\": \"2026-01-10T00:00:00Z\",\n      \"etapa\": \"Proposta enviada\",\n      \"probabilidade_pct\": 50,\n      \"valor_estimado\": 1200.5,\n      \"data_fechamento\": null,\n      \"ciclo_dias\": null,\n      \"motivo_perda\": null,\n      \"created_at\": \"2026-09-15T00:00:00Z\",\n      \"updated_at\": \"2026-09-15T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1,\n    \"pages\": 1\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — acesso restrito a administradores"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades?page=1&limit=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"oportunidade_id\": 1,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"origem\": \"Indicação\",\n      \"data_abertura\": \"2026-01-10T00:00:00Z\",\n      \"etapa\": \"Proposta enviada\",\n      \"probabilidade_pct\": 50,\n      \"valor_estimado\": 1200.5,\n      \"data_fechamento\": null,\n      \"ciclo_dias\": null,\n      \"motivo_perda\": null,\n      \"created_at\": \"2026-09-15T00:00:00Z\",\n      \"updated_at\": \"2026-09-15T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1,\n    \"pages\": 1\n  }\n}"
+            },
+            {
+              "name": "403 Forbidden — usuário normal",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Detalhe da Oportunidade (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Dados da oportunidade presentes', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('oportunidade_id');",
+                  "    pm.expect(jsonData.data).to.have.property('cliente_id');",
+                  "    pm.expect(jsonData.data).to.have.property('vendedor_id');",
+                  "    pm.expect(jsonData.data).to.have.property('etapa');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/oportunidades/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "oportunidades", "1"]
+            },
+            "description": "Retorna o detalhe de uma oportunidade pelo `oportunidade_id`.\n\n**Acesso admin only.**\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — `oportunidade_id`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"oportunidade_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10T00:00:00Z\",\n    \"etapa\": \"Proposta enviada\",\n    \"probabilidade_pct\": 50,\n    \"valor_estimado\": 1200.5,\n    \"data_fechamento\": null,\n    \"ciclo_dias\": null,\n    \"motivo_perda\": null,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — acesso restrito a administradores\n- `404` — oportunidade não encontrada"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"oportunidade_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10T00:00:00Z\",\n    \"etapa\": \"Proposta enviada\",\n    \"probabilidade_pct\": 50,\n    \"valor_estimado\": 1200.5,\n    \"data_fechamento\": null,\n    \"ciclo_dias\": null,\n    \"motivo_perda\": null,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Oportunidade inexistente",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"oportunidade não encontrada\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Criar Oportunidade (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Oportunidade criada com dados corretos', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('oportunidade_id');",
+                  "    pm.expect(jsonData.data.cliente_id).to.eql(1);",
+                  "    pm.expect(jsonData.data.vendedor_id).to.eql(1);",
+                  "    pm.expect(jsonData.data.etapa).to.eql('Qualificação');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-09-15\",\n    \"etapa\": \"Qualificação\",\n    \"probabilidade_pct\": 20,\n    \"valor_estimado\": 850.0,\n    \"data_fechamento\": \"\",\n    \"ciclo_dias\": null,\n    \"motivo_perda\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/oportunidades",
+              "host": ["{{base_url}}"],
+              "path": ["api", "oportunidades"]
+            },
+            "description": "Cria uma nova oportunidade.\n\n**Acesso admin only.**\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cliente_id\": 1,\n  \"vendedor_id\": 1,\n  \"origem\": \"Indicação\",\n  \"data_abertura\": \"2026-09-15\",\n  \"etapa\": \"Qualificação\",\n  \"probabilidade_pct\": 20,\n  \"valor_estimado\": 850.0,\n  \"data_fechamento\": \"\",\n  \"ciclo_dias\": null,\n  \"motivo_perda\": \"\"\n}\n```\n- `cliente_id` obrigatório — deve existir em `clientes`.\n- `vendedor_id` obrigatório — deve existir em `vendedores`. É um campo próprio da oportunidade (não depende de vínculo de carteira ativo entre o cliente e o vendedor).\n- `origem` e `etapa` obrigatórios (não vazios).\n- `data_abertura` opcional (`AAAA-MM-DD`) — vazio = hoje.\n- `probabilidade_pct` deve estar entre 0 e 100.\n- `valor_estimado` deve ser >= 0.\n- `data_fechamento` opcional (`AAAA-MM-DD`); `ciclo_dias` opcional (inteiro).\n- `motivo_perda` obrigatório somente quando `etapa` = `\"Fechado perdido\"`.\n- `oportunidade_id` é gerado automaticamente (AUTO_INCREMENT).\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"oportunidade_id\": 2,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-09-15T00:00:00Z\",\n    \"etapa\": \"Qualificação\",\n    \"probabilidade_pct\": 20,\n    \"valor_estimado\": 850.0,\n    \"data_fechamento\": null,\n    \"ciclo_dias\": null,\n    \"motivo_perda\": null,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `cliente_id`/`vendedor_id` ausente ou inexistente, `origem`/`etapa` vazios, `probabilidade_pct` fora de 0-100, `valor_estimado` negativo, `data_abertura`/`data_fechamento` em formato inválido, `motivo_perda` ausente quando `etapa = \"Fechado perdido\"`\n- `401` — não autenticado\n- `403` — acesso restrito a administradores"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-09-15\",\n    \"etapa\": \"Qualificação\",\n    \"probabilidade_pct\": 20,\n    \"valor_estimado\": 850.0\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"oportunidade_id\": 2,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-09-15T00:00:00Z\",\n    \"etapa\": \"Qualificação\",\n    \"probabilidade_pct\": 20,\n    \"valor_estimado\": 850.0,\n    \"data_fechamento\": null,\n    \"ciclo_dias\": null,\n    \"motivo_perda\": null,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — vendedor não encontrado",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 999999,\n    \"origem\": \"Indicação\",\n    \"etapa\": \"Qualificação\",\n    \"probabilidade_pct\": 20,\n    \"valor_estimado\": 850.0\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades"]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"vendedor_id é obrigatório e deve existir\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Editar Oportunidade (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Oportunidade atualizada com dados corretos', function() {",
+                  "    pm.expect(jsonData.data.oportunidade_id).to.eql(1);",
+                  "    pm.expect(jsonData.data.etapa).to.eql('Fechado ganho');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10\",\n    \"etapa\": \"Fechado ganho\",\n    \"probabilidade_pct\": 100,\n    \"valor_estimado\": 1200.5,\n    \"data_fechamento\": \"2026-09-15\",\n    \"ciclo_dias\": 248,\n    \"motivo_perda\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/oportunidades/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "oportunidades", "1"]
+            },
+            "description": "Atualiza os dados de uma oportunidade existente.\n\n**Acesso admin only.**\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — `oportunidade_id`\n\n**Body:** mesmo formato do `POST /api/oportunidades` (`data_abertura` obrigatório na edição).\n\n**Resposta de sucesso (200):** oportunidade atualizada (mesmo formato de `GET /api/oportunidades/{id}`).\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, `cliente_id`/`vendedor_id` ausente ou inexistente, `origem`/`etapa` vazios, `probabilidade_pct` fora de 0-100, `valor_estimado` negativo, `data_abertura`/`data_fechamento` em formato inválido, `motivo_perda` ausente quando `etapa = \"Fechado perdido\"`\n- `401` — não autenticado\n- `403` — acesso restrito a administradores\n- `404` — oportunidade não encontrada"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10\",\n    \"etapa\": \"Fechado ganho\",\n    \"probabilidade_pct\": 100,\n    \"valor_estimado\": 1200.5,\n    \"data_fechamento\": \"2026-09-15\",\n    \"ciclo_dias\": 248\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"oportunidade_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10T00:00:00Z\",\n    \"etapa\": \"Fechado ganho\",\n    \"probabilidade_pct\": 100,\n    \"valor_estimado\": 1200.5,\n    \"data_fechamento\": \"2026-09-15T00:00:00Z\",\n    \"ciclo_dias\": 248,\n    \"motivo_perda\": null,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Oportunidade inexistente",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10\",\n    \"etapa\": \"Fechado ganho\",\n    \"probabilidade_pct\": 100,\n    \"valor_estimado\": 1200.5\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"oportunidade não encontrada\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Listar Clientes do Vendedor (acesso comum)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Usuário NORMAL consegue acessar (não é 403)', function() {",
+                  "    pm.expect(pm.response.code).to.not.eql(403);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Lista de clientes retornada', function() {",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendedor_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/vendedores/1/clientes",
+              "host": ["{{base_url}}"],
+              "path": ["api", "vendedores", "1", "clientes"]
+            },
+            "description": "Lista os clientes vinculados (carteira ativa, `data_fim IS NULL`) a um vendedor. Usado pelo dropdown em cascata da tela de Oportunidades: ao escolher o vendedor, filtra os clientes possíveis no segundo dropdown.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64) — id do vendedor\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cnpj\": \"12.345.678/0001-90\",\n      \"razao_social\": \"Perfumaria Central Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"carteira_id\": 1,\n      \"data_inicio\": \"2026-01-01T00:00:00Z\",\n      \"data_fim\": null\n    }\n  ]\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — vendedor não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/vendedores/1/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendedores", "1", "clientes"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cnpj\": \"12.345.678/0001-90\",\n      \"razao_social\": \"Perfumaria Central Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"carteira_id\": 1,\n      \"data_inicio\": \"2026-01-01T00:00:00Z\",\n      \"data_fim\": null\n    }\n  ]\n}"
+            },
+            {
+              "name": "404 Not Found — Vendedor inexistente",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/vendedores/999999/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendedores", "999999", "clientes"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"vendedor não encontrado\"\n}"
             }
           ]
         }

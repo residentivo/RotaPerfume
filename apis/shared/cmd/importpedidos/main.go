@@ -414,8 +414,13 @@ func parseItemPedidoRow(record []string) (itemPedidoRow, error) {
 // de linhas de itens_pedido.csv — ~197k registros).
 // ---------------------------------------------------------------
 
+// loadClienteIDsByOrigem carrega o conjunto de cliente_id_origem existentes
+// em `clientes` para lookup. Como cliente_id_origem agora É a PK da tabela
+// (ver sql/09_ddl_clientes.sql), o valor usado como FK em pedidos.cliente_id
+// é o próprio cliente_id_origem — o mapa é usado apenas para validar
+// existência (identidade origem -> origem).
 func loadClienteIDsByOrigem(db *sql.DB) (map[int64]int64, error) {
-	rows, err := db.Query("SELECT id, cliente_id_origem FROM clientes")
+	rows, err := db.Query("SELECT cliente_id_origem FROM clientes")
 	if err != nil {
 		return nil, err
 	}
@@ -423,17 +428,22 @@ func loadClienteIDsByOrigem(db *sql.DB) (map[int64]int64, error) {
 
 	m := make(map[int64]int64)
 	for rows.Next() {
-		var id, origem int64
-		if err := rows.Scan(&id, &origem); err != nil {
+		var origem int64
+		if err := rows.Scan(&origem); err != nil {
 			return nil, err
 		}
-		m[origem] = id
+		m[origem] = origem
 	}
 	return m, rows.Err()
 }
 
+// loadPedidoIDsByOrigem carrega o conjunto de pedido_id_origem existentes em
+// `pedidos` para lookup. Como pedido_id_origem agora É a PK da tabela (ver
+// sql/04_ddl_pedidos.sql), o valor usado como FK em itens_pedido.pedido_id é
+// o próprio pedido_id_origem — o mapa é usado apenas para validar existência
+// (identidade origem -> origem).
 func loadPedidoIDsByOrigem(db *sql.DB) (map[int64]int64, error) {
-	rows, err := db.Query("SELECT id, pedido_id_origem FROM pedidos")
+	rows, err := db.Query("SELECT pedido_id_origem FROM pedidos")
 	if err != nil {
 		return nil, err
 	}
@@ -441,11 +451,11 @@ func loadPedidoIDsByOrigem(db *sql.DB) (map[int64]int64, error) {
 
 	m := make(map[int64]int64)
 	for rows.Next() {
-		var id, origem int64
-		if err := rows.Scan(&id, &origem); err != nil {
+		var origem int64
+		if err := rows.Scan(&origem); err != nil {
 			return nil, err
 		}
-		m[origem] = id
+		m[origem] = origem
 	}
 	return m, rows.Err()
 }

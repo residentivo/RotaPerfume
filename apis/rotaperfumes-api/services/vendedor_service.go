@@ -57,8 +57,10 @@ func NewVendedorService(db *sql.DB, cfg *config.Config) *VendedorService {
 	}
 }
 
-// ListVendedores retorna os vendedores ativos, ordenados por nome.
-func (s *VendedorService) ListVendedores(ctx context.Context, db *sql.DB) ([]models.Vendedor, error) {
+// ListVendedores retorna TODOS os vendedores (ativos e inativos), ordenados
+// por nome. Cada item traz DataDesligamento (nil = ativo) para que o
+// chamador (frontend) possa marcar visualmente os inativos.
+func (s *VendedorService) ListVendedores(ctx context.Context, db *sql.DB) ([]repositories.VendedorResumo, error) {
 	vendedores, err := s.repo.List(ctx, db)
 	if err != nil {
 		return nil, err
@@ -94,6 +96,29 @@ func (s *VendedorService) GetVendedorDetalhe(ctx context.Context, db *sql.DB, ve
 		Vendedor: *v,
 		Clientes: clientes,
 	}, nil
+}
+
+// ListClientesDoVendedor retorna os clientes vinculados (carteira ativa,
+// data_fim IS NULL) a um vendedor. Retorna ErrVendedorNaoEncontrado se o
+// vendedor não existir.
+func (s *VendedorService) ListClientesDoVendedor(ctx context.Context, db *sql.DB, vendedorID int64) ([]repositories.ClienteResumo, error) {
+	vendedorExiste, err := s.repo.ExistsByID(ctx, db, vendedorID)
+	if err != nil {
+		return nil, err
+	}
+	if !vendedorExiste {
+		return nil, ErrVendedorNaoEncontrado
+	}
+
+	clientes, err := s.carteiraRepo.ListClientesByVendedorID(ctx, db, vendedorID)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.Cfg.Verbose {
+		log.Printf("[vendedores] clientes do vendedor: vendedor_id=%d total=%d", vendedorID, len(clientes))
+	}
+	return clientes, nil
 }
 
 // VendedorInput agrupa os campos editáveis de um vendedor, usados tanto na
@@ -212,7 +237,34 @@ func (s *VendedorService) UpdateVendedor(ctx context.Context, db *sql.DB, id int
 // ErrVendedorNaoEncontrado se não existir.
 func (s *VendedorService) DeleteVendedor(ctx context.Context, db *sql.DB, id int64) (*models.Vendedor, error) {
 	dataDesligamento := sql.NullTime{Time: time.Now(), Valid: true}
-	if err := s.repo.SetDataDesligamento(ctx, db, id, &dataDesligamento); err != nil {
+	v, err := s.setDataDesligamento(ctx, db, id, &dataDesligamento)
+	if err != nil {
+		return nil, err
+	}
+	if s.Cfg.Verbose {
+		log.Printf("[vendedores] inativado (soft-delete): id=%d", id)
+	}
+	return v, nil
+}
+
+// ReativarVendedor reverte o soft-delete de um vendedor, limpando
+// data_desligamento. Retorna ErrVendedorNaoEncontrado se não existir.
+func (s *VendedorService) ReativarVendedor(ctx context.Context, db *sql.DB, id int64) (*models.Vendedor, error) {
+	v, err := s.setDataDesligamento(ctx, db, id, &sql.NullTime{Valid: false})
+	if err != nil {
+		return nil, err
+	}
+	if s.Cfg.Verbose {
+		log.Printf("[vendedores] reativado: id=%d", id)
+	}
+	return v, nil
+}
+
+// setDataDesligamento aplica SetDataDesligamento e retorna o vendedor
+// atualizado, traduzindo ErrNotFound para ErrVendedorNaoEncontrado. Usado por
+// DeleteVendedor e ReativarVendedor para evitar duplicação.
+func (s *VendedorService) setDataDesligamento(ctx context.Context, db *sql.DB, id int64, dataDesligamento *sql.NullTime) (*models.Vendedor, error) {
+	if err := s.repo.SetDataDesligamento(ctx, db, id, dataDesligamento); err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrVendedorNaoEncontrado
 		}
@@ -222,9 +274,6 @@ func (s *VendedorService) DeleteVendedor(ctx context.Context, db *sql.DB, id int
 	v, err := s.repo.GetByID(ctx, db, id)
 	if err != nil {
 		return nil, err
-	}
-	if s.Cfg.Verbose {
-		log.Printf("[vendedores] inativado (soft-delete): id=%d", id)
 	}
 	return v, nil
 }
@@ -265,7 +314,7 @@ func (s *VendedorService) VincularCliente(ctx context.Context, db *sql.DB, vende
 			// Já vinculado a este mesmo vendedor: nada a fazer, retorna o resumo atual.
 			return clienteResumoDoVinculo(cliente, vinculoAnterior), nil
 		}
-		if err := s.carteiraRepo.EncerrarVinculo(ctx, db, vinculoAnterior.ID, agora); err != nil {
+		if err := s.carteiraRepo.EncerrarVinculo(ctx, db, vinculoAnterior.CarteiraIDOrigem, agora); err != nil {
 			return nil, err
 		}
 		if s.Cfg.Verbose {
@@ -289,34 +338,29 @@ func (s *VendedorService) VincularCliente(ctx context.Context, db *sql.DB, vende
 			// recente do cliente por algum motivo): idempotente.
 			return clienteResumoDoVinculo(cliente, vinculoDoDia), nil
 		}
-		if err := s.carteiraRepo.ReativarVinculo(ctx, db, vinculoDoDia.ID); err != nil {
+		if err := s.carteiraRepo.ReativarVinculo(ctx, db, vinculoDoDia.CarteiraIDOrigem); err != nil {
 			return nil, err
 		}
 		vinculoDoDia.DataFim = nil
 
 		if s.Cfg.Verbose {
-			log.Printf("[vendedores] vinculo reativado (mesmo dia): vendedor_id=%d cliente_id=%d carteira_id=%d", vendedorID, clienteID, vinculoDoDia.ID)
+			log.Printf("[vendedores] vinculo reativado (mesmo dia): vendedor_id=%d cliente_id=%d carteira_id=%d", vendedorID, clienteID, vinculoDoDia.CarteiraIDOrigem)
 		}
 		return clienteResumoDoVinculo(cliente, vinculoDoDia), nil
 	}
 
-	carteiraIDOrigem, err := s.carteiraRepo.NextCarteiraIDOrigem(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-
+	// carteira_id_origem é gerado nativamente pelo AUTO_INCREMENT do MySQL.
 	novoVinculo := &models.Carteira{
-		CarteiraIDOrigem: carteiraIDOrigem,
-		ClienteID:        clienteID,
-		VendedorID:       vendedorID,
-		DataInicio:       agora,
+		ClienteID:  clienteID,
+		VendedorID: vendedorID,
+		DataInicio: agora,
 	}
 	if err := s.carteiraRepo.Create(ctx, db, novoVinculo); err != nil {
 		return nil, err
 	}
 
 	if s.Cfg.Verbose {
-		log.Printf("[vendedores] cliente vinculado: vendedor_id=%d cliente_id=%d carteira_id=%d", vendedorID, clienteID, novoVinculo.ID)
+		log.Printf("[vendedores] cliente vinculado: vendedor_id=%d cliente_id=%d carteira_id=%d", vendedorID, clienteID, novoVinculo.CarteiraIDOrigem)
 	}
 
 	return clienteResumoDoVinculo(cliente, novoVinculo), nil
@@ -334,7 +378,7 @@ func (s *VendedorService) DesvincularCliente(ctx context.Context, db *sql.DB, ve
 		return err
 	}
 
-	if err := s.carteiraRepo.EncerrarVinculo(ctx, db, vinculo.ID, time.Now()); err != nil {
+	if err := s.carteiraRepo.EncerrarVinculo(ctx, db, vinculo.CarteiraIDOrigem, time.Now()); err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrVinculoNaoEncontrado
 		}
@@ -351,13 +395,13 @@ func (s *VendedorService) DesvincularCliente(ctx context.Context, db *sql.DB, ve
 // carregados do cliente e do vínculo de carteira, evitando uma nova query.
 func clienteResumoDoVinculo(cliente *models.Cliente, vinculo *models.Carteira) *repositories.ClienteResumo {
 	return &repositories.ClienteResumo{
-		ID:          cliente.ID,
+		ID:          cliente.ClienteIDOrigem,
 		CNPJ:        cliente.CNPJ,
 		RazaoSocial: cliente.RazaoSocial,
 		Segmento:    cliente.Segmento,
 		Cidade:      cliente.Cidade,
 		UF:          cliente.UF,
-		CarteiraID:  vinculo.ID,
+		CarteiraID:  vinculo.CarteiraIDOrigem,
 		DataInicio:  vinculo.DataInicio,
 		DataFim:     vinculo.DataFim,
 	}

@@ -226,10 +226,13 @@ func parseData(raw string) (time.Time, error) {
 	return time.Time{}, lastErr
 }
 
-// loadClienteIDsByOrigem pré-carrega o mapa cliente_id_origem -> id, usado
-// para resolver o cliente_id do CSV (que referencia a origem, não o id interno).
+// loadClienteIDsByOrigem pré-carrega o conjunto de cliente_id_origem
+// existentes em `clientes`, usado para validar o cliente_id do CSV. Como
+// cliente_id_origem agora É a PK da tabela (ver sql/09_ddl_clientes.sql), o
+// valor usado como FK em carteiras.cliente_id é o próprio cliente_id_origem
+// — o mapa serve apenas para checar existência (identidade origem -> origem).
 func loadClienteIDsByOrigem(db *sql.DB) (map[int64]int64, error) {
-	rows, err := db.Query("SELECT id, cliente_id_origem FROM clientes")
+	rows, err := db.Query("SELECT cliente_id_origem FROM clientes")
 	if err != nil {
 		return nil, err
 	}
@@ -237,11 +240,11 @@ func loadClienteIDsByOrigem(db *sql.DB) (map[int64]int64, error) {
 
 	m := make(map[int64]int64)
 	for rows.Next() {
-		var id, origem int64
-		if err := rows.Scan(&id, &origem); err != nil {
+		var origem int64
+		if err := rows.Scan(&origem); err != nil {
 			return nil, err
 		}
-		m[origem] = id
+		m[origem] = origem
 	}
 	return m, rows.Err()
 }

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/rotaperfumes/shared/models"
 )
@@ -21,14 +22,33 @@ func NewVendedorRepository() *VendedorRepository {
 // vendedorColunas lista as colunas usadas em GetByID/Create/Update.
 const vendedorColunas = `id, nome, regiao, uf, data_admissao, data_desligamento, meta_mensal, created_at, updated_at`
 
-// List retorna os vendedores ativos (data_desligamento IS NULL), ordenados por nome.
+// VendedorResumo é o formato reduzido de vendedor usado para popular listas
+// de seleção (ex: combobox no admin de usuários/pedidos), no mesmo padrão de
+// ClienteResumo. Inclui DataDesligamento (nil = ativo) para que o chamador
+// possa distinguir vendedores ativos de inativos e, por exemplo, marcá-los
+// com um indicador visual — sem essa informação um vendedor inativo ainda
+// vinculado a um registro antigo "desaparecia" das opções (bug corrigido
+// junto com a remoção do filtro WHERE data_desligamento IS NULL abaixo).
+type VendedorResumo struct {
+	ID               int64      `json:"id"`
+	Nome             string     `json:"nome"`
+	Regiao           string     `json:"regiao"`
+	UF               string     `json:"uf"`
+	DataDesligamento *time.Time `json:"data_desligamento"`
+}
+
+// List retorna TODOS os vendedores (ativos e inativos), ordenados por nome.
+// DataDesligamento indica o status de cada um (nil = ativo).
 //
-// Não pagina: é usado para popular listas de seleção (ex: combobox no admin de usuários).
-func (r *VendedorRepository) List(ctx context.Context, db *sql.DB) ([]models.Vendedor, error) {
+// Não pagina: é usado para popular listas de seleção (ex: combobox no admin
+// de usuários/pedidos). Antes filtrava por data_desligamento IS NULL, mas
+// isso fazia vendedores inativos vinculados a registros existentes sumirem
+// das opções do formulário — o chamador agora decide como exibir inativos
+// (ex: marcador "[inativo]") usando DataDesligamento.
+func (r *VendedorRepository) List(ctx context.Context, db *sql.DB) ([]VendedorResumo, error) {
 	const q = `
-		SELECT id, nome, regiao, uf
+		SELECT id, nome, regiao, uf, data_desligamento
 		FROM vendedores
-		WHERE data_desligamento IS NULL
 		ORDER BY nome ASC`
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
@@ -36,10 +56,10 @@ func (r *VendedorRepository) List(ctx context.Context, db *sql.DB) ([]models.Ven
 	}
 	defer rows.Close()
 
-	var out []models.Vendedor
+	var out []VendedorResumo
 	for rows.Next() {
-		var v models.Vendedor
-		if err := rows.Scan(&v.ID, &v.Nome, &v.Regiao, &v.UF); err != nil {
+		var v VendedorResumo
+		if err := rows.Scan(&v.ID, &v.Nome, &v.Regiao, &v.UF, &v.DataDesligamento); err != nil {
 			return nil, fmt.Errorf("repositories: scan vendedor: %w", err)
 		}
 		out = append(out, v)

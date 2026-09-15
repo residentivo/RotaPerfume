@@ -113,7 +113,7 @@ export function PedidoModal({
         setItens(
           pedido.itens.length > 0
             ? pedido.itens.map((it) => ({
-                localId: String(it.id),
+                localId: String(it.item_id_origem),
                 produto_id: String(it.produto_id),
                 quantidade: String(it.quantidade),
                 preco_praticado: String(it.preco_praticado),
@@ -190,8 +190,8 @@ export function PedidoModal({
     () => [
       { value: "", label: "Selecione um cliente" },
       ...clientes.map((c) => ({
-        value: String(c.id),
-        label: `#${c.id} - ${c.razao_social}`,
+        value: String(c.cliente_id_origem),
+        label: `#${c.cliente_id_origem} - ${c.razao_social}`,
       })),
     ],
     [clientes]
@@ -202,7 +202,7 @@ export function PedidoModal({
       { value: "", label: "Selecione um vendedor" },
       ...vendedores.map((v) => ({
         value: String(v.id),
-        label: `#${v.id} - ${v.nome}`,
+        label: `#${v.id} - ${v.nome}${v.data_desligamento ? " [X]" : ""}`,
       })),
     ],
     [vendedores]

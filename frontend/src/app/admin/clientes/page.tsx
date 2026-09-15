@@ -17,7 +17,7 @@ import {
 import { Cliente, ClienteInput } from "@/lib/types";
 
 type SortKey =
-  | "id"
+  | "cliente_id_origem"
   | "razao_social"
   | "cnpj"
   | "segmento"
@@ -36,6 +36,21 @@ const STATUS_OPTIONS: { value: "" | "ativo" | "inativo"; label: string }[] = [
   { value: "ativo", label: "Ativo" },
   { value: "inativo", label: "Inativo" },
 ];
+
+// Mapeia a sortKey interna do frontend para o campo aceito pelo backend em
+// order_by. A whitelist do backend (clienteOrderWhitelist, em
+// apis/shared/repositories/cliente_repository.go) usa a chave "id" mapeada
+// para a coluna cliente_id_origem, entao a ordenacao por cliente_id_origem
+// continua enviando order_by=id.
+const ORDER_BY_MAP: Partial<Record<SortKey, string>> = {
+  cliente_id_origem: "id",
+  razao_social: "razao_social",
+  cnpj: "cnpj",
+  segmento: "segmento",
+  cidade: "cidade",
+  data_cadastro: "data_cadastro",
+  ativo: "ativo",
+};
 
 const LIMIT_OPTIONS = [
   { value: "10", label: "10 por pagina" },
@@ -69,7 +84,7 @@ export default function ClientesPage() {
   const [ufFilter, setUfFilter] = useState("");
   const [segmentoFilter, setSegmentoFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | "ativo" | "inativo">("");
-  const [sortKey, setSortKey] = useState<SortKey>("id");
+  const [sortKey, setSortKey] = useState<SortKey>("cliente_id_origem");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [action, setAction] = useState<ActionState>({ type: null, clienteId: null });
 
@@ -99,7 +114,7 @@ export default function ClientesPage() {
               : statusFilter === "ativo",
           q: search.trim() || undefined,
         },
-        sortKey,
+        ORDER_BY_MAP[sortKey],
         sortDir
       );
       setClientes(res.data);
@@ -154,13 +169,18 @@ export default function ClientesPage() {
     );
     if (!ok) return;
 
-    setAction({ type: "toggle", clienteId: cliente.id });
+    setAction({ type: "toggle", clienteId: cliente.cliente_id_origem });
     setError(null);
     setSuccess(null);
     try {
-      const updated = await apiToggleClienteStatus(cliente.id, novoStatus);
+      const updated = await apiToggleClienteStatus(
+        cliente.cliente_id_origem,
+        novoStatus
+      );
       setClientes((prev) =>
-        prev.map((c) => (c.id === updated.id ? updated : c))
+        prev.map((c) =>
+          c.cliente_id_origem === updated.cliente_id_origem ? updated : c
+        )
       );
       setSuccess(
         `Cliente ${novoStatus ? "reativado" : "inativado"} com sucesso.`
@@ -194,9 +214,14 @@ export default function ClientesPage() {
       await loadClientes();
       setSuccess(`Cliente "${created.razao_social}" criado com sucesso.`);
     } else if (editingCliente) {
-      const updated = await apiUpdateCliente(editingCliente.id, data);
+      const updated = await apiUpdateCliente(
+        editingCliente.cliente_id_origem,
+        data
+      );
       setClientes((prev) =>
-        prev.map((c) => (c.id === updated.id ? updated : c))
+        prev.map((c) =>
+          c.cliente_id_origem === updated.cliente_id_origem ? updated : c
+        )
       );
       setSuccess(`Cliente "${updated.razao_social}" atualizado com sucesso.`);
     }
@@ -216,7 +241,7 @@ export default function ClientesPage() {
           className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
           title="Editar cliente"
         >
-          #{c.id} - {c.razao_social}
+          #{c.cliente_id_origem} - {c.razao_social}
         </button>
       ),
     },
@@ -270,7 +295,10 @@ export default function ClientesPage() {
         <button
           type="button"
           onClick={() => handleToggleStatus(c)}
-          disabled={action.type === "toggle" && action.clienteId === c.id}
+          disabled={
+            action.type === "toggle" &&
+            action.clienteId === c.cliente_id_origem
+          }
           title={c.ativo ? "Clique para inativar" : "Clique para reativar"}
           className={[
             "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors",
@@ -418,7 +446,7 @@ export default function ClientesPage() {
           <Table
             columns={columns}
             data={clientes}
-            keyExtractor={(c) => c.id}
+            keyExtractor={(c) => c.cliente_id_origem}
             loading={loading}
             sortKey={sortKey}
             sortDir={sortDir}

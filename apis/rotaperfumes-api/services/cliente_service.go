@@ -172,37 +172,30 @@ func validarClienteInput(input ClienteInput, defaultHoje bool) (razaoSocial, cnp
 	return
 }
 
-// CreateCliente cria um novo cliente, validando os campos obrigatórios e
-// gerando automaticamente cliente_id_origem (próximo valor disponível, já
-// que a coluna é UNIQUE e obrigatória e não existe no payload de entrada).
+// CreateCliente cria um novo cliente, validando os campos obrigatórios.
+// cliente_id_origem é gerado nativamente pelo AUTO_INCREMENT do MySQL.
 func (s *ClienteService) CreateCliente(ctx context.Context, db *sql.DB, input ClienteInput) (*models.Cliente, error) {
 	razaoSocial, cnpj, segmento, cidade, uf, bairro, dataCadastro, err := validarClienteInput(input, true)
 	if err != nil {
 		return nil, err
 	}
 
-	proximoIDOrigem, err := s.repo.NextClienteIDOrigem(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-
 	c := &models.Cliente{
-		ClienteIDOrigem: proximoIDOrigem,
-		CNPJ:            cnpj,
-		RazaoSocial:     razaoSocial,
-		Segmento:        segmento,
-		Cidade:          cidade,
-		UF:              uf,
-		Bairro:          bairro,
-		DataCadastro:    dataCadastro,
-		Ativo:           true,
+		CNPJ:         cnpj,
+		RazaoSocial:  razaoSocial,
+		Segmento:     segmento,
+		Cidade:       cidade,
+		UF:           uf,
+		Bairro:       bairro,
+		DataCadastro: dataCadastro,
+		Ativo:        true,
 	}
 	if err := s.repo.Create(ctx, db, c); err != nil {
 		return nil, err
 	}
 
 	if s.Cfg.Verbose {
-		log.Printf("[clientes] criado: id=%d cliente_id_origem=%d razao_social=%s", c.ID, c.ClienteIDOrigem, c.RazaoSocial)
+		log.Printf("[clientes] criado: cliente_id_origem=%d razao_social=%s", c.ClienteIDOrigem, c.RazaoSocial)
 	}
 	return c, nil
 }

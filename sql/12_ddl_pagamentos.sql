@@ -19,11 +19,13 @@
 --     há coluna `id` separada nem `pagamento_id_origem`. O importador insere
 --     o valor de `pagamento_id` explicitamente (não deixa o AUTO_INCREMENT
 --     gerar), garantindo idempotência via upsert direto na PK.
---   - `pedido_id` do CSV referencia `pedido_id` de dados/erp/pedidos.csv, e
---     NÃO o `id` interno de `pedidos` — o importador resolve via lookup
---     `SELECT id FROM pedidos WHERE pedido_id_origem = ?` (mesmo padrão de
---     `itens_pedido.pedido_id`, ver sql/11_ddl_itens_pedido.sql). A coluna
---     `pedido_id` aqui já armazena o `id` interno de `pedidos`.
+--   - ATUALIZAÇÃO (2026-09-15): `pedido_id` do CSV referencia `pedido_id` de
+--     dados/erp/pedidos.csv, que agora é a própria PK `pedido_id_origem` de
+--     `pedidos` (ver sql/04_ddl_pedidos.sql) — o importador resolve via
+--     lookup `SELECT pedido_id_origem FROM pedidos WHERE pedido_id_origem =
+--     ?` (mesmo padrão de `itens_pedido.pedido_id`, ver
+--     sql/11_ddl_itens_pedido.sql). A coluna `pedido_id` aqui já armazena o
+--     `pedido_id_origem` de `pedidos`.
 --   - `ON DELETE RESTRICT` em `pedido_id`: diferente de `itens_pedido`
 --     (CASCADE, pois item é composição do pedido), um pagamento não deve
 --     ficar órfão silenciosamente ao excluir o pedido — a exclusão do pedido
@@ -59,7 +61,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `pagamentos` (
     `pagamento_id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'PK — corresponde 1:1 ao pagamento_id do CSV de origem (dados/erp/pagamentos.csv), sem desacoplamento',
-    `pedido_id` BIGINT NOT NULL COMMENT 'FK para pedidos.id (resolvido via pedido_id_origem na importação)',
+    `pedido_id` BIGINT NOT NULL COMMENT 'FK para pedidos.pedido_id_origem',
     `forma_pagamento` ENUM('Boleto 14 dias','Boleto 28 dias','Cartão de crédito','Cartão de débito','Cheque a prazo','Dinheiro','PIX') NOT NULL COMMENT 'Forma de pagamento utilizada',
     `parcelas` TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Número de parcelas',
     `valor` DECIMAL(15,2) NOT NULL COMMENT 'Valor bruto do pagamento em R$',
@@ -75,7 +77,7 @@ CREATE TABLE IF NOT EXISTS `pagamentos` (
     KEY `idx_pagamentos_status_pagamento` (`status_pagamento`),
     KEY `idx_pagamentos_data_vencimento` (`data_vencimento`),
     CONSTRAINT `fk_pagamentos_pedido` FOREIGN KEY (`pedido_id`)
-        REFERENCES `pedidos`(`id`)
+        REFERENCES `pedidos`(`pedido_id_origem`)
         ON DELETE RESTRICT
         ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tabela de pagamentos do ERP';

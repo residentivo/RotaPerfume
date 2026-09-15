@@ -223,7 +223,7 @@ func (h *PedidoHandler) CreatePedido(w http.ResponseWriter, r *http.Request) {
 	}
 
 	role, _ := middleware.GetRole(r.Context())
-	log.Printf("[pedidos] criado: id=%d por usuario role=%s", pedido.ID, role)
+	log.Printf("[pedidos] criado: id=%d por usuario role=%s", pedido.PedidoIDOrigem, role)
 	writeJSON(w, http.StatusCreated, pedido, "")
 }
 

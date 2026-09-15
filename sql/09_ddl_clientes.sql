@@ -6,12 +6,13 @@
 --
 -- Origem dos dados: dados/crm/clientes.csv (3040 registros).
 -- Decisões de schema:
---   - `cliente_id` do CSV já é sequencial (1..3040) e único, mas optamos por
---     NÃO usá-lo como PK direta: a PK interna `id` (BIGINT AUTO_INCREMENT)
---     segue o padrão do restante do banco (vendedores, usuarios, pedidos) e
---     desacopla o identificador interno da origem do CSV. O valor original
---     é preservado em `cliente_id_origem` (UNIQUE) para rastreabilidade e
---     para permitir upsert idempotente na importação.
+--   - ATUALIZAÇÃO (2026-09-15): `cliente_id_origem` deixou de ser uma coluna
+--     auxiliar desacoplada e passou a ser a própria PK BIGINT AUTO_INCREMENT
+--     da tabela (mesmo padrão adotado em `pagamentos.pagamento_id`), pois o
+--     `cliente_id` do CSV já é sequencial (1..3040) e único. A antiga PK
+--     interna `id` foi removida — não há mais desacoplamento nem
+--     necessidade de UNIQUE separada (a PK já garante unicidade). Coluna
+--     padronizada para BIGINT (era INT).
 --   - `cnpj` é normalizado (somente dígitos, 14 chars) na importação, pois
 --     o CSV traz formatos mistos (com/sem máscara, com espaços). NÃO é
 --     UNIQUE: a análise do CSV encontrou ~40 CNPJs duplicados associados a
@@ -33,8 +34,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- Base de clientes do CRM (importada de dados/crm/clientes.csv)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `clientes` (
-    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID interno do cliente',
-    `cliente_id_origem` INT NOT NULL COMMENT 'ID original do cliente no CSV de origem (dados/crm/clientes.csv)',
+    `cliente_id_origem` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'PK — corresponde 1:1 ao cliente_id do CSV de origem (dados/crm/clientes.csv), sem desacoplamento',
     `cnpj` CHAR(14) NOT NULL COMMENT 'CNPJ normalizado (somente dígitos, sem máscara)',
     `razao_social` VARCHAR(255) NOT NULL COMMENT 'Razão social do cliente',
     `segmento` VARCHAR(80) NOT NULL COMMENT 'Segmento de atuação (ex: Perfumaria, E-commerce)',
@@ -45,8 +45,7 @@ CREATE TABLE IF NOT EXISTS `clientes` (
     `ativo` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '0 = inativo, 1 = ativo (origem: N/S)',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Data de criação do registro',
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Data de última atualização',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_clientes_cliente_id_origem` (`cliente_id_origem`),
+    PRIMARY KEY (`cliente_id_origem`),
     KEY `idx_clientes_cnpj` (`cnpj`),
     KEY `idx_clientes_uf` (`uf`),
     KEY `idx_clientes_segmento` (`segmento`),

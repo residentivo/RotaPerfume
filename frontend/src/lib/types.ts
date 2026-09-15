@@ -40,6 +40,7 @@ export interface Vendedor {
   nome: string;
   regiao: string;
   uf: string;
+  data_desligamento: string | null; // null = vendedor ativo; qualquer data = inativo
 }
 
 // === Vendedores (CRUD completo) ===
@@ -160,7 +161,6 @@ export interface VendedorRanking {
 // === Clientes ===
 
 export interface Cliente {
-  id: number;
   cliente_id_origem: number;
   cnpj: string;
   razao_social: string;
@@ -254,7 +254,6 @@ export type PedidoStatus =
 // Pedido (cabecalho), como retornado por GET /api/pedidos e no cabecalho de
 // GET /api/pedidos/{id}. cliente_nome/vendedor_nome vem via JOIN no backend.
 export interface Pedido {
-  id: number;
   pedido_id_origem: number;
   cliente_id: number;
   vendedor_id: number;
@@ -271,7 +270,6 @@ export interface Pedido {
 // Item de pedido, como retornado dentro de itens de GET /api/pedidos/{id}.
 // produto_sku/produto_descricao vem via JOIN no backend.
 export interface ItemPedido {
-  id: number;
   item_id_origem: number;
   pedido_id: number;
   produto_id: number;
@@ -386,4 +384,78 @@ export interface ListPagamentosFilters {
   pedido_id?: number;
   vencimento_de?: string; // formato AAAA-MM-DD
   vencimento_ate?: string; // formato AAAA-MM-DD
+}
+
+// === Oportunidades (CRM) ===
+//
+// Tela admin-only — ver apis/rotaperfumes-api/handlers (rota /api/oportunidades).
+
+export type OportunidadeEtapa =
+  | "Prospecção"
+  | "Qualificação"
+  | "Proposta enviada"
+  | "Negociação"
+  | "Fechado ganho"
+  | "Fechado perdido";
+
+export type OportunidadeOrigem =
+  | "WhatsApp"
+  | "Indicação"
+  | "Inbound site"
+  | "Instagram"
+  | "Feira de beleza"
+  | "Reativação"
+  | "Prospecção ativa";
+
+// Oportunidade, como retornada por GET /api/oportunidades e
+// GET /api/oportunidades/{id}.
+export interface Oportunidade {
+  oportunidade_id: number;
+  cliente_id: number;
+  vendedor_id: number;
+  origem: string;
+  data_abertura: string; // formato AAAA-MM-DD
+  etapa: string;
+  probabilidade_pct: number;
+  valor_estimado: number;
+  data_fechamento: string | null; // formato AAAA-MM-DD ou null
+  ciclo_dias: number | null;
+  motivo_perda: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Payload usado tanto para POST /api/oportunidades (criar) quanto para
+// PUT /api/oportunidades/{id} (editar). motivo_perda e exigido pelo backend
+// quando etapa = "Fechado perdido".
+export interface OportunidadeInput {
+  cliente_id: number;
+  vendedor_id: number;
+  origem: string;
+  data_abertura?: string; // formato AAAA-MM-DD
+  etapa: string;
+  probabilidade_pct: number;
+  valor_estimado: number;
+  data_fechamento?: string; // formato AAAA-MM-DD
+  ciclo_dias?: number;
+  motivo_perda?: string;
+}
+
+// Filtros aceitos por GET /api/oportunidades.
+export interface ListOportunidadesFilters {
+  cliente_id?: number;
+  vendedor_id?: number;
+  etapa?: string;
+  origem?: string;
+  data_abertura_de?: string; // formato AAAA-MM-DD
+  data_abertura_ate?: string; // formato AAAA-MM-DD
+  q?: string;
+}
+
+export interface ListOportunidadesResponse {
+  data: Oportunidade[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
 }

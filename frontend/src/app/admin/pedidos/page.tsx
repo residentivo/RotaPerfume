@@ -17,7 +17,6 @@ import {
 import { Pedido, PedidoDetalhe, PedidoInput } from "@/lib/types";
 
 type SortKey =
-  | "id"
   | "pedido_id_origem"
   | "cliente_nome"
   | "vendedor_nome"
@@ -67,10 +66,12 @@ function fmtDate(dateStr: string): string {
 }
 
 // Mapeia a sortKey interna do frontend para o campo aceito pelo backend em
-// order_by. `pedido_id_origem` nao esta na whitelist do backend, entao nao
-// enviamos order_by nesse caso (cai no default do backend: id desc).
+// order_by. A whitelist do backend (pedidoOrderWhitelist, em
+// apis/shared/repositories/pedido_repository.go) usa a chave "id" mapeada
+// para a coluna pedido_id_origem, entao a ordenacao por pedido_id_origem
+// continua enviando order_by=id.
 const ORDER_BY_MAP: Partial<Record<SortKey, string>> = {
-  id: "id",
+  pedido_id_origem: "id",
   cliente_nome: "cliente_nome",
   vendedor_nome: "vendedor_nome",
   data_pedido: "data_pedido",
@@ -98,7 +99,7 @@ export default function PedidosPage() {
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
-  const [sortKey, setSortKey] = useState<SortKey>("id");
+  const [sortKey, setSortKey] = useState<SortKey>("pedido_id_origem");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [page, setPage] = useState(1);
@@ -198,15 +199,15 @@ export default function PedidosPage() {
   };
 
   const toggleItens = (pedido: Pedido) => {
-    if (selectedId === pedido.id) {
+    if (selectedId === pedido.pedido_id_origem) {
       setSelectedId(null);
       setSelectedDetalhe(null);
       setItensError(null);
       return;
     }
-    setSelectedId(pedido.id);
+    setSelectedId(pedido.pedido_id_origem);
     setSelectedDetalhe(null);
-    loadItens(pedido.id);
+    loadItens(pedido.pedido_id_origem);
   };
 
   const openCreate = () => {
@@ -219,7 +220,7 @@ export default function PedidosPage() {
     setError(null);
     setLoadingEdit(true);
     try {
-      const detalhe = await apiGetPedido(pedido.id);
+      const detalhe = await apiGetPedido(pedido.pedido_id_origem);
       setModalMode("edit");
       setEditingPedido(detalhe);
       setModalOpen(true);
@@ -239,16 +240,21 @@ export default function PedidosPage() {
     if (modalMode === "create") {
       const created = await apiCreatePedido(data);
       await loadPedidos();
-      setSuccess(`Pedido #${created.id} criado com sucesso.`);
+      setSuccess(`Pedido #${created.pedido_id_origem} criado com sucesso.`);
     } else if (editingPedido) {
-      const updated = await apiUpdatePedido(editingPedido.id, data);
-      setPedidos((prev) =>
-        prev.map((p) => (p.id === updated.id ? updated : p))
+      const updated = await apiUpdatePedido(
+        editingPedido.pedido_id_origem,
+        data
       );
-      if (selectedId === updated.id) {
+      setPedidos((prev) =>
+        prev.map((p) =>
+          p.pedido_id_origem === updated.pedido_id_origem ? updated : p
+        )
+      );
+      if (selectedId === updated.pedido_id_origem) {
         setSelectedDetalhe(updated);
       }
-      setSuccess(`Pedido #${updated.id} atualizado com sucesso.`);
+      setSuccess(`Pedido #${updated.pedido_id_origem} atualizado com sucesso.`);
     }
     setModalOpen(false);
     setTimeout(() => setSuccess(null), 4000);
@@ -266,18 +272,8 @@ export default function PedidosPage() {
           className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
           title="Ver itens do pedido"
         >
-          #{p.id} - {p.cliente_nome}
+          #{p.pedido_id_origem} - {p.cliente_nome}
         </button>
-      ),
-    },
-    {
-      key: "pedido_id_origem",
-      header: "ID Origem",
-      width: "110px",
-      align: "center",
-      sortable: true,
-      render: (p) => (
-        <span className="text-slate-600">{p.pedido_id_origem}</span>
       ),
     },
     {
@@ -345,7 +341,7 @@ export default function PedidosPage() {
             onClick={() => toggleItens(p)}
             title="Ver itens do pedido"
           >
-            {selectedId === p.id ? "Ocultar itens" : "Itens"}
+            {selectedId === p.pedido_id_origem ? "Ocultar itens" : "Itens"}
           </Button>
           <Button
             size="sm"
@@ -474,7 +470,7 @@ export default function PedidosPage() {
           <Table
             columns={columns}
             data={pedidos}
-            keyExtractor={(p) => p.id}
+            keyExtractor={(p) => p.pedido_id_origem}
             loading={loading}
             sortKey={sortKey}
             sortDir={sortDir}
@@ -595,7 +591,10 @@ export default function PedidosPage() {
                       </tr>
                     )}
                     {selectedDetalhe.itens.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50">
+                      <tr
+                        key={item.item_id_origem}
+                        className="hover:bg-slate-50"
+                      >
                         <td className="px-4 py-2 text-sm text-slate-700">
                           #{item.produto_id} - {item.produto_descricao}{" "}
                           <span className="text-xs text-slate-400">

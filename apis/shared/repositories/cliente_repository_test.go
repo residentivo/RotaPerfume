@@ -16,12 +16,12 @@ import (
 )
 
 var clienteColumns = []string{
-	"id", "cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
+	"cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
 	"data_cadastro", "ativo", "created_at", "updated_at",
 }
 
-func clienteRow(id, idOrigem int64, cnpj, razao, segmento, cidade, uf, bairro string, dataCadastro time.Time, ativo bool, created, updated time.Time) []driver.Value {
-	return []driver.Value{id, idOrigem, cnpj, razao, segmento, cidade, uf, bairro, dataCadastro, ativo, created, updated}
+func clienteRow(idOrigem int64, cnpj, razao, segmento, cidade, uf, bairro string, dataCadastro time.Time, ativo bool, created, updated time.Time) []driver.Value {
+	return []driver.Value{idOrigem, cnpj, razao, segmento, cidade, uf, bairro, dataCadastro, ativo, created, updated}
 }
 
 func TestClienteList_SemFiltro(t *testing.T) {
@@ -33,10 +33,10 @@ func TestClienteList_SemFiltro(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(clienteColumns).
-		AddRow(clienteRow(1, 100, "11111111000100", "Empresa A", "Perfumaria", "SP", "SP", "Centro", now, true, now, now)...).
-		AddRow(clienteRow(2, 101, "22222222000100", "Empresa B", "Cosmeticos", "RJ", "RJ", "Zona Sul", now, true, now, now)...)
+		AddRow(clienteRow(100, "11111111000100", "Empresa A", "Perfumaria", "SP", "SP", "Centro", now, true, now, now)...).
+		AddRow(clienteRow(101, "22222222000100", "Empresa B", "Cosmeticos", "RJ", "RJ", "Zona Sul", now, true, now, now)...)
 
-	mock.ExpectQuery("SELECT .+ FROM clientes ORDER BY id ASC LIMIT \\? OFFSET \\?").
+	mock.ExpectQuery("SELECT .+ FROM clientes ORDER BY cliente_id_origem ASC LIMIT \\? OFFSET \\?").
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
@@ -47,7 +47,7 @@ func TestClienteList_SemFiltro(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
 	assert.Len(t, clientes, 2)
-	assert.Equal(t, int64(1), clientes[0].ID)
+	assert.Equal(t, int64(100), clientes[0].ClienteIDOrigem)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -100,7 +100,7 @@ func TestClienteList_ComFiltros(t *testing.T) {
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
 
 			allArgs := append(append([]driver.Value{}, tt.args...), int64(10), int64(0))
-			mock.ExpectQuery("SELECT .+ FROM clientes " + tt.whereRegexp + " ORDER BY id ASC LIMIT \\? OFFSET \\?").
+			mock.ExpectQuery("SELECT .+ FROM clientes " + tt.whereRegexp + " ORDER BY cliente_id_origem ASC LIMIT \\? OFFSET \\?").
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(clienteColumns))
 
@@ -123,9 +123,9 @@ func TestClienteList_OrderBy(t *testing.T) {
 	}{
 		{"order_by válido asc", "razao_social", "asc", "ORDER BY razao_social ASC"},
 		{"order_by válido desc", "data_cadastro", "desc", "ORDER BY data_cadastro DESC"},
-		{"order_by fora da whitelist cai no default", "1; DROP TABLE clientes;--", "asc", "ORDER BY id ASC"},
+		{"order_by fora da whitelist cai no default", "1; DROP TABLE clientes;--", "asc", "ORDER BY cliente_id_origem ASC"},
 		{"order_dir inválido cai no default (asc)", "cnpj", "invalido", "ORDER BY cnpj ASC"},
-		{"tudo vazio cai no default", "", "", "ORDER BY id ASC"},
+		{"tudo vazio cai no default", "", "", "ORDER BY cliente_id_origem ASC"},
 	}
 
 	for _, tt := range testes {
@@ -192,7 +192,7 @@ func TestClienteList_IterError(t *testing.T) {
 	mock.ExpectQuery("SELECT .+ FROM clientes").
 		WithArgs(10, 0).
 		WillReturnRows(sqlmock.NewRows(clienteColumns).
-			AddRow(clienteRow(1, 100, "cnpj", "razao", "seg", "cidade", "uf", "bairro", now, true, now, now)...).
+			AddRow(clienteRow(100, "cnpj", "razao", "seg", "cidade", "uf", "bairro", now, true, now, now)...).
 			RowError(0, sql.ErrConnDone))
 
 	repo := repositories.NewClienteRepository()
@@ -219,7 +219,7 @@ func TestClienteExistsByID(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 
-			q := mock.ExpectQuery(`SELECT 1 FROM clientes WHERE id = \? LIMIT 1`).WithArgs(tt.id)
+			q := mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).WithArgs(tt.id)
 			if tt.mockErr != nil {
 				q.WillReturnError(tt.mockErr)
 			} else {
@@ -241,7 +241,7 @@ func TestClienteExistsByID_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
@@ -260,9 +260,9 @@ func TestClienteGetByID_Success(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(clienteColumns).
-		AddRow(clienteRow(1, 100, "11111111000100", "Empresa A", "Perfumaria", "SP", "SP", "Centro", now, true, now, now)...)
+		AddRow(clienteRow(100, "11111111000100", "Empresa A", "Perfumaria", "SP", "SP", "Centro", now, true, now, now)...)
 
-	mock.ExpectQuery("SELECT .+ FROM clientes WHERE id = \\? LIMIT 1").
+	mock.ExpectQuery("SELECT .+ FROM clientes WHERE cliente_id_origem = \\? LIMIT 1").
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
@@ -271,7 +271,7 @@ func TestClienteGetByID_Success(t *testing.T) {
 	c, err := repo.GetByID(ctx, db, 1)
 
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), c.ID)
+	assert.Equal(t, int64(100), c.ClienteIDOrigem)
 	assert.Equal(t, "Empresa A", c.RazaoSocial)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -280,7 +280,7 @@ func TestClienteGetByID_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT .+ FROM clientes WHERE id = \\? LIMIT 1").
+	mock.ExpectQuery("SELECT .+ FROM clientes WHERE cliente_id_origem = \\? LIMIT 1").
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
@@ -297,7 +297,7 @@ func TestClienteGetByID_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT .+ FROM clientes WHERE id = \\? LIMIT 1").
+	mock.ExpectQuery("SELECT .+ FROM clientes WHERE cliente_id_origem = \\? LIMIT 1").
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
@@ -315,7 +315,7 @@ func TestClienteSetAtivo_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
 		WithArgs(false, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -331,7 +331,7 @@ func TestClienteSetAtivo_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
 		WithArgs(true, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -347,7 +347,7 @@ func TestClienteSetAtivo_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
 		WithArgs(true, int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
@@ -591,36 +591,9 @@ func TestClienteCountPorUF_IterError(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestClienteNextClienteIDOrigem_Success(t *testing.T) {
-	db, mock := newMock(t)
-	defer db.Close()
-
-	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(cliente_id_origem\\), 0\\) \\+ 1 FROM clientes").
-		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(101))
-
-	repo := repositories.NewClienteRepository()
-	ctx := context.Background()
-	next, err := repo.NextClienteIDOrigem(ctx, db)
-
-	require.NoError(t, err)
-	assert.Equal(t, int64(101), next)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestClienteNextClienteIDOrigem_DBError(t *testing.T) {
-	db, mock := newMock(t)
-	defer db.Close()
-
-	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(cliente_id_origem\\), 0\\) \\+ 1 FROM clientes").
-		WillReturnError(sql.ErrConnDone)
-
-	repo := repositories.NewClienteRepository()
-	ctx := context.Background()
-	_, err := repo.NextClienteIDOrigem(ctx, db)
-
-	assert.Error(t, err)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
+// NextClienteIDOrigem foi removida: cliente_id_origem agora é a PK
+// AUTO_INCREMENT da tabela clientes, e o valor é obtido via LastInsertId()
+// no repositório Create (ver TestClienteCreate_Success abaixo).
 
 func TestClienteCreate_Success(t *testing.T) {
 	db, mock := newMock(t)
@@ -628,19 +601,18 @@ func TestClienteCreate_Success(t *testing.T) {
 
 	now := time.Now()
 	c := &models.Cliente{
-		ClienteIDOrigem: 101,
-		CNPJ:            "11111111000100",
-		RazaoSocial:     "Empresa A",
-		Segmento:        "Perfumaria",
-		Cidade:          "SP",
-		UF:              "SP",
-		Bairro:          "Centro",
-		DataCadastro:    now,
-		Ativo:           true,
+		CNPJ:         "11111111000100",
+		RazaoSocial:  "Empresa A",
+		Segmento:     "Perfumaria",
+		Cidade:       "SP",
+		UF:           "SP",
+		Bairro:       "Centro",
+		DataCadastro: now,
+		Ativo:        true,
 	}
 
 	mock.ExpectExec("INSERT INTO clientes").
-		WithArgs(c.ClienteIDOrigem, c.CNPJ, c.RazaoSocial, c.Segmento, c.Cidade, c.UF, c.Bairro, c.DataCadastro, c.Ativo).
+		WithArgs(c.CNPJ, c.RazaoSocial, c.Segmento, c.Cidade, c.UF, c.Bairro, c.DataCadastro, c.Ativo).
 		WillReturnResult(sqlmock.NewResult(9, 1))
 
 	repo := repositories.NewClienteRepository()
@@ -648,7 +620,7 @@ func TestClienteCreate_Success(t *testing.T) {
 	err := repo.Create(ctx, db, c)
 
 	require.NoError(t, err)
-	assert.Equal(t, int64(9), c.ID)
+	assert.Equal(t, int64(9), c.ClienteIDOrigem)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

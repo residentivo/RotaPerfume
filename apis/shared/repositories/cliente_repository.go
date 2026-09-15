@@ -22,7 +22,7 @@ func NewClienteRepository() *ClienteRepository {
 
 // clienteColunas usa COALESCE em bairro pois a coluna é NULLable no banco,
 // mas o model.Cliente.Bairro é string (não ponteiro) — NULL vira "".
-const clienteColunas = `id, cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, COALESCE(bairro, ''), data_cadastro, ativo, created_at, updated_at`
+const clienteColunas = `cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, COALESCE(bairro, ''), data_cadastro, ativo, created_at, updated_at`
 
 // ClienteFiltro agrupa os filtros opcionais aceitos por List.
 // Campos vazios/nil são ignorados (não filtram).
@@ -31,14 +31,14 @@ type ClienteFiltro struct {
 	Segmento string
 	Ativo    *bool
 	Q        string // busca textual em razao_social OU cnpj (LIKE)
-	OrderBy  string // campo de ordenação (whitelist: ver clienteOrderWhitelist); default "id"
+	OrderBy  string // campo de ordenação (whitelist: ver clienteOrderWhitelist); default "cliente_id_origem"
 	OrderDir string // "asc" ou "desc" (case-insensitive); default "asc"
 }
 
 // clienteOrderWhitelist mapeia os campos de ordenação aceitos pela API para
 // as colunas SQL reais da tabela clientes.
 var clienteOrderWhitelist = map[string]string{
-	"id":            "id",
+	"id":            "cliente_id_origem",
 	"razao_social":  "razao_social",
 	"cnpj":          "cnpj",
 	"segmento":      "segmento",
@@ -51,9 +51,9 @@ var clienteOrderWhitelist = map[string]string{
 }
 
 // orderBy monta a cláusula ORDER BY a partir de OrderBy/OrderDir, com
-// default "id ASC" (comportamento atual).
+// default "cliente_id_origem ASC" (comportamento atual).
 func (f ClienteFiltro) orderBy() string {
-	return buildOrderByClause(clienteOrderWhitelist, f.OrderBy, f.OrderDir, "id", "ASC")
+	return buildOrderByClause(clienteOrderWhitelist, f.OrderBy, f.OrderDir, "cliente_id_origem", "ASC")
 }
 
 // where monta a cláusula WHERE (sem a palavra "WHERE") e os args correspondentes.
@@ -133,7 +133,7 @@ func (r *ClienteRepository) List(ctx context.Context, db *sql.DB, page, limit in
 
 // ExistsByID verifica se existe um cliente com o id informado (ativo ou não).
 func (r *ClienteRepository) ExistsByID(ctx context.Context, db *sql.DB, id int64) (bool, error) {
-	const q = `SELECT 1 FROM clientes WHERE id = ? LIMIT 1`
+	const q = `SELECT 1 FROM clientes WHERE cliente_id_origem = ? LIMIT 1`
 	var one int
 	err := db.QueryRowContext(ctx, q, id).Scan(&one)
 	if err != nil {
@@ -147,14 +147,14 @@ func (r *ClienteRepository) ExistsByID(ctx context.Context, db *sql.DB, id int64
 
 // GetByID busca um cliente pelo ID. Retorna ErrNotFound se não existir.
 func (r *ClienteRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (*models.Cliente, error) {
-	q := "SELECT " + clienteColunas + " FROM clientes WHERE id = ? LIMIT 1"
+	q := "SELECT " + clienteColunas + " FROM clientes WHERE cliente_id_origem = ? LIMIT 1"
 	row := db.QueryRowContext(ctx, q, id)
 	return scanCliente(row)
 }
 
 // SetAtivo ativa/inativa um cliente. Retorna ErrNotFound se não existir.
 func (r *ClienteRepository) SetAtivo(ctx context.Context, db *sql.DB, id int64, ativo bool) error {
-	const q = `UPDATE clientes SET ativo = ? WHERE id = ?`
+	const q = `UPDATE clientes SET ativo = ? WHERE cliente_id_origem = ?`
 	res, err := db.ExecContext(ctx, q, ativo, id)
 	if err != nil {
 		return fmt.Errorf("repositories: set ativo cliente: %w", err)
@@ -272,26 +272,13 @@ func (r *ClienteRepository) CountPorUF(ctx context.Context, db *sql.DB) ([]UFCon
 	return out, nil
 }
 
-// NextClienteIDOrigem retorna o próximo valor disponível para
-// cliente_id_origem (MAX atual + 1). cliente_id_origem é UNIQUE e obrigatório
-// na tabela, mas não é gerado automaticamente pelo banco — clientes criados
-// via API (fora do CSV de origem) recebem um valor sequencial aqui.
-func (r *ClienteRepository) NextClienteIDOrigem(ctx context.Context, db *sql.DB) (int64, error) {
-	var next int64
-	const q = `SELECT COALESCE(MAX(cliente_id_origem), 0) + 1 FROM clientes`
-	if err := db.QueryRowContext(ctx, q).Scan(&next); err != nil {
-		return 0, fmt.Errorf("repositories: next cliente_id_origem: %w", err)
-	}
-	return next, nil
-}
-
-// Create insere um novo cliente e preenche c.ID com o id gerado.
+// Create insere um novo cliente e preenche c.ClienteIDOrigem com o id
+// gerado nativamente pelo AUTO_INCREMENT do MySQL.
 func (r *ClienteRepository) Create(ctx context.Context, db *sql.DB, c *models.Cliente) error {
 	const q = `
-		INSERT INTO clientes (cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		INSERT INTO clientes (cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := db.ExecContext(ctx, q,
-		c.ClienteIDOrigem,
 		c.CNPJ,
 		c.RazaoSocial,
 		c.Segmento,
@@ -308,7 +295,7 @@ func (r *ClienteRepository) Create(ctx context.Context, db *sql.DB, c *models.Cl
 	if err != nil {
 		return fmt.Errorf("repositories: create cliente lastInsertId: %w", err)
 	}
-	c.ID = id
+	c.ClienteIDOrigem = id
 	return nil
 }
 
@@ -318,7 +305,7 @@ func (r *ClienteRepository) Update(ctx context.Context, db *sql.DB, id int64, c 
 	const q = `
 		UPDATE clientes
 		SET cnpj = ?, razao_social = ?, segmento = ?, cidade = ?, uf = ?, bairro = ?, data_cadastro = ?
-		WHERE id = ?`
+		WHERE cliente_id_origem = ?`
 	res, err := db.ExecContext(ctx, q,
 		c.CNPJ,
 		c.RazaoSocial,
@@ -345,7 +332,6 @@ func (r *ClienteRepository) Update(ctx context.Context, db *sql.DB, id int64, c 
 func scanCliente(s rowScanner) (*models.Cliente, error) {
 	var c models.Cliente
 	if err := s.Scan(
-		&c.ID,
 		&c.ClienteIDOrigem,
 		&c.CNPJ,
 		&c.RazaoSocial,

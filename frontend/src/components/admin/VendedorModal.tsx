@@ -242,10 +242,15 @@ export function VendedorModal({
     () => [
       { value: "", label: "Selecione um cliente" },
       ...todosClientes
-        .filter((c) => !(detalhe?.clientes ?? []).some((v) => v.id === c.id))
+        .filter(
+          (c) =>
+            !(detalhe?.clientes ?? []).some(
+              (v) => v.id === c.cliente_id_origem
+            )
+        )
         .map((c) => ({
-          value: String(c.id),
-          label: `#${c.id} - ${c.razao_social}`,
+          value: String(c.cliente_id_origem),
+          label: `#${c.cliente_id_origem} - ${c.razao_social}`,
         })),
     ],
     [todosClientes, detalhe]

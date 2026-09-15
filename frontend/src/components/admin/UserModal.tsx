@@ -97,7 +97,9 @@ export function UserModal({
     { value: "", label: "Nenhum" },
     ...vendedores.map((v) => ({
       value: String(v.id),
-      label: `${v.nome} — ${v.regiao}/${v.uf}`,
+      label: `${v.nome} — ${v.regiao}/${v.uf}${
+        v.data_desligamento ? " [X]" : ""
+      }`,
     })),
   ];
 

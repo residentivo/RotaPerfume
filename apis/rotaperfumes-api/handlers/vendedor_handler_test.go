@@ -16,8 +16,8 @@ import (
 // Regexes/colunas que espelham as constantes de
 // apis/shared/repositories/vendedor_repository.go e carteira_repository.go.
 const vendedorGetColunasRegexH = `id, nome, regiao, uf, data_admissao, data_desligamento, meta_mensal, created_at, updated_at FROM vendedores WHERE id = \? LIMIT 1`
-const clienteResumoColunasRegexH = `c\.id, c\.cnpj, c\.razao_social, c\.segmento, c\.cidade, c\.uf, ca\.id, ca\.data_inicio, ca\.data_fim`
-const clienteResumoFromRegexH = ` FROM carteiras ca JOIN clientes c ON c\.id = ca\.cliente_id`
+const clienteResumoColunasRegexH = `c\.cliente_id_origem, c\.cnpj, c\.razao_social, c\.segmento, c\.cidade, c\.uf, ca\.carteira_id_origem, ca\.data_inicio, ca\.data_fim`
+const clienteResumoFromRegexH = ` FROM carteiras ca JOIN clientes c ON c\.cliente_id_origem = ca\.cliente_id`
 
 func vendedorGetRowsH(id int64, nome string, dataDesligamento any) *sqlmock.Rows {
 	now := time.Now()
@@ -58,10 +58,10 @@ func TestListVendedores_Success(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT id, nome, regiao, uf\s+FROM vendedores\s+WHERE data_desligamento IS NULL\s+ORDER BY nome ASC`).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf"}).
-			AddRow(int64(1), "Vendedor Um", "Sudeste", "SP").
-			AddRow(int64(2), "Vendedor Dois", "Sul", "PR"))
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+ORDER BY nome ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
+			AddRow(int64(1), "Vendedor Um", "Sudeste", "SP", nil).
+			AddRow(int64(2), "Vendedor Dois", "Sul", "PR", nil))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -77,6 +77,49 @@ func TestListVendedores_Success(t *testing.T) {
 	require.Len(t, data, 2)
 	first := data[0].(map[string]any)
 	assert.Equal(t, "Vendedor Um", first["nome"])
+	assert.Nil(t, first["data_desligamento"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestListVendedores_AtivosEInativos cobre o comportamento central da
+// correção do bug: vendedores ativos e inativos devem vir juntos na listagem,
+// com data_desligamento populado para os inativos, permitindo ao frontend
+// exibir um marcador "[inativo]" em vez de o vendedor simplesmente sumir.
+func TestListVendedores_AtivosEInativos(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	desligadoEm := time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+ORDER BY nome ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
+			AddRow(int64(1), "Vendedor Ativo", "Sudeste", "SP", nil).
+			AddRow(int64(2), "Vendedor Inativo", "Sul", "RS", desligadoEm))
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	data := body["data"].([]any)
+	require.Len(t, data, 2)
+
+	ativo := data[0].(map[string]any)
+	assert.Equal(t, "Vendedor Ativo", ativo["nome"])
+	assert.Nil(t, ativo["data_desligamento"])
+
+	inativo := data[1].(map[string]any)
+	assert.Equal(t, "Vendedor Inativo", inativo["nome"])
+	assert.NotNil(t, inativo["data_desligamento"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -89,8 +132,8 @@ func TestListVendedores_ListaVazia(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT id, nome, regiao, uf\s+FROM vendedores\s+WHERE data_desligamento IS NULL\s+ORDER BY nome ASC`).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf"}))
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+ORDER BY nome ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -115,7 +158,7 @@ func TestListVendedores_ErroInterno(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT id, nome, regiao, uf\s+FROM vendedores\s+WHERE data_desligamento IS NULL\s+ORDER BY nome ASC`).
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+ORDER BY nome ASC`).
 		WillReturnError(sqlmock.ErrCancelled)
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
@@ -137,10 +180,10 @@ func TestListVendedores_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mock.ExpectQuery(`SELECT id, nome, regiao, uf\s+FROM vendedores\s+WHERE data_desligamento IS NULL\s+ORDER BY nome ASC`).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf"}).
-			AddRow(int64(1), "Vendedor Um", "Sudeste", "SP").
-			AddRow(int64(2), "Vendedor Dois", "Sul", "PR"))
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+ORDER BY nome ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
+			AddRow(int64(1), "Vendedor Um", "Sudeste", "SP", nil).
+			AddRow(int64(2), "Vendedor Dois", "Sul", "PR", nil))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -285,6 +328,149 @@ func TestGetVendedor_IDInvalido(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.Equal(t, "id inválido", body["error"])
+}
+
+// ---------------------------------------------------------------------------
+// ListClientesDoVendedor GET /api/vendedores/{id}/clientes
+// ---------------------------------------------------------------------------
+
+func TestListClientesDoVendedor_Success_ComClientes(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(vendedorExistsByIDRegexH).WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectQuery(clienteResumoColunasRegexH + clienteResumoFromRegexH + ` WHERE ca\.vendedor_id = \? AND ca\.data_fim IS NULL ORDER BY c\.razao_social ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(clienteResumoRowsH())
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores/1/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	data := body["data"].([]any)
+	require.Len(t, data, 2)
+	primeiro := data[0].(map[string]any)
+	assert.Equal(t, "Cliente A", primeiro["razao_social"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestListClientesDoVendedor_Success_SemClientes(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(vendedorExistsByIDRegexH).WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectQuery(clienteResumoColunasRegexH + clienteResumoFromRegexH + ` WHERE ca\.vendedor_id = \? AND ca\.data_fim IS NULL ORDER BY c\.razao_social ASC`).
+		WithArgs(int64(2)).
+		WillReturnRows(emptyClienteResumoRowsH())
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores/2/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	data, ok := body["data"].([]any)
+	assert.True(t, !ok || len(data) == 0)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestListClientesDoVendedor_VendedorNaoEncontrado(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(vendedorExistsByIDRegexH).WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores/999/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "vendedor não encontrado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestListClientesDoVendedor_IDInvalido(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores/abc/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "id inválido", body["error"])
+}
+
+// TestListClientesDoVendedor_PermitidoParaNaoAdmin garante que a rota é
+// "acesso comum": usuários não-admin também conseguem consultar os clientes
+// vinculados a um vendedor (usado pelo dropdown em cascata do frontend em
+// Oportunidades).
+func TestListClientesDoVendedor_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(vendedorExistsByIDRegexH).WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectQuery(clienteResumoColunasRegexH + clienteResumoFromRegexH + ` WHERE ca\.vendedor_id = \? AND ca\.data_fim IS NULL ORDER BY c\.razao_social ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(clienteResumoRowsH())
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores/1/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------
@@ -603,31 +789,138 @@ func TestDeleteVendedor_NaoEncontrado(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// ReativarVendedor POST /api/vendedores/{id}/reativar
+// ---------------------------------------------------------------------------
+
+func TestReativarVendedor_Success(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(vendedorGetColunasRegexH).
+		WithArgs(int64(1)).
+		WillReturnRows(vendedorGetRowsH(1, "João Vendedor", nil))
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/vendedores/1/reativar", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, float64(1), data["id"])
+	assert.Nil(t, data["data_desligamento"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestReativarVendedor_IDInvalido(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/vendedores/abc/reativar", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "id inválido", body["error"])
+}
+
+func TestReativarVendedor_NaoEncontrado(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), int64(999)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/vendedores/999/reativar", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "vendedor não encontrado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestReativarVendedor_ErroInterno(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
+		WillReturnError(sql.ErrConnDone)
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/vendedores/1/reativar", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "erro interno", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ---------------------------------------------------------------------------
 // VincularCliente POST /api/vendedores/{id}/clientes
 // ---------------------------------------------------------------------------
 
 const vendedorExistsByIDRegexH = `SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`
-const clienteGetByIDRegexH = `SELECT .+ FROM clientes WHERE id = \? LIMIT 1`
-const carteiraGetVinculoAtivoByClienteIDRegexH = `SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`
-const carteiraGetVinculoAtivoRegexH = `SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`
-const carteiraEncerrarVinculoRegexH = `UPDATE carteiras SET data_fim = \? WHERE id = \?`
-const carteiraNextCarteiraIDOrigemRegexH = `SELECT COALESCE\(MAX\(carteira_id_origem\), 0\) \+ 1 FROM carteiras`
-const carteiraCreateRegexH = `INSERT INTO carteiras \(carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?, \?\)`
-const carteiraGetVinculoByClienteVendedorDataRegexH = `SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND vendedor_id = \? AND data_inicio = \?\s+LIMIT 1`
+const clienteGetByIDRegexH = `SELECT .+ FROM clientes WHERE cliente_id_origem = \? LIMIT 1`
+const carteiraGetVinculoAtivoByClienteIDRegexH = `SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`
+const carteiraGetVinculoAtivoRegexH = `SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`
+const carteiraEncerrarVinculoRegexH = `UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`
+const carteiraCreateRegexH = `INSERT INTO carteiras \(cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?\)`
+const carteiraGetVinculoByClienteVendedorDataRegexH = `SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND vendedor_id = \? AND data_inicio = \?\s+LIMIT 1`
 
-func clienteGetByIDRowsH(id int64, razaoSocial string) *sqlmock.Rows {
+func clienteGetByIDRowsH(idOrigem int64, razaoSocial string) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows([]string{
-		"id", "cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
+		"cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
 		"data_cadastro", "ativo", "created_at", "updated_at",
-	}).AddRow(id, int64(100), "11.111.111/0001-11", razaoSocial, "Varejo", "São Paulo", "SP", "Centro", now, true, now, now)
+	}).AddRow(idOrigem, "11.111.111/0001-11", razaoSocial, "Varejo", "São Paulo", "SP", "Centro", now, true, now, now)
 }
 
-func carteiraVinculoRowH(id, carteiraIDOrigem, clienteID, vendedorID int64) *sqlmock.Rows {
+func carteiraVinculoRowH(carteiraIDOrigem, clienteID, vendedorID int64) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows([]string{
-		"id", "carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
-	}).AddRow(id, carteiraIDOrigem, clienteID, vendedorID, now, nil, now, now)
+		"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+	}).AddRow(carteiraIDOrigem, clienteID, vendedorID, now, nil, now, now)
 }
 
 func TestVincularCliente_Success(t *testing.T) {
@@ -646,8 +939,6 @@ func TestVincularCliente_Success(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegexH).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(carteiraNextCarteiraIDOrigemRegexH).
-		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(501))
 	mock.ExpectExec(carteiraCreateRegexH).
 		WillReturnResult(sqlmock.NewResult(7, 1))
 
@@ -798,9 +1089,9 @@ func TestDesvincularCliente_Success(t *testing.T) {
 	adminToken := generateToken(t, cfg, 1, "admin")
 
 	mock.ExpectQuery(carteiraGetVinculoAtivoRegexH).WithArgs(int64(1), int64(10)).
-		WillReturnRows(carteiraVinculoRowH(3, 300, 10, 1))
+		WillReturnRows(carteiraVinculoRowH(300, 10, 1))
 	mock.ExpectExec(carteiraEncerrarVinculoRegexH).
-		WithArgs(sqlmock.AnyArg(), int64(3)).
+		WithArgs(sqlmock.AnyArg(), int64(300)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/vendedores/1/clientes/10", nil)

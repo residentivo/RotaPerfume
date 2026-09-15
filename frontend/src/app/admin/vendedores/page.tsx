@@ -13,6 +13,7 @@ import {
   apiCreateVendedor,
   apiUpdateVendedor,
   apiDeleteVendedor,
+  apiReativarVendedor,
 } from "@/lib/api";
 import { Vendedor, VendedorCompleto, VendedorInput } from "@/lib/types";
 
@@ -20,8 +21,9 @@ import { Vendedor, VendedorCompleto, VendedorInput } from "@/lib/types";
 // (endpoint simples, historicamente usado so para popular combobox) — ver
 // apis/rotaperfumes-api/handlers/vendedor_handler.go (ListVendedores). Por
 // isso a busca, ordenacao e paginacao desta tela sao aplicadas no cliente,
-// sobre a lista completa de vendedores ativos retornada pela API.
-type SortKey = "id" | "nome" | "regiao" | "uf";
+// sobre a lista completa de vendedores (ativos e inativos) retornada pela
+// API.
+type SortKey = "id" | "nome" | "regiao" | "uf" | "status";
 type SortDir = "asc" | "desc";
 
 const LIMIT_OPTIONS = [
@@ -31,15 +33,28 @@ const LIMIT_OPTIONS = [
   { value: "100", label: "100 por pagina" },
 ];
 
+type StatusFilter = "todos" | "ativo" | "inativo";
+
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "todos", label: "Todos" },
+  { value: "ativo", label: "Ativo" },
+  { value: "inativo", label: "Inativo" },
+];
+
+const TODAS_OPTION = { value: "", label: "Todas" };
+
 export default function VendedoresPage() {
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [regiaoFilter, setRegiaoFilter] = useState("");
+  const [ufFilter, setUfFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
   const [sortKey, setSortKey] = useState<SortKey>("nome");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
@@ -74,10 +89,24 @@ export default function VendedoresPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reseta para pagina 1 quando busca/ordenacao mudam.
+  // Reseta para pagina 1 quando busca/filtros/ordenacao mudam.
   useEffect(() => {
     setPage(1);
-  }, [search, sortKey, sortDir]);
+  }, [search, regiaoFilter, ufFilter, statusFilter, sortKey, sortDir]);
+
+  const regiaoOptions = useMemo(() => {
+    const values = Array.from(new Set(vendedores.map((v) => v.regiao))).sort(
+      (a, b) => a.localeCompare(b, "pt-BR")
+    );
+    return [TODAS_OPTION, ...values.map((v) => ({ value: v, label: v }))];
+  }, [vendedores]);
+
+  const ufOptions = useMemo(() => {
+    const values = Array.from(new Set(vendedores.map((v) => v.uf))).sort(
+      (a, b) => a.localeCompare(b, "pt-BR")
+    );
+    return [TODAS_OPTION, ...values.map((v) => ({ value: v, label: v }))];
+  }, [vendedores]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -97,10 +126,29 @@ export default function VendedoresPage() {
           String(v.id).includes(term) ||
           v.nome.toLowerCase().includes(term) ||
           v.regiao.toLowerCase().includes(term) ||
-          v.uf.toLowerCase().includes(term)
+          v.uf.toLowerCase().includes(term) ||
+          (v.data_desligamento
+            ? "inativo".includes(term)
+            : "ativo".includes(term))
+      );
+    }
+    if (regiaoFilter) {
+      list = list.filter((v) => v.regiao === regiaoFilter);
+    }
+    if (ufFilter) {
+      list = list.filter((v) => v.uf === ufFilter);
+    }
+    if (statusFilter !== "todos") {
+      list = list.filter((v) =>
+        statusFilter === "ativo" ? !v.data_desligamento : !!v.data_desligamento
       );
     }
     const sorted = [...list].sort((a, b) => {
+      if (sortKey === "status") {
+        const av = a.data_desligamento ? 0 : 1;
+        const bv = b.data_desligamento ? 0 : 1;
+        return sortDir === "asc" ? av - bv : bv - av;
+      }
       const av = a[sortKey];
       const bv = b[sortKey];
       if (typeof av === "number" && typeof bv === "number") {
@@ -112,7 +160,15 @@ export default function VendedoresPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [vendedores, search, sortKey, sortDir]);
+  }, [
+    vendedores,
+    search,
+    regiaoFilter,
+    ufFilter,
+    statusFilter,
+    sortKey,
+    sortDir,
+  ]);
 
   const total = filteredSorted.length;
   const pages = Math.max(1, Math.ceil(total / limit));
@@ -139,7 +195,7 @@ export default function VendedoresPage() {
       regiao: vendedor.regiao,
       uf: vendedor.uf,
       data_admissao: "",
-      data_desligamento: null,
+      data_desligamento: vendedor.data_desligamento,
       meta_mensal: 0,
       created_at: "",
       updated_at: "",
@@ -168,12 +224,12 @@ export default function VendedoresPage() {
     );
     if (!ok) return;
 
-    setDeletingId(vendedor.id);
+    setTogglingId(vendedor.id);
     setError(null);
     setSuccess(null);
     try {
       await apiDeleteVendedor(vendedor.id);
-      setVendedores((prev) => prev.filter((v) => v.id !== vendedor.id));
+      await loadVendedores();
       setSuccess(`Vendedor "${vendedor.nome}" inativado com sucesso.`);
       setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
@@ -181,7 +237,38 @@ export default function VendedoresPage() {
         err instanceof Error ? err.message : "Erro ao inativar vendedor.";
       setError(message);
     } finally {
-      setDeletingId(null);
+      setTogglingId(null);
+    }
+  };
+
+  const handleReativar = async (vendedor: Vendedor) => {
+    const ok = window.confirm(
+      `Tem certeza que deseja reativar o vendedor "${vendedor.nome}"?`
+    );
+    if (!ok) return;
+
+    setTogglingId(vendedor.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      await apiReativarVendedor(vendedor.id);
+      await loadVendedores();
+      setSuccess(`Vendedor "${vendedor.nome}" reativado com sucesso.`);
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erro ao reativar vendedor.";
+      setError(message);
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const handleToggleStatus = (vendedor: Vendedor) => {
+    if (vendedor.data_desligamento) {
+      handleReativar(vendedor);
+    } else {
+      handleDelete(vendedor);
     }
   };
 
@@ -217,9 +304,44 @@ export default function VendedoresPage() {
       render: (v) => <span className="text-slate-600">{v.uf}</span>,
     },
     {
+      key: "status",
+      header: "Status",
+      width: "140px",
+      align: "center",
+      sortable: true,
+      sortValue: (v) => (v.data_desligamento ? 0 : 1),
+      render: (v) => (
+        <button
+          type="button"
+          onClick={() => handleToggleStatus(v)}
+          disabled={togglingId === v.id}
+          title={
+            v.data_desligamento
+              ? "Clique para reativar"
+              : "Clique para inativar"
+          }
+          className={[
+            "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+            "disabled:cursor-not-allowed disabled:opacity-60",
+            v.data_desligamento
+              ? "bg-red-100 text-red-700 hover:bg-red-200"
+              : "bg-green-100 text-green-700 hover:bg-green-200",
+          ].join(" ")}
+        >
+          <span
+            className={[
+              "h-2 w-2 rounded-full",
+              v.data_desligamento ? "bg-red-500" : "bg-green-500",
+            ].join(" ")}
+          />
+          {v.data_desligamento ? "Inativo" : "Ativo"}
+        </button>
+      ),
+    },
+    {
       key: "actions",
       header: "Acoes",
-      width: "160px",
+      width: "100px",
       align: "right",
       render: (v) => (
         <div className="inline-flex items-center justify-end gap-2">
@@ -230,15 +352,6 @@ export default function VendedoresPage() {
             title="Editar vendedor"
           >
             Editar
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => handleDelete(v)}
-            disabled={deletingId === v.id}
-            title="Inativar vendedor"
-          >
-            Inativar
           </Button>
         </div>
       ),
@@ -305,6 +418,32 @@ export default function VendedoresPage() {
               </div>
               <div className="sm:w-44">
                 <Select
+                  label="Regiao"
+                  options={regiaoOptions}
+                  value={regiaoFilter}
+                  onChange={(e) => setRegiaoFilter(e.target.value)}
+                />
+              </div>
+              <div className="sm:w-32">
+                <Select
+                  label="UF"
+                  options={ufOptions}
+                  value={ufFilter}
+                  onChange={(e) => setUfFilter(e.target.value)}
+                />
+              </div>
+              <div className="sm:w-36">
+                <Select
+                  label="Status"
+                  options={STATUS_OPTIONS}
+                  value={statusFilter}
+                  onChange={(e) =>
+                    setStatusFilter(e.target.value as StatusFilter)
+                  }
+                />
+              </div>
+              <div className="sm:w-44">
+                <Select
                   label="Itens por pagina"
                   options={LIMIT_OPTIONS}
                   value={String(limit)}
@@ -335,8 +474,8 @@ export default function VendedoresPage() {
             sortDir={sortDir}
             onSort={(key) => handleSort(key as SortKey)}
             emptyMessage={
-              search
-                ? "Nenhum vendedor encontrado para a busca aplicada."
+              search || regiaoFilter || ufFilter || statusFilter !== "todos"
+                ? "Nenhum vendedor encontrado para a busca/filtros aplicados."
                 : "Nenhum vendedor cadastrado."
             }
           />
@@ -390,11 +529,14 @@ export default function VendedoresPage() {
       </Card>
 
       <div className="mt-4 text-xs text-slate-400">
-        <strong>Nota:</strong> A busca, ordenacao e paginacao desta tela sao
-        aplicadas no navegador, pois <code>GET /api/vendedores</code> retorna
-        a lista completa de vendedores ativos (sem parametros de
-        paginacao/filtro no backend). Vendedores inativados deixam de
-        aparecer na lista.
+        <strong>Nota:</strong> A busca, os filtros (regiao/UF/status),
+        ordenacao e paginacao desta tela sao aplicados no navegador, pois{" "}
+        <code>GET /api/vendedores</code> retorna a lista completa de
+        vendedores (ativos e inativos), sem parametros de
+        paginacao/filtro/ordenacao no backend. Vendedores inativados
+        continuam aparecendo na lista, marcados com{" "}
+        <strong>[X] Inativo</strong> na coluna Status — use os filtros de
+        Status/Regiao/UF para restringir a visualizacao.
       </div>
 
       <VendedorModal

@@ -8,16 +8,17 @@
 -- Colunas de origem: carteira_id,cliente_id,vendedor_id,data_inicio,data_fim
 --
 -- Decisões de schema:
---   - `carteira_id` do CSV é sequencial e único, mas seguindo o padrão já
---     adotado em Clientes/Pedidos, a PK interna `id` (BIGINT AUTO_INCREMENT)
---     fica desacoplada da origem. O valor original é preservado em
---     `carteira_id_origem` (UNIQUE) para rastreabilidade e upsert
---     idempotente na importação.
+--   - ATUALIZAÇÃO (2026-09-15): `carteira_id_origem` deixou de ser uma
+--     coluna auxiliar desacoplada e passou a ser a própria PK BIGINT
+--     AUTO_INCREMENT da tabela (mesmo padrão adotado em
+--     `pagamentos.pagamento_id`), pois o `carteira_id` do CSV é sequencial
+--     e único. A antiga PK interna `id` foi removida — não há mais UNIQUE
+--     separada (a PK já garante unicidade).
 --   - `cliente_id` do CSV NÃO pode ser usado direto como FK: a tabela
---     `clientes` tem PK interna própria. O importador resolve via lookup
---     `SELECT id FROM clientes WHERE cliente_id_origem = ?` antes do insert
---     (mesmo padrão de `pedidos`). Aqui a coluna `cliente_id` já armazena o
---     `id` interno de `clientes`.
+--     `clientes` agora tem PK própria `cliente_id_origem`. O importador
+--     resolve via lookup `SELECT cliente_id_origem FROM clientes WHERE
+--     cliente_id_origem = ?` (mesmo padrão de `pedidos`). Aqui a coluna
+--     `cliente_id` já armazena o `cliente_id_origem` de `clientes`.
 --   - `vendedor_id` do CSV, ao contrário, JÁ corresponde 1:1 ao `id` de
 --     `vendedores` (seed com IDs explícitos 1..42) — usado direto como FK,
 --     sem necessidade de lookup (mesmo padrão de `pedidos`).
@@ -46,22 +47,20 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- dados/crm/carteira.csv)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `carteiras` (
-    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID interno da carteira',
-    `carteira_id_origem` BIGINT NOT NULL COMMENT 'ID original da carteira no CSV de origem (dados/crm/carteira.csv)',
-    `cliente_id` BIGINT NOT NULL COMMENT 'FK para clientes.id (resolvido via cliente_id_origem na importação)',
+    `carteira_id_origem` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'PK — corresponde 1:1 ao carteira_id do CSV de origem (dados/crm/carteira.csv), sem desacoplamento',
+    `cliente_id` BIGINT NOT NULL COMMENT 'FK para clientes.cliente_id_origem',
     `vendedor_id` BIGINT NOT NULL COMMENT 'FK para vendedores.id (vendedor_id do CSV já corresponde 1:1)',
     `data_inicio` DATE NOT NULL COMMENT 'Data de início do vínculo cliente-vendedor',
     `data_fim` DATE NULL COMMENT 'Data de fim do vínculo (NULL = vínculo ativo)',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Data de criação do registro',
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Data de última atualização',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_carteiras_carteira_id_origem` (`carteira_id_origem`),
+    PRIMARY KEY (`carteira_id_origem`),
     UNIQUE KEY `uk_carteiras_cliente_vendedor_inicio` (`cliente_id`, `vendedor_id`, `data_inicio`),
     KEY `idx_carteiras_cliente_id` (`cliente_id`),
     KEY `idx_carteiras_vendedor_id` (`vendedor_id`),
     KEY `idx_carteiras_data_fim` (`data_fim`),
     CONSTRAINT `fk_carteiras_cliente` FOREIGN KEY (`cliente_id`)
-        REFERENCES `clientes`(`id`)
+        REFERENCES `clientes`(`cliente_id_origem`)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
     CONSTRAINT `fk_carteiras_vendedor` FOREIGN KEY (`vendedor_id`)

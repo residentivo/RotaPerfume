@@ -16,24 +16,24 @@ import (
 )
 
 var pedidoColumns = []string{
-	"id", "pedido_id_origem", "cliente_id", "vendedor_id", "data_pedido", "canal", "status",
+	"pedido_id_origem", "cliente_id", "vendedor_id", "data_pedido", "canal", "status",
 	"valor_total", "created_at", "updated_at", "cliente_nome", "vendedor_nome",
 }
 
-func pedidoRow(id, idOrigem, clienteID, vendedorID int64, dataPedido time.Time, canal, status string, valorTotal float64, created, updated time.Time, clienteNome, vendedorNome string) []driver.Value {
-	return []driver.Value{id, idOrigem, clienteID, vendedorID, dataPedido, canal, status, valorTotal, created, updated, clienteNome, vendedorNome}
+func pedidoRow(idOrigem, clienteID, vendedorID int64, dataPedido time.Time, canal, status string, valorTotal float64, created, updated time.Time, clienteNome, vendedorNome string) []driver.Value {
+	return []driver.Value{idOrigem, clienteID, vendedorID, dataPedido, canal, status, valorTotal, created, updated, clienteNome, vendedorNome}
 }
 
 var itemPedidoColumns = []string{
-	"id", "item_id_origem", "pedido_id", "produto_id", "quantidade", "preco_praticado",
+	"item_id_origem", "pedido_id", "produto_id", "quantidade", "preco_praticado",
 	"desconto_pct", "valor_bruto", "created_at", "updated_at", "produto_sku", "produto_descricao",
 }
 
-func itemPedidoRow(id, idOrigem, pedidoID, produtoID int64, quantidade int, preco, desconto, valorBruto float64, created, updated time.Time, sku, descricao string) []driver.Value {
-	return []driver.Value{id, idOrigem, pedidoID, produtoID, quantidade, preco, desconto, valorBruto, created, updated, sku, descricao}
+func itemPedidoRow(idOrigem, pedidoID, produtoID int64, quantidade int, preco, desconto, valorBruto float64, created, updated time.Time, sku, descricao string) []driver.Value {
+	return []driver.Value{idOrigem, pedidoID, produtoID, quantidade, preco, desconto, valorBruto, created, updated, sku, descricao}
 }
 
-const pedidoFromRegexp = `FROM pedidos p JOIN clientes c ON c.id = p.cliente_id JOIN vendedores v ON v.id = p.vendedor_id`
+const pedidoFromRegexp = `FROM pedidos p JOIN clientes c ON c\.cliente_id_origem = p\.cliente_id JOIN vendedores v ON v\.id = p\.vendedor_id`
 
 func TestPedidoList_SemFiltro(t *testing.T) {
 	db, mock := newMock(t)
@@ -44,10 +44,10 @@ func TestPedidoList_SemFiltro(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(pedidoColumns).
-		AddRow(pedidoRow(2, 202, 1, 1, now, "online", "aprovado", 300.0, now, now, "Cliente A", "Vendedor A")...).
-		AddRow(pedidoRow(1, 201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...)
+		AddRow(pedidoRow(202, 1, 1, now, "online", "aprovado", 300.0, now, now, "Cliente A", "Vendedor A")...).
+		AddRow(pedidoRow(201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...)
 
-	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` ORDER BY p.id DESC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
@@ -117,7 +117,7 @@ func TestPedidoList_ComFiltros(t *testing.T) {
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
 
 			allArgs := append(append([]driver.Value{}, tt.args...), int64(10), int64(0))
-			mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` ` + tt.whereRegexp + ` ORDER BY p\.id DESC LIMIT \? OFFSET \?`).
+			mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` ` + tt.whereRegexp + ` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(pedidoColumns))
 
@@ -160,7 +160,7 @@ func TestPedidoList_OrderBy(t *testing.T) {
 			nome:        "order_by fora da whitelist cai no default",
 			orderBy:     "1; DROP TABLE pedidos;--",
 			orderDir:    "desc",
-			orderRegexp: `ORDER BY p\.id DESC`,
+			orderRegexp: `ORDER BY p\.pedido_id_origem DESC`,
 		},
 		{
 			nome:        "order_dir inválido cai no default (desc)",
@@ -172,7 +172,7 @@ func TestPedidoList_OrderBy(t *testing.T) {
 			nome:        "order_by e order_dir vazios caem no default",
 			orderBy:     "",
 			orderDir:    "",
-			orderRegexp: `ORDER BY p\.id DESC`,
+			orderRegexp: `ORDER BY p\.pedido_id_origem DESC`,
 		},
 	}
 
@@ -240,7 +240,7 @@ func TestPedidoList_IterError(t *testing.T) {
 	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp).
 		WithArgs(10, 0).
 		WillReturnRows(sqlmock.NewRows(pedidoColumns).
-			AddRow(pedidoRow(1, 201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...).
+			AddRow(pedidoRow(201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...).
 			RowError(0, sql.ErrConnDone))
 
 	repo := repositories.NewPedidoRepository()
@@ -257,9 +257,9 @@ func TestPedidoGetByID_Success(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(pedidoColumns).
-		AddRow(pedidoRow(1, 201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...)
+		AddRow(pedidoRow(201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...)
 
-	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` WHERE p\.id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
@@ -268,7 +268,7 @@ func TestPedidoGetByID_Success(t *testing.T) {
 	p, err := repo.GetByID(ctx, db, 1)
 
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), p.ID)
+	assert.Equal(t, int64(201), p.PedidoIDOrigem)
 	assert.Equal(t, "Cliente A", p.ClienteNome)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -277,7 +277,7 @@ func TestPedidoGetByID_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` WHERE p\.id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
@@ -294,7 +294,7 @@ func TestPedidoGetByID_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` WHERE p\.id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
@@ -314,9 +314,9 @@ func TestPedidoListItensByPedidoID_Success(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(itemPedidoColumns).
-		AddRow(itemPedidoRow(1, 301, 1, 1, 2, 50.0, 0, 100.0, now, now, "SKU1", "Perfume A")...)
+		AddRow(itemPedidoRow(301, 1, 1, 2, 50.0, 0, 100.0, now, now, "SKU1", "Perfume A")...)
 
-	mock.ExpectQuery(`SELECT .+ FROM itens_pedido i JOIN produtos pr ON pr\.id = i\.produto_id WHERE i\.pedido_id = \? ORDER BY i\.id ASC`).
+	mock.ExpectQuery(`SELECT .+ FROM itens_pedido i JOIN produtos pr ON pr\.id = i\.produto_id WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
@@ -334,7 +334,7 @@ func TestPedidoListItensByPedidoID_Vazio(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT .+ FROM itens_pedido i JOIN produtos pr ON pr\.id = i\.produto_id WHERE i\.pedido_id = \? ORDER BY i\.id ASC`).
+	mock.ExpectQuery(`SELECT .+ FROM itens_pedido i JOIN produtos pr ON pr\.id = i\.produto_id WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itemPedidoColumns))
 
@@ -351,7 +351,7 @@ func TestPedidoListItensByPedidoID_QueryError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT .+ FROM itens_pedido i JOIN produtos pr ON pr\.id = i\.produto_id WHERE i\.pedido_id = \? ORDER BY i\.id ASC`).
+	mock.ExpectQuery(`SELECT .+ FROM itens_pedido i JOIN produtos pr ON pr\.id = i\.produto_id WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
@@ -369,10 +369,10 @@ func TestPedidoListItensByPedidoID_IterError(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(itemPedidoColumns).
-		AddRow(itemPedidoRow(1, 301, 1, 1, 2, 50.0, 0, 100.0, now, now, "SKU1", "Perfume A")...).
+		AddRow(itemPedidoRow(301, 1, 1, 2, 50.0, 0, 100.0, now, now, "SKU1", "Perfume A")...).
 		RowError(0, sql.ErrConnDone)
 
-	mock.ExpectQuery(`SELECT .+ FROM itens_pedido i JOIN produtos pr ON pr\.id = i\.produto_id WHERE i\.pedido_id = \? ORDER BY i\.id ASC`).
+	mock.ExpectQuery(`SELECT .+ FROM itens_pedido i JOIN produtos pr ON pr\.id = i\.produto_id WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
@@ -384,50 +384,72 @@ func TestPedidoListItensByPedidoID_IterError(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestPedidoNextPedidoIDOrigem_Success(t *testing.T) {
-	db, mock := newMock(t)
-	defer db.Close()
+func TestPedidoExistsByID(t *testing.T) {
+	testes := []struct {
+		nome     string
+		id       int64
+		mockErr  error
+		expected bool
+	}{
+		{nome: "pedido existe", id: 1, expected: true},
+		{nome: "pedido nao existe", id: 999, mockErr: sql.ErrNoRows, expected: false},
+	}
 
-	mock.ExpectQuery(`SELECT COALESCE\(MAX\(pedido_id_origem\), 0\) \+ 1 FROM pedidos`).
-		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(202))
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
 
-	repo := repositories.NewPedidoRepository()
-	ctx := context.Background()
-	next, err := repo.NextPedidoIDOrigem(ctx, db)
+			q := mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).WithArgs(tt.id)
+			if tt.mockErr != nil {
+				q.WillReturnError(tt.mockErr)
+			} else {
+				q.WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+			}
 
-	require.NoError(t, err)
-	assert.Equal(t, int64(202), next)
-	assert.NoError(t, mock.ExpectationsWereMet())
+			repo := repositories.NewPedidoRepository()
+			ctx := context.Background()
+			exists, err := repo.ExistsByID(ctx, db, tt.id)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, exists)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
-func TestPedidoNextPedidoIDOrigem_DBError(t *testing.T) {
+func TestPedidoExistsByID_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT COALESCE\(MAX\(pedido_id_origem\), 0\) \+ 1 FROM pedidos`).
+	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewPedidoRepository()
 	ctx := context.Background()
-	_, err := repo.NextPedidoIDOrigem(ctx, db)
+	exists, err := repo.ExistsByID(ctx, db, 1)
 
+	assert.False(t, exists)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestPedidoCreateComItens_Success valida que pedido_id_origem e
+// item_id_origem são obtidos via LastInsertId() do sql.Result (não mais via
+// SELECT MAX(...) + 1 manual, comportamento removido do repositório).
 func TestPedidoCreateComItens_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
 	now := time.Now()
 	p := &models.Pedido{
-		PedidoIDOrigem: 202,
-		ClienteID:      1,
-		VendedorID:     1,
-		DataPedido:     now,
-		Canal:          "online",
-		Status:         "aprovado",
-		ValorTotal:     150.0,
+		ClienteID:  1,
+		VendedorID: 1,
+		DataPedido: now,
+		Canal:      "online",
+		Status:     "aprovado",
+		ValorTotal: 150.0,
 	}
 	itens := []models.ItemPedido{
 		{ProdutoID: 1, Quantidade: 3, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 150.0},
@@ -435,12 +457,10 @@ func TestPedidoCreateComItens_Success(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO pedidos").
-		WithArgs(p.PedidoIDOrigem, p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal).
+		WithArgs(p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal).
 		WillReturnResult(sqlmock.NewResult(10, 1))
-	mock.ExpectQuery(`SELECT COALESCE\(MAX\(item_id_origem\), 0\) \+ 1 FROM itens_pedido`).
-		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(401))
 	mock.ExpectExec("INSERT INTO itens_pedido").
-		WithArgs(int64(401), int64(10), int64(1), 3, 50.0, 0.0, 150.0).
+		WithArgs(int64(10), int64(1), 3, 50.0, 0.0, 150.0).
 		WillReturnResult(sqlmock.NewResult(20, 1))
 	mock.ExpectCommit()
 
@@ -449,9 +469,9 @@ func TestPedidoCreateComItens_Success(t *testing.T) {
 	err := repo.CreateComItens(ctx, db, p, itens)
 
 	require.NoError(t, err)
-	assert.Equal(t, int64(10), p.ID)
-	assert.Equal(t, int64(20), itens[0].ID)
-	assert.Equal(t, int64(401), itens[0].ItemIDOrigem)
+	assert.Equal(t, int64(10), p.PedidoIDOrigem)
+	assert.Equal(t, int64(10), itens[0].PedidoID)
+	assert.Equal(t, int64(20), itens[0].ItemIDOrigem)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -460,11 +480,11 @@ func TestPedidoCreateComItens_SemItens(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	p := &models.Pedido{PedidoIDOrigem: 202, ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "aprovado", ValorTotal: 0}
+	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "aprovado", ValorTotal: 0}
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO pedidos").
-		WithArgs(p.PedidoIDOrigem, p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal).
+		WithArgs(p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal).
 		WillReturnResult(sqlmock.NewResult(11, 1))
 	mock.ExpectCommit()
 
@@ -473,7 +493,7 @@ func TestPedidoCreateComItens_SemItens(t *testing.T) {
 	err := repo.CreateComItens(ctx, db, p, nil)
 
 	require.NoError(t, err)
-	assert.Equal(t, int64(11), p.ID)
+	assert.Equal(t, int64(11), p.PedidoIDOrigem)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -506,8 +526,6 @@ func TestPedidoCreateComItens_ErroInsertItem(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO pedidos").
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectQuery(`SELECT COALESCE\(MAX\(item_id_origem\), 0\) \+ 1 FROM itens_pedido`).
-		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(1))
 	mock.ExpectExec("INSERT INTO itens_pedido").
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
@@ -537,10 +555,8 @@ func TestPedidoUpdateComItens_Success(t *testing.T) {
 	mock.ExpectExec(`DELETE FROM itens_pedido WHERE pedido_id = \?`).
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
-	mock.ExpectQuery(`SELECT COALESCE\(MAX\(item_id_origem\), 0\) \+ 1 FROM itens_pedido`).
-		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(500))
 	mock.ExpectExec("INSERT INTO itens_pedido").
-		WithArgs(int64(500), int64(1), int64(2), 4, 50.0, 0.0, 200.0).
+		WithArgs(int64(1), int64(2), 4, 50.0, 0.0, 200.0).
 		WillReturnResult(sqlmock.NewResult(30, 1))
 	mock.ExpectCommit()
 
@@ -549,7 +565,7 @@ func TestPedidoUpdateComItens_Success(t *testing.T) {
 	err := repo.UpdateComItens(ctx, db, 1, p, itens)
 
 	require.NoError(t, err)
-	assert.Equal(t, int64(30), itens[0].ID)
+	assert.Equal(t, int64(30), itens[0].ItemIDOrigem)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

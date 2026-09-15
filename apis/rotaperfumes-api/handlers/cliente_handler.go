@@ -229,7 +229,7 @@ func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[clientes] criado: id=%d por usuario role=%s", cliente.ID, role)
+	log.Printf("[clientes] criado: id=%d por usuario role=%s", cliente.ClienteIDOrigem, role)
 	writeJSON(w, http.StatusCreated, cliente, "")
 }
 

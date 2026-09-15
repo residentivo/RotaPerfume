@@ -31,8 +31,12 @@ func NewVendedorHandler(db *sql.DB, cfg *config.Config) *VendedorHandler {
 // ListVendedores GET /api/vendedores
 //
 // Sem paginação: usado para popular listas de seleção (ex: combobox no
-// admin de usuários). Retorna apenas vendedores ativos.
-// Response: {success, data: [{id, nome, regiao, uf}], error}
+// admin de usuários/pedidos). Retorna TODOS os vendedores, ativos e
+// inativos — cada item traz data_desligamento (null = ativo) para que o
+// frontend decida como sinalizar os inativos (ex: marcador "[inativo]").
+// Antes filtrava só ativos, o que fazia vendedores inativos vinculados a
+// registros existentes sumirem das opções (bug corrigido).
+// Response: {success, data: [{id, nome, regiao, uf, data_desligamento}], error}
 // Acesso comum.
 func (h *VendedorHandler) ListVendedores(w http.ResponseWriter, r *http.Request) {
 	vendedores, err := h.svc.ListVendedores(r.Context(), h.db)
@@ -69,6 +73,34 @@ func (h *VendedorHandler) GetVendedor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, vendedor, "")
+}
+
+// ListClientesDoVendedor GET /api/vendedores/{id}/clientes
+//
+// Lista os clientes vinculados (carteira ativa, data_fim IS NULL) a um
+// vendedor. Usado pelo dropdown em cascata do frontend (Oportunidades: ao
+// escolher o vendedor, filtra os clientes possíveis).
+// Response: {success, data: [ClienteResumo...], error}
+// Acesso comum.
+func (h *VendedorHandler) ListClientesDoVendedor(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	clientes, err := h.svc.ListClientesDoVendedor(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, services.ErrVendedorNaoEncontrado) {
+			writeJSON(w, http.StatusNotFound, nil, "vendedor não encontrado")
+			return
+		}
+		log.Printf("[vendedores] ListClientesDoVendedor: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, clientes, "")
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +234,8 @@ func (h *VendedorHandler) UpdateVendedor(w http.ResponseWriter, r *http.Request)
 // DeleteVendedor DELETE /api/vendedores/{id}
 //
 // Soft-delete: define data_desligamento = hoje, preservando o histórico de
-// carteiras/pedidos vinculados ao vendedor.
+// carteiras/pedidos vinculados ao vendedor (ver ReativarVendedor para
+// reverter).
 // Retorna: 200 com o vendedor atualizado, 404 se não existir.
 // Acesso comum.
 func (h *VendedorHandler) DeleteVendedor(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +258,35 @@ func (h *VendedorHandler) DeleteVendedor(w http.ResponseWriter, r *http.Request)
 
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[vendedores] inativado: id=%d por usuario role=%s", id, role)
+	writeJSON(w, http.StatusOK, vendedor, "")
+}
+
+// ReativarVendedor POST /api/vendedores/{id}/reativar
+//
+// Reverte o soft-delete: limpa data_desligamento, tornando o vendedor ativo
+// novamente (ver DeleteVendedor).
+// Retorna: 200 com o vendedor atualizado, 404 se não existir.
+// Acesso comum.
+func (h *VendedorHandler) ReativarVendedor(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	vendedor, err := h.svc.ReativarVendedor(r.Context(), h.db, id)
+	if err != nil {
+		if status, msg, ok := vendedorErroParaStatus(err); ok {
+			writeJSON(w, status, nil, msg)
+			return
+		}
+		log.Printf("[vendedores] ReativarVendedor: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[vendedores] reativado: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, vendedor, "")
 }
 

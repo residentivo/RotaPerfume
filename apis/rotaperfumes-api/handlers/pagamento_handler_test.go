@@ -303,7 +303,7 @@ func TestCreatePagamento_Success(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	mock.ExpectExec(`INSERT INTO pagamentos \(pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento\)`).
@@ -369,7 +369,7 @@ func TestCreatePagamento_PedidoNaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrNoRows)
 
@@ -498,7 +498,7 @@ func TestCreatePagamento_ValidacaoNegocio(t *testing.T) {
 			// pedido_id=0 falha antes de tocar o repo; caso contrário, o
 			// serviço checa a existência do pedido primeiro.
 			if pid, ok := payload["pedido_id"].(int); !ok || pid != 0 {
-				mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE id = \? LIMIT 1`).
+				mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 			}
 

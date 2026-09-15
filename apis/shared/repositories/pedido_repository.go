@@ -47,13 +47,13 @@ type PedidoDetalhe struct {
 }
 
 // pedidoColunas traz o cabeçalho do pedido + nomes de cliente/vendedor via JOIN.
-const pedidoColunas = `p.id, p.pedido_id_origem, p.cliente_id, p.vendedor_id, p.data_pedido, p.canal, p.status, p.valor_total, p.created_at, p.updated_at, c.razao_social, v.nome`
+const pedidoColunas = `p.pedido_id_origem, p.cliente_id, p.vendedor_id, p.data_pedido, p.canal, p.status, p.valor_total, p.created_at, p.updated_at, c.razao_social, v.nome`
 
 // pedidoFrom é o FROM + JOINs comuns às queries de listagem/detalhe de pedidos.
-const pedidoFrom = ` FROM pedidos p JOIN clientes c ON c.id = p.cliente_id JOIN vendedores v ON v.id = p.vendedor_id`
+const pedidoFrom = ` FROM pedidos p JOIN clientes c ON c.cliente_id_origem = p.cliente_id JOIN vendedores v ON v.id = p.vendedor_id`
 
 // itemPedidoColunas traz o item de pedido + sku/descrição do produto via JOIN.
-const itemPedidoColunas = `i.id, i.item_id_origem, i.pedido_id, i.produto_id, i.quantidade, i.preco_praticado, i.desconto_pct, i.valor_bruto, i.created_at, i.updated_at, pr.sku, pr.descricao`
+const itemPedidoColunas = `i.item_id_origem, i.pedido_id, i.produto_id, i.quantidade, i.preco_praticado, i.desconto_pct, i.valor_bruto, i.created_at, i.updated_at, pr.sku, pr.descricao`
 
 // itemPedidoFrom é o FROM + JOIN comum às queries de itens de pedido.
 const itemPedidoFrom = ` FROM itens_pedido i JOIN produtos pr ON pr.id = i.produto_id`
@@ -68,14 +68,14 @@ type PedidoFiltro struct {
 	DataInicio string // formato AAAA-MM-DD (inclusive)
 	DataFim    string // formato AAAA-MM-DD (inclusive)
 	Q          string // busca textual na razão social do cliente (LIKE)
-	OrderBy    string // campo de ordenação (whitelist: ver pedidoOrderWhitelist); default "id"
+	OrderBy    string // campo de ordenação (whitelist: ver pedidoOrderWhitelist); default "id" (mapeado para pedido_id_origem)
 	OrderDir   string // "asc" ou "desc" (case-insensitive); default "desc"
 }
 
 // pedidoOrderWhitelist mapeia os campos de ordenação aceitos pela API para
 // as colunas SQL reais (com alias) da query de listagem de pedidos.
 var pedidoOrderWhitelist = map[string]string{
-	"id":            "p.id",
+	"id":            "p.pedido_id_origem",
 	"data_pedido":   "p.data_pedido",
 	"canal":         "p.canal",
 	"status":        "p.status",
@@ -87,9 +87,9 @@ var pedidoOrderWhitelist = map[string]string{
 }
 
 // orderBy monta a cláusula ORDER BY a partir de OrderBy/OrderDir, com
-// default "p.id DESC" (comportamento atual).
+// default "p.pedido_id_origem DESC" (comportamento atual).
 func (f PedidoFiltro) orderBy() string {
-	return buildOrderByClause(pedidoOrderWhitelist, f.OrderBy, f.OrderDir, "p.id", "DESC")
+	return buildOrderByClause(pedidoOrderWhitelist, f.OrderBy, f.OrderDir, "p.pedido_id_origem", "DESC")
 }
 
 // where monta a cláusula WHERE (sem a palavra "WHERE") e os args correspondentes.
@@ -181,15 +181,15 @@ func (r *PedidoRepository) List(ctx context.Context, db *sql.DB, page, limit int
 // GetByID busca o cabeçalho de um pedido pelo ID (com nomes de
 // cliente/vendedor). Retorna ErrNotFound se não existir.
 func (r *PedidoRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (*PedidoListagem, error) {
-	q := "SELECT " + pedidoColunas + pedidoFrom + " WHERE p.id = ? LIMIT 1"
+	q := "SELECT " + pedidoColunas + pedidoFrom + " WHERE p.pedido_id_origem = ? LIMIT 1"
 	row := db.QueryRowContext(ctx, q, id)
 	return scanPedidoListagem(row)
 }
 
 // ListItensByPedidoID retorna todos os itens de um pedido (com sku/descrição
-// do produto), ordenados por id.
+// do produto), ordenados por item_id_origem.
 func (r *PedidoRepository) ListItensByPedidoID(ctx context.Context, db *sql.DB, pedidoID int64) ([]ItemPedidoDetalhe, error) {
-	q := "SELECT " + itemPedidoColunas + itemPedidoFrom + " WHERE i.pedido_id = ? ORDER BY i.id ASC"
+	q := "SELECT " + itemPedidoColunas + itemPedidoFrom + " WHERE i.pedido_id = ? ORDER BY i.item_id_origem ASC"
 	rows, err := db.QueryContext(ctx, q, pedidoID)
 	if err != nil {
 		return nil, fmt.Errorf("repositories: list itens_pedido: %w", err)
@@ -213,7 +213,7 @@ func (r *PedidoRepository) ListItensByPedidoID(ctx context.Context, db *sql.DB, 
 // ExistsByID verifica se existe um pedido com o id informado. Usado pelo
 // serviço de Pagamentos para validar pedido_id antes de criar um pagamento.
 func (r *PedidoRepository) ExistsByID(ctx context.Context, db *sql.DB, id int64) (bool, error) {
-	const q = `SELECT 1 FROM pedidos WHERE id = ? LIMIT 1`
+	const q = `SELECT 1 FROM pedidos WHERE pedido_id_origem = ? LIMIT 1`
 	var one int
 	err := db.QueryRowContext(ctx, q, id).Scan(&one)
 	if err != nil {
@@ -225,34 +225,10 @@ func (r *PedidoRepository) ExistsByID(ctx context.Context, db *sql.DB, id int64)
 	return true, nil
 }
 
-// NextPedidoIDOrigem retorna o próximo valor disponível para
-// pedido_id_origem (MAX atual + 1). A coluna é UNIQUE e obrigatória, mas não
-// é gerada automaticamente pelo banco — pedidos criados via API (fora do CSV
-// de origem) recebem um valor sequencial aqui.
-func (r *PedidoRepository) NextPedidoIDOrigem(ctx context.Context, db *sql.DB) (int64, error) {
-	var next int64
-	const q = `SELECT COALESCE(MAX(pedido_id_origem), 0) + 1 FROM pedidos`
-	if err := db.QueryRowContext(ctx, q).Scan(&next); err != nil {
-		return 0, fmt.Errorf("repositories: next pedido_id_origem: %w", err)
-	}
-	return next, nil
-}
-
-// nextItemIDOrigemTx retorna o próximo valor disponível para item_id_origem
-// (MAX atual + 1), consultado dentro da transação para evitar corrida entre
-// os itens de um mesmo pedido sendo inseridos em sequência.
-func nextItemIDOrigemTx(ctx context.Context, tx *sql.Tx) (int64, error) {
-	var next int64
-	const q = `SELECT COALESCE(MAX(item_id_origem), 0) + 1 FROM itens_pedido`
-	if err := tx.QueryRowContext(ctx, q).Scan(&next); err != nil {
-		return 0, fmt.Errorf("repositories: next item_id_origem: %w", err)
-	}
-	return next, nil
-}
-
 // CreateComItens insere um novo pedido e seus itens em uma única transação:
-// se qualquer inserção falhar, nada é persistido. Preenche p.ID e o ID de
-// cada item em itens.
+// se qualquer inserção falhar, nada é persistido. pedido_id_origem e
+// item_id_origem são gerados nativamente pelo AUTO_INCREMENT do MySQL.
+// Preenche p.PedidoIDOrigem e o ItemIDOrigem/PedidoID de cada item em itens.
 func (r *PedidoRepository) CreateComItens(ctx context.Context, db *sql.DB, p *models.Pedido, itens []models.ItemPedido) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -261,10 +237,10 @@ func (r *PedidoRepository) CreateComItens(ctx context.Context, db *sql.DB, p *mo
 	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
 
 	const insertPedido = `
-		INSERT INTO pedidos (pedido_id_origem, cliente_id, vendedor_id, data_pedido, canal, status, valor_total)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`
+		INSERT INTO pedidos (cliente_id, vendedor_id, data_pedido, canal, status, valor_total)
+		VALUES (?, ?, ?, ?, ?, ?)`
 	res, err := tx.ExecContext(ctx, insertPedido,
-		p.PedidoIDOrigem, p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal,
+		p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal,
 	)
 	if err != nil {
 		return fmt.Errorf("repositories: create pedido: %w", err)
@@ -273,7 +249,7 @@ func (r *PedidoRepository) CreateComItens(ctx context.Context, db *sql.DB, p *mo
 	if err != nil {
 		return fmt.Errorf("repositories: create pedido lastInsertId: %w", err)
 	}
-	p.ID = pedidoID
+	p.PedidoIDOrigem = pedidoID
 
 	if err := insertItensTx(ctx, tx, pedidoID, itens); err != nil {
 		return err
@@ -298,7 +274,7 @@ func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id in
 	const updatePedido = `
 		UPDATE pedidos
 		SET cliente_id = ?, vendedor_id = ?, data_pedido = ?, canal = ?, status = ?, valor_total = ?
-		WHERE id = ?`
+		WHERE pedido_id_origem = ?`
 	res, err := tx.ExecContext(ctx, updatePedido,
 		p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal, id,
 	)
@@ -327,30 +303,23 @@ func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id in
 	return nil
 }
 
-// insertItensTx insere os itens de um pedido dentro da transação informada,
-// atribuindo item_id_origem sequencialmente e preenchendo o ID de cada item.
+// insertItensTx insere os itens de um pedido dentro da transação informada.
+// item_id_origem é gerado nativamente pelo AUTO_INCREMENT do MySQL.
 func insertItensTx(ctx context.Context, tx *sql.Tx, pedidoID int64, itens []models.ItemPedido) error {
 	if len(itens) == 0 {
 		return nil
 	}
 
-	proximoIDOrigem, err := nextItemIDOrigemTx(ctx, tx)
-	if err != nil {
-		return err
-	}
-
 	const insertItem = `
-		INSERT INTO itens_pedido (item_id_origem, pedido_id, produto_id, quantidade, preco_praticado, desconto_pct, valor_bruto)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`
+		INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_praticado, desconto_pct, valor_bruto)
+		VALUES (?, ?, ?, ?, ?, ?)`
 
 	for i := range itens {
 		it := &itens[i]
 		it.PedidoID = pedidoID
-		it.ItemIDOrigem = proximoIDOrigem
-		proximoIDOrigem++
 
 		res, err := tx.ExecContext(ctx, insertItem,
-			it.ItemIDOrigem, it.PedidoID, it.ProdutoID, it.Quantidade, it.PrecoPraticado, it.DescontoPct, it.ValorBruto,
+			it.PedidoID, it.ProdutoID, it.Quantidade, it.PrecoPraticado, it.DescontoPct, it.ValorBruto,
 		)
 		if err != nil {
 			return fmt.Errorf("repositories: create item_pedido: %w", err)
@@ -359,7 +328,7 @@ func insertItensTx(ctx context.Context, tx *sql.Tx, pedidoID int64, itens []mode
 		if err != nil {
 			return fmt.Errorf("repositories: create item_pedido lastInsertId: %w", err)
 		}
-		it.ID = itemID
+		it.ItemIDOrigem = itemID
 	}
 	return nil
 }
@@ -367,7 +336,6 @@ func insertItensTx(ctx context.Context, tx *sql.Tx, pedidoID int64, itens []mode
 func scanPedidoListagem(s rowScanner) (*PedidoListagem, error) {
 	var p PedidoListagem
 	if err := s.Scan(
-		&p.ID,
 		&p.PedidoIDOrigem,
 		&p.ClienteID,
 		&p.VendedorID,
@@ -391,7 +359,6 @@ func scanPedidoListagem(s rowScanner) (*PedidoListagem, error) {
 func scanItemPedidoDetalhe(s rowScanner) (*ItemPedidoDetalhe, error) {
 	var it ItemPedidoDetalhe
 	if err := s.Scan(
-		&it.ID,
 		&it.ItemIDOrigem,
 		&it.PedidoID,
 		&it.ProdutoID,

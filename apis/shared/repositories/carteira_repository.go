@@ -36,10 +36,10 @@ type ClienteResumo struct {
 }
 
 // clienteResumoColunas traz os dados do cliente + o vínculo de carteira via JOIN.
-const clienteResumoColunas = `c.id, c.cnpj, c.razao_social, c.segmento, c.cidade, c.uf, ca.id, ca.data_inicio, ca.data_fim`
+const clienteResumoColunas = `c.cliente_id_origem, c.cnpj, c.razao_social, c.segmento, c.cidade, c.uf, ca.carteira_id_origem, ca.data_inicio, ca.data_fim`
 
 // clienteResumoFrom é o FROM + JOIN comum às queries de clientes de um vendedor.
-const clienteResumoFrom = ` FROM carteiras ca JOIN clientes c ON c.id = ca.cliente_id`
+const clienteResumoFrom = ` FROM carteiras ca JOIN clientes c ON c.cliente_id_origem = ca.cliente_id`
 
 // ListClientesByVendedorID retorna os clientes vinculados (carteira ativa,
 // data_fim IS NULL) a um vendedor, ordenados por razão social.
@@ -72,9 +72,9 @@ func (r *CarteiraRepository) ListClientesByVendedorID(ctx context.Context, db *s
 // GetByID busca uma carteira pelo ID. Retorna ErrNotFound se não existir.
 func (r *CarteiraRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (*models.Carteira, error) {
 	const q = `
-		SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at
+		SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at
 		FROM carteiras
-		WHERE id = ?
+		WHERE carteira_id_origem = ?
 		LIMIT 1`
 	row := db.QueryRowContext(ctx, q, id)
 	return scanCarteira(row)
@@ -86,7 +86,7 @@ func (r *CarteiraRepository) GetByID(ctx context.Context, db *sql.DB, id int64) 
 // ErrNotFound se o cliente não tiver vínculo ativo.
 func (r *CarteiraRepository) GetVinculoAtivoByClienteID(ctx context.Context, db *sql.DB, clienteID int64) (*models.Carteira, error) {
 	const q = `
-		SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at
+		SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at
 		FROM carteiras
 		WHERE cliente_id = ? AND data_fim IS NULL
 		LIMIT 1`
@@ -98,7 +98,7 @@ func (r *CarteiraRepository) GetVinculoAtivoByClienteID(ctx context.Context, db 
 // um vendedor e um cliente específicos. Retorna ErrNotFound se não existir.
 func (r *CarteiraRepository) GetVinculoAtivo(ctx context.Context, db *sql.DB, vendedorID, clienteID int64) (*models.Carteira, error) {
 	const q = `
-		SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at
+		SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at
 		FROM carteiras
 		WHERE vendedor_id = ? AND cliente_id = ? AND data_fim IS NULL
 		LIMIT 1`
@@ -113,7 +113,7 @@ func (r *CarteiraRepository) GetVinculoAtivo(ctx context.Context, db *sql.DB, ve
 // criar um novo registro). Retorna ErrNotFound se não existir.
 func (r *CarteiraRepository) GetVinculoByClienteVendedorData(ctx context.Context, db *sql.DB, clienteID, vendedorID int64, dataInicio time.Time) (*models.Carteira, error) {
 	const q = `
-		SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at
+		SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at
 		FROM carteiras
 		WHERE cliente_id = ? AND vendedor_id = ? AND data_inicio = ?
 		LIMIT 1`
@@ -127,7 +127,7 @@ func (r *CarteiraRepository) GetVinculoByClienteVendedorData(ctx context.Context
 // violaria a unique key cliente_id+vendedor_id+data_inicio). Retorna
 // ErrNotFound se o vínculo não existir.
 func (r *CarteiraRepository) ReativarVinculo(ctx context.Context, db *sql.DB, id int64) error {
-	const q = `UPDATE carteiras SET data_fim = NULL WHERE id = ?`
+	const q = `UPDATE carteiras SET data_fim = NULL WHERE carteira_id_origem = ?`
 	res, err := db.ExecContext(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("repositories: reativar vinculo carteira: %w", err)
@@ -142,13 +142,13 @@ func (r *CarteiraRepository) ReativarVinculo(ctx context.Context, db *sql.DB, id
 	return nil
 }
 
-// Create insere um novo vínculo de carteira e preenche c.ID com o id gerado.
+// Create insere um novo vínculo de carteira e preenche c.CarteiraIDOrigem
+// com o id gerado nativamente pelo AUTO_INCREMENT do MySQL.
 func (r *CarteiraRepository) Create(ctx context.Context, db *sql.DB, c *models.Carteira) error {
 	const q = `
-		INSERT INTO carteiras (carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim)
-		VALUES (?, ?, ?, ?, ?)`
+		INSERT INTO carteiras (cliente_id, vendedor_id, data_inicio, data_fim)
+		VALUES (?, ?, ?, ?)`
 	res, err := db.ExecContext(ctx, q,
-		c.CarteiraIDOrigem,
 		c.ClienteID,
 		c.VendedorID,
 		c.DataInicio,
@@ -161,7 +161,7 @@ func (r *CarteiraRepository) Create(ctx context.Context, db *sql.DB, c *models.C
 	if err != nil {
 		return fmt.Errorf("repositories: create carteira lastInsertId: %w", err)
 	}
-	c.ID = id
+	c.CarteiraIDOrigem = id
 	return nil
 }
 
@@ -169,7 +169,7 @@ func (r *CarteiraRepository) Create(ctx context.Context, db *sql.DB, c *models.C
 // trocar o vendedor de um cliente sem apagar o histórico. Retorna
 // ErrNotFound se o vínculo não existir.
 func (r *CarteiraRepository) EncerrarVinculo(ctx context.Context, db *sql.DB, id int64, dataFim time.Time) error {
-	const q = `UPDATE carteiras SET data_fim = ? WHERE id = ?`
+	const q = `UPDATE carteiras SET data_fim = ? WHERE carteira_id_origem = ?`
 	res, err := db.ExecContext(ctx, q, dataFim, id)
 	if err != nil {
 		return fmt.Errorf("repositories: encerrar vinculo carteira: %w", err)
@@ -186,7 +186,7 @@ func (r *CarteiraRepository) EncerrarVinculo(ctx context.Context, db *sql.DB, id
 
 // Delete remove um vínculo de carteira pelo ID. Retorna ErrNotFound se não existir.
 func (r *CarteiraRepository) Delete(ctx context.Context, db *sql.DB, id int64) error {
-	const q = `DELETE FROM carteiras WHERE id = ?`
+	const q = `DELETE FROM carteiras WHERE carteira_id_origem = ?`
 	res, err := db.ExecContext(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("repositories: delete carteira: %w", err)
@@ -201,23 +201,9 @@ func (r *CarteiraRepository) Delete(ctx context.Context, db *sql.DB, id int64) e
 	return nil
 }
 
-// NextCarteiraIDOrigem retorna o próximo valor disponível para
-// carteira_id_origem (MAX atual + 1). A coluna é UNIQUE e obrigatória, mas
-// não é gerada automaticamente pelo banco — vínculos criados via API (fora
-// do CSV de origem) recebem um valor sequencial aqui.
-func (r *CarteiraRepository) NextCarteiraIDOrigem(ctx context.Context, db *sql.DB) (int64, error) {
-	var next int64
-	const q = `SELECT COALESCE(MAX(carteira_id_origem), 0) + 1 FROM carteiras`
-	if err := db.QueryRowContext(ctx, q).Scan(&next); err != nil {
-		return 0, fmt.Errorf("repositories: next carteira_id_origem: %w", err)
-	}
-	return next, nil
-}
-
 func scanCarteira(s rowScanner) (*models.Carteira, error) {
 	var c models.Carteira
 	if err := s.Scan(
-		&c.ID,
 		&c.CarteiraIDOrigem,
 		&c.ClienteID,
 		&c.VendedorID,
@@ -237,7 +223,7 @@ func scanCarteira(s rowScanner) (*models.Carteira, error) {
 func scanClienteResumo(s rowScanner) (*ClienteResumo, error) {
 	var cr ClienteResumo
 	if err := s.Scan(
-		&cr.ID,
+		&cr.ID, // ClienteResumo.ID mapeia c.cliente_id_origem (identidade do cliente)
 		&cr.CNPJ,
 		&cr.RazaoSocial,
 		&cr.Segmento,

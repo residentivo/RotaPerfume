@@ -88,9 +88,10 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock) 
 	produtoHandler := handlers.NewProdutoHandler(db, cfg)
 	pedidoHandler := handlers.NewPedidoHandler(db, cfg)
 	pagamentoHandler := handlers.NewPagamentoHandler(db, cfg)
+	oportunidadeHandler := handlers.NewOportunidadeHandler(db, cfg)
 
 	// Router real com middlewares corretos
-	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler)
+	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler)
 
 	server := httptest.NewServer(mux)
 	return server, db, mock

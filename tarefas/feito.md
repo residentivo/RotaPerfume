@@ -4,6 +4,139 @@
 
 ---
 
+## Importador de Oportunidades (CRM) — complemento da feature — 2026-09-15
+**Agentes:** 🌸 DataBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** Complemento à feature "Cadastro de Oportunidades (CRM)" (ver entrada logo abaixo), que foi entregue sem importador de dados — a tabela `oportunidades` existia criada mas vazia (documentado na entrega anterior como "não há importador dedicado nesta tarefa").
+
+**Camadas:**
+- [x] Database (🌸 DataBrain) — criado `apis/shared/cmd/importoportunidades/main.go` (upsert idempotente a partir de `dados/crm/oportunidades.csv`), seguindo o padrão de `importcarteiras`/`importpagamentos`. Adicionado target `make db-import-oportunidades` no Makefile, incluído em `db-rebuild`, posicionado após `db-import-carteiras`. Executado contra o banco local: **5979 linhas importadas, 0 erros**. Segunda execução confirmou idempotência (0 inseridos, 5979 atualizados).
+- [x] Documentação (🔵 SubBrain) — `postman/README.md`, seção "Oportunidades (CRM)": atualizada para remover a nota "não há importador dedicado" e adicionar o passo `make db-up && make db-import-oportunidades`, no mesmo formato usado para Clientes/Produtos/Pedidos/Pagamentos. `postman/collection.json` verificado — não há menção a comandos `make db-import-*` nas descrições de pastas/requests da collection (o padrão de citar o importador é exclusivo do README), então nenhuma alteração foi necessária nesse arquivo.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Cadastro de Oportunidades (CRM) — 2026-09-15
+**Agentes:** 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** Nova tela de CRM para cadastro e gestão do funil de vendas (Oportunidades), baseada em `dados/crm/oportunidades.csv` (colunas: `oportunidade_id, cliente_id, vendedor_id, origem, data_abertura, etapa, probabilidade_pct, valor_estimado, data_fechamento, ciclo_dias, motivo_perda`). Pedido do usuário: nova tabela `oportunidades` (PK `oportunidade_id`), tela de cadastro com dois dropdowns em cascata (Vendedor → Cliente, onde Clientes é filtrado pelo Vendedor selecionado), campos de filtro por coluna na listagem, e botão para criar nova oportunidade.
+
+**Camadas:**
+- [x] Database (🌸 DataBrain) — `sql/15_ddl_oportunidades.sql`: tabela `oportunidades`, PK `oportunidade_id BIGINT AUTO_INCREMENT`, FKs `cliente_id → clientes.cliente_id_origem` e `vendedor_id → vendedores.id`, índices para os filtros de listagem (cliente_id, vendedor_id, etapa, origem, data_abertura). Registrada no Makefile (`db-up`), aplicada após `clientes`/`vendedores`. Não validada via `make db-reset` no sandbox (sem `make`/`mysql` disponíveis) — revisão manual comparando com `14_ddl_carteiras.sql`.
+- [x] Backend (🟡 BackBrain) — model/repository/service/handler em `apis/shared/models/oportunidade.go`, `apis/shared/repositories/oportunidade_repository.go`, `apis/rotaperfumes-api/services/oportunidade_service.go`, `apis/rotaperfumes-api/handlers/oportunidade_handler.go`. Rotas **admin-only**: `GET/POST /api/oportunidades`, `GET/PUT /api/oportunidades/{id}` (filtros: `cliente_id`, `vendedor_id`, `etapa`, `origem`, `data_abertura_de`/`data_abertura_ate`, `q` — busca em origem OU etapa; `order_by`/`order_dir` com whitelist: id, data_abertura, valor_estimado, probabilidade_pct, etapa, origem, created_at, updated_at). Validações de negócio: `cliente_id`/`vendedor_id` obrigatórios e devem existir, `origem`/`etapa` obrigatórios, `probabilidade_pct` entre 0-100, `valor_estimado >= 0`, `motivo_perda` obrigatório quando `etapa = "Fechado perdido"`. Endpoint novo **de acesso comum** `GET /api/vendedores/{id}/clientes` (`VendedorHandler.ListClientesDoVendedor`, mesma cadeia de middleware de Pagamentos `cfg, true, false`) — lista clientes da carteira ativa (`data_fim IS NULL`) do vendedor, usado só para alimentar o dropdown em cascata do formulário. `go build`/`go vet` OK.
+- [x] Frontend (🟢 FrontBrain) — `frontend/src/app/admin/oportunidades/page.tsx` (listagem com filtros por vendedor/cliente/etapa/origem/data, paginação, botão "Nova Oportunidade") + `frontend/src/components/admin/OportunidadeModal.tsx` (dropdowns em cascata Vendedor → Cliente, carregando o segundo via `GET /api/vendedores/{id}/clientes` ao mudar o vendedor selecionado). Tipos novos em `frontend/src/lib/types.ts`, chamadas em `frontend/src/lib/api.ts`, item de menu "Oportunidades" adicionado em `frontend/src/app/admin/layout.tsx`. `tsc --noEmit` OK (revisado no ambiente do FrontBrain).
+- [x] Teste (🔴 TestBrain) — `apis/shared/repositories/oportunidade_repository_test.go`, `apis/rotaperfumes-api/services/oportunidade_service_test.go`, `apis/rotaperfumes-api/handlers/oportunidade_handler_test.go` (novos); `apis/rotaperfumes-api/handlers/vendedor_handler_test.go` estendido com casos para `ListClientesDoVendedor` (sucesso com/sem clientes, vendedor inexistente, id inválido, erro interno). `go test ./...` OK em `apis/shared` e `apis/rotaperfumes-api`, sem regressão. Cobertura ≥80% nas funções novas (repositories 89%, services 94%, handlers novos 75-100%). Nenhum bug encontrado no código de produção.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Decisões de arquitetura importantes:**
+- **`vendedor_id` é campo próprio da oportunidade**, informado diretamente no `POST`/`PUT` — **não depende** de a oportunidade ter um vínculo de carteira ativo entre aquele cliente e aquele vendedor em `carteiras`. Uma oportunidade pode existir mesmo que o cliente esteja hoje na carteira de outro vendedor, ou sem vínculo ativo algum. O endpoint `GET /api/vendedores/{id}/clientes` é usado **apenas para alimentar o dropdown em cascata do formulário** (sugestão de clientes prováveis por vendedor), não como restrição de integridade na criação/edição da oportunidade.
+- **Acesso admin-only para o CRUD de Oportunidades** (`GET/POST /api/oportunidades`, `GET/PUT /api/oportunidades/{id}`) vs. **acesso comum** para `GET /api/vendedores/{id}/clientes` (mesmo padrão de cadeia de middleware já usado em Pagamentos: `middleware.JWTMiddleware(cfg, true, false)`) — decisão consistente com o restante do sistema, em que endpoints de suporte a formulário (dropdowns) tendem a ser mais permissivos que o CRUD principal da entidade.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — nova pasta "Oportunidades" com os 5 endpoints (`Listar Oportunidades`, `Detalhe da Oportunidade`, `Criar Oportunidade`, `Editar Oportunidade`, `Listar Clientes do Vendedor`), com exemplos de query params de filtro, bodies de `POST`/`PUT`, respostas de sucesso (`200`/`201`) e erro (`400`/`404`/`403`) e testes automatizados, seguindo o padrão da pasta "Pagamentos" (mais recente e completa). Os 4 endpoints de CRUD de Oportunidades usam `{{admin_token}}`; `Listar Clientes do Vendedor` usa `{{vendedor_token}}`, com teste explícito validando que o usuário `normal` recebe `200` e não `403` (mesmo padrão usado em Pagamentos para deixar explícito o acesso comum).
+- `postman/README.md` — nova seção "Oportunidades (`/api/oportunidades/*`) — admin only, + `GET /api/vendedores/{id}/clientes` (acesso comum)" em Endpoints, documentando os 5 endpoints, a decisão de `vendedor_id` ser campo independente de vínculo de carteira, e a assimetria de acesso (admin-only vs. acesso comum). Seção "Testes automatizados (Postman)" e tabela "Resumo de testes por endpoint" atualizadas com as 5 novas requests. Nova seção "Importação de oportunidades (CRM)" em "Subindo o ambiente" — documentando que não há importador dedicado nesta tarefa (base populada apenas via `POST` manual).
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Validação de build do frontend (resolve pendência recorrente) — 2026-09-15
+**Agentes:** 🤍 MegaBrain
+
+**Descrição:** As últimas 3 tarefas de frontend ("Promover colunas *_id_origem a PK autoincremento", "Filtros (região/UF/status) e ação ativar/inativar na tela de vendedores", "Padronizar botão de status ativo/inativo da tela de vendedores com a de usuários") ficaram com a validação de build pendente porque os agentes não encontravam `node`/`npm`/`npx` no PATH do shell de execução. Investigado a pedido do usuário: o shell usado pelas ferramentas roda com `PATH` vazio (nem `where.exe` do Windows resolve por nome) — não é falta de Node instalado, é uma restrição do ambiente de execução das ferramentas, diferente do terminal interativo do usuário (onde `make dev-frontend` funciona normalmente).
+
+**Solução:** localizado um Node v24.12.0 completo (com npm/npx) empacotado junto ao Visual Studio em `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VisualStudio\NodeJs\`. Usando o caminho completo, rodado:
+- `npx tsc --noEmit` — sem erros.
+- `npm run build` (Next.js) — compilou com sucesso, todas as 13 rotas geradas, incluindo `/admin/vendedores`.
+
+**Resultado:** resolve a pendência de validação de build registrada nos 3 cards anteriores — o frontend compila corretamente com todas as mudanças acumuladas (migração de PKs, filtros de vendedores, botão de status unificado). Validação visual manual das telas ainda é responsabilidade do usuário.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Padronizar botão de status ativo/inativo da tela de vendedores com a de usuários — 2026-09-15
+**Agentes:** 🟢 FrontBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** A tela `admin/usuarios/page.tsx` usa um botão-pílula único na coluna "Status" que exibe o estado (bolinha verde/vermelha + "Ativo"/"Inativo") e ao ser clicado alterna o status diretamente. A tela `admin/vendedores/page.tsx` tinha uma coluna "Status" só de exibição e um botão separado "Ativar"/"Inativar" na coluna de ações. Unificado no mesmo padrão visual/interativo da tela de usuários.
+
+**Camadas:**
+- [x] Frontend (🟢 FrontBrain) — em `admin/vendedores/page.tsx`, a coluna "Status" passou a ser um botão-pílula clicável (bolinha verde/vermelha + texto "Ativo"/"Inativo"), reaproveitando os endpoints já existentes `apiDeleteVendedor`/`apiReativarVendedor` (nenhum endpoint novo foi necessário). O botão separado "Ativar"/"Inativar" que existia na coluna de ações foi removido. Mudança 100% frontend, sem impacto em contrato de API.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` e `postman/README.md` — não alterados nesta tarefa: mudança puramente visual/de interação na UI, sem alteração de endpoint, payload, resposta ou contrato de API (os endpoints `DELETE /api/vendedores/{id}` e `POST /api/vendedores/{id}/reativar` já estavam documentados desde a tarefa "Filtros (região/UF/status) e ação ativar/inativar na tela de vendedores").
+
+**Nota pendente — ação manual do usuário (acumulada, 3ª vez consecutiva em tarefas de frontend):** não foi possível rodar `npm run build`/`tsc --noEmit` neste ambiente (Node não instalado) nesta nem nas duas tarefas de frontend anteriores ("Listar vendedores inativos..." e "Filtros (região/UF/status) e ação ativar/inativar..."). Recomenda-se, antes de considerar o conjunto dessas mudanças de frontend 100% fechado: (1) rodar `npm run build` localmente no frontend; (2) validar visualmente `/admin/vendedores` — o novo botão-pílula de status alternando corretamente entre Ativo/Inativo ao clicar, e a ausência de regressão nos filtros de Região/UF/Status já existentes na tela.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Filtros (região/UF/status) e ação ativar/inativar na tela de vendedores — 2026-09-15
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** A tela `admin/vendedores/page.tsx` tinha apenas uma busca livre por texto; adicionados filtros dedicados por região, UF e status (ativo/inativo), e a ação da lista passou a alternar entre "Inativar"/"Ativar" conforme o status do vendedor. O backend só expunha soft-delete (`DELETE /api/vendedores/{id}` → seta `data_desligamento`); não existia endpoint para reverter isso, embora o repositório já suportasse (`VendedorRepository.SetDataDesligamento` passando `nil`).
+
+**Camadas:**
+- [x] Backend (🟡 BackBrain) — novo endpoint `POST /api/vendedores/{id}/reativar` (handler `VendedorHandler.ReativarVendedor`, service `VendedorService.ReativarVendedor`), limpa `data_desligamento` reaproveitando `VendedorRepository.SetDataDesligamento`. Retorna 200 com o vendedor atualizado (mesmo formato de `DeleteVendedor`), 404 se não existir. Helper privado `setDataDesligamento` compartilhado entre `DeleteVendedor` e `ReativarVendedor`.
+- [x] Frontend (🟢 FrontBrain) — adicionados selects de Região, UF (opções derivadas dinamicamente da lista carregada) e Status (Todos/Ativo/Inativo) em `admin/vendedores/page.tsx`, combinando (AND) com a busca livre já existente dentro do mesmo `useMemo` `filteredSorted`; página reseta para 1 ao mudar qualquer filtro. Botão de ação dinâmico: "Inativar" (`variant="danger"`, `handleDelete`) quando ativo, "Ativar" (`variant="primary"`, nova função `handleReativar` usando nova `apiReativarVendedor` em `frontend/src/lib/api.ts`) quando `data_desligamento` preenchido; estado de loading unificado em `togglingId` (renomeado de `deletingId`). Nota de rodapé da página atualizada mencionando os novos filtros.
+- [x] Teste (🔴 TestBrain) — baseline `go build ./...`/`go test ./...` OK antes da mudança. Adicionados testes para o fluxo de reativação, espelhando a cobertura de `DeleteVendedor`: service (`vendedor_service_test.go`) `TestVendedorService_ReativarVendedor_Sucesso/_NaoEncontrado/_ErroGenericoDoRepo/_ErroNoGetByIDApósUpdate`; handler (`vendedor_handler_test.go`) `TestReativarVendedor_Success/_IDInvalido/_NaoEncontrado/_ErroInterno`. Helper `setDataDesligamento` não recebeu teste dedicado (já exercitado por `DeleteVendedor` e `ReativarVendedor`). Suíte completa 100% verde; cobertura `apis/rotaperfumes-api/services` = 95.9%, `apis/rotaperfumes-api/handlers` = 79.0%, `apis/shared/repositories` = 88.8%. Nenhum bug de código encontrado.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` e `postman/README.md` — verificados novamente: confirmado o gap já registrado nas tarefas "Promover colunas *_id_origem a PK autoincremento" e "Listar vendedores inativos com marcador [X]" — **não existe pasta "Vendedores" na collection** (só há "Login — Vendedor (primeiro acesso)" e "Dashboard — Ranking Vendedores", que são endpoints diferentes) nem seção "Vendedor" de CRUD no README (só há as seções "Vendedor (42 vendedores...)" com dados de seed e "Login — Vendedor"). Como não existe base de request/response de vendedor para seguir o padrão, não foi adicionado o novo `POST /api/vendedores/{id}/reativar` isoladamente (ficaria deslocado sem a pasta completa) — mantendo a decisão já tomada nas duas tarefas anteriores de tratar isso como item de escopo futuro. Nenhuma alteração feita em `postman/collection.json` nem `postman/README.md` nesta tarefa.
+- Reforça-se a recomendação (3ª vez registrada) de, em uma tarefa futura dedicada, criar a pasta "Vendedores" na collection cobrindo `GET/POST/PUT/DELETE /api/vendedores(/{id})`, `POST /api/vendedores/{id}/reativar`, `POST/DELETE /api/vendedores/{id}/clientes(/{clienteId})` e a seção correspondente no README.
+
+**Nota pendente — ação manual do usuário:** não foi possível rodar `npm run build`/`tsc --noEmit` em nenhuma etapa desta tarefa (Node não instalado no ambiente de execução). Recomenda-se, antes de considerar a tarefa 100% fechada: (1) rodar `npm run build` localmente no frontend; (2) testar manualmente na tela `/admin/vendedores` os três novos filtros (Região, UF, Status) combinados com a busca livre, e o botão de ação alternando corretamente entre "Inativar"/"Ativar" para vendedores ativos e inativos.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Listar vendedores inativos com marcador [X] (corrige bug de vínculo "sumido") — 2026-09-15
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** `GET /api/vendedores` filtrava `WHERE data_desligamento IS NULL` e não retornava esse campo. Selects que dependem dessa lista (usuário → vendedor em `UserModal.tsx`, pedido → vendedor em `PedidoModal.tsx`, e a própria listagem `admin/vendedores/page.tsx`) perdiam a opção quando o vendedor vinculado estava inativo, fazendo o campo aparecer "sem seleção" mesmo com o vínculo salvo (caso reportado: usuário Henrique Rodrigues, vinculado a um vendedor já desligado). Corrigido: `GET /api/vendedores` passa a retornar todos os vendedores (ativos e inativos) com um indicador de status; os selects/listagens no frontend marcam os inativos com `[X]`.
+
+**Camadas:**
+- [x] Backend (🟡 BackBrain) — `VendedorRepository.List` (`apis/shared/repositories/vendedor_repository.go`) não filtra mais por `data_desligamento IS NULL` e passa a retornar `data_desligamento` em cada item (novo tipo `repositories.VendedorResumo`: `id, nome, regiao, uf, data_desligamento`). `GET /api/vendedores` agora responde `data: [{id, nome, regiao, uf, data_desligamento}]` (null = ativo), ordenado por nome.
+- [x] Frontend (🟢 FrontBrain) — `Vendedor` (`frontend/src/lib/types.ts`) ganhou `data_desligamento: string | null`. Selects de `UserModal.tsx` e `PedidoModal.tsx` sufixam o label com `" [X]"` quando o vendedor está inativo (sem desabilitar a opção). `admin/vendedores/page.tsx` ganhou coluna "Status" (`Ativo` / `[X] Inativo`), busca por texto passou a casar com "ativo"/"inativo", `openEdit` preenche `data_desligamento` real no fallback, e `handleDelete` agora recarrega a lista (`loadVendedores()`) em vez de remover o item otimisticamente da UI (evita o vendedor "sumir" da listagem após ser inativado).
+- [x] Teste (🔴 TestBrain) — `go build ./...` e `go test ./...` OK em `apis/shared` e `apis/rotaperfumes-api`. Corrigidos `TestVendedorList_Success/_Vazio/_QueryError/_ScanError/_IterError` (`apis/shared/repositories/vendedor_repository_test.go`), `TestVendedorService_ListVendedores` (`apis/rotaperfumes-api/services/vendedor_service_test.go`) e `TestListVendedores_Success/_ListaVazia/_ErroInterno/_PermitidoParaNaoAdmin` (`apis/rotaperfumes-api/handlers/vendedor_handler_test.go`) para o novo shape sem `WHERE data_desligamento IS NULL`. Casos novos cobrindo o comportamento central da correção (ativos + inativos juntos, `DataDesligamento` populado só para inativos): `TestVendedorList_AtivosEInativos`, subteste em `TestVendedorService_ListVendedores` e `TestListVendedores_AtivosEInativos`. `vendedor_repository.go` com 100% de cobertura em todas as funções. Suíte completa passou 100%.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` e `postman/README.md` — verificados: **não existe request para `GET /api/vendedores`** na coleção nem seção correspondente no README (só há `GET /api/dashboard/vendedores`, endpoint de ranking, que é diferente e não filtra vendedores por status). Esse gap já havia sido identificado e registrado na tarefa "Promover colunas *_id_origem a PK autoincremento — 2026-09-15" (linha "a collection nunca chegou a ter uma pasta 'Vendedores'..."). Não havia, portanto, exemplo de resposta ou afirmação de "retorna apenas vendedores ativos" para corrigir. Nenhuma alteração feita nesses arquivos nesta tarefa. Fica reforçada aqui a recomendação de, em uma futura tarefa, criar a pasta "Vendedores" na collection cobrindo `GET/POST/PUT/DELETE /api/vendedores(/{id})` e os vínculos de carteira, já documentando o novo shape com `data_desligamento`.
+
+**Nota pendente — ação manual do usuário:** o FrontBrain não conseguiu rodar `npm run build` / `npx tsc --noEmit` neste ambiente (Node não disponível no sandbox). Recomenda-se validar visualmente as telas afetadas (`admin/vendedores`, `UserModal`, `PedidoModal`) e rodar `npm run build` localmente antes de considerar esta tarefa 100% fechada.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Promover colunas *_id_origem a PK autoincremento — 2026-09-15
+**Agentes:** 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** As colunas auxiliares `pedido_id_origem` (pedidos), `cliente_id_origem` (clientes), `item_id_origem` (itens_pedido) e `carteira_id_origem` (carteiras) deixaram de ser colunas auxiliares e passaram a ser a própria PK `BIGINT AUTO_INCREMENT` de cada tabela, substituindo a antiga `id` interna — seguindo o mesmo padrão já usado em `pagamentos` (PK = `pagamento_id`). A geração manual "MAX+1" (`NextPedidoIDOrigem`, `NextClienteIDOrigem`, `nextItemIDOrigemTx`, `NextCarteiraIDOrigem`) foi removida, eliminando o débito técnico de risco de colisão em criações concorrentes registrado na tarefa "[Clientes — Criação e Edição] — 2026-09-13".
+
+**Camadas:**
+- [x] Database (🌸 DataBrain) — em `sql/04_ddl_pedidos.sql`, `sql/09_ddl_clientes.sql`, `sql/11_ddl_itens_pedido.sql`, `sql/14_ddl_carteiras.sql`: removida a antiga PK `id BIGINT AUTO_INCREMENT` de `pedidos`, `clientes`, `itens_pedido`, `carteiras`; as colunas `pedido_id_origem`, `cliente_id_origem` (padronizada de `INT` para `BIGINT`), `item_id_origem` e `carteira_id_origem` passaram a ser `BIGINT AUTO_INCREMENT PRIMARY KEY`. FKs atualizadas: `itens_pedido.pedido_id -> pedidos.pedido_id_origem`, `pagamentos.pedido_id -> pedidos.pedido_id_origem`, `pedidos.cliente_id -> clientes.cliente_id_origem`, `carteiras.cliente_id -> clientes.cliente_id_origem`. A UNIQUE composta de `carteiras` (`cliente_id`, `vendedor_id`, `data_inicio`) foi preservada. `vendedores` e `produtos` não foram alterados (mantêm `id` como PK própria).
+- [x] Backend (🟡 BackBrain) — campo `ID` removido dos models `Pedido`, `Cliente`, `ItemPedido`, `Carteira` (`apis/shared/models/`). Removida a geração manual "MAX+1"; o ID agora é gerado nativamente pelo MySQL via `AUTO_INCREMENT` e capturado via `LastInsertId()` (`apis/shared/repositories/`). As rotas HTTP (`/api/pedidos/{id}`, `/api/clientes/{id}` etc.) mantiveram a mesma interface externa (path param continua `{id}`, agora mapeado para a nova PK). Os importadores (`importpedidos`, `importclientes`, `importcarteiras`, `importpagamentos`) continuam inserindo o valor do CSV explicitamente na coluna `AUTO_INCREMENT`, preservando compatibilidade com dados legados. A struct auxiliar `ClienteResumo` (resposta de `GET /api/vendedores/{id}`) manteve os nomes de campo antigos (`id`, `carteira_id`) por decisão de compatibilidade — não afetada externamente por esta tarefa.
+- [x] Frontend (🟢 FrontBrain) — tipos `Pedido`, `Cliente`, `ItemPedido` em `frontend/src/lib/types.ts` perderam o campo `id` (restando `pedido_id_origem`/`cliente_id_origem`/`item_id_origem`). Páginas e modais ajustados: `frontend/src/app/admin/pedidos/page.tsx`, `frontend/src/app/admin/clientes/page.tsx`, `frontend/src/components/admin/PedidoModal.tsx`, `frontend/src/components/admin/VendedorModal.tsx`. Build e typecheck do frontend passaram limpos.
+- [x] Teste (🔴 TestBrain) — toda a suíte Go (`apis/shared`, `apis/rotaperfumes-api`) foi corrigida e passa 100%, com cobertura mantida (88-100% conforme pacote). Não há testes de frontend configurados no projeto.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — pastas "Clientes" e "Pedidos": removido o campo `"id"` de todos os exemplos de resposta JSON (`Listar`/`Criar`/`Detalhe`/`Editar`/`Ativar-Inativar Cliente`; `Listar`/`Criar`/`Detalhe`/`Editar Pedido`, inclusive nos itens aninhados `itens[]`), mantendo `cliente_id_origem`/`pedido_id_origem`/`item_id_origem` como identificador. Scripts de teste (`pm.test`) que checavam `jsonData.data.id` ou `.to.have.property('id')` ajustados para checar apenas os campos `*_id_origem`. Descrições dos requests atualizadas para deixar claro que o path param `{id}` da URL agora corresponde à PK `*_id_origem` (não a uma coluna `id` separada, que não existe mais) e que `order_by=id` continua aceito pela API como alias de coluna mapeado para `*_id_origem`.
+- `postman/README.md` — seções "Clientes" e "Pedidos" atualizadas (`GET/POST/PUT /api/clientes(/{id})`, `GET/POST/PUT /api/pedidos(/{id})`, tabela de ordenação e "Resumo de testes por endpoint") removendo menções a campo `id` de resposta e ao antigo débito técnico "MAX+1" (marcado como resolvido nesta tarefa).
+- Não havia coleção Postman nem documentação dedicada para `itens_pedido` isoladamente (sempre aninhado em `pedidos`) nem para `carteiras`/vínculo de cliente-vendedor — a collection nunca chegou a ter uma pasta "Vendedores" com os endpoints `POST/DELETE /api/vendedores/{id}/clientes(/{clienteId})` (gap pré-existente, não introduzido por esta tarefa). Registrado aqui para eventual priorização futura, se desejado.
+- Não existe manual central do projeto (raiz/`docs/`) além do `Makefile` (`make help`) e do `postman/README.md` — nenhum documento novo foi criado além do estritamente necessário.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## Vincular/Desvincular Cliente a Vendedor (Carteiras) — 2026-09-14
 **Agentes:** 🟡 BackBrain + 🟢 FrontBrain + 🔴 TestBrain (delegado por 🤍 MegaBrain)
 

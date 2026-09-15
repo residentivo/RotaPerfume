@@ -170,17 +170,17 @@ Exemplos:
 - **Auth:** Bearer Token (admin)
 - **Query (todos opcionais):** `?page=1&limit=20&uf=SP&segmento=Varejo&ativo=true&q=perfumaria&order_by=razao_social&order_dir=asc`
 - **Descrição:** Lista clientes paginada (total + pages), com filtros exatos por `uf`/`segmento`, filtro por status (`ativo=true|false`) e busca livre (`q`) em `razao_social` OU `cnpj`
-- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at` (default: `id`; `id` é um alias de coluna aceito pela API, mapeado para `cliente_id_origem` — não existe mais campo `id` na resposta); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/clientes
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" (opcional, "AAAA-MM-DD", default hoje) }`
-- **Descrição:** Cria um novo cliente. `cliente_id_origem` é gerado automaticamente pelo sistema (`MAX + 1`) e `ativo` é sempre `true` na criação — nenhum dos dois é aceito no body. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação.
-- **Débito técnico conhecido:** o próximo `cliente_id_origem` é calculado via `MAX(cliente_id_origem) + 1` sem transação/lock explícito no banco. Em criações concorrentes simultâneas (ex.: dois admins criando clientes ao mesmo tempo) existe risco teórico de colisão. Risco considerado baixo dado o baixo volume de uso desta tela (admin only), mas registrado aqui como débito técnico conhecido para eventual revisão futura (ex.: usar transação com `SELECT ... FOR UPDATE` ou coluna `AUTO_INCREMENT` dedicada).
+- **Descrição:** Cria um novo cliente. `cliente_id_origem` é a PK `BIGINT AUTO_INCREMENT` da tabela, gerada nativamente pelo MySQL (não é aceita no body), e `ativo` é sempre `true` na criação. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação. Não existe mais campo `id` — `cliente_id_origem` é o único identificador.
+- **Nota histórica (resolvida):** versões anteriores geravam `cliente_id_origem` via `MAX(cliente_id_origem) + 1` sem transação/lock explícito, com risco teórico de colisão em criações concorrentes. Esse débito técnico foi eliminado na tarefa "Promover colunas \*_id_origem a PK autoincremento" (2026-09-15) — a geração agora é feita nativamente pelo MySQL via `AUTO_INCREMENT`.
 
 #### GET /api/clientes/{id}
 - **Auth:** Bearer Token (admin)
-- **Descrição:** Retorna o detalhe de um cliente pelo `id` interno (não confundir com `cliente_id_origem`, o ID do CSV de origem)
+- **Descrição:** Retorna o detalhe de um cliente pelo `cliente_id_origem` (PK da tabela; o path param continua se chamando `id` na rota, mas não existe mais campo `id` separado na resposta)
 
 #### PUT /api/clientes/{id}
 - **Auth:** Bearer Token (admin)
@@ -234,16 +234,16 @@ Exemplos:
 - **Auth:** Bearer Token (admin)
 - **Query (todos opcionais):** `?page=1&limit=20&status=Faturado&canal=App&cliente_id=1&vendedor_id=1&data_inicio=2026-01-01&data_fim=2026-12-31&q=perfumaria&order_by=data_pedido&order_dir=desc`
 - **Descrição:** Lista pedidos paginada (total + pages), com filtros exatos por `status` (`Cancelado`|`Em separação`|`Entregue`|`Faturado`), `canal` (`App`|`Telefone`|`Visita`|`WhatsApp`), `cliente_id`, `vendedor_id`, intervalo `data_inicio`/`data_fim` (`AAAA-MM-DD`) e busca livre (`q`) pela razão social do cliente. Cada item traz o cabeçalho do pedido enriquecido com `cliente_nome`/`vendedor_nome`, sem os itens.
-- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome` (default: `id`; `id` é um alias de coluna aceito pela API, mapeado para `pedido_id_origem` — não existe mais campo `id` na resposta); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/pedidos
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "cliente_id", "vendedor_id", "data_pedido" ("AAAA-MM-DD"), "canal", "status", "itens": [{ "produto_id", "quantidade", "preco_praticado", "desconto_pct" }] }`
-- **Descrição:** Cria um novo pedido com seus itens. `valor_bruto` de cada item e `valor_total` do pedido são calculados no backend (não aceitos no body). `pedido_id_origem` é gerado automaticamente pelo sistema. Exige ao menos um item. Retorna `201` com o pedido criado (incluindo itens); `400` em caso de validação.
+- **Descrição:** Cria um novo pedido com seus itens. `valor_bruto` de cada item e `valor_total` do pedido são calculados no backend (não aceitos no body). `pedido_id_origem` é a PK `BIGINT AUTO_INCREMENT` gerada nativamente pelo MySQL. Exige ao menos um item. Retorna `201` com o pedido criado (incluindo itens); `400` em caso de validação. Não existe mais campo `id` — `pedido_id_origem`/`item_id_origem` são os identificadores.
 
 #### GET /api/pedidos/{id}
 - **Auth:** Bearer Token (admin)
-- **Descrição:** Retorna o detalhe de um pedido pelo `id` interno, incluindo a lista de itens (`itens`, cada um enriquecido com `produto_sku`/`produto_descricao` via JOIN) — usado na tela master-detail.
+- **Descrição:** Retorna o detalhe de um pedido pelo `pedido_id_origem` (PK; o path param continua se chamando `id` na rota), incluindo a lista de itens (`itens`, cada um enriquecido com `produto_sku`/`produto_descricao` via JOIN) — usado na tela master-detail.
 
 #### PUT /api/pedidos/{id}
 - **Auth:** Bearer Token (admin)
@@ -275,6 +275,36 @@ Exemplos:
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Body:** mesmo formato do `POST /api/pagamentos`, exceto `pedido_id`
 - **Descrição:** Atualiza os campos editáveis de um pagamento existente. `pagamento_id` e `pedido_id` **não** são editáveis por esta rota (o vínculo com o pedido de origem é definitivo — para reatribuir a outro pedido, o fluxo correto é excluir/recriar). Retorna `200` com o pagamento atualizado, `404` se não existir, `400` se o payload for inválido.
+
+### Oportunidades (`/api/oportunidades/*`) — admin only, + `GET /api/vendedores/{id}/clientes` (acesso comum)
+
+> Funil de vendas (CRM) importado de `dados/crm/oportunidades.csv` (colunas: `oportunidade_id, cliente_id, vendedor_id, origem, data_abertura, etapa, probabilidade_pct, valor_estimado, data_fechamento, ciclo_dias, motivo_perda`). Tela com dois dropdowns em cascata (Vendedor → Cliente) e filtros de coluna na listagem. Requests desses endpoints estão agrupadas na pasta **"Oportunidades"** da collection. Não existe endpoint de `DELETE` nem exclusão lógica.
+>
+> **Decisão de design:** `vendedor_id` é um campo próprio da oportunidade — **não depende** de a oportunidade ter um vínculo de carteira ativo entre aquele cliente e aquele vendedor (uma oportunidade pode existir mesmo que o cliente esteja hoje na carteira de outro vendedor, ou sem vínculo ativo algum). O endpoint `GET /api/vendedores/{id}/clientes` (usado só para alimentar o segundo dropdown do formulário) é **acesso comum**, diferente do CRUD de Oportunidades (`admin only`) — mesma cadeia de middleware (`cfg, true, false`) usada em Pagamentos.
+
+#### GET /api/oportunidades
+- **Auth:** Bearer Token (admin)
+- **Query (todos opcionais):** `?page=1&limit=20&cliente_id=1&vendedor_id=1&etapa=Proposta enviada&origem=Indicação&data_abertura_de=2026-01-01&data_abertura_ate=2026-12-31&q=indica&order_by=data_abertura&order_dir=desc`
+- **Descrição:** Lista oportunidades paginada (total + pages), com filtros exatos por `cliente_id`, `vendedor_id`, `etapa`, `origem`, intervalo `data_abertura_de`/`data_abertura_ate` (`AAAA-MM-DD`) e busca livre (`q`) em `origem` OU `etapa`.
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, data_abertura, valor_estimado, probabilidade_pct, etapa, origem, created_at, updated_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
+
+#### POST /api/oportunidades
+- **Auth:** Bearer Token (admin)
+- **Body:** `{ "cliente_id", "vendedor_id", "origem", "data_abertura" (opcional, "AAAA-MM-DD", default hoje), "etapa", "probabilidade_pct", "valor_estimado", "data_fechamento" (opcional, "AAAA-MM-DD"), "ciclo_dias" (opcional), "motivo_perda" (obrigatório se etapa = "Fechado perdido") }`
+- **Descrição:** Cria uma nova oportunidade. `cliente_id` deve existir em `clientes`; `vendedor_id` deve existir em `vendedores` (campo independente de vínculo de carteira). `probabilidade_pct` deve estar entre 0 e 100; `valor_estimado` deve ser `>= 0`. `oportunidade_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com a oportunidade criada; `400` em caso de validação.
+
+#### GET /api/oportunidades/{id}
+- **Auth:** Bearer Token (admin)
+- **Descrição:** Retorna o detalhe de uma oportunidade pelo `oportunidade_id`.
+
+#### PUT /api/oportunidades/{id}
+- **Auth:** Bearer Token (admin)
+- **Body:** mesmo formato do `POST /api/oportunidades` (`data_abertura` obrigatório na edição)
+- **Descrição:** Atualiza os dados de uma oportunidade existente. Retorna `200` com a oportunidade atualizada, `404` se não existir, `400` se o payload for inválido.
+
+#### GET /api/vendedores/{id}/clientes
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Descrição:** Lista os clientes vinculados (carteira ativa, `data_fim IS NULL`) a um vendedor. Usado pelo dropdown em cascata da tela de Oportunidades (ao escolher o vendedor, filtra os clientes possíveis no segundo dropdown). `404` se o vendedor não existir.
 
 ## Testes automatizados (Postman)
 
@@ -370,7 +400,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 ### Criar Cliente
 - `Status 201 Created`
-- `Cliente criado com dados corretos` (`id`, `cliente_id_origem`, `razao_social`, `ativo === true`)
+- `Cliente criado com dados corretos` (`cliente_id_origem`, `razao_social`, `ativo === true`)
 
 ### Detalhe do Cliente
 - `Status 200`
@@ -417,12 +447,12 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 ### Criar Pedido
 - `Status 201 Created`
-- `Pedido criado com dados corretos` (`id`, `pedido_id_origem`, `itens` array não vazio)
+- `Pedido criado com dados corretos` (`pedido_id_origem`, `itens` array não vazio)
 - `valor_total e valor_bruto calculados pelo backend`
 
 ### Detalhe do Pedido
 - `Status 200`
-- `Dados do pedido presentes` (`id`, `pedido_id_origem`, `itens`)
+- `Dados do pedido presentes` (`pedido_id_origem`, `itens`)
 - `Itens é um array`
 
 ### Editar Pedido
@@ -448,6 +478,28 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Status 200 OK`
 - `Usuário NORMAL consegue editar (não é 403)`
 - `Pagamento atualizado com dados corretos` (`pagamento_id`, `status_pagamento`)
+
+### Listar Oportunidades
+- `Status 200`
+- `Lista retornada`
+- `Paginação presente`
+
+### Detalhe da Oportunidade
+- `Status 200`
+- `Dados da oportunidade presentes` (`oportunidade_id`, `cliente_id`, `vendedor_id`, `etapa`)
+
+### Criar Oportunidade
+- `Status 201 Created`
+- `Oportunidade criada com dados corretos` (`oportunidade_id`, `cliente_id`, `vendedor_id`, `etapa`)
+
+### Editar Oportunidade
+- `Status 200 OK`
+- `Oportunidade atualizada com dados corretos` (`oportunidade_id`, `etapa`)
+
+### Listar Clientes do Vendedor
+- `Status 200`
+- `Usuário NORMAL consegue acessar (não é 403)` — **valida explicitamente que o acesso é comum, não admin only**
+- `Lista de clientes retornada`
 
 ## Resumo de testes por endpoint
 
@@ -489,6 +541,11 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Criar Pagamento | 3 | — |
 | Detalhe do Pagamento | 1 | — |
 | Editar Pagamento | 3 | — |
+| Listar Oportunidades | 2 | — |
+| Detalhe da Oportunidade | 1 | — |
+| Criar Oportunidade | 1 | — |
+| Editar Oportunidade | 1 | — |
+| Listar Clientes do Vendedor | 2 | — |
 
 ## Códigos de erro comuns
 
@@ -557,6 +614,16 @@ make db-up && make db-import-pagamentos
 ```
 
 O importador (`apis/shared/cmd/importpagamentos`) é idempotente (upsert por `pagamento_id`, a própria PK da tabela) e resolve `pedido_id` via lookup em `pedidos.pedido_id_origem` — pagamentos cujo `pedido_id` do CSV não corresponda a nenhum pedido importado são pulados com log de aviso. Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/pagamentos`, `GET /api/pagamentos/{id}`, `POST/PUT /api/pagamentos` funcionam normalmente (inclusive para usuários `normal`, já que o acesso é comum), mas retornam/operam sobre base vazia — exceto pagamentos criados manualmente via `POST`, que exigem que o `pedido_id` informado já exista (rode `make db-import-pedidos` antes, se necessário).
+
+### Oportunidades (CRM)
+
+`make db-up`/`make db-reset` criam a tabela `oportunidades` (via `sql/15_ddl_oportunidades.sql`, FKs `cliente_id → clientes.cliente_id_origem` e `vendedor_id → vendedores.id`), mas **não** carregam os dados nela. Para popular a tabela `oportunidades` a partir de `dados/crm/oportunidades.csv` (5979 registros; colunas `oportunidade_id, cliente_id, vendedor_id, origem, data_abertura, etapa, probabilidade_pct, valor_estimado, data_fechamento, ciclo_dias, motivo_perda`), rode adicionalmente:
+
+```bash
+make db-up && make db-import-oportunidades
+```
+
+O importador (`apis/shared/cmd/importoportunidades`) é idempotente (upsert por `oportunidade_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto oportunidades criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam.
 
 Depois, em outro terminal:
 

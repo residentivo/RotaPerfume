@@ -27,6 +27,9 @@ import {
   PagamentoCreateInput,
   PagamentoUpdateInput,
   ListPagamentosFilters,
+  Oportunidade,
+  OportunidadeInput,
+  ListOportunidadesFilters,
 } from "./types";
 import { fetchWithAuth } from "./apiClient";
 
@@ -444,6 +447,14 @@ export async function apiDeleteVendedor(id: number): Promise<VendedorCompleto> {
   });
 }
 
+// POST /api/vendedores/{id}/reativar — reverte o soft-delete do vendedor
+// (limpa data_desligamento), tornando-o ativo novamente.
+export async function apiReativarVendedor(id: number): Promise<VendedorCompleto> {
+  return fetchWithAuth<VendedorCompleto>(`/api/vendedores/${id}/reativar`, {
+    method: "POST",
+  });
+}
+
 // POST /api/vendedores/{id}/clientes — vincula um cliente a carteira ativa
 // do vendedor. Se o cliente ja tiver vendedor ativo, a API transfere a
 // carteira automaticamente (encerrando o vinculo anterior). Retorna 201 com
@@ -468,6 +479,21 @@ export async function apiDesvincularCliente(
     `/api/vendedores/${vendedorId}/clientes/${clienteId}`,
     {
       method: "DELETE",
+    }
+  );
+}
+
+// GET /api/vendedores/{id}/clientes — acesso comum, lista os clientes da
+// carteira ativa daquele vendedor. Usado para popular o dropdown de
+// Clientes filtrado pelo Vendedor selecionado (ex: OportunidadeModal).
+// Envelope padrao {success, data, error}.
+export async function apiListClientesDoVendedor(
+  vendedorId: number
+): Promise<ClienteResumo[]> {
+  return fetchWithAuth<ClienteResumo[]>(
+    `/api/vendedores/${vendedorId}/clientes`,
+    {
+      method: "GET",
     }
   );
 }
@@ -942,6 +968,112 @@ export async function apiUpdatePagamento(
   input: PagamentoUpdateInput
 ): Promise<Pagamento> {
   return fetchWithAuth<Pagamento>(`/api/pagamentos/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+// === Oportunidades (CRM) ===
+//
+// Tela admin-only — ver rota /api/oportunidades no backend.
+
+export interface ListOportunidadesResponse {
+  data: Oportunidade[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+// GET /api/oportunidades — lista paginada com filtros. Envelope
+// {success, data, pagination: {page, limit, total, pages}, error}.
+export async function apiListOportunidades(
+  page = 1,
+  limit = 20,
+  filters: ListOportunidadesFilters = {},
+  orderBy?: string,
+  orderDir?: "asc" | "desc"
+): Promise<ListOportunidadesResponse> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.cliente_id) qs.set("cliente_id", String(filters.cliente_id));
+  if (filters.vendedor_id) qs.set("vendedor_id", String(filters.vendedor_id));
+  if (filters.etapa) qs.set("etapa", filters.etapa);
+  if (filters.origem) qs.set("origem", filters.origem);
+  if (filters.data_abertura_de) qs.set("data_abertura_de", filters.data_abertura_de);
+  if (filters.data_abertura_ate) qs.set("data_abertura_ate", filters.data_abertura_ate);
+  if (filters.q) qs.set("q", filters.q);
+  if (orderBy) qs.set("order_by", orderBy);
+  if (orderDir) qs.set("order_dir", orderDir);
+
+  const res = await fetch(`${API_BASE}/api/oportunidades?${qs.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+
+  const raw = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = raw;
+  }
+
+  if (!res.ok) {
+    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
+    if (parsed && typeof parsed === "object") {
+      const d = parsed as Record<string, unknown>;
+      if ("error" in d) errorMessage = String(d.error);
+      else if ("message" in d) errorMessage = String(d.message);
+    }
+    throw new Error(errorMessage);
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const d = parsed as Record<string, unknown>;
+    if ("data" in d && Array.isArray(d.data)) {
+      const pag = (d.pagination && typeof d.pagination === "object"
+        ? (d.pagination as Record<string, unknown>)
+        : d) as Record<string, unknown>;
+      return {
+        data: d.data as Oportunidade[],
+        page: Number(pag.page ?? page),
+        limit: Number(pag.limit ?? limit),
+        total: Number(pag.total ?? (d.data as unknown[]).length),
+        pages: Number(pag.pages ?? 1),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return { data: parsed as Oportunidade[], page, limit, total: parsed.length, pages: 1 };
+  }
+  return { data: [], page, limit, total: 0, pages: 0 };
+}
+
+// GET /api/oportunidades/{id} — detalhe de uma oportunidade
+export async function apiGetOportunidade(id: number): Promise<Oportunidade> {
+  return fetchWithAuth<Oportunidade>(`/api/oportunidades/${id}`, {
+    method: "GET",
+  });
+}
+
+// POST /api/oportunidades — admin cria nova oportunidade.
+export async function apiCreateOportunidade(
+  input: OportunidadeInput
+): Promise<Oportunidade> {
+  return fetchWithAuth<Oportunidade>("/api/oportunidades", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// PUT /api/oportunidades/{id} — admin atualiza uma oportunidade existente.
+export async function apiUpdateOportunidade(
+  id: number,
+  input: OportunidadeInput
+): Promise<Oportunidade> {
+  return fetchWithAuth<Oportunidade>(`/api/oportunidades/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });

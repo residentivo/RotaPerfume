@@ -314,7 +314,7 @@ func TestPagamentoService_CreatePagamento_PedidoIDObrigatorio(t *testing.T) {
 
 func TestPagamentoService_CreatePagamento_PedidoNaoEncontrado(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
@@ -329,7 +329,7 @@ func TestPagamentoService_CreatePagamento_PedidoNaoEncontrado(t *testing.T) {
 
 func TestPagamentoService_CreatePagamento_ErroExistsByID(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
@@ -344,7 +344,7 @@ func TestPagamentoService_CreatePagamento_Validacoes(t *testing.T) {
 	for _, tc := range pagamentoValidacaoTestCases() {
 		t.Run(tc.nome, func(t *testing.T) {
 			db, mock := newPagamentoTestDB(t)
-			mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE id = \? LIMIT 1`).
+			mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 				WithArgs(int64(1)).
 				WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 
@@ -359,7 +359,7 @@ func TestPagamentoService_CreatePagamento_Validacoes(t *testing.T) {
 
 func TestPagamentoService_CreatePagamento_Sucesso(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	mock.ExpectExec(`INSERT INTO pagamentos \(pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento\)`).
@@ -378,7 +378,7 @@ func TestPagamentoService_CreatePagamento_Sucesso(t *testing.T) {
 
 func TestPagamentoService_CreatePagamento_ErroCreateRepo(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	mock.ExpectExec(`INSERT INTO pagamentos`).

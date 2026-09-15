@@ -12,11 +12,12 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/repositories"
 )
 
 const vendedorGetColunasRegex = `id, nome, regiao, uf, data_admissao, data_desligamento, meta_mensal, created_at, updated_at FROM vendedores WHERE id = \? LIMIT 1`
-const clienteResumoColunasRegex = `c\.id, c\.cnpj, c\.razao_social, c\.segmento, c\.cidade, c\.uf, ca\.id, ca\.data_inicio, ca\.data_fim`
-const clienteResumoFromRegex = ` FROM carteiras ca JOIN clientes c ON c\.id = ca\.cliente_id`
+const clienteResumoColunasRegex = `c\.cliente_id_origem, c\.cnpj, c\.razao_social, c\.segmento, c\.cidade, c\.uf, ca\.carteira_id_origem, ca\.data_inicio, ca\.data_fim`
+const clienteResumoFromRegex = ` FROM carteiras ca JOIN clientes c ON c\.cliente_id_origem = ca\.cliente_id`
 
 func vendedorGetRows(id int64, nome string, dataDesligamento any) *sqlmock.Rows {
 	now := time.Now()
@@ -52,12 +53,12 @@ func newVendedorTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	return db, mock
 }
 
-var vendedorColunasRegex = `id, nome, regiao, uf\s+FROM vendedores\s+WHERE data_desligamento IS NULL\s+ORDER BY nome ASC`
+var vendedorColunasRegex = `id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+ORDER BY nome ASC`
 
 func vendedorRows() *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "nome", "regiao", "uf"}).
-		AddRow(int64(1), "João Vendedor", "Sudeste", "SP").
-		AddRow(int64(2), "Maria Vendedora", "Sul", "RS")
+	return sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
+		AddRow(int64(1), "João Vendedor", "Sudeste", "SP", nil).
+		AddRow(int64(2), "Maria Vendedora", "Sul", "RS", nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,7 @@ func TestVendedorService_ListVendedores(t *testing.T) {
 		mock    func(mock sqlmock.Sqlmock)
 		wantErr bool
 		wantLen int
+		checar  func(t *testing.T, vendedores []repositories.VendedorResumo)
 	}{
 		{
 			nome:    "sucesso - retorna vendedores ativos ordenados por nome",
@@ -86,9 +88,27 @@ func TestVendedorService_ListVendedores(t *testing.T) {
 			verbose: false,
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(vendedorColunasRegex).
-					WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf"}))
+					WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}))
 			},
 			wantLen: 0,
+		},
+		{
+			nome:    "sucesso - retorna ativos e inativos, sem filtrar por data_desligamento",
+			verbose: false,
+			mock: func(mock sqlmock.Sqlmock) {
+				desligadoEm := time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC)
+				rows := sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
+					AddRow(int64(1), "Vendedor Ativo", "Sudeste", "SP", nil).
+					AddRow(int64(2), "Vendedor Inativo", "Sul", "RS", desligadoEm)
+				mock.ExpectQuery(vendedorColunasRegex).
+					WillReturnRows(rows)
+			},
+			wantLen: 2,
+			checar: func(t *testing.T, vendedores []repositories.VendedorResumo) {
+				require.Nil(t, vendedores[0].DataDesligamento)
+				require.NotNil(t, vendedores[1].DataDesligamento)
+				assert.Equal(t, time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC), *vendedores[1].DataDesligamento)
+			},
 		},
 		{
 			nome:    "erro do repo é propagado",
@@ -115,6 +135,9 @@ func TestVendedorService_ListVendedores(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Len(t, vendedores, tc.wantLen)
+				if tc.checar != nil {
+					tc.checar(t, vendedores)
+				}
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
@@ -506,41 +529,112 @@ func TestVendedorService_DeleteVendedor_ErroGenericoDoRepo(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// ReativarVendedor
+// ---------------------------------------------------------------------------
+
+func TestVendedorService_ReativarVendedor_Sucesso(t *testing.T) {
+	db, mock := newVendedorTestDB(t)
+
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(vendedorGetColunasRegex).
+		WithArgs(int64(1)).
+		WillReturnRows(vendedorGetRows(1, "João Vendedor", nil))
+
+	svc := services.NewVendedorService(db, vendedorTestCfg(true))
+	v, err := svc.ReativarVendedor(context.Background(), db, 1)
+
+	require.NoError(t, err)
+	require.NotNil(t, v)
+	assert.Equal(t, int64(1), v.ID)
+	assert.Nil(t, v.DataDesligamento)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestVendedorService_ReativarVendedor_NaoEncontrado(t *testing.T) {
+	db, mock := newVendedorTestDB(t)
+
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), int64(999)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	svc := services.NewVendedorService(db, vendedorTestCfg(false))
+	v, err := svc.ReativarVendedor(context.Background(), db, 999)
+
+	assert.Nil(t, v)
+	assert.ErrorIs(t, err, services.ErrVendedorNaoEncontrado)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestVendedorService_ReativarVendedor_ErroGenericoDoRepo(t *testing.T) {
+	db, mock := newVendedorTestDB(t)
+
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+		WillReturnError(sql.ErrConnDone)
+
+	svc := services.NewVendedorService(db, vendedorTestCfg(false))
+	v, err := svc.ReativarVendedor(context.Background(), db, 1)
+
+	assert.Nil(t, v)
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, services.ErrVendedorNaoEncontrado)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestVendedorService_ReativarVendedor_ErroNoGetByIDApósUpdate(t *testing.T) {
+	db, mock := newVendedorTestDB(t)
+
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(vendedorGetColunasRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrConnDone)
+
+	svc := services.NewVendedorService(db, vendedorTestCfg(false))
+	v, err := svc.ReativarVendedor(context.Background(), db, 1)
+
+	assert.Nil(t, v)
+	assert.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ---------------------------------------------------------------------------
 // VincularCliente
 // ---------------------------------------------------------------------------
 
 const vendedorExistsByIDRegex = `SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`
-const clienteGetByIDRegex = `SELECT .+ FROM clientes WHERE id = \? LIMIT 1`
-const carteiraGetVinculoAtivoByClienteIDRegex = `SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`
-const carteiraGetVinculoAtivoRegex = `SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`
-const carteiraEncerrarVinculoRegex = `UPDATE carteiras SET data_fim = \? WHERE id = \?`
-const carteiraNextCarteiraIDOrigemRegex = `SELECT COALESCE\(MAX\(carteira_id_origem\), 0\) \+ 1 FROM carteiras`
-const carteiraCreateRegex = `INSERT INTO carteiras \(carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?, \?\)`
-const carteiraGetVinculoByClienteVendedorDataRegex = `SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND vendedor_id = \? AND data_inicio = \?\s+LIMIT 1`
-const carteiraReativarVinculoRegex = `UPDATE carteiras SET data_fim = NULL WHERE id = \?`
+const clienteGetByIDRegex = `SELECT .+ FROM clientes WHERE cliente_id_origem = \? LIMIT 1`
+const carteiraGetVinculoAtivoByClienteIDRegex = `SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`
+const carteiraGetVinculoAtivoRegex = `SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`
+const carteiraEncerrarVinculoRegex = `UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`
+const carteiraCreateRegex = `INSERT INTO carteiras \(cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?\)`
+const carteiraGetVinculoByClienteVendedorDataRegex = `SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND vendedor_id = \? AND data_inicio = \?\s+LIMIT 1`
+const carteiraReativarVinculoRegex = `UPDATE carteiras SET data_fim = NULL WHERE carteira_id_origem = \?`
 
-func clienteGetByIDRows(id int64, razaoSocial string) *sqlmock.Rows {
+func clienteGetByIDRows(idOrigem int64, razaoSocial string) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows([]string{
-		"id", "cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
+		"cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
 		"data_cadastro", "ativo", "created_at", "updated_at",
-	}).AddRow(id, int64(100), "11.111.111/0001-11", razaoSocial, "Varejo", "São Paulo", "SP", "Centro", now, true, now, now)
+	}).AddRow(idOrigem, "11.111.111/0001-11", razaoSocial, "Varejo", "São Paulo", "SP", "Centro", now, true, now, now)
 }
 
-func carteiraVinculoRow(id, carteiraIDOrigem, clienteID, vendedorID int64) *sqlmock.Rows {
+func carteiraVinculoRow(carteiraIDOrigem, clienteID, vendedorID int64) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows([]string{
-		"id", "carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
-	}).AddRow(id, carteiraIDOrigem, clienteID, vendedorID, now, nil, now, now)
+		"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+	}).AddRow(carteiraIDOrigem, clienteID, vendedorID, now, nil, now, now)
 }
 
 // carteiraVinculoRowEncerrado simula um vínculo de carteira já encerrado
 // (data_fim preenchido), usado nos cenários de revinculação no mesmo dia.
-func carteiraVinculoRowEncerrado(id, carteiraIDOrigem, clienteID, vendedorID int64) *sqlmock.Rows {
+func carteiraVinculoRowEncerrado(carteiraIDOrigem, clienteID, vendedorID int64) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows([]string{
-		"id", "carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
-	}).AddRow(id, carteiraIDOrigem, clienteID, vendedorID, now, now, now, now)
+		"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+	}).AddRow(carteiraIDOrigem, clienteID, vendedorID, now, now, now, now)
 }
 
 func TestVendedorService_VincularCliente(t *testing.T) {
@@ -566,8 +660,6 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrNoRows)
-				mock.ExpectQuery(carteiraNextCarteiraIDOrigemRegex).
-					WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(501))
 				mock.ExpectExec(carteiraCreateRegex).
 					WillReturnResult(sqlmock.NewResult(7, 1))
 			},
@@ -583,14 +675,12 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
-					WillReturnRows(carteiraVinculoRow(3, 300, 10, 1))
+					WillReturnRows(carteiraVinculoRow(300, 10, 1))
 				mock.ExpectExec(carteiraEncerrarVinculoRegex).
-					WithArgs(sqlmock.AnyArg(), int64(3)).
+					WithArgs(sqlmock.AnyArg(), int64(300)).
 					WillReturnResult(sqlmock.NewResult(0, 1))
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(2), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrNoRows)
-				mock.ExpectQuery(carteiraNextCarteiraIDOrigemRegex).
-					WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(501))
 				mock.ExpectExec(carteiraCreateRegex).
 					WillReturnResult(sqlmock.NewResult(8, 1))
 			},
@@ -606,7 +696,7 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
-					WillReturnRows(carteiraVinculoRow(3, 300, 10, 1))
+					WillReturnRows(carteiraVinculoRow(300, 10, 1))
 			},
 			wantVendID: 1,
 		},
@@ -674,8 +764,6 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrNoRows)
-				mock.ExpectQuery(carteiraNextCarteiraIDOrigemRegex).
-					WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(501))
 				mock.ExpectExec(carteiraCreateRegex).
 					WillReturnError(sql.ErrConnDone)
 			},
@@ -695,9 +783,9 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
-					WillReturnRows(carteiraVinculoRowEncerrado(3, 300, 10, 1))
+					WillReturnRows(carteiraVinculoRowEncerrado(300, 10, 1))
 				mock.ExpectExec(carteiraReativarVinculoRegex).
-					WithArgs(int64(3)).
+					WithArgs(int64(300)).
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			},
 			wantVendID: 1,
@@ -732,9 +820,9 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
-					WillReturnRows(carteiraVinculoRowEncerrado(3, 300, 10, 1))
+					WillReturnRows(carteiraVinculoRowEncerrado(300, 10, 1))
 				mock.ExpectExec(carteiraReativarVinculoRegex).
-					WithArgs(int64(3)).
+					WithArgs(int64(300)).
 					WillReturnError(sql.ErrConnDone)
 			},
 			checkErr: func(t *testing.T, err error) {
@@ -786,9 +874,9 @@ func TestVendedorService_DesvincularCliente(t *testing.T) {
 			clienteID:  10,
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(carteiraGetVinculoAtivoRegex).WithArgs(int64(1), int64(10)).
-					WillReturnRows(carteiraVinculoRow(3, 300, 10, 1))
+					WillReturnRows(carteiraVinculoRow(300, 10, 1))
 				mock.ExpectExec(carteiraEncerrarVinculoRegex).
-					WithArgs(sqlmock.AnyArg(), int64(3)).
+					WithArgs(sqlmock.AnyArg(), int64(300)).
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			},
 		},
@@ -831,7 +919,7 @@ func TestVendedorService_DesvincularCliente(t *testing.T) {
 			clienteID:  10,
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(carteiraGetVinculoAtivoRegex).WithArgs(int64(1), int64(10)).
-					WillReturnRows(carteiraVinculoRow(3, 300, 10, 1))
+					WillReturnRows(carteiraVinculoRow(300, 10, 1))
 				mock.ExpectExec(carteiraEncerrarVinculoRegex).
 					WillReturnError(sql.ErrConnDone)
 			},

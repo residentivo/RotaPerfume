@@ -16,14 +16,14 @@ import (
 )
 
 var clienteResumoColumns = []string{
-	"id", "cnpj", "razao_social", "segmento", "cidade", "uf", "carteira_id", "data_inicio", "data_fim",
+	"cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "carteira_id_origem", "data_inicio", "data_fim",
 }
 
 func clienteResumoRow(id int64, cnpj, razaoSocial, segmento, cidade, uf string, carteiraID int64, dataInicio time.Time, dataFim *time.Time) []driver.Value {
 	return []driver.Value{id, cnpj, razaoSocial, segmento, cidade, uf, carteiraID, dataInicio, dataFim}
 }
 
-const clienteResumoFromRegexp = `FROM carteiras ca JOIN clientes c ON c\.id = ca\.cliente_id`
+const clienteResumoFromRegexp = `FROM carteiras ca JOIN clientes c ON c\.cliente_id_origem = ca\.cliente_id`
 
 func TestCarteiraListClientesByVendedorID_ComClientes(t *testing.T) {
 	db, mock := newMock(t)
@@ -131,7 +131,7 @@ func TestCarteiraListClientesByVendedorID_IterError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 var carteiraColumns = []string{
-	"id", "carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+	"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
 }
 
 func TestCarteiraGetByID_Success(t *testing.T) {
@@ -140,9 +140,9 @@ func TestCarteiraGetByID_Success(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(carteiraColumns).
-		AddRow(1, 500, 10, 1, now, nil, now, now)
+		AddRow(500, 10, 1, now, nil, now, now)
 
-	mock.ExpectQuery(`SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE id = \?\s+LIMIT 1`).
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE carteira_id_origem = \?\s+LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
@@ -151,7 +151,6 @@ func TestCarteiraGetByID_Success(t *testing.T) {
 	c, err := repo.GetByID(ctx, db, 1)
 
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), c.ID)
 	assert.Equal(t, int64(500), c.CarteiraIDOrigem)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -160,7 +159,7 @@ func TestCarteiraGetByID_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE id = \?\s+LIMIT 1`).
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE carteira_id_origem = \?\s+LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
@@ -177,7 +176,7 @@ func TestCarteiraGetByID_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE id = \?\s+LIMIT 1`).
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE carteira_id_origem = \?\s+LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
@@ -209,18 +208,18 @@ func TestCarteiraGetVinculoAtivoByClienteID(t *testing.T) {
 			nome:      "vínculo ativo encontrado",
 			clienteID: 10,
 			mock: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows(carteiraColumns).AddRow(1, 500, 10, 1, now, nil, now, now)
-				mock.ExpectQuery(`SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+				rows := sqlmock.NewRows(carteiraColumns).AddRow(500, 10, 1, now, nil, now, now)
+				mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 					WithArgs(int64(10)).
 					WillReturnRows(rows)
 			},
-			wantID: 1,
+			wantID: 500,
 		},
 		{
 			nome:      "não encontrado",
 			clienteID: 99,
 			mock: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+				mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 					WithArgs(int64(99)).
 					WillReturnError(sql.ErrNoRows)
 			},
@@ -230,7 +229,7 @@ func TestCarteiraGetVinculoAtivoByClienteID(t *testing.T) {
 			nome:      "erro de query",
 			clienteID: 1,
 			mock: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+				mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 					WithArgs(int64(1)).
 					WillReturnError(sql.ErrConnDone)
 			},
@@ -250,7 +249,7 @@ func TestCarteiraGetVinculoAtivoByClienteID(t *testing.T) {
 
 			if tt.wantID != 0 {
 				require.NoError(t, err)
-				assert.Equal(t, tt.wantID, c.ID)
+				assert.Equal(t, tt.wantID, c.CarteiraIDOrigem)
 			} else {
 				assert.Nil(t, c)
 				assert.Error(t, err)
@@ -285,19 +284,19 @@ func TestCarteiraGetVinculoAtivo(t *testing.T) {
 			vendedorID: 1,
 			clienteID:  10,
 			mock: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows(carteiraColumns).AddRow(1, 500, 10, 1, now, nil, now, now)
-				mock.ExpectQuery(`SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+				rows := sqlmock.NewRows(carteiraColumns).AddRow(500, 10, 1, now, nil, now, now)
+				mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 					WithArgs(int64(1), int64(10)).
 					WillReturnRows(rows)
 			},
-			wantID: 1,
+			wantID: 500,
 		},
 		{
 			nome:       "não encontrado",
 			vendedorID: 2,
 			clienteID:  99,
 			mock: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+				mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 					WithArgs(int64(2), int64(99)).
 					WillReturnError(sql.ErrNoRows)
 			},
@@ -308,7 +307,7 @@ func TestCarteiraGetVinculoAtivo(t *testing.T) {
 			vendedorID: 1,
 			clienteID:  1,
 			mock: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT id, carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+				mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 					WithArgs(int64(1), int64(1)).
 					WillReturnError(sql.ErrConnDone)
 			},
@@ -328,7 +327,7 @@ func TestCarteiraGetVinculoAtivo(t *testing.T) {
 
 			if tt.wantID != 0 {
 				require.NoError(t, err)
-				assert.Equal(t, tt.wantID, c.ID)
+				assert.Equal(t, tt.wantID, c.CarteiraIDOrigem)
 			} else {
 				assert.Nil(t, c)
 				assert.Error(t, err)
@@ -359,8 +358,8 @@ func TestCarteiraCreate_Success(t *testing.T) {
 		DataInicio:       now,
 	}
 
-	mock.ExpectExec(`INSERT INTO carteiras \(carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?, \?\)`).
-		WithArgs(c.CarteiraIDOrigem, c.ClienteID, c.VendedorID, c.DataInicio, c.DataFim).
+	mock.ExpectExec(`INSERT INTO carteiras \(cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?\)`).
+		WithArgs(c.ClienteID, c.VendedorID, c.DataInicio, c.DataFim).
 		WillReturnResult(sqlmock.NewResult(7, 1))
 
 	repo := repositories.NewCarteiraRepository()
@@ -368,7 +367,7 @@ func TestCarteiraCreate_Success(t *testing.T) {
 	err := repo.Create(ctx, db, c)
 
 	require.NoError(t, err)
-	assert.Equal(t, int64(7), c.ID)
+	assert.Equal(t, int64(7), c.CarteiraIDOrigem)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -376,9 +375,9 @@ func TestCarteiraCreate_ExecError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	c := &models.Carteira{CarteiraIDOrigem: 500, ClienteID: 10, VendedorID: 1, DataInicio: time.Now()}
+	c := &models.Carteira{ClienteID: 10, VendedorID: 1, DataInicio: time.Now()}
 
-	mock.ExpectExec(`INSERT INTO carteiras \(carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?, \?\)`).
+	mock.ExpectExec(`INSERT INTO carteiras \(cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?\)`).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewCarteiraRepository()
@@ -393,9 +392,9 @@ func TestCarteiraCreate_LastInsertIdError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	c := &models.Carteira{CarteiraIDOrigem: 500, ClienteID: 10, VendedorID: 1, DataInicio: time.Now()}
+	c := &models.Carteira{ClienteID: 10, VendedorID: 1, DataInicio: time.Now()}
 
-	mock.ExpectExec(`INSERT INTO carteiras \(carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?, \?\)`).
+	mock.ExpectExec(`INSERT INTO carteiras \(cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?\)`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
 	repo := repositories.NewCarteiraRepository()
@@ -416,7 +415,7 @@ func TestCarteiraEncerrarVinculo_Success(t *testing.T) {
 
 	dataFim := time.Now()
 
-	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`).
 		WithArgs(dataFim, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -434,7 +433,7 @@ func TestCarteiraEncerrarVinculo_NotFound(t *testing.T) {
 
 	dataFim := time.Now()
 
-	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`).
 		WithArgs(dataFim, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -450,7 +449,7 @@ func TestCarteiraEncerrarVinculo_ExecError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewCarteiraRepository()
@@ -465,7 +464,7 @@ func TestCarteiraEncerrarVinculo_RowsAffectedError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
 	repo := repositories.NewCarteiraRepository()
@@ -484,7 +483,7 @@ func TestCarteiraDelete_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`DELETE FROM carteiras WHERE id = \?`).
+	mock.ExpectExec(`DELETE FROM carteiras WHERE carteira_id_origem = \?`).
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -500,7 +499,7 @@ func TestCarteiraDelete_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`DELETE FROM carteiras WHERE id = \?`).
+	mock.ExpectExec(`DELETE FROM carteiras WHERE carteira_id_origem = \?`).
 		WithArgs(int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -516,7 +515,7 @@ func TestCarteiraDelete_ExecError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`DELETE FROM carteiras WHERE id = \?`).
+	mock.ExpectExec(`DELETE FROM carteiras WHERE carteira_id_origem = \?`).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewCarteiraRepository()
@@ -531,7 +530,7 @@ func TestCarteiraDelete_RowsAffectedError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`DELETE FROM carteiras WHERE id = \?`).
+	mock.ExpectExec(`DELETE FROM carteiras WHERE carteira_id_origem = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
 	repo := repositories.NewCarteiraRepository()
@@ -542,37 +541,6 @@ func TestCarteiraDelete_RowsAffectedError(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// ---------------------------------------------------------------------------
-// NextCarteiraIDOrigem
-// ---------------------------------------------------------------------------
-
-func TestCarteiraNextCarteiraIDOrigem_Success(t *testing.T) {
-	db, mock := newMock(t)
-	defer db.Close()
-
-	mock.ExpectQuery(`SELECT COALESCE\(MAX\(carteira_id_origem\), 0\) \+ 1 FROM carteiras`).
-		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(501))
-
-	repo := repositories.NewCarteiraRepository()
-	ctx := context.Background()
-	next, err := repo.NextCarteiraIDOrigem(ctx, db)
-
-	require.NoError(t, err)
-	assert.Equal(t, int64(501), next)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestCarteiraNextCarteiraIDOrigem_DBError(t *testing.T) {
-	db, mock := newMock(t)
-	defer db.Close()
-
-	mock.ExpectQuery(`SELECT COALESCE\(MAX\(carteira_id_origem\), 0\) \+ 1 FROM carteiras`).
-		WillReturnError(sql.ErrConnDone)
-
-	repo := repositories.NewCarteiraRepository()
-	ctx := context.Background()
-	_, err := repo.NextCarteiraIDOrigem(ctx, db)
-
-	assert.Error(t, err)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
+// NextCarteiraIDOrigem foi removida: carteira_id_origem agora é a PK
+// AUTO_INCREMENT da tabela carteiras, e o valor é obtido via LastInsertId()
+// no repositório Create (ver TestCarteiraCreate_Success acima).

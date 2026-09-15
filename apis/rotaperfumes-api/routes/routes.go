@@ -28,7 +28,9 @@ import (
 //	GET  /api/vendedores/{id}           — acesso comum — detalhe de um vendedor (com clientes vinculados)
 //	PUT  /api/vendedores/{id}           — acesso comum — atualizar vendedor
 //	DELETE /api/vendedores/{id}         — acesso comum — inativar vendedor (soft-delete via data_desligamento)
+//	POST   /api/vendedores/{id}/reativar — acesso comum — reativar vendedor (limpa data_desligamento)
 //	POST   /api/vendedores/{id}/clientes — acesso comum — vincula cliente à carteira do vendedor (transfere automaticamente se já vinculado a outro vendedor)
+//	GET    /api/vendedores/{id}/clientes — acesso comum — lista clientes vinculados (carteira ativa) ao vendedor
 //	DELETE /api/vendedores/{id}/clientes/{clienteId} — acesso comum — encerra vínculo ativo entre vendedor e cliente
 //	GET  /api/senha-historico           — admin only — todo histórico de senhas (paginado, order_by/order_dir opcionais)
 //	GET  /api/senha-historico/{user_id} — admin only — histórico de um usuário (paginado, order_by/order_dir opcionais)
@@ -54,8 +56,12 @@ import (
 //	POST /api/pagamentos                — acesso comum — cria pagamento
 //	GET  /api/pagamentos/{id}            — acesso comum — detalhe de um pagamento
 //	PUT  /api/pagamentos/{id}            — acesso comum — atualiza pagamento
+//	GET  /api/oportunidades             — admin only — lista oportunidades (paginado, filtros cliente_id/vendedor_id/etapa/origem/data_abertura_de/data_abertura_ate/q, order_by/order_dir opcionais)
+//	POST /api/oportunidades             — admin only — cria oportunidade
+//	GET  /api/oportunidades/{id}        — admin only — detalhe de uma oportunidade
+//	PUT  /api/oportunidades/{id}        — admin only — atualiza oportunidade
 //	GET  /health                        — público
-func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler) http.Handler {
+func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler, oportunidadeH *handlers.OportunidadeHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Login: middleware "não-protegido" (não exige token). Mas usamos um middleware
@@ -140,6 +146,10 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	deleteVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.DeleteVendedor))
 	mux.Handle("DELETE /api/vendedores/{id}", deleteVendedorChain)
 
+	// Reativa vendedor (limpa data_desligamento): acesso comum.
+	reativarVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.ReativarVendedor))
+	mux.Handle("POST /api/vendedores/{id}/reativar", reativarVendedorChain)
+
 	// Vincula cliente à carteira do vendedor (transfere automaticamente se já
 	// vinculado a outro vendedor): acesso comum.
 	vincularClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.VincularCliente))
@@ -148,6 +158,11 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Desvincula cliente da carteira do vendedor (encerra vínculo ativo): acesso comum.
 	desvincularClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.DesvincularCliente))
 	mux.Handle("DELETE /api/vendedores/{id}/clientes/{clienteId}", desvincularClienteChain)
+
+	// Lista clientes vinculados (carteira ativa) a um vendedor: acesso comum
+	// (usado pelo dropdown em cascata do frontend em Oportunidades).
+	listClientesDoVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.ListClientesDoVendedor))
+	mux.Handle("GET /api/vendedores/{id}/clientes", listClientesDoVendedorChain)
 
 	// Dashboard clientes (métricas da base de clientes): acesso comum.
 	dashboardClientesChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetClientes))
@@ -225,6 +240,22 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Atualiza pagamento: acesso comum.
 	updatePagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.UpdatePagamento))
 	mux.Handle("PUT /api/pagamentos/{id}", updatePagamentoChain)
+
+	// Lista de oportunidades: admin only.
+	listOportunidadesChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(oportunidadeH.ListOportunidades))
+	mux.Handle("GET /api/oportunidades", listOportunidadesChain)
+
+	// Cria oportunidade: admin only.
+	createOportunidadeChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(oportunidadeH.CreateOportunidade))
+	mux.Handle("POST /api/oportunidades", createOportunidadeChain)
+
+	// Detalhe de oportunidade: admin only.
+	getOportunidadeChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(oportunidadeH.GetOportunidade))
+	mux.Handle("GET /api/oportunidades/{id}", getOportunidadeChain)
+
+	// Atualiza oportunidade: admin only.
+	updateOportunidadeChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(oportunidadeH.UpdateOportunidade))
+	mux.Handle("PUT /api/oportunidades/{id}", updateOportunidadeChain)
 
 	// Healthcheck.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

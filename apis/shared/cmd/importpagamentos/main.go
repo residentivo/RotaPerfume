@@ -281,8 +281,13 @@ func isValidStatusPagamento(v string) bool {
 // Lookup (pré-carregado em memória, mesmo padrão de importpedidos).
 // ---------------------------------------------------------------
 
+// loadPedidoIDsByOrigem pré-carrega o conjunto de pedido_id_origem
+// existentes em `pedidos`, usado para validar o pedido_id do CSV. Como
+// pedido_id_origem agora É a PK da tabela (ver sql/04_ddl_pedidos.sql), o
+// valor usado como FK em pagamentos.pedido_id é o próprio pedido_id_origem
+// — o mapa serve apenas para checar existência (identidade origem -> origem).
 func loadPedidoIDsByOrigem(db *sql.DB) (map[int64]int64, error) {
-	rows, err := db.Query("SELECT id, pedido_id_origem FROM pedidos")
+	rows, err := db.Query("SELECT pedido_id_origem FROM pedidos")
 	if err != nil {
 		return nil, err
 	}
@@ -290,11 +295,11 @@ func loadPedidoIDsByOrigem(db *sql.DB) (map[int64]int64, error) {
 
 	m := make(map[int64]int64)
 	for rows.Next() {
-		var id, origem int64
-		if err := rows.Scan(&id, &origem); err != nil {
+		var origem int64
+		if err := rows.Scan(&origem); err != nil {
 			return nil, err
 		}
-		m[origem] = id
+		m[origem] = origem
 	}
 	return m, rows.Err()
 }

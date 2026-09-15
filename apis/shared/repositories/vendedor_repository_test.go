@@ -22,11 +22,11 @@ func TestVendedorList_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	rows := sqlmock.NewRows([]string{"id", "nome", "regiao", "uf"}).
-		AddRow(1, "Vendedor A", "Sudeste", "SP").
-		AddRow(2, "Vendedor B", "Sul", "RS")
+	rows := sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
+		AddRow(1, "Vendedor A", "Sudeste", "SP", nil).
+		AddRow(2, "Vendedor B", "Sul", "RS", nil)
 
-	mock.ExpectQuery(`SELECT .+ FROM vendedores WHERE data_desligamento IS NULL ORDER BY nome ASC`).
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
 	repo := repositories.NewVendedorRepository()
@@ -39,12 +39,49 @@ func TestVendedorList_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestVendedorList_AtivosEInativos cobre o comportamento central da correção
+// do bug de vínculo "sumido": List não deve mais filtrar por
+// data_desligamento IS NULL — vendedores ativos e inativos devem vir juntos,
+// e DataDesligamento deve vir populado (não-nil) para os inativos e nil para
+// os ativos, permitindo ao chamador marcá-los (ex: "[inativo]").
+func TestVendedorList_AtivosEInativos(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	desligadoEm := time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC)
+
+	rows := sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
+		AddRow(1, "Vendedor Ativo", "Sudeste", "SP", nil).
+		AddRow(2, "Vendedor Inativo", "Sul", "RS", desligadoEm)
+
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
+		WillReturnRows(rows)
+
+	repo := repositories.NewVendedorRepository()
+	ctx := context.Background()
+	vendedores, err := repo.List(ctx, db)
+
+	require.NoError(t, err)
+	require.Len(t, vendedores, 2)
+
+	ativo := vendedores[0]
+	assert.Equal(t, "Vendedor Ativo", ativo.Nome)
+	assert.Nil(t, ativo.DataDesligamento)
+
+	inativo := vendedores[1]
+	assert.Equal(t, "Vendedor Inativo", inativo.Nome)
+	require.NotNil(t, inativo.DataDesligamento)
+	assert.True(t, desligadoEm.Equal(*inativo.DataDesligamento))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestVendedorList_Vazio(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT .+ FROM vendedores WHERE data_desligamento IS NULL ORDER BY nome ASC`).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf"}))
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}))
 
 	repo := repositories.NewVendedorRepository()
 	ctx := context.Background()
@@ -59,7 +96,7 @@ func TestVendedorList_QueryError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT .+ FROM vendedores WHERE data_desligamento IS NULL ORDER BY nome ASC`).
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewVendedorRepository()
@@ -78,7 +115,7 @@ func TestVendedorList_ScanError(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"id", "nome", "regiao"}).
 		AddRow(1, "Vendedor A", "Sudeste")
 
-	mock.ExpectQuery(`SELECT .+ FROM vendedores WHERE data_desligamento IS NULL ORDER BY nome ASC`).
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
 	repo := repositories.NewVendedorRepository()
@@ -93,11 +130,11 @@ func TestVendedorList_IterError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	rows := sqlmock.NewRows([]string{"id", "nome", "regiao", "uf"}).
-		AddRow(1, "Vendedor A", "Sudeste", "SP").
+	rows := sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
+		AddRow(1, "Vendedor A", "Sudeste", "SP", nil).
 		RowError(0, sql.ErrConnDone)
 
-	mock.ExpectQuery(`SELECT .+ FROM vendedores WHERE data_desligamento IS NULL ORDER BY nome ASC`).
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
 	repo := repositories.NewVendedorRepository()

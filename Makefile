@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -43,6 +43,8 @@ db-up: db-create ## Cria o schema (tabelas vazias)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/12_ddl_pagamentos.sql
 	@echo "=== Aplicando DDL de carteiras (depende de clientes + vendedores) ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/14_ddl_carteiras.sql
+	@echo "=== Aplicando DDL de oportunidades (depende de clientes + vendedores) ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/15_ddl_oportunidades.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
@@ -83,6 +85,11 @@ db-import-pagamentos: ## Importa dados/erp/pagamentos.csv para a tabela pagament
 
 db-import-carteiras: ## Importa dados/crm/carteira.csv para a tabela carteiras (upsert idempotente, depende de clientes e vendedores já importados)
 	cd apis/shared && go run ./cmd/importcarteiras
+
+db-import-oportunidades: ## Importa dados/crm/oportunidades.csv para a tabela oportunidades (upsert idempotente, depende de clientes e vendedores já importados)
+	cd apis/shared && go run ./cmd/importoportunidades
+
+db-rebuild: db-down db-seed db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades ## Recria o banco do zero e importa todos os dados
 
 # =============================================================================
 # Build
