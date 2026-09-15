@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -41,6 +41,8 @@ db-up: db-create ## Cria o schema (tabelas vazias)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/11_ddl_itens_pedido.sql
 	@echo "=== Aplicando DDL de pagamentos (depende de pedidos) ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/12_ddl_pagamentos.sql
+	@echo "=== Aplicando DDL de carteiras (depende de clientes + vendedores) ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/14_ddl_carteiras.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
@@ -78,6 +80,9 @@ db-import-pedidos: ## Importa dados/erp/pedidos.csv e itens_pedido.csv (upsert i
 
 db-import-pagamentos: ## Importa dados/erp/pagamentos.csv para a tabela pagamentos (upsert idempotente, depende de pedidos já importados)
 	cd apis/shared && go run ./cmd/importpagamentos
+
+db-import-carteiras: ## Importa dados/crm/carteira.csv para a tabela carteiras (upsert idempotente, depende de clientes e vendedores já importados)
+	cd apis/shared && go run ./cmd/importcarteiras
 
 # =============================================================================
 # Build

@@ -59,6 +59,16 @@ const adminNav: NavItem[] = [
     ),
   },
   {
+    label: "Vendedores",
+    href: "/admin/vendedores",
+    icon: (
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-16.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+      </svg>
+    ),
+  },
+  {
     label: "Auditoria de Senha",
     href: "/admin/senha-historico",
     icon: (

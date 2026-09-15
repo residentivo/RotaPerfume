@@ -203,6 +203,57 @@ func TestClienteList_IterError(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestClienteExistsByID(t *testing.T) {
+	testes := []struct {
+		nome     string
+		id       int64
+		mockErr  error
+		expected bool
+	}{
+		{nome: "cliente existe", id: 1, expected: true},
+		{nome: "cliente nao existe", id: 999, mockErr: sql.ErrNoRows, expected: false},
+	}
+
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+
+			q := mock.ExpectQuery(`SELECT 1 FROM clientes WHERE id = \? LIMIT 1`).WithArgs(tt.id)
+			if tt.mockErr != nil {
+				q.WillReturnError(tt.mockErr)
+			} else {
+				q.WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+			}
+
+			repo := repositories.NewClienteRepository()
+			ctx := context.Background()
+			exists, err := repo.ExistsByID(ctx, db, tt.id)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, exists)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestClienteExistsByID_DBError(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrConnDone)
+
+	repo := repositories.NewClienteRepository()
+	ctx := context.Background()
+	exists, err := repo.ExistsByID(ctx, db, 1)
+
+	assert.False(t, exists)
+	assert.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestClienteGetByID_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()

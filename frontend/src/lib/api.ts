@@ -11,6 +11,10 @@ import {
   SenhaHistoricoResponse,
   TipoReset,
   Vendedor,
+  VendedorCompleto,
+  VendedorDetalhe,
+  VendedorInput,
+  ClienteResumo,
   Cliente,
   ClienteInput,
   ClienteDashboardMetrics,
@@ -399,6 +403,73 @@ export async function apiListVendedores(): Promise<Vendedor[]> {
   return fetchWithAuth<Vendedor[]>("/api/vendedores", {
     method: "GET",
   });
+}
+
+// GET /api/vendedores/{id} — detalhe de um vendedor + clientes vinculados
+// (carteira ativa). Envelope padrao {success, data, error}.
+export async function apiGetVendedor(id: number): Promise<VendedorDetalhe> {
+  return fetchWithAuth<VendedorDetalhe>(`/api/vendedores/${id}`, {
+    method: "GET",
+  });
+}
+
+// POST /api/vendedores — cria novo vendedor. data_admissao e opcional
+// (default hoje no backend).
+export async function apiCreateVendedor(
+  input: VendedorInput
+): Promise<VendedorCompleto> {
+  return fetchWithAuth<VendedorCompleto>("/api/vendedores", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// PUT /api/vendedores/{id} — atualiza dados cadastrais do vendedor.
+// data_desligamento nao e editavel por esta rota (use apiDeleteVendedor).
+export async function apiUpdateVendedor(
+  id: number,
+  input: VendedorInput
+): Promise<VendedorCompleto> {
+  return fetchWithAuth<VendedorCompleto>(`/api/vendedores/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+// DELETE /api/vendedores/{id} — inativa o vendedor (soft-delete via
+// data_desligamento = hoje), preservando o historico de carteiras/pedidos.
+export async function apiDeleteVendedor(id: number): Promise<VendedorCompleto> {
+  return fetchWithAuth<VendedorCompleto>(`/api/vendedores/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// POST /api/vendedores/{id}/clientes — vincula um cliente a carteira ativa
+// do vendedor. Se o cliente ja tiver vendedor ativo, a API transfere a
+// carteira automaticamente (encerrando o vinculo anterior). Retorna 201 com
+// o ClienteResumo do cliente vinculado.
+export async function apiVincularCliente(
+  vendedorId: number,
+  clienteId: number
+): Promise<ClienteResumo> {
+  return fetchWithAuth<ClienteResumo>(`/api/vendedores/${vendedorId}/clientes`, {
+    method: "POST",
+    body: JSON.stringify({ cliente_id: clienteId }),
+  });
+}
+
+// DELETE /api/vendedores/{id}/clientes/{clienteId} — encerra o vinculo ativo
+// entre aquele cliente e aquele vendedor especificamente.
+export async function apiDesvincularCliente(
+  vendedorId: number,
+  clienteId: number
+): Promise<void> {
+  await fetchWithAuth<null>(
+    `/api/vendedores/${vendedorId}/clientes/${clienteId}`,
+    {
+      method: "DELETE",
+    }
+  );
 }
 
 // === Clientes ===

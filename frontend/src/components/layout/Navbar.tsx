@@ -73,6 +73,14 @@ export function Navbar() {
               Pedidos
             </Link>
           )}
+          {user && (
+            <Link
+              href="/admin/vendedores"
+              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
+            >
+              Vendedores
+            </Link>
+          )}
           {user?.role === "admin" && (
             <Link
               href="/admin/usuarios"

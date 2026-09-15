@@ -42,6 +42,58 @@ export interface Vendedor {
   uf: string;
 }
 
+// === Vendedores (CRUD completo) ===
+//
+// Vendedor acima e o formato resumido de GET /api/vendedores (lista simples,
+// usada em selects). VendedorCompleto e o formato retornado no
+// header de GET/POST/PUT/DELETE /api/vendedores/{id} (models.Vendedor no
+// backend, ver apis/shared/models/vendedor.go).
+
+export interface VendedorCompleto {
+  id: number;
+  nome: string;
+  regiao: string;
+  uf: string;
+  data_admissao: string; // formato AAAA-MM-DD (ou ISO datetime)
+  data_desligamento: string | null; // null = vendedor ativo
+  meta_mensal: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Cliente vinculado a um vendedor via carteira ativa (ver
+// repositories.ClienteResumo no backend). Retornado dentro de
+// VendedorDetalhe.clientes.
+export interface ClienteResumo {
+  id: number;
+  cnpj: string;
+  razao_social: string;
+  segmento: string;
+  cidade: string;
+  uf: string;
+  carteira_id: number;
+  data_inicio: string;
+  data_fim: string | null;
+}
+
+// Vendedor com a lista de clientes vinculados (carteira ativa), retornado
+// por GET /api/vendedores/{id} (services.VendedorDetalhe no backend).
+export interface VendedorDetalhe extends VendedorCompleto {
+  clientes: ClienteResumo[];
+}
+
+// Payload usado tanto para POST /api/vendedores (criar) quanto para
+// PUT /api/vendedores/{id} (editar). data_admissao e opcional apenas na
+// criacao (default hoje no backend); data_desligamento nao e editavel por
+// esta rota (ver apiDeleteVendedor / soft-delete).
+export interface VendedorInput {
+  nome: string;
+  regiao: string;
+  uf: string;
+  data_admissao?: string; // formato AAAA-MM-DD
+  meta_mensal: number;
+}
+
 export interface LoginRequest {
   email: string;
   password: string;

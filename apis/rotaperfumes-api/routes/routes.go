@@ -24,6 +24,12 @@ import (
 //	PATCH /api/usuarios/{id}/inativar   — admin only — ativar/inativar
 //	POST /api/admin/reset-password      — admin only — resetar senha de outro usuário
 //	GET  /api/vendedores                — acesso comum — lista vendedores ativos (sem paginação)
+//	POST /api/vendedores                — acesso comum — criar vendedor
+//	GET  /api/vendedores/{id}           — acesso comum — detalhe de um vendedor (com clientes vinculados)
+//	PUT  /api/vendedores/{id}           — acesso comum — atualizar vendedor
+//	DELETE /api/vendedores/{id}         — acesso comum — inativar vendedor (soft-delete via data_desligamento)
+//	POST   /api/vendedores/{id}/clientes — acesso comum — vincula cliente à carteira do vendedor (transfere automaticamente se já vinculado a outro vendedor)
+//	DELETE /api/vendedores/{id}/clientes/{clienteId} — acesso comum — encerra vínculo ativo entre vendedor e cliente
 //	GET  /api/senha-historico           — admin only — todo histórico de senhas (paginado, order_by/order_dir opcionais)
 //	GET  /api/senha-historico/{user_id} — admin only — histórico de um usuário (paginado, order_by/order_dir opcionais)
 //	GET  /api/dashboard/metrics         — acesso comum — métricas gerais (vendas, pedidos, ticket medio)
@@ -117,6 +123,31 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Lista de vendedores (para popular selects): acesso comum.
 	listVendedoresChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.ListVendedores))
 	mux.Handle("GET /api/vendedores", listVendedoresChain)
+
+	// Cria vendedor: acesso comum.
+	createVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.CreateVendedor))
+	mux.Handle("POST /api/vendedores", createVendedorChain)
+
+	// Detalhe de vendedor (com clientes vinculados): acesso comum.
+	getVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.GetVendedor))
+	mux.Handle("GET /api/vendedores/{id}", getVendedorChain)
+
+	// Atualiza vendedor: acesso comum.
+	updateVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.UpdateVendedor))
+	mux.Handle("PUT /api/vendedores/{id}", updateVendedorChain)
+
+	// Inativa vendedor (soft-delete via data_desligamento): acesso comum.
+	deleteVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.DeleteVendedor))
+	mux.Handle("DELETE /api/vendedores/{id}", deleteVendedorChain)
+
+	// Vincula cliente à carteira do vendedor (transfere automaticamente se já
+	// vinculado a outro vendedor): acesso comum.
+	vincularClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.VincularCliente))
+	mux.Handle("POST /api/vendedores/{id}/clientes", vincularClienteChain)
+
+	// Desvincula cliente da carteira do vendedor (encerra vínculo ativo): acesso comum.
+	desvincularClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.DesvincularCliente))
+	mux.Handle("DELETE /api/vendedores/{id}/clientes/{clienteId}", desvincularClienteChain)
 
 	// Dashboard clientes (métricas da base de clientes): acesso comum.
 	dashboardClientesChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetClientes))

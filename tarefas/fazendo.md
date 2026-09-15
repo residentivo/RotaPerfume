@@ -1,3 +1,3 @@
 # Em Execução 🚧
 
-Nenhuma tarefa em execução.
+_Nenhuma tarefa em execução no momento._

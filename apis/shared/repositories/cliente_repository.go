@@ -5,6 +5,7 @@ package repositories
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -128,6 +129,20 @@ func (r *ClienteRepository) List(ctx context.Context, db *sql.DB, page, limit in
 		return nil, 0, fmt.Errorf("repositories: list clientes iteração: %w", err)
 	}
 	return out, total, nil
+}
+
+// ExistsByID verifica se existe um cliente com o id informado (ativo ou não).
+func (r *ClienteRepository) ExistsByID(ctx context.Context, db *sql.DB, id int64) (bool, error) {
+	const q = `SELECT 1 FROM clientes WHERE id = ? LIMIT 1`
+	var one int
+	err := db.QueryRowContext(ctx, q, id).Scan(&one)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("repositories: exists cliente: %w", err)
+	}
+	return true, nil
 }
 
 // GetByID busca um cliente pelo ID. Retorna ErrNotFound se não existir.
