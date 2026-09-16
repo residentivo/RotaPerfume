@@ -459,3 +459,60 @@ export interface ListOportunidadesResponse {
   total: number;
   pages: number;
 }
+
+// === Visitas (CRM) ===
+//
+// Tela admin-only — ver apis/rotaperfumes-api/handlers/visita_handler.go
+// (rota /api/visitas). Mesmo padrao de Oportunidades, porem data_visita e
+// sempre obrigatoria (sem default no backend).
+
+// Valores observados no dataset de origem (ver sql/16_ddl_visitas.sql).
+// Coluna e VARCHAR(40) livre no backend, entao novos valores nao quebram a
+// tela — apenas nao aparecerao pre-listados nos selects de filtro/form.
+export type VisitaResultado =
+  | "Sem pedido"
+  | "Pedido realizado"
+  | "Reagendada"
+  | "Cliente ausente"
+  | "Apenas relacionamento";
+
+// Visita, como retornada por GET /api/visitas e GET /api/visitas/{id}.
+export interface Visita {
+  visita_id: number;
+  cliente_id: number;
+  vendedor_id: number;
+  data_visita: string; // formato AAAA-MM-DD
+  resultado: string;
+  duracao_min: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Payload usado tanto para POST /api/visitas (criar) quanto para
+// PUT /api/visitas/{id} (editar). Diferente de OportunidadeInput,
+// data_visita e sempre obrigatoria (backend nao aplica default).
+export interface VisitaInput {
+  cliente_id: number;
+  vendedor_id: number;
+  data_visita: string; // formato AAAA-MM-DD
+  resultado: string;
+  duracao_min: number;
+}
+
+// Filtros aceitos por GET /api/visitas.
+export interface ListVisitasFilters {
+  cliente_id?: number;
+  vendedor_id?: number;
+  resultado?: string;
+  data_visita_de?: string; // formato AAAA-MM-DD
+  data_visita_ate?: string; // formato AAAA-MM-DD
+  q?: string;
+}
+
+export interface ListVisitasResponse {
+  data: Visita[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}

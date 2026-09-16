@@ -306,6 +306,32 @@ Exemplos:
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Descrição:** Lista os clientes vinculados (carteira ativa, `data_fim IS NULL`) a um vendedor. Usado pelo dropdown em cascata da tela de Oportunidades (ao escolher o vendedor, filtra os clientes possíveis no segundo dropdown). `404` se o vendedor não existir.
 
+### Visitas (`/api/visitas/*`) — admin only
+
+> Registro de visitas de vendedores a clientes (CRM), importado de `dados/crm/visitas.csv` (colunas: `visita_id, cliente_id, vendedor_id, data_visita, resultado, duracao_min`). Tela com os mesmos dois dropdowns em cascata (Vendedor → Cliente) usados em Oportunidades — reaproveita o endpoint compartilhado `GET /api/vendedores/{id}/clientes` (acesso comum, documentado acima na seção de Oportunidades) para alimentar o segundo dropdown. Filtros de coluna na listagem. Requests desses endpoints estão agrupadas na pasta **"Visitas"** da collection. Não existe endpoint de `DELETE` nem exclusão lógica.
+>
+> **Diferente de Oportunidades:** `data_visita` é **obrigatório e sem default** — no `POST`/`PUT` de Oportunidades, `data_abertura` vazio assume a data de hoje; em Visitas, `data_visita` vazio/ausente retorna `400` (`"data_visita inválida (use o formato AAAA-MM-DD)"`).
+
+#### GET /api/visitas
+- **Auth:** Bearer Token (admin)
+- **Query (todos opcionais):** `?page=1&limit=20&cliente_id=1&vendedor_id=1&resultado=Pedido fechado&data_visita_de=2026-01-01&data_visita_ate=2026-12-31&q=fechado&order_by=data_visita&order_dir=desc`
+- **Descrição:** Lista visitas paginada (total + pages), com filtros exatos por `cliente_id`, `vendedor_id`, `resultado`, intervalo `data_visita_de`/`data_visita_ate` (`AAAA-MM-DD`) e busca livre (`q`) em `resultado`.
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, visita_id, data_visita, duracao_min, resultado, created_at, updated_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
+
+#### POST /api/visitas
+- **Auth:** Bearer Token (admin)
+- **Body:** `{ "cliente_id", "vendedor_id", "data_visita" ("AAAA-MM-DD", obrigatório, sem default), "resultado", "duracao_min" }`
+- **Descrição:** Cria uma nova visita. `cliente_id` deve existir em `clientes`; `vendedor_id` deve existir em `vendedores`. `resultado` obrigatório (não vazio); `duracao_min` deve ser `>= 0`. `visita_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com a visita criada; `400` em caso de validação.
+
+#### GET /api/visitas/{id}
+- **Auth:** Bearer Token (admin)
+- **Descrição:** Retorna o detalhe de uma visita pelo `visita_id`.
+
+#### PUT /api/visitas/{id}
+- **Auth:** Bearer Token (admin)
+- **Body:** mesmo formato do `POST /api/visitas` (`data_visita` obrigatório também na edição, sem default)
+- **Descrição:** Atualiza os dados de uma visita existente. Retorna `200` com a visita atualizada, `404` se não existir, `400` se o payload for inválido.
+
 ## Testes automatizados (Postman)
 
 A collection inclui scripts de teste em JavaScript em cada request. Os testes verificam:
@@ -501,6 +527,23 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Usuário NORMAL consegue acessar (não é 403)` — **valida explicitamente que o acesso é comum, não admin only**
 - `Lista de clientes retornada`
 
+### Listar Visitas
+- `Status 200`
+- `Lista retornada`
+- `Paginação presente`
+
+### Detalhe da Visita
+- `Status 200`
+- `Dados da visita presentes` (`visita_id`, `cliente_id`, `vendedor_id`, `resultado`)
+
+### Criar Visita
+- `Status 201 Created`
+- `Visita criada com dados corretos` (`visita_id`, `cliente_id`, `vendedor_id`, `resultado`)
+
+### Editar Visita
+- `Status 200 OK`
+- `Visita atualizada com dados corretos` (`visita_id`, `resultado`)
+
 ## Resumo de testes por endpoint
 
 | Request | # Testes | Salva variáveis |
@@ -546,6 +589,10 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Criar Oportunidade | 1 | — |
 | Editar Oportunidade | 1 | — |
 | Listar Clientes do Vendedor | 2 | — |
+| Listar Visitas | 2 | — |
+| Detalhe da Visita | 1 | — |
+| Criar Visita | 1 | — |
+| Editar Visita | 1 | — |
 
 ## Códigos de erro comuns
 
@@ -624,6 +671,16 @@ make db-up && make db-import-oportunidades
 ```
 
 O importador (`apis/shared/cmd/importoportunidades`) é idempotente (upsert por `oportunidade_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto oportunidades criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam.
+
+### Visitas (CRM)
+
+`make db-up`/`make db-reset` criam a tabela `visitas` (via `sql/16_ddl_visitas.sql`, FKs `cliente_id → clientes.cliente_id_origem` e `vendedor_id → vendedores.id`), mas **não** carregam os dados nela. Para popular a tabela `visitas` a partir de `dados/crm/visitas.csv` (37936 registros; colunas `visita_id, cliente_id, vendedor_id, data_visita, resultado, duracao_min`), rode adicionalmente:
+
+```bash
+make db-up && make db-import-visitas
+```
+
+O importador (`apis/shared/cmd/importvisitas`) é idempotente (upsert por `visita_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Já foi executado com sucesso contra o banco local (37936 linhas importadas, 0 erros; segunda execução confirmou idempotência: 0 inseridos, 37936 atualizados). Sem esse passo, os endpoints `GET/POST /api/visitas` e `GET/PUT /api/visitas/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto visitas criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam.
 
 Depois, em outro terminal:
 

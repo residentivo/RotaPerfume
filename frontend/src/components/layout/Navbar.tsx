@@ -83,6 +83,14 @@ export function Navbar() {
           )}
           {user?.role === "admin" && (
             <Link
+              href="/admin/visitas"
+              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
+            >
+              Visitas
+            </Link>
+          )}
+          {user?.role === "admin" && (
+            <Link
               href="/admin/usuarios"
               className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
             >

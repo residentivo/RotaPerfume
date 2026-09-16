@@ -5419,6 +5419,447 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Visitas",
+      "item": [
+        {
+          "name": "Listar Visitas (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Lista retornada', function() {",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "pm.test('Paginação presente', function() {",
+                  "    pm.expect(jsonData).to.have.property('pagination');",
+                  "    pm.expect(jsonData.pagination).to.have.property('page');",
+                  "    pm.expect(jsonData.pagination).to.have.property('limit');",
+                  "    pm.expect(jsonData.pagination).to.have.property('total');",
+                  "    pm.expect(jsonData.pagination).to.have.property('pages');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/visitas?page=1&limit=20&cliente_id=1&vendedor_id=1&resultado=Pedido fechado&data_visita_de=2026-01-01&data_visita_ate=2026-12-31&q=fechado",
+              "host": ["{{base_url}}"],
+              "path": ["api", "visitas"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número da página (padrão: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Itens por página (padrão: 20, máx: 100)"
+                },
+                {
+                  "key": "cliente_id",
+                  "value": "1",
+                  "description": "Filtro exato pelo cliente_id_origem — opcional"
+                },
+                {
+                  "key": "vendedor_id",
+                  "value": "1",
+                  "description": "Filtro exato pelo id do vendedor — opcional"
+                },
+                {
+                  "key": "resultado",
+                  "value": "Pedido fechado",
+                  "description": "Filtro exato pelo resultado da visita — opcional"
+                },
+                {
+                  "key": "data_visita_de",
+                  "value": "2026-01-01",
+                  "description": "Data mínima da visita, formato AAAA-MM-DD — opcional"
+                },
+                {
+                  "key": "data_visita_ate",
+                  "value": "2026-12-31",
+                  "description": "Data máxima da visita, formato AAAA-MM-DD — opcional"
+                },
+                {
+                  "key": "q",
+                  "value": "fechado",
+                  "description": "Busca livre em resultado — opcional"
+                },
+                {
+                  "key": "order_by",
+                  "value": "data_visita",
+                  "disabled": true,
+                  "description": "Coluna de ordenação (opcional). Aceitos: id, visita_id, data_visita, duracao_min, resultado, created_at, updated_at. Default: id."
+                },
+                {
+                  "key": "order_dir",
+                  "value": "desc",
+                  "disabled": true,
+                  "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: asc."
+                }
+              ]
+            },
+            "description": "Lista visitas com paginação e filtros.\n\n**Acesso admin only.**\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `cliente_id` (int64) — filtro exato\n- `vendedor_id` (int64) — filtro exato\n- `resultado` (string) — filtro exato\n- `data_visita_de` / `data_visita_ate` (`AAAA-MM-DD`) — intervalo de `data_visita`\n- `q` (string) — busca livre em `resultado`\n- `order_by`: id, visita_id, data_visita, duracao_min, resultado, created_at, updated_at. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"visita_id\": 1,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_visita\": \"2026-01-10T00:00:00Z\",\n      \"resultado\": \"Pedido fechado\",\n      \"duracao_min\": 45,\n      \"created_at\": \"2026-09-15T00:00:00Z\",\n      \"updated_at\": \"2026-09-15T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1,\n    \"pages\": 1\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — acesso restrito a administradores"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/visitas?page=1&limit=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"visita_id\": 1,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_visita\": \"2026-01-10T00:00:00Z\",\n      \"resultado\": \"Pedido fechado\",\n      \"duracao_min\": 45,\n      \"created_at\": \"2026-09-15T00:00:00Z\",\n      \"updated_at\": \"2026-09-15T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1,\n    \"pages\": 1\n  }\n}"
+            },
+            {
+              "name": "403 Forbidden — usuário normal",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/visitas",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Detalhe da Visita (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Dados da visita presentes', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('visita_id');",
+                  "    pm.expect(jsonData.data).to.have.property('cliente_id');",
+                  "    pm.expect(jsonData.data).to.have.property('vendedor_id');",
+                  "    pm.expect(jsonData.data).to.have.property('resultado');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/visitas/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "visitas", "1"]
+            },
+            "description": "Retorna o detalhe de uma visita pelo `visita_id`.\n\n**Acesso admin only.**\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — `visita_id`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"visita_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10T00:00:00Z\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 45,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — acesso restrito a administradores\n- `404` — visita não encontrada"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/visitas/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"visita_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10T00:00:00Z\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 45,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Visita inexistente",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/visitas/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"visita não encontrada\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Criar Visita (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Visita criada com dados corretos', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('visita_id');",
+                  "    pm.expect(jsonData.data.cliente_id).to.eql(1);",
+                  "    pm.expect(jsonData.data.vendedor_id).to.eql(1);",
+                  "    pm.expect(jsonData.data.resultado).to.eql('Agendamento de retorno');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-09-15\",\n    \"resultado\": \"Agendamento de retorno\",\n    \"duracao_min\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/visitas",
+              "host": ["{{base_url}}"],
+              "path": ["api", "visitas"]
+            },
+            "description": "Cria uma nova visita.\n\n**Acesso admin only.**\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cliente_id\": 1,\n  \"vendedor_id\": 1,\n  \"data_visita\": \"2026-09-15\",\n  \"resultado\": \"Agendamento de retorno\",\n  \"duracao_min\": 30\n}\n```\n- `cliente_id` obrigatório — deve existir em `clientes`.\n- `vendedor_id` obrigatório — deve existir em `vendedores`.\n- `data_visita` **obrigatório** (`AAAA-MM-DD`) — **diferente de Oportunidades, não há default para hoje**: se vazio/ausente, retorna `400`.\n- `resultado` obrigatório (não vazio).\n- `duracao_min` deve ser >= 0.\n- `visita_id` é gerado automaticamente (AUTO_INCREMENT).\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"visita_id\": 2,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-09-15T00:00:00Z\",\n    \"resultado\": \"Agendamento de retorno\",\n    \"duracao_min\": 30,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `cliente_id`/`vendedor_id` ausente ou inexistente, `data_visita` ausente/inválida, `resultado` vazio, `duracao_min` negativo\n- `401` — não autenticado\n- `403` — acesso restrito a administradores"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-09-15\",\n    \"resultado\": \"Agendamento de retorno\",\n    \"duracao_min\": 30\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/visitas",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"visita_id\": 2,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-09-15T00:00:00Z\",\n    \"resultado\": \"Agendamento de retorno\",\n    \"duracao_min\": 30,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — data_visita ausente",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"resultado\": \"Agendamento de retorno\",\n    \"duracao_min\": 30\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/visitas",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas"]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"data_visita inválida (use o formato AAAA-MM-DD)\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Editar Visita (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Visita atualizada com dados corretos', function() {",
+                  "    pm.expect(jsonData.data.visita_id).to.eql(1);",
+                  "    pm.expect(jsonData.data.resultado).to.eql('Pedido fechado');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 60\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/visitas/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "visitas", "1"]
+            },
+            "description": "Atualiza os dados de uma visita existente.\n\n**Acesso admin only.**\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — `visita_id`\n\n**Body:** mesmo formato do `POST /api/visitas` (`data_visita` obrigatório, sem default, também na edição).\n\n**Resposta de sucesso (200):** visita atualizada (mesmo formato de `GET /api/visitas/{id}`).\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, `cliente_id`/`vendedor_id` ausente ou inexistente, `data_visita` ausente/inválida, `resultado` vazio, `duracao_min` negativo\n- `401` — não autenticado\n- `403` — acesso restrito a administradores\n- `404` — visita não encontrada"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 60\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/visitas/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"visita_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10T00:00:00Z\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 60,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Visita inexistente",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 60\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/visitas/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"visita não encontrada\"\n}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

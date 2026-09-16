@@ -61,7 +61,8 @@ func main() {
 	pedidoHandler := handlers.NewPedidoHandler(conn, cfg)
 	pagamentoHandler := handlers.NewPagamentoHandler(conn, cfg)
 	oportunidadeHandler := handlers.NewOportunidadeHandler(conn, cfg)
-	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler)
+	visitaHandler := handlers.NewVisitaHandler(conn, cfg)
+	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler, visitaHandler)
 
 	srv := &http.Server{
 		Addr:         ":8080",

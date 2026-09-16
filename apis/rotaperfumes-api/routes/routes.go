@@ -60,8 +60,12 @@ import (
 //	POST /api/oportunidades             — admin only — cria oportunidade
 //	GET  /api/oportunidades/{id}        — admin only — detalhe de uma oportunidade
 //	PUT  /api/oportunidades/{id}        — admin only — atualiza oportunidade
+//	GET  /api/visitas                   — admin only — lista visitas (paginado, filtros cliente_id/vendedor_id/resultado/data_visita_de/data_visita_ate/q, order_by/order_dir opcionais)
+//	POST /api/visitas                   — admin only — cria visita
+//	GET  /api/visitas/{id}               — admin only — detalhe de uma visita
+//	PUT  /api/visitas/{id}               — admin only — atualiza visita
 //	GET  /health                        — público
-func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler, oportunidadeH *handlers.OportunidadeHandler) http.Handler {
+func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler, oportunidadeH *handlers.OportunidadeHandler, visitaH *handlers.VisitaHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Login: middleware "não-protegido" (não exige token). Mas usamos um middleware
@@ -256,6 +260,22 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Atualiza oportunidade: admin only.
 	updateOportunidadeChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(oportunidadeH.UpdateOportunidade))
 	mux.Handle("PUT /api/oportunidades/{id}", updateOportunidadeChain)
+
+	// Lista de visitas: admin only.
+	listVisitasChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(visitaH.ListVisitas))
+	mux.Handle("GET /api/visitas", listVisitasChain)
+
+	// Cria visita: admin only.
+	createVisitaChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(visitaH.CreateVisita))
+	mux.Handle("POST /api/visitas", createVisitaChain)
+
+	// Detalhe de visita: admin only.
+	getVisitaChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(visitaH.GetVisita))
+	mux.Handle("GET /api/visitas/{id}", getVisitaChain)
+
+	// Atualiza visita: admin only.
+	updateVisitaChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(visitaH.UpdateVisita))
+	mux.Handle("PUT /api/visitas/{id}", updateVisitaChain)
 
 	// Healthcheck.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

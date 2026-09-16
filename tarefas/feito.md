@@ -4,6 +4,28 @@
 
 ---
 
+## Cadastro de Visitas (CRM) — 2026-09-15
+**Agentes:** 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** Nova tabela/tela de CRM para registro de Visitas, baseada em `dados/crm/visitas.csv` (colunas: `visita_id, cliente_id, vendedor_id, data_visita, resultado, duracao_min`, 37936 linhas). Segue o mesmo padrão já aplicado ao módulo de Oportunidades (ver "Cadastro de Oportunidades (CRM)" e "Importador de Oportunidades (CRM)" logo abaixo): PK própria `visita_id BIGINT AUTO_INCREMENT`, FKs para `clientes`/`vendedores`, importador CSV dedicado, CRUD completo, tela com dropdowns em cascata Vendedor → Cliente e filtros por coluna, testes com cobertura, documentação Postman/README. Diferente de Oportunidades, foi entregue já com o importador incluído desde o início (sem necessidade de tarefa complementar) e com `data_visita` obrigatório e sem default (em Oportunidades, `data_abertura` vazio assume a data de hoje).
+
+**Camadas:**
+- [x] Database (🌸 DataBrain) — `sql/16_ddl_visitas.sql` (PK `visita_id BIGINT AUTO_INCREMENT`, FKs `cliente_id → clientes.cliente_id_origem` ON DELETE CASCADE, `vendedor_id → vendedores.id` ON DELETE RESTRICT, `resultado VARCHAR(40)` texto livre, índices cliente_id/vendedor_id/data_visita/resultado); registrada no Makefile (`db-up`, após oportunidades); importador `apis/shared/cmd/importvisitas/main.go` (target `db-import-visitas`, incluído em `db-rebuild`). Validado ponta a ponta contra o banco local: 37936 linhas importadas, 0 erros; segunda execução confirmou idempotência (0 inseridos, 37936 atualizados).
+- [x] Backend (🟡 BackBrain) — `apis/shared/models/visita.go`, `apis/shared/repositories/visita_repository.go`, `apis/rotaperfumes-api/services/visita_service.go`, `apis/rotaperfumes-api/handlers/visita_handler.go`. Rotas admin-only `GET/POST /api/visitas`, `GET/PUT /api/visitas/{id}` (filtros: cliente_id, vendedor_id, resultado, data_visita_de/ate, q; order_by com whitelist id/visita_id/data_visita/duracao_min/resultado/created_at/updated_at). Reaproveita `GET /api/vendedores/{id}/clientes` já existente para o dropdown em cascata. Validações: cliente_id/vendedor_id obrigatórios e existentes, data_visita obrigatória (sem default, diferente de oportunidades), resultado obrigatório, duracao_min >= 0. `go build`/`go vet` OK.
+- [x] Frontend (🟢 FrontBrain) — `frontend/src/app/admin/visitas/page.tsx` (listagem com filtros vendedor/cliente/resultado/data, paginação, ordenação, botão "Nova Visita") + `frontend/src/components/admin/VisitaModal.tsx` (dropdowns em cascata Vendedor → Cliente via `GET /api/vendedores/{id}/clientes`). Tipos em `types.ts`, chamadas em `api.ts`, item de menu "Visitas" em `admin/layout.tsx`. `tsc --noEmit` OK (exit 0).
+- [x] Teste (🔴 TestBrain) — `apis/shared/repositories/visita_repository_test.go`, `apis/rotaperfumes-api/services/visita_service_test.go`, `apis/rotaperfumes-api/handlers/visita_handler_test.go` (novos). `go test ./...` OK em `apis/shared` e `apis/rotaperfumes-api`, sem regressão. Cobertura: repositories 89.3%, services 94.9%, handlers 80.5% (funções novas em sua maioria 100%). Nenhum bug encontrado no código de produção. Nota: flake pré-existente e não relacionado em `TestValidateJWT/token_manipulado_é_rejeitado` (apis/shared/services/auth_service_test.go), fora do escopo desta tarefa.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — nova pasta "Visitas" com os 4 endpoints (`Listar Visitas`, `Detalhe da Visita`, `Criar Visita`, `Editar Visita`), com exemplos de query params de filtro, bodies de `POST`/`PUT`, respostas de sucesso (`200`/`201`) e erro (`400`/`404`/`403`) e testes automatizados, seguindo o padrão da pasta "Oportunidades". O endpoint compartilhado `GET /api/vendedores/{id}/clientes` não foi duplicado — já documentado na pasta "Oportunidades".
+- `postman/README.md` — nova seção "Visitas (`/api/visitas/*`) — admin only" em Endpoints, documentando os 4 endpoints, os filtros, e a regra de `data_visita` ser obrigatória e sem default (diferente de oportunidades), com referência ao endpoint compartilhado `GET /api/vendedores/{id}/clientes`. Seção "Testes automatizados (Postman)" e tabela "Resumo de testes por endpoint" atualizadas com as 4 novas requests. Nova seção "Visitas (CRM)" em "Subindo o ambiente" documentando `make db-up && make db-import-visitas` — já registrando que o importador foi executado com sucesso (37936 linhas, 0 erros, idempotência validada), diferente de Oportunidades que inicialmente não teve importador dedicado.
+
+**Bugfix — 2026-09-15 (🟢 FrontBrain):** usuário reportou que faltava o link de "Visitas" na barra de navegação superior. Causa: o item de menu só havia sido adicionado ao sidebar admin (`admin/layout.tsx`), não ao `frontend/src/components/layout/Navbar.tsx` (barra superior, componente separado). Corrigido adicionando o link "Visitas" (`/admin/visitas`) ao Navbar.tsx, condicionado a `user?.role === "admin"` (mesmo padrão do link "Administração", já que Visitas é admin-only), posicionado após "Vendedores". `tsc --noEmit` OK. **Gap pré-existente identificado, não corrigido nesta tarefa:** a rota `/admin/oportunidades` também não está no Navbar.tsx — mesmo problema, mas fora do escopo do pedido do usuário (fica registrado aqui para decisão futura).
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## Importador de Oportunidades (CRM) — complemento da feature — 2026-09-15
 **Agentes:** 🌸 DataBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
 

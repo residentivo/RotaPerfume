@@ -30,6 +30,9 @@ import {
   Oportunidade,
   OportunidadeInput,
   ListOportunidadesFilters,
+  Visita,
+  VisitaInput,
+  ListVisitasFilters,
 } from "./types";
 import { fetchWithAuth } from "./apiClient";
 
@@ -1074,6 +1077,109 @@ export async function apiUpdateOportunidade(
   input: OportunidadeInput
 ): Promise<Oportunidade> {
   return fetchWithAuth<Oportunidade>(`/api/oportunidades/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+// === Visitas (CRM) ===
+//
+// Tela admin-only — ver rota /api/visitas no backend.
+
+export interface ListVisitasResponse {
+  data: Visita[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+// GET /api/visitas — lista paginada com filtros. Envelope
+// {success, data, pagination: {page, limit, total, pages}, error}.
+export async function apiListVisitas(
+  page = 1,
+  limit = 20,
+  filters: ListVisitasFilters = {},
+  orderBy?: string,
+  orderDir?: "asc" | "desc"
+): Promise<ListVisitasResponse> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.cliente_id) qs.set("cliente_id", String(filters.cliente_id));
+  if (filters.vendedor_id) qs.set("vendedor_id", String(filters.vendedor_id));
+  if (filters.resultado) qs.set("resultado", filters.resultado);
+  if (filters.data_visita_de) qs.set("data_visita_de", filters.data_visita_de);
+  if (filters.data_visita_ate) qs.set("data_visita_ate", filters.data_visita_ate);
+  if (filters.q) qs.set("q", filters.q);
+  if (orderBy) qs.set("order_by", orderBy);
+  if (orderDir) qs.set("order_dir", orderDir);
+
+  const res = await fetch(`${API_BASE}/api/visitas?${qs.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+
+  const raw = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = raw;
+  }
+
+  if (!res.ok) {
+    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
+    if (parsed && typeof parsed === "object") {
+      const d = parsed as Record<string, unknown>;
+      if ("error" in d) errorMessage = String(d.error);
+      else if ("message" in d) errorMessage = String(d.message);
+    }
+    throw new Error(errorMessage);
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const d = parsed as Record<string, unknown>;
+    if ("data" in d && Array.isArray(d.data)) {
+      const pag = (d.pagination && typeof d.pagination === "object"
+        ? (d.pagination as Record<string, unknown>)
+        : d) as Record<string, unknown>;
+      return {
+        data: d.data as Visita[],
+        page: Number(pag.page ?? page),
+        limit: Number(pag.limit ?? limit),
+        total: Number(pag.total ?? (d.data as unknown[]).length),
+        pages: Number(pag.pages ?? 1),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return { data: parsed as Visita[], page, limit, total: parsed.length, pages: 1 };
+  }
+  return { data: [], page, limit, total: 0, pages: 0 };
+}
+
+// GET /api/visitas/{id} — detalhe de uma visita
+export async function apiGetVisita(id: number): Promise<Visita> {
+  return fetchWithAuth<Visita>(`/api/visitas/${id}`, {
+    method: "GET",
+  });
+}
+
+// POST /api/visitas — admin cria nova visita.
+export async function apiCreateVisita(input: VisitaInput): Promise<Visita> {
+  return fetchWithAuth<Visita>("/api/visitas", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// PUT /api/visitas/{id} — admin atualiza uma visita existente.
+export async function apiUpdateVisita(
+  id: number,
+  input: VisitaInput
+): Promise<Visita> {
+  return fetchWithAuth<Visita>(`/api/visitas/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });
