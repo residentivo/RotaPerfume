@@ -31,6 +31,7 @@ type PagamentoFiltro struct {
 	PedidoID        int64
 	VencimentoDe    string // formato AAAA-MM-DD (inclusive)
 	VencimentoAte   string // formato AAAA-MM-DD (inclusive)
+	VendedorID      int64  // > 0 restringe aos pagamentos de pedidos desse vendedor
 	OrderBy         string // campo de ordenação (whitelist: ver pagamentoOrderWhitelist); default "pagamento_id"
 	OrderDir        string // "asc" ou "desc" (case-insensitive); default "asc"
 }
@@ -83,6 +84,10 @@ func (f PagamentoFiltro) where() (string, []any) {
 	if f.VencimentoAte != "" {
 		conds = append(conds, "data_vencimento <= ?")
 		args = append(args, f.VencimentoAte)
+	}
+	if f.VendedorID > 0 {
+		conds = append(conds, "pedido_id IN (SELECT pedido_id_origem FROM pedidos WHERE vendedor_id = ?)")
+		args = append(args, f.VendedorID)
 	}
 
 	if len(conds) == 0 {

@@ -89,6 +89,20 @@ func (h *VendedorHandler) ListClientesDoVendedor(w http.ResponseWriter, r *http.
 		return
 	}
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[vendedores] ListClientesDoVendedor escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.Restrito && !scope.PermiteVendedor(id) {
+		// Usuário role=normal tentando ver a carteira de outro vendedor:
+		// resposta idêntica à de vendedor inexistente, para não confirmar a
+		// existência do id informado.
+		writeJSON(w, http.StatusNotFound, nil, "vendedor não encontrado")
+		return
+	}
+
 	clientes, err := h.svc.ListClientesDoVendedor(r.Context(), h.db, id)
 	if err != nil {
 		if errors.Is(err, services.ErrVendedorNaoEncontrado) {

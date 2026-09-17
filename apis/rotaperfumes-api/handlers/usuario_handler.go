@@ -20,6 +20,7 @@ import (
 // UsuarioHandler trata as rotas /api/usuarios/*.
 type UsuarioHandler struct {
 	db         *sql.DB
+	cfg        *config.Config
 	svc        *services.UsuarioService
 	senhaSvc   *services.SenhaHistoricoService
 	refreshSvc *services.RefreshTokenService
@@ -31,6 +32,7 @@ type UsuarioHandler struct {
 func NewUsuarioHandler(db *sql.DB, cfg *config.Config, emailSvc sharedsvc.EmailService) *UsuarioHandler {
 	return &UsuarioHandler{
 		db:         db,
+		cfg:        cfg,
 		svc:        services.NewUsuarioService(db, cfg, emailSvc),
 		senhaSvc:   services.NewSenhaHistoricoService(),
 		refreshSvc: services.NewRefreshTokenService(),
@@ -355,7 +357,7 @@ func (h *UsuarioHandler) AdminResetPassword(w http.ResponseWriter, r *http.Reque
 
 	// Captura adminID do contexto.
 	adminID, _ := middleware.GetUserID(r.Context())
-	ipOrigem := getClientIP(r)
+	ipOrigem := getClientIP(r, h.cfg.TrustProxyHeaders)
 	userAgent := r.UserAgent()
 
 	emailEnviado, err := h.svc.AdminResetPassword(ctx, h.db, req.UsuarioID, targetUser.Email, targetUser.Nome)

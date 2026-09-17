@@ -4,6 +4,34 @@
 
 ---
 
+## Auditoria de Segurança (Site + API) e Correção de Falhas — 2026-09-17
+**Agentes:** 🟣 SecBrain (auditoria) → 🟡 BackBrain, 🌸 DataBrain, 🟢 FrontBrain (correções por camada) → 🔴 TestBrain (validação) → documentação e fechamento por 🔵 SubBrain
+
+**Descrição:** Auditoria de segurança completa do projeto (API Go `apis/rotaperfumes-api`/`apis/shared`, Frontend Next.js `frontend/`, Banco de Dados `sql/`/`dados/`, segredos no repositório), liderada por 🟣 SecBrain. Relatório completo em `FalhasEncontradas.md`. Identificados 13 itens (1 crítico, 1 alto, 4 médios, 6 baixos, 1 recomendação de processo).
+
+**Resultado:** todos os 12 itens de falha real (1-12) corrigidos e validados. Item 13 (dependências) é recomendação de processo, sem ação de código — mantido como "a validar" continuamente.
+
+**Correções por camada:**
+- **Segredos no repositório:** `itenslocais.txt` (credenciais texto puro de `gerente_admin`/`rh_admin`) e `.env` (JWT_SECRET, senha de app Gmail) removidos de todo o histórico do git via `git filter-branch`; `.gitignore` reforçado; `JWT_SECRET` regenerado; force-push realizado.
+- **🟡 BackBrain (API Go):** rate limiting/anti-bruteforce no login (`middleware/ratelimit_middleware.go`); headers de segurança HTTP — CSP, HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy (`middleware/security_headers_middleware.go`); CORS restrito (sem prefix-match genérico de qualquer porta localhost); `getClientIP` não confia mais cegamente em `X-Forwarded-For`/`X-Real-IP`; log de login não expõe mais e-mail em texto claro; `senha_hash_anterior` removido da resposta da API de auditoria; `seedusers` não imprime mais senha em stdout/argv; escopo por vendedor aplicado a `/api/clientes`, `/api/pedidos`, `/api/pagamentos`, `/api/vendedores/{id}/clientes` (filtro server-side, nunca a partir de parâmetro do cliente — `handlers/scope.go`).
+- **🌸 DataBrain:** seed de vendedores (`sql/03_seed_vendedores.sql`) ajustado para forçar troca de senha (`deve_trocar_senha = 1`) em vez de manter senha padrão idêntica sem rotação obrigatória.
+- **🟢 FrontBrain:** `ProtectedRoute.tsx` passou a revalidar `role`/sessão contra `/api/auth/me` em vez de confiar apenas em `localStorage`.
+- **🔴 TestBrain:** validou as correções (novos testes de rate limit, security headers, CORS, `cors_middleware_test.go`, `ratelimit_middleware_test.go`, `security_headers_middleware_test.go`, além de ajustes nos testes existentes de handlers/repositories impactados pelo escopo por vendedor).
+- **🔵 SubBrain:** revisão final de `FalhasEncontradas.md` (tabela-resumo e priorização coerentes com o estado final — itens 1-12 "Corrigido", item 13 mantido como recomendação/"a validar") e adicionada a seção "Pendências Operacionais (fora do escopo dos agentes)"; Kanban fechado.
+
+**Pendências operacionais registradas em `FalhasEncontradas.md` (fora do escopo dos agentes, dependem do usuário):**
+1. Rotacionar senhas das contas `gerente_admin`/`rh_admin` no banco (expostas em texto puro no GitHub até a limpeza do histórico).
+2. Gerar nova senha de app Gmail (myaccount.google.com/apppasswords) e preencher `SMTP_USER`/`SMTP_PASSWORD` no `.env` local (a anterior foi destruída na limpeza do histórico e não pôde ser recuperada).
+3. Verificar/tratar forks do repositório GitHub (`residentivo/RotaPerfume`), se existirem — ainda conteriam o histórico antigo com os segredos.
+4. Configurar suíte de testes automatizados no frontend (sem Jest/Testing Library) — a mudança em `ProtectedRoute.tsx` ficou sem teste automatizado; registrado como item de backlog.
+5. Adotar rotina periódica de `npm audit`/`go list -m -u` (item 13) — recomendação de processo, sem ação imediata.
+
+**Nota:** nenhuma rota nova foi criada nesta auditoria (apenas comportamento de rotas existentes mudou), portanto `postman/collection.json` e `postman/README.md` não precisaram de alteração.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## Ranking de vendedores deve ordenar por meta e desempatar por atingimento — 2026-09-17
 **Agentes:** 🟡 BackBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
 

@@ -91,6 +91,12 @@ func TestPagamentoList_ComFiltros(t *testing.T) {
 			args:        []driver.Value{"2024-01-01", "2024-01-31"},
 		},
 		{
+			nome:        "filtro por vendedor_id (restrição de carteira)",
+			filtro:      repositories.PagamentoFiltro{VendedorID: 7},
+			whereRegexp: `WHERE pedido_id IN \(SELECT pedido_id_origem FROM pedidos WHERE vendedor_id = \?\)`,
+			args:        []driver.Value{int64(7)},
+		},
+		{
 			nome: "filtro combinado (todos os campos)",
 			filtro: repositories.PagamentoFiltro{
 				StatusPagamento: "Pago",
@@ -98,9 +104,10 @@ func TestPagamentoList_ComFiltros(t *testing.T) {
 				PedidoID:        5,
 				VencimentoDe:    "2024-01-01",
 				VencimentoAte:   "2024-01-31",
+				VendedorID:      7,
 			},
-			whereRegexp: `WHERE status_pagamento = \? AND forma_pagamento = \? AND pedido_id = \? AND data_vencimento >= \? AND data_vencimento <= \?`,
-			args:        []driver.Value{"Pago", "PIX", int64(5), "2024-01-01", "2024-01-31"},
+			whereRegexp: `WHERE status_pagamento = \? AND forma_pagamento = \? AND pedido_id = \? AND data_vencimento >= \? AND data_vencimento <= \? AND pedido_id IN \(SELECT pedido_id_origem FROM pedidos WHERE vendedor_id = \?\)`,
+			args:        []driver.Value{"Pago", "PIX", int64(5), "2024-01-01", "2024-01-31", int64(7)},
 		},
 	}
 

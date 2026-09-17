@@ -210,10 +210,15 @@ func TestListPedidos_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pedidoFromRegexH).
+	vendedorWhere := ` WHERE p\.vendedor_id = \?`
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pedidoFromRegexH + vendedorWhere).
+		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
-		WithArgs(20, 0).
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + vendedorWhere + ` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
+		WithArgs(int64(2), 20, 0).
 		WillReturnRows(pedidoRowsForHandler(1, 230.0))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/pedidos", nil)
@@ -343,6 +348,9 @@ func TestGetPedido_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
 	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pedidoRowsForHandler(1, 230.0))
@@ -360,6 +368,43 @@ func TestGetPedido_PermitidoParaNaoAdmin(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetPedido_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// pedidoRowsForHandler(1, ...) tem vendedor_id=2, mas o usuário autenticado
+	// está vinculado ao vendedor 99 — não deve conseguir ver o pedido.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 230.0))
+	// O service busca cabeçalho + itens numa única chamada (GetPedidoDetalhe);
+	// a checagem de propriedade acontece só depois, no handler — os itens são
+	// descartados na resposta (404), mas a query ainda é executada.
+	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(itemPedidoRowsForHandler(1))
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/pedidos/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "pedido não encontrado", body["error"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

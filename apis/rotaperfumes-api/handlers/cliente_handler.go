@@ -13,19 +13,22 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/repositories"
 )
 
 // ClienteHandler trata as rotas /api/clientes/*.
 type ClienteHandler struct {
-	db  *sql.DB
-	svc *services.ClienteService
+	db           *sql.DB
+	svc          *services.ClienteService
+	carteiraRepo *repositories.CarteiraRepository
 }
 
 // NewClienteHandler cria um ClienteHandler com pool de conexão injetado.
 func NewClienteHandler(db *sql.DB, cfg *config.Config) *ClienteHandler {
 	return &ClienteHandler{
-		db:  db,
-		svc: services.NewClienteService(db, cfg),
+		db:           db,
+		svc:          services.NewClienteService(db, cfg),
+		carteiraRepo: repositories.NewCarteiraRepository(),
 	}
 }
 
@@ -58,6 +61,20 @@ func (h *ClienteHandler) ListClientes(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("limit"),
 	)
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[clientes] ListClientes escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		// Usuário normal sem vendedor vinculado: nenhuma carteira, nenhum
+		// resultado — nunca cai no "sem filtro" (que exporia todos os
+		// clientes de todos os vendedores).
+		writeJSONWithPagination(w, http.StatusOK, []any{}, page, limit, 0, 0)
+		return
+	}
+
 	filtro := services.ClienteFiltro{
 		UF:       strings.TrimSpace(r.URL.Query().Get("uf")),
 		Segmento: strings.TrimSpace(r.URL.Query().Get("segmento")),
@@ -65,6 +82,12 @@ func (h *ClienteHandler) ListClientes(w http.ResponseWriter, r *http.Request) {
 		Q:        strings.TrimSpace(r.URL.Query().Get("q")),
 		OrderBy:  strings.TrimSpace(r.URL.Query().Get("order_by")),
 		OrderDir: parseOrderDirQuery(r.URL.Query().Get("order_dir")),
+	}
+	if scope.Restrito {
+		// Usuário role=normal: força o filtro à própria carteira, ignorando
+		// qualquer tentativa de bypass via query string (não há parâmetro
+		// vendedor_id nesta rota hoje, mas o campo é sempre sobrescrito).
+		filtro.VendedorID = scope.VendedorID
 	}
 
 	clientes, total, err := h.svc.ListClientes(r.Context(), h.db, page, limit, filtro)
@@ -93,6 +116,17 @@ func (h *ClienteHandler) GetCliente(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[clientes] GetCliente escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "cliente não encontrado")
+		return
+	}
+
 	cliente, err := h.svc.GetClienteByID(r.Context(), h.db, id)
 	if err != nil {
 		if errors.Is(err, services.ErrClienteNaoEncontrado) {
@@ -102,6 +136,21 @@ func (h *ClienteHandler) GetCliente(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[clientes] GetCliente: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
+	}
+
+	if scope.Restrito {
+		if _, err := h.carteiraRepo.GetVinculoAtivo(r.Context(), h.db, scope.VendedorID, id); err != nil {
+			if errors.Is(err, repositories.ErrNotFound) {
+				// Cliente existe, mas não pertence à carteira do usuário:
+				// resposta 404 (mesma mensagem do "não existe") para não
+				// vazar a existência de clientes de outros vendedores.
+				writeJSON(w, http.StatusNotFound, nil, "cliente não encontrado")
+				return
+			}
+			log.Printf("[clientes] GetCliente vinculo carteira: %v", err)
+			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, cliente, "")

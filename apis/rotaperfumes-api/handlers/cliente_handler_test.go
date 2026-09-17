@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"bytes"
+	"database/sql"
 	"net/http"
 	"testing"
 	"time"
@@ -113,10 +114,14 @@ func TestListClientes_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes`).
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\)`).
+		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
-		WithArgs(20, 0).
+	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\) ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+		WithArgs(int64(10), 20, 0).
 		WillReturnRows(clienteRowsForHandler())
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/clientes", nil)
@@ -266,10 +271,19 @@ func TestGetCliente_PermitidoParaNaoAdmin(t *testing.T) {
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+	now := time.Now()
 
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
 	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(clienteRowsForHandler())
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(10), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+		}).AddRow(int64(500), int64(1), int64(10), now, nil, now, now))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/clientes/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -281,6 +295,38 @@ func TestGetCliente_PermitidoParaNaoAdmin(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetCliente_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(clienteRowsForHandler())
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(10), int64(1)).
+		WillReturnError(sql.ErrNoRows)
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/clientes/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.False(t, body["success"].(bool))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

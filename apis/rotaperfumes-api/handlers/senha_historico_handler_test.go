@@ -53,6 +53,8 @@ func TestListarTodos_Success(t *testing.T) {
 	item := data[0].(map[string]any)
 	assert.Equal(t, float64(1), item["resetado_por_id"])
 	assert.Equal(t, "admin", item["tipo_reset"])
+	_, hasHash := item["senha_hash_anterior"]
+	assert.False(t, hasHash, "senha_hash_anterior NÃO deve ser serializado na resposta HTTP")
 
 	pagination := body["pagination"].(map[string]any)
 	assert.Equal(t, float64(1), pagination["total"])
@@ -171,6 +173,9 @@ func TestListarPorUsuario_Success(t *testing.T) {
 	body := decodeResponse(t, readBody(t, resp))
 	data := body["data"].([]any)
 	require.Len(t, data, 1)
+	item := data[0].(map[string]any)
+	_, hasHash := item["senha_hash_anterior"]
+	assert.False(t, hasHash, "senha_hash_anterior NÃO deve ser serializado na resposta HTTP")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

@@ -51,6 +51,17 @@ func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request
 		r.URL.Query().Get("limit"),
 	)
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pagamentos] ListPagamentos escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSONWithPagination(w, http.StatusOK, []any{}, page, limit, 0, 0)
+		return
+	}
+
 	var pedidoID int64
 	if v := strings.TrimSpace(r.URL.Query().Get("pedido_id")); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)
@@ -69,6 +80,10 @@ func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request
 		VencimentoAte:   strings.TrimSpace(r.URL.Query().Get("vencimento_ate")),
 		OrderBy:         strings.TrimSpace(r.URL.Query().Get("order_by")),
 		OrderDir:        parseOrderDirQuery(r.URL.Query().Get("order_dir")),
+	}
+	if scope.Restrito {
+		// Usuário role=normal: força o filtro à própria carteira.
+		filtro.VendedorID = scope.VendedorID
 	}
 
 	pagamentos, total, err := h.svc.ListPagamentos(r.Context(), h.db, page, limit, filtro)
@@ -97,6 +112,17 @@ func (h *PagamentoHandler) GetPagamento(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pagamentos] GetPagamento escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
+		return
+	}
+
 	pagamento, err := h.svc.GetPagamentoByID(r.Context(), h.db, id)
 	if err != nil {
 		if errors.Is(err, services.ErrPagamentoNaoEncontrado) {
@@ -106,6 +132,22 @@ func (h *PagamentoHandler) GetPagamento(w http.ResponseWriter, r *http.Request) 
 		log.Printf("[pagamentos] GetPagamento: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
+	}
+
+	if scope.Restrito {
+		vendedorID, err := h.svc.VendedorIDDoPedido(r.Context(), h.db, pagamento.PedidoID)
+		if err != nil {
+			// Pedido do pagamento não encontrado é inesperado (FK garante
+			// integridade), mas por segurança trata como "sem acesso" em vez
+			// de vazar erro interno.
+			log.Printf("[pagamentos] GetPagamento vendedor do pedido: %v", err)
+			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
+			return
+		}
+		if !scope.PermiteVendedor(vendedorID) {
+			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, pagamento, "")

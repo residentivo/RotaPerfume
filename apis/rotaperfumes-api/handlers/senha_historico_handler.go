@@ -63,14 +63,17 @@ func (h *SenhaHistoricoHandler) ListarTodos(w http.ResponseWriter, r *http.Reque
 
 	out := make([]map[string]any, 0, len(historicos))
 	for _, h := range historicos {
+		// Nota: senha_hash_anterior (bcrypt) é mantido no model para uso
+		// interno/auditoria em banco, mas NUNCA deve ser serializado na
+		// resposta HTTP — mesmo sendo um hash, sua exposição facilita
+		// ataques offline (ex. em caso de vazamento de logs/rede).
 		item := map[string]any{
-			"id":                h.ID,
-			"usuario_id":        h.UsuarioID,
-			"ip_origem":         h.IPOrigem,
-			"user_agent":        h.UserAgent,
-			"tipo_reset":        h.TipoReset,
-			"created_at":        h.CreatedAt,
-			"senha_hash_anterior": h.SenhaHashAnterior, // para auditoria (hash, não plaintext)
+			"id":         h.ID,
+			"usuario_id": h.UsuarioID,
+			"ip_origem":  h.IPOrigem,
+			"user_agent": h.UserAgent,
+			"tipo_reset": h.TipoReset,
+			"created_at": h.CreatedAt,
 		}
 		if h.ResetadoPorID.Valid {
 			item["resetado_por_id"] = h.ResetadoPorID.Int64
@@ -138,14 +141,14 @@ func (h *SenhaHistoricoHandler) ListarPorUsuario(w http.ResponseWriter, r *http.
 
 	out := make([]map[string]any, 0, len(historicos))
 	for _, h := range historicos {
+		// senha_hash_anterior não é exposto na resposta HTTP (ver nota em ListarTodos).
 		item := map[string]any{
-			"id":                h.ID,
-			"usuario_id":        h.UsuarioID,
-			"ip_origem":         h.IPOrigem,
-			"user_agent":        h.UserAgent,
-			"tipo_reset":        h.TipoReset,
-			"created_at":        h.CreatedAt,
-			"senha_hash_anterior": h.SenhaHashAnterior,
+			"id":         h.ID,
+			"usuario_id": h.UsuarioID,
+			"ip_origem":  h.IPOrigem,
+			"user_agent": h.UserAgent,
+			"tipo_reset": h.TipoReset,
+			"created_at": h.CreatedAt,
 		}
 		if h.ResetadoPorID.Valid {
 			item["resetado_por_id"] = h.ResetadoPorID.Int64

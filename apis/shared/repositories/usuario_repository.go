@@ -53,6 +53,27 @@ func (r *UsuarioRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (
 	return scanUsuario(row)
 }
 
+// GetIDVendedorByUsuarioID retorna o id_vendedor vinculado ao usuário
+// informado (nil quando o usuário não tem vendedor vinculado). Retorna
+// ErrNotFound se o usuário não existir. Consulta enxuta (sem JOIN), usada
+// pela API para restringir consultas de negócio (clientes/pedidos/
+// pagamentos) à carteira do usuário autenticado com role=normal.
+func (r *UsuarioRepository) GetIDVendedorByUsuarioID(ctx context.Context, db *sql.DB, usuarioID int64) (*int64, error) {
+	const q = `SELECT id_vendedor FROM usuarios WHERE id = ? LIMIT 1`
+	var idVendedor sql.NullInt64
+	if err := db.QueryRowContext(ctx, q, usuarioID).Scan(&idVendedor); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("repositories: get id_vendedor usuario: %w", err)
+	}
+	if !idVendedor.Valid {
+		return nil, nil
+	}
+	v := idVendedor.Int64
+	return &v, nil
+}
+
 // usuarioOrderWhitelist mapeia os campos de ordenação aceitos pela API para
 // as colunas SQL reais (com alias) da query de listagem de usuários.
 var usuarioOrderWhitelist = map[string]string{

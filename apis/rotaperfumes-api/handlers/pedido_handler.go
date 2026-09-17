@@ -43,6 +43,17 @@ func (h *PedidoHandler) ListPedidos(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("limit"),
 	)
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pedidos] ListPedidos escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSONWithPagination(w, http.StatusOK, []any{}, page, limit, 0, 0)
+		return
+	}
+
 	filtro := services.PedidoFiltro{
 		Status:     strings.TrimSpace(r.URL.Query().Get("status")),
 		Canal:      strings.TrimSpace(r.URL.Query().Get("canal")),
@@ -53,6 +64,11 @@ func (h *PedidoHandler) ListPedidos(w http.ResponseWriter, r *http.Request) {
 		Q:          strings.TrimSpace(r.URL.Query().Get("q")),
 		OrderBy:    strings.TrimSpace(r.URL.Query().Get("order_by")),
 		OrderDir:   parseOrderDirQuery(r.URL.Query().Get("order_dir")),
+	}
+	if scope.Restrito {
+		// Usuário role=normal: força o filtro à própria carteira, ignorando
+		// qualquer vendedor_id vindo da query string (evita bypass via URL).
+		filtro.VendedorID = scope.VendedorID
 	}
 
 	pedidos, total, err := h.svc.ListPedidos(r.Context(), h.db, page, limit, filtro)
@@ -95,6 +111,17 @@ func (h *PedidoHandler) GetPedido(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pedidos] GetPedido escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
+		return
+	}
+
 	pedido, err := h.svc.GetPedidoDetalhe(r.Context(), h.db, id)
 	if err != nil {
 		if errors.Is(err, services.ErrPedidoNaoEncontrado) {
@@ -103,6 +130,11 @@ func (h *PedidoHandler) GetPedido(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Printf("[pedidos] GetPedido: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	if scope.Restrito && !scope.PermiteVendedor(pedido.VendedorID) {
+		writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
 		return
 	}
 

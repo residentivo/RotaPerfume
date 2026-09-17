@@ -129,6 +129,75 @@ func TestGetByID_NotFound(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestGetIDVendedorByUsuarioID_ComVinculo(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(5)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+
+	repo := repositories.NewUsuarioRepository()
+	ctx := context.Background()
+	idVendedor, err := repo.GetIDVendedorByUsuarioID(ctx, db, 5)
+
+	require.NoError(t, err)
+	require.NotNil(t, idVendedor)
+	assert.Equal(t, int64(99), *idVendedor)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetIDVendedorByUsuarioID_SemVinculo(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(5)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
+
+	repo := repositories.NewUsuarioRepository()
+	ctx := context.Background()
+	idVendedor, err := repo.GetIDVendedorByUsuarioID(ctx, db, 5)
+
+	require.NoError(t, err)
+	assert.Nil(t, idVendedor)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetIDVendedorByUsuarioID_NotFound(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
+
+	repo := repositories.NewUsuarioRepository()
+	ctx := context.Background()
+	idVendedor, err := repo.GetIDVendedorByUsuarioID(ctx, db, 999)
+
+	assert.Nil(t, idVendedor)
+	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetIDVendedorByUsuarioID_DBError(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(5)).
+		WillReturnError(sql.ErrConnDone)
+
+	repo := repositories.NewUsuarioRepository()
+	ctx := context.Background()
+	idVendedor, err := repo.GetIDVendedorByUsuarioID(ctx, db, 5)
+
+	assert.Nil(t, idVendedor)
+	assert.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestList_Pagination(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()

@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -69,6 +70,63 @@ func TestClienteCountNovosNoPeriodo_Success(t *testing.T) {
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+const clienteColunasRegexp = `cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, COALESCE\(bairro, ''\), data_cadastro, ativo, created_at, updated_at`
+
+var clienteRepoColumns = []string{
+	"cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
+	"data_cadastro", "ativo", "created_at", "updated_at",
+}
+
+// TestClienteList_FiltroVendedorID garante que VendedorID > 0 restringe a
+// listagem aos clientes na carteira ativa desse vendedor (ver item 12 do
+// relatório de segurança — filtro server-side por carteira).
+func TestClienteList_FiltroVendedorID(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	whereRegexp := `WHERE cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\)`
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes ` + whereRegexp).
+		WithArgs(int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
+
+	now := time.Now()
+	mock.ExpectQuery(`SELECT ` + clienteColunasRegexp + ` FROM clientes ` + whereRegexp + ` ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+		WithArgs(int64(7), 10, 0).
+		WillReturnRows(sqlmock.NewRows(clienteRepoColumns).
+			AddRow(int64(1), "12345678000199", "Empresa Teste", "varejo", "SP", "SP", "Centro", now, true, now, now))
+
+	repo := repositories.NewClienteRepository()
+	ctx := context.Background()
+	clientes, total, err := repo.List(ctx, db, 1, 10, repositories.ClienteFiltro{VendedorID: 7})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	assert.Len(t, clientes, 1)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestClienteList_SemFiltroVendedorID garante que VendedorID=0 (não
+// informado) não adiciona restrição de carteira à query.
+func TestClienteList_SemFiltroVendedorID(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes$`).
+		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+	mock.ExpectQuery(`SELECT ` + clienteColunasRegexp + ` FROM clientes ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+		WithArgs(10, 0).
+		WillReturnRows(sqlmock.NewRows(clienteRepoColumns))
+
+	repo := repositories.NewClienteRepository()
+	ctx := context.Background()
+	_, total, err := repo.List(ctx, db, 1, 10, repositories.ClienteFiltro{})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, total)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // TestClienteCountNovosNoPeriodo_DBError garante que erros do banco são

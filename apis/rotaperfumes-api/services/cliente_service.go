@@ -31,12 +31,13 @@ const dataCadastroLayout = "2006-01-02"
 
 // ClienteFiltro agrupa os filtros opcionais aceitos por ListClientes.
 type ClienteFiltro struct {
-	UF       string
-	Segmento string
-	Ativo    *bool
-	Q        string
-	OrderBy  string
-	OrderDir string
+	UF         string
+	Segmento   string
+	Ativo      *bool
+	Q          string
+	VendedorID int64 // > 0 restringe aos clientes na carteira ativa desse vendedor
+	OrderBy    string
+	OrderDir   string
 }
 
 // ClienteService agrega regras de negócio sobre clientes.
@@ -57,16 +58,17 @@ func NewClienteService(db *sql.DB, cfg *config.Config) *ClienteService {
 // page/limit são validados (limit max 100) no repositório.
 func (s *ClienteService) ListClientes(ctx context.Context, db *sql.DB, page, limit int, filtro ClienteFiltro) ([]models.Cliente, int, error) {
 	if s.Cfg.Verbose {
-		log.Printf("[clientes] list page=%d limit=%d uf=%q segmento=%q ativo=%v q=%q",
-			page, limit, filtro.UF, filtro.Segmento, filtro.Ativo, filtro.Q)
+		log.Printf("[clientes] list page=%d limit=%d uf=%q segmento=%q ativo=%v q=%q vendedor_id=%d",
+			page, limit, filtro.UF, filtro.Segmento, filtro.Ativo, filtro.Q, filtro.VendedorID)
 	}
 	repoFiltro := repositories.ClienteFiltro{
-		UF:       filtro.UF,
-		Segmento: filtro.Segmento,
-		Ativo:    filtro.Ativo,
-		Q:        filtro.Q,
-		OrderBy:  filtro.OrderBy,
-		OrderDir: filtro.OrderDir,
+		UF:         filtro.UF,
+		Segmento:   filtro.Segmento,
+		Ativo:      filtro.Ativo,
+		Q:          filtro.Q,
+		VendedorID: filtro.VendedorID,
+		OrderBy:    filtro.OrderBy,
+		OrderDir:   filtro.OrderDir,
 	}
 	return s.repo.List(ctx, db, page, limit, repoFiltro)
 }

@@ -27,12 +27,13 @@ const clienteColunas = `cliente_id_origem, cnpj, razao_social, segmento, cidade,
 // ClienteFiltro agrupa os filtros opcionais aceitos por List.
 // Campos vazios/nil são ignorados (não filtram).
 type ClienteFiltro struct {
-	UF       string
-	Segmento string
-	Ativo    *bool
-	Q        string // busca textual em razao_social OU cnpj (LIKE)
-	OrderBy  string // campo de ordenação (whitelist: ver clienteOrderWhitelist); default "cliente_id_origem"
-	OrderDir string // "asc" ou "desc" (case-insensitive); default "asc"
+	UF         string
+	Segmento   string
+	Ativo      *bool
+	Q          string // busca textual em razao_social OU cnpj (LIKE)
+	VendedorID int64  // > 0 restringe aos clientes na carteira ativa desse vendedor (ver tabela carteiras)
+	OrderBy    string // campo de ordenação (whitelist: ver clienteOrderWhitelist); default "cliente_id_origem"
+	OrderDir   string // "asc" ou "desc" (case-insensitive); default "asc"
 }
 
 // clienteOrderWhitelist mapeia os campos de ordenação aceitos pela API para
@@ -78,6 +79,10 @@ func (f ClienteFiltro) where() (string, []any) {
 		conds = append(conds, "(razao_social LIKE ? OR cnpj LIKE ?)")
 		like := "%" + f.Q + "%"
 		args = append(args, like, like)
+	}
+	if f.VendedorID > 0 {
+		conds = append(conds, "cliente_id_origem IN (SELECT cliente_id FROM carteiras WHERE vendedor_id = ? AND data_fim IS NULL)")
+		args = append(args, f.VendedorID)
 	}
 
 	if len(conds) == 0 {

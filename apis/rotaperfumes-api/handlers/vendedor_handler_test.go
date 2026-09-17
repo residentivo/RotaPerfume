@@ -444,7 +444,8 @@ func TestListClientesDoVendedor_IDInvalido(t *testing.T) {
 // TestListClientesDoVendedor_PermitidoParaNaoAdmin garante que a rota é
 // "acesso comum": usuários não-admin também conseguem consultar os clientes
 // vinculados a um vendedor (usado pelo dropdown em cascata do frontend em
-// Oportunidades).
+// Oportunidades) — desde que seja a própria carteira (ver
+// TestListClientesDoVendedor_NegadoParaNaoAdminDeOutroVendedor).
 func TestListClientesDoVendedor_PermitidoParaNaoAdmin(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
@@ -453,6 +454,9 @@ func TestListClientesDoVendedor_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
 	mock.ExpectQuery(vendedorExistsByIDRegexH).WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	mock.ExpectQuery(clienteResumoColunasRegexH + clienteResumoFromRegexH + ` WHERE ca\.vendedor_id = \? AND ca\.data_fim IS NULL ORDER BY c\.razao_social ASC`).
@@ -469,6 +473,35 @@ func TestListClientesDoVendedor_PermitidoParaNaoAdmin(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestListClientesDoVendedor_NegadoParaNaoAdminDeOutroVendedor garante que um
+// usuário role=normal não consegue listar a carteira de outro vendedor
+// (apenas a sua própria) — corrige o item 12 do relatório de segurança.
+func TestListClientesDoVendedor_NegadoParaNaoAdminDeOutroVendedor(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores/1/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "vendedor não encontrado", body["error"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

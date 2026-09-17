@@ -244,6 +244,172 @@ func TestLogin_UsuarioInativo(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestLogin_RateLimited_AposVariasFalhas garante que, após várias tentativas
+// de login com credenciais erradas, o endpoint passa a responder 429 (rate
+// limit anti-bruteforce) em vez de continuar consultando o banco.
+func TestLogin_RateLimited_AposVariasFalhas(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	hash, err := services.NewAuthService().HashPassword(cfg, "senha-correta")
+	require.NoError(t, err)
+
+	const maxFailures = 5 // deve bater com loginMaxFailures em auth_handler.go
+
+	// As primeiras maxFailures tentativas consultam o banco normalmente
+	// (senha incorreta) e vão incrementando o contador de falhas.
+	for i := 0; i < maxFailures; i++ {
+		mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
+			WithArgs("bruteforce@test.com").
+			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+				AddRow(int64(1), "Admin User", "bruteforce@test.com", hash, "admin", nil, true, false, time.Now(), time.Now(), nil, nil))
+	}
+
+	// Usa um único *http.Client dedicado, com o corpo da resposta sempre
+	// totalmente lido antes de fechar, para reusar a mesma conexão TCP
+	// (keep-alive) entre as tentativas. O rate limit por IP também funciona
+	// com conexões novas a cada tentativa — ver
+	// TestLogin_RateLimited_QuebraComConexoesNovasPorTentativa, que cobre
+	// esse caso (mais realista de uma ferramenta de bruteforce).
+	client := &http.Client{}
+	for i := 0; i < maxFailures; i++ {
+		resp, err := client.Post(server.URL+"/api/auth/login", "application/json",
+			makeJSON(map[string]string{"email": "bruteforce@test.com", "password": "senha-errada"}))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "tentativa %d deve ser 401 (credenciais inválidas)", i+1)
+		readBody(t, resp) // drena o corpo para permitir reuso da conexão (keep-alive)
+		resp.Body.Close()
+	}
+
+	// A tentativa seguinte deve ser bloqueada por rate limit, SEM consultar o banco de novo.
+	resp, err := client.Post(server.URL+"/api/auth/login", "application/json",
+		makeJSON(map[string]string{"email": "bruteforce@test.com", "password": "senha-errada"}))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	assert.NotEmpty(t, resp.Header.Get("Retry-After"), "resposta 429 deve incluir Retry-After")
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Contains(t, body["error"], "muitas tentativas")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestLogin_RateLimited_SucessoResetaContador garante que um login bem-sucedido
+// limpa o contador de falhas, permitindo novas tentativas normalmente.
+func TestLogin_RateLimited_SucessoResetaContador(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	hash, err := services.NewAuthService().HashPassword(cfg, "senha-correta")
+	require.NoError(t, err)
+
+	rowsCorretas := func() *sqlmock.Rows {
+		return sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(int64(1), "Admin User", "reset@test.com", hash, "admin", nil, true, false, time.Now(), time.Now(), nil, nil)
+	}
+
+	// Duas falhas (abaixo do limite de 5).
+	for i := 0; i < 2; i++ {
+		mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
+			WithArgs("reset@test.com").
+			WillReturnRows(rowsCorretas())
+	}
+	for i := 0; i < 2; i++ {
+		resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
+			makeJSON(map[string]string{"email": "reset@test.com", "password": "senha-errada"}))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		resp.Body.Close()
+	}
+
+	// Login bem-sucedido: reseta o contador.
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
+		WithArgs("reset@test.com").
+		WillReturnRows(rowsCorretas())
+	mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE usuarios SET ultimo_login_at = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
+		makeJSON(map[string]string{"email": "reset@test.com", "password": "senha-correta"}))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	// Mais duas falhas (novo ciclo) ainda não devem bloquear (contador foi resetado).
+	for i := 0; i < 2; i++ {
+		mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
+			WithArgs("reset@test.com").
+			WillReturnRows(rowsCorretas())
+	}
+	for i := 0; i < 2; i++ {
+		resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
+			makeJSON(map[string]string{"email": "reset@test.com", "password": "senha-errada"}))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "não deveria estar bloqueado logo após reset do contador")
+		resp.Body.Close()
+	}
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestLogin_RateLimited_QuebraComConexoesNovasPorTentativa garante que o rate
+// limit por IP funciona mesmo quando cada tentativa abre uma conexão TCP nova
+// (comportamento padrão de ferramentas de bruteforce reais, que não reusam
+// conexões). getClientIP() normaliza r.RemoteAddr com net.SplitHostPort antes
+// de montar a chave, então a porta efêmera de cada conexão nova não afeta o
+// bloqueio: após maxFailures tentativas o mesmo e-mail/IP deve levar 429.
+func TestLogin_RateLimited_QuebraComConexoesNovasPorTentativa(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	hash, err := services.NewAuthService().HashPassword(cfg, "senha-correta")
+	require.NoError(t, err)
+
+	const maxFailures = 5 // deve bater com loginMaxFailures em auth_handler.go
+
+	// Uma conexão TCP nova (porta efêmera diferente) por tentativa, simulando
+	// uma ferramenta de bruteforce real que não reaproveita conexões.
+	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
+
+	// Apenas as primeiras maxFailures tentativas consultam o banco; a partir
+	// daí o rate limit bloqueia antes de qualquer consulta.
+	for i := 0; i < maxFailures; i++ {
+		mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
+			WithArgs("bruteforce-newconn@test.com").
+			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+				AddRow(int64(1), "Admin User", "bruteforce-newconn@test.com", hash, "admin", nil, true, false, time.Now(), time.Now(), nil, nil))
+	}
+
+	for i := 0; i < maxFailures+3; i++ {
+		req, _ := http.NewRequest("POST", server.URL+"/api/auth/login", makeJSON(map[string]string{
+			"email": "bruteforce-newconn@test.com", "password": "senha-errada",
+		}))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+
+		if i < maxFailures {
+			assert.Equal(t, http.StatusUnauthorized, resp.StatusCode,
+				"tentativa %d deve ser 401 (credenciais inválidas)", i+1)
+		} else {
+			assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode,
+				"tentativa %d deveria ser 429 (rate limit), mesmo com conexão TCP nova a cada tentativa", i+1)
+		}
+		resp.Body.Close()
+	}
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestLogin_EmptyBody(t *testing.T) {
 	server, db, _ := setupTestServer(t)
 	defer server.Close()

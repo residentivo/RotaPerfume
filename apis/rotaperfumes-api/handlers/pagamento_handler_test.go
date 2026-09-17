@@ -59,10 +59,15 @@ func TestListPagamentos_Success_UsuarioComum(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH).
+	vendedorWhere := ` WHERE pedido_id IN \(SELECT pedido_id_origem FROM pedidos WHERE vendedor_id = \?\)`
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH + vendedorWhere).
+		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
-		WithArgs(20, 0).
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + vendedorWhere + ` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
+		WithArgs(int64(10), 20, 0).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/pagamentos", nil)
@@ -103,10 +108,15 @@ func TestListPagamentos_OrderBy(t *testing.T) {
 			cfg := testCfg()
 			userToken := generateToken(t, cfg, 2, "normal")
 
-			mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH).
+			vendedorWhere := ` WHERE pedido_id IN \(SELECT pedido_id_origem FROM pedidos WHERE vendedor_id = \?\)`
+			mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+				WithArgs(int64(2)).
+				WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+			mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH + vendedorWhere).
+				WithArgs(int64(10)).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` ` + tc.orderRegexp + ` LIMIT \? OFFSET \?`).
-				WithArgs(20, 0).
+			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + vendedorWhere + ` ` + tc.orderRegexp + ` LIMIT \? OFFSET \?`).
+				WithArgs(int64(10), 20, 0).
 				WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 
 			req, _ := http.NewRequest("GET", server.URL+"/api/pagamentos?"+tc.query, nil)
@@ -157,12 +167,16 @@ func TestListPagamentos_ComFiltrosEPaginacao(t *testing.T) {
 }
 
 func TestListPagamentos_PedidoIDInvalido(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/pagamentos?pedido_id=abc", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -199,7 +213,12 @@ func TestListPagamentos_ErroInterno(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH).
+	vendedorWhere := ` WHERE pedido_id IN \(SELECT pedido_id_origem FROM pedidos WHERE vendedor_id = \?\)`
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH + vendedorWhere).
+		WithArgs(int64(10)).
 		WillReturnError(sqlmock.ErrCancelled)
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/pagamentos", nil)
@@ -225,9 +244,15 @@ func TestGetPagamento_Success(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 100.0))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/pagamentos/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -253,11 +278,49 @@ func TestGetPagamento_NaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnRows(emptyPagamentoRowsForHandler())
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/pagamentos/999", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "pagamento não encontrado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetPagamento_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// pedidoRowsForHandler(1, ...) tem vendedor_id=2, mas o usuário
+	// autenticado está vinculado ao vendedor 99 — não deve conseguir ver o
+	// pagamento vinculado ao pedido de outro vendedor.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 100.0))
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/pagamentos/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
 
 	resp, err := (&http.Client{}).Do(req)

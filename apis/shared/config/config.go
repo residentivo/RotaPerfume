@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,17 @@ type Config struct {
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string
+
+	// CORSAllowedOrigins é a lista explícita de origens permitidas (comparação
+	// exata, sem prefix-match), configurável via CORS_ALLOWED_ORIGINS
+	// (separadas por vírgula). Sempre inclui as origens padrão de dev local.
+	CORSAllowedOrigins []string
+
+	// TrustProxyHeaders indica se a aplicação está atrás de um proxy/load
+	// balancer confiável que popula X-Forwarded-For/X-Real-IP corretamente.
+	// Quando false (padrão), esses headers são ignorados e r.RemoteAddr é
+	// sempre usado como IP do cliente — evita spoofing de IP.
+	TrustProxyHeaders bool
 }
 
 // Load lê as variáveis de ambiente e retorna uma Config preenchida.
@@ -82,7 +94,34 @@ func Load() (*Config, error) {
 	cfg.SMTPPassword = os.Getenv("SMTP_PASSWORD")
 	cfg.SMTPFrom = os.Getenv("SMTP_FROM")
 
+	cfg.CORSAllowedOrigins = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	cfg.TrustProxyHeaders = getEnv("TRUST_PROXY_HEADERS", "false") == "true"
+
 	return cfg, nil
+}
+
+// defaultDevOrigins são as origens de desenvolvimento local sempre permitidas,
+// independente de CORS_ALLOWED_ORIGINS — cobre o frontend Next.js em dev.
+var defaultDevOrigins = []string{
+	"http://localhost:3000",
+	"http://127.0.0.1:3000",
+}
+
+// parseAllowedOrigins monta a lista final de origens permitidas: as origens de
+// dev local padrão mais o que vier em CORS_ALLOWED_ORIGINS (separadas por
+// vírgula). Comparação é sempre exata — sem prefix-match.
+func parseAllowedOrigins(raw string) []string {
+	origins := make([]string, 0, len(defaultDevOrigins)+2)
+	origins = append(origins, defaultDevOrigins...)
+
+	for _, o := range strings.Split(raw, ",") {
+		o = strings.TrimSpace(o)
+		if o == "" {
+			continue
+		}
+		origins = append(origins, o)
+	}
+	return origins
 }
 
 // DSN monta a connection string para o driver go-sql-driver/mysql.

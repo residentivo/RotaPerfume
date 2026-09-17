@@ -61,6 +61,7 @@ type PagamentoFiltro struct {
 	PedidoID        int64
 	VencimentoDe    string
 	VencimentoAte   string
+	VendedorID      int64 // > 0 restringe aos pagamentos de pedidos desse vendedor
 	OrderBy         string
 	OrderDir        string
 }
@@ -85,8 +86,8 @@ func NewPagamentoService(db *sql.DB, cfg *config.Config) *PagamentoService {
 // page/limit são validados (limit max 100) no repositório.
 func (s *PagamentoService) ListPagamentos(ctx context.Context, db *sql.DB, page, limit int, filtro PagamentoFiltro) ([]models.Pagamento, int, error) {
 	if s.Cfg.Verbose {
-		log.Printf("[pagamentos] list page=%d limit=%d status=%q forma=%q pedido_id=%d vencimento_de=%q vencimento_ate=%q",
-			page, limit, filtro.StatusPagamento, filtro.FormaPagamento, filtro.PedidoID, filtro.VencimentoDe, filtro.VencimentoAte)
+		log.Printf("[pagamentos] list page=%d limit=%d status=%q forma=%q pedido_id=%d vencimento_de=%q vencimento_ate=%q vendedor_id=%d",
+			page, limit, filtro.StatusPagamento, filtro.FormaPagamento, filtro.PedidoID, filtro.VencimentoDe, filtro.VencimentoAte, filtro.VendedorID)
 	}
 	repoFiltro := repositories.PagamentoFiltro{
 		StatusPagamento: filtro.StatusPagamento,
@@ -94,6 +95,7 @@ func (s *PagamentoService) ListPagamentos(ctx context.Context, db *sql.DB, page,
 		PedidoID:        filtro.PedidoID,
 		VencimentoDe:    filtro.VencimentoDe,
 		VencimentoAte:   filtro.VencimentoAte,
+		VendedorID:      filtro.VendedorID,
 		OrderBy:         filtro.OrderBy,
 		OrderDir:        filtro.OrderDir,
 	}
@@ -111,6 +113,22 @@ func (s *PagamentoService) GetPagamentoByID(ctx context.Context, db *sql.DB, pag
 		return nil, err
 	}
 	return p, nil
+}
+
+// VendedorIDDoPedido retorna o vendedor_id do pedido informado. Usado para
+// verificar se um pagamento pertence à carteira do usuário autenticado
+// (role=normal), já que a tabela pagamentos não guarda vendedor_id
+// diretamente — o vínculo é via pedidos.vendedor_id.
+// Retorna ErrPedidoNaoEncontrado se o pedido não existir.
+func (s *PagamentoService) VendedorIDDoPedido(ctx context.Context, db *sql.DB, pedidoID int64) (int64, error) {
+	pedido, err := s.pedidoRepo.GetByID(ctx, db, pedidoID)
+	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return 0, ErrPedidoNaoEncontrado
+		}
+		return 0, err
+	}
+	return pedido.VendedorID, nil
 }
 
 // PagamentoInput agrupa os campos aceitos no payload de criação/edição de

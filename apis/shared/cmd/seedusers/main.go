@@ -58,6 +58,7 @@ const (
 func main() {
 	noExec := flag.Bool("no-exec", false, "apenas substitui placeholders; não executa SQL no MySQL")
 	dryRun := flag.Bool("dry-run", false, "imprime hashes gerados sem modificar arquivos")
+	showPassword := flag.Bool("show-password", false, "exibe as senhas de seed geradas/usadas no console (cuidado: evite em ambientes compartilhados)")
 	flag.Parse()
 
 	// Carrega .env da raiz do projeto (sobe diretórios a partir de cwd).
@@ -93,12 +94,18 @@ func main() {
 	log.Printf("seedusers: cost=%d, admin_hash=%s..., user_hash=%s...",
 		cfg.BCryptCost, shortHash(adminHash), shortHash(userHash))
 
-	// Imprime as credenciais geradas (sempre, mesmo no dry-run) para dev.
+	// As senhas de seed só são impressas em claro no console quando
+	// --show-password é passado explicitamente — evita vazamento acidental
+	// em logs de CI/terminal compartilhado.
 	fmt.Println()
-	fmt.Println("=== CREDENCIAIS DE SEED ===")
-	fmt.Printf("ADMIN_PASSWORD=%s\n", adminPwd)
-	fmt.Printf("USER_PASSWORD =%s\n", userPwd)
-	fmt.Println("============================")
+	if *showPassword {
+		fmt.Println("=== CREDENCIAIS DE SEED ===")
+		fmt.Printf("ADMIN_PASSWORD=%s\n", adminPwd)
+		fmt.Printf("USER_PASSWORD =%s\n", userPwd)
+		fmt.Println("============================")
+	} else {
+		fmt.Println("=== CREDENCIAIS DE SEED: definidas com sucesso (use --show-password para exibir) ===")
+	}
 	fmt.Println()
 
 	if *dryRun {
@@ -233,10 +240,13 @@ func replaceInFile(path string, repl map[string]string) (int, error) {
 }
 
 // runMySQL executa um arquivo SQL via cliente mysql, lendo o conteúdo via stdin.
+// A senha do banco é passada via variável de ambiente MYSQL_PWD (lida
+// nativamente pelo cliente mysql) em vez de argumento de linha de comando
+// (-p senha), que ficaria visível para outros processos/usuários do sistema
+// via `ps`/Task Manager e no histórico de shell.
 func runMySQL(cfg *config.Config, file string) error {
 	args := []string{
 		fmt.Sprintf("-u%s", cfg.DBUsuario),
-		fmt.Sprintf("-p%s", cfg.DBSenha),
 		fmt.Sprintf("-h%s", cfg.DBHost),
 		fmt.Sprintf("-P%s", cfg.DBPort),
 		"--default-character-set=utf8mb4",
@@ -248,6 +258,7 @@ func runMySQL(cfg *config.Config, file string) error {
 		return fmt.Errorf("leitura de %s: %w", file, err)
 	}
 	cmd := exec.Command("mysql", args...)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("MYSQL_PWD=%s", cfg.DBSenha))
 	cmd.Stdin = strings.NewReader(string(sqlBytes))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

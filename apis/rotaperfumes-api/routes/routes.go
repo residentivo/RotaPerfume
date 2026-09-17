@@ -284,8 +284,13 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 		w.Write([]byte(`{"success":true,"data":{"status":"ok"}}`))
 	})
 
+	// Security headers — aplicado em TODAS as rotas.
+	securityChain := middleware.SecurityHeadersMiddleware()
+
 	// CORS — aplicado em TODAS as rotas (deve ser o middleware mais externo).
-	// Origins permitidas: http://localhost:3000 (Next.js dev) + o que vier em CORS_ALLOWED_ORIGINS.
-	corsChain := middleware.CORSMiddleware("http://localhost:3000")
-	return corsChain(mux)
+	// Origins permitidas: lista explícita (comparação exata) em
+	// cfg.CORSAllowedOrigins, que já inclui as origens de dev local padrão
+	// mais o que vier em CORS_ALLOWED_ORIGINS.
+	corsChain := middleware.CORSMiddleware(cfg.CORSAllowedOrigins)
+	return corsChain(securityChain(mux))
 }
