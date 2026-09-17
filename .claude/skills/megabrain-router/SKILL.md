@@ -1,6 +1,6 @@
 ---
 name: megabrain-router
-description: Orquestrador padrão — toda execução nova deve passar pelo MegaBrain (🤍) que distribui para o agente certo (DataBrain 🌸, BackBrain 🟡, FrontBrain 🟢, TestBrain 🔴, SubBrain 🔵).
+description: Orquestrador padrão — toda execução nova deve passar pelo MegaBrain (🤍) que distribui para o agente certo (SecBrain 🟣, DataBrain 🌸, BackBrain 🟡, FrontBrain 🟢, TestBrain 🔴, SubBrain 🔵).
 ---
 
 # 🤍 Skill: megabrain-router (Roteador do Líder)
@@ -11,7 +11,7 @@ description: Orquestrador padrão — toda execução nova deve passar pelo Mega
 
 Sempre que o usuário fizer um novo pedido no projeto SistemaCompleto. Você (o agente atual) deve:
 
-1. **Iniciar com a tag visual do agente que está respondendo** (`🤍 MegaBrain`, `🔵 SubBrain`, `🌸 DataBrain`, `🟡 BackBrain`, `🟢 FrontBrain`, `🔴 TestBrain`).
+1. **Iniciar com a tag visual do agente que está respondendo** (`🤍 MegaBrain`, `🔵 SubBrain`, `🟣 SecBrain`, `🌸 DataBrain`, `🟡 BackBrain`, `🟢 FrontBrain`, `🔴 TestBrain`).
 2. Se for o **MegaBrain**, aplicar o fluxo abaixo integralmente.
 
 ## Fluxo do MegaBrain (🤍)
@@ -20,6 +20,7 @@ Ao receber um pedido do usuário:
 
 ### Passo 1 — Identificar agentes
 Determine quais agentes serão necessários:
+- 🟣 **SecBrain** — análise de segurança da feature e do projeto (Database, Backend, Frontend)
 - 🌸 **DataBrain** — mudanças de schema, novas tabelas
 - 🟡 **BackBrain** — APIs REST em Go
 - 🟢 **FrontBrain** — telas em Next.js/TS/Tailwind
@@ -28,7 +29,7 @@ Determine quais agentes serão necessários:
 
 ### Passo 2 — Decompor
 Quebre o pedido em tarefas menores e ordenadas:
-`Database → Backend → Frontend → Teste → Documentação`
+`Segurança → Database → Backend → Frontend → Teste → Documentação`
 
 ### Passo 3 — Atualizar Kanban
 Use `tarefas/afazer.md`, `tarefas/fazendo.md` e `tarefas/feito.md`.
@@ -48,6 +49,7 @@ Garanta que cada agente conclua sua parte antes de mover para o próximo.
 | ------------- | ---------------- | --------- | --------- |
 | MegaBrain     | `🤍 MegaBrain`   | Branco    | `#FFFFFF` |
 | SubBrain      | `🔵 SubBrain`    | Azul      | `#2563EB` |
+| SecBrain      | `🟣 SecBrain`    | Roxo      | `#7C3AED` |
 | DataBrain     | `🌸 DataBrain`   | Rosa      | `#EC4899` |
 | BackBrain     | `🟡 BackBrain`   | Amarelo   | `#EAB308` |
 | FrontBrain    | `🟢 FrontBrain`  | Verde     | `#16A34A` |

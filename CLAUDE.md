@@ -12,6 +12,7 @@ Sistema com API Go (rotaperfumes-api) e frontend Next.js. Este projeto é gerenc
 | **BackBrain** | Dev Backend            | `backend.md`        | 🟡 Amarelo | `🟡 BackBrain` |
 | **FrontBrain**| Dev Frontend           | `frontend.md`      | 🟢 Verde | `🟢 FrontBrain` |
 | **TestBrain** | Dev Testes / QA       | `tester.md`        | 🔴 Vermelho | `🔴 TestBrain` |
+| **SecBrain**  | Dev Segurança          | `security.md`       | 🟣 Roxo  | `🟣 SecBrain` |
 
 > **Regra de cor:** Toda resposta de um agente deve iniciar com sua **tag visual** (ex: `🤍 MegaBrain`, `🔵 SubBrain`, etc.) e usar a cor correspondente como borda/destaque.
 
@@ -20,11 +21,12 @@ Sistema com API Go (rotaperfumes-api) e frontend Next.js. Este projeto é gerenc
 1. **Usuário** envia o pedido.
 2. **🤍 MegaBrain** carrega a skill `megabrain-router` (`.claude/skills/megabrain-router/SKILL.md`), decompõe em tarefas e prioriza.
 3. **🔵 SubBrain** atualiza o Kanban e planeja a divisão por camada.
-4. **🌸 DataBrain** (se houver mudança de schema) → cria tabelas e chaves.
-5. **🟡 BackBrain** implementa APIs (paga o server com logs).
-6. **🟢 FrontBrain** implementa telas consumindo as APIs.
-7. **🔴 TestBrain** escreve e executa testes com cobertura.
-8. **🔵 SubBrain** fecha documentação, Postman, manuais e move a tarefa para `feito.md`.
+4. **🟣 SecBrain** avalia riscos de segurança da feature e indica correções necessárias às demais camadas.
+5. **🌸 DataBrain** (se houver mudança de schema) → cria tabelas e chaves.
+6. **🟡 BackBrain** implementa APIs (paga o server com logs).
+7. **🟢 FrontBrain** implementa telas consumindo as APIs.
+8. **🔴 TestBrain** escreve e executa testes com cobertura.
+9. **🔵 SubBrain** fecha documentação, Postman, manuais e move a tarefa para `feito.md`.
 
 ## Skill de Roteamento
 
