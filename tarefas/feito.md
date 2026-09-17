@@ -4,6 +4,132 @@
 
 ---
 
+## Ranking de vendedores deve ordenar por meta e desempatar por atingimento — 2026-09-17
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** `GetVendedoresRanking` (dashboard_repository.go) ordenava só por `meta_mensal DESC` na query SQL e computava o `atingimento_meta` depois em Go (pós-paginação), sem desempate real. Pedido do usuário: ordenar por meta (maior primeiro) e usar atingimento como critério de desempate, resolvido no nível do banco para funcionar corretamente com paginação.
+
+**Subtarefas:**
+- [x] 🟡 BackBrain: reescrita `GetVendedoresRanking` (`apis/shared/repositories/dashboard_repository.go`) para uma query única (LEFT JOIN vendedores + subquery agregada de pedidos do mês), ordenando `ORDER BY v.meta_mensal DESC, atingimento_meta DESC` no banco, antes do LIMIT/OFFSET. Removida a função auxiliar `getVendasMap` (não usada em mais nenhum lugar). Validado manualmente no banco local com dados reais.
+- [x] 🔴 TestBrain: adicionado teste específico de desempate por atingimento (`TestDashboardGetVendedoresRanking_EmpateMeta_OrdenaPorAtingimento`), validando a cláusula ORDER BY via regex e a preservação da ordem. Cobertura ~80-95%, tudo passando.
+- [x] 🔵 SubBrain: card movido para `feito.md`; documentação atualizada — ver detalhes abaixo.
+
+**Nota:** 🟢 FrontBrain não foi acionado — mudança é só de ordenação no backend, não altera o contrato JSON nem exige alteração no frontend.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — request "Dashboard — Ranking Vendedores": descrição atualizada com a nota "Ordenação: `meta_mensal DESC`, com desempate por `atingimento_meta DESC` — calculada no SQL (join/subquery agregada de pedidos do mês), antes do LIMIT/OFFSET."
+- `postman/README.md` — seção "Dashboard (`/api/dashboard/*`) — admin only", item `GET /api/dashboard/vendedores`: adicionada linha "Ordenação: por `meta_mensal DESC`, com desempate por `atingimento_meta DESC` (calculado no SQL, antes da paginação)."
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Bug: barras do gráfico "Vendas nos Últimos 30 Dias" invisíveis (CSS) — 2026-09-16
+**Agente:** 🤍 MegaBrain (correção direta, pré-existente no componente `BarChart`)
+
+**Descrição:** No componente `BarChart` (`frontend/src/app/dashboard/page.tsx`), o container das barras usava `items-end` (alinha ao final, mas dimensiona pelo conteúdo). Cada barra ficava dentro de um wrapper sem altura definida, e `height: {pct}%` sobre um pai com altura `auto` resolve para `0` (regra CSS de percentage-height). Resultado: datas do eixo X apareciam corretamente, mas nenhuma barra era renderizada, independente dos valores de vendas — bug de layout, não de dados.
+
+**Correção:** container mudou para `items-stretch` (cada wrapper ocupa a altura total, 192px/h-48) e cada wrapper virou `flex flex-col justify-end`, empurrando a barra interna para o fundo. Validado com `tsc --noEmit` (sem erros).
+
+---
+
+## Bug: erro 500 (only_full_group_by) em GET /api/dashboard/vendas — 2026-09-16
+**Agente:** 🤍 MegaBrain (correção direta, regressão da tarefa anterior)
+
+**Descrição:** A correção do bug "NaN/09" trocou o SELECT de `GetVendasSeries` para `DATE_FORMAT(data_pedido, '%Y-%m-%d')`, mas o `GROUP BY` continuou como `DATE(data_pedido)` — expressão diferente da do SELECT. Com `sql_mode=only_full_group_by` (padrão do MySQL), isso gera `Error 1055`, quebrando o endpoint com 500.
+
+**Correção:** `GROUP BY` alterado para `DATE_FORMAT(data_pedido, '%Y-%m-%d')` em `apis/shared/repositories/dashboard_repository.go`, casando com o SELECT. Validado manualmente no banco (query executa sem erro) e via `go test ./...` em `apis/shared` e `apis/rotaperfumes-api` (todos os pacotes passando).
+
+---
+
+## Bug: gráfico de vendas mostra "NaN/09" no eixo de datas — 2026-09-16
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** A conexão MySQL usa `parseTime=true` (config.go). Colunas DATE/DATE_SUB retornadas por `DATE(data_pedido)` e `DATE_SUB(CURDATE(), INTERVAL n DAY)` em `dashboard_repository.go` (linhas ~352 e ~432) eram convertidas pelo driver para `time.Time` e, ao serem escaneadas numa string Go, viravam algo como `"2026-09-16 00:00:00 -0300 -03"` em vez de `"2026-09-16"`. O frontend fazia `dateStr.split("-")` esperando `YYYY-MM-DD`, então o "dia" virava `NaN`.
+
+**Subtarefas:**
+- [x] 🟡 BackBrain: corrigidas as 2 queries (`GetVendasSeries` e `buildFullSeries`) usando `DATE_FORMAT(..., '%Y-%m-%d')` em `apis/shared/repositories/dashboard_repository.go`, garantindo string pura `YYYY-MM-DD` independente do driver. Validado manualmente no banco local.
+- [x] 🟢 FrontBrain: não precisou de alteração.
+- [x] 🔴 TestBrain: adicionado teste validando formato exato `YYYY-MM-DD` via regex, cobrindo os dois caminhos (query real e `buildFullSeries`). Cobertura 80-95%, tudo passando.
+- [x] 🔵 SubBrain: card movido para `feito.md`; `postman/collection.json` verificado — nenhum exemplo de resposta com data no formato errado (ex: `"2026-09-16 00:00:00 -0300 -03"`) foi encontrado, então nenhuma correção foi necessária (é detalhe de formatação interna, não muda o contrato já documentado).
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Bug: gráfico "Vendas nos Últimos 30 Dias" não mostra nada — 2026-09-16
+**Agentes:** 🟡 BackBrain (delegado por 🤍 MegaBrain) → 🔴 TestBrain → documentação por 🔵 SubBrain
+
+**Descrição:** `GET /api/dashboard/vendas` retornava um array puro de pontos com campos `data`/`valor`/`quantidade`, enquanto o frontend (tipo `VendasSeries`) esperava um objeto `{dias, pontos: [{dia, total_vendas, total_pedidos}]}`. O mismatch de shape fazia o gráfico cair sempre no estado vazio.
+
+**Subtarefas:**
+- [x] 🟡 BackBrain: `GetVendas` corrigido para responder `{dias, pontos: [{dia, total_vendas, total_pedidos}]}`, batendo com o tipo `VendasSeries` do frontend. Corrigido também `emptySeries` para gerar datas reais (`YYYY-MM-DD`) em vez do texto `"N dias atras"`.
+- [x] 🟢 FrontBrain: não precisou de alteração — o frontend já esperava esse shape.
+- [x] 🔴 TestBrain: reforçados testes de repository/service/handler cobrindo o novo shape, cobertura 80-95%, suíte 100% verde.
+- [x] 🔵 SubBrain: card movido para `feito.md`; `postman/collection.json` e `postman/README.md` corrigidos — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — request "Dashboard — Vendas (série temporal)": descrição e exemplo de resposta 200 corrigidos de array puro (`data: [{data, valor, pedidos}]`) para o shape real `data: {dias, pontos: [{dia, total_vendas, total_pedidos}]}`, com nota de que dias sem venda vêm zerados (não omitidos). Script de teste (`pm.test`) atualizado para checar `jsonData.data.dias` e as propriedades `dia`/`total_vendas`/`total_pedidos` de `jsonData.data.pontos[0]`.
+- `postman/README.md` — seção "Dashboard (`/api/dashboard/*`) — admin only", item `GET /api/dashboard/vendas`: adicionada linha "Resposta" documentando o shape real `{dias, pontos: [...]}`.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Bug: Total de Vendas exibe NaN e Ranking de Vendedores sempre 0 — 2026-09-16
+**Agentes:** 🟡 BackBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** Dois bugs pré-existentes no dashboard, encontrados durante testes manuais do usuário: (1) `dashboard_service.go` retornava `total_vendas_valor` mas o frontend esperava `total_vendas`, causando NaN no card "Total de Vendas"; (2) `dashboard_repository.go` usava a coluna inexistente `id_vendedor` em 3 queries (`enrichWithVendas`, `enrichMetasWithVendas`, `getVendasMap`), quando a coluna real em `pedidos` é `vendedor_id`, fazendo as queries falharem silenciosamente e o ranking de vendedores ficar sempre zerado.
+
+**Subtarefas:**
+- [x] 🟡 BackBrain: trocado `id_vendedor` por `vendedor_id` nas 3 queries de `apis/shared/repositories/dashboard_repository.go` (`enrichWithVendas`, `enrichMetasWithVendas`, `getVendasMap`), corrigindo o ranking de vendedores sempre zerado; renomeada a chave `"total_vendas_valor"` para `"total_vendas"` no retorno de `GetMetrics` em `apis/rotaperfumes-api/services/dashboard_service.go`, corrigindo o NaN no card "Total de Vendas" (mismatch com o campo esperado pelo frontend).
+- [x] 🟢 FrontBrain: não precisou de alteração — o frontend já esperava o campo `total_vendas`.
+- [x] 🔴 TestBrain: mocks/asserts ajustados em `dashboard_repository_test.go`, `dashboard_service_test.go` e `dashboard_handler_test.go`. Build e testes passam.
+- [x] 🔵 SubBrain: card movido para `feito.md`; `postman/collection.json` verificado — já usava `total_vendas` nos exemplos de resposta de `GET /api/dashboard/metrics`, nenhuma correção necessária.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Filtro "Semana" do dashboard retorna os mesmos dados que "Hoje" — 2026-09-16
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** O backend só suportava `periodo=today`/`month`; o frontend remapeava `week` para `today` como contorno (escondendo o problema em vez de resolvê-lo), fazendo o filtro "Semana" do dashboard exibir exatamente os mesmos dados que "Hoje".
+
+**Subtarefas:**
+- [x] 🟡 BackBrain: adicionado suporte real a `periodo="week"` (7 dias corridos, `DATE_SUB(CURDATE(), INTERVAL 6 DAY)` até hoje) em `GetVendasTotais`, `GetTotalPedidos` (`apis/shared/repositories/dashboard_repository.go`) e `CountNovosNoPeriodo` (`apis/shared/repositories/cliente_repository.go`); validação dos handlers (`apis/rotaperfumes-api/handlers/dashboard_handler.go`) passou a aceitar `"today"`/`"week"`/`"month"`.
+- [x] 🟢 FrontBrain: removido o remapeamento `"week" -> "today"` em `frontend/src/app/dashboard/page.tsx` e o tipo `DashboardPeriodo` (`frontend/src/lib/types.ts`) passou a incluir `"week"`. Typecheck (`tsc --noEmit`) OK.
+- [x] 🔴 TestBrain: corrigido um mock quebrado pré-existente (`GetMetaMensalTotal` faltando em um teste) e escritos testes novos cobrindo o caso `"week"` nas 3 funções alteradas do backend + teste de handler. Suíte 100% verde, cobertura 80-95%.
+- [x] 🔵 SubBrain: documentação/Postman atualizada — ver detalhes abaixo — e card movido para `feito.md`.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — pasta "Dashboard", requests `GET /api/dashboard/metrics` e `GET /api/dashboard/clientes`: descrições de query param `periodo` atualizadas de `today | month` para `today | week | month`, descrições longas dos requests atualizadas explicando que `week` considera os últimos 7 dias corridos (`DATE_SUB(CURDATE(), INTERVAL 6 DAY)`), e as mensagens de erro 400 de exemplo atualizadas de `"periodo deve ser 'today' ou 'month'"` para `"periodo deve ser 'today', 'week' ou 'month'"`.
+- `postman/README.md` — seção "Dashboard (`/api/dashboard/*`) — admin only": `GET /api/dashboard/metrics` e `GET /api/dashboard/clientes` com a query documentada como `?periodo=today|week|month` e nova linha explicando que `week` = últimos 7 dias corridos (não semana civil).
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Dashboard 100% orientado a dados reais da base — 2026-09-16
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
+
+**Descrição:** O dashboard admin misturava dados reais da API com fallbacks/mocks decorativos no frontend (métricas demo, série de vendas com `Math.random`, lista fixa de 10 vendedores fictícios, metas de pedidos/clientes calculadas por multiplicador arbitrário) sempre que a resposta da API vinha vazia ou incompleta. Objetivo: tornar o dashboard 100% orientado a dados reais do banco, com estados vazios/zero honestos em vez de dados fake.
+
+**Camadas:**
+- [x] Backend (🟡 BackBrain) — `apis/shared/repositories/dashboard_repository.go`: novo `GetMetaMensalTotal` (SUM de `vendedores.meta_mensal` filtrando vendedores ativos). `apis/rotaperfumes-api/services/dashboard_service.go`: `GetMetrics` passou a compor e retornar o campo real `meta_mes` em `GET /api/dashboard/metrics`, substituindo qualquer valor calculado no frontend.
+- [x] Frontend (🟢 FrontBrain) — `frontend/src/app/dashboard/page.tsx`: removidos todos os fallbacks fake (`demoMetrics`, `demoVendas` com `Math.random`, lista de 10 vendedores fictícios, metas de pedidos/clientes calculadas por multiplicador arbitrário). Passou a usar `displayMetrics`/`displayVendas` vindos diretamente da API, com estados vazios/zero honestos quando não há dado. A meta de vendas exibida agora vem do campo real `meta_mes`. Os cards de "meta de pedidos" e "meta de clientes" foram removidos por não existir fonte real desses dados no banco (decisão de não inventar métrica sem lastro).
+- [x] Teste (🔴 TestBrain) — `apis/shared/repositories/dashboard_repository_test.go` e `apis/rotaperfumes-api/services/dashboard_service_test.go`: novos casos cobrindo `GetMetaMensalTotal` (sucesso, tabela vazia, tabela inexistente, erro de DB) e `GetMetrics` ajustado para o novo campo `meta_mes`. Cobertura 89-95%, suíte 100% verde. Confirmado via grep que não restou nenhum mock/fallback fake no frontend do dashboard.
+- [x] Documentação (🔵 SubBrain) — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — pasta "Dashboard", request `GET /api/dashboard/metrics`: descrição e os dois exemplos de resposta 200 (mês e dia) atualizados incluindo o novo campo `meta_mes` (com nota explicando que é a soma real de `vendedores.meta_mensal` dos vendedores ativos, sem filtro por período). Script de teste (`pm.test`) atualizado para checar `jsonData.data.meta_mes`.
+- `postman/README.md` — seção "Dashboard (`/api/dashboard/*`) — admin only", item `GET /api/dashboard/metrics`: descrição atualizada mencionando "meta do mês" e adicionada nota explicando a origem real do campo `meta_mes`.
+- Não existe manual dedicado de "como usar as telas" nem manual de banco de dados no repositório (apenas `postman/README.md` e o `Makefile`/`make help`) — nenhum outro documento precisou de ajuste para esta tarefa.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## Cadastro de Visitas (CRM) — 2026-09-15
 **Agentes:** 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain (delegado por 🤍 MegaBrain) → documentação por 🔵 SubBrain
 

@@ -135,18 +135,22 @@ Exemplos:
 
 #### GET /api/dashboard/metrics
 - **Auth:** Bearer Token (admin)
-- **Query:** `?periodo=today|month&ano=2026&mes=9`
-- **Descrição:** Métricas gerais (total de vendas, pedidos, ticket médio, vendedores ativos)
+- **Query:** `?periodo=today|week|month&ano=2026&mes=9`
+- **Descrição:** Métricas gerais (total de vendas, pedidos, ticket médio, vendedores ativos, meta do mês)
+- **Período `week`:** considera os últimos 7 dias corridos (`DATE_SUB(CURDATE(), INTERVAL 6 DAY)` até hoje), não a semana civil.
+- **Campo `meta_mes`:** soma real de `vendedores.meta_mensal` dos vendedores ativos (`GetMetaMensalTotal`), sem fallback calculado — dado 100% vindo do banco.
 
 #### GET /api/dashboard/vendas
 - **Auth:** Bearer Token (admin)
 - **Query:** `?dias=30` (padrão 30, máx 365)
 - **Descrição:** Série temporal de vendas dos últimos N dias
+- **Resposta:** `data: { dias: number, pontos: [{ dia: "YYYY-MM-DD", total_vendas: number, total_pedidos: number }] }` — um ponto por dia do intervalo, com `total_vendas`/`total_pedidos` zerados nos dias sem venda (nunca omitidos), evitando o gráfico "Vendas nos Últimos 30 Dias" ficar vazio.
 
 #### GET /api/dashboard/vendedores
 - **Auth:** Bearer Token (admin)
 - **Query:** `?page=1&limit=20`
 - **Descrição:** Ranking de vendedores (total de vendas, meta, percentual)
+- **Ordenação:** por `meta_mensal DESC`, com desempate por `atingimento_meta DESC` (calculado no SQL, antes da paginação).
 
 ### Histórico de Senhas (`/api/senha-historico/*`) — admin only
 
@@ -194,8 +198,9 @@ Exemplos:
 
 #### GET /api/dashboard/clientes
 - **Auth:** Bearer Token (admin)
-- **Query:** `?periodo=today|month` (padrão: `month`)
+- **Query:** `?periodo=today|week|month` (padrão: `month`)
 - **Descrição:** Métricas agregadas da base de clientes: `total_clientes`, `total_ativos`, `total_inativos`, `novos_no_periodo`, `por_segmento` (array `{segmento, total}`) e `por_uf` (array `{uf, total}`)
+- **Período `week`:** considera os últimos 7 dias corridos (`DATE_SUB(CURDATE(), INTERVAL 6 DAY)` até hoje), não a semana civil.
 
 ### Produtos (`/api/produtos/*`) — admin only
 

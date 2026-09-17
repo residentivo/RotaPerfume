@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 )
 
 // DashboardRepository agrupa queries do dashboard.
@@ -16,9 +17,25 @@ func NewDashboardRepository() *DashboardRepository {
 	return &DashboardRepository{}
 }
 
+// periodoWhereClause monta a clausula WHERE de filtro de data para data_pedido
+// de acordo com o periodo solicitado.
+// periodo: "today" = dia atual, "week" = ultimos 7 dias (incluindo hoje),
+// qualquer outro valor (inclusive "month") = mes atual.
+func periodoWhereClause(periodo string) string {
+	switch periodo {
+	case "today":
+		return "DATE(data_pedido) = CURDATE()"
+	case "week":
+		return "data_pedido >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)"
+	default:
+		// month: primeiro ao ultimo dia do mes atual.
+		return "YEAR(data_pedido) = YEAR(CURDATE()) AND MONTH(data_pedido) = MONTH(CURDATE())"
+	}
+}
+
 // GetVendasTotais retorna (valor_total, quantidade) de vendas no periodo.
 // Se a tabela pedidos não existir, retorna (0, 0).
-// periodo: "today" = dia atual, "month" = mes atual.
+// periodo: "today" = dia atual, "week" = ultimos 7 dias, "month" = mes atual.
 func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, periodo string) (float64, int, error) {
 	// Tenta buscar da tabela pedidos (se existir).
 	// A query abaixo usa um filtro de periodo baseado na coluna data_pedido (se existir).
@@ -26,13 +43,7 @@ func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, p
 	var valorTotal sql.NullFloat64
 	var quantidade sql.NullInt64
 
-	var whereClause string
-	if periodo == "today" {
-		whereClause = "DATE(data_pedido) = CURDATE()"
-	} else {
-		// month: primeiro ao ultimo dia do mes atual.
-		whereClause = "YEAR(data_pedido) = YEAR(CURDATE()) AND MONTH(data_pedido) = MONTH(CURDATE())"
-	}
+	whereClause := periodoWhereClause(periodo)
 
 	// Query genérica que só funciona se a tabela pedidos existir.
 	q := fmt.Sprintf(`
@@ -62,12 +73,7 @@ func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, p
 
 // GetTotalPedidos retorna o total de pedidos no periodo.
 func (r *DashboardRepository) GetTotalPedidos(ctx context.Context, db *sql.DB, periodo string) (int, error) {
-	var whereClause string
-	if periodo == "today" {
-		whereClause = "DATE(data_pedido) = CURDATE()"
-	} else {
-		whereClause = "YEAR(data_pedido) = YEAR(CURDATE()) AND MONTH(data_pedido) = MONTH(CURDATE())"
-	}
+	whereClause := periodoWhereClause(periodo)
 
 	q := fmt.Sprintf(`
 		SELECT COUNT(*) FROM pedidos
@@ -84,6 +90,31 @@ func (r *DashboardRepository) GetTotalPedidos(ctx context.Context, db *sql.DB, p
 
 	if total.Valid {
 		return int(total.Int64), nil
+	}
+	return 0, nil
+}
+
+// GetMetaMensalTotal retorna a soma de meta_mensal de todos os vendedores
+// ativos (sem data_desligamento). Se a tabela vendedores nao existir,
+// retorna 0.
+func (r *DashboardRepository) GetMetaMensalTotal(ctx context.Context, db *sql.DB) (float64, error) {
+	var metaTotal sql.NullFloat64
+
+	q := `
+		SELECT COALESCE(SUM(meta_mensal), 0)
+		FROM vendedores
+		WHERE data_desligamento IS NULL`
+
+	err := db.QueryRowContext(ctx, q).Scan(&metaTotal)
+	if err != nil {
+		if isTableNotFound(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("GetMetaMensalTotal: %w", err)
+	}
+
+	if metaTotal.Valid {
+		return metaTotal.Float64, nil
 	}
 	return 0, nil
 }
@@ -159,15 +190,15 @@ func (r *DashboardRepository) enrichWithVendas(ctx context.Context, db *sql.DB, 
 	}
 
 	q := fmt.Sprintf(`
-		SELECT id_vendedor,
+		SELECT vendedor_id,
 			   COALESCE(SUM(valor_total), 0),
 			   COUNT(*)
 		FROM pedidos
-		WHERE id_vendedor IN (%s)
+		WHERE vendedor_id IN (%s)
 		  AND YEAR(data_pedido) = YEAR(CURDATE())
 		  AND MONTH(data_pedido) = MONTH(CURDATE())
 		  AND status NOT IN ('cancelado', 'devolvido')
-		GROUP BY id_vendedor`, placeholders)
+		GROUP BY vendedor_id`, placeholders)
 
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -270,15 +301,15 @@ func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql
 	}
 
 	q := fmt.Sprintf(`
-		SELECT id_vendedor,
+		SELECT vendedor_id,
 			   COALESCE(SUM(valor_total), 0),
 			   COUNT(*)
 		FROM pedidos
-		WHERE id_vendedor IN (%s)
+		WHERE vendedor_id IN (%s)
 		  AND YEAR(data_pedido) = YEAR(CURDATE())
 		  AND MONTH(data_pedido) = MONTH(CURDATE())
 		  AND status NOT IN ('cancelado', 'devolvido')
-		GROUP BY id_vendedor`, placeholders)
+		GROUP BY vendedor_id`, placeholders)
 
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -318,13 +349,13 @@ func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql
 // GetVendasSeries retorna serie temporal (data -> valor, quantidade) dos ultimos N dias.
 func (r *DashboardRepository) GetVendasSeries(ctx context.Context, db *sql.DB, dias int) ([]map[string]any, error) {
 	q := `
-		SELECT DATE(data_pedido) AS data,
+		SELECT DATE_FORMAT(data_pedido, '%Y-%m-%d') AS data,
 			   COALESCE(SUM(valor_total), 0) AS valor,
 			   COUNT(*) AS quantidade
 		FROM pedidos
 		WHERE data_pedido >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
 		  AND status NOT IN ('cancelado', 'devolvido')
-		GROUP BY DATE(data_pedido)
+		GROUP BY DATE_FORMAT(data_pedido, '%Y-%m-%d')
 		ORDER BY data ASC`
 
 	rows, err := db.QueryContext(ctx, q, dias)
@@ -374,13 +405,17 @@ func (r *DashboardRepository) GetVendasSeries(ctx context.Context, db *sql.DB, d
 }
 
 // emptySeries retorna uma serie com zeros para os ultimos N dias.
+// As datas sao geradas em Go no formato YYYY-MM-DD, equivalente a
+// DATE_SUB(CURDATE(), INTERVAL i DAY), para bater com o contrato do frontend.
 func (r *DashboardRepository) emptySeries(dias int) []map[string]any {
+	hoje := time.Now()
 	series := make([]map[string]any, 0, dias)
 	for i := dias - 1; i >= 0; i-- {
+		dia := hoje.AddDate(0, 0, -i).Format("2006-01-02")
 		series = append(series, map[string]any{
-			"data":       fmt.Sprintf("%d dias atras", i),
-			"valor":      0.0,
-			"quantidade": 0,
+			"dia":           dia,
+			"total_vendas":  0.0,
+			"total_pedidos": 0,
 		})
 	}
 	return series
@@ -394,7 +429,7 @@ func (r *DashboardRepository) buildFullSeries(ctx context.Context, db *sql.DB, d
 	series := make([]map[string]any, 0, dias)
 
 	// Pega datas do banco para ter a sequencia correta.
-	q := `SELECT DATE_SUB(CURDATE(), INTERVAL n DAY) AS dia
+	q := `SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL n DAY), '%Y-%m-%d') AS dia
 	      FROM (
 	          SELECT 0 AS n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4
 	          UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9
@@ -490,15 +525,15 @@ func (r *DashboardRepository) buildFullSeries(ctx context.Context, db *sql.DB, d
 		}
 		if d, ok := data[dia]; ok {
 			series = append(series, map[string]any{
-				"data":       dia,
-				"valor":      d.valor,
-				"quantidade": d.quantidade,
+				"dia":           dia,
+				"total_vendas":  d.valor,
+				"total_pedidos": d.quantidade,
 			})
 		} else {
 			series = append(series, map[string]any{
-				"data":       dia,
-				"valor":      0.0,
-				"quantidade": 0,
+				"dia":           dia,
+				"total_vendas":  0.0,
+				"total_pedidos": 0,
 			})
 		}
 	}
@@ -526,12 +561,25 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 		return nil, 0, fmt.Errorf("GetVendedoresRanking count: %w", err)
 	}
 
-	// Lista de vendedores ordenados por meta.
+	// Lista de vendedores com vendas do mes, ordenados por meta e, em caso de
+	// empate, por atingimento da meta — ordenacao feita no banco, antes do
+	// LIMIT/OFFSET, para que a paginacao seja consistente entre paginas.
 	q := `
-		SELECT id, nome, regiao, uf, meta_mensal
-		FROM vendedores
-		WHERE data_desligamento IS NULL
-		ORDER BY meta_mensal DESC
+		SELECT
+			v.id, v.nome, v.regiao, v.uf, v.meta_mensal,
+			COALESCE(p.total_vendas, 0) AS total_vendas,
+			COALESCE(p.total_pedidos, 0) AS total_pedidos,
+			CASE WHEN v.meta_mensal > 0 THEN (COALESCE(p.total_vendas, 0) / v.meta_mensal) * 100 ELSE 0 END AS atingimento_meta
+		FROM vendedores v
+		LEFT JOIN (
+			SELECT vendedor_id, SUM(valor_total) AS total_vendas, COUNT(*) AS total_pedidos
+			FROM pedidos
+			WHERE YEAR(data_pedido) = YEAR(CURDATE()) AND MONTH(data_pedido) = MONTH(CURDATE())
+			  AND status NOT IN ('cancelado', 'devolvido')
+			GROUP BY vendedor_id
+		) p ON p.vendedor_id = v.id
+		WHERE v.data_desligamento IS NULL
+		ORDER BY v.meta_mensal DESC, atingimento_meta DESC
 		LIMIT ? OFFSET ?`
 
 	rows, err := db.QueryContext(ctx, q, limit, offset)
@@ -540,120 +588,44 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 	}
 	defer rows.Close()
 
-	var vendedorIDs []int64
-	var raw []struct {
-		ID     int64
-		Nome   string
-		Regiao string
-		UF     string
-		Meta   float64
-	}
-
+	result := make([]map[string]any, 0, limit)
 	for rows.Next() {
-		var v struct {
-			ID     int64
-			Nome   string
-			Regiao string
-			UF     string
-			Meta   float64
-		}
-		if err := rows.Scan(&v.ID, &v.Nome, &v.Regiao, &v.UF, &v.Meta); err != nil {
+		var (
+			id             int64
+			nome           string
+			regiao         string
+			uf             string
+			meta           float64
+			totalVendas    float64
+			totalPedidos   int
+			atingimentoRaw float64
+		)
+		if err := rows.Scan(&id, &nome, &regiao, &uf, &meta, &totalVendas, &totalPedidos, &atingimentoRaw); err != nil {
 			return nil, 0, fmt.Errorf("GetVendedoresRanking scan: %w", err)
 		}
-		raw = append(raw, v)
-		vendedorIDs = append(vendedorIDs, v.ID)
-	}
 
-	// Busca vendas do mes para os IDs retornados.
-	vendasMap := r.getVendasMap(ctx, db, vendedorIDs)
-
-	// Monta output.
-	result := make([]map[string]any, 0, len(raw))
-	for _, v := range raw {
-		venda := vendasMap[v.ID]
-		percentual := 0.0
-		if v.Meta > 0 {
-			percentual = (venda.total / v.Meta) * 100
-		}
 		ticketMedio := 0.0
-		if venda.qtd > 0 {
-			ticketMedio = venda.total / float64(venda.qtd)
+		if totalPedidos > 0 {
+			ticketMedio = totalVendas / float64(totalPedidos)
 		}
+
 		result = append(result, map[string]any{
-			"vendedor_id":      v.ID,
-			"vendedor_nome":    v.Nome,
-			"regiao":           v.Regiao,
-			"uf":               v.UF,
-			"total_vendas":     venda.total,
-			"total_pedidos":    venda.qtd,
+			"vendedor_id":      id,
+			"vendedor_nome":    nome,
+			"regiao":           regiao,
+			"uf":               uf,
+			"total_vendas":     totalVendas,
+			"total_pedidos":    totalPedidos,
 			"ticket_medio":     mathRound(ticketMedio, 2),
-			"meta":             v.Meta,
-			"atingimento_meta": mathRound(percentual, 2),
+			"meta":             meta,
+			"atingimento_meta": mathRound(atingimentoRaw, 2),
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("GetVendedoresRanking rows: %w", err)
 	}
 
 	return result, total, nil
-}
-
-// vendaData agrega dados de venda.
-type vendaData struct {
-	total float64
-	qtd   int
-}
-
-// getVendasMap retorna mapa de id_vendedor -> vendas do mes.
-func (r *DashboardRepository) getVendasMap(ctx context.Context, db *sql.DB, ids []int64) map[int64]vendaData {
-	result := make(map[int64]vendaData)
-	if len(ids) == 0 {
-		return result
-	}
-
-	placeholders := ""
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		if i > 0 {
-			placeholders += ","
-		}
-		placeholders += "?"
-		args[i] = id
-	}
-
-	q := fmt.Sprintf(`
-		SELECT id_vendedor,
-			   COALESCE(SUM(valor_total), 0),
-			   COUNT(*)
-		FROM pedidos
-		WHERE id_vendedor IN (%s)
-		  AND YEAR(data_pedido) = YEAR(CURDATE())
-		  AND MONTH(data_pedido) = MONTH(CURDATE())
-		  AND status NOT IN ('cancelado', 'devolvido')
-		GROUP BY id_vendedor`, placeholders)
-
-	rows, err := db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return result
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var vid int64
-		var total sql.NullFloat64
-		var qtd sql.NullInt64
-		if err := rows.Scan(&vid, &total, &qtd); err != nil {
-			continue
-		}
-		t := 0.0
-		q := 0
-		if total.Valid {
-			t = total.Float64
-		}
-		if qtd.Valid {
-			q = int(qtd.Int64)
-		}
-		result[vid] = vendaData{total: t, qtd: q}
-	}
-
-	return result
 }
 
 // isTableNotFound retorna true se o erro indica que a tabela nao existe.

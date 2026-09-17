@@ -27,7 +27,7 @@ func NewDashboardService(db *sql.DB, cfg *config.Config) *DashboardService {
 }
 
 // GetMetrics retorna metricas agregadas de vendas para o periodo informado.
-// periodo: "today" (dia atual) ou "month" (mes atual).
+// periodo: "today" (dia atual), "week" (ultimos 7 dias) ou "month" (mes atual).
 func (s *DashboardService) GetMetrics(ctx context.Context, db *sql.DB, periodo string) (map[string]any, error) {
 	if s.Cfg.Verbose {
 		log.Printf("[dashboard] GetMetrics periodo=%s", periodo)
@@ -57,6 +57,12 @@ func (s *DashboardService) GetMetrics(ctx context.Context, db *sql.DB, periodo s
 		return nil, err
 	}
 
+	// Meta mensal total: soma de meta_mensal dos vendedores ativos.
+	metaMensalTotal, err := s.repo.GetMetaMensalTotal(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
 	// Ticket medio.
 	var ticketMedio float64
 	if totalVendasQuantidade > 0 {
@@ -64,22 +70,31 @@ func (s *DashboardService) GetMetrics(ctx context.Context, db *sql.DB, periodo s
 	}
 
 	return map[string]any{
-		"periodo":           periodo,
-		"total_vendas_valor":  totalVendasValor,
-		"total_vendas_qtd":    totalVendasQuantidade,
-		"total_pedidos":       totalPedidos,
-		"ticket_medio":        ticketMedio,
-		"top_vendedores":      topVendedores,
-		"metas_vendedores":    metas,
+		"periodo":          periodo,
+		"total_vendas":     totalVendasValor,
+		"total_vendas_qtd": totalVendasQuantidade,
+		"total_pedidos":    totalPedidos,
+		"ticket_medio":     ticketMedio,
+		"top_vendedores":   topVendedores,
+		"metas_vendedores": metas,
+		"meta_mes":         metaMensalTotal,
 	}, nil
 }
 
-// GetVendasSeries retorna serie temporal de vendas dos ultimos N dias.
-func (s *DashboardService) GetVendasSeries(ctx context.Context, db *sql.DB, dias int) ([]map[string]any, error) {
+// GetVendasSeries retorna serie temporal de vendas dos ultimos N dias, no
+// formato {dias, pontos} esperado pelo frontend (VendasSeries).
+func (s *DashboardService) GetVendasSeries(ctx context.Context, db *sql.DB, dias int) (map[string]any, error) {
 	if s.Cfg.Verbose {
 		log.Printf("[dashboard] GetVendasSeries dias=%d", dias)
 	}
-	return s.repo.GetVendasSeries(ctx, db, dias)
+	pontos, err := s.repo.GetVendasSeries(ctx, db, dias)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"dias":   dias,
+		"pontos": pontos,
+	}, nil
 }
 
 // GetVendedoresRanking retorna ranking paginado de vendedores com vendas e meta.
@@ -93,7 +108,7 @@ func (s *DashboardService) GetVendedoresRanking(ctx context.Context, db *sql.DB,
 // GetClienteMetrics retorna metricas agregadas da base de clientes: totais
 // (geral, ativos, inativos), novos cadastros no periodo informado e a
 // distribuicao por segmento e por UF.
-// periodo: "today" (dia atual) ou "month" (mes atual).
+// periodo: "today" (dia atual), "week" (ultimos 7 dias) ou "month" (mes atual).
 func (s *DashboardService) GetClienteMetrics(ctx context.Context, db *sql.DB, periodo string) (map[string]any, error) {
 	if s.Cfg.Verbose {
 		log.Printf("[dashboard] GetClienteMetrics periodo=%s", periodo)

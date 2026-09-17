@@ -1,3 +1,3 @@
 # Fazendo
 
-Nenhuma tarefa em execução no momento.
+(nenhuma tarefa em execução no momento)

@@ -124,7 +124,7 @@ export interface ResetPasswordRequest {
 
 // === Dashboard ===
 
-export type DashboardPeriodo = "today" | "month";
+export type DashboardPeriodo = "today" | "week" | "month";
 
 export interface DashboardMetrics {
   total_vendas: number;

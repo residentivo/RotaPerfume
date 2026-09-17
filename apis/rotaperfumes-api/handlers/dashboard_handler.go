@@ -25,15 +25,15 @@ func NewDashboardHandler(db *sql.DB, cfg *config.Config) *DashboardHandler {
 }
 
 // GetMetrics GET /api/dashboard/metrics
-// Query params (opcionais): periodo (today|month), ano (YYYY), mes (1-12).
-// Resposta: métricas gerais de vendas do dia ou mes.
+// Query params (opcionais): periodo (today|week|month), ano (YYYY), mes (1-12).
+// Resposta: métricas gerais de vendas do dia, semana ou mes.
 func (h *DashboardHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	periodo := r.URL.Query().Get("periodo")
 	if periodo == "" {
 		periodo = "month"
 	}
-	if periodo != "today" && periodo != "month" {
-		writeJSON(w, http.StatusBadRequest, nil, "periodo deve ser 'today' ou 'month'")
+	if periodo != "today" && periodo != "week" && periodo != "month" {
+		writeJSON(w, http.StatusBadRequest, nil, "periodo deve ser 'today', 'week' ou 'month'")
 		return
 	}
 
@@ -93,7 +93,7 @@ func (h *DashboardHandler) GetVendedores(w http.ResponseWriter, r *http.Request)
 }
 
 // GetClientes GET /api/dashboard/clientes
-// Query params (opcionais): periodo (today|month).
+// Query params (opcionais): periodo (today|week|month).
 // Resposta: {periodo, total_clientes, total_ativos, total_inativos,
 //
 //	novos_no_periodo, por_segmento: [{segmento, total}], por_uf: [{uf, total}]}
@@ -102,8 +102,8 @@ func (h *DashboardHandler) GetClientes(w http.ResponseWriter, r *http.Request) {
 	if periodo == "" {
 		periodo = "month"
 	}
-	if periodo != "today" && periodo != "month" {
-		writeJSON(w, http.StatusBadRequest, nil, "periodo deve ser 'today' ou 'month'")
+	if periodo != "today" && periodo != "week" && periodo != "month" {
+		writeJSON(w, http.StatusBadRequest, nil, "periodo deve ser 'today', 'week' ou 'month'")
 		return
 	}
 

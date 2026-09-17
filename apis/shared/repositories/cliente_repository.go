@@ -185,12 +185,16 @@ func (r *ClienteRepository) CountPorAtivo(ctx context.Context, db *sql.DB, ativo
 }
 
 // CountNovosNoPeriodo retorna o total de clientes cujo data_cadastro caiu no
-// período informado. periodo: "today" (dia atual) ou "month" (mês atual).
+// período informado. periodo: "today" (dia atual), "week" (ultimos 7 dias,
+// incluindo hoje) ou "month" (mês atual).
 func (r *ClienteRepository) CountNovosNoPeriodo(ctx context.Context, db *sql.DB, periodo string) (int, error) {
 	var whereClause string
-	if periodo == "today" {
+	switch periodo {
+	case "today":
 		whereClause = "data_cadastro = CURDATE()"
-	} else {
+	case "week":
+		whereClause = "data_cadastro >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)"
+	default:
 		whereClause = "YEAR(data_cadastro) = YEAR(CURDATE()) AND MONTH(data_cadastro) = MONTH(CURDATE())"
 	}
 

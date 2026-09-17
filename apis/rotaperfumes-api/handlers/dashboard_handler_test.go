@@ -14,10 +14,11 @@ import (
 // GetMetrics GET /api/dashboard/metrics
 // ---------------------------------------------------------------------------
 
-// mockDashboardMetricsQueries prepara os 4 mocks consumidos em sequência por
-// GetMetrics (vendas totais, total de pedidos, top vendedores, metas).
-// Retorna listas vazias para top_vendedores/metas_vendedores para evitar as
-// queries adicionais de enriquecimento (só disparadas quando há resultados).
+// mockDashboardMetricsQueries prepara os 5 mocks consumidos em sequência por
+// GetMetrics (vendas totais, total de pedidos, top vendedores, metas,
+// meta mensal total). Retorna listas vazias para top_vendedores/
+// metas_vendedores para evitar as queries adicionais de enriquecimento
+// (só disparadas quando há resultados).
 func mockDashboardMetricsQueries(mock sqlmock.Sqlmock) {
 	mock.ExpectQuery(`SELECT COALESCE\(SUM\(valor_total\), 0\), COUNT\(\*\)\s+FROM pedidos`).
 		WillReturnRows(sqlmock.NewRows([]string{"valor", "quantidade"}).AddRow(1000.0, 5))
@@ -28,6 +29,8 @@ func mockDashboardMetricsQueries(mock sqlmock.Sqlmock) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}))
 	mock.ExpectQuery(`SELECT\s+v\.id,\s+v\.nome,\s+v\.regiao,\s+v\.uf,\s+v\.meta_mensal AS meta\s+FROM vendedores v`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta"}))
+	mock.ExpectQuery(`SELECT COALESCE\(SUM\(meta_mensal\), 0\)\s+FROM vendedores\s+WHERE data_desligamento IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"meta"}).AddRow(2000.0))
 }
 
 func TestGetMetrics_Success_Month(t *testing.T) {
@@ -52,7 +55,7 @@ func TestGetMetrics_Success_Month(t *testing.T) {
 	assert.True(t, body["success"].(bool))
 	data := body["data"].(map[string]any)
 	assert.Equal(t, "month", data["periodo"])
-	assert.Equal(t, float64(1000), data["total_vendas_valor"])
+	assert.Equal(t, float64(1000), data["total_vendas"])
 	assert.Equal(t, float64(5), data["total_pedidos"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -83,6 +86,31 @@ func TestGetMetrics_Success_Today(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestGetMetrics_Success_Week(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mockDashboardMetricsQueries(mock)
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/metrics?periodo=week", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, "week", data["periodo"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestGetMetrics_PeriodoInvalido(t *testing.T) {
 	server, db, _ := setupTestServer(t)
 	defer server.Close()
@@ -100,7 +128,7 @@ func TestGetMetrics_PeriodoInvalido(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "periodo deve ser 'today' ou 'month'", body["error"])
+	assert.Equal(t, "periodo deve ser 'today', 'week' ou 'month'", body["error"])
 }
 
 func TestGetMetrics_PermitidoParaNaoAdmin(t *testing.T) {
@@ -161,7 +189,7 @@ func TestGetVendas_Success_DiasDefault(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT DATE\(data_pedido\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
+	mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
 		WithArgs(30).
 		WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
@@ -174,8 +202,10 @@ func TestGetVendas_Success_DiasDefault(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].([]any)
-	assert.Len(t, data, 30)
+	data := body["data"].(map[string]any)
+	assert.Equal(t, float64(30), data["dias"])
+	pontos := data["pontos"].([]any)
+	assert.Len(t, pontos, 30)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -188,7 +218,7 @@ func TestGetVendas_ComDiasCustom(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT DATE\(data_pedido\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
+	mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
 		WithArgs(7).
 		WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
@@ -201,8 +231,10 @@ func TestGetVendas_ComDiasCustom(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].([]any)
-	assert.Len(t, data, 7)
+	data := body["data"].(map[string]any)
+	assert.Equal(t, float64(7), data["dias"])
+	pontos := data["pontos"].([]any)
+	assert.Len(t, pontos, 7)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -216,7 +248,7 @@ func TestGetVendas_DiasForaDoIntervalo_UsaDefault(t *testing.T) {
 	adminToken := generateToken(t, cfg, 1, "admin")
 
 	// dias=9999 é > 365, então o handler ignora e usa o default (30).
-	mock.ExpectQuery(`SELECT DATE\(data_pedido\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
+	mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
 		WithArgs(30).
 		WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
@@ -228,6 +260,11 @@ func TestGetVendas_DiasForaDoIntervalo_UsaDefault(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, float64(30), data["dias"])
+	pontos := data["pontos"].([]any)
+	assert.Len(t, pontos, 30)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -239,7 +276,7 @@ func TestGetVendas_ErroInterno(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT DATE\(data_pedido\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
+	mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
 		WithArgs(30).
 		WillReturnError(sqlmock.ErrCancelled)
 
@@ -262,7 +299,7 @@ func TestGetVendas_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mock.ExpectQuery(`SELECT DATE\(data_pedido\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
+	mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
 		WithArgs(30).
 		WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
@@ -275,8 +312,10 @@ func TestGetVendas_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].([]any)
-	assert.Len(t, data, 30)
+	data := body["data"].(map[string]any)
+	assert.Equal(t, float64(30), data["dias"])
+	pontos := data["pontos"].([]any)
+	assert.Len(t, pontos, 30)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -295,9 +334,9 @@ func TestGetVendedores_Success(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectQuery(`SELECT id, nome, regiao, uf, meta_mensal\s+FROM vendedores\s+WHERE data_desligamento IS NULL\s+ORDER BY meta_mensal DESC\s+LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`(?s)SELECT.*FROM vendedores v.*LEFT JOIN.*ORDER BY v\.meta_mensal DESC, atingimento_meta DESC.*LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal"}))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/vendedores", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -346,9 +385,9 @@ func TestGetVendedores_PermitidoParaNaoAdmin(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectQuery(`SELECT id, nome, regiao, uf, meta_mensal\s+FROM vendedores\s+WHERE data_desligamento IS NULL\s+ORDER BY meta_mensal DESC\s+LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`(?s)SELECT.*FROM vendedores v.*LEFT JOIN.*ORDER BY v\.meta_mensal DESC, atingimento_meta DESC.*LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal"}))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/vendedores", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -431,7 +470,7 @@ func TestGetClientes_PeriodoInvalido(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "periodo deve ser 'today' ou 'month'", body["error"])
+	assert.Equal(t, "periodo deve ser 'today', 'week' ou 'month'", body["error"])
 }
 
 func TestGetClientes_ErroInterno(t *testing.T) {

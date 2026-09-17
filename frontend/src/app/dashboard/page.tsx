@@ -14,7 +14,6 @@ import {
 } from "@/lib/api";
 import {
   DashboardMetrics,
-  DashboardPeriodo,
   VendasSeries,
   VendaDiaria,
   VendedorRanking,
@@ -144,13 +143,13 @@ function BarChart({ series }: { series: VendasSeries }) {
         </div>
 
         {/* Bars */}
-        <div className="relative flex flex-1 items-end gap-[2px]">
+        <div className="relative flex flex-1 items-stretch gap-[2px]">
           {sampled.map((pt, i) => {
             const pct = (pt.total_vendas / maxVendas) * 100;
             return (
               <div
                 key={i}
-                className="group relative flex-1 cursor-default"
+                className="group relative flex flex-1 flex-col justify-end cursor-default"
                 title={`${fmtDate(pt.dia)}: ${fmtCurrency(pt.total_vendas)} (${pt.total_pedidos} pedidos)`}
               >
                 {/* Barra */}
@@ -495,62 +494,47 @@ function DashboardContent() {
   const [error, setError] = useState<string | null>(null);
   const [chartsDias, setChartsDias] = useState(30);
 
-  const apiPeriodo: DashboardPeriodo = periodo === "week" ? "today" : periodo;
-
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [m, v, vd, cm] = await Promise.all([
-        apiDashboardMetrics(apiPeriodo),
+        apiDashboardMetrics(periodo),
         apiDashboardVendas(chartsDias),
         apiDashboardVendedores(1, 10),
-        apiDashboardClientes(apiPeriodo),
+        apiDashboardClientes(periodo),
       ]);
       setMetrics(m);
       setVendasSeries(v);
-      setVendedores(vd.data.slice(0, 10));
+      setVendedores((vd.data ?? []).slice(0, 10));
       setClienteMetrics(cm);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar dados");
     } finally {
       setLoading(false);
     }
-  }, [apiPeriodo, chartsDias]);
+  }, [periodo, chartsDias]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Dados simulados para visualizacao enquanto backend nao tem dados reais
-  const hasRealData = metrics !== null && vendasSeries !== null;
-  const demoMetrics: DashboardMetrics = metrics ?? {
-    total_vendas: 184750,
-    total_pedidos: 342,
-    ticket_medio: 540,
-    total_clientes: 128,
-    meta_mes: 200000,
-    atingimento_meta: 92.4,
-    periodo: apiPeriodo,
+  // Dados reais vindos da API. Quando ainda nao carregados, usa valores
+  // zerados — nunca dados inventados.
+  const displayMetrics: DashboardMetrics = metrics ?? {
+    total_vendas: 0,
+    total_pedidos: 0,
+    ticket_medio: 0,
+    total_clientes: 0,
+    meta_mes: undefined,
+    atingimento_meta: 0,
+    periodo,
   };
 
-  const demoVendas: VendasSeries =
-    vendasSeries && vendasSeries.pontos
-      ? vendasSeries
-      : {
-          dias: chartsDias,
-          pontos: Array.from({ length: chartsDias }, (_, i) => {
-            const d = new Date();
-            d.setDate(d.getDate() - (chartsDias - 1 - i));
-            const base = 4000 + Math.random() * 6000;
-            const spike = i === 15 || i === 22 ? 1.8 : 1;
-            return {
-              dia: d.toISOString().split("T")[0],
-              total_vendas: Math.round(base * spike),
-              total_pedidos: Math.round(base / 500),
-            };
-          }),
-        };
+  const displayVendas: VendasSeries = {
+    dias: vendasSeries?.dias ?? chartsDias,
+    pontos: vendasSeries?.pontos ?? [],
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -589,7 +573,7 @@ function DashboardContent() {
         {/* Error */}
         {error && (
           <Alert variant="error" className="mb-4">
-            {error} — mostrando dados demonstracao.
+            {error}
           </Alert>
         )}
 
@@ -597,20 +581,20 @@ function DashboardContent() {
         <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
             label="Total de Vendas"
-            value={fmtCurrency(demoMetrics.total_vendas)}
+            value={fmtCurrency(displayMetrics.total_vendas)}
             sub={`Periodo: ${PERIOD_LABELS[periodo]}`}
             accent
             icon={<IconCurrency />}
           />
           <KpiCard
             label="Pedidos"
-            value={fmtNumber(demoMetrics.total_pedidos)}
+            value={fmtNumber(displayMetrics.total_pedidos)}
             sub="Pedidos realizados"
             icon={<IconCart />}
           />
           <KpiCard
             label="Ticket Medio"
-            value={fmtCurrency(demoMetrics.ticket_medio)}
+            value={fmtCurrency(displayMetrics.ticket_medio)}
             sub="Por pedido"
             icon={<IconTicket />}
           />
@@ -628,7 +612,7 @@ function DashboardContent() {
           <Card className="lg:col-span-2">
             <CardHeader
               title="Vendas nos Ultimos 30 Dias"
-              subtitle={`Total: ${fmtCurrency(demoVendas.pontos.reduce((s, p) => s + p.total_vendas, 0))}`}
+              subtitle={`Total: ${fmtCurrency(displayVendas.pontos.reduce((s, p) => s + p.total_vendas, 0))}`}
               action={
                 <select
                   className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
@@ -647,7 +631,7 @@ function DashboardContent() {
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
               </div>
             ) : (
-              <BarChart series={demoVendas} />
+              <BarChart series={displayVendas} />
             )}
           </Card>
 
@@ -655,21 +639,17 @@ function DashboardContent() {
           <Card>
             <CardHeader title="Acompanhamento de Metas" />
             <div className="space-y-4">
-              <GoalProgress
-                label="Meta Mensal de Vendas"
-                current={demoMetrics.total_vendas}
-                target={demoMetrics.meta_mes ?? demoMetrics.total_vendas * 1.1}
-              />
-              <GoalProgress
-                label="Meta de Pedidos"
-                current={demoMetrics.total_pedidos}
-                target={Math.round(demoMetrics.total_pedidos * 1.15)}
-              />
-              <GoalProgress
-                label="Meta de Clientes"
-                current={demoMetrics.total_clientes}
-                target={Math.round(demoMetrics.total_clientes * 1.2)}
-              />
+              {displayMetrics.meta_mes != null && displayMetrics.meta_mes > 0 ? (
+                <GoalProgress
+                  label="Meta Mensal de Vendas"
+                  current={displayMetrics.total_vendas}
+                  target={displayMetrics.meta_mes}
+                />
+              ) : (
+                <div className="py-8 text-center text-sm text-slate-400">
+                  Nenhuma meta de vendas cadastrada
+                </div>
+              )}
             </div>
           </Card>
         </div>
@@ -695,18 +675,7 @@ function DashboardContent() {
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
             </div>
           ) : (
-            <RankingTable vendedores={vendedores.length > 0 ? vendedores : [
-              { vendedor_id: 1, vendedor_nome: "Carlos Silva", total_vendas: 45000, total_pedidos: 92, ticket_medio: 489, meta: 40000, atingimento_meta: 112 },
-              { vendedor_id: 2, vendedor_nome: "Ana Beatriz Santos", total_vendas: 38200, total_pedidos: 78, ticket_medio: 490, meta: 40000, atingimento_meta: 95 },
-              { vendedor_id: 3, vendedor_nome: "Ricardo Oliveira", total_vendas: 34100, total_pedidos: 71, ticket_medio: 480, meta: 40000, atingimento_meta: 85 },
-              { vendedor_id: 4, vendedor_nome: "Fernanda Costa", total_vendas: 29500, total_pedidos: 62, ticket_medio: 476, meta: 35000, atingimento_meta: 84 },
-              { vendedor_id: 5, vendedor_nome: "Bruno Almeida", total_vendas: 25800, total_pedidos: 55, ticket_medio: 469, meta: 35000, atingimento_meta: 74 },
-              { vendedor_id: 6, vendedor_nome: "Patricia Lima", total_vendas: 22100, total_pedidos: 48, ticket_medio: 460, meta: 30000, atingimento_meta: 74 },
-              { vendedor_id: 7, vendedor_nome: "Marcos Pereira", total_vendas: 18900, total_pedidos: 41, ticket_medio: 461, meta: 30000, atingimento_meta: 63 },
-              { vendedor_id: 8, vendedor_nome: "Juliana Rocha", total_vendas: 15200, total_pedidos: 33, ticket_medio: 461, meta: 25000, atingimento_meta: 61 },
-              { vendedor_id: 9, vendedor_nome: "Thiago Ferreira", total_vendas: 11800, total_pedidos: 26, ticket_medio: 454, meta: 25000, atingimento_meta: 47 },
-              { vendedor_id: 10, vendedor_nome: "Luciana Martins", total_vendas: 8500, total_pedidos: 19, ticket_medio: 447, meta: 20000, atingimento_meta: 43 },
-            ]} />
+            <RankingTable vendedores={vendedores} />
           )}
         </Card>
 

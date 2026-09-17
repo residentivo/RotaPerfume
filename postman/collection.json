@@ -1579,6 +1579,7 @@
               "    pm.expect(jsonData.data).to.have.property('total_pedidos');",
               "    pm.expect(jsonData.data).to.have.property('ticket_medio');",
               "    pm.expect(jsonData.data).to.have.property('periodo');",
+              "    pm.expect(jsonData.data).to.have.property('meta_mes');",
               "});"
             ],
             "type": "text/javascript"
@@ -1606,7 +1607,7 @@
             {
               "key": "periodo",
               "value": "month",
-              "description": "today | month"
+              "description": "today | week | month"
             },
             {
               "key": "ano",
@@ -1620,7 +1621,7 @@
             }
           ]
         },
-        "description": "Retorna métricas gerais de vendas (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `periodo` (string, opcional) — `today` ou `month` (padrão: `month`)\n- `ano` (int, opcional) — ano YYYY (usado com `periodo=month`)\n- `mes` (int, opcional) — mês 1-12 (usado com `periodo=month`)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_vendas\": 152300.50,\n    \"total_pedidos\": 234,\n    \"ticket_medio\": 650.86,\n    \"vendedores_ativos\": 38\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `periodo` inválido\n- `401` — não autenticado\n- `403` — não é admin"
+        "description": "Retorna métricas gerais de vendas (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `periodo` (string, opcional) — `today`, `week` (últimos 7 dias corridos) ou `month` (padrão: `month`)\n- `ano` (int, opcional) — ano YYYY (usado com `periodo=month`)\n- `mes` (int, opcional) — mês 1-12 (usado com `periodo=month`)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_vendas\": 152300.50,\n    \"total_pedidos\": 234,\n    \"ticket_medio\": 650.86,\n    \"vendedores_ativos\": 38,\n    \"meta_mes\": 180000.00\n  }\n}\n```\n\n`meta_mes` é a soma real de `vendedores.meta_mensal` de todos os vendedores ativos (não filtra por período — representa a meta mensal vigente agregada). Vem de dado real do banco, sem fallback calculado no frontend.\n\n**Códigos de erro:**\n- `400` — `periodo` inválido (deve ser `today`, `week` ou `month`)\n- `401` — não autenticado\n- `403` — não é admin"
       },
       "response": [
         {
@@ -1650,7 +1651,7 @@
             }
           ],
           "cookie": [],
-          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_vendas\": 152300.50,\n    \"total_pedidos\": 234,\n    \"ticket_medio\": 650.86,\n    \"vendedores_ativos\": 38\n  }\n}"
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_vendas\": 152300.50,\n    \"total_pedidos\": 234,\n    \"ticket_medio\": 650.86,\n    \"vendedores_ativos\": 38,\n    \"meta_mes\": 180000.00\n  }\n}"
         },
         {
           "name": "200 OK — Métricas do dia",
@@ -1679,7 +1680,7 @@
             }
           ],
           "cookie": [],
-          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"today\",\n    \"total_vendas\": 8500.00,\n    \"total_pedidos\": 12,\n    \"ticket_medio\": 708.33,\n    \"vendedores_ativos\": 15\n  }\n}"
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"today\",\n    \"total_vendas\": 8500.00,\n    \"total_pedidos\": 12,\n    \"ticket_medio\": 708.33,\n    \"vendedores_ativos\": 15,\n    \"meta_mes\": 180000.00\n  }\n}"
         },
         {
           "name": "403 Forbidden — Não é admin",
@@ -1723,13 +1724,15 @@
               "    pm.response.to.have.status(200);",
               "});",
               "var jsonData = pm.response.json();",
-              "pm.test('Série temporal retornada', function() {",
-              "    pm.expect(jsonData.data).to.be.an('array');",
+              "pm.test('Resposta tem dias e pontos', function() {",
+              "    pm.expect(jsonData.data).to.have.property('dias');",
+              "    pm.expect(jsonData.data.pontos).to.be.an('array');",
               "});",
-              "if (jsonData.data && jsonData.data.length > 0) {",
-              "    pm.test('Cada item tem data e valor', function() {",
-              "        pm.expect(jsonData.data[0]).to.have.property('data');",
-              "        pm.expect(jsonData.data[0]).to.have.property('valor');",
+              "if (jsonData.data.pontos && jsonData.data.pontos.length > 0) {",
+              "    pm.test('Cada ponto tem dia, total_vendas e total_pedidos', function() {",
+              "        pm.expect(jsonData.data.pontos[0]).to.have.property('dia');",
+              "        pm.expect(jsonData.data.pontos[0]).to.have.property('total_vendas');",
+              "        pm.expect(jsonData.data.pontos[0]).to.have.property('total_pedidos');",
               "    });",
               "}"
             ],
@@ -1762,7 +1765,7 @@
             }
           ]
         },
-        "description": "Retorna série temporal de vendas dos últimos N dias (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `dias` (int, opcional) — quantidade de dias (padrão: 30, máx: 365)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"data\": \"2026-09-01\",\n      \"valor\": 12500.00,\n      \"pedidos\": 18\n    },\n    {\n      \"data\": \"2026-09-02\",\n      \"valor\": 8700.00,\n      \"pedidos\": 12\n    }\n  ]\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+        "description": "Retorna série temporal de vendas dos últimos N dias (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `dias` (int, opcional) — quantidade de dias (padrão: 30, máx: 365)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"dias\": 30,\n    \"pontos\": [\n      {\n        \"dia\": \"2026-09-01\",\n        \"total_vendas\": 12500.00,\n        \"total_pedidos\": 18\n      },\n      {\n        \"dia\": \"2026-09-02\",\n        \"total_vendas\": 8700.00,\n        \"total_pedidos\": 12\n      }\n    ]\n  }\n}\n```\nSempre há um ponto para cada dia do intervalo (dias sem venda vêm com `total_vendas: 0` e `total_pedidos: 0`, com `dia` no formato `YYYY-MM-DD`), evitando o gráfico ficar vazio.\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
       },
       "response": [
         {
@@ -1792,7 +1795,7 @@
             }
           ],
           "cookie": [],
-          "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"data\": \"2026-09-01\",\n      \"valor\": 12500.00,\n      \"pedidos\": 18\n    },\n    {\n      \"data\": \"2026-09-02\",\n      \"valor\": 8700.00,\n      \"pedidos\": 12\n    }\n  ]\n}"
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"dias\": 30,\n    \"pontos\": [\n      {\n        \"dia\": \"2026-09-01\",\n        \"total_vendas\": 12500.00,\n        \"total_pedidos\": 18\n      },\n      {\n        \"dia\": \"2026-09-02\",\n        \"total_vendas\": 8700.00,\n        \"total_pedidos\": 12\n      }\n    ]\n  }\n}"
         },
         {
           "name": "403 Forbidden — Não é admin",
@@ -1879,7 +1882,7 @@
             }
           ]
         },
-        "description": "Retorna ranking de vendedores com vendas, meta e percentual de atingimento (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"vendedor_id\": 7,\n      \"nome\": \"Débora Ribeiro\",\n      \"regiao\": \"Salvador\",\n      \"total_vendas\": 95000.00,\n      \"meta\": 100000.00,\n      \"percentual_meta\": 95.0,\n      \"pedidos\": 142\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 42,\n    \"pages\": 3\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+        "description": "Retorna ranking de vendedores com vendas, meta e percentual de atingimento (apenas admin).\n\n**Ordenação:** `meta_mensal DESC`, com desempate por `atingimento_meta DESC` — calculada no SQL (join/subquery agregada de pedidos do mês), antes do LIMIT/OFFSET.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `page` (int, opcional, padrão: 1)\n- `limit` (int, opcional, padrão: 20, máx: 100)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"vendedor_id\": 7,\n      \"nome\": \"Débora Ribeiro\",\n      \"regiao\": \"Salvador\",\n      \"total_vendas\": 95000.00,\n      \"meta\": 100000.00,\n      \"percentual_meta\": 95.0,\n      \"pedidos\": 142\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 42,\n    \"pages\": 3\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
       },
       "response": [
         {
@@ -3018,11 +3021,11 @@
                 {
                   "key": "periodo",
                   "value": "month",
-                  "description": "today | month (padrão: month)"
+                  "description": "today | week | month (padrão: month)"
                 }
               ]
             },
-            "description": "Retorna métricas agregadas da base de clientes (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `periodo` (string, opcional) — `today` ou `month` (padrão: `month`)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_clientes\": 3040,\n    \"total_ativos\": 2870,\n    \"total_inativos\": 170,\n    \"novos_no_periodo\": 42,\n    \"por_segmento\": [\n      { \"segmento\": \"Varejo\", \"total\": 1500 },\n      { \"segmento\": \"Atacado\", \"total\": 900 }\n    ],\n    \"por_uf\": [\n      { \"uf\": \"SP\", \"total\": 1200 },\n      { \"uf\": \"RJ\", \"total\": 480 }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `periodo` inválido (diferente de `today`/`month`)\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Retorna métricas agregadas da base de clientes (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params:**\n- `periodo` (string, opcional) — `today`, `week` (últimos 7 dias corridos) ou `month` (padrão: `month`)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"periodo\": \"month\",\n    \"total_clientes\": 3040,\n    \"total_ativos\": 2870,\n    \"total_inativos\": 170,\n    \"novos_no_periodo\": 42,\n    \"por_segmento\": [\n      { \"segmento\": \"Varejo\", \"total\": 1500 },\n      { \"segmento\": \"Atacado\", \"total\": 900 }\n    ],\n    \"por_uf\": [\n      { \"uf\": \"SP\", \"total\": 1200 },\n      { \"uf\": \"RJ\", \"total\": 480 }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `periodo` inválido (diferente de `today`/`week`/`month`)\n- `401` — não autenticado\n- `403` — não é admin"
           },
           "response": [
             {
@@ -3081,7 +3084,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": false,\n  \"error\": \"periodo deve ser 'today' ou 'month'\"\n}"
+              "body": "{\n  \"success\": false,\n  \"error\": \"periodo deve ser 'today', 'week' ou 'month'\"\n}"
             },
             {
               "name": "403 Forbidden — Não é admin",
