@@ -4,6 +4,9 @@
 .env.*.local
 *.env
 
+# Credenciais / segredos locais - nunca versionar
+itenslocais.txt
+
 # Dependencies
 node_modules/
 vendor/
