@@ -1,0 +1,102 @@
+flowchart TD
+
+subgraph group_frontend["Web application"]
+  node_login_ui["Login screens<br/>[page.tsx]"]
+  node_admin_ui["Admin screens<br/>[layout.tsx]"]
+  node_api_client["API client<br/>[apiClient.ts]"]
+end
+
+subgraph group_api["HTTP API"]
+  node_api_server["API server<br/>[main.go]"]
+  node_http_routes["HTTP routes<br/>[routes.go]"]
+  node_request_middleware["Request middleware<br/>[auth_middleware.go]"]
+  node_auth_handlers["Auth handlers<br/>[auth_handler.go]"]
+  node_crm_handlers["CRM handlers"]
+  node_sales_handlers["Sales handlers"]
+  node_dashboard_handlers["Dashboard handlers"]
+end
+
+subgraph group_business["Business services"]
+  node_auth_service["Auth service<br/>[auth_service.go]"]
+  node_domain_services["Domain services"]
+  node_token_services["Token services"]
+  node_email_service["Email service<br/>[email_service.go]"]
+end
+
+subgraph group_data["Persistence"]
+  node_repositories["Repositories"]
+  node_db_connection["DB connection<br/>[db.go]"]
+  node_mysql[("MySQL database")]
+end
+
+subgraph group_ingestion["Data ingestion"]
+  node_crm_importers["CRM importers<br/>[main.go]"]
+  node_erp_importers["ERP importers<br/>[main.go]"]
+end
+
+node_web_user(("Web user"))
+node_admin_user(("Administrator"))
+node_csv_sources["ERP CRM CSVs"]
+node_smtp["SMTP server"]
+
+node_web_user -->|"opens login"| node_login_ui
+node_admin_user -->|"uses console"| node_admin_ui
+node_login_ui -->|"submits credentials"| node_api_client
+node_admin_ui -->|"calls API"| node_api_client
+node_api_client -->|"sends requests"| node_api_server
+node_api_server -->|"serves routes"| node_http_routes
+node_http_routes -->|"wraps handlers"| node_request_middleware
+node_request_middleware -->|"dispatches auth"| node_auth_handlers
+node_request_middleware -->|"dispatches CRM"| node_crm_handlers
+node_request_middleware -->|"dispatches sales"| node_sales_handlers
+node_request_middleware -->|"dispatches metrics"| node_dashboard_handlers
+node_auth_handlers -->|"authenticates users"| node_auth_service
+node_auth_handlers -->|"manages refresh"| node_token_services
+node_auth_handlers -->|"updates users"| node_repositories
+node_crm_handlers -->|"runs CRM logic"| node_domain_services
+node_sales_handlers -->|"runs sales logic"| node_domain_services
+node_dashboard_handlers -->|"loads metrics"| node_domain_services
+node_auth_service -->|"reads users"| node_repositories
+node_token_services -->|"stores tokens"| node_repositories
+node_domain_services -->|"persists domain"| node_repositories
+node_api_server -->|"opens database"| node_db_connection
+node_repositories -->|"reads writes"| node_mysql
+node_db_connection -->|"connects to"| node_mysql
+node_api_server -->|"configures email"| node_email_service
+node_email_service -.->|"sends mail"| node_smtp
+node_crm_importers -->|"reads CRM CSVs"| node_csv_sources
+node_crm_importers -->|"upserts CRM"| node_mysql
+node_erp_importers -->|"reads ERP CSVs"| node_csv_sources
+node_erp_importers -->|"upserts ERP"| node_mysql
+
+click node_login_ui "https://github.com/residentivo/rotaperfume/blob/main/frontend/src/app/login/page.tsx"
+click node_admin_ui "https://github.com/residentivo/rotaperfume/blob/main/frontend/src/app/admin/layout.tsx"
+click node_api_client "https://github.com/residentivo/rotaperfume/blob/main/frontend/src/lib/apiClient.ts"
+click node_api_server "https://github.com/residentivo/rotaperfume/blob/main/apis/rotaperfumes-api/cmd/server/main.go"
+click node_http_routes "https://github.com/residentivo/rotaperfume/blob/main/apis/rotaperfumes-api/routes/routes.go"
+click node_request_middleware "https://github.com/residentivo/rotaperfume/blob/main/apis/rotaperfumes-api/middleware/auth_middleware.go"
+click node_auth_handlers "https://github.com/residentivo/rotaperfume/blob/main/apis/rotaperfumes-api/handlers/auth_handler.go"
+click node_crm_handlers "https://github.com/residentivo/rotaperfume/tree/main/apis/rotaperfumes-api/handlers"
+click node_sales_handlers "https://github.com/residentivo/rotaperfume/tree/main/apis/rotaperfumes-api/handlers"
+click node_dashboard_handlers "https://github.com/residentivo/rotaperfume/blob/main/apis/rotaperfumes-api/handlers/dashboard_handler.go"
+click node_auth_service "https://github.com/residentivo/rotaperfume/blob/main/apis/shared/services/auth_service.go"
+click node_domain_services "https://github.com/residentivo/rotaperfume/tree/main/apis/rotaperfumes-api/services"
+click node_token_services "https://github.com/residentivo/rotaperfume/blob/main/apis/rotaperfumes-api/services/refresh_token_service.go"
+click node_email_service "https://github.com/residentivo/rotaperfume/blob/main/apis/shared/services/email_service.go"
+click node_repositories "https://github.com/residentivo/rotaperfume/tree/main/apis/shared/repositories"
+click node_db_connection "https://github.com/residentivo/rotaperfume/blob/main/apis/shared/db/db.go"
+click node_crm_importers "https://github.com/residentivo/rotaperfume/blob/main/apis/shared/cmd/importclientes/main.go"
+click node_erp_importers "https://github.com/residentivo/rotaperfume/blob/main/apis/shared/cmd/importpedidos/main.go"
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_login_ui,node_admin_ui,node_api_client,node_web_user toneBlue
+class node_api_server,node_http_routes,node_request_middleware,node_auth_handlers,node_crm_handlers,node_sales_handlers,node_dashboard_handlers toneAmber
+class node_auth_service,node_domain_services,node_token_services,node_email_service,node_smtp toneMint
+class node_repositories,node_db_connection,node_mysql toneRose
+class node_crm_importers,node_erp_importers,node_admin_user,node_csv_sources toneIndigo
