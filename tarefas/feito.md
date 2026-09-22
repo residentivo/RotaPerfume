@@ -4,6 +4,34 @@
 
 ---
 
+## Bugfix: "Failed to fetch" (unhandledRejection) no logout — 2026-09-22
+**Agente:** 🟢 FrontBrain (delegado por 🤍 MegaBrain)
+
+**Descrição:** Usuário reportou `TypeError: Failed to fetch` não tratado ao clicar em "Sair" (`handleLogout` em `Navbar.tsx` → `logout()` em `frontend/src/lib/auth.ts`). O snippet do console apontava para a linha errada (artefato de sourcemap do hot-reload, na verdade era `getUser()`).
+
+**Causa raiz:** `logout()` fazia `fetch(POST /api/auth/logout, credentials: "include").finally(() => redirect)` sem `.catch`. Quando a chamada ao backend falha por erro de rede genuíno (indisponibilidade, timeout, CORS, etc.), o `fetch` rejeita e, sem handler, gera `unhandledRejection` — o redirect ainda acontecia via `finally`, então o usuário não ficava travado, mas o erro poluía o console.
+
+**Correção:** `logout()` agora é `async`, com `await fetch(...)` dentro de `try/catch` (falha de rede é ignorada silenciosamente) e `finally` garantindo o redirect para `/login` em qualquer cenário. `clearTokens()` (limpeza do localStorage) já rodava antes do fetch, então a sessão local sempre é limpa. `Navbar.tsx` ajustado para `void logout()` (único caller). Validado com `tsc --noEmit`, sem erros.
+
+**Confirmado por 🤍 MegaBrain:** o endpoint `POST /api/auth/logout` já existe no backend (`apis/rotaperfumes-api/routes/routes.go` / `handlers/auth_handler.go`), então não há lacuna de backend — a causa era puramente falta de tratamento de erro no frontend.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Bugfix: warning Cloudflare Turnstile "Cannot find Widget" — 2026-09-22
+**Agente:** 🟢 FrontBrain (delegado por 🤍 MegaBrain)
+
+**Descrição:** Usuário reportou no console do browser: `[Cloudflare Turnstile] Cannot find Widget cf-chl-widget-krygo, consider using turnstile.remove() to clean up a widget.`
+
+**Causa raiz:** em `frontend/src/components/ui/Turnstile.tsx`, o `useEffect` que renderiza o widget (`window.turnstile.render(...)`) não tinha função de cleanup, e `renderWidget()` limpava o DOM manualmente (`containerRef.current.innerHTML = ""`) sem antes chamar `window.turnstile.remove(widgetId)`. Isso deixa o script do Turnstile com referência interna "órfã" a um widgetId cujo elemento DOM já foi apagado — reproduz facilmente em dev com React Strict Mode (dupla execução do efeito).
+
+**Correção:** adicionada função `removeWidget()` que chama `window.turnstile.remove(widgetIdRef.current)` e limpa a ref; `renderWidget()` chama `removeWidget()` antes de renderizar nova instância (evita duplicidade no mesmo container); o `useEffect` retorna cleanup chamando `removeWidget()` no unmount/re-execução. Validado com `tsc --noEmit` (sem erros). Nenhuma mudança de contrato de API — sem impacto em Postman/backend.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## Controle de Estoque — 2026-09-22
 **Agentes:** 🟣 SecBrain → 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
 

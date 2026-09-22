@@ -61,15 +61,22 @@ export function isAuthenticated(): boolean {
   return !!getUser();
 }
 
-export function logout(): void {
+export async function logout(): Promise<void> {
   clearTokens();
   if (typeof window !== "undefined") {
     // Revoga o refresh token e limpa os cookies HttpOnly no backend.
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    }).finally(() => {
+    // O objetivo do usuário (sair) deve ser cumprido mesmo que o backend
+    // esteja indisponível ou a chamada falhe por erro de rede — por isso
+    // o fetch é protegido por try/catch e nunca bloqueia o redirect.
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Falha de rede ao notificar o backend: ignora e segue com o logout local.
+    } finally {
       window.location.href = "/login";
-    });
+    }
   }
 }

@@ -67,9 +67,23 @@ export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
     const widgetIdRef = useRef<string | undefined>(undefined);
     const [scriptLoaded, setScriptLoaded] = useState(false);
 
+    const removeWidget = () => {
+      if (window.turnstile && widgetIdRef.current) {
+        // Remove a instância registrada no Turnstile antes de limpar o DOM
+        // ou renderizar de novo — sem isso, o script mantém referência a um
+        // widgetId "órfão" e loga o warning
+        // "Cannot find Widget ..., consider using turnstile.remove()".
+        window.turnstile.remove(widgetIdRef.current);
+      }
+      widgetIdRef.current = undefined;
+    };
+
     const renderWidget = () => {
       if (!window.turnstile || !containerRef.current || !SITE_KEY) return;
-      // Evita renderizar duplicado se o efeito rodar mais de uma vez.
+      // Evita renderizar duplicado se o efeito rodar mais de uma vez
+      // (ex: React Strict Mode em dev): limpa a instância anterior via API
+      // do Turnstile antes de renderizar uma nova.
+      removeWidget();
       containerRef.current.innerHTML = "";
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: SITE_KEY,
@@ -84,6 +98,9 @@ export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
       if (scriptLoaded) {
         renderWidget();
       }
+      return () => {
+        removeWidget();
+      };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scriptLoaded]);
 

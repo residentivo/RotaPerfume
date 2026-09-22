@@ -52,7 +52,7 @@ export function Navbar() {
   }, []);
 
   const handleLogout = () => {
-    logout();
+    void logout();
   };
 
   return (
