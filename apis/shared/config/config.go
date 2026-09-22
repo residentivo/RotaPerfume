@@ -49,6 +49,12 @@ type Config struct {
 	// Quando false (padrão), esses headers são ignorados e r.RemoteAddr é
 	// sempre usado como IP do cliente — evita spoofing de IP.
 	TrustProxyHeaders bool
+
+	// TurnstileSecretKey é a chave secreta do Cloudflare Turnstile usada para
+	// verificar o token de CAPTCHA enviado pelo frontend em /api/auth/login e
+	// /api/auth/reset-password (env TURNSTILE_SECRET_KEY). Nunca é logada nem
+	// retornada em resposta JSON.
+	TurnstileSecretKey string
 }
 
 // Load lê as variáveis de ambiente e retorna uma Config preenchida.
@@ -96,6 +102,7 @@ func Load() (*Config, error) {
 
 	cfg.CORSAllowedOrigins = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
 	cfg.TrustProxyHeaders = getEnv("TRUST_PROXY_HEADERS", "false") == "true"
+	cfg.TurnstileSecretKey = os.Getenv("TURNSTILE_SECRET_KEY")
 
 	return cfg, nil
 }

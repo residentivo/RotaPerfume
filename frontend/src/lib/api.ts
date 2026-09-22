@@ -74,9 +74,10 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 export async function apiLogin(
   email: string,
-  password: string
+  password: string,
+  captchaToken?: string
 ): Promise<LoginResponse> {
-  const body: LoginRequest = { email, password };
+  const body: LoginRequest = { email, password, captchaToken };
   return fetchWithAuth<LoginResponse>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify(body),
@@ -124,13 +125,15 @@ export async function apiResetPassword(
 
 export async function apiChangePassword(
   senhaAtual: string,
-  novaSenha: string
+  novaSenha: string,
+  captchaToken?: string
 ): Promise<{ message: string }> {
   return fetchWithAuth<{ message: string }>("/api/auth/reset-password", {
     method: "POST",
     body: JSON.stringify({
       senha_atual: senhaAtual,
       nova_senha: novaSenha,
+      captchaToken,
     }),
   });
 }

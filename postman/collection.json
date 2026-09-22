@@ -123,14 +123,14 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"password\": \"Admin@123\"\n}"
+          "raw": "{\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"password\": \"Admin@123\",\n    \"captchaToken\": \"TESTING_TOKEN\"\n}"
         },
         "url": {
           "raw": "{{base_url}}/api/auth/login",
           "host": ["{{base_url}}"],
           "path": ["api", "auth", "login"]
         },
-        "description": "Faz login e retorna um JWT Bearer Token + refresh token.\n\n**Body:**\n- `email` (string, obrigatório) — e-mail do usuário\n- `password` (string, obrigatório) — senha em texto puro\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 1,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"nome\": \"Administrador Principal\"\n    },\n    \"trocar_senha\": false\n  }\n}\n```\n\n**Credenciais:**\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedor (seed): `henrique.rodrigues@rotaperfumes.com.br` / `Mudar@123`\n\n**Observação:** `trocar_senha` agora vem diretamente da coluna persistida `usuarios.deve_trocar_senha` (não é mais calculada comparando a senha digitada com uma constante fixa). Essa flag é setada como `true` sempre que o usuário é criado (`POST /api/usuarios`) ou tem a senha resetada pelo admin (`POST /api/admin/reset-password`), e volta a `false` quando o próprio usuário troca a senha (`POST /api/auth/reset-password`)."
+        "description": "Faz login e retorna um JWT Bearer Token + refresh token.\n\n**Body:**\n- `email` (string, obrigatório) — e-mail do usuário\n- `password` (string, obrigatório) — senha em texto puro\n- `captchaToken` (string, **obrigatório**) — token do widget Cloudflare Turnstile, validado server-side contra `https://challenges.cloudflare.com/turnstile/v0/siteverify` (fail-closed). Sem `captchaToken` válido, o login é rejeitado antes de checar as credenciais.\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900,\n    \"user\": {\n      \"id\": 1,\n      \"email\": \"admin@rotaperfumes.com.br\",\n      \"role\": \"admin\",\n      \"nome\": \"Administrador Principal\"\n    },\n    \"trocar_senha\": false\n  }\n}\n```\n\n**Credenciais:**\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedor (seed): `henrique.rodrigues@rotaperfumes.com.br` / `Mudar@123`\n\n**Observação:** `trocar_senha` agora vem diretamente da coluna persistida `usuarios.deve_trocar_senha` (não é mais calculada comparando a senha digitada com uma constante fixa). Essa flag é setada como `true` sempre que o usuário é criado (`POST /api/usuarios`) ou tem a senha resetada pelo admin (`POST /api/admin/reset-password`), e volta a `false` quando o próprio usuário troca a senha (`POST /api/auth/reset-password`)."
       },
       "response": [
         {
@@ -145,7 +145,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"password\": \"Admin@123\"\n}"
+              "raw": "{\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"password\": \"Admin@123\",\n    \"captchaToken\": \"TESTING_TOKEN\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/login",
@@ -177,7 +177,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"password\": \"senha-errada\"\n}"
+              "raw": "{\n    \"email\": \"admin@rotaperfumes.com.br\",\n    \"password\": \"senha-errada\",\n    \"captchaToken\": \"TESTING_TOKEN\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/login",
@@ -209,7 +209,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"email\": \"usuario-inativo@rotaperfumes.com.br\",\n    \"password\": \"qualquer\"\n}"
+              "raw": "{\n    \"email\": \"usuario-inativo@rotaperfumes.com.br\",\n    \"password\": \"qualquer\",\n    \"captchaToken\": \"TESTING_TOKEN\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/login",
@@ -725,14 +725,14 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n    \"senha_atual\": \"Admin@123\",\n    \"nova_senha\": \"NovaSenha@456\"\n}"
+          "raw": "{\n    \"senha_atual\": \"Admin@123\",\n    \"nova_senha\": \"NovaSenha@456\",\n    \"captchaToken\": \"TESTING_TOKEN\"\n}"
         },
         "url": {
           "raw": "{{base_url}}/api/auth/reset-password",
           "host": ["{{base_url}}"],
           "path": ["api", "auth", "reset-password"]
         },
-        "description": "O usuário autenticado troca a própria senha.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{token}}\n```\n\n**Body:**\n- `senha_atual` (string, obrigatório) — senha atual (comparada com hash)\n- `nova_senha` (string, obrigatório) — nova senha (mínimo 6 caracteres)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"mensagem\": \"senha alterada com sucesso\"\n  }\n}\n```\n\n**Segurança:** Após a troca, todos os refresh tokens do usuário são revogados.\n\n**Códigos de erro:**\n- `400` — `senha_atual` ou `nova_senha` vazios, ou `nova_senha` < 6 chars\n- `401` — `senha_atual` incorreta\n- `401` — não autenticado"
+        "description": "O usuário autenticado troca a própria senha.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{token}}\n```\n\n**Body:**\n- `senha_atual` (string, obrigatório) — senha atual (comparada com hash)\n- `nova_senha` (string, obrigatório) — nova senha (mínimo 6 caracteres)\n- `captchaToken` (string, **obrigatório**) — token do widget Cloudflare Turnstile, validado server-side (fail-closed). Este endpoint também ganhou rate limiting dedicado: 10 falhas em 5 minutos bloqueiam por 10 minutos.\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"mensagem\": \"senha alterada com sucesso\"\n  }\n}\n```\n\n**Segurança:** Após a troca, todos os refresh tokens do usuário são revogados.\n\n**Códigos de erro:**\n- `400` — `senha_atual`, `nova_senha` ou `captchaToken` vazios, ou `nova_senha` < 6 chars\n- `401` — `senha_atual` incorreta, ou `captchaToken` inválido/expirado\n- `401` — não autenticado\n- `429` — rate limit excedido (10 falhas / 5 min, bloqueio de 10 min)"
       },
       "response": [
         {
@@ -747,7 +747,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"senha_atual\": \"Admin@123\",\n    \"nova_senha\": \"NovaSenha@456\"\n}"
+              "raw": "{\n    \"senha_atual\": \"Admin@123\",\n    \"nova_senha\": \"NovaSenha@456\",\n    \"captchaToken\": \"TESTING_TOKEN\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/reset-password",
@@ -779,7 +779,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"senha_atual\": \"senha-errada\",\n    \"nova_senha\": \"NovaSenha@456\"\n}"
+              "raw": "{\n    \"senha_atual\": \"senha-errada\",\n    \"nova_senha\": \"NovaSenha@456\",\n    \"captchaToken\": \"TESTING_TOKEN\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/reset-password",
@@ -811,7 +811,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"senha_atual\": \"Admin@123\",\n    \"nova_senha\": \"abc\"\n}"
+              "raw": "{\n    \"senha_atual\": \"Admin@123\",\n    \"nova_senha\": \"abc\",\n    \"captchaToken\": \"TESTING_TOKEN\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/reset-password",

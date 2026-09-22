@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { Turnstile, TurnstileHandle, isTurnstileEnabled } from "@/components/ui/Turnstile";
 import { apiChangePassword } from "@/lib/api";
 import { getUser } from "@/lib/auth";
 
@@ -22,6 +23,8 @@ export default function TrocarSenhaPage() {
     novaSenha?: string;
     confirmarSenha?: string;
   }>({});
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   useEffect(() => {
     // Verificar se o usuário está logado
@@ -66,16 +69,26 @@ export default function TrocarSenhaPage() {
 
     setLoading(true);
     try {
-      await apiChangePassword(senhaAtual, novaSenha);
+      await apiChangePassword(senhaAtual, novaSenha, captchaToken ?? undefined);
       setSuccess("Senha alterada com sucesso!");
       // Redirecionar para dashboard após breve delay
       setTimeout(() => {
         router.replace("/dashboard");
       }, 1500);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Erro ao alterar senha";
-      setError(message);
+      const rawMessage = err instanceof Error ? err.message : "";
+      const isCaptchaFailure = /captcha|turnstile/i.test(rawMessage);
+      // Falha de captcha: mensagem genérica, sem expor detalhes técnicos do
+      // motivo. Demais falhas mantêm a mensagem retornada pela API.
+      setError(
+        isCaptchaFailure
+          ? "Nao foi possivel validar o captcha. Tente novamente."
+          : rawMessage || "Erro ao alterar senha"
+      );
+      // Token do Turnstile e de uso unico: apos qualquer falha, reseta o
+      // widget para forcar um novo desafio antes de reenviar.
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
     } finally {
       setLoading(false);
     }
@@ -216,11 +229,19 @@ export default function TrocarSenhaPage() {
               }
             />
 
+            <Turnstile
+              ref={turnstileRef}
+              onVerify={(token) => setCaptchaToken(token)}
+              onExpire={() => setCaptchaToken(null)}
+              onError={() => setCaptchaToken(null)}
+            />
+
             <Button
               type="submit"
               variant="primary"
               size="lg"
               loading={loading}
+              disabled={isTurnstileEnabled && !captchaToken}
               fullWidth
             >
               {loading ? "Alterando..." : "Alterar Senha"}

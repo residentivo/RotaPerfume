@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { Turnstile, TurnstileHandle, isTurnstileEnabled } from "@/components/ui/Turnstile";
 import { apiLogin } from "@/lib/api";
 import { saveUser, getUser, isAdmin } from "@/lib/auth";
 
@@ -16,6 +17,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; senha?: string }>({});
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   useEffect(() => {
     if (getUser()) {
@@ -45,7 +48,7 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const res = await apiLogin(email, senha);
+      const res = await apiLogin(email, senha, captchaToken ?? undefined);
 
       // Tokens sao definidos pelo backend via Set-Cookie HttpOnly (nao acessiveis via JS).
       // Apenas o usuario e persistido no client para controle de UI.
@@ -58,8 +61,20 @@ export default function LoginPage() {
         router.replace(isAdmin() ? "/dashboard" : "/pagamentos");
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro ao fazer login";
-      setError(message);
+      const rawMessage = err instanceof Error ? err.message : "";
+      const isCaptchaFailure = /captcha|turnstile/i.test(rawMessage);
+      // Falha de captcha: mensagem genérica, sem expor detalhes técnicos do
+      // motivo. Demais falhas (ex: credenciais inválidas) mantêm a mensagem
+      // retornada pela API.
+      setError(
+        isCaptchaFailure
+          ? "Nao foi possivel validar o captcha. Tente novamente."
+          : rawMessage || "Erro ao fazer login"
+      );
+      // Token do Turnstile e de uso unico: apos qualquer falha, reseta o
+      // widget para forcar um novo desafio antes de reenviar.
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
     } finally {
       setLoading(false);
     }
@@ -151,11 +166,19 @@ export default function LoginPage() {
               }
             />
 
+            <Turnstile
+              ref={turnstileRef}
+              onVerify={(token) => setCaptchaToken(token)}
+              onExpire={() => setCaptchaToken(null)}
+              onError={() => setCaptchaToken(null)}
+            />
+
             <Button
               type="submit"
               variant="primary"
               size="lg"
               loading={loading}
+              disabled={isTurnstileEnabled && !captchaToken}
               fullWidth
             >
               {loading ? "Entrando..." : "Entrar"}

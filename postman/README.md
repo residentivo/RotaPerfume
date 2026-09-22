@@ -77,9 +77,10 @@ Exemplos:
 
 #### POST /api/auth/login
 - **Auth:** nenhuma
-- **Body:** `{ "email": "...", "password": "..." }`
+- **Body:** `{ "email": "...", "password": "...", "captchaToken": "..." }`
 - **Resposta:** `{ "success": true, "data": { "access_token", "refresh_token", "token_type", "expires_in", "user": {...}, "trocar_senha" } }`
 - **Nota:** `trocar_senha` reflete diretamente a coluna `usuarios.deve_trocar_senha` (não é mais calculado comparando a senha digitada com uma constante fixa). Fica `true` quando o usuário foi criado ou teve a senha resetada pelo admin e ainda não trocou a senha voluntariamente; volta a `false` após `POST /api/auth/reset-password`.
+- **CAPTCHA:** `captchaToken` (string, **obrigatório**) é o token do widget Cloudflare Turnstile, validado server-side contra `https://challenges.cloudflare.com/turnstile/v0/siteverify` (fail-closed, timeout 4s). Ver seção "CAPTCHA (Cloudflare Turnstile)" abaixo.
 
 #### POST /api/auth/refresh
 - **Auth:** nenhuma (usa `refresh_token` no body)
@@ -98,8 +99,9 @@ Exemplos:
 
 #### POST /api/auth/reset-password
 - **Auth:** Bearer Token (qualquer role autenticado)
-- **Body:** `{ "senha_atual": "...", "nova_senha": "..." }`
+- **Body:** `{ "senha_atual": "...", "nova_senha": "...", "captchaToken": "..." }`
 - **Descrição:** Usuário troca a própria senha (precisa da senha atual)
+- **CAPTCHA:** `captchaToken` (string, **obrigatório**) — mesma validação Turnstile do login (fail-closed). Endpoint também ganhou rate limiting dedicado: 10 falhas em 5 minutos bloqueiam por 10 minutos (lacuna identificada pelo SecBrain — antes não existia rate limiting aqui).
 
 ### Usuários (`/api/usuarios`) — admin only
 
@@ -626,6 +628,17 @@ make dev-api
 ### Envio de email (senha inicial / reset de senha)
 
 Copie `.env.example` (raiz do projeto) para `.env` e preencha as variáveis `SMTP_*` (Gmail com "senha de app") para que `POST /api/usuarios` e `POST /api/admin/reset-password` realmente enviem a senha gerada por email. Se essas variáveis não forem preenchidas, a API sobe normalmente e usa um serviço de email "noop" (apenas loga que o envio foi pulado, sem nunca logar a senha em texto claro) — útil para dev local, mas nesse caso `email_enviado` retorna `false` e o usuário não recebe a nova senha por nenhum canal (o admin precisaria providenciá-la manualmente).
+
+### CAPTCHA (Cloudflare Turnstile) em Login e Troca de Senha
+
+`POST /api/auth/login` e `POST /api/auth/reset-password` exigem o campo `captchaToken` no body — um token gerado pelo widget Cloudflare Turnstile, validado server-side (fail-closed, timeout 4s) contra `https://challenges.cloudflare.com/turnstile/v0/siteverify`. O serviço fica em `apis/shared/services/turnstile_service.go`.
+
+Para configurar:
+1. Crie um site no [dashboard do Cloudflare Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile) e copie a **Site Key** (pública) e a **Secret Key** (privada).
+2. Backend: copie `.env.example` (raiz do projeto) para `.env` e preencha `TURNSTILE_SECRET_KEY` com a Secret Key. **Nunca** faça commit dessa chave.
+3. Frontend: preencha `NEXT_PUBLIC_TURNSTILE_SITE_KEY` em `frontend/.env.local` com a Site Key (ver `frontend/.env.local.example`).
+
+Sem `captchaToken` válido, ambos os endpoints respondem `401`. `POST /api/auth/reset-password` também ganhou rate limiting dedicado (10 falhas/5min, bloqueio de 10min), lacuna identificada pelo SecBrain durante a revisão desta feature.
 
 ### Importação de clientes (CRM)
 

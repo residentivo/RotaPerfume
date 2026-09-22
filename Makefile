@@ -96,6 +96,9 @@ db-import-visitas: ## Importa dados/crm/visitas.csv para a tabela visitas (upser
 
 db-rebuild: db-down db-seed db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas ## Recria o banco do zero e importa todos os dados
 
+db-export: ## Exporta as tabelas do banco para CSV em export/crm e export/erp (mesmo formato de dados/)
+	cd apis/shared && go run ./cmd/exportdados
+
 # =============================================================================
 # Build
 # =============================================================================

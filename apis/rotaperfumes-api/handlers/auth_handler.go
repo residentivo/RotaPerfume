@@ -30,38 +30,54 @@ const (
 	refreshMaxFailures = 10
 	refreshWindow      = 1 * time.Minute
 	refreshBlockFor    = 5 * time.Minute
+
+	// Rate limiting do reset-password: mais permissivo que login (usuário já
+	// autenticado), mas ainda protege contra automação de tentativas de
+	// adivinhar a senha_atual.
+	resetPasswordMaxFailures = 10
+	resetPasswordWindow      = 5 * time.Minute
+	resetPasswordBlockFor    = 10 * time.Minute
 )
 
 // AuthHandler trata as rotas /api/auth/*.
 type AuthHandler struct {
-	db             *sql.DB
-	repo           *repositories.UsuarioRepository
-	auth           *sharedsvc.AuthService
-	refreshSvc     *services.RefreshTokenService
-	senhaSvc       *services.SenhaHistoricoService
-	cfg            *config.Config
-	loginLimiter   *middleware.LoginRateLimiter
-	refreshLimiter *middleware.LoginRateLimiter
+	db                   *sql.DB
+	repo                 *repositories.UsuarioRepository
+	auth                 *sharedsvc.AuthService
+	refreshSvc           *services.RefreshTokenService
+	senhaSvc             *services.SenhaHistoricoService
+	cfg                  *config.Config
+	loginLimiter         *middleware.LoginRateLimiter
+	refreshLimiter       *middleware.LoginRateLimiter
+	resetPasswordLimiter *middleware.LoginRateLimiter
+	captcha              sharedsvc.CaptchaVerifier
 }
 
 // NewAuthHandler cria um AuthHandler com pool de conexão injetado.
 func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{
-		db:             db,
-		repo:           repositories.NewUsuarioRepository(),
-		auth:           sharedsvc.NewAuthService(),
-		refreshSvc:     services.NewRefreshTokenService(),
-		senhaSvc:       services.NewSenhaHistoricoService(),
-		cfg:            cfg,
-		loginLimiter:   middleware.NewLoginRateLimiter(loginMaxFailures, loginWindow, loginBlockFor),
-		refreshLimiter: middleware.NewLoginRateLimiter(refreshMaxFailures, refreshWindow, refreshBlockFor),
+		db:                   db,
+		repo:                 repositories.NewUsuarioRepository(),
+		auth:                 sharedsvc.NewAuthService(),
+		refreshSvc:           services.NewRefreshTokenService(),
+		senhaSvc:             services.NewSenhaHistoricoService(),
+		cfg:                  cfg,
+		loginLimiter:         middleware.NewLoginRateLimiter(loginMaxFailures, loginWindow, loginBlockFor),
+		refreshLimiter:       middleware.NewLoginRateLimiter(refreshMaxFailures, refreshWindow, refreshBlockFor),
+		resetPasswordLimiter: middleware.NewLoginRateLimiter(resetPasswordMaxFailures, resetPasswordWindow, resetPasswordBlockFor),
+		captcha:              sharedsvc.NewTurnstileService(cfg),
 	}
 }
 
 // LoginRequest body do POST /api/auth/login.
+// CaptchaToken é o token do Cloudflare Turnstile gerado no frontend
+// (widget) e enviado no campo JSON "captchaToken" — contrato acordado com o
+// FrontBrain. Obrigatório: requisições sem esse campo são recusadas (400)
+// antes mesmo de consultar o Cloudflare.
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email        string `json:"email"`
+	Password     string `json:"password"`
+	CaptchaToken string `json:"captchaToken"`
 }
 
 // RefreshTokenRequest body do POST /api/auth/refresh.
@@ -71,9 +87,12 @@ type RefreshTokenRequest struct {
 
 // ResetPasswordRequest body do POST /api/auth/reset-password.
 // O usuario_id é extraído do token JWT — não deve vir no body.
+// CaptchaToken é o token do Cloudflare Turnstile gerado no frontend e
+// enviado no campo JSON "captchaToken" — mesmo contrato usado em LoginRequest.
 type ResetPasswordRequest struct {
-	SenhaAtual string `json:"senha_atual"`
-	NovaSenha  string `json:"nova_senha"`
+	SenhaAtual   string `json:"senha_atual"`
+	NovaSenha    string `json:"nova_senha"`
+	CaptchaToken string `json:"captchaToken"`
 }
 
 // setTokenCookies define os cookies HttpOnly com os tokens de autenticacao.
@@ -151,9 +170,17 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	maskedEmail := maskEmail(req.Email)
 	log.Printf("[auth] Login attempt: email=%s", maskedEmail)
 
+	ipOrigemPreCheck := getClientIP(r, h.cfg.TrustProxyHeaders)
+
+	// Validação do CAPTCHA (Cloudflare Turnstile) roda ANTES do rate limiting
+	// para não gastar o "budget" de rate limit contra bots óbvios. Fail-closed:
+	// token ausente ou inválido/irverificável => recusa imediatamente.
+	if !h.verifyCaptcha(w, r, req.CaptchaToken, ipOrigemPreCheck, "login") {
+		return
+	}
+
 	// Rate limiting anti-bruteforce: bloqueia por IP e por conta (IP+email)
 	// após várias falhas consecutivas em janela curta.
-	ipOrigemPreCheck := getClientIP(r, h.cfg.TrustProxyHeaders)
 	ipKey := "ip:" + ipOrigemPreCheck
 	acctKey := "acct:" + ipOrigemPreCheck + "|" + req.Email
 	if blocked, retryAfter := h.loginLimiter.Blocked(ipKey); blocked {
@@ -385,6 +412,24 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ipOrigemPreCheck := getClientIP(r, h.cfg.TrustProxyHeaders)
+
+	// Validação do CAPTCHA (Cloudflare Turnstile) roda ANTES do rate limiting,
+	// mesmo padrão do Login. Fail-closed: token ausente/inválido => recusa.
+	if !h.verifyCaptcha(w, r, req.CaptchaToken, ipOrigemPreCheck, "reset-password") {
+		return
+	}
+
+	// Rate limiting anti-bruteforce por IP+usuário: protege contra automação
+	// de tentativas de adivinhar a senha_atual (endpoint antes não tinha
+	// nenhum rate limit).
+	resetKey := "reset:" + ipOrigemPreCheck + "|" + strconv.FormatInt(uid, 10)
+	if blocked, retryAfter := h.resetPasswordLimiter.Blocked(resetKey); blocked {
+		log.Printf("[auth] reset-password: bloqueado por rate limit: user_id=%d retry_after=%s", uid, retryAfter)
+		writeRateLimited(w, retryAfter)
+		return
+	}
+
 	ctx := r.Context()
 	u, err := h.repo.GetByID(ctx, h.db, uid)
 	if err != nil {
@@ -399,9 +444,13 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	if !h.auth.VerifyPassword(u.PasswordHash, req.SenhaAtual) {
 		log.Printf("[auth] reset-password: senha atual incorreta: user_id=%d", uid)
+		h.resetPasswordLimiter.RegisterFailure(resetKey)
 		writeJSON(w, http.StatusUnauthorized, nil, "senha atual incorreta")
 		return
 	}
+
+	// Senha atual confirmada: limpa o contador de falhas do rate limiter.
+	h.resetPasswordLimiter.RegisterSuccess(resetKey)
 
 	newHash, err := h.auth.HashPassword(h.cfg, req.NovaSenha)
 	if err != nil {
@@ -530,6 +579,34 @@ func maskEmail(email string) string {
 		return "***"
 	}
 	return email[:1] + "***" + email[at:]
+}
+
+// SetCaptchaVerifier substitui o CaptchaVerifier usado pelo handler. Existe
+// apenas para permitir injeção de mocks/fakes em testes (produção sempre usa
+// o TurnstileService criado por NewAuthHandler) — não redesenha a
+// arquitetura, apenas expõe um setter mínimo para testabilidade.
+func (h *AuthHandler) SetCaptchaVerifier(v sharedsvc.CaptchaVerifier) {
+	h.captcha = v
+}
+
+// verifyCaptcha valida o token do Cloudflare Turnstile (campo JSON
+// "captchaToken") enviado pelo frontend. Roda ANTES das checagens de rate
+// limiting para economizar esse "budget" contra bots óbvios. Comportamento
+// fail-closed: token ausente ou inválido/irverificável (erro de rede, timeout,
+// resposta inesperada, success=false) faz a requisição ser recusada com 400,
+// sem nunca logar o token ou a secret key. Retorna true se a validação
+// passou (chamador pode prosseguir).
+func (h *AuthHandler) verifyCaptcha(w http.ResponseWriter, r *http.Request, token, remoteIP, acao string) bool {
+	if err := h.captcha.Verify(r.Context(), token, remoteIP); err != nil {
+		if errors.Is(err, sharedsvc.ErrCaptchaTokenAusente) {
+			log.Printf("[auth] %s: captchaToken ausente: ip=%s", acao, remoteIP)
+		} else {
+			log.Printf("[auth] %s: falha na verificação de captcha: ip=%s", acao, remoteIP)
+		}
+		writeJSON(w, http.StatusBadRequest, nil, "captcha inválido ou ausente")
+		return false
+	}
+	return true
 }
 
 // writeRateLimited escreve uma resposta 429 padronizada, incluindo o header

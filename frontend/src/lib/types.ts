@@ -95,9 +95,14 @@ export interface VendedorInput {
   meta_mensal: number;
 }
 
+// Nome do campo do token do Cloudflare Turnstile enviado ao backend.
+// FrontBrain implementou usando "captchaToken" por padrão — se o BackBrain
+// definir outro nome (ex: "turnstileToken"), ajustar aqui e em
+// apiLogin/apiChangePassword (lib/api.ts).
 export interface LoginRequest {
   email: string;
   password: string;
+  captchaToken?: string;
 }
 
 export interface LoginResponse {
@@ -120,6 +125,8 @@ export interface ResetPasswordRequest {
   usuario_id: number;
   nova_senha: string;
   senha_atual?: string;
+  // Nome do campo alinhado com LoginRequest.captchaToken — ver comentário lá.
+  captchaToken?: string;
 }
 
 // === Dashboard ===

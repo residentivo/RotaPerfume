@@ -4,6 +4,27 @@
 
 ---
 
+## CAPTCHA (Cloudflare Turnstile) em Login e Troca de Senha — 2026-09-22
+**Agentes:** 🟣 SecBrain (revisão) → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Descrição:** Adicionada proteção CAPTCHA via Cloudflare Turnstile em `POST /api/auth/login` e `POST /api/auth/reset-password`, exigindo o campo `captchaToken` (string, obrigatório) no body de ambas as requisições.
+
+**Camadas:**
+- [x] 🟣 SecBrain — revisão concluída. Requisitos definidos: validação sempre server-side via `siteverify`, fail-closed, timeout curto (3-5s), nunca logar token/secret, Turnstile não substitui rate limiting existente, enviar `remoteip`, token de uso único. Lacuna extra identificada: `/api/auth/reset-password` não tinha rate limiting — tarefa complementar passada ao BackBrain.
+- [x] 🟡 BackBrain — implementado. Campo `captchaToken` em `LoginRequest`/`ResetPasswordRequest` (`apis/rotaperfumes-api/handlers/auth_handler.go`). Novo `apis/shared/services/turnstile_service.go` (`TurnstileService`/`CaptchaVerifier`), validando o token contra `https://challenges.cloudflare.com/turnstile/v0/siteverify`, fail-closed, timeout 4s, sem logs de token/secret. Rate limiting adicionado a `/api/auth/reset-password` (10 falhas/5min, bloqueio de 10min) — lacuna identificada pelo SecBrain. Nova env var `TURNSTILE_SECRET_KEY`. Build/vet OK.
+- [x] 🟢 FrontBrain — implementado. Novo componente `frontend/src/components/ui/Turnstile.tsx`, widget carregado via `next/script`, integrado em `frontend/src/app/login/page.tsx` e `frontend/src/app/trocar-senha/page.tsx`. Campo `captchaToken` já bate com o contrato do BackBrain (`frontend/src/lib/types.ts`, `frontend/src/lib/api.ts`). Nova env var `NEXT_PUBLIC_TURNSTILE_SITE_KEY`. Build/typecheck OK.
+- [x] 🔴 TestBrain — concluído. Novos testes em `apis/shared/services/turnstile_service_test.go` (fail-closed, timeout, JSON malformado etc.) e `apis/rotaperfumes-api/handlers/auth_handler_test.go` (captcha ausente/inválido/válido). `go test ./...` OK em ambos os módulos, sem falhas. Cobertura do pacote `handlers` 77,8% (gaps pré-existentes em `Refresh`/`Logout`, fora do escopo).
+- [x] 🔵 SubBrain — documentação concluída, ver detalhes abaixo. Card movido para `feito.md`.
+
+**Documentação (SubBrain):**
+- `.env.example` (raiz do projeto) — adicionada `TURNSTILE_SECRET_KEY` com comentário explicando onde obtê-la (dashboard Cloudflare Turnstile) e a natureza fail-closed da validação.
+- `postman/collection.json` — requests **Login** e **Reset Password (própria senha)**: body principal e todos os exemplos de resposta salvos (200/401/400) atualizados incluindo `"captchaToken": "TESTING_TOKEN"`; descrições atualizadas explicando o campo, a validação server-side fail-closed, e o novo rate limiting de `/api/auth/reset-password`.
+- `postman/README.md` — seção "Autenticação (`/api/auth/*`)": `POST /api/auth/login` e `POST /api/auth/reset-password` atualizados com o campo `captchaToken` no body e nota de CAPTCHA. Nova seção "CAPTCHA (Cloudflare Turnstile) em Login e Troca de Senha" em "Subindo o ambiente", seguindo o mesmo padrão da seção "Envio de email (senha inicial / reset de senha)" já existente — explica onde obter as chaves no dashboard Cloudflare, como preencher `TURNSTILE_SECRET_KEY` (backend) e `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (frontend, já documentada em `frontend/.env.local.example` pelo FrontBrain), e o novo rate limiting do reset-password.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## Auditoria de Segurança (Site + API) e Correção de Falhas — 2026-09-17
 **Agentes:** 🟣 SecBrain (auditoria) → 🟡 BackBrain, 🌸 DataBrain, 🟢 FrontBrain (correções por camada) → 🔴 TestBrain (validação) → documentação e fechamento por 🔵 SubBrain
 

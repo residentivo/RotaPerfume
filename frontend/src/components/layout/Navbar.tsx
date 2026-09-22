@@ -7,6 +7,42 @@ import { Button } from "@/components/ui/Button";
 import { logout, getUser } from "@/lib/auth";
 import { User } from "@/lib/types";
 
+interface NavDropdownItem {
+  label: string;
+  href: string;
+}
+
+function NavDropdown({ label, items }: { label: string; items: NavDropdownItem[] }) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="group relative hidden sm:block">
+      <button
+        type="button"
+        className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-primary-600"
+      >
+        {label}
+        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      <div className="invisible absolute left-0 top-full z-20 min-w-[10rem] rounded-lg border border-slate-200 bg-white py-1 opacity-0 shadow-lg transition-opacity duration-150 group-hover:visible group-hover:opacity-100">
+        {items.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="block px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-primary-600"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Navbar() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -41,70 +77,49 @@ export function Navbar() {
               Dashboard
             </Link>
           )}
+
           {user && (
-            <Link
-              href="/pagamentos"
-              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
-            >
-              Pagamentos
-            </Link>
+            <NavDropdown
+              label="ERP"
+              items={[
+                { label: "Clientes", href: "/admin/clientes" },
+                ...(user.role === "admin"
+                  ? [
+                      { label: "Oportunidades", href: "/admin/oportunidades" },
+                      { label: "Visitas", href: "/admin/visitas" },
+                    ]
+                  : []),
+              ]}
+            />
           )}
+
           {user && (
-            <Link
-              href="/admin/clientes"
-              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
-            >
-              Clientes
-            </Link>
+            <NavDropdown
+              label="CRM"
+              items={[
+                { label: "Estoque", href: "/admin/estoque" },
+                { label: "Pagamentos", href: "/pagamentos" },
+                { label: "Pedidos", href: "/admin/pedidos" },
+                { label: "Produtos", href: "/admin/produtos" },
+              ]}
+            />
           )}
+
           {user && (
-            <Link
-              href="/admin/produtos"
-              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
-            >
-              Produtos
-            </Link>
+            <NavDropdown
+              label="Administração"
+              items={[
+                ...(user.role === "admin"
+                  ? [{ label: "Auditoria de Senha", href: "/admin/senha-historico" }]
+                  : []),
+                { label: "Vendedores", href: "/admin/vendedores" },
+                ...(user.role === "admin"
+                  ? [{ label: "Usuários", href: "/admin/usuarios" }]
+                  : []),
+              ]}
+            />
           )}
-          {user && (
-            <Link
-              href="/admin/pedidos"
-              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
-            >
-              Pedidos
-            </Link>
-          )}
-          {user && (
-            <Link
-              href="/admin/vendedores"
-              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
-            >
-              Vendedores
-            </Link>
-          )}
-          {user?.role === "admin" && (
-            <Link
-              href="/admin/oportunidades"
-              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
-            >
-              Oportunidades
-            </Link>
-          )}
-          {user?.role === "admin" && (
-            <Link
-              href="/admin/visitas"
-              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
-            >
-              Visitas
-            </Link>
-          )}
-          {user?.role === "admin" && (
-            <Link
-              href="/admin/usuarios"
-              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
-            >
-              Administração
-            </Link>
-          )}
+
           {user && (
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium text-slate-900">{user.nome}</p>

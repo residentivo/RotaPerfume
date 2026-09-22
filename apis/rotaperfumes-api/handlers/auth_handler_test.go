@@ -32,6 +32,34 @@ func (f *fakeEmailService) EnviarSenhaInicial(ctx context.Context, destinatario,
 	return nil
 }
 
+// fakeCaptchaVerifier é um CaptchaVerifier fake para testes — nunca faz
+// chamadas de rede reais. Reproduz o comportamento fail-closed do
+// TurnstileService real para token vazio (ErrCaptchaTokenAusente), e para
+// qualquer outro token retorna o erro configurado em err (nil == captcha
+// válido).
+type fakeCaptchaVerifier struct {
+	err error
+}
+
+func (f *fakeCaptchaVerifier) Verify(ctx context.Context, token, remoteIP string) error {
+	if token == "" {
+		return services.ErrCaptchaTokenAusente
+	}
+	return f.err
+}
+
+// validCaptchaBody mescla um body de requisição com um captchaToken válido —
+// atalho usado pela maioria dos testes de Login/ResetPassword, já que o
+// campo passou a ser obrigatório.
+func validCaptchaBody(body map[string]any) map[string]any {
+	merged := make(map[string]any, len(body)+1)
+	for k, v := range body {
+		merged[k] = v
+	}
+	merged["captchaToken"] = "token-valido-de-teste"
+	return merged
+}
+
 // config de teste.
 func testCfg() *config.Config {
 	return &config.Config{
@@ -70,8 +98,20 @@ func readBody(t *testing.T, resp *http.Response) []byte {
 }
 
 // setupTestServer cria um httptest.Server com o router real (routes.NewMux)
-// e handlers reais, injetando um DB mockado via sqlmock.
+// e handlers reais, injetando um DB mockado via sqlmock. Usado pela maioria
+// dos testes de handlers deste pacote, que não precisam manipular o
+// CaptchaVerifier do AuthHandler diretamente.
 func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock) {
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
+	return server, db, mock
+}
+
+// setupTestServerWithAuthHandler é como setupTestServer, mas também retorna
+// o *handlers.AuthHandler real usado pelo router — permite que os testes de
+// captcha (Login/ResetPassword) substituam o CaptchaVerifier via
+// AuthHandler.SetCaptchaVerifier para simular sucesso/falha do Turnstile sem
+// chamadas de rede reais.
+func setupTestServerWithAuthHandler(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock, *handlers.AuthHandler) {
 	cfg := testCfg()
 
 	// sqlmock para DB
@@ -80,6 +120,11 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock) 
 
 	// Handlers reais (recebem *sql.DB injetado)
 	authHandler := handlers.NewAuthHandler(db, cfg)
+	// Por padrão, injeta um CaptchaVerifier fake que sempre aprova tokens
+	// não vazios (mantendo o fail-closed real para token vazio) — evita
+	// chamadas de rede reais ao Cloudflare nos testes. Testes que queiram
+	// simular captcha inválido chamam authHandler.SetCaptchaVerifier de novo.
+	authHandler.SetCaptchaVerifier(&fakeCaptchaVerifier{err: nil})
 	userHandler := handlers.NewUsuarioHandler(db, cfg, &fakeEmailService{})
 	dashboardHandler := handlers.NewDashboardHandler(db, cfg)
 	senhaHandler := handlers.NewSenhaHistoricoHandler(db)
@@ -95,7 +140,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock) 
 	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler, visitaHandler)
 
 	server := httptest.NewServer(mux)
-	return server, db, mock
+	return server, db, mock, authHandler
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +148,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock) 
 // ---------------------------------------------------------------------------
 
 func TestLogin_Success(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -129,7 +174,7 @@ func TestLogin_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
-		makeJSON(map[string]string{"email": "admin@test.com", "password": "senha-correta"}))
+		makeJSON(map[string]string{"email": "admin@test.com", "password": "senha-correta", "captchaToken": "token-valido-de-teste"}))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -167,7 +212,7 @@ func TestLogin_Success(t *testing.T) {
 }
 
 func TestLogin_InvalidCredentials(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -182,7 +227,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 			AddRow(int64(1), "Admin User", "admin@test.com", hash, "admin", nil, true, false, time.Now(), time.Now(), nil, nil))
 
 	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
-		makeJSON(map[string]string{"email": "admin@test.com", "password": "senha-errada"}))
+		makeJSON(map[string]string{"email": "admin@test.com", "password": "senha-errada", "captchaToken": "token-valido-de-teste"}))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -195,7 +240,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 }
 
 func TestLogin_UsuarioNaoExiste(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -205,7 +250,7 @@ func TestLogin_UsuarioNaoExiste(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
-		makeJSON(map[string]string{"email": "naoexiste@test.com", "password": "qualquer"}))
+		makeJSON(map[string]string{"email": "naoexiste@test.com", "password": "qualquer", "captchaToken": "token-valido-de-teste"}))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -218,7 +263,7 @@ func TestLogin_UsuarioNaoExiste(t *testing.T) {
 }
 
 func TestLogin_UsuarioInativo(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -233,7 +278,7 @@ func TestLogin_UsuarioInativo(t *testing.T) {
 			AddRow(int64(1), "Inativo User", "inativo@test.com", hash, "normal", nil, false, false, time.Now(), time.Now(), nil, nil))
 
 	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
-		makeJSON(map[string]string{"email": "inativo@test.com", "password": "qualquer"}))
+		makeJSON(map[string]string{"email": "inativo@test.com", "password": "qualquer", "captchaToken": "token-valido-de-teste"}))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -248,7 +293,7 @@ func TestLogin_UsuarioInativo(t *testing.T) {
 // de login com credenciais erradas, o endpoint passa a responder 429 (rate
 // limit anti-bruteforce) em vez de continuar consultando o banco.
 func TestLogin_RateLimited_AposVariasFalhas(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -276,7 +321,7 @@ func TestLogin_RateLimited_AposVariasFalhas(t *testing.T) {
 	client := &http.Client{}
 	for i := 0; i < maxFailures; i++ {
 		resp, err := client.Post(server.URL+"/api/auth/login", "application/json",
-			makeJSON(map[string]string{"email": "bruteforce@test.com", "password": "senha-errada"}))
+			makeJSON(map[string]string{"email": "bruteforce@test.com", "password": "senha-errada", "captchaToken": "token-valido-de-teste"}))
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "tentativa %d deve ser 401 (credenciais inválidas)", i+1)
 		readBody(t, resp) // drena o corpo para permitir reuso da conexão (keep-alive)
@@ -285,7 +330,7 @@ func TestLogin_RateLimited_AposVariasFalhas(t *testing.T) {
 
 	// A tentativa seguinte deve ser bloqueada por rate limit, SEM consultar o banco de novo.
 	resp, err := client.Post(server.URL+"/api/auth/login", "application/json",
-		makeJSON(map[string]string{"email": "bruteforce@test.com", "password": "senha-errada"}))
+		makeJSON(map[string]string{"email": "bruteforce@test.com", "password": "senha-errada", "captchaToken": "token-valido-de-teste"}))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -300,7 +345,7 @@ func TestLogin_RateLimited_AposVariasFalhas(t *testing.T) {
 // TestLogin_RateLimited_SucessoResetaContador garante que um login bem-sucedido
 // limpa o contador de falhas, permitindo novas tentativas normalmente.
 func TestLogin_RateLimited_SucessoResetaContador(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -321,7 +366,7 @@ func TestLogin_RateLimited_SucessoResetaContador(t *testing.T) {
 	}
 	for i := 0; i < 2; i++ {
 		resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
-			makeJSON(map[string]string{"email": "reset@test.com", "password": "senha-errada"}))
+			makeJSON(map[string]string{"email": "reset@test.com", "password": "senha-errada", "captchaToken": "token-valido-de-teste"}))
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 		resp.Body.Close()
@@ -337,7 +382,7 @@ func TestLogin_RateLimited_SucessoResetaContador(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
-		makeJSON(map[string]string{"email": "reset@test.com", "password": "senha-correta"}))
+		makeJSON(map[string]string{"email": "reset@test.com", "password": "senha-correta", "captchaToken": "token-valido-de-teste"}))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
@@ -350,7 +395,7 @@ func TestLogin_RateLimited_SucessoResetaContador(t *testing.T) {
 	}
 	for i := 0; i < 2; i++ {
 		resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
-			makeJSON(map[string]string{"email": "reset@test.com", "password": "senha-errada"}))
+			makeJSON(map[string]string{"email": "reset@test.com", "password": "senha-errada", "captchaToken": "token-valido-de-teste"}))
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "não deveria estar bloqueado logo após reset do contador")
 		resp.Body.Close()
@@ -366,7 +411,7 @@ func TestLogin_RateLimited_SucessoResetaContador(t *testing.T) {
 // de montar a chave, então a porta efêmera de cada conexão nova não afeta o
 // bloqueio: após maxFailures tentativas o mesmo e-mail/IP deve levar 429.
 func TestLogin_RateLimited_QuebraComConexoesNovasPorTentativa(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -391,7 +436,7 @@ func TestLogin_RateLimited_QuebraComConexoesNovasPorTentativa(t *testing.T) {
 
 	for i := 0; i < maxFailures+3; i++ {
 		req, _ := http.NewRequest("POST", server.URL+"/api/auth/login", makeJSON(map[string]string{
-			"email": "bruteforce-newconn@test.com", "password": "senha-errada",
+			"email": "bruteforce-newconn@test.com", "password": "senha-errada", "captchaToken": "token-valido-de-teste",
 		}))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
@@ -411,7 +456,7 @@ func TestLogin_RateLimited_QuebraComConexoesNovasPorTentativa(t *testing.T) {
 }
 
 func TestLogin_EmptyBody(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+	server, db, _, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -426,7 +471,7 @@ func TestLogin_EmptyBody(t *testing.T) {
 }
 
 func TestLogin_InvalidJSON(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+	server, db, _, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -443,7 +488,7 @@ func TestLogin_InvalidJSON(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -472,7 +517,7 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 
 	// O endpoint /api/auth/reset-password usa senha_atual (não é admin-only).
 	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
-		makeJSON(map[string]any{"senha_atual": "senha-atual", "nova_senha": "nova-senha-123"}))
+		makeJSON(map[string]any{"senha_atual": "senha-atual", "nova_senha": "nova-senha-123", "captchaToken": "token-valido-de-teste"}))
 	req.Header.Set("Authorization", "Bearer "+normalToken)
 
 	client := &http.Client{}
@@ -488,7 +533,7 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 }
 
 func TestAdminResetPassword_Success(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -532,7 +577,7 @@ func TestAdminResetPassword_Success(t *testing.T) {
 }
 
 func TestResetPassword_SenhaCurta(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+	server, db, _, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -559,7 +604,7 @@ func TestResetPassword_SenhaCurta(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMe_Success(t *testing.T) {
-	server, db, mock := setupTestServer(t)
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
@@ -591,8 +636,124 @@ func TestMe_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// ---------------------------------------------------------------------------
+// Captcha (Cloudflare Turnstile) — Login e ResetPassword
+// ---------------------------------------------------------------------------
+
+// TestLogin_CaptchaTokenAusente garante que login sem captchaToken é recusado
+// com 400 antes mesmo de consultar o banco (fail-closed).
+func TestLogin_CaptchaTokenAusente(t *testing.T) {
+	server, db, _, _ := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
+		makeJSON(map[string]string{"email": "qualquer@test.com", "password": "qualquer"}))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Contains(t, body["error"], "captcha")
+}
+
+// TestLogin_CaptchaInvalido garante que login com captchaToken presente mas
+// rejeitado pelo verificador (ex.: Cloudflare recusou) é recusado com 400,
+// sem sequer consultar o banco (nenhum mock.ExpectQuery configurado).
+func TestLogin_CaptchaInvalido(t *testing.T) {
+	server, db, _, authHandler := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	authHandler.SetCaptchaVerifier(&fakeCaptchaVerifier{err: services.ErrCaptchaInvalido})
+
+	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
+		makeJSON(validCaptchaBody(map[string]any{"email": "qualquer@test.com", "password": "qualquer"})))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Contains(t, body["error"], "captcha")
+}
+
+// TestLogin_CaptchaValido_ProssegueParaCredenciais garante que, com captcha
+// válido, o fluxo prossegue normalmente até a validação de credenciais
+// (chegando a consultar o banco).
+func TestLogin_CaptchaValido_ProssegueParaCredenciais(t *testing.T) {
+	server, db, mock, authHandler := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	authHandler.SetCaptchaVerifier(&fakeCaptchaVerifier{err: nil})
+
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
+		WithArgs("captcha-ok@test.com").
+		WillReturnError(sql.ErrNoRows)
+
+	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
+		makeJSON(validCaptchaBody(map[string]any{"email": "captcha-ok@test.com", "password": "qualquer"})))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	// Chegou até a checagem de credenciais (401, não 400 de captcha).
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestResetPassword_CaptchaTokenAusente garante que reset-password sem
+// captchaToken é recusado com 400 antes de consultar o banco.
+func TestResetPassword_CaptchaTokenAusente(t *testing.T) {
+	server, db, _, _ := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+		makeJSON(map[string]any{"senha_atual": "senha-atual", "nova_senha": "nova-senha-123"}))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Contains(t, body["error"], "captcha")
+}
+
+// TestResetPassword_CaptchaInvalido garante que reset-password com
+// captchaToken rejeitado pelo verificador é recusado com 400, sem consultar
+// o banco.
+func TestResetPassword_CaptchaInvalido(t *testing.T) {
+	server, db, _, authHandler := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	authHandler.SetCaptchaVerifier(&fakeCaptchaVerifier{err: services.ErrCaptchaInvalido})
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "senha-atual", "nova_senha": "nova-senha-123"})))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Contains(t, body["error"], "captcha")
+}
+
 func TestMe_NaoAutenticado(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+	server, db, _, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 

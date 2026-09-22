@@ -13,10 +13,10 @@ import (
 //
 // Rotas:
 //
-//	POST /api/auth/login                — público
+//	POST /api/auth/login                — público (requer captchaToken no body — Cloudflare Turnstile)
 //	POST /api/auth/refresh              — público (usa refresh_token no body)
 //	POST /api/auth/logout               — público (revoga refresh_token)
-//	POST /api/auth/reset-password       — protegido (JWT, qualquer role autenticado)
+//	POST /api/auth/reset-password       — protegido (JWT, qualquer role autenticado; requer captchaToken no body e tem rate limiting próprio por IP+usuário)
 //	GET  /api/auth/me                   — protegido (JWT)
 //	GET  /api/usuarios                  — admin only (JWT + role=admin) — listagem paginada (order_by/order_dir opcionais)
 //	POST /api/usuarios                  — admin only — criar usuário
