@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -35,12 +36,6 @@ const LIMIT_OPTIONS = [
   { value: "100", label: "100 por pagina" },
 ];
 
-const ORIGEM_LABEL: Record<string, string> = {
-  import_csv: "Importação CSV",
-  faturamento: "Faturamento",
-  manual: "Manual",
-};
-
 function fmtDate(dateStr: string | null): string {
   if (!dateStr) return "-";
   const d = new Date(dateStr.length <= 10 ? `${dateStr}T00:00:00` : dateStr);
@@ -48,7 +43,7 @@ function fmtDate(dateStr: string | null): string {
   return d.toLocaleDateString("pt-BR");
 }
 
-export default function EstoquePage() {
+function EstoquePageContent() {
   const [admin, setAdmin] = useState(false);
   const [registros, setRegistros] = useState<Estoque[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,7 +80,6 @@ export default function EstoquePage() {
         limit,
         {
           sku: search.trim() || undefined,
-          data_de: dataFiltro || undefined,
           data_ate: dataFiltro || undefined,
           ruptura:
             rupturaFilter === "" ? undefined : rupturaFilter === "sim",
@@ -190,14 +184,28 @@ export default function EstoquePage() {
           <button
             type="button"
             onClick={() => openEdit(e)}
-            className="font-mono text-xs font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
+            className="text-left hover:text-primary-600"
             title="Editar registro de estoque"
           >
-            #{e.id} - {e.sku}
+            <span className="block font-mono text-xs font-medium text-slate-900 hover:underline">
+              #{e.id} - {e.sku}
+            </span>
+            {e.produto_descricao && (
+              <span className="block text-xs text-slate-500">
+                {e.produto_descricao}
+              </span>
+            )}
           </button>
         ) : (
-          <span className="font-mono text-xs font-medium text-slate-900">
-            #{e.id} - {e.sku}
+          <span>
+            <span className="block font-mono text-xs font-medium text-slate-900">
+              #{e.id} - {e.sku}
+            </span>
+            {e.produto_descricao && (
+              <span className="block text-xs text-slate-500">
+                {e.produto_descricao}
+              </span>
+            )}
           </span>
         ),
     },
@@ -231,16 +239,6 @@ export default function EstoquePage() {
             ].join(" ")}
           />
           {e.ruptura ? "Em ruptura" : "OK"}
-        </span>
-      ),
-    },
-    {
-      key: "origem",
-      header: "Origem",
-      width: "150px",
-      render: (e) => (
-        <span className="text-slate-600">
-          {ORIGEM_LABEL[e.origem] || e.origem}
         </span>
       ),
     },
@@ -344,7 +342,7 @@ export default function EstoquePage() {
                   type="date"
                   value={dataFiltro}
                   onChange={(e) => setDataFiltro(e.target.value)}
-                  helperText="Vazio = ultima posicao"
+                  helperText="Ultima posicao de cada produto ate a data"
                 />
               </div>
               <div className="sm:w-44">
@@ -455,5 +453,13 @@ export default function EstoquePage() {
         onSubmit={handleModalSubmit}
       />
     </div>
+  );
+}
+
+export default function EstoquePage() {
+  return (
+    <ProtectedRoute requireAdmin>
+      <EstoquePageContent />
+    </ProtectedRoute>
   );
 }

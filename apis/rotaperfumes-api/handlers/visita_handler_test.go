@@ -76,13 +76,60 @@ func TestListVisitas_Success_Admin(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestListVisitas_NegadoParaNaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+// TestListVisitas_PermitidoParaNaoAdmin_ForcaCarteira cobre a mudança de
+// rota: a listagem virou acesso comum, mas o vendedor_id da query é ignorado
+// e forçado à carteira do vendedor vinculado ao usuário autenticado (evita
+// bypass via URL, ex.: ?vendedor_id=<de outro vendedor>).
+func TestListVisitas_PermitidoParaNaoAdmin_ForcaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	vendedorWhere := ` WHERE vendedor_id = \?`
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM visitas` + vendedorWhere).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas` + vendedorWhere + ` ORDER BY visita_id ASC LIMIT \? OFFSET \?`).
+		WithArgs(int64(2), 20, 0).
+		WillReturnRows(visitaRowsForHandler())
+
+	// vendedor_id=99 na query é ignorado — o filtro real usado é o vendedor
+	// (2) vinculado ao usuário autenticado.
+	req, _ := http.NewRequest("GET", server.URL+"/api/visitas?vendedor_id=99", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestListVisitas_SemVendedorVinculado_ListaVazia cobre o caso de usuário
+// role=normal sem id_vendedor vinculado: nunca deve enxergar dados de
+// terceiros, retorna lista vazia (200) sem sequer consultar a tabela de
+// visitas.
+func TestListVisitas_SemVendedorVinculado_ListaVazia(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/visitas", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -91,7 +138,15 @@ func TestListVisitas_NegadoParaNaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	data := body["data"].([]any)
+	assert.Len(t, data, 0)
+	pagination := body["pagination"].(map[string]any)
+	assert.Equal(t, float64(0), pagination["total"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestListVisitas_ComFiltros(t *testing.T) {
@@ -249,13 +304,24 @@ func TestGetVisita_IDInvalido(t *testing.T) {
 	assert.Equal(t, "id inválido", body["error"])
 }
 
-func TestGetVisita_NegadoParaNaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+// TestGetVisita_PermitidoParaNaoAdmin cobre a mudança de rota: o detalhe
+// virou acesso comum para o vendedor dono do registro.
+func TestGetVisita_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	// visitaRowsForHandler() tem vendedor_id=1 — usuário vinculado ao mesmo
+	// vendedor.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/visitas/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -264,7 +330,45 @@ func TestGetVisita_NegadoParaNaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestGetVisita_NegadoParaNaoAdminForaDaCarteira cobre o cenário de IDOR:
+// vendedor não-admin tentando ler visita de outro vendedor por enumeração de
+// ID deve receber 404 (não 403).
+func TestGetVisita_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// visitaRowsForHandler() tem vendedor_id=1, mas o usuário está vinculado
+	// ao vendedor 99 — não deve conseguir ver a visita.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/visitas/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "visita não encontrada", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestGetVisita_ErroInterno(t *testing.T) {
@@ -328,13 +432,71 @@ func TestCreateVisita_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCreateVisita_NegadoParaNaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+// TestCreateVisita_PermitidoParaNaoAdmin_ForcaVendedorID cobre a mudança de
+// rota: vendedor não-admin pode criar visita, mas o vendedor_id do payload é
+// sempre ignorado e forçado ao vendedor vinculado ao usuário autenticado
+// (evita forjar registro para outro vendedor).
+func TestCreateVisita_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(5)))
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(5), int64(100)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+		}).AddRow(int64(500), int64(100), int64(5), time.Now(), nil, time.Now(), time.Now()))
+	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
+		WithArgs(int64(100)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectQuery(`SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`).
+		WithArgs(int64(5)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectExec(`INSERT INTO visitas`).
+		WithArgs(int64(100), int64(5), sqlmock.AnyArg(), "Positiva", 30).
+		WillReturnResult(sqlmock.NewResult(9, 1))
+
+	// payload tenta forjar vendedor_id=99 (outro vendedor) — deve ser
+	// ignorado e substituído pelo vendedor vinculado (5).
+	payload := validVisitaPayload()
+	payload["vendedor_id"] = 99
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/visitas", makeJSON(payload))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, float64(5), data["vendedor_id"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestCreateVisita_SemVendedorVinculado_Forbidden cobre o caso de usuário
+// role=normal sem id_vendedor vinculado: 403, sem sequer chegar a
+// decodificar o payload de negócio.
+func TestCreateVisita_SemVendedorVinculado_Forbidden(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/visitas", makeJSON(validVisitaPayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -344,6 +506,42 @@ func TestCreateVisita_NegadoParaNaoAdmin(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "usuário sem vendedor vinculado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestCreateVisita_ClienteForaDaCarteira cobre a validação de SecBrain:
+// vendedor não-admin tentando criar visita para um cliente fora da própria
+// carteira recebe 400, sem chegar a inserir o registro.
+func TestCreateVisita_ClienteForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(5)))
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(5), int64(100)).
+		WillReturnError(sql.ErrNoRows)
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/visitas", makeJSON(validVisitaPayload()))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "cliente não pertence à carteira deste vendedor", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestCreateVisita_JSONInvalido(t *testing.T) {
@@ -530,6 +728,11 @@ func TestUpdateVisita_Success(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
+	// UpdateVisita busca o registro atual primeiro (owner check — sempre
+	// executado, mesmo para admin) antes de decodificar/validar o payload.
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
 	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 		WithArgs(int64(100)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
@@ -559,13 +762,24 @@ func TestUpdateVisita_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUpdateVisita_NegadoParaNaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+// TestUpdateVisita_NegadoParaNaoAdminForaDaCarteira cobre o cenário de IDOR:
+// vendedor não-admin tentando editar visita de outro vendedor recebe 404.
+func TestUpdateVisita_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	// visitaRowsForHandler() tem vendedor_id=1, mas o usuário está vinculado
+	// ao vendedor 99.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/visitas/1", makeJSON(validVisitaPayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -574,7 +788,103 @@ func TestUpdateVisita_NegadoParaNaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "visita não encontrada", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestUpdateVisita_PermitidoParaNaoAdmin_ForcaVendedorID cobre a mudança de
+// rota: vendedor não-admin pode editar visita da própria carteira, mas o
+// vendedor_id do payload é sempre ignorado e forçado ao vendedor vinculado
+// (evita reatribuir o registro a outro vendedor).
+func TestUpdateVisita_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// visitaRowsForHandler() tem vendedor_id=1 — usuário vinculado ao mesmo
+	// vendedor (dono do registro).
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(1), int64(100)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+		}).AddRow(int64(500), int64(100), int64(1), time.Now(), nil, time.Now(), time.Now()))
+	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
+		WithArgs(int64(100)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectQuery(`SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectExec(`UPDATE visitas`).
+		WithArgs(int64(100), int64(1), sqlmock.AnyArg(), "Positiva", 30, int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
+
+	// payload tenta reatribuir vendedor_id=99 — deve ser ignorado e mantido
+	// o vendedor vinculado (1).
+	payload := validVisitaPayload()
+	payload["vendedor_id"] = 99
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/visitas/1", makeJSON(payload))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestUpdateVisita_ClienteForaDaCarteira cobre a validação de SecBrain:
+// vendedor não-admin tentando reatribuir a visita a um cliente fora da
+// própria carteira recebe 400.
+func TestUpdateVisita_ClienteForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(1), int64(100)).
+		WillReturnError(sql.ErrNoRows)
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/visitas/1", makeJSON(validVisitaPayload()))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "cliente não pertence à carteira deste vendedor", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestUpdateVisita_IDInvalido(t *testing.T) {
@@ -598,12 +908,17 @@ func TestUpdateVisita_IDInvalido(t *testing.T) {
 }
 
 func TestUpdateVisita_JSONInvalido(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
+
+	// UpdateVisita busca o registro atual antes de decodificar o body.
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/visitas/1", bytes.NewBufferString("{invalido"))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -615,15 +930,22 @@ func TestUpdateVisita_JSONInvalido(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.Equal(t, "body JSON inválido", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestUpdateVisita_ValidacaoNegocio(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
+
+	// UpdateVisita busca o registro atual antes de validar o payload.
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
 
 	payload := validVisitaPayload()
 	payload["duracao_min"] = -5
@@ -638,8 +960,13 @@ func TestUpdateVisita_ValidacaoNegocio(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.Equal(t, "duracao_min deve ser maior ou igual a zero", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestUpdateVisita_NaoEncontrada cobre o caso de ID inexistente: a busca do
+// registro atual (owner check) já retorna "não encontrada" antes de
+// qualquer tentativa de UPDATE.
 func TestUpdateVisita_NaoEncontrada(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
@@ -648,15 +975,9 @@ func TestUpdateVisita_NaoEncontrada(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-		WithArgs(int64(100)).
-		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
-	mock.ExpectQuery(`SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
-	mock.ExpectExec(`UPDATE visitas`).
-		WithArgs(int64(100), int64(1), sqlmock.AnyArg(), "Positiva", 30, int64(999)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/visitas/999", makeJSON(validVisitaPayload()))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -680,6 +1001,9 @@ func TestUpdateVisita_ErroInterno(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
 	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 		WithArgs(int64(100)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))

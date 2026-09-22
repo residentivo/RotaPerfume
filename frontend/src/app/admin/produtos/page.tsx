@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
+import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { ProdutoModal } from "@/components/admin/ProdutoModal";
 import {
   apiListProdutos,
@@ -60,7 +61,7 @@ function fmtDate(dateStr: string | null): string {
   return d.toLocaleDateString("pt-BR");
 }
 
-export default function ProdutosPage() {
+function ProdutosPageContent() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -486,5 +487,13 @@ export default function ProdutosPage() {
         onSubmit={handleModalSubmit}
       />
     </div>
+  );
+}
+
+export default function ProdutosPage() {
+  return (
+    <ProtectedRoute requireAdmin>
+      <ProdutosPageContent />
+    </ProtectedRoute>
   );
 }

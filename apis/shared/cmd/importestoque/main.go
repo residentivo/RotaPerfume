@@ -206,24 +206,19 @@ func parseRuptura(raw string) bool {
 }
 
 // upsertAll grava todas as linhas no banco via INSERT ... ON DUPLICATE KEY UPDATE,
-// usando a chave composta (data_snapshot, sku) como idempotência.
-//
-// origem é sempre gravada/sobrescrita como 'import_csv' (mesmo em UPDATE),
-// para deixar explícito que o valor vigente do snapshot veio do ERP —
-// mesmo que uma baixa por faturamento (origem='faturamento') tenha gravado
-// esse par (data_snapshot, sku) antes. Isso é intencional: o CSV do ERP é
-// a fonte de verdade para o saldo absoluto do dia; o rastreio de origem
-// serve apenas para auditoria/observabilidade, não para bloquear o import.
+// usando a chave composta (data_snapshot, sku) como idempotência. O saldo do
+// CSV do ERP é sempre a fonte de verdade para o saldo absoluto do dia,
+// mesmo que uma baixa por faturamento tenha gravado esse par
+// (data_snapshot, sku) antes.
 func upsertAll(db *sql.DB, rows []estoqueRow) (inserted, updated, failed int) {
 	const query = `
 		INSERT INTO estoque
-			(data_snapshot, sku, saldo, ruptura, origem)
+			(data_snapshot, sku, saldo, ruptura)
 		VALUES
-			(?, ?, ?, ?, 'import_csv')
+			(?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			saldo = VALUES(saldo),
-			ruptura = VALUES(ruptura),
-			origem = VALUES(origem)
+			ruptura = VALUES(ruptura)
 	`
 
 	stmt, err := db.Prepare(query)

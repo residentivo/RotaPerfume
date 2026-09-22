@@ -530,19 +530,17 @@ export interface ListVisitasResponse {
 // editar são admin-only — ver apis/rotaperfumes-api/handlers/estoque_handler.go
 // (rota /api/estoque).
 
-export type EstoqueOrigem = "import_csv" | "faturamento" | "manual";
-
 // Estoque, como retornado por GET /api/estoque e GET /api/estoque/{id}.
 // Sem data_de/data_ate no filtro da listagem, a API devolve a última
-// posição de estoque de cada SKU; com data_de/data_ate, devolve apenas o
-// último movimento de cada SKU dentro do período informado.
+// posição de estoque de cada SKU; com data_ate, devolve a última posição de
+// cada SKU até (inclusive) aquela data.
 export interface Estoque {
   id: number;
   data_snapshot: string; // formato AAAA-MM-DD
   sku: string;
+  produto_descricao: string;
   saldo: number;
   ruptura: boolean;
-  origem: EstoqueOrigem;
   created_at: string;
   updated_at: string;
 }

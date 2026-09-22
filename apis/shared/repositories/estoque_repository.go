@@ -20,7 +20,13 @@ func NewEstoqueRepository() *EstoqueRepository {
 	return &EstoqueRepository{}
 }
 
-const estoqueColunas = `id, data_snapshot, sku, saldo, ruptura, origem, created_at, updated_at`
+// estoqueColunas seleciona os campos de estoque mais a descrição do produto
+// (via LEFT JOIN com produtos), usado por List/UltimaPosicaoPorSku/GetByID.
+// LEFT JOIN para não esconder um snapshot cujo sku não exista mais em
+// produtos (não deveria acontecer, dada a FK, mas evita que uma
+// inconsistência de dados faça o registro sumir da listagem).
+const estoqueColunas = `e.id, e.data_snapshot, e.sku, COALESCE(p.descricao, '') AS produto_descricao, e.saldo, e.ruptura, e.created_at, e.updated_at`
+const estoqueFrom = ` FROM estoque e LEFT JOIN produtos p ON p.sku = e.sku`
 
 // estoqueDataLayout é o formato usado para comparar/gravar data_snapshot.
 const estoqueDataLayout = "2006-01-02"
@@ -37,9 +43,24 @@ type EstoqueFiltro struct {
 }
 
 // estoqueOrderWhitelist mapeia os campos de ordenação aceitos pela API para
-// as colunas SQL reais da tabela estoque. Usado para sanitizar ORDER BY
-// dinâmico (proteção contra SQL injection via order_by).
+// as colunas SQL reais (qualificadas com o alias `e` da tabela estoque, já
+// que as queries sempre fazem LEFT JOIN com produtos). Usado para sanitizar
+// ORDER BY dinâmico (proteção contra SQL injection via order_by).
 var estoqueOrderWhitelist = map[string]string{
+	"id":            "e.id",
+	"data_snapshot": "e.data_snapshot",
+	"sku":           "e.sku",
+	"saldo":         "e.saldo",
+	"ruptura":       "e.ruptura",
+	"created_at":    "e.created_at",
+	"updated_at":    "e.updated_at",
+}
+
+// estoqueOrderWhitelistRanked é a variante usada para ordenar o resultado
+// FINAL de UltimaPosicaoPorSku, que seleciona a partir de uma tabela
+// derivada ("ranked") sem alias `e`/`p` — os nomes de coluna aí são os
+// aliases definidos em estoqueColunas (id, data_snapshot, sku, saldo, ...).
+var estoqueOrderWhitelistRanked = map[string]string{
 	"id":            "id",
 	"data_snapshot": "data_snapshot",
 	"sku":           "sku",
@@ -52,29 +73,37 @@ var estoqueOrderWhitelist = map[string]string{
 // orderBy monta a cláusula ORDER BY a partir de OrderBy/OrderDir, com
 // default "data_snapshot DESC" (última posição primeiro).
 func (f EstoqueFiltro) orderBy() string {
-	return buildOrderByClause(estoqueOrderWhitelist, f.OrderBy, f.OrderDir, "data_snapshot", "DESC")
+	return buildOrderByClause(estoqueOrderWhitelist, f.OrderBy, f.OrderDir, "e.data_snapshot", "DESC")
 }
 
-// where monta a cláusula WHERE (sem a palavra "WHERE") e os args correspondentes.
+// orderByRanked é o equivalente a orderBy() para uso sobre a tabela derivada
+// "ranked" de UltimaPosicaoPorSku (ver estoqueOrderWhitelistRanked).
+func (f EstoqueFiltro) orderByRanked() string {
+	return buildOrderByClause(estoqueOrderWhitelistRanked, f.OrderBy, f.OrderDir, "data_snapshot", "DESC")
+}
+
+// where monta a cláusula WHERE (sem a palavra "WHERE") e os args
+// correspondentes, com colunas qualificadas pelo alias `e` (tabela estoque),
+// já que todas as queries que a utilizam fazem LEFT JOIN com produtos.
 // Retorna string vazia quando não há filtros.
 func (f EstoqueFiltro) where() (string, []any) {
 	var conds []string
 	var args []any
 
 	if f.SKU != "" {
-		conds = append(conds, "sku = ?")
+		conds = append(conds, "e.sku = ?")
 		args = append(args, f.SKU)
 	}
 	if f.DataDe != nil {
-		conds = append(conds, "data_snapshot >= ?")
+		conds = append(conds, "e.data_snapshot >= ?")
 		args = append(args, f.DataDe.Format(estoqueDataLayout))
 	}
 	if f.DataAte != nil {
-		conds = append(conds, "data_snapshot <= ?")
+		conds = append(conds, "e.data_snapshot <= ?")
 		args = append(args, f.DataAte.Format(estoqueDataLayout))
 	}
 	if f.Ruptura != nil {
-		conds = append(conds, "ruptura = ?")
+		conds = append(conds, "e.ruptura = ?")
 		args = append(args, *f.Ruptura)
 	}
 
@@ -93,12 +122,12 @@ func (r *EstoqueRepository) List(ctx context.Context, db *sql.DB, page, limit in
 	whereClause, args := filtro.where()
 
 	var total int
-	countQ := "SELECT COUNT(*) FROM estoque" + whereClause
+	countQ := "SELECT COUNT(*)" + estoqueFrom + whereClause
 	if err := db.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("repositories: count estoque: %w", err)
 	}
 
-	q := "SELECT " + estoqueColunas + " FROM estoque" + whereClause + filtro.orderBy() + " LIMIT ? OFFSET ?"
+	q := "SELECT " + estoqueColunas + estoqueFrom + whereClause + filtro.orderBy() + " LIMIT ? OFFSET ?"
 	queryArgs := append(append([]any{}, args...), limit, offset)
 
 	rows, err := db.QueryContext(ctx, q, queryArgs...)
@@ -123,7 +152,9 @@ func (r *EstoqueRepository) List(ctx context.Context, db *sql.DB, page, limit in
 
 // UltimaPosicaoPorSku retorna, para cada sku (respeitando o filtro), apenas
 // o registro de data_snapshot mais recente — usado pela listagem padrão do
-// frontend, que sempre mostra a última posição de estoque por produto.
+// frontend, que sempre mostra a última posição de estoque por produto. Com
+// filtro.DataAte informado, retorna a última posição de cada sku até
+// (inclusive) aquela data — histórico "como estava naquele dia".
 //
 // Implementado com window function ROW_NUMBER() OVER (PARTITION BY sku
 // ORDER BY data_snapshot DESC), suportada desde MySQL 8.0 (dialeto usado
@@ -136,8 +167,8 @@ func (r *EstoqueRepository) UltimaPosicaoPorSku(ctx context.Context, db *sql.DB,
 
 	const rankedCTE = `
 		SELECT ` + estoqueColunas + `,
-			ROW_NUMBER() OVER (PARTITION BY sku ORDER BY data_snapshot DESC, id DESC) AS rn
-		FROM estoque`
+			ROW_NUMBER() OVER (PARTITION BY e.sku ORDER BY e.data_snapshot DESC, e.id DESC) AS rn
+		` + estoqueFrom
 
 	var total int
 	countQ := "SELECT COUNT(*) FROM (" + rankedCTE + whereClause + ") ranked WHERE rn = 1"
@@ -145,7 +176,7 @@ func (r *EstoqueRepository) UltimaPosicaoPorSku(ctx context.Context, db *sql.DB,
 		return nil, 0, fmt.Errorf("repositories: count estoque última posição: %w", err)
 	}
 
-	q := "SELECT " + estoqueColunas + " FROM (" + rankedCTE + whereClause + ") ranked WHERE rn = 1" + filtro.orderBy() + " LIMIT ? OFFSET ?"
+	q := "SELECT id, data_snapshot, sku, produto_descricao, saldo, ruptura, created_at, updated_at FROM (" + rankedCTE + whereClause + ") ranked WHERE rn = 1" + filtro.orderByRanked() + " LIMIT ? OFFSET ?"
 	queryArgs := append(append([]any{}, args...), limit, offset)
 
 	rows, err := db.QueryContext(ctx, q, queryArgs...)
@@ -170,28 +201,21 @@ func (r *EstoqueRepository) UltimaPosicaoPorSku(ctx context.Context, db *sql.DB,
 
 // GetByID busca um registro de estoque pelo ID. Retorna ErrNotFound se não existir.
 func (r *EstoqueRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (*models.Estoque, error) {
-	q := "SELECT " + estoqueColunas + " FROM estoque WHERE id = ? LIMIT 1"
+	q := "SELECT " + estoqueColunas + estoqueFrom + " WHERE e.id = ? LIMIT 1"
 	row := db.QueryRowContext(ctx, q, id)
 	return scanEstoque(row)
 }
 
 // Create insere um novo registro de estoque e preenche e.ID com o id gerado.
-// Se e.Origem estiver vazio, assume models.EstoqueOrigemManual (inserções
-// diretas via Backend, fora do importador/faturamento).
 func (r *EstoqueRepository) Create(ctx context.Context, db *sql.DB, e *models.Estoque) error {
-	origem := e.Origem
-	if origem == "" {
-		origem = models.EstoqueOrigemManual
-	}
 	const q = `
-		INSERT INTO estoque (data_snapshot, sku, saldo, ruptura, origem)
-		VALUES (?, ?, ?, ?, ?)`
+		INSERT INTO estoque (data_snapshot, sku, saldo, ruptura)
+		VALUES (?, ?, ?, ?)`
 	res, err := db.ExecContext(ctx, q,
 		e.DataSnapshot.Format(estoqueDataLayout),
 		e.SKU,
 		e.Saldo,
 		e.Ruptura,
-		origem,
 	)
 	if err != nil {
 		return fmt.Errorf("repositories: create estoque: %w", err)
@@ -206,22 +230,15 @@ func (r *EstoqueRepository) Create(ctx context.Context, db *sql.DB, e *models.Es
 
 // Update atualiza os campos editáveis de um registro de estoque (data_snapshot
 // e sku não são alterados por aqui — para mudar a chave de negócio, crie um
-// novo registro). Se e.Origem estiver vazio, assume
-// models.EstoqueOrigemManual (edição direta via Backend). Retorna
-// ErrNotFound se não existir.
+// novo registro). Retorna ErrNotFound se não existir.
 func (r *EstoqueRepository) Update(ctx context.Context, db *sql.DB, id int64, e *models.Estoque) error {
-	origem := e.Origem
-	if origem == "" {
-		origem = models.EstoqueOrigemManual
-	}
 	const q = `
 		UPDATE estoque
-		SET saldo = ?, ruptura = ?, origem = ?
+		SET saldo = ?, ruptura = ?
 		WHERE id = ?`
 	res, err := db.ExecContext(ctx, q,
 		e.Saldo,
 		e.Ruptura,
-		origem,
 		id,
 	)
 	if err != nil {
@@ -239,25 +256,21 @@ func (r *EstoqueRepository) Update(ctx context.Context, db *sql.DB, id int64, e 
 
 // UpsertPorDataSku faz upsert do saldo/ruptura ABSOLUTO de um sku numa data:
 // se já existir registro para aquele par (data_snapshot, sku) — UNIQUE KEY
-// uk_estoque_data_sku —, sobrescreve saldo/ruptura/origem; senão cria um
-// novo registro. `origem` identifica o processo que está gravando (ex:
-// models.EstoqueOrigemImportCSV) — obrigatório, para rastrear e evitar que
-// processos distintos (import do CSV do ERP vs. faturamento de pedidos)
-// sobrescrevam um ao outro silenciosamente no mesmo dia.
+// uk_estoque_data_sku —, sobrescreve saldo/ruptura; senão cria um novo
+// registro.
 //
 // Uso: importador de CSV (dados/erp/estoque.csv traz saldo absoluto do
 // ERP). NÃO usar para baixa de estoque por faturamento de pedidos — nesse
 // caso, use AjustarSaldoPorFaturamento (delta relativo, seguro sob
 // concorrência e dentro da mesma transação do faturamento).
-func (r *EstoqueRepository) UpsertPorDataSku(ctx context.Context, db *sql.DB, sku string, data time.Time, saldo int, ruptura bool, origem string) error {
+func (r *EstoqueRepository) UpsertPorDataSku(ctx context.Context, db *sql.DB, sku string, data time.Time, saldo int, ruptura bool) error {
 	const q = `
-		INSERT INTO estoque (data_snapshot, sku, saldo, ruptura, origem)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO estoque (data_snapshot, sku, saldo, ruptura)
+		VALUES (?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			saldo = VALUES(saldo),
-			ruptura = VALUES(ruptura),
-			origem = VALUES(origem)`
-	_, err := db.ExecContext(ctx, q, data.Format(estoqueDataLayout), sku, saldo, ruptura, origem)
+			ruptura = VALUES(ruptura)`
+	_, err := db.ExecContext(ctx, q, data.Format(estoqueDataLayout), sku, saldo, ruptura)
 	if err != nil {
 		return fmt.Errorf("repositories: upsert estoque por data/sku: %w", err)
 	}
@@ -287,8 +300,6 @@ func (r *EstoqueRepository) UpsertPorDataSku(ctx context.Context, db *sql.DB, sk
 // carry-over sozinho, para manter a query atômica e simples.
 //
 // ruptura é recalculada automaticamente: true se o saldo resultante for <= 0.
-// origem do registro é sempre gravada/sobrescrita como
-// models.EstoqueOrigemFaturamento.
 //
 // Usa SELECT ... FOR UPDATE para serializar concorrência entre faturamentos
 // simultâneos do mesmo (data_snapshot, sku) antes do upsert, já que o
@@ -319,14 +330,13 @@ func (r *EstoqueRepository) AjustarSaldoPorFaturamento(ctx context.Context, tx *
 	// tanto o saldo final do INSERT quanto o delta do UPDATE simultaneamente
 	// — impossível com uma única expressão de sinal fixo).
 	const q = `
-		INSERT INTO estoque (data_snapshot, sku, saldo, ruptura, origem)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO estoque (data_snapshot, sku, saldo, ruptura)
+		VALUES (?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			saldo = saldo + VALUES(saldo),
-			ruptura = (saldo + VALUES(saldo)) <= 0,
-			origem = VALUES(origem)`
+			ruptura = (saldo + VALUES(saldo)) <= 0`
 	contribuicao := -delta
-	_, err = tx.ExecContext(ctx, q, dataStr, sku, contribuicao, contribuicao <= 0, models.EstoqueOrigemFaturamento)
+	_, err = tx.ExecContext(ctx, q, dataStr, sku, contribuicao, contribuicao <= 0)
 	if err != nil {
 		return fmt.Errorf("repositories: ajustar saldo estoque por faturamento: %w", err)
 	}
@@ -355,9 +365,9 @@ func scanEstoque(s rowScanner) (*models.Estoque, error) {
 		&e.ID,
 		&dataSnapshot,
 		&e.SKU,
+		&e.ProdutoDescricao,
 		&e.Saldo,
 		&e.Ruptura,
-		&e.Origem,
 		&e.CreatedAt,
 		&e.UpdatedAt,
 	); err != nil {

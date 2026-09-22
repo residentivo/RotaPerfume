@@ -73,3 +73,21 @@ func resolverVendedorScope(ctx context.Context, db *sql.DB) (vendedorScope, erro
 	}
 	return vendedorScope{Restrito: true, VendedorID: *idVendedor}, nil
 }
+
+// clienteNaCarteiraDoVendedor reporta se existe vínculo de carteira ativo
+// (data_fim IS NULL) entre o vendedor e o cliente informados. Usado para
+// impedir que um vendedor com escopo restrito crie/edite registros de
+// negócio (oportunidade, visita, ...) associados a um cliente fora da
+// própria carteira.
+//
+// Cada chamada executa sua própria consulta ao banco (sem cache L1).
+func clienteNaCarteiraDoVendedor(ctx context.Context, db *sql.DB, vendedorID, clienteID int64) (bool, error) {
+	_, err := repositories.NewCarteiraRepository().GetVinculoAtivo(ctx, db, vendedorID, clienteID)
+	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("handlers: checar carteira do vendedor: %w", err)
+	}
+	return true, nil
+}

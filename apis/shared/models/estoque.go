@@ -9,20 +9,11 @@ type Estoque struct {
 	ID           int64     `json:"id"`
 	DataSnapshot time.Time `json:"data_snapshot"`
 	SKU          string    `json:"sku"`
-	Saldo        int       `json:"saldo"`
-	Ruptura      bool      `json:"ruptura"`
-	Origem       string    `json:"origem"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	// ProdutoDescricao é preenchido via JOIN com produtos (produtos.descricao)
+	// nas queries de listagem, para exibição ao lado do SKU no frontend.
+	ProdutoDescricao string    `json:"produto_descricao"`
+	Saldo            int       `json:"saldo"`
+	Ruptura          bool      `json:"ruptura"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
-
-// Valores possíveis de Estoque.Origem (ver ENUM `origem` em
-// sql/17_ddl_estoque.sql). Rastreiam qual processo gravou/atualizou por
-// último cada snapshot (data_snapshot, sku), evitando que o import diário
-// do CSV do ERP e a baixa por faturamento de pedidos se sobrescrevam
-// silenciosamente.
-const (
-	EstoqueOrigemImportCSV   = "import_csv"
-	EstoqueOrigemFaturamento = "faturamento"
-	EstoqueOrigemManual      = "manual"
-)

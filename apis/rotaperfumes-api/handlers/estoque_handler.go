@@ -166,8 +166,7 @@ func estoqueErroParaStatus(err error) (status int, msg string, ok bool) {
 // CreateEstoque POST /api/estoque
 //
 // Body: { "sku": string, "data_snapshot": "AAAA-MM-DD", "saldo": number }
-// ruptura é sempre derivada de saldo <= 0. origem é sempre gravada como
-// "manual".
+// ruptura é sempre derivada de saldo <= 0.
 // Retorna: 201 com o registro criado.
 // Admin only.
 func (h *EstoqueHandler) CreateEstoque(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +202,7 @@ func (h *EstoqueHandler) CreateEstoque(w http.ResponseWriter, r *http.Request) {
 //
 // Body: { "saldo": number }
 // sku e data_snapshot não são editáveis por esta rota. ruptura é sempre
-// derivada de saldo <= 0. origem é sempre gravada como "manual".
+// derivada de saldo <= 0.
 // Retorna: 200 com o registro atualizado, 404 se não existir, 400 se o
 // payload for inválido.
 // Admin only.

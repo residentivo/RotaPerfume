@@ -44,10 +44,10 @@ import (
 //	PUT  /api/clientes/{id}             — acesso comum — atualizar cliente
 //	PATCH /api/clientes/{id}/inativar   — acesso comum — ativar/inativar cliente
 //	GET  /api/produtos                  — acesso comum — lista produtos (paginado, filtros categoria/marca/ativo/q, order_by/order_dir opcionais)
-//	POST /api/produtos                  — acesso comum — criar produto
+//	POST /api/produtos                  — admin only — criar produto
 //	GET  /api/produtos/{id}             — acesso comum — detalhe de um produto
-//	PUT  /api/produtos/{id}             — acesso comum — atualizar produto
-//	PATCH /api/produtos/{id}/inativar   — acesso comum — ativar/inativar produto
+//	PUT  /api/produtos/{id}             — admin only — atualizar produto
+//	PATCH /api/produtos/{id}/inativar   — admin only — ativar/inativar produto
 //	GET  /api/pedidos                   — acesso comum — lista pedidos (paginado, filtros status/canal/cliente_id/vendedor_id/data_inicio/data_fim/q, order_by/order_dir opcionais)
 //	POST /api/pedidos                   — acesso comum — cria pedido com itens (calcula valor_bruto/valor_total)
 //	GET  /api/pedidos/{id}               — acesso comum — detalhe de um pedido (com itens)
@@ -56,17 +56,17 @@ import (
 //	POST /api/pagamentos                — acesso comum — cria pagamento
 //	GET  /api/pagamentos/{id}            — acesso comum — detalhe de um pagamento
 //	PUT  /api/pagamentos/{id}            — acesso comum — atualiza pagamento
-//	GET  /api/oportunidades             — admin only — lista oportunidades (paginado, filtros cliente_id/vendedor_id/etapa/origem/data_abertura_de/data_abertura_ate/q, order_by/order_dir opcionais)
-//	POST /api/oportunidades             — admin only — cria oportunidade
-//	GET  /api/oportunidades/{id}        — admin only — detalhe de uma oportunidade
-//	PUT  /api/oportunidades/{id}        — admin only — atualiza oportunidade
-//	GET  /api/visitas                   — admin only — lista visitas (paginado, filtros cliente_id/vendedor_id/resultado/data_visita_de/data_visita_ate/q, order_by/order_dir opcionais)
-//	POST /api/visitas                   — admin only — cria visita
-//	GET  /api/visitas/{id}               — admin only — detalhe de uma visita
-//	PUT  /api/visitas/{id}               — admin only — atualiza visita
-//	GET  /api/estoque                   — acesso comum — lista estoque (paginado; por padrão última posição por sku; filtros sku/data_de/data_ate/ruptura, order_by/order_dir/historico opcionais)
+//	GET  /api/oportunidades             — acesso comum (escopo por carteira) — lista oportunidades (paginado, filtros cliente_id/vendedor_id/etapa/origem/data_abertura_de/data_abertura_ate/q, order_by/order_dir opcionais)
+//	POST /api/oportunidades             — acesso comum (escopo por carteira) — cria oportunidade
+//	GET  /api/oportunidades/{id}        — acesso comum (escopo por carteira) — detalhe de uma oportunidade
+//	PUT  /api/oportunidades/{id}        — acesso comum (escopo por carteira) — atualiza oportunidade
+//	GET  /api/visitas                   — acesso comum (escopo por carteira) — lista visitas (paginado, filtros cliente_id/vendedor_id/resultado/data_visita_de/data_visita_ate/q, order_by/order_dir opcionais)
+//	POST /api/visitas                   — acesso comum (escopo por carteira) — cria visita
+//	GET  /api/visitas/{id}               — acesso comum (escopo por carteira) — detalhe de uma visita
+//	PUT  /api/visitas/{id}               — acesso comum (escopo por carteira) — atualiza visita
+//	GET  /api/estoque                   — admin only — lista estoque (paginado; por padrão última posição por sku; filtros sku/data_de/data_ate/ruptura, order_by/order_dir/historico opcionais)
 //	POST /api/estoque                   — admin only — cria ajuste manual de estoque
-//	GET  /api/estoque/{id}               — acesso comum — detalhe de um registro de estoque
+//	GET  /api/estoque/{id}               — admin only — detalhe de um registro de estoque
 //	PUT  /api/estoque/{id}               — admin only — atualiza (ajuste manual) saldo de um registro de estoque
 //	GET  /health                        — público
 func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler, oportunidadeH *handlers.OportunidadeHandler, visitaH *handlers.VisitaHandler, estoqueH *handlers.EstoqueHandler) http.Handler {
@@ -200,20 +200,21 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	listProdutosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.ListProdutos))
 	mux.Handle("GET /api/produtos", listProdutosChain)
 
-	// Cria produto: acesso comum.
-	createProdutoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.CreateProduto))
+	// Cria produto: admin only (gestão de catálogo movida para Administração;
+	// leitura continua liberada para o vendedor montar pedidos).
+	createProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.CreateProduto))
 	mux.Handle("POST /api/produtos", createProdutoChain)
 
 	// Detalhe de produto: acesso comum.
 	getProdutoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.GetProduto))
 	mux.Handle("GET /api/produtos/{id}", getProdutoChain)
 
-	// Atualiza produto: acesso comum.
-	updateProdutoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.UpdateProduto))
+	// Atualiza produto: admin only.
+	updateProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.UpdateProduto))
 	mux.Handle("PUT /api/produtos/{id}", updateProdutoChain)
 
-	// Toggle ativo/inativo de produto: acesso comum.
-	toggleAtivoProdutoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.ToggleAtivoProduto))
+	// Toggle ativo/inativo de produto: admin only.
+	toggleAtivoProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.ToggleAtivoProduto))
 	mux.Handle("PATCH /api/produtos/{id}/inativar", toggleAtivoProdutoChain)
 
 	// Lista de pedidos: acesso comum.
@@ -249,48 +250,48 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	updatePagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.UpdatePagamento))
 	mux.Handle("PUT /api/pagamentos/{id}", updatePagamentoChain)
 
-	// Lista de oportunidades: admin only.
-	listOportunidadesChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(oportunidadeH.ListOportunidades))
+	// Lista de oportunidades: acesso comum (escopo por carteira aplicado no handler).
+	listOportunidadesChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.ListOportunidades))
 	mux.Handle("GET /api/oportunidades", listOportunidadesChain)
 
-	// Cria oportunidade: admin only.
-	createOportunidadeChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(oportunidadeH.CreateOportunidade))
+	// Cria oportunidade: acesso comum (escopo por carteira aplicado no handler).
+	createOportunidadeChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.CreateOportunidade))
 	mux.Handle("POST /api/oportunidades", createOportunidadeChain)
 
-	// Detalhe de oportunidade: admin only.
-	getOportunidadeChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(oportunidadeH.GetOportunidade))
+	// Detalhe de oportunidade: acesso comum (escopo por carteira aplicado no handler).
+	getOportunidadeChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.GetOportunidade))
 	mux.Handle("GET /api/oportunidades/{id}", getOportunidadeChain)
 
-	// Atualiza oportunidade: admin only.
-	updateOportunidadeChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(oportunidadeH.UpdateOportunidade))
+	// Atualiza oportunidade: acesso comum (escopo por carteira aplicado no handler).
+	updateOportunidadeChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.UpdateOportunidade))
 	mux.Handle("PUT /api/oportunidades/{id}", updateOportunidadeChain)
 
-	// Lista de visitas: admin only.
-	listVisitasChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(visitaH.ListVisitas))
+	// Lista de visitas: acesso comum (escopo por carteira aplicado no handler).
+	listVisitasChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.ListVisitas))
 	mux.Handle("GET /api/visitas", listVisitasChain)
 
-	// Cria visita: admin only.
-	createVisitaChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(visitaH.CreateVisita))
+	// Cria visita: acesso comum (escopo por carteira aplicado no handler).
+	createVisitaChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.CreateVisita))
 	mux.Handle("POST /api/visitas", createVisitaChain)
 
-	// Detalhe de visita: admin only.
-	getVisitaChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(visitaH.GetVisita))
+	// Detalhe de visita: acesso comum (escopo por carteira aplicado no handler).
+	getVisitaChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.GetVisita))
 	mux.Handle("GET /api/visitas/{id}", getVisitaChain)
 
-	// Atualiza visita: admin only.
-	updateVisitaChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(visitaH.UpdateVisita))
+	// Atualiza visita: acesso comum (escopo por carteira aplicado no handler).
+	updateVisitaChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.UpdateVisita))
 	mux.Handle("PUT /api/visitas/{id}", updateVisitaChain)
 
-	// Lista de estoque: acesso comum.
-	listEstoqueChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(estoqueH.ListEstoque))
+	// Lista de estoque: admin only (página de Estoque é restrita a administradores).
+	listEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.ListEstoque))
 	mux.Handle("GET /api/estoque", listEstoqueChain)
 
 	// Cria ajuste manual de estoque: admin only.
 	createEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.CreateEstoque))
 	mux.Handle("POST /api/estoque", createEstoqueChain)
 
-	// Detalhe de um registro de estoque: acesso comum.
-	getEstoqueChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(estoqueH.GetEstoque))
+	// Detalhe de um registro de estoque: admin only.
+	getEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.GetEstoque))
 	mux.Handle("GET /api/estoque/{id}", getEstoqueChain)
 
 	// Atualiza (ajuste manual) saldo de um registro de estoque: admin only.

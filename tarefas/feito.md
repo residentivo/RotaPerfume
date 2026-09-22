@@ -4,6 +4,69 @@
 
 ---
 
+## Bugfix menu "Vendedores" visível para vendedor + restrição de Estoque a admin — 2026-09-22
+**Agentes:** 🟢 FrontBrain, 🟡 BackBrain, 🔴 TestBrain (execução direta, pedido pontual do usuário) → documentação e fechamento por 🔵 SubBrain
+
+> **Nota:** estas duas mudanças foram pedidas diretamente pelo usuário e implementadas/testadas na sessão sem passar formalmente por `tarefas/fazendo.md`. Registradas aqui retroativamente para manter o histórico completo.
+
+**1) Bugfix: menu "Vendedores" aparecia para login de vendedor**
+- **Pedido do usuário:** o dropdown "Administração" continuava mostrando o item "Vendedores" para um usuário logado como vendedor (`normal`), que não deveria ter acesso.
+- **Causa raiz (🟢 FrontBrain):** `frontend/src/components/layout/Navbar.tsx` — o item "Vendedores" do dropdown "Administração" não tinha a checagem `user.role === "admin"`, diferente dos demais itens do mesmo dropdown.
+- **Correção:** `Navbar.tsx` — gate `user.role === "admin"` adicionado ao item "Vendedores". `frontend/src/app/admin/vendedores/page.tsx` — envolvido com `<ProtectedRoute requireAdmin>` (não tinha proteção de rota nenhuma).
+- **Achado extra (não corrigido neste card, virou backlog):** as rotas `/api/vendedores*` no backend (`apis/rotaperfumes-api/routes/routes.go`) não são admin-only — acesso comum, protegido só no frontend. Registrado em `tarefas/afazer.md`.
+
+**2) Estoque restrito a admin (pedido do usuário)**
+- **Pedido do usuário:** a página de Estoque deve ser visível apenas para admins.
+- **🟢 FrontBrain:** `Navbar.tsx` — "Estoque" movido do dropdown "CRM" para "Administração", gated `role === "admin"`. `frontend/src/app/admin/estoque/page.tsx` — envolvido com `<ProtectedRoute requireAdmin>`.
+- **🟡 BackBrain:** `apis/rotaperfumes-api/routes/routes.go` — `GET /api/estoque` e `GET /api/estoque/{id}` deixaram de ser acesso comum e viraram admin-only (`requireAdmin=true`), alinhando com `POST`/`PUT` que já eram admin-only. Comentários de documentação do topo do arquivo atualizados. Confirmado que `/api/estoque` só é consumido pela própria tela de estoque (nenhum outro fluxo, como pedidos, depende de leitura comum).
+- **🔴 TestBrain:** `apis/rotaperfumes-api/handlers/estoque_handler_test.go` — `TestListEstoque_PermitidoParaNaoAdmin`/`TestGetEstoque_PermitidoParaNaoAdmin` renomeados para `..._NegadoParaNaoAdmin` e ajustados para esperar `403`. `go test ./...` 100% verde em `apis/shared` e `apis/rotaperfumes-api`.
+
+**Documentação (🔵 SubBrain):**
+- `postman/README.md` — seção "Estoque (`/api/estoque/*`)" renomeada de "GET acesso comum, POST/PUT admin only" para "admin only"; nota de assimetria de acesso substituída por nota de mudança (2026-09-22) explicando que os 4 endpoints agora exigem admin; `Auth` de `GET /api/estoque` e `GET /api/estoque/{id}` corrigido de "qualquer usuário autenticado" para "admin". Referências cruzadas obsoletas a "Pagamentos/Estoque" (que citavam a antiga cadeia de middleware `cfg, true, false` de Estoque) corrigidas nas seções de Produtos e Oportunidades, já que Estoque não segue mais esse padrão.
+- `postman/collection.json` — pasta "Estoque": "Listar Estoque (acesso comum)" → "Listar Estoque (admin only)" e "Detalhe do Estoque (acesso comum)" → "Detalhe do Estoque (admin only)", token de autenticação nos dois requests trocado de `{{vendedor_token}}` para `{{admin_token}}`, descrições atualizadas, e adicionado exemplo de resposta `403 Forbidden — Não é admin` (`{"success": false, "error": "acesso restrito a administradores"}`) em ambos, substituindo o cenário desatualizado de acesso comum com token de vendedor.
+- Menu "Vendedores": não existe pasta/seção dedicada equivalente no Postman (README/collection) a atualizar — confirmado que a documentação de API de Vendedores já refletia corretamente o estado de acesso comum do backend (que segue sem mudança neste card).
+- `tarefas/afazer.md` — confirmado que o item sobre `/api/vendedores*` não ser admin-only no backend já estava registrado (adicionado anteriormente), sem necessidade de duplicar.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Menu do vendedor: Visitas/Oportunidades + escopo por carteira; Produtos movido para Administração — 2026-09-22
+**Agentes:** 🟣 SecBrain (análise) → 🟡 BackBrain + 🟢 FrontBrain (implementação em paralelo) → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Pedido do usuário:**
+1. Menu do vendedor não mostra "Visitas" e "Oportunidades" — precisa aparecer.
+2. Essas telas (Visitas e Oportunidades) precisam filtrar somente os clientes do vendedor logado.
+3. Produtos deve ser movido para a área de Administração, gerenciado apenas por admins.
+
+**Achados da investigação (🤍 MegaBrain, via Explore):**
+- `frontend/src/components/layout/Navbar.tsx`: menu "ERP" esconde Oportunidades/Visitas de não-admin (linhas ~81-94); "Produtos" está no dropdown "CRM" (linhas ~96-106), visível para qualquer autenticado, sem gate de admin.
+- `apis/rotaperfumes-api/routes/routes.go`: rotas de `/api/oportunidades` e `/api/visitas` usam `middleware.JWTMiddleware(cfg, true, true)` (admin-only) — bloqueiam vendedor mesmo se o menu for liberado. Rotas de `/api/produtos*` usam `(cfg, true, false)` (acesso comum) — precisa virar `(cfg, true, true)`.
+- `handlers/oportunidade_handler.go` e `handlers/visita_handler.go` não usam `resolverVendedorScope`/`vendedorScope` (padrão já existente em `handlers/scope.go`, usado em `pedido_handler.go`, `cliente_handler.go`, `pagamento_handler.go`) — precisa ser adicionado para restringir vendedor à própria carteira (`scope.Restrito` força `filtro.VendedorID = scope.VendedorID`).
+- `app/admin/produtos/page.tsx` não tem `<ProtectedRoute requireAdmin>` (padrão usado em `app/admin/usuarios/page.tsx`).
+- Vínculo usuário→vendedor: `usuarios.id_vendedor` (fonte de verdade no backend, resolvido via `UsuarioRepository.GetIDVendedorByUsuarioID`); no frontend, `User.id_vendedor` em `lib/types.ts`.
+
+**Revisão 🟣 SecBrain — plano NÃO aprovado como estava, ajustes obrigatórios incorporados:**
+- Padrão `resolverVendedorScope`/`scope.go` é seguro (deriva sempre do JWT/banco, nunca de input do client) — confirmado replicável.
+- `oportunidade_handler.go`/`visita_handler.go` tinham ZERO checagem de dono em Get/Create/Update. Abrir a rota só com List corrigido deixaria IDOR grave: vendedor conseguiria ler (Get), forjar (Create com vendedor_id de outro) e editar/roubar (Update) registros de outros vendedores por enumeração de ID.
+- Produtos: `GET /api/produtos` é usado por `PedidoModal.tsx` para o vendedor montar pedido — bloquear TODAS as rotas de produto quebra o fluxo de pedidos. Só as mutações (POST/PUT/PATCH) devem virar admin-only; GET continua acesso comum.
+- Backlog separado (fora deste card): mesmo gap de Create/Update sem scope já existe hoje em `pedido_handler.go` — registrado em `tarefas/afazer.md`.
+
+**Entregue:**
+- **Backend (🟡 BackBrain)** — `routes.go`: oportunidades/visitas com `requireAdmin=false`; produtos com GET comum e POST/PUT/PATCH admin-only. `oportunidade_handler.go`/`visita_handler.go`: List/Get/Create/Update com `vendedorScope` completo (owner check em Get/Update, forçar `VendedorID` em Create/Update ignorando payload, 404 para não-dono — nunca 403, para não permitir enumeração de IDs). Nova `clienteNaCarteiraDoVendedor` em `scope.go` valida no Create/Update que o cliente pertence à carteira do vendedor (400 se não pertence) — vai além do pedido mínimo do SecBrain. `go build`/`go vet` OK nos dois módulos.
+- **Frontend (🟢 FrontBrain)** — `Navbar.tsx`: Oportunidades/Visitas liberadas para todo autenticado no menu ERP; "Produtos" movido de "CRM" para "Administração" (gated admin). `app/admin/produtos/page.tsx`: envolvido com `<ProtectedRoute requireAdmin>`. `app/admin/oportunidades/page.tsx`/`app/admin/visitas/page.tsx`: filtro de vendedor travado na própria carteira para não-admin (seletor "todos os vendedores" só aparece para admin); usuário sem `id_vendedor` tratado como carteira vazia sem chamar a API. `tsc --noEmit` OK (exit 0).
+- **Testes (🔴 TestBrain)** — cobertura completa de IDOR/escopo em `oportunidade_handler_test.go`, `visita_handler_test.go` (List/Get/Create/Update, incluindo tentativa de vendedor ler/editar/criar registro de outro vendedor) e `produto_handler_test.go` (GET comum, POST/PUT/PATCH admin-only). `go test ./...` 100% verde em `apis/shared` e `apis/rotaperfumes-api`.
+- **Documentação (🔵 SubBrain)** — ver detalhes abaixo.
+
+**Documentação (SubBrain):**
+- `postman/collection.json` — pastas "Oportunidades" e "Visitas": todos os requests de list/get/create/update renomeados de "(admin only)" para "(acesso comum, escopo por carteira)"; descrições reescritas explicando a mudança de acesso, o forçamento de `vendedor_id` para usuário `normal`, a validação de `cliente_id` contra a carteira, e o 404 (não 403) em tentativa de acesso a registro de outro vendedor; adicionados exemplos de resposta novos: `200 OK` com `{{vendedor_token}}` mostrando escopo (vendedor_id da query ignorado), `404` de IDOR bloqueado em Get/Update, e `400` de "cliente não pertence à carteira deste vendedor" em Create. Pasta "Produtos": "Listar Produtos" e "Detalhe do Produto" renomeados para "(acesso comum)", descrições e exemplos de resposta 403 (incorretos, resquício de quando GET era admin-only) substituídos por exemplos `200 OK` com usuário normal; "Criar Produto"/"Editar Produto"/"Ativar/Inativar Produto" mantidos "(admin only)" com seus exemplos de erro 403 já corretos.
+- `postman/README.md` — seção "Produtos (`/api/produtos/*`)" renomeada para "GET acesso comum, POST/PUT/PATCH admin only", com nota de assimetria e `Auth` de cada endpoint corrigido. Seções "Oportunidades (`/api/oportunidades/*`)" e "Visitas (`/api/visitas/*`)" renomeadas para "acesso comum, com escopo por carteira", com bloco de nota detalhando a regra de escopo (vendedor só vê/edita a própria carteira; 404 em vez de 403 para registro de outro vendedor; `vendedor_id` do payload ignorado para usuário `normal`; `cliente_id` precisa pertencer à carteira ativa do vendedor) e `Auth` de cada endpoint atualizado.
+- `tarefas/afazer.md` — novo item de backlog registrando o gap de scope em `CreatePedido`/`UpdatePedido` (`pedido_handler.go`), identificado pelo SecBrain e confirmado pelo BackBrain como pré-existente e fora deste card.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## Bugfix: "Failed to fetch" (unhandledRejection) no logout — 2026-09-22
 **Agente:** 🟢 FrontBrain (delegado por 🤍 MegaBrain)
 

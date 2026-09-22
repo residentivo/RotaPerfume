@@ -16,11 +16,11 @@ import (
 )
 
 var estoqueColumns = []string{
-	"id", "data_snapshot", "sku", "saldo", "ruptura", "origem", "created_at", "updated_at",
+	"id", "data_snapshot", "sku", "produto_descricao", "saldo", "ruptura", "created_at", "updated_at",
 }
 
-func estoqueRow(id int64, dataSnapshot time.Time, sku string, saldo int, ruptura bool, origem string, created, updated time.Time) []driver.Value {
-	return []driver.Value{id, dataSnapshot, sku, saldo, ruptura, origem, created, updated}
+func estoqueRow(id int64, dataSnapshot time.Time, sku string, descricao string, saldo int, ruptura bool, created, updated time.Time) []driver.Value {
+	return []driver.Value{id, dataSnapshot, sku, descricao, saldo, ruptura, created, updated}
 }
 
 // ---------------------------------------------------------------------------
@@ -36,10 +36,10 @@ func TestEstoqueList_SemFiltro(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(estoqueColumns).
-		AddRow(estoqueRow(1, now, "SKU1", 10, false, models.EstoqueOrigemImportCSV, now, now)...).
-		AddRow(estoqueRow(2, now.AddDate(0, 0, -1), "SKU1", 5, false, models.EstoqueOrigemImportCSV, now, now)...)
+		AddRow(estoqueRow(1, now, "SKU1", "Perfume 1", 10, false, now, now)...).
+		AddRow(estoqueRow(2, now.AddDate(0, 0, -1), "SKU1", "Perfume 1", 5, false, now, now)...)
 
-	mock.ExpectQuery("SELECT .+ FROM estoque ORDER BY data_snapshot DESC LIMIT \\? OFFSET \\?").
+	mock.ExpectQuery("SELECT .+ FROM estoque e LEFT JOIN produtos p ON p\\.sku = e\\.sku ORDER BY e\\.data_snapshot DESC LIMIT \\? OFFSET \\?").
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
@@ -51,6 +51,7 @@ func TestEstoqueList_SemFiltro(t *testing.T) {
 	assert.Equal(t, 2, total)
 	assert.Len(t, registros, 2)
 	assert.Equal(t, "SKU1", registros[0].SKU)
+	assert.Equal(t, "Perfume 1", registros[0].ProdutoDescricao)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -67,31 +68,31 @@ func TestEstoqueList_ComFiltros(t *testing.T) {
 		{
 			nome:        "filtro por sku",
 			filtro:      repositories.EstoqueFiltro{SKU: "SKU1"},
-			whereRegexp: "WHERE sku = \\?",
+			whereRegexp: "WHERE e\\.sku = \\?",
 			args:        []driver.Value{"SKU1"},
 		},
 		{
 			nome:        "filtro por data_de",
 			filtro:      repositories.EstoqueFiltro{DataDe: &dataDe},
-			whereRegexp: "WHERE data_snapshot >= \\?",
+			whereRegexp: "WHERE e\\.data_snapshot >= \\?",
 			args:        []driver.Value{"2024-01-01"},
 		},
 		{
 			nome:        "filtro por data_ate",
 			filtro:      repositories.EstoqueFiltro{DataAte: &dataAte},
-			whereRegexp: "WHERE data_snapshot <= \\?",
+			whereRegexp: "WHERE e\\.data_snapshot <= \\?",
 			args:        []driver.Value{"2024-01-31"},
 		},
 		{
 			nome:        "filtro por ruptura",
 			filtro:      repositories.EstoqueFiltro{Ruptura: boolPtr(true)},
-			whereRegexp: "WHERE ruptura = \\?",
+			whereRegexp: "WHERE e\\.ruptura = \\?",
 			args:        []driver.Value{true},
 		},
 		{
 			nome:        "filtro por sku + intervalo de datas",
 			filtro:      repositories.EstoqueFiltro{SKU: "SKU1", DataDe: &dataDe, DataAte: &dataAte},
-			whereRegexp: "WHERE sku = \\? AND data_snapshot >= \\? AND data_snapshot <= \\?",
+			whereRegexp: "WHERE e\\.sku = \\? AND e\\.data_snapshot >= \\? AND e\\.data_snapshot <= \\?",
 			args:        []driver.Value{"SKU1", "2024-01-01", "2024-01-31"},
 		},
 	}
@@ -101,12 +102,12 @@ func TestEstoqueList_ComFiltros(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 
-			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM estoque " + tt.whereRegexp).
+			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM estoque.+" + tt.whereRegexp).
 				WithArgs(tt.args...).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
 
 			allArgs := append(append([]driver.Value{}, tt.args...), int64(10), int64(0))
-			mock.ExpectQuery("SELECT .+ FROM estoque " + tt.whereRegexp + " ORDER BY data_snapshot DESC LIMIT \\? OFFSET \\?").
+			mock.ExpectQuery("SELECT .+ FROM estoque.+" + tt.whereRegexp + " ORDER BY e\\.data_snapshot DESC LIMIT \\? OFFSET \\?").
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(estoqueColumns))
 
@@ -131,31 +132,31 @@ func TestEstoqueList_OrderBy(t *testing.T) {
 			nome:        "order_by válido asc",
 			orderBy:     "saldo",
 			orderDir:    "asc",
-			orderRegexp: "ORDER BY saldo ASC",
+			orderRegexp: "ORDER BY e\\.saldo ASC",
 		},
 		{
 			nome:        "order_by válido desc (default)",
 			orderBy:     "",
 			orderDir:    "",
-			orderRegexp: "ORDER BY data_snapshot DESC",
+			orderRegexp: "ORDER BY e\\.data_snapshot DESC",
 		},
 		{
 			nome:        "order_by case-insensitive",
 			orderBy:     "SKU",
 			orderDir:    "ASC",
-			orderRegexp: "ORDER BY sku ASC",
+			orderRegexp: "ORDER BY e\\.sku ASC",
 		},
 		{
 			nome:        "order_by fora da whitelist cai no default",
 			orderBy:     "1; DROP TABLE estoque;--",
 			orderDir:    "asc",
-			orderRegexp: "ORDER BY data_snapshot ASC",
+			orderRegexp: "ORDER BY e\\.data_snapshot ASC",
 		},
 		{
 			nome:        "order_dir inválido cai no default (desc)",
 			orderBy:     "saldo",
 			orderDir:    "sideways",
-			orderRegexp: "ORDER BY saldo DESC",
+			orderRegexp: "ORDER BY e\\.saldo DESC",
 		},
 	}
 
@@ -166,7 +167,7 @@ func TestEstoqueList_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM estoque").
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-			mock.ExpectQuery("SELECT .+ FROM estoque " + tt.orderRegexp + " LIMIT \\? OFFSET \\?").
+			mock.ExpectQuery("SELECT .+ FROM estoque.+" + tt.orderRegexp + " LIMIT \\? OFFSET \\?").
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(estoqueColumns))
 
@@ -223,7 +224,7 @@ func TestEstoqueList_IterError(t *testing.T) {
 	mock.ExpectQuery("SELECT .+ FROM estoque").
 		WithArgs(10, 0).
 		WillReturnRows(sqlmock.NewRows(estoqueColumns).
-			AddRow(estoqueRow(1, now, "SKU1", 10, false, models.EstoqueOrigemImportCSV, now, now)...).
+			AddRow(estoqueRow(1, now, "SKU1", "Perfume 1", 10, false, now, now)...).
 			RowError(0, sql.ErrConnDone))
 
 	repo := repositories.NewEstoqueRepository()
@@ -242,16 +243,16 @@ func TestEstoqueUltimaPosicaoPorSku_RetornaApenasUltimoPorSku(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM \\(.+ROW_NUMBER\\(\\) OVER \\(PARTITION BY sku ORDER BY data_snapshot DESC, id DESC\\).+FROM estoque\\) ranked WHERE rn = 1").
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM \\(.+ROW_NUMBER\\(\\) OVER \\(PARTITION BY e\\.sku ORDER BY e\\.data_snapshot DESC, e\\.id DESC\\).+FROM estoque e LEFT JOIN produtos.+\\) ranked WHERE rn = 1").
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
 
 	now := time.Now()
 	// Só o registro mais recente (rn=1) é retornado pela query real (a
 	// window function já filtra no SQL); aqui simulamos a linha resultante.
 	rows := sqlmock.NewRows(estoqueColumns).
-		AddRow(estoqueRow(2, now, "SKU1", 8, false, models.EstoqueOrigemFaturamento, now, now)...)
+		AddRow(estoqueRow(2, now, "SKU1", "Perfume 1", 8, false, now, now)...)
 
-	mock.ExpectQuery("SELECT .+ FROM \\(.+ROW_NUMBER\\(\\) OVER \\(PARTITION BY sku ORDER BY data_snapshot DESC, id DESC\\).+FROM estoque\\) ranked WHERE rn = 1 ORDER BY data_snapshot DESC LIMIT \\? OFFSET \\?").
+	mock.ExpectQuery("SELECT .+ FROM \\(.+ROW_NUMBER\\(\\) OVER \\(PARTITION BY e\\.sku ORDER BY e\\.data_snapshot DESC, e\\.id DESC\\).+\\) ranked WHERE rn = 1 ORDER BY data_snapshot DESC LIMIT \\? OFFSET \\?").
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
@@ -274,7 +275,7 @@ func TestEstoqueUltimaPosicaoPorSku_RespeitaFiltroDeData(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	whereRegexp := "WHERE data_snapshot >= \\? AND data_snapshot <= \\?"
+	whereRegexp := "WHERE e\\.data_snapshot >= \\? AND e\\.data_snapshot <= \\?"
 
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM \\(.+" + whereRegexp + "\\) ranked WHERE rn = 1").
 		WithArgs("2024-01-01", "2024-01-31").
@@ -282,7 +283,7 @@ func TestEstoqueUltimaPosicaoPorSku_RespeitaFiltroDeData(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(estoqueColumns).
-		AddRow(estoqueRow(5, dataAte, "SKU1", 3, false, models.EstoqueOrigemImportCSV, now, now)...)
+		AddRow(estoqueRow(5, dataAte, "SKU1", "Perfume 1", 3, false, now, now)...)
 
 	mock.ExpectQuery("SELECT .+ FROM \\(.+" + whereRegexp + "\\) ranked WHERE rn = 1 ORDER BY data_snapshot DESC LIMIT \\? OFFSET \\?").
 		WithArgs("2024-01-01", "2024-01-31", 10, 0).
@@ -341,9 +342,9 @@ func TestEstoqueGetByID_Success(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(estoqueColumns).
-		AddRow(estoqueRow(1, now, "SKU1", 10, false, models.EstoqueOrigemImportCSV, now, now)...)
+		AddRow(estoqueRow(1, now, "SKU1", "Perfume 1", 10, false, now, now)...)
 
-	mock.ExpectQuery("SELECT .+ FROM estoque WHERE id = \\? LIMIT 1").
+	mock.ExpectQuery("SELECT .+ FROM estoque.+WHERE e\\.id = \\? LIMIT 1").
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
@@ -353,6 +354,7 @@ func TestEstoqueGetByID_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "SKU1", e.SKU)
+	assert.Equal(t, "Perfume 1", e.ProdutoDescricao)
 	assert.Equal(t, 10, e.Saldo)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -361,7 +363,7 @@ func TestEstoqueGetByID_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT .+ FROM estoque WHERE id = \\? LIMIT 1").
+	mock.ExpectQuery("SELECT .+ FROM estoque.+WHERE e\\.id = \\? LIMIT 1").
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
@@ -378,7 +380,7 @@ func TestEstoqueGetByID_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT .+ FROM estoque WHERE id = \\? LIMIT 1").
+	mock.ExpectQuery("SELECT .+ FROM estoque.+WHERE e\\.id = \\? LIMIT 1").
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
@@ -406,11 +408,10 @@ func TestEstoqueCreate_Success(t *testing.T) {
 		SKU:          "SKU1",
 		Saldo:        10,
 		Ruptura:      false,
-		Origem:       models.EstoqueOrigemManual,
 	}
 
 	mock.ExpectExec("INSERT INTO estoque").
-		WithArgs("2024-06-01", "SKU1", 10, false, models.EstoqueOrigemManual).
+		WithArgs("2024-06-01", "SKU1", 10, false).
 		WillReturnResult(sqlmock.NewResult(7, 1))
 
 	repo := repositories.NewEstoqueRepository()
@@ -419,26 +420,6 @@ func TestEstoqueCreate_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), e.ID)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestEstoqueCreate_OrigemVaziaAssumeManual(t *testing.T) {
-	db, mock := newMock(t)
-	defer db.Close()
-
-	data := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
-	e := &models.Estoque{DataSnapshot: data, SKU: "SKU2", Saldo: 0, Ruptura: true}
-
-	mock.ExpectExec("INSERT INTO estoque").
-		WithArgs("2024-06-01", "SKU2", 0, true, models.EstoqueOrigemManual).
-		WillReturnResult(sqlmock.NewResult(8, 1))
-
-	repo := repositories.NewEstoqueRepository()
-	ctx := context.Background()
-	err := repo.Create(ctx, db, e)
-
-	require.NoError(t, err)
-	assert.Equal(t, int64(8), e.ID)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -466,10 +447,10 @@ func TestEstoqueUpdate_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	e := &models.Estoque{Saldo: 20, Ruptura: false, Origem: models.EstoqueOrigemManual}
+	e := &models.Estoque{Saldo: 20, Ruptura: false}
 
 	mock.ExpectExec("UPDATE estoque").
-		WithArgs(20, false, models.EstoqueOrigemManual, int64(1)).
+		WithArgs(20, false, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	repo := repositories.NewEstoqueRepository()
@@ -523,12 +504,12 @@ func TestEstoqueUpsertPorDataSku_InsertNovo(t *testing.T) {
 	data := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
 
 	mock.ExpectExec("INSERT INTO estoque .+ ON DUPLICATE KEY UPDATE").
-		WithArgs("2024-06-01", "SKU1", 15, false, models.EstoqueOrigemImportCSV).
+		WithArgs("2024-06-01", "SKU1", 15, false).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	repo := repositories.NewEstoqueRepository()
 	ctx := context.Background()
-	err := repo.UpsertPorDataSku(ctx, db, "SKU1", data, 15, false, models.EstoqueOrigemImportCSV)
+	err := repo.UpsertPorDataSku(ctx, db, "SKU1", data, 15, false)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -544,12 +525,12 @@ func TestEstoqueUpsertPorDataSku_UpdateExistente(t *testing.T) {
 	// comportamento típico do MySQL para upsert que atualiza (em vez de
 	// inserir) — não afeta o retorno do método (void em caso de sucesso).
 	mock.ExpectExec("INSERT INTO estoque .+ ON DUPLICATE KEY UPDATE").
-		WithArgs("2024-06-01", "SKU1", 0, true, models.EstoqueOrigemImportCSV).
+		WithArgs("2024-06-01", "SKU1", 0, true).
 		WillReturnResult(sqlmock.NewResult(1, 2))
 
 	repo := repositories.NewEstoqueRepository()
 	ctx := context.Background()
-	err := repo.UpsertPorDataSku(ctx, db, "SKU1", data, 0, true, models.EstoqueOrigemImportCSV)
+	err := repo.UpsertPorDataSku(ctx, db, "SKU1", data, 0, true)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -566,7 +547,7 @@ func TestEstoqueUpsertPorDataSku_DBError(t *testing.T) {
 
 	repo := repositories.NewEstoqueRepository()
 	ctx := context.Background()
-	err := repo.UpsertPorDataSku(ctx, db, "SKU1", data, 15, false, models.EstoqueOrigemImportCSV)
+	err := repo.UpsertPorDataSku(ctx, db, "SKU1", data, 15, false)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -597,7 +578,7 @@ func TestEstoqueAjustarSaldoPorFaturamento_CriaRegistroQuandoNaoExiste(t *testin
 		WillReturnError(sql.ErrNoRows)
 	// delta=5 (baixa): contribuicao = -5, ruptura = (-5 <= 0) = true.
 	mock.ExpectExec(`INSERT INTO estoque .+ ON DUPLICATE KEY UPDATE`).
-		WithArgs("2024-06-01", "SKU1", -5, true, models.EstoqueOrigemFaturamento).
+		WithArgs("2024-06-01", "SKU1", -5, true).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
@@ -620,7 +601,7 @@ func TestEstoqueAjustarSaldoPorFaturamento_DecrementaSaldoExistente(t *testing.T
 		WithArgs("2024-06-01", "SKU1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(42)))
 	mock.ExpectExec(`INSERT INTO estoque .+ ON DUPLICATE KEY UPDATE`).
-		WithArgs("2024-06-01", "SKU1", -3, true, models.EstoqueOrigemFaturamento).
+		WithArgs("2024-06-01", "SKU1", -3, true).
 		WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectCommit()
 
@@ -658,7 +639,7 @@ func TestEstoqueAjustarSaldoPorFaturamento_RupturaRecalculada(t *testing.T) {
 				WithArgs("2024-06-01", "SKU1").
 				WillReturnError(sql.ErrNoRows)
 			mock.ExpectExec(`INSERT INTO estoque .+ ON DUPLICATE KEY UPDATE`).
-				WithArgs("2024-06-01", "SKU1", tt.wantContrib, tt.wantRupturaFlag, models.EstoqueOrigemFaturamento).
+				WithArgs("2024-06-01", "SKU1", tt.wantContrib, tt.wantRupturaFlag).
 				WillReturnResult(sqlmock.NewResult(1, 1))
 			mock.ExpectCommit()
 

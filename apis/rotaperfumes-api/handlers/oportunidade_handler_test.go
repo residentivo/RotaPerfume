@@ -80,13 +80,60 @@ func TestListOportunidades_Success_Admin(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestListOportunidades_NegadoParaNaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+// TestListOportunidades_PermitidoParaNaoAdmin_ForcaCarteira cobre a mudança
+// de rota: a listagem virou acesso comum, mas o vendedor_id da query é
+// ignorado e forçado à carteira do vendedor vinculado ao usuário autenticado
+// (evita bypass via URL, ex.: ?vendedor_id=<de outro vendedor>).
+func TestListOportunidades_PermitidoParaNaoAdmin_ForcaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	vendedorWhere := ` WHERE vendedor_id = \?`
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM oportunidades` + vendedorWhere).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades` + vendedorWhere + ` ORDER BY oportunidade_id ASC LIMIT \? OFFSET \?`).
+		WithArgs(int64(2), 20, 0).
+		WillReturnRows(oportunidadeRowsForHandler())
+
+	// vendedor_id=99 na query é ignorado — o filtro real usado é o vendedor
+	// (2) vinculado ao usuário autenticado.
+	req, _ := http.NewRequest("GET", server.URL+"/api/oportunidades?vendedor_id=99", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestListOportunidades_SemVendedorVinculado_ListaVazia cobre o caso de
+// usuário role=normal sem id_vendedor vinculado: nunca deve enxergar dados de
+// terceiros, retorna lista vazia (200) sem sequer consultar a tabela de
+// oportunidades.
+func TestListOportunidades_SemVendedorVinculado_ListaVazia(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/oportunidades", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -95,7 +142,15 @@ func TestListOportunidades_NegadoParaNaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	data := body["data"].([]any)
+	assert.Len(t, data, 0)
+	pagination := body["pagination"].(map[string]any)
+	assert.Equal(t, float64(0), pagination["total"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestListOportunidades_ComFiltros(t *testing.T) {
@@ -224,13 +279,24 @@ func TestGetOportunidade_IDInvalido(t *testing.T) {
 	assert.Equal(t, "id inválido", body["error"])
 }
 
-func TestGetOportunidade_NegadoParaNaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+// TestGetOportunidade_PermitidoParaNaoAdmin cobre a mudança de rota: o
+// detalhe virou acesso comum para o vendedor dono do registro.
+func TestGetOportunidade_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	// oportunidadeRowsForHandler() tem vendedor_id=1 — usuário vinculado ao
+	// mesmo vendedor.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/oportunidades/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -239,7 +305,46 @@ func TestGetOportunidade_NegadoParaNaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestGetOportunidade_NegadoParaNaoAdminForaDaCarteira cobre o cenário de
+// IDOR: vendedor não-admin tentando ler oportunidade de outro vendedor por
+// enumeração de ID deve receber 404 (não 403, para não confirmar a
+// existência do registro).
+func TestGetOportunidade_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// oportunidadeRowsForHandler() tem vendedor_id=1, mas o usuário está
+	// vinculado ao vendedor 99 — não deve conseguir ver a oportunidade.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/oportunidades/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "oportunidade não encontrada", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------
@@ -280,13 +385,71 @@ func TestCreateOportunidade_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCreateOportunidade_NegadoParaNaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+// TestCreateOportunidade_PermitidoParaNaoAdmin_ForcaVendedorID cobre a
+// mudança de rota: vendedor não-admin pode criar oportunidade, mas o
+// vendedor_id do payload é sempre ignorado e forçado ao vendedor vinculado
+// ao usuário autenticado (evita forjar registro para outro vendedor).
+func TestCreateOportunidade_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(5)))
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(5), int64(100)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+		}).AddRow(int64(500), int64(100), int64(5), time.Now(), nil, time.Now(), time.Now()))
+	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
+		WithArgs(int64(100)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectQuery(`SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`).
+		WithArgs(int64(5)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectExec(`INSERT INTO oportunidades`).
+		WithArgs(int64(100), int64(5), "Site", sqlmock.AnyArg(), "Prospeccao", 10.0, 1000.0, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(9, 1))
+
+	// payload tenta forjar vendedor_id=99 (outro vendedor) — deve ser
+	// ignorado e substituído pelo vendedor vinculado (5).
+	payload := validOportunidadePayload()
+	payload["vendedor_id"] = 99
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/oportunidades", makeJSON(payload))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	data := body["data"].(map[string]any)
+	assert.Equal(t, float64(5), data["vendedor_id"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestCreateOportunidade_SemVendedorVinculado_Forbidden cobre o caso de
+// usuário role=normal sem id_vendedor vinculado: 403, sem sequer chegar a
+// decodificar o payload de negócio.
+func TestCreateOportunidade_SemVendedorVinculado_Forbidden(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/oportunidades", makeJSON(validOportunidadePayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -296,6 +459,42 @@ func TestCreateOportunidade_NegadoParaNaoAdmin(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "usuário sem vendedor vinculado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestCreateOportunidade_ClienteForaDaCarteira cobre a validação de
+// SecBrain: vendedor não-admin tentando criar oportunidade para um cliente
+// fora da própria carteira recebe 400, sem chegar a inserir o registro.
+func TestCreateOportunidade_ClienteForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(5)))
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(5), int64(100)).
+		WillReturnError(sql.ErrNoRows)
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/oportunidades", makeJSON(validOportunidadePayload()))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "cliente não pertence à carteira deste vendedor", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestCreateOportunidade_JSONInvalido(t *testing.T) {
@@ -462,6 +661,12 @@ func TestUpdateOportunidade_Success(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
+	// UpdateOportunidade busca o registro atual primeiro (owner check —
+	// sempre executado, mesmo para admin) antes de decodificar/validar o
+	// payload.
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
 	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 		WithArgs(int64(100)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
@@ -491,13 +696,25 @@ func TestUpdateOportunidade_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUpdateOportunidade_NegadoParaNaoAdmin(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+// TestUpdateOportunidade_NegadoParaNaoAdminForaDaCarteira cobre o cenário de
+// IDOR: vendedor não-admin tentando editar oportunidade de outro vendedor
+// recebe 404.
+func TestUpdateOportunidade_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	// oportunidadeRowsForHandler() tem vendedor_id=1, mas o usuário está
+	// vinculado ao vendedor 99.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/oportunidades/1", makeJSON(validOportunidadePayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -506,7 +723,103 @@ func TestUpdateOportunidade_NegadoParaNaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "oportunidade não encontrada", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestUpdateOportunidade_PermitidoParaNaoAdmin_ForcaVendedorID cobre a
+// mudança de rota: vendedor não-admin pode editar oportunidade da própria
+// carteira, mas o vendedor_id do payload é sempre ignorado e forçado ao
+// vendedor vinculado (evita reatribuir o registro a outro vendedor).
+func TestUpdateOportunidade_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// oportunidadeRowsForHandler() tem vendedor_id=1 — usuário vinculado ao
+	// mesmo vendedor (dono do registro).
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(1), int64(100)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+		}).AddRow(int64(500), int64(100), int64(1), time.Now(), nil, time.Now(), time.Now()))
+	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
+		WithArgs(int64(100)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectQuery(`SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectExec(`UPDATE oportunidades`).
+		WithArgs(int64(100), int64(1), "Site", sqlmock.AnyArg(), "Prospeccao", 10.0, 1000.0, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
+
+	// payload tenta reatribuir vendedor_id=99 — deve ser ignorado e mantido
+	// o vendedor vinculado (1).
+	payload := validOportunidadePayload()
+	payload["vendedor_id"] = 99
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/oportunidades/1", makeJSON(payload))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestUpdateOportunidade_ClienteForaDaCarteira cobre a validação de
+// SecBrain: vendedor não-admin tentando reatribuir a oportunidade a um
+// cliente fora da própria carteira recebe 400.
+func TestUpdateOportunidade_ClienteForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(int64(1), int64(100)).
+		WillReturnError(sql.ErrNoRows)
+
+	req, _ := http.NewRequest("PUT", server.URL+"/api/oportunidades/1", makeJSON(validOportunidadePayload()))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "cliente não pertence à carteira deste vendedor", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestUpdateOportunidade_IDInvalido(t *testing.T) {
@@ -530,12 +843,17 @@ func TestUpdateOportunidade_IDInvalido(t *testing.T) {
 }
 
 func TestUpdateOportunidade_JSONInvalido(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
+
+	// UpdateOportunidade busca o registro atual antes de decodificar o body.
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/oportunidades/1", bytes.NewBufferString("{invalido"))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -547,15 +865,22 @@ func TestUpdateOportunidade_JSONInvalido(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.Equal(t, "body JSON inválido", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestUpdateOportunidade_ValidacaoNegocio(t *testing.T) {
-	server, db, _ := setupTestServer(t)
+	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
+
+	// UpdateOportunidade busca o registro atual antes de validar o payload.
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
 
 	payload := validOportunidadePayload()
 	payload["probabilidade_pct"] = -5.0
@@ -570,8 +895,13 @@ func TestUpdateOportunidade_ValidacaoNegocio(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.Equal(t, "probabilidade_pct deve estar entre 0 e 100", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestUpdateOportunidade_NaoEncontrada cobre o caso de ID inexistente: a
+// busca do registro atual (owner check) já retorna "não encontrada" antes de
+// qualquer tentativa de UPDATE.
 func TestUpdateOportunidade_NaoEncontrada(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
@@ -580,15 +910,9 @@ func TestUpdateOportunidade_NaoEncontrada(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-		WithArgs(int64(100)).
-		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
-	mock.ExpectQuery(`SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
-	mock.ExpectExec(`UPDATE oportunidades`).
-		WithArgs(int64(100), int64(1), "Site", sqlmock.AnyArg(), "Prospeccao", 10.0, 1000.0, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), int64(999)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/oportunidades/999", makeJSON(validOportunidadePayload()))
 	req.Header.Set("Authorization", "Bearer "+adminToken)

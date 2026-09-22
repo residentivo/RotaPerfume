@@ -15,6 +15,7 @@ import {
   apiListVendedores,
   apiListClientes,
 } from "@/lib/api";
+import { getUser } from "@/lib/auth";
 import { Visita, VisitaInput, Vendedor, Cliente } from "@/lib/types";
 
 type SortKey =
@@ -79,8 +80,19 @@ export default function VisitasPage() {
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
 
+  // Usuário logado: vendedores (role !== "admin") só enxergam a própria
+  // carteira — o filtro de vendedor é travado com o id_vendedor do usuário
+  // e o seletor "todos os vendedores" fica oculto. Admin mantém o filtro
+  // livre (padrão anterior). Sem id_vendedor vinculado, o vendedor não tem
+  // carteira: a lista permanece vazia (mesmo comportamento do backend).
+  const currentUser = getUser();
+  const isAdmin = currentUser?.role === "admin";
+  const semCarteira = !isAdmin && !currentUser?.id_vendedor;
+
   const [search, setSearch] = useState("");
-  const [vendedorFilter, setVendedorFilter] = useState("");
+  const [vendedorFilter, setVendedorFilter] = useState(
+    !isAdmin && currentUser?.id_vendedor ? String(currentUser.id_vendedor) : ""
+  );
   const [clienteFilter, setClienteFilter] = useState("");
   const [resultadoFilter, setResultadoFilter] = useState("");
   const [dataVisitaDe, setDataVisitaDe] = useState("");
@@ -160,6 +172,16 @@ export default function VisitasPage() {
   );
 
   const loadVisitas = async () => {
+    // Vendedor sem carteira vinculada (id_vendedor null): não há dados a
+    // buscar, mantém a lista vazia sem chamar a API.
+    if (semCarteira) {
+      setLoading(false);
+      setError(null);
+      setVisitas([]);
+      setTotal(0);
+      setPages(0);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -398,14 +420,16 @@ export default function VisitasPage() {
                   }
                 />
               </div>
-              <div className="sm:w-56">
-                <Select
-                  label="Vendedor"
-                  options={vendedorOptions}
-                  value={vendedorFilter}
-                  onChange={(e) => setVendedorFilter(e.target.value)}
-                />
-              </div>
+              {isAdmin && (
+                <div className="sm:w-56">
+                  <Select
+                    label="Vendedor"
+                    options={vendedorOptions}
+                    value={vendedorFilter}
+                    onChange={(e) => setVendedorFilter(e.target.value)}
+                  />
+                </div>
+              )}
               <div className="sm:w-56">
                 <Select
                   label="Cliente"

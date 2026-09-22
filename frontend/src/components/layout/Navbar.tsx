@@ -83,12 +83,8 @@ export function Navbar() {
               label="ERP"
               items={[
                 { label: "Clientes", href: "/admin/clientes" },
-                ...(user.role === "admin"
-                  ? [
-                      { label: "Oportunidades", href: "/admin/oportunidades" },
-                      { label: "Visitas", href: "/admin/visitas" },
-                    ]
-                  : []),
+                { label: "Oportunidades", href: "/admin/oportunidades" },
+                { label: "Visitas", href: "/admin/visitas" },
               ]}
             />
           )}
@@ -97,10 +93,8 @@ export function Navbar() {
             <NavDropdown
               label="CRM"
               items={[
-                { label: "Estoque", href: "/admin/estoque" },
                 { label: "Pagamentos", href: "/pagamentos" },
                 { label: "Pedidos", href: "/admin/pedidos" },
-                { label: "Produtos", href: "/admin/produtos" },
               ]}
             />
           )}
@@ -112,9 +106,17 @@ export function Navbar() {
                 ...(user.role === "admin"
                   ? [{ label: "Auditoria de Senha", href: "/admin/senha-historico" }]
                   : []),
-                { label: "Vendedores", href: "/admin/vendedores" },
+                ...(user.role === "admin"
+                  ? [{ label: "Vendedores", href: "/admin/vendedores" }]
+                  : []),
                 ...(user.role === "admin"
                   ? [{ label: "Usuários", href: "/admin/usuarios" }]
+                  : []),
+                ...(user.role === "admin"
+                  ? [{ label: "Produtos", href: "/admin/produtos" }]
+                  : []),
+                ...(user.role === "admin"
+                  ? [{ label: "Estoque", href: "/admin/estoque" }]
                   : []),
               ]}
             />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -43,7 +44,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
 
 const TODAS_OPTION = { value: "", label: "Todas" };
 
-export default function VendedoresPage() {
+function VendedoresPageContent() {
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -547,5 +548,13 @@ export default function VendedoresPage() {
         onSubmit={handleModalSubmit}
       />
     </div>
+  );
+}
+
+export default function VendedoresPage() {
+  return (
+    <ProtectedRoute requireAdmin>
+      <VendedoresPageContent />
+    </ProtectedRoute>
   );
 }

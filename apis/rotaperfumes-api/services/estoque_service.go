@@ -178,8 +178,7 @@ func (s *EstoqueService) validarEstoqueInput(ctx context.Context, db *sql.DB, in
 
 // CreateEstoque cria um ajuste manual de estoque, validando sku (deve
 // existir em produtos), saldo (>= 0) e data_snapshot (não futura). ruptura é
-// sempre derivada de saldo <= 0. origem é sempre gravada como
-// models.EstoqueOrigemManual.
+// sempre derivada de saldo <= 0.
 func (s *EstoqueService) CreateEstoque(ctx context.Context, db *sql.DB, input EstoqueInput) (*models.Estoque, error) {
 	sku, dataSnapshot, saldo, err := s.validarEstoqueInput(ctx, db, input)
 	if err != nil {
@@ -191,7 +190,6 @@ func (s *EstoqueService) CreateEstoque(ctx context.Context, db *sql.DB, input Es
 		DataSnapshot: dataSnapshot,
 		Saldo:        saldo,
 		Ruptura:      saldo <= 0,
-		Origem:       models.EstoqueOrigemManual,
 	}
 	if err := s.repo.Create(ctx, db, e); err != nil {
 		return nil, err
@@ -207,8 +205,7 @@ func (s *EstoqueService) CreateEstoque(ctx context.Context, db *sql.DB, input Es
 // UpdateEstoque atualiza um registro de estoque existente via ajuste MANUAL
 // (sku e data_snapshot não são alterados por aqui — para mudar a chave de
 // negócio, crie um novo registro). ruptura é sempre derivada de saldo <= 0.
-// origem é sempre gravada como models.EstoqueOrigemManual. Retorna
-// ErrEstoqueNaoEncontrado se não existir.
+// Retorna ErrEstoqueNaoEncontrado se não existir.
 func (s *EstoqueService) UpdateEstoque(ctx context.Context, db *sql.DB, id int64, input EstoqueInput) (*models.Estoque, error) {
 	atual, err := s.repo.GetByID(ctx, db, id)
 	if err != nil {
@@ -227,7 +224,6 @@ func (s *EstoqueService) UpdateEstoque(ctx context.Context, db *sql.DB, id int64
 	e := &models.Estoque{
 		Saldo:   input.Saldo,
 		Ruptura: input.Saldo <= 0,
-		Origem:  models.EstoqueOrigemManual,
 	}
 	if err := s.repo.Update(ctx, db, id, e); err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {

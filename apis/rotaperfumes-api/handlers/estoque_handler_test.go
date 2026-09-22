@@ -11,17 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// estoqueColunasRegexH reflete a constante estoqueColunas do repositório.
-const estoqueColunasRegexH = `id, data_snapshot, sku, saldo, ruptura, origem, created_at, updated_at`
-
 func estoqueColunasHeaderForHandler() []string {
-	return []string{"id", "data_snapshot", "sku", "saldo", "ruptura", "origem", "created_at", "updated_at"}
+	return []string{"id", "data_snapshot", "sku", "produto_descricao", "saldo", "ruptura", "created_at", "updated_at"}
 }
 
-func estoqueRowsForHandler(id int64, saldo int, ruptura bool, origem string) *sqlmock.Rows {
+func estoqueRowsForHandler(id int64, saldo int, ruptura bool) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows(estoqueColunasHeaderForHandler()).
-		AddRow(id, now, "SKU-001", saldo, ruptura, origem, now, now)
+		AddRow(id, now, "SKU-001", "Perfume Teste", saldo, ruptura, now, now)
 }
 
 func emptyEstoqueRowsForHandler() *sqlmock.Rows {
@@ -44,7 +41,7 @@ func TestListEstoque_Success_Admin(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectQuery(`SELECT .+ FROM \(.+\) ranked WHERE rn = 1 ORDER BY data_snapshot DESC LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
-		WillReturnRows(estoqueRowsForHandler(1, 10, false, "import_csv"))
+		WillReturnRows(estoqueRowsForHandler(1, 10, false))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/estoque", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -64,21 +61,15 @@ func TestListEstoque_Success_Admin(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// TestListEstoque_PermitidoParaNaoAdmin cobre que GET /api/estoque é acesso
-// comum (não exige role admin), diferente de POST/PUT.
-func TestListEstoque_PermitidoParaNaoAdmin(t *testing.T) {
+// TestListEstoque_NegadoParaNaoAdmin cobre que GET /api/estoque é admin-only,
+// assim como POST/PUT.
+func TestListEstoque_NegadoParaNaoAdmin(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
-
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM \(.+\) ranked WHERE rn = 1`).
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT .+ FROM \(.+\) ranked WHERE rn = 1 ORDER BY data_snapshot DESC LIMIT \? OFFSET \?`).
-		WithArgs(20, 0).
-		WillReturnRows(estoqueRowsForHandler(1, 10, false, "import_csv"))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/estoque", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -87,10 +78,7 @@ func TestListEstoque_PermitidoParaNaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -102,12 +90,12 @@ func TestListEstoque_Historico(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM estoque WHERE sku = \?`).
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM estoque.+WHERE e\.sku = \?`).
 		WithArgs("SKU-001").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
-	mock.ExpectQuery(`SELECT `+estoqueColunasRegexH+` FROM estoque WHERE sku = \? ORDER BY data_snapshot DESC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.sku = \? ORDER BY e\.data_snapshot DESC LIMIT \? OFFSET \?`).
 		WithArgs("SKU-001", 20, 0).
-		WillReturnRows(estoqueRowsForHandler(1, 10, false, "import_csv"))
+		WillReturnRows(estoqueRowsForHandler(1, 10, false))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/estoque?sku=SKU-001&historico=true", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -154,9 +142,9 @@ func TestGetEstoque_Success(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegexH + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRowsForHandler(1, 10, false, "import_csv"))
+		WillReturnRows(estoqueRowsForHandler(1, 10, false))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/estoque/1", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -174,17 +162,13 @@ func TestGetEstoque_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestGetEstoque_PermitidoParaNaoAdmin(t *testing.T) {
+func TestGetEstoque_NegadoParaNaoAdmin(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
-
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegexH + ` FROM estoque WHERE id = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(estoqueRowsForHandler(1, 10, false, "import_csv"))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/estoque/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -193,7 +177,7 @@ func TestGetEstoque_PermitidoParaNaoAdmin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -205,7 +189,7 @@ func TestGetEstoque_NaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegexH + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnRows(emptyEstoqueRowsForHandler())
 
@@ -267,7 +251,7 @@ func TestCreateEstoque_Success_Admin(t *testing.T) {
 		WithArgs("SKU-001").
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	mock.ExpectExec(`INSERT INTO estoque`).
-		WithArgs("2024-06-01", "SKU-001", 10, false, "manual").
+		WithArgs("2024-06-01", "SKU-001", 10, false).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/estoque", makeJSON(validEstoquePayload()))
@@ -434,15 +418,15 @@ func TestUpdateEstoque_Success_Admin(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegexH + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRowsForHandler(1, 10, false, "manual"))
+		WillReturnRows(estoqueRowsForHandler(1, 10, false))
 	mock.ExpectExec(`UPDATE estoque`).
-		WithArgs(25, false, "manual", int64(1)).
+		WithArgs(25, false, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegexH + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRowsForHandler(1, 25, false, "manual"))
+		WillReturnRows(estoqueRowsForHandler(1, 25, false))
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/estoque/1", makeJSON(map[string]any{"saldo": 25}))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -528,7 +512,7 @@ func TestUpdateEstoque_NaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegexH + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnRows(emptyEstoqueRowsForHandler())
 
@@ -554,9 +538,9 @@ func TestUpdateEstoque_SaldoNegativo(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegexH + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRowsForHandler(1, 10, false, "manual"))
+		WillReturnRows(estoqueRowsForHandler(1, 10, false))
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/estoque/1", makeJSON(map[string]any{"saldo": -5}))
 	req.Header.Set("Authorization", "Bearer "+adminToken)

@@ -204,32 +204,34 @@ Exemplos:
 - **Descrição:** Métricas agregadas da base de clientes: `total_clientes`, `total_ativos`, `total_inativos`, `novos_no_periodo`, `por_segmento` (array `{segmento, total}`) e `por_uf` (array `{uf, total}`)
 - **Período `week`:** considera os últimos 7 dias corridos (`DATE_SUB(CURDATE(), INTERVAL 6 DAY)` até hoje), não a semana civil.
 
-### Produtos (`/api/produtos/*`) — admin only
+### Produtos (`/api/produtos/*`) — GET acesso comum, POST/PUT/PATCH admin only
 
 > Base de produtos importada de `dados/erp/produtos.csv` (293 linhas) para a tabela `produtos` (ver seção "Importação de produtos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Produtos"** da collection. A exclusão de produtos é sempre **lógica** (flag `ativo`) — não existe endpoint de `DELETE`.
+>
+> **Assimetria de acesso (2026-09-22):** `GET /api/produtos` e `GET /api/produtos/{id}` são **acesso comum** (qualquer usuário autenticado — admin ou normal), mesma cadeia de middleware usada em Pagamentos (`cfg, true, false`) — mantidos abertos porque o vendedor precisa consultar o catálogo para montar um pedido (`PedidoModal.tsx`). `POST /api/produtos`, `PUT /api/produtos/{id}` e `PATCH /api/produtos/{id}/inativar` continuam **admin only** (`cfg, true, true`) — só admin pode criar, editar ou ativar/inativar produtos. (Estoque, diferente de Produtos, teve **todas** as rotas — incluindo GET — restringidas a admin only na mesma data; ver seção "Estoque" abaixo.)
 
 #### GET /api/produtos
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Query (todos opcionais):** `?page=1&limit=20&categoria=Masculino&marca=Rota&ativo=true&q=intense&order_by=descricao&order_dir=asc`
 - **Descrição:** Lista produtos paginada (total + pages), com filtros exatos por `categoria`/`marca`, filtro por status (`ativo=true|false`) e busca livre (`q`) em `descricao` OU `sku`
 - **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, sku, descricao, categoria, marca, preco_tabela, custo_unitario, data_lancamento, ativo, created_at, updated_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/produtos
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (admin) — usuário `normal` recebe `403`
 - **Body:** `{ "sku", "descricao", "categoria", "marca", "nota_olfativa", "preco_tabela", "custo_unitario", "unidade", "data_lancamento" (opcional, "AAAA-MM-DD") }`
 - **Descrição:** Cria um novo produto. `ativo` é sempre `true` na criação — não é aceito no body. Campos obrigatórios: `sku`, `descricao`, `categoria`, `marca`, `unidade`; `preco_tabela`/`custo_unitario` devem ser `>= 0`. Retorna `201` com o produto criado; `400` em caso de validação.
 
 #### GET /api/produtos/{id}
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Descrição:** Retorna o detalhe de um produto pelo `id` interno
 
 #### PUT /api/produtos/{id}
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (admin) — usuário `normal` recebe `403`
 - **Body:** `{ "descricao", "categoria", "marca", "nota_olfativa", "preco_tabela", "custo_unitario", "unidade", "data_lancamento" (opcional, "AAAA-MM-DD") }`
 - **Descrição:** Atualiza os dados de um produto existente. `sku` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/produtos/{id}/inativar` para alterar `ativo`). Retorna `200` com o produto atualizado, `404` se não existir, `400` se o payload for inválido.
 
 #### PATCH /api/produtos/{id}/inativar
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (admin) — usuário `normal` recebe `403`
 - **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
 - **Descrição:** Ativa ou inativa o produto (exclusão lógica)
 
@@ -283,91 +285,99 @@ Exemplos:
 - **Body:** mesmo formato do `POST /api/pagamentos`, exceto `pedido_id`
 - **Descrição:** Atualiza os campos editáveis de um pagamento existente. `pagamento_id` e `pedido_id` **não** são editáveis por esta rota (o vínculo com o pedido de origem é definitivo — para reatribuir a outro pedido, o fluxo correto é excluir/recriar). Retorna `200` com o pagamento atualizado, `404` se não existir, `400` se o payload for inválido.
 
-### Oportunidades (`/api/oportunidades/*`) — admin only, + `GET /api/vendedores/{id}/clientes` (acesso comum)
+### Oportunidades (`/api/oportunidades/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-22)
 
 > Funil de vendas (CRM) importado de `dados/crm/oportunidades.csv` (colunas: `oportunidade_id, cliente_id, vendedor_id, origem, data_abertura, etapa, probabilidade_pct, valor_estimado, data_fechamento, ciclo_dias, motivo_perda`). Tela com dois dropdowns em cascata (Vendedor → Cliente) e filtros de coluna na listagem. Requests desses endpoints estão agrupadas na pasta **"Oportunidades"** da collection. Não existe endpoint de `DELETE` nem exclusão lógica.
 >
-> **Decisão de design:** `vendedor_id` é um campo próprio da oportunidade — **não depende** de a oportunidade ter um vínculo de carteira ativo entre aquele cliente e aquele vendedor (uma oportunidade pode existir mesmo que o cliente esteja hoje na carteira de outro vendedor, ou sem vínculo ativo algum). O endpoint `GET /api/vendedores/{id}/clientes` (usado só para alimentar o segundo dropdown do formulário) é **acesso comum**, diferente do CRUD de Oportunidades (`admin only`) — mesma cadeia de middleware (`cfg, true, false`) usada em Pagamentos.
+> **Mudança de acesso (2026-09-22):** `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` deixaram de ser `admin only` e passaram a **acesso comum com escopo por carteira** — mesma cadeia de middleware usada em Pagamentos (`cfg, true, false`), com a restrição de dono aplicada no handler via `vendedorScope`/`resolverVendedorScope` (`apis/rotaperfumes-api/handlers/scope.go`), o mesmo padrão já usado em Pedidos/Clientes/Pagamentos:
+> - **Listagem (`GET /api/oportunidades`):** usuário `admin` enxerga tudo; usuário `normal` só enxerga oportunidades da própria carteira — qualquer `vendedor_id` informado na query é **ignorado** e forçado ao vendedor vinculado ao usuário logado (nunca confia em input do cliente).
+> - **Detalhe/edição por ID (`GET`/`PUT /api/oportunidades/{id}`):** usuário `normal` tentando acessar/editar uma oportunidade de outro vendedor recebe **`404`** (não `403`) — decisão deliberada para não expor, por enumeração de ID, a existência do registro a quem não tem acesso a ele.
+> - **Criação/edição (`POST`/`PUT`):** o `vendedor_id` do payload é **ignorado** para usuário `normal` — é sempre forçado ao vendedor vinculado ao usuário logado, mesmo que o body envie outro valor (impede forjar/reatribuir o registro a outro vendedor). Além disso, `cliente_id` precisa pertencer à carteira ativa (`data_fim IS NULL`) desse vendedor — se não pertencer, retorna `400` (`"cliente não pertence à carteira deste vendedor"`).
+> - Usuário `normal` sem vendedor vinculado (`id_vendedor` nulo) é tratado como carteira vazia: listagem retorna vazio, `GET`/`PUT` por ID retornam `404`, `POST` retorna `403` (`"usuário sem vendedor vinculado"`).
+> - Usuário `admin` não sofre nenhuma dessas restrições (comportamento idêntico ao anterior).
+>
+> **Decisão de design:** `vendedor_id` é um campo próprio da oportunidade — **não depende** de a oportunidade ter um vínculo de carteira ativo entre aquele cliente e aquele vendedor (uma oportunidade pode existir mesmo que o cliente esteja hoje na carteira de outro vendedor, ou sem vínculo ativo algum) — essa regra vale para `admin`; para usuário `normal`, o `cliente_id` do `POST`/`PUT` é validado contra a própria carteira, como descrito acima. O endpoint `GET /api/vendedores/{id}/clientes` (usado só para alimentar o segundo dropdown do formulário) continua **acesso comum**, mesma cadeia de middleware (`cfg, true, false`).
 
 #### GET /api/oportunidades
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Query (todos opcionais):** `?page=1&limit=20&cliente_id=1&vendedor_id=1&etapa=Proposta enviada&origem=Indicação&data_abertura_de=2026-01-01&data_abertura_ate=2026-12-31&q=indica&order_by=data_abertura&order_dir=desc`
-- **Descrição:** Lista oportunidades paginada (total + pages), com filtros exatos por `cliente_id`, `vendedor_id`, `etapa`, `origem`, intervalo `data_abertura_de`/`data_abertura_ate` (`AAAA-MM-DD`) e busca livre (`q`) em `origem` OU `etapa`.
+- **Descrição:** Lista oportunidades paginada (total + pages), com filtros exatos por `cliente_id`, `vendedor_id`, `etapa`, `origem`, intervalo `data_abertura_de`/`data_abertura_ate` (`AAAA-MM-DD`) e busca livre (`q`) em `origem` OU `etapa`. Para usuário `normal`, `vendedor_id` da query é ignorado e forçado à própria carteira.
 - **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, data_abertura, valor_estimado, probabilidade_pct, etapa, origem, created_at, updated_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/oportunidades
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Body:** `{ "cliente_id", "vendedor_id", "origem", "data_abertura" (opcional, "AAAA-MM-DD", default hoje), "etapa", "probabilidade_pct", "valor_estimado", "data_fechamento" (opcional, "AAAA-MM-DD"), "ciclo_dias" (opcional), "motivo_perda" (obrigatório se etapa = "Fechado perdido") }`
-- **Descrição:** Cria uma nova oportunidade. `cliente_id` deve existir em `clientes`; `vendedor_id` deve existir em `vendedores` (campo independente de vínculo de carteira). `probabilidade_pct` deve estar entre 0 e 100; `valor_estimado` deve ser `>= 0`. `oportunidade_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com a oportunidade criada; `400` em caso de validação.
+- **Descrição:** Cria uma nova oportunidade. `cliente_id` deve existir em `clientes`; `vendedor_id` deve existir em `vendedores` (campo independente de vínculo de carteira, para `admin`). `probabilidade_pct` deve estar entre 0 e 100; `valor_estimado` deve ser `>= 0`. `oportunidade_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com a oportunidade criada; `400` em caso de validação. Para usuário `normal`: `vendedor_id` do payload é ignorado (forçado à própria carteira) e `cliente_id` precisa pertencer à carteira ativa desse vendedor (`400` se não pertencer).
 
 #### GET /api/oportunidades/{id}
-- **Auth:** Bearer Token (admin)
-- **Descrição:** Retorna o detalhe de uma oportunidade pelo `oportunidade_id`.
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
+- **Descrição:** Retorna o detalhe de uma oportunidade pelo `oportunidade_id`. Usuário `normal` tentando acessar oportunidade de outro vendedor recebe `404`.
 
 #### PUT /api/oportunidades/{id}
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Body:** mesmo formato do `POST /api/oportunidades` (`data_abertura` obrigatório na edição)
-- **Descrição:** Atualiza os dados de uma oportunidade existente. Retorna `200` com a oportunidade atualizada, `404` se não existir, `400` se o payload for inválido.
+- **Descrição:** Atualiza os dados de uma oportunidade existente. Retorna `200` com a oportunidade atualizada, `404` se não existir (ou pertencer a outro vendedor, para usuário `normal`), `400` se o payload for inválido (inclui `cliente_id` fora da carteira do vendedor, para usuário `normal`). `vendedor_id` do payload é ignorado para usuário `normal` (não é possível reatribuir a outro vendedor).
 
 #### GET /api/vendedores/{id}/clientes
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Descrição:** Lista os clientes vinculados (carteira ativa, `data_fim IS NULL`) a um vendedor. Usado pelo dropdown em cascata da tela de Oportunidades (ao escolher o vendedor, filtra os clientes possíveis no segundo dropdown). `404` se o vendedor não existir.
 
-### Visitas (`/api/visitas/*`) — admin only
+### Visitas (`/api/visitas/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-22)
 
 > Registro de visitas de vendedores a clientes (CRM), importado de `dados/crm/visitas.csv` (colunas: `visita_id, cliente_id, vendedor_id, data_visita, resultado, duracao_min`). Tela com os mesmos dois dropdowns em cascata (Vendedor → Cliente) usados em Oportunidades — reaproveita o endpoint compartilhado `GET /api/vendedores/{id}/clientes` (acesso comum, documentado acima na seção de Oportunidades) para alimentar o segundo dropdown. Filtros de coluna na listagem. Requests desses endpoints estão agrupadas na pasta **"Visitas"** da collection. Não existe endpoint de `DELETE` nem exclusão lógica.
 >
 > **Diferente de Oportunidades:** `data_visita` é **obrigatório e sem default** — no `POST`/`PUT` de Oportunidades, `data_abertura` vazio assume a data de hoje; em Visitas, `data_visita` vazio/ausente retorna `400` (`"data_visita inválida (use o formato AAAA-MM-DD)"`).
+>
+> **Mudança de acesso (2026-09-22):** exatamente a mesma mudança e as mesmas regras de escopo por carteira aplicadas a Oportunidades acima (mesmo padrão `vendedorScope`/`resolverVendedorScope`) — `GET/POST /api/visitas` e `GET/PUT /api/visitas/{id}` deixaram de ser `admin only` e passaram a **acesso comum**: usuário `normal` só lista/vê/cria/edita visitas da própria carteira (`vendedor_id` da query/payload é ignorado e forçado ao vendedor vinculado; `cliente_id` do `POST`/`PUT` precisa pertencer à carteira ativa desse vendedor, `400` se não pertencer); acesso a visita de outro vendedor por `GET`/`PUT` por ID retorna `404`; usuário `normal` sem vendedor vinculado é tratado como carteira vazia (listagem vazia, `404` em `GET`/`PUT` por ID, `403` em `POST`).
 
 #### GET /api/visitas
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Query (todos opcionais):** `?page=1&limit=20&cliente_id=1&vendedor_id=1&resultado=Pedido fechado&data_visita_de=2026-01-01&data_visita_ate=2026-12-31&q=fechado&order_by=data_visita&order_dir=desc`
-- **Descrição:** Lista visitas paginada (total + pages), com filtros exatos por `cliente_id`, `vendedor_id`, `resultado`, intervalo `data_visita_de`/`data_visita_ate` (`AAAA-MM-DD`) e busca livre (`q`) em `resultado`.
+- **Descrição:** Lista visitas paginada (total + pages), com filtros exatos por `cliente_id`, `vendedor_id`, `resultado`, intervalo `data_visita_de`/`data_visita_ate` (`AAAA-MM-DD`) e busca livre (`q`) em `resultado`. Para usuário `normal`, `vendedor_id` da query é ignorado e forçado à própria carteira.
 - **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, visita_id, data_visita, duracao_min, resultado, created_at, updated_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/visitas
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Body:** `{ "cliente_id", "vendedor_id", "data_visita" ("AAAA-MM-DD", obrigatório, sem default), "resultado", "duracao_min" }`
-- **Descrição:** Cria uma nova visita. `cliente_id` deve existir em `clientes`; `vendedor_id` deve existir em `vendedores`. `resultado` obrigatório (não vazio); `duracao_min` deve ser `>= 0`. `visita_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com a visita criada; `400` em caso de validação.
+- **Descrição:** Cria uma nova visita. `cliente_id` deve existir em `clientes`; `vendedor_id` deve existir em `vendedores`. `resultado` obrigatório (não vazio); `duracao_min` deve ser `>= 0`. `visita_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com a visita criada; `400` em caso de validação. Para usuário `normal`: `vendedor_id` do payload é ignorado (forçado à própria carteira) e `cliente_id` precisa pertencer à carteira ativa desse vendedor (`400` se não pertencer).
 
 #### GET /api/visitas/{id}
-- **Auth:** Bearer Token (admin)
-- **Descrição:** Retorna o detalhe de uma visita pelo `visita_id`.
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
+- **Descrição:** Retorna o detalhe de uma visita pelo `visita_id`. Usuário `normal` tentando acessar visita de outro vendedor recebe `404`.
 
 #### PUT /api/visitas/{id}
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Body:** mesmo formato do `POST /api/visitas` (`data_visita` obrigatório também na edição, sem default)
-- **Descrição:** Atualiza os dados de uma visita existente. Retorna `200` com a visita atualizada, `404` se não existir, `400` se o payload for inválido.
+- **Descrição:** Atualiza os dados de uma visita existente. Retorna `200` com a visita atualizada, `404` se não existir (ou pertencer a outro vendedor, para usuário `normal`), `400` se o payload for inválido (inclui `cliente_id` fora da carteira do vendedor, para usuário `normal`). `vendedor_id` do payload é ignorado para usuário `normal` (não é possível reatribuir a outro vendedor).
 
-### Estoque (`/api/estoque/*`) — GET acesso comum, POST/PUT admin only
+### Estoque (`/api/estoque/*`) — admin only
 
 > Série temporal de snapshots diários de saldo por SKU, importada de `dados/erp/estoque.csv` para a tabela `estoque` (ver seção "Importação de estoque (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Estoque"** da collection. Não existe endpoint de `DELETE`.
 >
-> **Assimetria de acesso:** diferente do restante do módulo (admin only), `GET /api/estoque` e `GET /api/estoque/{id}` são **acesso comum** (qualquer usuário autenticado — admin ou normal), mesma cadeia de middleware usada em Pagamentos (`cfg, true, false`). `POST /api/estoque` e `PUT /api/estoque/{id}` continuam **admin only** (`cfg, true, true`).
+> **Mudança de acesso (2026-09-22):** os quatro endpoints (`GET /api/estoque`, `GET /api/estoque/{id}`, `POST /api/estoque`, `PUT /api/estoque/{id}`) são **admin only** (`cfg, true, true`). Antes, `GET /api/estoque` e `GET /api/estoque/{id}` eram acesso comum (qualquer usuário autenticado); foram restringidos a admin junto com a mudança de "Estoque" no menu do frontend, que passou do dropdown "CRM" para "Administração" (visível só para admin).
 >
 > **Constraint de unicidade:** `UNIQUE (data_snapshot, sku)` — só existe um snapshot por SKU por dia. O importador e o hook de faturamento fazem *upsert* nessa chave.
 >
-> **Hook de faturamento:** ao atualizar um pedido (`PUT /api/pedidos/{id}`) com transição de status para `Faturado`, o sistema decrementa automaticamente o saldo de estoque de cada item do pedido (dentro da mesma transação de `UpdateComItens`, com `SELECT ... FOR UPDATE` para evitar condição de corrida), gravando `origem=faturamento`. É idempotente — reenviar o update com status já `Faturado` não baixa estoque de novo — e bloqueia a edição dos itens de um pedido já faturado (a tentativa retorna `409 Conflict`: `{"success": false, "error": "pedido já faturado: não é possível alterar os itens, apenas o status"}`).
+> **Hook de faturamento:** ao atualizar um pedido (`PUT /api/pedidos/{id}`) com transição de status para `Faturado`, o sistema decrementa automaticamente o saldo de estoque de cada item do pedido (dentro da mesma transação de `UpdateComItens`, com `SELECT ... FOR UPDATE` para evitar condição de corrida). É idempotente — reenviar o update com status já `Faturado` não baixa estoque de novo — e bloqueia a edição dos itens de um pedido já faturado (a tentativa retorna `409 Conflict`: `{"success": false, "error": "pedido já faturado: não é possível alterar os itens, apenas o status"}`).
 >
 > **Decisão consciente sobre a data do snapshot no faturamento:** a baixa de estoque usa a data/hora atual do servidor (`time.Now()`) como `data_snapshot` no momento do faturamento — **não** a data de criação do pedido (`data_pedido`). Ou seja, o snapshot de estoque reflete o dia em que o faturamento efetivamente ocorreu, e não a data em que o pedido foi originalmente registrado. Isso foi identificado e documentado pelo TestBrain como decisão de negócio (não é bug).
 
 #### GET /api/estoque
-- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Auth:** Bearer Token (admin)
 - **Query (todos opcionais):** `?page=1&limit=20&sku=ROT-0001&data_de=2026-09-01&data_ate=2026-09-22&ruptura=false&order_by=data_snapshot&order_dir=desc&historico=true`
-- **Descrição:** Lista snapshots de estoque paginados (total + pages), com filtro exato por `sku`, filtro por `ruptura` (`true`|`false`) e intervalo `data_de`/`data_ate` (`AAAA-MM-DD`).
-- **Comportamento por padrão (sem `data_de`/`data_ate` nem `historico`):** retorna a **última posição de estoque de cada SKU** (um registro por SKU, o snapshot mais recente).
-- **Com `data_de`/`data_ate` (sem `historico`):** retorna apenas o **último movimento de cada SKU dentro do período** informado.
-- **Com `historico=true`:** retorna a **série temporal completa** (todos os snapshots, sem agregação por SKU).
-- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, sku, data_snapshot, saldo, ruptura, origem, created_at, updated_at` (default: `data_snapshot`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
+- **Descrição:** Lista snapshots de estoque paginados (total + pages), com filtro exato por `sku`, filtro por `ruptura` (`true`|`false`) e intervalo `data_de`/`data_ate` (`AAAA-MM-DD`). Cada registro vem com `produto_descricao` (via JOIN com `produtos`), para exibição ao lado do SKU.
+- **Comportamento por padrão (sem `historico`):** retorna a **última posição de estoque de cada SKU** (um registro por SKU). Sem `data_ate`, é a última posição geral (snapshot mais recente); com `data_ate`, é a **última posição de cada SKU até (inclusive) aquela data** — permite consultar "quanto tinha em estoque até o dia X" para todos os produtos.
+- **Com `historico=true`:** retorna a **série temporal completa** (todos os snapshots que casarem com `data_de`/`data_ate`, sem agregação por SKU).
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, sku, data_snapshot, saldo, ruptura, created_at, updated_at` (default: `data_snapshot`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### GET /api/estoque/{id}
-- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Auth:** Bearer Token (admin)
 - **Descrição:** Retorna o detalhe de um snapshot de estoque pelo `id`.
 
 #### POST /api/estoque
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "sku", "data_snapshot" ("AAAA-MM-DD"), "saldo" }`
-- **Descrição:** Cria um snapshot de estoque manual. `sku` deve existir em `produtos`; `ruptura` é derivada automaticamente (`saldo <= 0`, não aceita no body); `origem` é sempre `manual` nesta rota. Respeita a constraint `UNIQUE (data_snapshot, sku)` — criar outro registro para o mesmo par retorna `400`. Retorna `201` com o snapshot criado.
+- **Descrição:** Cria um snapshot de estoque manual. `sku` deve existir em `produtos`; `ruptura` é derivada automaticamente (`saldo <= 0`, não aceita no body). Respeita a constraint `UNIQUE (data_snapshot, sku)` — criar outro registro para o mesmo par retorna `400`. Retorna `201` com o snapshot criado.
 
 #### PUT /api/estoque/{id}
 - **Auth:** Bearer Token (admin)
@@ -597,7 +607,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 ### Criar Estoque
 - `Status 201 Created`
-- `Estoque criado com dados corretos` (`id`, `sku`, `origem === "manual"`)
+- `Estoque criado com dados corretos` (`id`, `sku`)
 
 ### Editar Estoque
 - `Status 200 OK`

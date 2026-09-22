@@ -25,16 +25,14 @@ func newEstoqueTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	return db, mock
 }
 
-var estoqueColunasRegex = `id, data_snapshot, sku, saldo, ruptura, origem, created_at, updated_at`
-
 func estoqueColunasHeader() []string {
-	return []string{"id", "data_snapshot", "sku", "saldo", "ruptura", "origem", "created_at", "updated_at"}
+	return []string{"id", "data_snapshot", "sku", "produto_descricao", "saldo", "ruptura", "created_at", "updated_at"}
 }
 
-func estoqueRows(id int64, saldo int, ruptura bool, origem string) *sqlmock.Rows {
+func estoqueRows(id int64, saldo int, ruptura bool) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows(estoqueColunasHeader()).
-		AddRow(id, now, "SKU-001", saldo, ruptura, origem, now, now)
+		AddRow(id, now, "SKU-001", "Perfume Teste", saldo, ruptura, now, now)
 }
 
 func emptyEstoqueRows() *sqlmock.Rows {
@@ -52,7 +50,7 @@ func TestEstoqueService_ListEstoque_Padrao_UsaUltimaPosicao(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
 	mock.ExpectQuery(`SELECT .+ FROM \(.+\) ranked WHERE rn = 1 ORDER BY data_snapshot DESC LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
-		WillReturnRows(estoqueRows(1, 10, false, "import_csv"))
+		WillReturnRows(estoqueRows(1, 10, false))
 
 	svc := services.NewEstoqueService(db, estoqueTestCfg(true))
 	registros, total, err := svc.ListEstoque(context.Background(), db, 1, 20, services.EstoqueFiltro{})
@@ -68,9 +66,9 @@ func TestEstoqueService_ListEstoque_Historico_UsaListSimples(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM estoque`).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(3))
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegex + ` FROM estoque ORDER BY data_snapshot DESC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+ORDER BY e\.data_snapshot DESC LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
-		WillReturnRows(estoqueRows(1, 10, false, "import_csv"))
+		WillReturnRows(estoqueRows(1, 10, false))
 
 	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
 	_, total, err := svc.ListEstoque(context.Background(), db, 1, 20, services.EstoqueFiltro{Historico: true})
@@ -107,9 +105,9 @@ func TestEstoqueService_ListEstoque_DataAteInvalida(t *testing.T) {
 func TestEstoqueService_GetEstoqueByID_Success(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegex + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRows(1, 10, false, "import_csv"))
+		WillReturnRows(estoqueRows(1, 10, false))
 
 	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
 	e, err := svc.GetEstoqueByID(context.Background(), db, 1)
@@ -123,7 +121,7 @@ func TestEstoqueService_GetEstoqueByID_Success(t *testing.T) {
 func TestEstoqueService_GetEstoqueByID_NaoEncontrado(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegex + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnRows(emptyEstoqueRows())
 
@@ -253,7 +251,7 @@ func TestEstoqueService_CreateEstoque_RupturaSempreDerivadaDoSaldo(t *testing.T)
 				WithArgs("SKU-001").
 				WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 			mock.ExpectExec(`INSERT INTO estoque`).
-				WithArgs("2024-06-01", "SKU-001", tc.saldo, tc.wantRuptura, "manual").
+				WithArgs("2024-06-01", "SKU-001", tc.saldo, tc.wantRuptura).
 				WillReturnResult(sqlmock.NewResult(1, 1))
 
 			in := validEstoqueInput()
@@ -265,7 +263,6 @@ func TestEstoqueService_CreateEstoque_RupturaSempreDerivadaDoSaldo(t *testing.T)
 			require.NoError(t, err)
 			require.NotNil(t, e)
 			assert.Equal(t, tc.wantRuptura, e.Ruptura)
-			assert.Equal(t, "manual", e.Origem)
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -278,7 +275,7 @@ func TestEstoqueService_CreateEstoque_Success(t *testing.T) {
 		WithArgs("SKU-001").
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	mock.ExpectExec(`INSERT INTO estoque`).
-		WithArgs("2024-06-01", "SKU-001", 10, false, "manual").
+		WithArgs("2024-06-01", "SKU-001", 10, false).
 		WillReturnResult(sqlmock.NewResult(7, 1))
 
 	svc := services.NewEstoqueService(db, estoqueTestCfg(true))
@@ -297,15 +294,15 @@ func TestEstoqueService_CreateEstoque_Success(t *testing.T) {
 func TestEstoqueService_UpdateEstoque_Success(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegex + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRows(1, 10, false, "manual"))
+		WillReturnRows(estoqueRows(1, 10, false))
 	mock.ExpectExec(`UPDATE estoque`).
-		WithArgs(20, false, "manual", int64(1)).
+		WithArgs(20, false, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegex + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRows(1, 20, false, "manual"))
+		WillReturnRows(estoqueRows(1, 20, false))
 
 	svc := services.NewEstoqueService(db, estoqueTestCfg(true))
 	e, err := svc.UpdateEstoque(context.Background(), db, 1, services.EstoqueInput{Saldo: 20})
@@ -319,7 +316,7 @@ func TestEstoqueService_UpdateEstoque_Success(t *testing.T) {
 func TestEstoqueService_UpdateEstoque_NaoEncontrado(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegex + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnRows(emptyEstoqueRows())
 
@@ -334,9 +331,9 @@ func TestEstoqueService_UpdateEstoque_NaoEncontrado(t *testing.T) {
 func TestEstoqueService_UpdateEstoque_SaldoNegativo(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegex + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRows(1, 10, false, "manual"))
+		WillReturnRows(estoqueRows(1, 10, false))
 
 	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
 	e, err := svc.UpdateEstoque(context.Background(), db, 1, services.EstoqueInput{Saldo: -5})
@@ -349,15 +346,15 @@ func TestEstoqueService_UpdateEstoque_SaldoNegativo(t *testing.T) {
 func TestEstoqueService_UpdateEstoque_RupturaDerivadaDoSaldoZero(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegex + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRows(1, 10, false, "manual"))
+		WillReturnRows(estoqueRows(1, 10, false))
 	mock.ExpectExec(`UPDATE estoque`).
-		WithArgs(0, true, "manual", int64(1)).
+		WithArgs(0, true, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(`SELECT ` + estoqueColunasRegex + ` FROM estoque WHERE id = \? LIMIT 1`).
+	mock.ExpectQuery(`SELECT .+ FROM estoque.+WHERE e\.id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(estoqueRows(1, 0, true, "manual"))
+		WillReturnRows(estoqueRows(1, 0, true))
 
 	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
 	e, err := svc.UpdateEstoque(context.Background(), db, 1, services.EstoqueInput{Saldo: 0})

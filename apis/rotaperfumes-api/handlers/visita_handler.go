@@ -37,12 +37,24 @@ func NewVisitaHandler(db *sql.DB, cfg *config.Config) *VisitaHandler {
 // (id|visita_id|data_visita|duracao_min|resultado|created_at|updated_at;
 // default id), order_dir (asc|desc; default asc).
 // Response: {success, data: [visita...], error, pagination: {page, limit, total, pages}}
-// Acesso admin only.
+// Acesso comum: usuário role=normal só enxerga visitas da própria carteira
+// (vendedor_id da query é ignorado e forçado ao vendedor vinculado).
 func (h *VisitaHandler) ListVisitas(w http.ResponseWriter, r *http.Request) {
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[visitas] ListVisitas escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSONWithPagination(w, http.StatusOK, []any{}, page, limit, 0, 0)
+		return
+	}
 
 	filtro := services.VisitaFiltro{
 		ClienteID:     parseInt64Query(r.URL.Query().Get("cliente_id")),
@@ -53,6 +65,11 @@ func (h *VisitaHandler) ListVisitas(w http.ResponseWriter, r *http.Request) {
 		Q:             strings.TrimSpace(r.URL.Query().Get("q")),
 		OrderBy:       strings.TrimSpace(r.URL.Query().Get("order_by")),
 		OrderDir:      parseOrderDirQuery(r.URL.Query().Get("order_dir")),
+	}
+	if scope.Restrito {
+		// Usuário role=normal: força o filtro à própria carteira, ignorando
+		// qualquer vendedor_id vindo da query string (evita bypass via URL).
+		filtro.VendedorID = scope.VendedorID
 	}
 
 	visitas, total, err := h.svc.ListVisitas(r.Context(), h.db, page, limit, filtro)
@@ -73,11 +90,24 @@ func (h *VisitaHandler) ListVisitas(w http.ResponseWriter, r *http.Request) {
 // GetVisita GET /api/visitas/{id}
 //
 // Response: {success, data: visita, error}
-// Acesso admin only.
+// Acesso comum: usuário role=normal só enxerga visita da própria carteira
+// (404 — não 403 — se pertencer a outro vendedor, para não permitir
+// enumeração de IDs).
 func (h *VisitaHandler) GetVisita(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[visitas] GetVisita escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 		return
 	}
 
@@ -89,6 +119,11 @@ func (h *VisitaHandler) GetVisita(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Printf("[visitas] GetVisita: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	if scope.Restrito && !scope.PermiteVendedor(visita.VendedorID) {
+		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 		return
 	}
 
@@ -144,14 +179,44 @@ func visitaErroParaStatus(err error) (status int, msg string, ok bool) {
 // Body: { "cliente_id": number, "vendedor_id": number,
 // "data_visita": "AAAA-MM-DD", "resultado": string, "duracao_min": number }
 // Retorna: 201 com a visita criada.
-// Acesso admin only.
+// Acesso comum: usuário role=normal só pode criar visita para a própria
+// carteira (vendedor_id do payload é ignorado e forçado ao vendedor
+// vinculado; cliente_id deve pertencer à carteira ativa desse vendedor).
 func (h *VisitaHandler) CreateVisita(w http.ResponseWriter, r *http.Request) {
 	role, _ := middleware.GetRole(r.Context())
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[visitas] CreateVisita escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusForbidden, nil, "usuário sem vendedor vinculado")
+		return
+	}
 
 	var req CreateVisitaRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
+	}
+
+	if scope.Restrito {
+		// Usuário role=normal: nunca confia no vendedor_id do payload — força
+		// à própria carteira (evita forjar registro para outro vendedor).
+		req.VendedorID = scope.VendedorID
+
+		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		if err != nil {
+			log.Printf("[visitas] CreateVisita checar carteira: %v", err)
+			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+			return
+		}
+		if !pertence {
+			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
+			return
+		}
 	}
 
 	input := services.VisitaInput{
@@ -182,7 +247,9 @@ func (h *VisitaHandler) CreateVisita(w http.ResponseWriter, r *http.Request) {
 // Body: igual ao de CreateVisita.
 // Retorna: 200 com a visita atualizada, 404 se não existir, 400 se o
 // payload for inválido.
-// Acesso admin only.
+// Acesso comum: usuário role=normal só pode atualizar visita da própria
+// carteira (404 se pertencer a outro vendedor) e não pode reatribuir
+// vendedor_id para outro vendedor.
 func (h *VisitaHandler) UpdateVisita(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -190,10 +257,53 @@ func (h *VisitaHandler) UpdateVisita(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[visitas] UpdateVisita escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
+		return
+	}
+
+	atual, err := h.svc.GetVisitaByID(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, services.ErrVisitaNaoEncontrada) {
+			writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
+			return
+		}
+		log.Printf("[visitas] UpdateVisita buscar atual: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.Restrito && !scope.PermiteVendedor(atual.VendedorID) {
+		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
+		return
+	}
+
 	var req UpdateVisitaRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
+	}
+
+	if scope.Restrito {
+		// Usuário role=normal: nunca confia no vendedor_id do payload — força
+		// à própria carteira (evita reatribuir o registro a outro vendedor).
+		req.VendedorID = scope.VendedorID
+
+		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		if err != nil {
+			log.Printf("[visitas] UpdateVisita checar carteira: %v", err)
+			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+			return
+		}
+		if !pertence {
+			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
+			return
+		}
 	}
 
 	input := services.VisitaInput{

@@ -37,12 +37,24 @@ func NewOportunidadeHandler(db *sql.DB, cfg *config.Config) *OportunidadeHandler
 // (id|data_abertura|valor_estimado|probabilidade_pct|etapa|origem|created_at|
 // updated_at; default id), order_dir (asc|desc; default asc).
 // Response: {success, data: [oportunidade...], error, pagination: {page, limit, total, pages}}
-// Acesso admin only.
+// Acesso comum: usuário role=normal só enxerga oportunidades da própria
+// carteira (vendedor_id da query é ignorado e forçado ao vendedor vinculado).
 func (h *OportunidadeHandler) ListOportunidades(w http.ResponseWriter, r *http.Request) {
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[oportunidades] ListOportunidades escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSONWithPagination(w, http.StatusOK, []any{}, page, limit, 0, 0)
+		return
+	}
 
 	filtro := services.OportunidadeFiltro{
 		ClienteID:       parseInt64Query(r.URL.Query().Get("cliente_id")),
@@ -54,6 +66,11 @@ func (h *OportunidadeHandler) ListOportunidades(w http.ResponseWriter, r *http.R
 		Q:               strings.TrimSpace(r.URL.Query().Get("q")),
 		OrderBy:         strings.TrimSpace(r.URL.Query().Get("order_by")),
 		OrderDir:        parseOrderDirQuery(r.URL.Query().Get("order_dir")),
+	}
+	if scope.Restrito {
+		// Usuário role=normal: força o filtro à própria carteira, ignorando
+		// qualquer vendedor_id vindo da query string (evita bypass via URL).
+		filtro.VendedorID = scope.VendedorID
 	}
 
 	oportunidades, total, err := h.svc.ListOportunidades(r.Context(), h.db, page, limit, filtro)
@@ -74,11 +91,24 @@ func (h *OportunidadeHandler) ListOportunidades(w http.ResponseWriter, r *http.R
 // GetOportunidade GET /api/oportunidades/{id}
 //
 // Response: {success, data: oportunidade, error}
-// Acesso admin only.
+// Acesso comum: usuário role=normal só enxerga oportunidade da própria
+// carteira (404 — não 403 — se pertencer a outro vendedor, para não permitir
+// enumeração de IDs).
 func (h *OportunidadeHandler) GetOportunidade(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[oportunidades] GetOportunidade escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 		return
 	}
 
@@ -90,6 +120,11 @@ func (h *OportunidadeHandler) GetOportunidade(w http.ResponseWriter, r *http.Req
 		}
 		log.Printf("[oportunidades] GetOportunidade: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	if scope.Restrito && !scope.PermiteVendedor(oportunidade.VendedorID) {
+		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 		return
 	}
 
@@ -167,14 +202,44 @@ func oportunidadeErroParaStatus(err error) (status int, msg string, ok bool) {
 // "data_fechamento": "AAAA-MM-DD" (opcional), "ciclo_dias": number (opcional),
 // "motivo_perda": string (obrigatório se etapa = "Fechado perdido") }
 // Retorna: 201 com a oportunidade criada.
-// Acesso admin only.
+// Acesso comum: usuário role=normal só pode criar oportunidade para a
+// própria carteira (vendedor_id do payload é ignorado e forçado ao vendedor
+// vinculado; cliente_id deve pertencer à carteira ativa desse vendedor).
 func (h *OportunidadeHandler) CreateOportunidade(w http.ResponseWriter, r *http.Request) {
 	role, _ := middleware.GetRole(r.Context())
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[oportunidades] CreateOportunidade escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusForbidden, nil, "usuário sem vendedor vinculado")
+		return
+	}
 
 	var req CreateOportunidadeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
+	}
+
+	if scope.Restrito {
+		// Usuário role=normal: nunca confia no vendedor_id do payload — força
+		// à própria carteira (evita forjar registro para outro vendedor).
+		req.VendedorID = scope.VendedorID
+
+		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		if err != nil {
+			log.Printf("[oportunidades] CreateOportunidade checar carteira: %v", err)
+			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+			return
+		}
+		if !pertence {
+			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
+			return
+		}
 	}
 
 	input := services.OportunidadeInput{
@@ -210,7 +275,9 @@ func (h *OportunidadeHandler) CreateOportunidade(w http.ResponseWriter, r *http.
 // Body: igual ao de CreateOportunidade (data_abertura obrigatório na edição).
 // Retorna: 200 com a oportunidade atualizada, 404 se não existir, 400 se o
 // payload for inválido.
-// Acesso admin only.
+// Acesso comum: usuário role=normal só pode atualizar oportunidade da
+// própria carteira (404 se pertencer a outro vendedor) e não pode reatribuir
+// vendedor_id para outro vendedor.
 func (h *OportunidadeHandler) UpdateOportunidade(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -218,10 +285,53 @@ func (h *OportunidadeHandler) UpdateOportunidade(w http.ResponseWriter, r *http.
 		return
 	}
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[oportunidades] UpdateOportunidade escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
+		return
+	}
+
+	atual, err := h.svc.GetOportunidadeByID(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, services.ErrOportunidadeNaoEncontrada) {
+			writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
+			return
+		}
+		log.Printf("[oportunidades] UpdateOportunidade buscar atual: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.Restrito && !scope.PermiteVendedor(atual.VendedorID) {
+		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
+		return
+	}
+
 	var req UpdateOportunidadeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
+	}
+
+	if scope.Restrito {
+		// Usuário role=normal: nunca confia no vendedor_id do payload — força
+		// à própria carteira (evita reatribuir o registro a outro vendedor).
+		req.VendedorID = scope.VendedorID
+
+		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		if err != nil {
+			log.Printf("[oportunidades] UpdateOportunidade checar carteira: %v", err)
+			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+			return
+		}
+		if !pertence {
+			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
+			return
+		}
 	}
 
 	input := services.OportunidadeInput{
