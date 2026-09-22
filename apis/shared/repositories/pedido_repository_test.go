@@ -47,7 +47,7 @@ func TestPedidoList_SemFiltro(t *testing.T) {
 		AddRow(pedidoRow(202, 1, 1, now, "online", "aprovado", 300.0, now, now, "Cliente A", "Vendedor A")...).
 		AddRow(pedidoRow(201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...)
 
-	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT .+ `+pedidoFromRegexp+` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
@@ -183,7 +183,7 @@ func TestPedidoList_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pedidoFromRegexp).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-			mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp + ` ` + tt.orderRegexp + ` LIMIT \? OFFSET \?`).
+			mock.ExpectQuery(`SELECT .+ `+pedidoFromRegexp+` `+tt.orderRegexp+` LIMIT \? OFFSET \?`).
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(pedidoColumns))
 
@@ -218,7 +218,7 @@ func TestPedidoList_QueryError(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pedidoFromRegexp).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp).
+	mock.ExpectQuery(`SELECT .+ `+pedidoFromRegexp).
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
@@ -237,7 +237,7 @@ func TestPedidoList_IterError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pedidoFromRegexp).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
 	now := time.Now()
-	mock.ExpectQuery(`SELECT .+ ` + pedidoFromRegexp).
+	mock.ExpectQuery(`SELECT .+ `+pedidoFromRegexp).
 		WithArgs(10, 0).
 		WillReturnRows(sqlmock.NewRows(pedidoColumns).
 			AddRow(pedidoRow(201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...).
@@ -538,6 +538,13 @@ func TestPedidoCreateComItens_ErroInsertItem(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// itensAtuaisColumns/Regexp seguem o SELECT usado por listItensByPedidoIDTx
+// (chamado dentro da tx de UpdateComItens para comparar itens atuais x payload).
+var itensAtuaisColumns = []string{"produto_id", "quantidade", "preco_praticado", "desconto_pct"}
+
+const selectStatusForUpdateRegexp = `SELECT status FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
+const selectItensAtuaisTxRegexp = `SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido WHERE pedido_id = \? ORDER BY item_id_origem ASC`
+
 func TestPedidoUpdateComItens_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
@@ -549,6 +556,12 @@ func TestPedidoUpdateComItens_Success(t *testing.T) {
 	}
 
 	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+	mock.ExpectQuery(selectItensAtuaisTxRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))
 	mock.ExpectExec("UPDATE pedidos").
 		WithArgs(p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -576,8 +589,9 @@ func TestPedidoUpdateComItens_NotFound(t *testing.T) {
 	p := &models.Pedido{}
 
 	mock.ExpectBegin()
-	mock.ExpectExec("UPDATE pedidos").
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(selectStatusForUpdateRegexp).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
 	repo := repositories.NewPedidoRepository()
@@ -595,6 +609,12 @@ func TestPedidoUpdateComItens_ErroUpdate(t *testing.T) {
 	p := &models.Pedido{}
 
 	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+	mock.ExpectQuery(selectItensAtuaisTxRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))
 	mock.ExpectExec("UPDATE pedidos").
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
@@ -614,6 +634,12 @@ func TestPedidoUpdateComItens_ErroDelete(t *testing.T) {
 	p := &models.Pedido{}
 
 	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+	mock.ExpectQuery(selectItensAtuaisTxRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))
 	mock.ExpectExec("UPDATE pedidos").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`DELETE FROM itens_pedido WHERE pedido_id = \?`).
@@ -623,6 +649,152 @@ func TestPedidoUpdateComItens_ErroDelete(t *testing.T) {
 	repo := repositories.NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.UpdateComItens(ctx, db, 1, p, nil)
+
+	assert.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPedidoUpdateComItens_TransicaoParaFaturado_BaixaEstoque(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	now := time.Now()
+	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
+	itens := []models.ItemPedido{
+		{ProdutoID: 2, Quantidade: 4, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 200.0},
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+	mock.ExpectQuery(selectItensAtuaisTxRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))
+	mock.ExpectExec("UPDATE pedidos").
+		WithArgs(p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal, int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`DELETE FROM itens_pedido WHERE pedido_id = \?`).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO itens_pedido").
+		WithArgs(int64(1), int64(2), 4, 50.0, 0.0, 200.0).
+		WillReturnResult(sqlmock.NewResult(30, 1))
+	// baixa de estoque: resolve sku pelo produto_id, depois ajusta saldo.
+	mock.ExpectQuery(`SELECT sku FROM produtos WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"sku"}).AddRow("SKU2"))
+	mock.ExpectQuery(`SELECT id FROM estoque WHERE data_snapshot = \? AND sku = \? FOR UPDATE`).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectExec("INSERT INTO estoque").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	repo := repositories.NewPedidoRepository()
+	ctx := context.Background()
+	err := repo.UpdateComItens(ctx, db, 1, p, itens)
+
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPedidoUpdateComItens_ReenvioFaturadoIdempotente_NaoBaixaEstoqueDeNovo(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	now := time.Now()
+	itens := []models.ItemPedido{
+		{ProdutoID: 2, Quantidade: 4, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 200.0},
+	}
+	// payload igual aos itens já persistidos (mesmo produto/qtd/preco/desconto).
+	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Faturado"))
+	mock.ExpectQuery(selectItensAtuaisTxRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns).
+			AddRow(int64(2), 4, 50.0, 0.0))
+	mock.ExpectExec("UPDATE pedidos").
+		WithArgs(p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal, int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	// pedido já estava Faturado: não reescreve itens_pedido (sem DELETE/INSERT)
+	// nem dispara baixa de estoque novamente (statusAtual já era Faturado).
+	mock.ExpectCommit()
+
+	repo := repositories.NewPedidoRepository()
+	ctx := context.Background()
+	err := repo.UpdateComItens(ctx, db, 1, p, itens)
+
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPedidoUpdateComItens_FaturadoTentaAlterarItens_Erro(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	now := time.Now()
+	// payload com item DIFERENTE do persistido (quantidade mudou).
+	itens := []models.ItemPedido{
+		{ProdutoID: 2, Quantidade: 99, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 200.0},
+	}
+	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Faturado"))
+	mock.ExpectQuery(selectItensAtuaisTxRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns).
+			AddRow(int64(2), 4, 50.0, 0.0))
+	mock.ExpectRollback()
+
+	repo := repositories.NewPedidoRepository()
+	ctx := context.Background()
+	err := repo.UpdateComItens(ctx, db, 1, p, itens)
+
+	assert.ErrorIs(t, err, repositories.ErrPedidoJaFaturadoNaoPodeAlterarItens)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPedidoUpdateComItens_ErroBaixaEstoque_RollbackTudo(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	now := time.Now()
+	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
+	itens := []models.ItemPedido{
+		{ProdutoID: 2, Quantidade: 4, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 200.0},
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+	mock.ExpectQuery(selectItensAtuaisTxRegexp).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))
+	mock.ExpectExec("UPDATE pedidos").
+		WithArgs(p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal, int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`DELETE FROM itens_pedido WHERE pedido_id = \?`).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO itens_pedido").
+		WithArgs(int64(1), int64(2), 4, 50.0, 0.0, 200.0).
+		WillReturnResult(sqlmock.NewResult(30, 1))
+	mock.ExpectQuery(`SELECT sku FROM produtos WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectRollback()
+
+	repo := repositories.NewPedidoRepository()
+	ctx := context.Background()
+	err := repo.UpdateComItens(ctx, db, 1, p, itens)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

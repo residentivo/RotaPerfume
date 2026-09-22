@@ -639,13 +639,13 @@ func carteiraVinculoRowEncerrado(carteiraIDOrigem, clienteID, vendedorID int64) 
 
 func TestVendedorService_VincularCliente(t *testing.T) {
 	testCases := []struct {
-		nome        string
-		vendedorID  int64
-		clienteID   int64
-		mock        func(mock sqlmock.Sqlmock)
-		wantErr     error
-		checkErr    func(t *testing.T, err error)
-		wantVendID  int64
+		nome       string
+		vendedorID int64
+		clienteID  int64
+		mock       func(mock sqlmock.Sqlmock)
+		wantErr    error
+		checkErr   func(t *testing.T, err error)
+		wantVendID int64
 	}{
 		{
 			nome:       "sucesso simples - cliente sem vínculo anterior",

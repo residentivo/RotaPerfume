@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/services"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 )
 
 // config de teste com segredo fixo.

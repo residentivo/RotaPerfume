@@ -523,3 +523,52 @@ export interface ListVisitasResponse {
   total: number;
   pages: number;
 }
+
+// === Estoque ===
+//
+// Tela de acesso comum para leitura (qualquer usuário autenticado); criar e
+// editar são admin-only — ver apis/rotaperfumes-api/handlers/estoque_handler.go
+// (rota /api/estoque).
+
+export type EstoqueOrigem = "import_csv" | "faturamento" | "manual";
+
+// Estoque, como retornado por GET /api/estoque e GET /api/estoque/{id}.
+// Sem data_de/data_ate no filtro da listagem, a API devolve a última
+// posição de estoque de cada SKU; com data_de/data_ate, devolve apenas o
+// último movimento de cada SKU dentro do período informado.
+export interface Estoque {
+  id: number;
+  data_snapshot: string; // formato AAAA-MM-DD
+  sku: string;
+  saldo: number;
+  ruptura: boolean;
+  origem: EstoqueOrigem;
+  created_at: string;
+  updated_at: string;
+}
+
+// Payload de POST /api/estoque (criar, admin only). ruptura NÃO é enviado —
+// é derivado automaticamente pelo backend a partir do saldo.
+// Payload de PUT /api/estoque/{id} (editar, admin only) usa apenas `saldo`
+// (sku e data_snapshot não são editáveis após a criação).
+export interface EstoqueInput {
+  sku: string;
+  data_snapshot: string; // formato AAAA-MM-DD
+  saldo: number;
+}
+
+// Filtros aceitos por GET /api/estoque.
+export interface ListEstoqueFilters {
+  sku?: string;
+  data_de?: string; // formato AAAA-MM-DD
+  data_ate?: string; // formato AAAA-MM-DD
+  ruptura?: boolean;
+}
+
+export interface ListEstoqueResponse {
+  data: Estoque[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}

@@ -68,7 +68,7 @@ func TestProdutoService_ListProdutos(t *testing.T) {
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos`).
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-				mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos ORDER BY id ASC LIMIT \? OFFSET \?`).
+				mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos ORDER BY id ASC LIMIT \? OFFSET \?`).
 					WithArgs(20, 0).
 					WillReturnRows(produtoRows())
 			},
@@ -84,7 +84,7 @@ func TestProdutoService_ListProdutos(t *testing.T) {
 				mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\)`).
 					WithArgs("Perfumaria", "Marca X", true, "%Teste%", "%Teste%").
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
-				mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\) ORDER BY id ASC LIMIT \? OFFSET \?`).
+				mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\) ORDER BY id ASC LIMIT \? OFFSET \?`).
 					WithArgs("Perfumaria", "Marca X", true, "%Teste%", "%Teste%", 10, 10).
 					WillReturnRows(produtoRows())
 			},

@@ -27,6 +27,10 @@ var (
 	ErrQuantidadeInvalida     = errors.New("quantidade deve ser maior que zero em todos os itens")
 	ErrPrecoPraticadoInvalido = errors.New("preco_praticado deve ser maior ou igual a zero em todos os itens")
 	ErrDescontoPctInvalido    = errors.New("desconto_pct deve estar entre 0 e 100 em todos os itens")
+	// ErrPedidoJaFaturadoNaoPodeAlterarItens espelha
+	// repositories.ErrPedidoJaFaturadoNaoPodeAlterarItens para uso em
+	// handlers, sem expor o pacote repositories diretamente.
+	ErrPedidoJaFaturadoNaoPodeAlterarItens = repositories.ErrPedidoJaFaturadoNaoPodeAlterarItens
 )
 
 // dataPedidoLayout é o formato aceito para o campo data_pedido no payload de

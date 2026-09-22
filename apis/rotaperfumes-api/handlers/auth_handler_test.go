@@ -135,9 +135,10 @@ func setupTestServerWithAuthHandler(t *testing.T) (*httptest.Server, *sql.DB, sq
 	pagamentoHandler := handlers.NewPagamentoHandler(db, cfg)
 	oportunidadeHandler := handlers.NewOportunidadeHandler(db, cfg)
 	visitaHandler := handlers.NewVisitaHandler(db, cfg)
+	estoqueHandler := handlers.NewEstoqueHandler(db, cfg)
 
 	// Router real com middlewares corretos
-	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler, visitaHandler)
+	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler, visitaHandler, estoqueHandler)
 
 	server := httptest.NewServer(mux)
 	return server, db, mock, authHandler

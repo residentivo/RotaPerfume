@@ -46,7 +46,7 @@ func TestListProdutos_Success_Admin(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos ORDER BY id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos ORDER BY id ASC LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
 		WillReturnRows(produtoRowsForHandler())
 
@@ -78,7 +78,7 @@ func TestListProdutos_PermitidoParaNaoAdmin(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos ORDER BY id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos ORDER BY id ASC LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
 		WillReturnRows(produtoRowsForHandler())
 
@@ -107,7 +107,7 @@ func TestListProdutos_ComFiltros(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\)`).
 		WithArgs("Perfumaria", "Marca X", true, "%Perfume%", "%Perfume%").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\) ORDER BY id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\) ORDER BY id ASC LIMIT \? OFFSET \?`).
 		WithArgs("Perfumaria", "Marca X", true, "%Perfume%", "%Perfume%", 20, 0).
 		WillReturnRows(produtoRowsForHandler())
 
@@ -145,7 +145,7 @@ func TestListProdutos_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos`).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-			mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos ` + tc.orderRegexp + ` LIMIT \? OFFSET \?`).
+			mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos `+tc.orderRegexp+` LIMIT \? OFFSET \?`).
 				WithArgs(20, 0).
 				WillReturnRows(produtoRowsForHandler())
 

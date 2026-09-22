@@ -11,14 +11,14 @@ import (
 
 // SenhaHistorico representa um registro de auditoria de alteração de senha.
 type SenhaHistorico struct {
-	ID                 int64
-	UsuarioID          int64
-	ResetadoPorID      sql.NullInt64
-	SenhaHashAnterior  string
-	IPOrigem           string
-	UserAgent          string
-	TipoReset          string // "usuario" | "admin" | "primeiro_acesso" | "esquecimento"
-	CreatedAt          time.Time
+	ID                int64
+	UsuarioID         int64
+	ResetadoPorID     sql.NullInt64
+	SenhaHashAnterior string
+	IPOrigem          string
+	UserAgent         string
+	TipoReset         string // "usuario" | "admin" | "primeiro_acesso" | "esquecimento"
+	CreatedAt         time.Time
 }
 
 // NewSenhaHistoricoRepository cria um repositório stateless.

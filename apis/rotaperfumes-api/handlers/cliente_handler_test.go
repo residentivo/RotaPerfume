@@ -45,7 +45,7 @@ func TestListClientes_Success_Admin(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+clienteColunasRegex+` FROM clientes ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
 		WillReturnRows(clienteRowsForHandler())
 
@@ -89,7 +89,7 @@ func TestListClientes_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes`).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-			mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes ` + tc.orderRegexp + ` LIMIT \? OFFSET \?`).
+			mock.ExpectQuery(`SELECT `+clienteColunasRegex+` FROM clientes `+tc.orderRegexp+` LIMIT \? OFFSET \?`).
 				WithArgs(20, 0).
 				WillReturnRows(clienteRowsForHandler())
 
@@ -120,7 +120,7 @@ func TestListClientes_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\)`).
 		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\) ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+clienteColunasRegex+` FROM clientes WHERE cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\) ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
 		WithArgs(int64(10), 20, 0).
 		WillReturnRows(clienteRowsForHandler())
 
@@ -149,7 +149,7 @@ func TestListClientes_ComFiltros(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE uf = \? AND segmento = \? AND ativo = \? AND \(razao_social LIKE \? OR cnpj LIKE \?\)`).
 		WithArgs("SP", "varejo", true, "%Empresa%", "%Empresa%").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE uf = \? AND segmento = \? AND ativo = \? AND \(razao_social LIKE \? OR cnpj LIKE \?\) ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+clienteColunasRegex+` FROM clientes WHERE uf = \? AND segmento = \? AND ativo = \? AND \(razao_social LIKE \? OR cnpj LIKE \?\) ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
 		WithArgs("SP", "varejo", true, "%Empresa%", "%Empresa%", 20, 0).
 		WillReturnRows(clienteRowsForHandler())
 

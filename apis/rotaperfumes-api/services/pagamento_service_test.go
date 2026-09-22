@@ -87,7 +87,7 @@ func TestPagamentoService_ListPagamentos(t *testing.T) {
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegex).
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-				mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
+				mock.ExpectQuery(`SELECT `+pagamentoColunasRegex+pagamentoFromRegex+` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
 					WithArgs(20, 0).
 					WillReturnRows(pagamentoRows(1, 1, 100.0))
 			},
@@ -107,10 +107,10 @@ func TestPagamentoService_ListPagamentos(t *testing.T) {
 			limit: 10,
 			mock: func(mock sqlmock.Sqlmock) {
 				whereRegex := ` WHERE status_pagamento = \? AND forma_pagamento = \? AND pedido_id = \? AND data_vencimento >= \? AND data_vencimento <= \?`
-				mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegex + whereRegex).
+				mock.ExpectQuery(`SELECT COUNT\(\*\)`+pagamentoFromRegex+whereRegex).
 					WithArgs("Pago", "PIX", int64(5), "2024-01-01", "2024-01-31").
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
-				mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + whereRegex + ` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
+				mock.ExpectQuery(`SELECT `+pagamentoColunasRegex+pagamentoFromRegex+whereRegex+` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
 					WithArgs("Pago", "PIX", int64(5), "2024-01-01", "2024-01-31", 10, 10).
 					WillReturnRows(pagamentoRows(1, 5, 100.0))
 			},

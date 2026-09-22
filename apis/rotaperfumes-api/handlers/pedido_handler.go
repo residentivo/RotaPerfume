@@ -215,6 +215,8 @@ func pedidoErroParaStatus(err error) (status int, msg string, ok bool) {
 		return http.StatusBadRequest, "preco_praticado deve ser maior ou igual a zero em todos os itens", true
 	case errors.Is(err, services.ErrDescontoPctInvalido):
 		return http.StatusBadRequest, "desconto_pct deve estar entre 0 e 100 em todos os itens", true
+	case errors.Is(err, services.ErrPedidoJaFaturadoNaoPodeAlterarItens):
+		return http.StatusConflict, "pedido já faturado: não é possível alterar os itens, apenas o status", true
 	default:
 		return 0, "", false
 	}

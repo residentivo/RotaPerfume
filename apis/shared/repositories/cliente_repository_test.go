@@ -93,7 +93,7 @@ func TestClienteList_FiltroVendedorID(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
 
 	now := time.Now()
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegexp + ` FROM clientes ` + whereRegexp + ` ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+clienteColunasRegexp+` FROM clientes `+whereRegexp+` ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
 		WithArgs(int64(7), 10, 0).
 		WillReturnRows(sqlmock.NewRows(clienteRepoColumns).
 			AddRow(int64(1), "12345678000199", "Empresa Teste", "varejo", "SP", "SP", "Centro", now, true, now, now))
@@ -116,7 +116,7 @@ func TestClienteList_SemFiltroVendedorID(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes$`).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegexp + ` FROM clientes ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+clienteColunasRegexp+` FROM clientes ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
 		WithArgs(10, 0).
 		WillReturnRows(sqlmock.NewRows(clienteRepoColumns))
 

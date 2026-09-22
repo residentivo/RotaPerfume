@@ -4,6 +4,26 @@
 
 ---
 
+## Controle de Estoque — 2026-09-22
+**Agentes:** 🟣 SecBrain → 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Descrição:** Nova feature de controle de estoque, baseada em `dados/erp/estoque.csv`: série temporal de snapshots diários de saldo por SKU, com CRUD igual às demais páginas, baixa automática de saldo ao faturar um pedido, e tela dedicada.
+
+**Entregue:**
+- **Banco (`sql/17_ddl_estoque.sql`):** tabela `estoque` (`id, data_snapshot DATE, sku FK->produtos.sku, saldo INT, ruptura TINYINT(1) derivado de saldo<=0, origem ENUM('import_csv','faturamento','manual'), created_at, updated_at`), `UNIQUE (data_snapshot, sku)`.
+- **Importador:** `apis/shared/cmd/importestoque` (`make db-import-estoque`), upsert idempotente por `(data_snapshot, sku)` a partir de `dados/erp/estoque.csv`, `origem=import_csv`.
+- **API REST** (`/api/estoque`, JWT obrigatório): `GET /api/estoque` e `GET /api/estoque/{id}` — **acesso comum**; `POST /api/estoque` e `PUT /api/estoque/{id}` — **admin only**. `GET /api/estoque` sem `data_de`/`data_ate` retorna a última posição por SKU; com o intervalo, retorna o último movimento do período por SKU; `historico=true` traz a série completa.
+- **Hook de faturamento:** `PUT /api/pedidos/{id}` com transição de status para "Faturado" decrementa automaticamente o saldo de cada item do pedido (dentro da mesma transação de `UpdateComItens`, com `SELECT ... FOR UPDATE`), `origem=faturamento`. Idempotente; bloqueia edição de itens de pedido já faturado (HTTP 409).
+- **Frontend:** `frontend/src/app/admin/estoque/page.tsx` + `components/admin/EstoqueModal.tsx` — listagem com busca por SKU, filtro por data e ruptura, sort, paginação, modal de criar/editar restrito a admins (usuários comuns só visualizam).
+- **Testes:** cobertura completa (repository/service/handler/importador + hook de faturamento), incluindo correção dos testes existentes de pedido quebrados pela nova trava transacional. `go test ./...` 100% verde.
+- **Documentação (🔵 SubBrain):** `postman/collection.json` — nova pasta "Estoque" com os 4 endpoints (listar, detalhe, criar, editar), exemplos de request/response e nota de acesso comum (GET) vs. admin only (POST/PUT). `postman/README.md` — nova seção "Estoque (`/api/estoque/*`)" em Endpoints, seção "Importação de estoque (ERP)" em "Subindo o ambiente", testes automatizados e tabela de resumo atualizados.
+
+**Nota importante (decisão de negócio, não bug):** a baixa de estoque no faturamento usa a data/hora atual do servidor (`time.Now()`) como `data_snapshot`, e não a data de criação do pedido — o snapshot reflete o dia em que o faturamento efetivamente ocorreu. Identificado pelo 🔴 TestBrain e registrado conscientemente.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## CAPTCHA (Cloudflare Turnstile) em Login e Troca de Senha — 2026-09-22
 **Agentes:** 🟣 SecBrain (revisão) → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
 

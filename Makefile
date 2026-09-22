@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -94,7 +94,10 @@ db-import-oportunidades: ## Importa dados/crm/oportunidades.csv para a tabela op
 db-import-visitas: ## Importa dados/crm/visitas.csv para a tabela visitas (upsert idempotente, depende de clientes e vendedores já importados)
 	cd apis/shared && go run ./cmd/importvisitas
 
-db-rebuild: db-down db-seed db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas ## Recria o banco do zero e importa todos os dados
+db-import-estoque: ## Importa dados/erp/estoque.csv para a tabela estoque (upsert idempotente, depende de produtos já importados)
+	cd apis/shared && go run ./cmd/importestoque
+
+db-rebuild: db-down db-seed db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque ## Recria o banco do zero e importa todos os dados
 
 db-export: ## Exporta as tabelas do banco para CSV em export/crm e export/erp (mesmo formato de dados/)
 	cd apis/shared && go run ./cmd/exportdados

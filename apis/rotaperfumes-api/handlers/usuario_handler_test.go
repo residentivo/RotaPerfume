@@ -44,7 +44,7 @@ func TestListUsuarios_Success(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM usuarios`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(usuarioSelectRegex + `\s+ORDER BY u\.id ASC\s+LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(usuarioSelectRegex+`\s+ORDER BY u\.id ASC\s+LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
 		WillReturnRows(usuarioRowsForHandler(1, true))
 
@@ -90,7 +90,7 @@ func TestListUsuarios_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM usuarios`).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-			mock.ExpectQuery(usuarioSelectRegex + `\s+` + tc.orderRegexp + `\s+LIMIT \? OFFSET \?`).
+			mock.ExpectQuery(usuarioSelectRegex+`\s+`+tc.orderRegexp+`\s+LIMIT \? OFFSET \?`).
 				WithArgs(20, 0).
 				WillReturnRows(usuarioRowsForHandler(1, true))
 

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rotaperfumes/shared/models"
 )
@@ -22,6 +23,17 @@ type PedidoRepository struct{}
 func NewPedidoRepository() *PedidoRepository {
 	return &PedidoRepository{}
 }
+
+// statusFaturado é o valor do ENUM status (sql/04_ddl_pedidos.sql) que
+// dispara a baixa automática de estoque em UpdateComItens.
+const statusFaturado = "Faturado"
+
+// ErrPedidoJaFaturadoNaoPodeAlterarItens é retornado por UpdateComItens
+// quando o pedido já está com status "Faturado" e o payload tenta alterar a
+// lista de itens/quantidades (permitido apenas mudar o status, ex. para
+// "Entregue") — exigência do SecBrain para não dessincronizar itens_pedido
+// do estoque já baixado.
+var ErrPedidoJaFaturadoNaoPodeAlterarItens = errors.New("pedido já faturado: não é possível alterar os itens, apenas o status")
 
 // PedidoListagem representa um pedido enriquecido com o nome do cliente e do
 // vendedor (via JOIN), usado na listagem e no cabeçalho do detalhe.
@@ -264,12 +276,45 @@ func (r *PedidoRepository) CreateComItens(ctx context.Context, db *sql.DB, p *mo
 // UpdateComItens atualiza o cabeçalho de um pedido existente e substitui
 // integralmente a lista de itens (delete + insert), em uma única transação.
 // Retorna ErrNotFound se o pedido não existir.
+//
+// Regras adicionais (exigência do SecBrain 🟣), todas dentro da MESMA
+// transação:
+//   - Lê o status ATUAL do pedido com SELECT ... FOR UPDATE (serializa
+//     concorrência) antes de decidir o que fazer.
+//   - Se o pedido já está "Faturado" e o payload tenta alterar os itens
+//     (produto/quantidade/preço/desconto), retorna
+//     ErrPedidoJaFaturadoNaoPodeAlterarItens sem persistir nada — apenas
+//     mudança de status é permitida para pedidos já faturados.
+//   - Dispara a baixa de estoque (EstoqueRepository.AjustarSaldoPorFaturamento,
+//     dentro da mesma tx) somente na transição status_atual != "Faturado" AND
+//     novo_status == "Faturado" — reenvios idempotentes (pedido já faturado
+//     recebendo novamente status "Faturado") não baixam estoque de novo. Se a
+//     baixa falhar, a transação inteira é revertida (rollback do faturamento).
 func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id int64, p *models.Pedido, itens []models.ItemPedido) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("repositories: begin tx update pedido: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
+
+	var statusAtual string
+	err = tx.QueryRowContext(ctx, `SELECT status FROM pedidos WHERE pedido_id_origem = ? FOR UPDATE`, id).Scan(&statusAtual)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("repositories: lock pedido para update: %w", err)
+	}
+
+	itensAtuais, err := listItensByPedidoIDTx(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	itensAlterados := !itensIguais(itensAtuais, itens)
+
+	if statusAtual == statusFaturado && itensAlterados {
+		return ErrPedidoJaFaturadoNaoPodeAlterarItens
+	}
 
 	const updatePedido = `
 		UPDATE pedidos
@@ -289,18 +334,100 @@ func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id in
 		return ErrNotFound
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM itens_pedido WHERE pedido_id = ?`, id); err != nil {
-		return fmt.Errorf("repositories: delete itens_pedido: %w", err)
+	// Pedido já faturado: itens não podem ser reescritos (checado acima),
+	// então preserva as linhas de itens_pedido como estão (mesmo
+	// item_id_origem/created_at) — apenas o cabeçalho do pedido (ex: status)
+	// foi atualizado.
+	if statusAtual != statusFaturado {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM itens_pedido WHERE pedido_id = ?`, id); err != nil {
+			return fmt.Errorf("repositories: delete itens_pedido: %w", err)
+		}
+
+		if err := insertItensTx(ctx, tx, id, itens); err != nil {
+			return err
+		}
 	}
 
-	if err := insertItensTx(ctx, tx, id, itens); err != nil {
-		return err
+	// Baixa de estoque automática na transição para "Faturado" (idempotente:
+	// só dispara se o pedido NÃO estava faturado antes).
+	if statusAtual != statusFaturado && p.Status == statusFaturado {
+		estoqueRepo := NewEstoqueRepository()
+		dataFaturamento := time.Now()
+		for _, it := range itens {
+			sku, err := skuPorProdutoIDTx(ctx, tx, it.ProdutoID)
+			if err != nil {
+				return err
+			}
+			if err := estoqueRepo.AjustarSaldoPorFaturamento(ctx, tx, sku, dataFaturamento, it.Quantidade); err != nil {
+				return fmt.Errorf("repositories: baixa de estoque no faturamento do pedido %d: %w", id, err)
+			}
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("repositories: commit update pedido: %w", err)
 	}
 	return nil
+}
+
+// skuPorProdutoIDTx busca o sku de um produto pelo id, dentro da transação
+// informada. Usado pela baixa automática de estoque no faturamento (a tabela
+// estoque referencia produtos por sku, não por id).
+func skuPorProdutoIDTx(ctx context.Context, tx *sql.Tx, produtoID int64) (string, error) {
+	var sku string
+	err := tx.QueryRowContext(ctx, `SELECT sku FROM produtos WHERE id = ? LIMIT 1`, produtoID).Scan(&sku)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("repositories: produto_id %d não encontrado para baixa de estoque", produtoID)
+		}
+		return "", fmt.Errorf("repositories: sku por produto_id: %w", err)
+	}
+	return sku, nil
+}
+
+// listItensByPedidoIDTx é igual a ListItensByPedidoID, mas roda dentro de
+// uma transação (*sql.Tx) — usado por UpdateComItens para comparar os itens
+// atuais com o payload recebido antes de decidir se a reescrita de itens é
+// permitida.
+func listItensByPedidoIDTx(ctx context.Context, tx *sql.Tx, pedidoID int64) ([]models.ItemPedido, error) {
+	const q = `SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido WHERE pedido_id = ? ORDER BY item_id_origem ASC`
+	rows, err := tx.QueryContext(ctx, q, pedidoID)
+	if err != nil {
+		return nil, fmt.Errorf("repositories: list itens_pedido (tx): %w", err)
+	}
+	defer rows.Close()
+
+	var out []models.ItemPedido
+	for rows.Next() {
+		var it models.ItemPedido
+		if err := rows.Scan(&it.ProdutoID, &it.Quantidade, &it.PrecoPraticado, &it.DescontoPct); err != nil {
+			return nil, fmt.Errorf("repositories: scan itens_pedido (tx): %w", err)
+		}
+		out = append(out, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repositories: list itens_pedido (tx) iteração: %w", err)
+	}
+	return out, nil
+}
+
+// itensIguais compara duas listas de itens de pedido por conteúdo de
+// negócio (produto_id, quantidade, preco_praticado, desconto_pct), ignorando
+// ids/timestamps — usado para detectar se um update de pedido está tentando
+// alterar os itens de um pedido já faturado.
+func itensIguais(a, b []models.ItemPedido) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ProdutoID != b[i].ProdutoID ||
+			a[i].Quantidade != b[i].Quantidade ||
+			a[i].PrecoPraticado != b[i].PrecoPraticado ||
+			a[i].DescontoPct != b[i].DescontoPct {
+			return false
+		}
+	}
+	return true
 }
 
 // insertItensTx insere os itens de um pedido dentro da transação informada.

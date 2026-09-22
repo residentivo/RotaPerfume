@@ -66,7 +66,7 @@ func TestListPagamentos_Success_UsuarioComum(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH + vendedorWhere).
 		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + vendedorWhere + ` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+pagamentoColunasRegexH+pagamentoFromRegexH+vendedorWhere+` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
 		WithArgs(int64(10), 20, 0).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 
@@ -115,7 +115,7 @@ func TestListPagamentos_OrderBy(t *testing.T) {
 			mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH + vendedorWhere).
 				WithArgs(int64(10)).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + vendedorWhere + ` ` + tc.orderRegexp + ` LIMIT \? OFFSET \?`).
+			mock.ExpectQuery(`SELECT `+pagamentoColunasRegexH+pagamentoFromRegexH+vendedorWhere+` `+tc.orderRegexp+` LIMIT \? OFFSET \?`).
 				WithArgs(int64(10), 20, 0).
 				WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 
@@ -141,10 +141,10 @@ func TestListPagamentos_ComFiltrosEPaginacao(t *testing.T) {
 	adminToken := generateToken(t, cfg, 1, "admin")
 
 	whereRegex := ` WHERE status_pagamento = \? AND forma_pagamento = \? AND pedido_id = \? AND data_vencimento >= \? AND data_vencimento <= \?`
-	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH + whereRegex).
+	mock.ExpectQuery(`SELECT COUNT\(\*\)`+pagamentoFromRegexH+whereRegex).
 		WithArgs("Pago", "PIX", int64(5), "2024-01-01", "2024-01-31").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(25))
-	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + whereRegex + ` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+pagamentoColunasRegexH+pagamentoFromRegexH+whereRegex+` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
 		WithArgs("Pago", "PIX", int64(5), "2024-01-01", "2024-01-31", 10, 10).
 		WillReturnRows(pagamentoRowsForHandler(1, 5, 200.0))
 

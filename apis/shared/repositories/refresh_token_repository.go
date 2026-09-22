@@ -14,13 +14,13 @@ import (
 
 // RefreshToken representa um token de refresh no banco.
 type RefreshToken struct {
-	ID           int64
-	UsuarioID    int64
-	TokenHash    string
-	ExpiresAt    time.Time
-	RevokedAt    sql.NullTime
-	IPOrigem     string
-	UserAgent    string
+	ID        int64
+	UsuarioID int64
+	TokenHash string
+	ExpiresAt time.Time
+	RevokedAt sql.NullTime
+	IPOrigem  string
+	UserAgent string
 }
 
 // NewRefreshTokenRepository cria um repositório stateless.

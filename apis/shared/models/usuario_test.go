@@ -35,7 +35,7 @@ func TestUsuarioIsAdmin(t *testing.T) {
 		}{
 			{"admin", true},
 			{"normal", false},
-			{"ADMIN", false},  // case sensitive
+			{"ADMIN", false}, // case sensitive
 			{"", false},
 			{" root", false},
 			{"Admin", false},

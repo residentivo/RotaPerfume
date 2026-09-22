@@ -5863,6 +5863,442 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Estoque",
+      "item": [
+        {
+          "name": "Listar Estoque (acesso comum)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Lista retornada', function() {",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "pm.test('Paginação presente', function() {",
+                  "    pm.expect(jsonData).to.have.property('pagination');",
+                  "    pm.expect(jsonData.pagination).to.have.property('page');",
+                  "    pm.expect(jsonData.pagination).to.have.property('limit');",
+                  "    pm.expect(jsonData.pagination).to.have.property('total');",
+                  "    pm.expect(jsonData.pagination).to.have.property('pages');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendedor_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/estoque?page=1&limit=20&sku=ROT-0001&ruptura=false",
+              "host": ["{{base_url}}"],
+              "path": ["api", "estoque"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número da página (padrão: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Itens por página (padrão: 20, máx: 100)"
+                },
+                {
+                  "key": "sku",
+                  "value": "ROT-0001",
+                  "description": "Filtro exato por SKU (opcional)"
+                },
+                {
+                  "key": "ruptura",
+                  "value": "false",
+                  "description": "true|false — filtra por ruptura. Qualquer outro valor (ou ausente) = sem filtro"
+                },
+                {
+                  "key": "data_de",
+                  "value": "2026-09-01",
+                  "disabled": true,
+                  "description": "Início do período (AAAA-MM-DD, opcional). Combinado com data_ate, retorna só o último movimento de cada SKU dentro do período."
+                },
+                {
+                  "key": "data_ate",
+                  "value": "2026-09-22",
+                  "disabled": true,
+                  "description": "Fim do período (AAAA-MM-DD, opcional)."
+                },
+                {
+                  "key": "historico",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "true — retorna a série temporal completa (todos os snapshots), em vez de apenas a última posição por SKU."
+                },
+                {
+                  "key": "order_by",
+                  "value": "data_snapshot",
+                  "disabled": true,
+                  "description": "Coluna de ordenação (opcional). Aceitos: id, sku, data_snapshot, saldo, ruptura, origem, created_at, updated_at. Default: data_snapshot."
+                },
+                {
+                  "key": "order_dir",
+                  "value": "desc",
+                  "disabled": true,
+                  "description": "Direção da ordenação (opcional): asc|desc, case-insensitive. Default: desc."
+                }
+              ]
+            },
+            "description": "Lista snapshots de estoque com paginação e filtros. **Acesso comum** — qualquer usuário autenticado (admin ou normal).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `sku` (string) — filtro exato\n- `data_de`/`data_ate` (`AAAA-MM-DD`) — intervalo de datas\n- `ruptura` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `historico` (`true`) — retorna a série temporal completa\n- `order_by`: id, sku, data_snapshot, saldo, ruptura, origem, created_at, updated_at. Default: data_snapshot.\n- `order_dir`: asc|desc, case-insensitive. Default: desc.\n\n**Comportamento por padrão (sem `data_de`/`data_ate` nem `historico`):** retorna a última posição de estoque de cada SKU (um registro por SKU, o snapshot mais recente).\n\n**Com `data_de`/`data_ate` (sem `historico`):** retorna apenas o último movimento de cada SKU dentro do período informado.\n\n**Com `historico=true`:** retorna a série temporal completa (todos os snapshots, sem agregação por SKU).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"data_snapshot\": \"2026-09-22\",\n      \"sku\": \"ROT-0001\",\n      \"saldo\": 120,\n      \"ruptura\": false,\n      \"origem\": \"import_csv\",\n      \"created_at\": \"2026-09-22T00:00:00Z\",\n      \"updated_at\": \"2026-09-22T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 293,\n    \"pages\": 15\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/estoque?page=1&limit=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"data_snapshot\": \"2026-09-22\",\n      \"sku\": \"ROT-0001\",\n      \"saldo\": 120,\n      \"ruptura\": false,\n      \"origem\": \"import_csv\",\n      \"created_at\": \"2026-09-22T00:00:00Z\",\n      \"updated_at\": \"2026-09-22T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 293,\n    \"pages\": 15\n  }\n}"
+            },
+            {
+              "name": "401 Unauthorized — Sem token",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/estoque",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque"]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"token ausente ou inválido\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Detalhe do Estoque (acesso comum)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Dados do estoque presentes', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data).to.have.property('sku');",
+                  "    pm.expect(jsonData.data).to.have.property('saldo');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendedor_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/estoque/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "estoque", "1"]
+            },
+            "description": "Retorna o detalhe de um snapshot de estoque pelo `id`. **Acesso comum.**\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0001\",\n    \"saldo\": 120,\n    \"ruptura\": false,\n    \"origem\": \"import_csv\",\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — snapshot não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/estoque/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0001\",\n    \"saldo\": 120,\n    \"ruptura\": false,\n    \"origem\": \"import_csv\",\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Snapshot inexistente",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/estoque/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"estoque não encontrado\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Criar Estoque (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Estoque criado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data.sku).to.eql('ROT-0002');",
+                  "    pm.expect(jsonData.data.origem).to.eql('manual');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"sku\": \"ROT-0002\",\n    \"data_snapshot\": \"2026-09-22\",\n    \"saldo\": 50\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/estoque",
+              "host": ["{{base_url}}"],
+              "path": ["api", "estoque"]
+            },
+            "description": "Cria um snapshot de estoque manual (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"sku\": \"ROT-0002\",\n  \"data_snapshot\": \"2026-09-22\",\n  \"saldo\": 50\n}\n```\n- `sku` deve existir em `produtos`.\n- `data_snapshot` obrigatório (`AAAA-MM-DD`).\n- `saldo` obrigatório (int).\n- `ruptura` é derivada automaticamente (`saldo <= 0`) — não é aceito no body.\n- `origem` é sempre `manual` nesta rota — não é aceito no body.\n- Respeita a constraint `UNIQUE (data_snapshot, sku)` — criar outro registro para o mesmo par retorna `400`.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 294,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0002\",\n    \"saldo\": 50,\n    \"ruptura\": false,\n    \"origem\": \"manual\",\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body inválido, `sku` inexistente em `produtos`, `data_snapshot` ausente/inválida, ou já existe snapshot para o par `(data_snapshot, sku)`\n- `401` — não autenticado\n- `403` — não é admin"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"sku\": \"ROT-0002\",\n    \"data_snapshot\": \"2026-09-22\",\n    \"saldo\": 50\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/estoque",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 294,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0002\",\n    \"saldo\": 50,\n    \"ruptura\": false,\n    \"origem\": \"manual\",\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "403 Forbidden — Não é admin",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"sku\": \"ROT-0002\",\n    \"data_snapshot\": \"2026-09-22\",\n    \"saldo\": 50\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/estoque",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque"]
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Editar Estoque (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Estoque atualizado com dados corretos', function() {",
+                  "    pm.expect(jsonData.data.saldo).to.eql(75);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"saldo\": 75\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/estoque/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "estoque", "1"]
+            },
+            "description": "Atualiza o saldo de um snapshot de estoque existente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"saldo\": 75\n}\n```\n- `sku` e `data_snapshot` são **imutáveis** por esta rota — não são aceitos no body.\n- `ruptura` é recalculada automaticamente (`saldo <= 0`).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0001\",\n    \"saldo\": 75,\n    \"ruptura\": false,\n    \"origem\": \"import_csv\",\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:10:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — snapshot não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"saldo\": 75\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/estoque/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque", "1"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0001\",\n    \"saldo\": 75,\n    \"ruptura\": false,\n    \"origem\": \"import_csv\",\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:10:00Z\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found — Snapshot inexistente",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"saldo\": 75\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/estoque/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"estoque não encontrado\"\n}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

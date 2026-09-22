@@ -147,7 +147,7 @@ func TestVisitaList_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM visitas").
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-			mock.ExpectQuery("SELECT .+ FROM visitas " + tt.orderRegexp + " LIMIT \\? OFFSET \\?").
+			mock.ExpectQuery("SELECT .+ FROM visitas "+tt.orderRegexp+" LIMIT \\? OFFSET \\?").
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(visitaColumns))
 

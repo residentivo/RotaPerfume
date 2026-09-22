@@ -12,6 +12,7 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/repositories"
 )
 
 func pedidoTestCfg(verbose bool) *config.Config {
@@ -107,7 +108,7 @@ func TestPedidoService_ListPedidos(t *testing.T) {
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(`SELECT COUNT\(\*\)` + pedidoFromRegex).
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-				mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
+				mock.ExpectQuery(`SELECT `+pedidoColunasRegex+pedidoFromRegex+` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
 					WithArgs(20, 0).
 					WillReturnRows(pedidoRows(1, 230.0))
 			},
@@ -124,10 +125,10 @@ func TestPedidoService_ListPedidos(t *testing.T) {
 			limit: 10,
 			mock: func(mock sqlmock.Sqlmock) {
 				whereRegex := ` WHERE p\.status = \? AND p\.canal = \? AND p\.cliente_id = \? AND p\.vendedor_id = \? AND p\.data_pedido >= \? AND p\.data_pedido <= \? AND c\.razao_social LIKE \?`
-				mock.ExpectQuery(`SELECT COUNT\(\*\)` + pedidoFromRegex + whereRegex).
+				mock.ExpectQuery(`SELECT COUNT\(\*\)`+pedidoFromRegex+whereRegex).
 					WithArgs("Faturado", "App", int64(1), int64(2), "2024-01-01", "2024-01-31", "%Teste%").
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
-				mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + whereRegex + ` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
+				mock.ExpectQuery(`SELECT `+pedidoColunasRegex+pedidoFromRegex+whereRegex+` ORDER BY p\.pedido_id_origem DESC LIMIT \? OFFSET \?`).
 					WithArgs("Faturado", "App", int64(1), int64(2), "2024-01-01", "2024-01-31", "%Teste%", 10, 10).
 					WillReturnRows(pedidoRows(1, 230.0))
 			},
@@ -462,10 +463,29 @@ func TestPedidoService_UpdatePedido_Validacoes(t *testing.T) {
 	}
 }
 
+// selectStatusForUpdateRegex/selectItensAtuaisTxRegex espelham as queries
+// executadas dentro da tx de PedidoRepository.UpdateComItens (SELECT status
+// ... FOR UPDATE + leitura dos itens atuais para comparação) — exigência do
+// SecBrain para faturamento idempotente/atômico.
+const selectStatusForUpdateRegex = `SELECT status FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
+const selectItensAtuaisTxRegex = `SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido WHERE pedido_id = \? ORDER BY item_id_origem ASC`
+
+func itensAtuaisRowsVazio() *sqlmock.Rows {
+	return sqlmock.NewRows([]string{"produto_id", "quantidade", "preco_praticado", "desconto_pct"})
+}
+
 func TestPedidoService_UpdatePedido_Sucesso(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
 
 	mock.ExpectBegin()
+	// statusAtual != "Faturado": update comum, reescreve itens e dispara a
+	// baixa de estoque automática (transição para "Faturado").
+	mock.ExpectQuery(selectStatusForUpdateRegex).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+	mock.ExpectQuery(selectItensAtuaisTxRegex).
+		WithArgs(int64(1)).
+		WillReturnRows(itensAtuaisRowsVazio())
 	mock.ExpectExec(`UPDATE pedidos\s+SET cliente_id = \?, vendedor_id = \?, data_pedido = \?, canal = \?, status = \?, valor_total = \?\s+WHERE pedido_id_origem = \?`).
 		WithArgs(int64(1), int64(2), sqlmock.AnyArg(), "App", "Faturado", 230.0, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -477,6 +497,21 @@ func TestPedidoService_UpdatePedido_Sucesso(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(`INSERT INTO itens_pedido \(pedido_id, produto_id, quantidade, preco_praticado, desconto_pct, valor_bruto\)`).
 		WithArgs(int64(1), int64(11), 1, 50.0, 0.0, 50.0).
+		WillReturnResult(sqlmock.NewResult(2, 1))
+	// baixa de estoque por item (resolve sku pelo produto_id, ajusta saldo).
+	mock.ExpectQuery(`SELECT sku FROM produtos WHERE id = \? LIMIT 1`).
+		WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"sku"}).AddRow("SKU10"))
+	mock.ExpectQuery(`SELECT id FROM estoque WHERE data_snapshot = \? AND sku = \? FOR UPDATE`).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectExec(`INSERT INTO estoque`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT sku FROM produtos WHERE id = \? LIMIT 1`).
+		WithArgs(int64(11)).
+		WillReturnRows(sqlmock.NewRows([]string{"sku"}).AddRow("SKU11"))
+	mock.ExpectQuery(`SELECT id FROM estoque WHERE data_snapshot = \? AND sku = \? FOR UPDATE`).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectExec(`INSERT INTO estoque`).
 		WillReturnResult(sqlmock.NewResult(2, 1))
 	mock.ExpectCommit()
 
@@ -500,9 +535,9 @@ func TestPedidoService_UpdatePedido_NaoEncontrado(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
 
 	mock.ExpectBegin()
-	mock.ExpectExec(`UPDATE pedidos\s+SET cliente_id = \?, vendedor_id = \?, data_pedido = \?, canal = \?, status = \?, valor_total = \?\s+WHERE pedido_id_origem = \?`).
-		WithArgs(int64(1), int64(2), sqlmock.AnyArg(), "App", "Faturado", 230.0, int64(999)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(selectStatusForUpdateRegex).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
 	svc := services.NewPedidoService(db, pedidoTestCfg(false))
@@ -516,6 +551,12 @@ func TestPedidoService_UpdatePedido_ErroGenericoDoRepo(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
 
 	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegex).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+	mock.ExpectQuery(selectItensAtuaisTxRegex).
+		WithArgs(int64(1)).
+		WillReturnRows(itensAtuaisRowsVazio())
 	mock.ExpectExec(`UPDATE pedidos\s+SET cliente_id = \?, vendedor_id = \?, data_pedido = \?, canal = \?, status = \?, valor_total = \?\s+WHERE pedido_id_origem = \?`).
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
@@ -525,5 +566,28 @@ func TestPedidoService_UpdatePedido_ErroGenericoDoRepo(t *testing.T) {
 	assert.Nil(t, p)
 	assert.Error(t, err)
 	assert.False(t, err == services.ErrPedidoNaoEncontrado)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestPedidoService_UpdatePedido_FaturadoTentaAlterarItens_Erro409 cobre a
+// regra do SecBrain: pedido já "Faturado" não pode ter os itens alterados
+// (apenas o status) — deve propagar o erro sentinela do repositório para o
+// handler mapear como HTTP 409.
+func TestPedidoService_UpdatePedido_FaturadoTentaAlterarItens_Erro409(t *testing.T) {
+	db, mock := newPedidoTestDB(t)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegex).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Faturado"))
+	mock.ExpectQuery(selectItensAtuaisTxRegex).
+		WithArgs(int64(1)).
+		WillReturnRows(itensAtuaisRowsVazio())
+	mock.ExpectRollback()
+
+	svc := services.NewPedidoService(db, pedidoTestCfg(false))
+	p, err := svc.UpdatePedido(context.Background(), db, 1, validPedidoInput())
+	assert.Nil(t, p)
+	assert.ErrorIs(t, err, repositories.ErrPedidoJaFaturadoNaoPodeAlterarItens)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

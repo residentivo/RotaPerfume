@@ -62,17 +62,17 @@ var dateLayouts = []string{"2006-01-02", "02/01/2006"}
 
 // oportunidadeRow é uma linha já normalizada do CSV, pronta para o upsert.
 type oportunidadeRow struct {
-	OportunidadeID    int64
-	ClienteIDOrigem   int64
-	VendedorID        int64
-	Origem            string
-	DataAbertura      time.Time
-	Etapa             string
-	ProbabilidadePct  float64
-	ValorEstimado     float64
-	DataFechamento    *time.Time
-	CicloDias         sql.NullInt64
-	MotivoPerda       sql.NullString
+	OportunidadeID   int64
+	ClienteIDOrigem  int64
+	VendedorID       int64
+	Origem           string
+	DataAbertura     time.Time
+	Etapa            string
+	ProbabilidadePct float64
+	ValorEstimado    float64
+	DataFechamento   *time.Time
+	CicloDias        sql.NullInt64
+	MotivoPerda      sql.NullString
 }
 
 func main() {

@@ -15,11 +15,11 @@ import (
 // Config agrega todas as configurações da aplicação.
 type Config struct {
 	// Banco de dados
-	DBHost     string
-	DBPort     string
-	DBName     string
-	DBUsuario  string
-	DBSenha    string
+	DBHost    string
+	DBPort    string
+	DBName    string
+	DBUsuario string
+	DBSenha   string
 
 	// JWT
 	JWTSecret string

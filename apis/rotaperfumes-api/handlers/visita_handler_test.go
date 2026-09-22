@@ -54,7 +54,7 @@ func TestListVisitas_Success_Admin(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM visitas`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas ORDER BY visita_id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+visitaColunasRegexH+` FROM visitas ORDER BY visita_id ASC LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
 		WillReturnRows(visitaRowsForHandler())
 
@@ -105,7 +105,7 @@ func TestListVisitas_ComFiltros(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM visitas WHERE cliente_id = \? AND vendedor_id = \? AND resultado = \?`).
 		WithArgs(int64(100), int64(1), "Positiva").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE cliente_id = \? AND vendedor_id = \? AND resultado = \? ORDER BY visita_id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+visitaColunasRegexH+` FROM visitas WHERE cliente_id = \? AND vendedor_id = \? AND resultado = \? ORDER BY visita_id ASC LIMIT \? OFFSET \?`).
 		WithArgs(int64(100), int64(1), "Positiva", 20, 0).
 		WillReturnRows(visitaRowsForHandler())
 
@@ -152,7 +152,7 @@ func TestListVisitas_ListaVazia(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM visitas`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas ORDER BY visita_id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+visitaColunasRegexH+` FROM visitas ORDER BY visita_id ASC LIMIT \? OFFSET \?`).
 		WithArgs(20, 0).
 		WillReturnRows(emptyVisitaRows())
 

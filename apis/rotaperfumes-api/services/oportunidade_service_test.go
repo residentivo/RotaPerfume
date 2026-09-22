@@ -67,7 +67,7 @@ func TestOportunidadeService_ListOportunidades(t *testing.T) {
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(`SELECT COUNT\(\*\) FROM oportunidades`).
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-				mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegex + ` FROM oportunidades ORDER BY oportunidade_id ASC LIMIT \? OFFSET \?`).
+				mock.ExpectQuery(`SELECT `+oportunidadeColunasRegex+` FROM oportunidades ORDER BY oportunidade_id ASC LIMIT \? OFFSET \?`).
 					WithArgs(20, 0).
 					WillReturnRows(oportunidadeRows())
 			},
@@ -83,7 +83,7 @@ func TestOportunidadeService_ListOportunidades(t *testing.T) {
 				mock.ExpectQuery(`SELECT COUNT\(\*\) FROM oportunidades WHERE cliente_id = \? AND vendedor_id = \? AND etapa = \?`).
 					WithArgs(int64(100), int64(1), "Prospeccao").
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
-				mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegex + ` FROM oportunidades WHERE cliente_id = \? AND vendedor_id = \? AND etapa = \? ORDER BY oportunidade_id ASC LIMIT \? OFFSET \?`).
+				mock.ExpectQuery(`SELECT `+oportunidadeColunasRegex+` FROM oportunidades WHERE cliente_id = \? AND vendedor_id = \? AND etapa = \? ORDER BY oportunidade_id ASC LIMIT \? OFFSET \?`).
 					WithArgs(int64(100), int64(1), "Prospeccao", 10, 10).
 					WillReturnRows(oportunidadeRows())
 			},

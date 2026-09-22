@@ -43,10 +43,10 @@ func TestCORSMiddleware_RejectedOrigin(t *testing.T) {
 	m := middleware.CORSMiddleware(allowed)
 
 	testCases := []string{
-		"http://localhost:4000",     // porta diferente — não deve dar prefix-match
+		"http://localhost:4000", // porta diferente — não deve dar prefix-match
 		"http://evil.com",
-		"http://127.0.0.1:3000",     // host diferente, mesma porta
-		"https://localhost:3000",    // esquema diferente
+		"http://127.0.0.1:3000",  // host diferente, mesma porta
+		"https://localhost:3000", // esquema diferente
 	}
 
 	for _, origin := range testCases {

@@ -33,6 +33,9 @@ import {
   Visita,
   VisitaInput,
   ListVisitasFilters,
+  Estoque,
+  EstoqueInput,
+  ListEstoqueFilters,
 } from "./types";
 import { fetchWithAuth } from "./apiClient";
 
@@ -1183,6 +1186,113 @@ export async function apiUpdateVisita(
   input: VisitaInput
 ): Promise<Visita> {
   return fetchWithAuth<Visita>(`/api/visitas/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+// === Estoque ===
+//
+// Leitura e acesso comum (qualquer usuário autenticado); criar/editar são
+// admin-only — ver apis/rotaperfumes-api/handlers/estoque_handler.go.
+
+export interface ListEstoqueResponse {
+  data: Estoque[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+// GET /api/estoque — lista paginada com filtros. Envelope
+// {success, data, pagination: {page, limit, total, pages}, error}.
+// Sem data_de/data_ate, retorna a última posição de estoque de cada SKU;
+// com data_de/data_ate, retorna apenas o último movimento de cada SKU
+// dentro do período informado.
+export async function apiListEstoque(
+  page = 1,
+  limit = 20,
+  filters: ListEstoqueFilters = {},
+  orderBy?: string,
+  orderDir?: "asc" | "desc"
+): Promise<ListEstoqueResponse> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filters.sku) qs.set("sku", filters.sku);
+  if (filters.data_de) qs.set("data_de", filters.data_de);
+  if (filters.data_ate) qs.set("data_ate", filters.data_ate);
+  if (filters.ruptura !== undefined) qs.set("ruptura", String(filters.ruptura));
+  if (orderBy) qs.set("order_by", orderBy);
+  if (orderDir) qs.set("order_dir", orderDir);
+
+  const res = await fetch(`${API_BASE}/api/estoque?${qs.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+
+  const raw = await res.text();
+  let parsed: unknown = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = raw;
+  }
+
+  if (!res.ok) {
+    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
+    if (parsed && typeof parsed === "object") {
+      const d = parsed as Record<string, unknown>;
+      if ("error" in d) errorMessage = String(d.error);
+      else if ("message" in d) errorMessage = String(d.message);
+    }
+    throw new Error(errorMessage);
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const d = parsed as Record<string, unknown>;
+    if ("data" in d && Array.isArray(d.data)) {
+      const pag = (d.pagination && typeof d.pagination === "object"
+        ? (d.pagination as Record<string, unknown>)
+        : d) as Record<string, unknown>;
+      return {
+        data: d.data as Estoque[],
+        page: Number(pag.page ?? page),
+        limit: Number(pag.limit ?? limit),
+        total: Number(pag.total ?? (d.data as unknown[]).length),
+        pages: Number(pag.pages ?? 1),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return { data: parsed as Estoque[], page, limit, total: parsed.length, pages: 1 };
+  }
+  return { data: [], page, limit, total: 0, pages: 0 };
+}
+
+// GET /api/estoque/{id} — detalhe de um registro de estoque
+export async function apiGetEstoque(id: number): Promise<Estoque> {
+  return fetchWithAuth<Estoque>(`/api/estoque/${id}`, {
+    method: "GET",
+  });
+}
+
+// POST /api/estoque — admin cria novo registro de estoque. ruptura NÃO é
+// enviada (derivada automaticamente pelo backend a partir do saldo).
+export async function apiCreateEstoque(input: EstoqueInput): Promise<Estoque> {
+  return fetchWithAuth<Estoque>("/api/estoque", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// PUT /api/estoque/{id} — admin atualiza o saldo de um registro existente.
+// sku e data_snapshot não são editáveis após a criação.
+export async function apiUpdateEstoque(
+  id: number,
+  input: { saldo: number }
+): Promise<Estoque> {
+  return fetchWithAuth<Estoque>(`/api/estoque/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });

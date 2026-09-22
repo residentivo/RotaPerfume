@@ -44,7 +44,7 @@ func TestPagamentoList_SemFiltro(t *testing.T) {
 		AddRow(pagamentoRow(2, 20, "PIX", 1, 100.0, 0, 100.0, now, nil, "Em aberto", now, now)...).
 		AddRow(pagamentoRow(1, 10, "Boleto 14 dias", 1, 200.0, 2.5, 195.0, now, nil, "Pago", now, now)...)
 
-	mock.ExpectQuery(`SELECT .+ ` + pagamentoFromRegexp + ` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT .+ `+pagamentoFromRegexp+` ORDER BY pagamento_id ASC LIMIT \? OFFSET \?`).
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
@@ -156,7 +156,7 @@ func TestPagamentoList_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pagamentoFromRegexp).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-			mock.ExpectQuery(`SELECT .+ ` + pagamentoFromRegexp + ` ` + tt.orderRegexp + ` LIMIT \? OFFSET \?`).
+			mock.ExpectQuery(`SELECT .+ `+pagamentoFromRegexp+` `+tt.orderRegexp+` LIMIT \? OFFSET \?`).
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(pagamentoColumns))
 
@@ -191,7 +191,7 @@ func TestPagamentoList_QueryError(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pagamentoFromRegexp).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-	mock.ExpectQuery(`SELECT .+ ` + pagamentoFromRegexp).
+	mock.ExpectQuery(`SELECT .+ `+pagamentoFromRegexp).
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
@@ -210,7 +210,7 @@ func TestPagamentoList_IterError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pagamentoFromRegexp).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
 	now := time.Now()
-	mock.ExpectQuery(`SELECT .+ ` + pagamentoFromRegexp).
+	mock.ExpectQuery(`SELECT .+ `+pagamentoFromRegexp).
 		WithArgs(10, 0).
 		WillReturnRows(sqlmock.NewRows(pagamentoColumns).
 			AddRow(pagamentoRow(1, 10, "PIX", 1, 100.0, 0, 100.0, now, nil, "Em aberto", now, now)...).

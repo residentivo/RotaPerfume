@@ -170,7 +170,7 @@ func TestSenhaHistoricoFindByUsuario_OrderBy(t *testing.T) {
 			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`).
 				WithArgs(int64(1)).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-			mock.ExpectQuery(`SELECT .+ FROM senha_historico WHERE usuario_id = \? ` + tt.orderRegexp + ` LIMIT \? OFFSET \?`).
+			mock.ExpectQuery(`SELECT .+ FROM senha_historico WHERE usuario_id = \? `+tt.orderRegexp+` LIMIT \? OFFSET \?`).
 				WithArgs(int64(1), 10, 0).
 				WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
@@ -303,7 +303,7 @@ func TestSenhaHistoricoFindAll_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico$`).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-			mock.ExpectQuery(`SELECT .+ FROM senha_historico ` + tt.orderRegexp + ` LIMIT \? OFFSET \?`).
+			mock.ExpectQuery(`SELECT .+ FROM senha_historico `+tt.orderRegexp+` LIMIT \? OFFSET \?`).
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 

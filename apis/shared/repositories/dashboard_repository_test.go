@@ -1,8 +1,8 @@
 package repositories_test
 
 import (
-	"database/sql"
 	"context"
+	"database/sql"
 	"errors"
 	"regexp"
 	"testing"

@@ -198,11 +198,11 @@ func TestCarteiraGetVinculoAtivoByClienteID(t *testing.T) {
 	now := time.Now()
 
 	testes := []struct {
-		nome     string
+		nome      string
 		clienteID int64
-		mock     func(mock sqlmock.Sqlmock)
-		wantErr  error
-		wantID   int64
+		mock      func(mock sqlmock.Sqlmock)
+		wantErr   error
+		wantID    int64
 	}{
 		{
 			nome:      "vínculo ativo encontrado",

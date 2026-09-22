@@ -164,7 +164,7 @@ func TestProdutoList_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM produtos").
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-			mock.ExpectQuery("SELECT .+ FROM produtos " + tt.orderRegexp + " LIMIT \\? OFFSET \\?").
+			mock.ExpectQuery("SELECT .+ FROM produtos "+tt.orderRegexp+" LIMIT \\? OFFSET \\?").
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(produtoColumns))
 

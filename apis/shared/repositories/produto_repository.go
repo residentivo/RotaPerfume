@@ -141,6 +141,22 @@ func (r *ProdutoRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (
 	return scanProduto(row)
 }
 
+// ExistsBySKU verifica se existe um produto com o sku informado (match
+// exato). Usado pelo EstoqueService para validar sku antes de criar/editar
+// um ajuste manual de estoque.
+func (r *ProdutoRepository) ExistsBySKU(ctx context.Context, db *sql.DB, sku string) (bool, error) {
+	const q = `SELECT 1 FROM produtos WHERE sku = ? LIMIT 1`
+	var one int
+	err := db.QueryRowContext(ctx, q, sku).Scan(&one)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("repositories: exists produto por sku: %w", err)
+	}
+	return true, nil
+}
+
 // SetAtivo ativa/inativa um produto (exclusão lógica). Retorna ErrNotFound
 // se não existir.
 func (r *ProdutoRepository) SetAtivo(ctx context.Context, db *sql.DB, id int64, ativo bool) error {

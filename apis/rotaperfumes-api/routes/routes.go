@@ -64,8 +64,12 @@ import (
 //	POST /api/visitas                   — admin only — cria visita
 //	GET  /api/visitas/{id}               — admin only — detalhe de uma visita
 //	PUT  /api/visitas/{id}               — admin only — atualiza visita
+//	GET  /api/estoque                   — acesso comum — lista estoque (paginado; por padrão última posição por sku; filtros sku/data_de/data_ate/ruptura, order_by/order_dir/historico opcionais)
+//	POST /api/estoque                   — admin only — cria ajuste manual de estoque
+//	GET  /api/estoque/{id}               — acesso comum — detalhe de um registro de estoque
+//	PUT  /api/estoque/{id}               — admin only — atualiza (ajuste manual) saldo de um registro de estoque
 //	GET  /health                        — público
-func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler, oportunidadeH *handlers.OportunidadeHandler, visitaH *handlers.VisitaHandler) http.Handler {
+func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler, oportunidadeH *handlers.OportunidadeHandler, visitaH *handlers.VisitaHandler, estoqueH *handlers.EstoqueHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Login: middleware "não-protegido" (não exige token). Mas usamos um middleware
@@ -276,6 +280,22 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Atualiza visita: admin only.
 	updateVisitaChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(visitaH.UpdateVisita))
 	mux.Handle("PUT /api/visitas/{id}", updateVisitaChain)
+
+	// Lista de estoque: acesso comum.
+	listEstoqueChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(estoqueH.ListEstoque))
+	mux.Handle("GET /api/estoque", listEstoqueChain)
+
+	// Cria ajuste manual de estoque: admin only.
+	createEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.CreateEstoque))
+	mux.Handle("POST /api/estoque", createEstoqueChain)
+
+	// Detalhe de um registro de estoque: acesso comum.
+	getEstoqueChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(estoqueH.GetEstoque))
+	mux.Handle("GET /api/estoque/{id}", getEstoqueChain)
+
+	// Atualiza (ajuste manual) saldo de um registro de estoque: admin only.
+	updateEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.UpdateEstoque))
+	mux.Handle("PUT /api/estoque/{id}", updateEstoqueChain)
 
 	// Healthcheck.
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

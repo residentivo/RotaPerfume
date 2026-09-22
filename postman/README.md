@@ -339,6 +339,41 @@ Exemplos:
 - **Body:** mesmo formato do `POST /api/visitas` (`data_visita` obrigatório também na edição, sem default)
 - **Descrição:** Atualiza os dados de uma visita existente. Retorna `200` com a visita atualizada, `404` se não existir, `400` se o payload for inválido.
 
+### Estoque (`/api/estoque/*`) — GET acesso comum, POST/PUT admin only
+
+> Série temporal de snapshots diários de saldo por SKU, importada de `dados/erp/estoque.csv` para a tabela `estoque` (ver seção "Importação de estoque (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Estoque"** da collection. Não existe endpoint de `DELETE`.
+>
+> **Assimetria de acesso:** diferente do restante do módulo (admin only), `GET /api/estoque` e `GET /api/estoque/{id}` são **acesso comum** (qualquer usuário autenticado — admin ou normal), mesma cadeia de middleware usada em Pagamentos (`cfg, true, false`). `POST /api/estoque` e `PUT /api/estoque/{id}` continuam **admin only** (`cfg, true, true`).
+>
+> **Constraint de unicidade:** `UNIQUE (data_snapshot, sku)` — só existe um snapshot por SKU por dia. O importador e o hook de faturamento fazem *upsert* nessa chave.
+>
+> **Hook de faturamento:** ao atualizar um pedido (`PUT /api/pedidos/{id}`) com transição de status para `Faturado`, o sistema decrementa automaticamente o saldo de estoque de cada item do pedido (dentro da mesma transação de `UpdateComItens`, com `SELECT ... FOR UPDATE` para evitar condição de corrida), gravando `origem=faturamento`. É idempotente — reenviar o update com status já `Faturado` não baixa estoque de novo — e bloqueia a edição dos itens de um pedido já faturado (a tentativa retorna `409 Conflict`: `{"success": false, "error": "pedido já faturado: não é possível alterar os itens, apenas o status"}`).
+>
+> **Decisão consciente sobre a data do snapshot no faturamento:** a baixa de estoque usa a data/hora atual do servidor (`time.Now()`) como `data_snapshot` no momento do faturamento — **não** a data de criação do pedido (`data_pedido`). Ou seja, o snapshot de estoque reflete o dia em que o faturamento efetivamente ocorreu, e não a data em que o pedido foi originalmente registrado. Isso foi identificado e documentado pelo TestBrain como decisão de negócio (não é bug).
+
+#### GET /api/estoque
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Query (todos opcionais):** `?page=1&limit=20&sku=ROT-0001&data_de=2026-09-01&data_ate=2026-09-22&ruptura=false&order_by=data_snapshot&order_dir=desc&historico=true`
+- **Descrição:** Lista snapshots de estoque paginados (total + pages), com filtro exato por `sku`, filtro por `ruptura` (`true`|`false`) e intervalo `data_de`/`data_ate` (`AAAA-MM-DD`).
+- **Comportamento por padrão (sem `data_de`/`data_ate` nem `historico`):** retorna a **última posição de estoque de cada SKU** (um registro por SKU, o snapshot mais recente).
+- **Com `data_de`/`data_ate` (sem `historico`):** retorna apenas o **último movimento de cada SKU dentro do período** informado.
+- **Com `historico=true`:** retorna a **série temporal completa** (todos os snapshots, sem agregação por SKU).
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, sku, data_snapshot, saldo, ruptura, origem, created_at, updated_at` (default: `data_snapshot`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
+
+#### GET /api/estoque/{id}
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Descrição:** Retorna o detalhe de um snapshot de estoque pelo `id`.
+
+#### POST /api/estoque
+- **Auth:** Bearer Token (admin)
+- **Body:** `{ "sku", "data_snapshot" ("AAAA-MM-DD"), "saldo" }`
+- **Descrição:** Cria um snapshot de estoque manual. `sku` deve existir em `produtos`; `ruptura` é derivada automaticamente (`saldo <= 0`, não aceita no body); `origem` é sempre `manual` nesta rota. Respeita a constraint `UNIQUE (data_snapshot, sku)` — criar outro registro para o mesmo par retorna `400`. Retorna `201` com o snapshot criado.
+
+#### PUT /api/estoque/{id}
+- **Auth:** Bearer Token (admin)
+- **Body:** `{ "saldo" }`
+- **Descrição:** Atualiza o saldo de um snapshot existente. `sku` e `data_snapshot` **não** são editáveis por esta rota (imutáveis). `ruptura` é recalculada automaticamente. Retorna `200` com o snapshot atualizado, `404` se não existir, `400` se o payload for inválido.
+
 ## Testes automatizados (Postman)
 
 A collection inclui scripts de teste em JavaScript em cada request. Os testes verificam:
@@ -551,6 +586,23 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Status 200 OK`
 - `Visita atualizada com dados corretos` (`visita_id`, `resultado`)
 
+### Listar Estoque
+- `Status 200`
+- `Lista retornada`
+- `Paginação presente`
+
+### Detalhe do Estoque
+- `Status 200`
+- `Dados do estoque presentes` (`id`, `sku`, `saldo`)
+
+### Criar Estoque
+- `Status 201 Created`
+- `Estoque criado com dados corretos` (`id`, `sku`, `origem === "manual"`)
+
+### Editar Estoque
+- `Status 200 OK`
+- `Estoque atualizado com dados corretos` (`saldo`)
+
 ## Resumo de testes por endpoint
 
 | Request | # Testes | Salva variáveis |
@@ -600,6 +652,10 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Detalhe da Visita | 1 | — |
 | Criar Visita | 1 | — |
 | Editar Visita | 1 | — |
+| Listar Estoque | 3 | — |
+| Detalhe do Estoque | 1 | — |
+| Criar Estoque | 1 | — |
+| Editar Estoque | 1 | — |
 
 ## Códigos de erro comuns
 
@@ -699,6 +755,16 @@ make db-up && make db-import-visitas
 ```
 
 O importador (`apis/shared/cmd/importvisitas`) é idempotente (upsert por `visita_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Já foi executado com sucesso contra o banco local (37936 linhas importadas, 0 erros; segunda execução confirmou idempotência: 0 inseridos, 37936 atualizados). Sem esse passo, os endpoints `GET/POST /api/visitas` e `GET/PUT /api/visitas/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto visitas criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam.
+
+### Estoque (ERP)
+
+`make db-up`/`make db-reset` criam a tabela `estoque` (via `sql/17_ddl_estoque.sql`, FK `sku → produtos.sku`, `UNIQUE (data_snapshot, sku)`), mas **não** carregam os dados nela. Para popular a tabela `estoque` a partir de `dados/erp/estoque.csv` (colunas `data_snapshot,sku,saldo,ruptura`), rode adicionalmente:
+
+```bash
+make db-up && make db-import-estoque
+```
+
+O importador (`apis/shared/cmd/importestoque`) é idempotente (upsert por `(data_snapshot, sku)`) e grava `origem=import_csv`. Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/estoque` e `GET/PUT /api/estoque/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto snapshots criados manualmente via `POST`, que exigem que o `sku` informado já exista em `produtos`. Além do importador, o saldo de estoque também é alimentado automaticamente pelo hook de faturamento de pedidos (`origem=faturamento`, ver seção "Estoque" em Endpoints acima).
 
 Depois, em outro terminal:
 
