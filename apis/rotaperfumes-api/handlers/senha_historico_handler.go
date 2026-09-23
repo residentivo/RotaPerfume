@@ -32,7 +32,7 @@ func NewSenhaHistoricoHandler(db *sql.DB) *SenhaHistoricoHandler {
 // Query params: page (default 1), limit (default 20, max 100),
 // order_by (id|usuario_id|tipo_reset|created_at; default id),
 // order_dir (asc|desc; default desc).
-// Response: {success, data: [{id, usuario_id, resetado_por_id, ip_origem, user_agent, tipo_reset, created_at}], pagination}
+// Response: {success, data: [{id, usuario_id, usuario_nome, resetado_por_id, resetado_por_nome, ip_origem, user_agent, tipo_reset, created_at}], pagination}
 // Admin only.
 func (h *SenhaHistoricoHandler) ListarTodos(w http.ResponseWriter, r *http.Request) {
 	role, ok := middleware.GetRole(r.Context())
@@ -68,15 +68,19 @@ func (h *SenhaHistoricoHandler) ListarTodos(w http.ResponseWriter, r *http.Reque
 		// resposta HTTP — mesmo sendo um hash, sua exposição facilita
 		// ataques offline (ex. em caso de vazamento de logs/rede).
 		item := map[string]any{
-			"id":         h.ID,
-			"usuario_id": h.UsuarioID,
-			"ip_origem":  h.IPOrigem,
-			"user_agent": h.UserAgent,
-			"tipo_reset": h.TipoReset,
-			"created_at": h.CreatedAt,
+			"id":           h.ID,
+			"usuario_id":   h.UsuarioID,
+			"usuario_nome": h.UsuarioNome,
+			"ip_origem":    h.IPOrigem,
+			"user_agent":   h.UserAgent,
+			"tipo_reset":   h.TipoReset,
+			"created_at":   h.CreatedAt,
 		}
 		if h.ResetadoPorID.Valid {
 			item["resetado_por_id"] = h.ResetadoPorID.Int64
+		}
+		if h.ResetadoPorNome.Valid {
+			item["resetado_por_nome"] = h.ResetadoPorNome.String
 		}
 		out = append(out, item)
 	}
@@ -143,15 +147,19 @@ func (h *SenhaHistoricoHandler) ListarPorUsuario(w http.ResponseWriter, r *http.
 	for _, h := range historicos {
 		// senha_hash_anterior não é exposto na resposta HTTP (ver nota em ListarTodos).
 		item := map[string]any{
-			"id":         h.ID,
-			"usuario_id": h.UsuarioID,
-			"ip_origem":  h.IPOrigem,
-			"user_agent": h.UserAgent,
-			"tipo_reset": h.TipoReset,
-			"created_at": h.CreatedAt,
+			"id":           h.ID,
+			"usuario_id":   h.UsuarioID,
+			"usuario_nome": h.UsuarioNome,
+			"ip_origem":    h.IPOrigem,
+			"user_agent":   h.UserAgent,
+			"tipo_reset":   h.TipoReset,
+			"created_at":   h.CreatedAt,
 		}
 		if h.ResetadoPorID.Valid {
 			item["resetado_por_id"] = h.ResetadoPorID.Int64
+		}
+		if h.ResetadoPorNome.Valid {
+			item["resetado_por_nome"] = h.ResetadoPorNome.String
 		}
 		out = append(out, item)
 	}

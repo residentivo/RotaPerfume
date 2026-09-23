@@ -1,6 +1,10 @@
 // === Senha Historico ===
 
-export type TipoReset = "proprio" | "admin" | "primeiro_login";
+export type TipoReset =
+  | "usuario"
+  | "admin"
+  | "primeiro_acesso"
+  | "esquecimento";
 
 export interface SenhaHistoricoItem {
   id: number;

@@ -79,6 +79,15 @@ export function Navbar() {
           )}
 
           {user && (
+            <Link
+              href="/trocar-senha"
+              className="hidden text-sm font-medium text-slate-600 hover:text-primary-600 sm:block"
+            >
+              Trocar Senha
+            </Link>
+          )}
+
+          {user && (
             <NavDropdown
               label="ERP"
               items={[

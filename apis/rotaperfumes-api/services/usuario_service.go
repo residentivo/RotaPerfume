@@ -23,6 +23,12 @@ import (
 // usuários e resets administrativos.
 const tamanhoSenhaGerada = 16
 
+// maxTentativasSenhaGerada é o número máximo de tentativas de regenerar a
+// senha aleatória de um AdminResetPassword caso ela colida (extremamente
+// improvável) com a senha atual do usuário-alvo — defesa em profundidade
+// simples, não é o mecanismo principal de bloqueio de reuso.
+const maxTentativasSenhaGerada = 3
+
 // Erros exportados para uso em handlers.
 var (
 	ErrUsuarioNaoEncontrado  = errors.New("usuário não encontrado")
@@ -161,9 +167,30 @@ func (s *UsuarioService) ResetSenha(ctx context.Context, db *sql.DB, id int64, n
 // cabe ao handler avisar o admin que o email não chegou.
 // Retorna ErrUsuarioNaoEncontrado se o usuário não existir.
 func (s *UsuarioService) AdminResetPassword(ctx context.Context, db *sql.DB, id int64, email, nome string) (emailEnviado bool, err error) {
-	senha, hash, err := s.gerarSenhaEHash()
+	targetUser, err := s.repo.GetByID(ctx, db, id)
 	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return false, ErrUsuarioNaoEncontrado
+		}
 		return false, err
+	}
+
+	// Defesa em profundidade: garante que a senha aleatória gerada não
+	// colida com a senha atual do usuário-alvo (extremamente improvável,
+	// dado que é gerada por crypto/rand com 16 caracteres). Se colidir,
+	// regenera em vez de expor erro ao admin. Não comparamos contra o
+	// histórico de últimas senhas aqui — seria custo de bcrypt
+	// desnecessário para uma senha aleatória forte.
+	var senha, hash string
+	for tentativa := 1; tentativa <= maxTentativasSenhaGerada; tentativa++ {
+		senha, hash, err = s.gerarSenhaEHash()
+		if err != nil {
+			return false, err
+		}
+		if !s.auth.VerifyPassword(targetUser.PasswordHash, senha) {
+			break
+		}
+		log.Printf("[usuarios] admin reset: senha gerada colidiu com a atual, regenerando: id=%d tentativa=%d", id, tentativa)
 	}
 
 	// Senha gerada pelo sistema (não escolhida pelo admin ou pelo usuário) —

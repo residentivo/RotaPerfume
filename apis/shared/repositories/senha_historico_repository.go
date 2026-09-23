@@ -13,7 +13,9 @@ import (
 type SenhaHistorico struct {
 	ID                int64
 	UsuarioID         int64
+	UsuarioNome       string
 	ResetadoPorID     sql.NullInt64
+	ResetadoPorNome   sql.NullString
 	SenhaHashAnterior string
 	IPOrigem          string
 	UserAgent         string
@@ -55,10 +57,10 @@ func (r *SenhaHistoricoRepository) Create(ctx context.Context, db *sql.DB, h *Se
 // senhaHistoricoOrderWhitelist mapeia os campos de ordenação aceitos pela
 // API para as colunas SQL reais da tabela senha_historico.
 var senhaHistoricoOrderWhitelist = map[string]string{
-	"id":         "id",
-	"usuario_id": "usuario_id",
-	"tipo_reset": "tipo_reset",
-	"created_at": "created_at",
+	"id":         "sh.id",
+	"usuario_id": "sh.usuario_id",
+	"tipo_reset": "sh.tipo_reset",
+	"created_at": "sh.created_at",
 }
 
 // FindByUsuario lista histórico de senhas de um usuário (paginado).
@@ -81,11 +83,14 @@ func (r *SenhaHistoricoRepository) FindByUsuario(ctx context.Context, db *sql.DB
 		return nil, 0, fmt.Errorf("repositories: count senha_historico: %w", err)
 	}
 
-	orderClause := buildOrderByClause(senhaHistoricoOrderWhitelist, orderBy, orderDir, "id", "DESC")
+	orderClause := buildOrderByClause(senhaHistoricoOrderWhitelist, orderBy, orderDir, "sh.id", "DESC")
 	q := `
-		SELECT id, usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset, created_at
-		FROM senha_historico
-		WHERE usuario_id = ?` + orderClause + `
+		SELECT sh.id, sh.usuario_id, sh.resetado_por_id, sh.senha_hash_anterior, sh.ip_origem, sh.user_agent, sh.tipo_reset, sh.created_at,
+			u1.nome AS usuario_nome, u2.nome AS resetado_por_nome
+		FROM senha_historico sh
+		LEFT JOIN usuarios u1 ON u1.id = sh.usuario_id
+		LEFT JOIN usuarios u2 ON u2.id = sh.resetado_por_id
+		WHERE sh.usuario_id = ?` + orderClause + `
 		LIMIT ? OFFSET ?`
 	rows, err := db.QueryContext(ctx, q, usuarioID, limit, offset)
 	if err != nil {
@@ -124,10 +129,13 @@ func (r *SenhaHistoricoRepository) FindAll(ctx context.Context, db *sql.DB, page
 		return nil, 0, fmt.Errorf("repositories: count senha_historico: %w", err)
 	}
 
-	orderClause := buildOrderByClause(senhaHistoricoOrderWhitelist, orderBy, orderDir, "id", "DESC")
+	orderClause := buildOrderByClause(senhaHistoricoOrderWhitelist, orderBy, orderDir, "sh.id", "DESC")
 	q := `
-		SELECT id, usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset, created_at
-		FROM senha_historico` + orderClause + `
+		SELECT sh.id, sh.usuario_id, sh.resetado_por_id, sh.senha_hash_anterior, sh.ip_origem, sh.user_agent, sh.tipo_reset, sh.created_at,
+			u1.nome AS usuario_nome, u2.nome AS resetado_por_nome
+		FROM senha_historico sh
+		LEFT JOIN usuarios u1 ON u1.id = sh.usuario_id
+		LEFT JOIN usuarios u2 ON u2.id = sh.resetado_por_id` + orderClause + `
 		LIMIT ? OFFSET ?`
 	rows, err := db.QueryContext(ctx, q, limit, offset)
 	if err != nil {
@@ -149,6 +157,7 @@ func (r *SenhaHistoricoRepository) FindAll(ctx context.Context, db *sql.DB, page
 func scanSenhaHistorico(s rowScanner) (*SenhaHistorico, error) {
 	var h SenhaHistorico
 	var resetadoPorID sql.NullInt64
+	var resetadoPorNome sql.NullString
 	if err := s.Scan(
 		&h.ID,
 		&h.UsuarioID,
@@ -158,6 +167,8 @@ func scanSenhaHistorico(s rowScanner) (*SenhaHistorico, error) {
 		&h.UserAgent,
 		&h.TipoReset,
 		&h.CreatedAt,
+		&h.UsuarioNome,
+		&resetadoPorNome,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -167,5 +178,6 @@ func scanSenhaHistorico(s rowScanner) (*SenhaHistorico, error) {
 	if resetadoPorID.Valid {
 		h.ResetadoPorID = resetadoPorID
 	}
+	h.ResetadoPorNome = resetadoPorNome
 	return &h, nil
 }

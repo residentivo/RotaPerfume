@@ -4,6 +4,52 @@
 
 ---
 
+## Bugfix: nome do usuário não aparecia na Auditoria de Senha — 2026-09-23
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** pedido direto do usuário.
+
+**Causa raiz:** `FindByUsuario`/`FindAll` (`apis/shared/repositories/senha_historico_repository.go`) nunca faziam JOIN com `usuarios` — o struct `SenhaHistorico` não tinha campo de nome e o handler (`senha_historico_handler.go`) nunca incluía `usuario_nome`/`resetado_por_nome` no JSON, mesmo o frontend já esperando esses campos (`SenhaHistoricoItem`).
+
+**Correção:**
+- `senha_historico_repository.go`: struct ganhou `UsuarioNome string` e `ResetadoPorNome sql.NullString`; queries agora fazem `LEFT JOIN usuarios u1 ON u1.id = sh.usuario_id` e `LEFT JOIN usuarios u2 ON u2.id = sh.resetado_por_id` (ambos LEFT — `resetado_por_id` é nulo quando a troca foi feita pelo próprio usuário); colunas/whitelist de ordenação prefixadas com `sh.` para evitar ambiguidade de `id` entre as tabelas.
+- `senha_historico_handler.go`: `ListarTodos`/`ListarPorUsuario` agora retornam `usuario_nome` sempre e `resetado_por_nome` só quando há reset por terceiro (mesmo padrão condicional já usado para `resetado_por_id`).
+
+**Testes (🔴 TestBrain):** mocks de SQL atualizados nos 4 arquivos de teste afetados pela mudança de query (`senha_historico_repository_test.go`, `senha_historico_handler_test.go`, `senha_historico_service_test.go`, `auth_handler_test.go` — este último porque o fluxo de bloqueio de reuso de senha, adicionado no card anterior, também consulta o histórico). Casos novos cobrindo nome preenchido/nulo em ambos os campos. `go test ./...` passa em `apis/shared` e `apis/rotaperfumes-api`.
+
+**Documentação (🔵 SubBrain):** contrato do `GET /api/senha-historico` e `GET /api/senha-historico/{usuario_id}` ganhou 2 campos novos (`usuario_nome`, `resetado_por_nome`) — sem breaking change (campos aditivos). Nada a atualizar em Postman além de nota informativa, se existir coleção salva com exemplos de resposta desses endpoints.
+
+## Bugfix: tipo_reset errado na Auditoria de Senha + nota obsoleta — 2026-09-23
+**Agentes:** 🟢 FrontBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** pedido direto do usuário — ao trocar a própria senha, a tela mostrava o tipo como "Primeiro Login" em vez de "Proprio".
+
+**Causa raiz:** o backend sempre gravou `tipo_reset` corretamente (`usuario`, `admin`, `primeiro_acesso`, `esquecimento`), mas o frontend (`frontend/src/lib/types.ts`) definia `TipoReset` com valores diferentes (`"proprio" | "admin" | "primeiro_login"`). Como o valor real `"usuario"` nunca batia com `"proprio"`, a lógica de rótulo/badge em `frontend/src/app/admin/senha-historico/page.tsx` caía no `else` genérico e exibia "Primeiro Login" para qualquer troca que não fosse feita por admin. Nenhuma mudança de backend foi necessária.
+
+**Correção:**
+- `frontend/src/lib/types.ts`: `TipoReset` corrigido para os 4 valores reais do backend.
+- `frontend/src/app/admin/senha-historico/page.tsx`: `TIPO_OPTIONS`, `tipoBadgeColor()` e `tipoLabel()` reescritos com mapeamento explícito (switch) dos 4 tipos — sem fallback silencioso (valor desconhecido agora mostra o valor bruto em vez de rotular errado, para evitar recorrência). Removida a nota obsoleta no rodapé sobre os endpoints `GET /api/senha-historico*` "talvez não implementados" (já existem e funcionam). Legenda dos tipos atualizada para os 4 valores reais.
+
+**Verificação:** `tsc --noEmit` sem erros. Sem testes de frontend existentes para essa tela (não havia suíte prévia a atualizar).
+
+**Documentação (🔵 SubBrain):** sem mudança de contrato de API — nada a atualizar em Postman/README.
+
+## Autoatendimento de troca de senha (menu) + política de senha forte + bloqueio de reuso — 2026-09-23
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** pedido direto do usuário.
+
+**Descrição:**
+1. **Menu (`frontend/src/components/layout/Navbar.tsx`):** adicionado link "Trocar Senha" (`/trocar-senha`) visível para qualquer usuário autenticado (admin ou normal/vendedor), ao lado do link "Dashboard". Antes, a página só era alcançada via redirect forçado de primeiro acesso (`deve_trocar_senha`); confirmado que ela já funciona por navegação livre.
+2. **Política de senha forte:** nova função `services.ValidarForcaSenha` em `apis/shared/services/password_policy.go` — mínimo 8 caracteres (por rune), máximo 72 bytes (limite do bcrypt, rejeitado explicitamente em vez de truncar silenciosamente), e ao menos 3 das 4 classes (minúscula/maiúscula/dígito/símbolo). Usada como fonte de verdade em `POST /api/auth/reset-password` (`auth_handler.go`), substituindo o antigo check de 6 caracteres. Frontend (`trocar-senha/page.tsx`) replica a regra só como feedback de UX antecipado.
+3. **Bloqueio de reuso das últimas 3 senhas:** em `ResetPassword`, a nova senha é comparada (bcrypt, sem short-circuit — evita side-channel de timing) contra o hash atual do usuário + os 2 registros mais recentes de `senha_historico.senha_hash_anterior` (3 candidatos = "últimas 3 senhas"). Em caso de reuso: 400 com mensagem genérica ("a nova senha não pode ser igual a uma das últimas senhas utilizadas", sem indicar qual bateu) e conta como falha no `resetPasswordLimiter` (rejeição por senha fraca não conta, é erro de usabilidade normal).
+4. **Reset de senha pelo admin (`AdminResetPassword`, `usuario_service.go`):** a senha aleatória gerada agora é comparada com o hash atual do usuário-alvo; em caso de colisão (estatisticamente improvável, dado o espaço de busca da geração aleatória), a senha é regenerada automaticamente (até 3 tentativas) antes de persistir — defesa em profundidade sem impacto observável pelo admin.
+5. **Testes:** `apis/shared/services/password_policy_test.go` (novo, 15 casos, 100% de cobertura de `ValidarForcaSenha`) e casos adicionados em `auth_handler_test.go`, `usuario_handler_test.go` e `usuario_service_test.go` cobrindo senha fraca, reuso contra senha atual/histórico, contagem no rate limiter e caminho de sucesso. `go test ./...` ok em `apis/shared` e `apis/rotaperfumes-api`.
+
+**Observação registrada pelo 🔴 TestBrain (não bloqueante):** como o rate limiter do reset-password reseta o contador de falhas (`RegisterSuccess`) sempre que a `senha_atual` está correta, tentativas isoladas de reuso (sempre com senha atual correta) não acumulam sozinhas até o limite de bloqueio — só bloqueiam combinadas com falhas de `senha_atual`. Como o atacante já precisa saber a senha atual para tentar essa enumeração, o risco residual é baixo; mantido como está, sem ação adicional.
+
+**Documentação (🔵 SubBrain):** sem novo endpoint público nem mudança de contrato de API (mensagens de erro do `POST /api/auth/reset-password` documentadas no card; `POST /api/admin/reset-password` mantém contrato idêntico) — Postman não precisa de atualização de rota, apenas nota interna sobre as novas mensagens de erro possíveis nesse endpoint.
+
 ## Seleção de pedido por combobox com busca na criação de pagamento — 2026-09-22
 **Agentes:** 🟢 FrontBrain → documentação e fechamento por 🔵 SubBrain
 

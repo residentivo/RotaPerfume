@@ -407,11 +407,6 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, nil, "nova_senha é obrigatória")
 		return
 	}
-	if len(req.NovaSenha) < 6 {
-		writeJSON(w, http.StatusBadRequest, nil, "nova_senha deve ter pelo menos 6 caracteres")
-		return
-	}
-
 	ipOrigemPreCheck := getClientIP(r, h.cfg.TrustProxyHeaders)
 
 	// Validação do CAPTCHA (Cloudflare Turnstile) roda ANTES do rate limiting,
@@ -451,6 +446,42 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	// Senha atual confirmada: limpa o contador de falhas do rate limiter.
 	h.resetPasswordLimiter.RegisterSuccess(resetKey)
+
+	// Força da nova senha: erro de usabilidade normal — não conta no rate
+	// limit de reset-password (só tentativas de adivinhar segredo contam).
+	if err := sharedsvc.ValidarForcaSenha(req.NovaSenha); err != nil {
+		log.Printf("[auth] reset-password: rejeitada: user_id=%d motivo=senha_fraca", uid)
+		writeJSON(w, http.StatusBadRequest, nil, err.Error())
+		return
+	}
+
+	// Bloqueio de reuso das últimas 3 senhas: hash atual + os 2 registros
+	// mais recentes do histórico. Rodamos as 3 comparações bcrypt até o
+	// fim, sem short-circuit, para não criar um side-channel de timing que
+	// revele qual das 3 senhas anteriores foi reutilizada.
+	historico, _, err := h.senhaSvc.ListarPorUsuario(ctx, h.db, uid, 1, 2, "id", "desc")
+	if err != nil {
+		log.Printf("[auth] reset-password: ListarPorUsuario: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	hashesCandidatos := make([]string, 0, 3)
+	hashesCandidatos = append(hashesCandidatos, u.PasswordHash)
+	for _, registro := range historico {
+		hashesCandidatos = append(hashesCandidatos, registro.SenhaHashAnterior)
+	}
+	reutilizada := false
+	for _, hashCandidato := range hashesCandidatos {
+		if h.auth.VerifyPassword(hashCandidato, req.NovaSenha) {
+			reutilizada = true
+		}
+	}
+	if reutilizada {
+		log.Printf("[auth] reset-password: rejeitada: user_id=%d motivo=senha_reutilizada", uid)
+		h.resetPasswordLimiter.RegisterFailure(resetKey)
+		writeJSON(w, http.StatusBadRequest, nil, "a nova senha não pode ser igual a uma das últimas senhas utilizadas")
+		return
+	}
 
 	newHash, err := h.auth.HashPassword(h.cfg, req.NovaSenha)
 	if err != nil {

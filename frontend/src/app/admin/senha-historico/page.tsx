@@ -25,9 +25,10 @@ const ORDER_BY_MAP: Partial<Record<SortKey, string>> = {
 
 const TIPO_OPTIONS: { value: "" | TipoReset; label: string }[] = [
   { value: "", label: "Todos os tipos" },
-  { value: "proprio", label: "Proprio" },
+  { value: "usuario", label: "Proprio" },
   { value: "admin", label: "Admin" },
-  { value: "primeiro_login", label: "Primeiro Login" },
+  { value: "primeiro_acesso", label: "Primeiro Acesso" },
+  { value: "esquecimento", label: "Esquecimento" },
 ];
 
 const LIMIT_OPTIONS = [
@@ -37,16 +38,37 @@ const LIMIT_OPTIONS = [
   { value: "100", label: "100 por pagina" },
 ];
 
-function tipoBadgeColor(tipo: TipoReset): "blue" | "yellow" | "green" {
-  if (tipo === "proprio") return "blue";
-  if (tipo === "admin") return "yellow";
-  return "green";
+function tipoBadgeColor(
+  tipo: TipoReset
+): "blue" | "yellow" | "green" | "red" | "gray" {
+  switch (tipo) {
+    case "usuario":
+      return "blue";
+    case "admin":
+      return "yellow";
+    case "primeiro_acesso":
+      return "green";
+    case "esquecimento":
+      return "red";
+    default:
+      return "gray";
+  }
 }
 
 function tipoLabel(tipo: TipoReset): string {
-  if (tipo === "proprio") return "Proprio";
-  if (tipo === "admin") return "Admin";
-  return "Primeiro Login";
+  switch (tipo) {
+    case "usuario":
+      return "Proprio";
+    case "admin":
+      return "Admin";
+    case "primeiro_acesso":
+      return "Primeiro Acesso";
+    case "esquecimento":
+      return "Esquecimento";
+    default:
+      // Valor desconhecido: exibe o valor bruto em vez de rotular errado.
+      return tipo;
+  }
 }
 
 function formatDateTime(iso: string): string {
@@ -427,13 +449,10 @@ export default function SenhaHistoricoPage() {
         <Badge color="blue">Proprio</Badge> alteracao feita pelo proprio
         usuario,{" "}
         <Badge color="yellow">Admin</Badge> reset feito por um administrador,{" "}
-        <Badge color="green">Primeiro Login</Badge> alteracao obrigatoria no
-        primeiro acesso.
-        <br />
-        <strong>Nota:</strong> Se a lista estiver vazia, verifique se os
-        endpoints <code>GET /api/senha-historico</code> e{" "}
-        <code>GET /api/senha-historico/&#123;usuario_id&#125;</code> estao
-        implementados no backend.
+        <Badge color="green">Primeiro Acesso</Badge> alteracao obrigatoria no
+        primeiro acesso,{" "}
+        <Badge color="red">Esquecimento</Badge> reset via fluxo de senha
+        esquecida.
       </div>
     </div>
   );

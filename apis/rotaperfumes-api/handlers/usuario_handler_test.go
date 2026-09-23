@@ -758,6 +758,14 @@ func TestAdminResetPassword_Success_ViaUsuarioHandler(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
+	// GetByID #1: UsuarioHandler.AdminResetPassword busca o alvo (email/nome
+	// para auditoria e envio de email).
+	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
+		WithArgs(int64(5)).
+		WillReturnRows(usuarioRowsForHandler(5, true))
+	// GetByID #2: UsuarioService.AdminResetPassword busca o mesmo usuário de
+	// novo internamente, para comparar a senha aleatória gerada com o hash
+	// atual e evitar colisão (defesa em profundidade).
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 		WithArgs(int64(5)).
 		WillReturnRows(usuarioRowsForHandler(5, true))
@@ -898,6 +906,14 @@ func TestAdminResetPassword_ErroInterno_Update(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
+	// GetByID #1: UsuarioHandler.AdminResetPassword busca o alvo (email/nome
+	// para auditoria e envio de email).
+	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
+		WithArgs(int64(5)).
+		WillReturnRows(usuarioRowsForHandler(5, true))
+	// GetByID #2: UsuarioService.AdminResetPassword busca o mesmo usuário de
+	// novo internamente, para comparar a senha aleatória gerada com o hash
+	// atual e evitar colisão (defesa em profundidade).
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 		WithArgs(int64(5)).
 		WillReturnRows(usuarioRowsForHandler(5, true))

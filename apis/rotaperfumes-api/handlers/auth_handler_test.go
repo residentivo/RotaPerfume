@@ -503,6 +503,15 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
 			AddRow(int64(2), "User 2", "user2@test.com", hash, "normal", nil, true, true, time.Now(), time.Now(), nil, nil))
 
+	// Mock: bloqueio de reuso — busca os 2 registros mais recentes do
+	// histórico de senhas (nenhum registro existente neste caso).
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+	mock.ExpectQuery(`SELECT sh\.id, sh\.usuario_id, sh\.resetado_por_id, sh\.senha_hash_anterior, sh\.ip_origem, sh\.user_agent, sh\.tipo_reset, sh\.created_at, u1\.nome AS usuario_nome, u2\.nome AS resetado_por_nome\s+FROM senha_historico sh\s+LEFT JOIN usuarios u1 ON u1\.id = sh\.usuario_id\s+LEFT JOIN usuarios u2 ON u2\.id = sh\.resetado_por_id\s+WHERE sh\.usuario_id = \?\s+ORDER BY sh\.id DESC\s+LIMIT \? OFFSET \?`).
+		WithArgs(int64(2), 2, 0).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "usuario_id", "resetado_por_id", "senha_hash_anterior", "ip_origem", "user_agent", "tipo_reset", "created_at", "usuario_nome", "resetado_por_nome"}))
+
 	// Mock: insert senha_historico
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -541,12 +550,23 @@ func TestAdminResetPassword_Success(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	// Mock: busca usuário alvo para capturar hash anterior
+	// Mock: busca usuário alvo para capturar hash anterior (GetByID #1,
+	// chamado pelo handler antes de invocar o service).
 	hash, _ := services.NewAuthService().HashPassword(cfg, "senha-antiga")
+	usuarioRowsFn := func() *sqlmock.Rows {
+		return sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(int64(5), "User 5", "user5@test.com", hash, "normal", nil, true, false, time.Now(), time.Now(), nil, nil)
+	}
 	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.id\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs(int64(5)).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
-			AddRow(int64(5), "User 5", "user5@test.com", hash, "normal", nil, true, false, time.Now(), time.Now(), nil, nil))
+		WillReturnRows(usuarioRowsFn())
+
+	// Mock: busca usuário alvo de novo (GetByID #2, chamado internamente por
+	// UsuarioService.AdminResetPassword para comparar a senha gerada com o
+	// hash atual e evitar colisão — defesa em profundidade).
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.id\s+=\s+\?\s+LIMIT\s+1`).
+		WithArgs(int64(5)).
+		WillReturnRows(usuarioRowsFn())
 
 	// Mock: update password_hash + deve_trocar_senha (senha aleatória gerada pelo admin)
 	mock.ExpectExec(`UPDATE usuarios SET password_hash`).
@@ -577,17 +597,88 @@ func TestAdminResetPassword_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestResetPassword_SenhaCurta(t *testing.T) {
-	server, db, _, _ := setupTestServerWithAuthHandler(t)
+// mockSenhaHistoricoRecente configura as expectations do
+// SenhaHistoricoService.ListarPorUsuario(uid, 1, 2, "id", "desc") — chamado
+// pelo ResetPassword handler no bloqueio de reuso das últimas 3 senhas.
+// hashesAnteriores são os senha_hash_anterior dos registros retornados (mais
+// recente primeiro), até 2 registros.
+func mockSenhaHistoricoRecente(mock sqlmock.Sqlmock, uid int64, hashesAnteriores ...string) {
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`).
+		WithArgs(uid).
+		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(len(hashesAnteriores)))
+
+	rows := sqlmock.NewRows([]string{"id", "usuario_id", "resetado_por_id", "senha_hash_anterior", "ip_origem", "user_agent", "tipo_reset", "created_at", "usuario_nome", "resetado_por_nome"})
+	for i, h := range hashesAnteriores {
+		rows.AddRow(int64(i+1), uid, nil, h, "127.0.0.1", "curl/8.0", "usuario", time.Now(), "Usuario Teste", nil)
+	}
+	mock.ExpectQuery(`SELECT sh\.id, sh\.usuario_id, sh\.resetado_por_id, sh\.senha_hash_anterior, sh\.ip_origem, sh\.user_agent, sh\.tipo_reset, sh\.created_at, u1\.nome AS usuario_nome, u2\.nome AS resetado_por_nome\s+FROM senha_historico sh\s+LEFT JOIN usuarios u1 ON u1\.id = sh\.usuario_id\s+LEFT JOIN usuarios u2 ON u2\.id = sh\.resetado_por_id\s+WHERE sh\.usuario_id = \?\s+ORDER BY sh\.id DESC\s+LIMIT \? OFFSET \?`).
+		WithArgs(uid, 2, 0).
+		WillReturnRows(rows)
+}
+
+// mockUsuarioParaResetPassword configura o mock de GetByID (WHERE u.id = ?)
+// usado pelo ResetPassword handler para validar a senha_atual, retornando um
+// usuário cujo password_hash corresponde a senhaAtualPlana.
+func mockUsuarioParaResetPassword(t *testing.T, mock sqlmock.Sqlmock, cfg *config.Config, uid int64, senhaAtualPlana string) {
+	hash, err := services.NewAuthService().HashPassword(cfg, senhaAtualPlana)
+	require.NoError(t, err)
+	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.id\s+=\s+\?\s+LIMIT\s+1`).
+		WithArgs(uid).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(uid, "User", "user@test.com", hash, "normal", nil, true, false, time.Now(), time.Now(), nil, nil))
+}
+
+// TestResetPassword_SenhaFraca_NaoContaNoRateLimiter garante que uma nova
+// senha que não atende a política de senha forte é rejeitada com 400 e a
+// mensagem de ValidarForcaSenha — e que essa rejeição (erro de usabilidade,
+// não tentativa de ataque) NÃO conta no rate limiter de reset-password:
+// várias tentativas seguidas com senha fraca não devem disparar 429.
+func TestResetPassword_SenhaFraca_NaoContaNoRateLimiter(t *testing.T) {
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()
 	defer db.Close()
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	// senha_atual fornecida, mas nova_senha é curta.
+	const tentativas = 12 // > resetPasswordMaxFailures (10), para provar que não bloqueia
+
+	for i := 0; i < tentativas; i++ {
+		mockUsuarioParaResetPassword(t, mock, cfg, 2, "senha-atual")
+	}
+
+	client := &http.Client{}
+	for i := 0; i < tentativas; i++ {
+		req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+			makeJSON(validCaptchaBody(map[string]any{"senha_atual": "senha-atual", "nova_senha": "abcdefgh"})))
+		req.Header.Set("Authorization", "Bearer "+userToken)
+
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "tentativa %d", i+1)
+		body := decodeResponse(t, readBody(t, resp))
+		assert.Contains(t, body["error"], "senha deve conter ao menos 3 dos 4 tipos")
+		resp.Body.Close()
+	}
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestResetPassword_SenhaCurta garante que uma nova senha abaixo do mínimo de
+// caracteres é rejeitada com 400 e a mensagem de ValidarForcaSenha.
+func TestResetPassword_SenhaCurta(t *testing.T) {
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mockUsuarioParaResetPassword(t, mock, cfg, 2, "senha-atual")
+
+	// senha_atual correta, mas nova_senha é curta (menos de 8 caracteres).
 	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
-		makeJSON(map[string]any{"senha_atual": "senha-valida", "nova_senha": "abc"}))
+		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "senha-atual", "nova_senha": "Ab1!"})))
 	req.Header.Set("Authorization", "Bearer "+userToken)
 
 	client := &http.Client{}
@@ -597,7 +688,211 @@ func TestResetPassword_SenhaCurta(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Contains(t, body["error"], "pelo menos 6 caracteres")
+	assert.Contains(t, body["error"], "pelo menos 8 caracteres")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestResetPassword_NovaSenhaIgualASenhaAtual garante que a troca é recusada
+// (400, mensagem genérica de reuso) quando a nova senha é idêntica à senha
+// atual do usuário — e que essa tentativa CONTA no rate limiter (é uma
+// tentativa de "reset" que não muda nada, tratada como falha).
+func TestResetPassword_NovaSenhaIgualASenhaAtual(t *testing.T) {
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaForte123!")
+	mockSenhaHistoricoRecente(mock, 2) // sem histórico anterior
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "SenhaForte123!", "nova_senha": "SenhaForte123!"})))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Contains(t, body["error"], "não pode ser igual a uma das últimas senhas utilizadas")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestResetPassword_NovaSenhaIgualAoHistorico garante que a troca é recusada
+// quando a nova senha coincide com uma das 2 senhas mais recentes do
+// histórico (mesmo não sendo a senha atual), com a mesma mensagem genérica
+// de reuso usada para "igual à senha atual".
+func TestResetPassword_NovaSenhaIgualAoHistorico(t *testing.T) {
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	hashSenhaAntiga, err := services.NewAuthService().HashPassword(cfg, "SenhaAntiga123!")
+	require.NoError(t, err)
+
+	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaAtual999!")
+	mockSenhaHistoricoRecente(mock, 2, hashSenhaAntiga)
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "SenhaAtual999!", "nova_senha": "SenhaAntiga123!"})))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Contains(t, body["error"], "não pode ser igual a uma das últimas senhas utilizadas")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestResetPassword_ReusoConta_NoRateLimiter comprova que a rejeição por
+// reuso de senha (bloco "if reutilizada") de fato invoca
+// resetPasswordLimiter.RegisterFailure, e não apenas retorna 400 sem
+// registrar nada. Como toda verificação de senha_atual correta chama
+// RegisterSuccess (zerando o contador) ANTES do bloco de reuso, uma única
+// falha de reuso nunca sobrevive à requisição seguinte com senha_atual
+// correta — por isso a prova combina 1 tentativa de reuso (soma 1 falha) com
+// 9 tentativas subsequentes de senha_atual INCORRETA (que não chamam
+// RegisterSuccess, então acumulam sobre a falha anterior): a 10ª falha
+// combinada deve disparar o bloqueio (resetPasswordMaxFailures=10) já na
+// requisição seguinte.
+func TestResetPassword_ReusoConta_NoRateLimiter(t *testing.T) {
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	hashSenhaAntiga, err := services.NewAuthService().HashPassword(cfg, "SenhaAntiga123!")
+	require.NoError(t, err)
+
+	const resetPasswordMaxFailures = 10 // deve bater com auth_handler.go
+
+	// 1ª requisição: senha_atual correta, nova_senha reutilizada do
+	// histórico → RegisterSuccess (zera) seguido de RegisterFailure (conta=1).
+	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaAtual999!")
+	mockSenhaHistoricoRecente(mock, 2, hashSenhaAntiga)
+
+	// Próximas (resetPasswordMaxFailures-1) requisições: senha_atual
+	// INCORRETA → apenas RegisterFailure (sem RegisterSuccess), acumulando
+	// sobre a falha da tentativa de reuso.
+	for i := 0; i < resetPasswordMaxFailures-1; i++ {
+		mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaAtual999!")
+	}
+
+	client := &http.Client{}
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "SenhaAtual999!", "nova_senha": "SenhaAntiga123!"})))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "1ª tentativa: reuso de senha do histórico")
+	resp.Body.Close()
+
+	for i := 0; i < resetPasswordMaxFailures-1; i++ {
+		req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+			makeJSON(validCaptchaBody(map[string]any{"senha_atual": "senha-incorreta", "nova_senha": "QualquerSenhaForte1!"})))
+		req.Header.Set("Authorization", "Bearer "+userToken)
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "tentativa de senha_atual incorreta %d", i+1)
+		resp.Body.Close()
+	}
+
+	// Após a tentativa de reuso (1 falha) + resetPasswordMaxFailures-1
+	// tentativas de senha_atual incorreta, o total de falhas acumuladas
+	// atinge resetPasswordMaxFailures — a próxima requisição deve ser
+	// bloqueada por rate limit, comprovando que a falha de reuso contou.
+	req, _ = http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "senha-incorreta", "nova_senha": "QualquerSenhaForte1!"})))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	resp, err = client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestResetPassword_NovaSenhaForte_NaoReutilizada_Sucesso garante que uma
+// nova senha forte e não reutilizada (nem igual à atual, nem ao histórico) é
+// aceita com 200 e o hash é atualizado.
+func TestResetPassword_NovaSenhaForte_NaoReutilizada_Sucesso(t *testing.T) {
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	hashSenhaAntiga, err := services.NewAuthService().HashPassword(cfg, "SenhaBemAntiga1!")
+	require.NoError(t, err)
+
+	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaAtual999!")
+	mockSenhaHistoricoRecente(mock, 2, hashSenhaAntiga)
+
+	mock.ExpectExec(`INSERT INTO senha_historico`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), false, int64(2)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "SenhaAtual999!", "nova_senha": "SenhaNovaForte1!"})))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.True(t, body["success"].(bool))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestResetPassword_ListarPorUsuarioErro_500 garante que um erro ao consultar
+// o histórico de senhas (usado no bloqueio de reuso) resulta em 500, sem
+// travar em algum estado intermediário.
+func TestResetPassword_ListarPorUsuarioErro_500(t *testing.T) {
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaAtual999!")
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`).
+		WithArgs(int64(2)).
+		WillReturnError(sql.ErrConnDone)
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "SenhaAtual999!", "nova_senha": "SenhaNovaForte1!"})))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // ---------------------------------------------------------------------------

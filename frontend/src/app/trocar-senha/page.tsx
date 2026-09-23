@@ -47,8 +47,19 @@ export default function TrocarSenhaPage() {
 
     if (!novaSenha) {
       errs.novaSenha = "Nova senha e obrigatoria";
-    } else if (novaSenha.length < 6) {
-      errs.novaSenha = "Nova senha deve ter pelo menos 6 caracteres";
+    } else if (novaSenha.length < 8) {
+      errs.novaSenha = "Nova senha deve ter pelo menos 8 caracteres";
+    } else {
+      const classesCount = [
+        /[a-z]/.test(novaSenha),
+        /[A-Z]/.test(novaSenha),
+        /[0-9]/.test(novaSenha),
+        /[^a-zA-Z0-9]/.test(novaSenha),
+      ].filter(Boolean).length;
+      if (classesCount < 3) {
+        errs.novaSenha =
+          "Nova senha deve conter ao menos 3 dos 4 tipos: letra minuscula, letra maiuscula, digito e simbolo";
+      }
     }
 
     if (!confirmarSenha) {
@@ -186,7 +197,7 @@ export default function TrocarSenhaPage() {
               value={novaSenha}
               onChange={(e) => setNovaSenha(e.target.value)}
               error={fieldErrors.novaSenha}
-              helperText="Minimo 6 caracteres"
+              helperText="Minimo 8 caracteres, com pelo menos 3 de: minuscula, maiuscula, numero, simbolo"
               icon={
                 <svg
                   className="h-5 w-5"

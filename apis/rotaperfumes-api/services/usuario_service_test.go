@@ -240,6 +240,11 @@ func TestUsuarioService_ResetSenha(t *testing.T) {
 func TestUsuarioService_AdminResetPassword(t *testing.T) {
 	t.Run("sucesso - email enviado", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
+		// AdminResetPassword agora busca o usuário-alvo primeiro (para
+		// comparar a senha gerada com o hash atual e evitar colisão).
+		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
+			WithArgs(int64(1)).
+			WillReturnRows(usuarioRows())
 		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
 			WithArgs(sqlmock.AnyArg(), true, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
@@ -256,6 +261,9 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 
 	t.Run("sucesso - falha no envio de email não desfaz o reset", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
+		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
+			WithArgs(int64(1)).
+			WillReturnRows(usuarioRows())
 		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
 			WithArgs(sqlmock.AnyArg(), true, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
@@ -270,8 +278,9 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 
 	t.Run("usuário não encontrado", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
+			WithArgs(int64(999)).
+			WillReturnError(sql.ErrNoRows)
 
 		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
 		enviado, err := svc.AdminResetPassword(context.Background(), db, 999, "fulano@test.com", "Fulano")
@@ -279,6 +288,44 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 		assert.ErrorIs(t, err, services.ErrUsuarioNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
+
+	t.Run("erro genérico do GetByID é propagado", func(t *testing.T) {
+		db, mock := newUsuarioTestDB(t)
+		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
+			WithArgs(int64(1)).
+			WillReturnError(sql.ErrConnDone)
+
+		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
+		enviado, err := svc.AdminResetPassword(context.Background(), db, 1, "fulano@test.com", "Fulano")
+		assert.False(t, enviado)
+		assert.Error(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("usuário desaparece entre a busca e o update (corrida)", func(t *testing.T) {
+		db, mock := newUsuarioTestDB(t)
+		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
+			WithArgs(int64(1)).
+			WillReturnRows(usuarioRows())
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
+			WithArgs(sqlmock.AnyArg(), true, int64(1)).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+
+		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
+		enviado, err := svc.AdminResetPassword(context.Background(), db, 1, "fulano@test.com", "Fulano")
+		assert.False(t, enviado)
+		assert.ErrorIs(t, err, services.ErrUsuarioNaoEncontrado)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	// NOTA (TestBrain): o caminho de "colisão com a senha atual → regenera"
+	// (loop de até maxTentativasSenhaGerada em AdminResetPassword) não é
+	// diretamente testável sem alterar a assinatura de produção — a senha
+	// aleatória vem de sharedsvc.GerarSenhaAleatoria (crypto/rand), que não é
+	// injetável no UsuarioService atual. Cobrimos apenas o caminho feliz
+	// (sem colisão) acima; testar a regeneração exigiria expor um gerador de
+	// senha como dependência injetável — reportado ao Analista como sugestão
+	// de melhoria de testabilidade, não como bug.
 }
 
 func assertError() error { return sql.ErrTxDone }
