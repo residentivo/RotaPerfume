@@ -447,6 +447,15 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	// Senha atual confirmada: limpa o contador de falhas do rate limiter.
 	h.resetPasswordLimiter.RegisterSuccess(resetKey)
 
+	// Nova senha igual à atual: checado ANTES da força, senão uma senha atual
+	// fraca retornaria o erro de força em vez do problema real. Não conta no
+	// rate limit: a senha atual já foi confirmada, então não há vazamento.
+	if req.NovaSenha == req.SenhaAtual {
+		log.Printf("[auth] reset-password: rejeitada: user_id=%d motivo=igual_senha_atual", uid)
+		writeJSON(w, http.StatusBadRequest, nil, "a nova senha não pode ser igual à senha atual")
+		return
+	}
+
 	// Força da nova senha: erro de usabilidade normal — não conta no rate
 	// limit de reset-password (só tentativas de adivinhar segredo contam).
 	if err := sharedsvc.ValidarForcaSenha(req.NovaSenha); err != nil {

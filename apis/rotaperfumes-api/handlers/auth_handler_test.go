@@ -693,39 +693,51 @@ func TestResetPassword_SenhaCurta(t *testing.T) {
 }
 
 // TestResetPassword_NovaSenhaIgualASenhaAtual garante que a troca é recusada
-// (400, mensagem genérica de reuso) quando a nova senha é idêntica à senha
-// atual do usuário — e que essa tentativa CONTA no rate limiter (é uma
-// tentativa de "reset" que não muda nada, tratada como falha).
+// (400, mensagem específica de igualdade) quando a nova senha é idêntica à
+// senha atual. A checagem ocorre antes da força e do histórico, por isso não
+// há expectativa de query de histórico. O caso "senha atual fraca" prova que
+// o erro retornado é o de igualdade, e não o de força de senha.
 func TestResetPassword_NovaSenhaIgualASenhaAtual(t *testing.T) {
-	server, db, mock, _ := setupTestServerWithAuthHandler(t)
-	defer server.Close()
-	defer db.Close()
+	casos := []struct {
+		nome  string
+		senha string
+	}{
+		{nome: "senha atual forte", senha: "SenhaForte123!"},
+		{nome: "senha atual fraca", senha: "abcdefgh"},
+	}
 
-	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	for _, tc := range casos {
+		t.Run(tc.nome, func(t *testing.T) {
+			server, db, mock, _ := setupTestServerWithAuthHandler(t)
+			defer server.Close()
+			defer db.Close()
 
-	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaForte123!")
-	mockSenhaHistoricoRecente(mock, 2) // sem histórico anterior
+			cfg := testCfg()
+			userToken := generateToken(t, cfg, 2, "normal")
 
-	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
-		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "SenhaForte123!", "nova_senha": "SenhaForte123!"})))
-	req.Header.Set("Authorization", "Bearer "+userToken)
+			mockUsuarioParaResetPassword(t, mock, cfg, 2, tc.senha)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
+			req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+				makeJSON(validCaptchaBody(map[string]any{"senha_atual": tc.senha, "nova_senha": tc.senha})))
+			req.Header.Set("Authorization", "Bearer "+userToken)
 
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	body := decodeResponse(t, readBody(t, resp))
-	assert.Contains(t, body["error"], "não pode ser igual a uma das últimas senhas utilizadas")
-	assert.NoError(t, mock.ExpectationsWereMet())
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			body := decodeResponse(t, readBody(t, resp))
+			assert.Equal(t, "a nova senha não pode ser igual à senha atual", body["error"])
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 // TestResetPassword_NovaSenhaIgualAoHistorico garante que a troca é recusada
 // quando a nova senha coincide com uma das 2 senhas mais recentes do
-// histórico (mesmo não sendo a senha atual), com a mesma mensagem genérica
-// de reuso usada para "igual à senha atual".
+// histórico (mesmo não sendo a senha atual), com a mensagem genérica de
+// reuso.
 func TestResetPassword_NovaSenhaIgualAoHistorico(t *testing.T) {
 	server, db, mock, _ := setupTestServerWithAuthHandler(t)
 	defer server.Close()

@@ -4,6 +4,21 @@
 
 ---
 
+## Bugfix: sem mensagem clara ao trocar senha pela mesma senha atual — 2026-09-23
+**Agentes:** 🟡 BackBrain + 🟢 FrontBrain (em paralelo)
+
+**Origem:** pedido direto do usuário — ao informar a nova senha igual à atual, a tela não indicava que esse era o problema.
+
+**Causa raiz:** a validação de força da senha rodava antes da checagem de reuso (no frontend em `trocar-senha/page.tsx` e no backend em `auth_handler.go`). Se a senha atual fosse fraca (ex.: senha padrão), o usuário via o erro de força em vez do erro de reuso. Além disso, quando o reuso era detectado, a mensagem era genérica ("uma das últimas senhas utilizadas").
+
+**Correção:**
+- `apis/rotaperfumes-api/handlers/auth_handler.go`: depois de confirmar a senha atual e antes de `ValidarForcaSenha`, `nova_senha == senha_atual` → 400 "a nova senha não pode ser igual à senha atual" (sem `RegisterFailure`, porque a senha atual já foi confirmada). A checagem bcrypt do histórico continua igual, com a mensagem genérica.
+- `frontend/src/app/trocar-senha/page.tsx`: `validate()` mostra "A nova senha nao pode ser igual a senha atual" antes das regras de tamanho e de tipos de caractere.
+
+**Testes:** `TestResetPassword_NovaSenhaIgualASenhaAtual` virou table-driven (senha atual forte e fraca), com igualdade exata da nova mensagem. `go build ./...`, `go vet` e `go test ./handlers/...` OK. Frontend: `tsc --noEmit` OK (não testado no navegador).
+
+**Documentação:** o `POST /api/auth/reset-password` ganhou uma mensagem de erro 400 nova. O contrato não muda.
+
 ## Bugfix: nome do usuário não aparecia na Auditoria de Senha — 2026-09-23
 **Agentes:** 🟡 BackBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
 

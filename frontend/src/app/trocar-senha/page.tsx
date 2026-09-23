@@ -47,6 +47,8 @@ export default function TrocarSenhaPage() {
 
     if (!novaSenha) {
       errs.novaSenha = "Nova senha e obrigatoria";
+    } else if (senhaAtual && novaSenha === senhaAtual) {
+      errs.novaSenha = "A nova senha nao pode ser igual a senha atual";
     } else if (novaSenha.length < 8) {
       errs.novaSenha = "Nova senha deve ter pelo menos 8 caracteres";
     } else {
