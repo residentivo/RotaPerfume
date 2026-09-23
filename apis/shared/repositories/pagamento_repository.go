@@ -208,6 +208,39 @@ func (r *PagamentoRepository) Update(ctx context.Context, db *sql.DB, pagamentoI
 	return nil
 }
 
+// ExistsByPedidoID reporta se existe algum pagamento vinculado ao pedido
+// informado. Usado por DeletePedido (handlers) para bloquear a exclusão de
+// pedidos com pagamentos vinculados.
+func (r *PagamentoRepository) ExistsByPedidoID(ctx context.Context, db *sql.DB, pedidoID int64) (bool, error) {
+	const q = `SELECT 1 FROM pagamentos WHERE pedido_id = ? LIMIT 1`
+	var one int
+	err := db.QueryRowContext(ctx, q, pedidoID).Scan(&one)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("repositories: exists pagamento por pedido_id: %w", err)
+	}
+	return true, nil
+}
+
+// Delete remove um pagamento pela PK pagamento_id (hard delete — não há
+// coluna deleted_at nesta tabela). Retorna ErrNotFound se não existir.
+func (r *PagamentoRepository) Delete(ctx context.Context, db *sql.DB, pagamentoID int64) error {
+	res, err := db.ExecContext(ctx, `DELETE FROM pagamentos WHERE pagamento_id = ?`, pagamentoID)
+	if err != nil {
+		return fmt.Errorf("repositories: delete pagamento: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("repositories: delete pagamento rowsAffected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func scanPagamento(s rowScanner) (*models.Pagamento, error) {
 	var p models.Pagamento
 	var dataPagamento sql.NullTime

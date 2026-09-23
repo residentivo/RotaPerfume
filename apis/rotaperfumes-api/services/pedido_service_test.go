@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -589,5 +590,129 @@ func TestPedidoService_UpdatePedido_FaturadoTentaAlterarItens_Erro409(t *testing
 	p, err := svc.UpdatePedido(context.Background(), db, 1, validPedidoInput())
 	assert.Nil(t, p)
 	assert.ErrorIs(t, err, repositories.ErrPedidoJaFaturadoNaoPodeAlterarItens)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ---------------------------------------------------------------------------
+// DeletePedido
+// ---------------------------------------------------------------------------
+
+// pedidoRowsComStatus é igual a pedidoRows, mas permite parametrizar o status
+// (pedidoRows sempre retorna "Faturado", que bloquearia a exclusão nos
+// cenários de sucesso do DeletePedido).
+func pedidoRowsComStatus(idOrigem int64, valorTotal float64, status string) *sqlmock.Rows {
+	now := time.Now()
+	return sqlmock.NewRows(pedidoColunasHeader()).
+		AddRow(idOrigem, int64(1), int64(2), now, "App", status, valorTotal, now, now, "Cliente Teste", "Vendedor Teste")
+}
+
+const deleteItensPedidoRegex = `DELETE FROM itens_pedido WHERE pedido_id = \?`
+const deletePedidoRegex = `DELETE FROM pedidos WHERE pedido_id_origem = \?`
+const existsPagamentoPorPedidoRegex = `SELECT 1 FROM pagamentos WHERE pedido_id = \? LIMIT 1`
+
+func TestPedidoService_DeletePedido_Sucesso(t *testing.T) {
+	db, mock := newPedidoTestDB(t)
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectBegin()
+	mock.ExpectExec(deleteItensPedidoRegex).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec(deletePedidoRegex).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	svc := services.NewPedidoService(db, pedidoTestCfg(true))
+	err := svc.DeletePedido(context.Background(), db, 1)
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPedidoService_DeletePedido_NaoEncontrado(t *testing.T) {
+	db, mock := newPedidoTestDB(t)
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(999)).
+		WillReturnRows(emptyPedidoRows())
+
+	svc := services.NewPedidoService(db, pedidoTestCfg(false))
+	err := svc.DeletePedido(context.Background(), db, 999)
+	assert.ErrorIs(t, err, services.ErrPedidoNaoEncontrado)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPedidoService_DeletePedido_PossuiPagamentosVinculados_409(t *testing.T) {
+	db, mock := newPedidoTestDB(t)
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+
+	svc := services.NewPedidoService(db, pedidoTestCfg(false))
+	err := svc.DeletePedido(context.Background(), db, 1)
+	assert.ErrorIs(t, err, services.ErrPedidoPossuiPagamentosVinculados)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPedidoService_DeletePedido_Faturado_409(t *testing.T) {
+	db, mock := newPedidoTestDB(t)
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Faturado"))
+	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrNoRows)
+
+	svc := services.NewPedidoService(db, pedidoTestCfg(false))
+	err := svc.DeletePedido(context.Background(), db, 1)
+	assert.ErrorIs(t, err, services.ErrPedidoFaturadoNaoPodeSerExcluido)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPedidoService_DeletePedido_ErroExistsByPedidoID(t *testing.T) {
+	db, mock := newPedidoTestDB(t)
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrConnDone)
+
+	svc := services.NewPedidoService(db, pedidoTestCfg(false))
+	err := svc.DeletePedido(context.Background(), db, 1)
+	assert.Error(t, err)
+	assert.False(t, errors.Is(err, services.ErrPedidoNaoEncontrado))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPedidoService_DeletePedido_ErroDeleteComItens(t *testing.T) {
+	db, mock := newPedidoTestDB(t)
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectBegin()
+	mock.ExpectExec(deleteItensPedidoRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrConnDone)
+	mock.ExpectRollback()
+
+	svc := services.NewPedidoService(db, pedidoTestCfg(false))
+	err := svc.DeletePedido(context.Background(), db, 1)
+	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

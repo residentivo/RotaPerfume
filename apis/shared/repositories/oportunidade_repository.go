@@ -212,6 +212,23 @@ func (r *OportunidadeRepository) Update(ctx context.Context, db *sql.DB, id int6
 	return nil
 }
 
+// Delete remove uma oportunidade pela PK oportunidade_id (hard delete — não
+// há coluna deleted_at nesta tabela). Retorna ErrNotFound se não existir.
+func (r *OportunidadeRepository) Delete(ctx context.Context, db *sql.DB, id int64) error {
+	res, err := db.ExecContext(ctx, `DELETE FROM oportunidades WHERE oportunidade_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("repositories: delete oportunidade: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("repositories: delete oportunidade rowsAffected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func scanOportunidade(s rowScanner) (*models.Oportunidade, error) {
 	var o models.Oportunidade
 	if err := s.Scan(

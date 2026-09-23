@@ -246,3 +246,20 @@ func (s *OportunidadeService) UpdateOportunidade(ctx context.Context, db *sql.DB
 	}
 	return atualizada, nil
 }
+
+// DeleteOportunidade remove uma oportunidade (hard delete). Retorna
+// ErrOportunidadeNaoEncontrada se não existir. O scope check por carteira é
+// responsabilidade do handler chamador, feito antes de invocar este método.
+func (s *OportunidadeService) DeleteOportunidade(ctx context.Context, db *sql.DB, id int64) error {
+	if err := s.repo.Delete(ctx, db, id); err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrOportunidadeNaoEncontrada
+		}
+		return err
+	}
+
+	if s.Cfg.Verbose {
+		log.Printf("[oportunidades] excluída: id=%d", id)
+	}
+	return nil
+}

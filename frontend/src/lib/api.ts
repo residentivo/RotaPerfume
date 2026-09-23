@@ -874,6 +874,14 @@ export async function apiUpdatePedido(
   });
 }
 
+// DELETE /api/pedidos/{id} — exclui um pedido. Backend retorna 409 se o
+// pedido possuir pagamentos vinculados ou estiver faturado.
+export async function apiDeletePedido(id: number): Promise<void> {
+  await fetchWithAuth<null>(`/api/pedidos/${id}`, {
+    method: "DELETE",
+  });
+}
+
 // === Pagamentos ===
 //
 // Acesso comum (qualquer usuário autenticado, admin ou normal) — ver
@@ -979,6 +987,14 @@ export async function apiUpdatePagamento(
   return fetchWithAuth<Pagamento>(`/api/pagamentos/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
+  });
+}
+
+// DELETE /api/pagamentos/{id} — exclui um pagamento. Backend retorna 409 se
+// o pagamento ja estiver quitado.
+export async function apiDeletePagamento(id: number): Promise<void> {
+  await fetchWithAuth<null>(`/api/pagamentos/${id}`, {
+    method: "DELETE",
   });
 }
 
@@ -1088,6 +1104,13 @@ export async function apiUpdateOportunidade(
   });
 }
 
+// DELETE /api/oportunidades/{id} — admin exclui uma oportunidade existente.
+export async function apiDeleteOportunidade(id: number): Promise<void> {
+  await fetchWithAuth<null>(`/api/oportunidades/${id}`, {
+    method: "DELETE",
+  });
+}
+
 // === Visitas (CRM) ===
 //
 // Tela admin-only — ver rota /api/visitas no backend.
@@ -1188,6 +1211,13 @@ export async function apiUpdateVisita(
   return fetchWithAuth<Visita>(`/api/visitas/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
+  });
+}
+
+// DELETE /api/visitas/{id} — admin exclui uma visita existente.
+export async function apiDeleteVisita(id: number): Promise<void> {
+  await fetchWithAuth<null>(`/api/visitas/${id}`, {
+    method: "DELETE",
   });
 }
 

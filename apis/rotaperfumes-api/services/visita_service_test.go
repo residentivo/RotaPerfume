@@ -507,3 +507,45 @@ func TestVisitaService_UpdateVisita(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// DeleteVisita
+// ---------------------------------------------------------------------------
+
+const deleteVisitaRegex = `DELETE FROM visitas WHERE visita_id = \?`
+
+func TestVisitaService_DeleteVisita_Sucesso(t *testing.T) {
+	db, mock := newVisitaTestDB(t)
+	mock.ExpectExec(deleteVisitaRegex).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	svc := services.NewVisitaService(db, visitaTestCfg(true))
+	err := svc.DeleteVisita(context.Background(), db, 1)
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestVisitaService_DeleteVisita_NaoEncontrada(t *testing.T) {
+	db, mock := newVisitaTestDB(t)
+	mock.ExpectExec(deleteVisitaRegex).
+		WithArgs(int64(999)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	svc := services.NewVisitaService(db, visitaTestCfg(false))
+	err := svc.DeleteVisita(context.Background(), db, 999)
+	assert.ErrorIs(t, err, services.ErrVisitaNaoEncontrada)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestVisitaService_DeleteVisita_ErroRepo(t *testing.T) {
+	db, mock := newVisitaTestDB(t)
+	mock.ExpectExec(deleteVisitaRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrConnDone)
+
+	svc := services.NewVisitaService(db, visitaTestCfg(false))
+	err := svc.DeleteVisita(context.Background(), db, 1)
+	assert.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

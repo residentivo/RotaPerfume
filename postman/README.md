@@ -237,7 +237,9 @@ Exemplos:
 
 ### Pedidos (`/api/pedidos/*`) — admin only
 
-> Tela master-detail: lista de pedidos + sub-lista de itens (produtos) de cada pedido. Base importada de `dados/erp/pedidos.csv` (28.729 linhas) e `dados/erp/itens_pedido.csv` (197.724 linhas) para as tabelas `pedidos`/`itens_pedido` (ver seção "Importação de pedidos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pedidos"** da collection. Não existe endpoint de `DELETE` nem de exclusão lógica para pedidos.
+> Tela master-detail: lista de pedidos + sub-lista de itens (produtos) de cada pedido. Base importada de `dados/erp/pedidos.csv` (28.729 linhas) e `dados/erp/itens_pedido.csv` (197.724 linhas) para as tabelas `pedidos`/`itens_pedido` (ver seção "Importação de pedidos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pedidos"** da collection.
+>
+> **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/pedidos/{id}` — hard delete (sem exclusão lógica). Ver detalhes abaixo.
 
 #### GET /api/pedidos
 - **Auth:** Bearer Token (admin)
@@ -259,9 +261,15 @@ Exemplos:
 - **Body:** mesmo formato do `POST /api/pedidos`
 - **Descrição:** Atualiza os dados de um pedido existente e substitui integralmente a lista de itens (delete + insert). `valor_bruto`/`valor_total` são recalculados no backend. Retorna `200` com o pedido atualizado (incluindo itens), `404` se não existir, `400` se o payload for inválido.
 
+#### DELETE /api/pedidos/{id} (adicionado em 2026-09-22)
+- **Auth:** Bearer Token (admin)
+- **Descrição:** Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete). Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (`"pedido possui pagamentos vinculados: remova-os antes de excluir o pedido"`) ou se já estiver com `status = "Faturado"` (`"pedido faturado não pode ser excluído, apenas ter o status alterado"` — nesse caso a única alteração permitida é a de status, via `PUT`). Escopo idêntico ao `GET`/`PUT`: `404` (não `403`) se o pedido pertencer a outro vendedor. Retorna `204` sem corpo em caso de sucesso.
+
 ### Pagamentos (`/api/pagamentos/*`) — **acesso comum (não é admin only)**
 
-> **Diferente de Clientes/Produtos/Pedidos (todos admin only), Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`.** A cadeia de middleware usada é `middleware.JWTMiddleware(cfg, true, false)` (`requireAuth=true`, `requireAdmin=false`), enquanto as demais telas usam `(cfg, true, true)`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum. Não existe endpoint de `DELETE`.
+> **Diferente de Clientes/Produtos/Pedidos (todos admin only), Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`.** A cadeia de middleware usada é `middleware.JWTMiddleware(cfg, true, false)` (`requireAuth=true`, `requireAdmin=false`), enquanto as demais telas usam `(cfg, true, true)`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum.
+>
+> **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/pagamentos/{id}` — hard delete (sem exclusão lógica). Ver detalhes abaixo.
 >
 > **Nota de schema:** a chave primária da tabela é literalmente `pagamento_id` (BIGINT AUTO_INCREMENT), não o padrão `id` desacoplado usado nas demais tabelas — decisão explícita do usuário, alinhada 1:1 ao `pagamento_id` do CSV de origem.
 
@@ -285,9 +293,15 @@ Exemplos:
 - **Body:** mesmo formato do `POST /api/pagamentos`, exceto `pedido_id`
 - **Descrição:** Atualiza os campos editáveis de um pagamento existente. `pagamento_id` e `pedido_id` **não** são editáveis por esta rota (o vínculo com o pedido de origem é definitivo — para reatribuir a outro pedido, o fluxo correto é excluir/recriar). Retorna `200` com o pagamento atualizado, `404` se não existir, `400` se o payload for inválido.
 
+#### DELETE /api/pagamentos/{id} (adicionado em 2026-09-22)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
+- **Descrição:** Exclui definitivamente um pagamento (hard delete, sem soft-delete). Bloqueado com `409` se `status_pagamento` já for `"Pago"` ou `"Pago com atraso"` (`"pagamento já quitado não pode ser excluído"`) — preserva a trilha financeira de pagamentos já quitados. Escopo idêntico ao `GET`/`PUT`: `404` (não `403`) se o pagamento pertencer a pedido de outro vendedor. Retorna `204` sem corpo em caso de sucesso.
+
 ### Oportunidades (`/api/oportunidades/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-22)
 
-> Funil de vendas (CRM) importado de `dados/crm/oportunidades.csv` (colunas: `oportunidade_id, cliente_id, vendedor_id, origem, data_abertura, etapa, probabilidade_pct, valor_estimado, data_fechamento, ciclo_dias, motivo_perda`). Tela com dois dropdowns em cascata (Vendedor → Cliente) e filtros de coluna na listagem. Requests desses endpoints estão agrupadas na pasta **"Oportunidades"** da collection. Não existe endpoint de `DELETE` nem exclusão lógica.
+> Funil de vendas (CRM) importado de `dados/crm/oportunidades.csv` (colunas: `oportunidade_id, cliente_id, vendedor_id, origem, data_abertura, etapa, probabilidade_pct, valor_estimado, data_fechamento, ciclo_dias, motivo_perda`). Tela com dois dropdowns em cascata (Vendedor → Cliente) e filtros de coluna na listagem. Requests desses endpoints estão agrupadas na pasta **"Oportunidades"** da collection.
+>
+> **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/oportunidades/{id}` — hard delete (sem exclusão lógica), sem restrição extra de negócio. Ver detalhes abaixo.
 >
 > **Mudança de acesso (2026-09-22):** `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` deixaram de ser `admin only` e passaram a **acesso comum com escopo por carteira** — mesma cadeia de middleware usada em Pagamentos (`cfg, true, false`), com a restrição de dono aplicada no handler via `vendedorScope`/`resolverVendedorScope` (`apis/rotaperfumes-api/handlers/scope.go`), o mesmo padrão já usado em Pedidos/Clientes/Pagamentos:
 > - **Listagem (`GET /api/oportunidades`):** usuário `admin` enxerga tudo; usuário `normal` só enxerga oportunidades da própria carteira — qualquer `vendedor_id` informado na query é **ignorado** e forçado ao vendedor vinculado ao usuário logado (nunca confia em input do cliente).
@@ -318,13 +332,19 @@ Exemplos:
 - **Body:** mesmo formato do `POST /api/oportunidades` (`data_abertura` obrigatório na edição)
 - **Descrição:** Atualiza os dados de uma oportunidade existente. Retorna `200` com a oportunidade atualizada, `404` se não existir (ou pertencer a outro vendedor, para usuário `normal`), `400` se o payload for inválido (inclui `cliente_id` fora da carteira do vendedor, para usuário `normal`). `vendedor_id` do payload é ignorado para usuário `normal` (não é possível reatribuir a outro vendedor).
 
+#### DELETE /api/oportunidades/{id} (adicionado em 2026-09-22)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
+- **Descrição:** Exclui definitivamente uma oportunidade (hard delete, sem soft-delete). Sem restrição extra de negócio (diferente de Pedido/Pagamento). Usuário `normal` tentando excluir oportunidade de outro vendedor recebe `404` (não `403`). Retorna `204` sem corpo em caso de sucesso.
+
 #### GET /api/vendedores/{id}/clientes
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Descrição:** Lista os clientes vinculados (carteira ativa, `data_fim IS NULL`) a um vendedor. Usado pelo dropdown em cascata da tela de Oportunidades (ao escolher o vendedor, filtra os clientes possíveis no segundo dropdown). `404` se o vendedor não existir.
 
 ### Visitas (`/api/visitas/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-22)
 
-> Registro de visitas de vendedores a clientes (CRM), importado de `dados/crm/visitas.csv` (colunas: `visita_id, cliente_id, vendedor_id, data_visita, resultado, duracao_min`). Tela com os mesmos dois dropdowns em cascata (Vendedor → Cliente) usados em Oportunidades — reaproveita o endpoint compartilhado `GET /api/vendedores/{id}/clientes` (acesso comum, documentado acima na seção de Oportunidades) para alimentar o segundo dropdown. Filtros de coluna na listagem. Requests desses endpoints estão agrupadas na pasta **"Visitas"** da collection. Não existe endpoint de `DELETE` nem exclusão lógica.
+> Registro de visitas de vendedores a clientes (CRM), importado de `dados/crm/visitas.csv` (colunas: `visita_id, cliente_id, vendedor_id, data_visita, resultado, duracao_min`). Tela com os mesmos dois dropdowns em cascata (Vendedor → Cliente) usados em Oportunidades — reaproveita o endpoint compartilhado `GET /api/vendedores/{id}/clientes` (acesso comum, documentado acima na seção de Oportunidades) para alimentar o segundo dropdown. Filtros de coluna na listagem. Requests desses endpoints estão agrupadas na pasta **"Visitas"** da collection.
+>
+> **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/visitas/{id}` — hard delete (sem exclusão lógica), sem restrição extra de negócio. Ver detalhes abaixo.
 >
 > **Diferente de Oportunidades:** `data_visita` é **obrigatório e sem default** — no `POST`/`PUT` de Oportunidades, `data_abertura` vazio assume a data de hoje; em Visitas, `data_visita` vazio/ausente retorna `400` (`"data_visita inválida (use o formato AAAA-MM-DD)"`).
 >
@@ -349,6 +369,10 @@ Exemplos:
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Body:** mesmo formato do `POST /api/visitas` (`data_visita` obrigatório também na edição, sem default)
 - **Descrição:** Atualiza os dados de uma visita existente. Retorna `200` com a visita atualizada, `404` se não existir (ou pertencer a outro vendedor, para usuário `normal`), `400` se o payload for inválido (inclui `cliente_id` fora da carteira do vendedor, para usuário `normal`). `vendedor_id` do payload é ignorado para usuário `normal` (não é possível reatribuir a outro vendedor).
+
+#### DELETE /api/visitas/{id} (adicionado em 2026-09-22)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
+- **Descrição:** Exclui definitivamente uma visita (hard delete, sem soft-delete). Sem restrição extra de negócio (diferente de Pedido/Pagamento). Usuário `normal` tentando excluir visita de outro vendedor recebe `404` (não `403`). Retorna `204` sem corpo em caso de sucesso.
 
 ### Estoque (`/api/estoque/*`) — admin only
 
@@ -537,6 +561,9 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Status 200 OK`
 - `Pedido atualizado com dados corretos` (`id`, `status`, `itens` array)
 
+### Excluir Pedido
+- `Status 204 No Content`
+
 ### Listar Pagamentos
 - `Status 200`
 - `Usuário NORMAL consegue acessar (não é 403)` — **valida explicitamente que o acesso é comum, não admin only**
@@ -557,6 +584,10 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Usuário NORMAL consegue editar (não é 403)`
 - `Pagamento atualizado com dados corretos` (`pagamento_id`, `status_pagamento`)
 
+### Excluir Pagamento
+- `Status 204 No Content`
+- `Usuário NORMAL consegue excluir (não é 403)` — **valida explicitamente que o acesso é comum, não admin only**
+
 ### Listar Oportunidades
 - `Status 200`
 - `Lista retornada`
@@ -573,6 +604,9 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 ### Editar Oportunidade
 - `Status 200 OK`
 - `Oportunidade atualizada com dados corretos` (`oportunidade_id`, `etapa`)
+
+### Excluir Oportunidade
+- `Status 204 No Content`
 
 ### Listar Clientes do Vendedor
 - `Status 200`
@@ -595,6 +629,9 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 ### Editar Visita
 - `Status 200 OK`
 - `Visita atualizada com dados corretos` (`visita_id`, `resultado`)
+
+### Excluir Visita
+- `Status 204 No Content`
 
 ### Listar Estoque
 - `Status 200`
@@ -649,19 +686,23 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Criar Pedido | 2 | — |
 | Detalhe do Pedido | 2 | — |
 | Editar Pedido | 1 | — |
+| Excluir Pedido | 1 | — |
 | Listar Pagamentos | 4 | — |
 | Criar Pagamento | 3 | — |
 | Detalhe do Pagamento | 1 | — |
 | Editar Pagamento | 3 | — |
+| Excluir Pagamento | 2 | — |
 | Listar Oportunidades | 2 | — |
 | Detalhe da Oportunidade | 1 | — |
 | Criar Oportunidade | 1 | — |
 | Editar Oportunidade | 1 | — |
+| Excluir Oportunidade | 1 | — |
 | Listar Clientes do Vendedor | 2 | — |
 | Listar Visitas | 2 | — |
 | Detalhe da Visita | 1 | — |
 | Criar Visita | 1 | — |
 | Editar Visita | 1 | — |
+| Excluir Visita | 1 | — |
 | Listar Estoque | 3 | — |
 | Detalhe do Estoque | 1 | — |
 | Criar Estoque | 1 | — |

@@ -194,6 +194,23 @@ func (r *VisitaRepository) Update(ctx context.Context, db *sql.DB, id int64, v *
 	return nil
 }
 
+// Delete remove uma visita pela PK visita_id (hard delete — não há coluna
+// deleted_at nesta tabela). Retorna ErrNotFound se não existir.
+func (r *VisitaRepository) Delete(ctx context.Context, db *sql.DB, id int64) error {
+	res, err := db.ExecContext(ctx, `DELETE FROM visitas WHERE visita_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("repositories: delete visita: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("repositories: delete visita rowsAffected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func scanVisita(s rowScanner) (*models.Visita, error) {
 	var v models.Visita
 	if err := s.Scan(

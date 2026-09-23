@@ -14,6 +14,7 @@ import {
   apiListPagamentos,
   apiCreatePagamento,
   apiUpdatePagamento,
+  apiDeletePagamento,
 } from "@/lib/api";
 import {
   Pagamento,
@@ -113,6 +114,7 @@ function PagamentosContent() {
   const [editingPagamento, setEditingPagamento] = useState<Pagamento | null>(
     null
   );
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const loadPagamentos = async () => {
     setLoading(true);
@@ -219,6 +221,31 @@ function PagamentosContent() {
     setTimeout(() => setSuccess(null), 4000);
   };
 
+  const handleDelete = async (pagamento: Pagamento) => {
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir o pagamento #${pagamento.pagamento_id} - ${pagamento.forma_pagamento}?`
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    setDeletingId(pagamento.pagamento_id);
+    try {
+      await apiDeletePagamento(pagamento.pagamento_id);
+      setPagamentos((prev) =>
+        prev.filter((p) => p.pagamento_id !== pagamento.pagamento_id)
+      );
+      setTotal((t) => Math.max(0, t - 1));
+      setSuccess(`Pagamento #${pagamento.pagamento_id} excluido com sucesso.`);
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erro ao excluir pagamento.";
+      setError(message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const columns: Column<Pagamento>[] = [
     {
       key: "pagamento_id",
@@ -302,7 +329,7 @@ function PagamentosContent() {
     {
       key: "actions",
       header: "Acoes",
-      width: "100px",
+      width: "170px",
       align: "right",
       render: (p) => (
         <div className="inline-flex items-center justify-end gap-2">
@@ -313,6 +340,15 @@ function PagamentosContent() {
             title="Editar pagamento"
           >
             Editar
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => handleDelete(p)}
+            disabled={deletingId === p.pagamento_id}
+            title="Excluir pagamento"
+          >
+            {deletingId === p.pagamento_id ? "Excluindo..." : "Excluir"}
           </Button>
         </div>
       ),

@@ -754,3 +754,175 @@ func TestUpdatePagamento_NaoAutenticado(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
+
+// ---------------------------------------------------------------------------
+// DeletePagamento DELETE /api/pagamentos/{id}
+// ---------------------------------------------------------------------------
+
+// pagamentoRowsComStatusForHandler é igual a pagamentoRowsForHandler, mas
+// permite parametrizar o status_pagamento (pagamentoRowsForHandler sempre
+// retorna "Em aberto").
+func pagamentoRowsComStatusForHandler(id, pedidoID int64, valor float64, status string) *sqlmock.Rows {
+	now := time.Now()
+	return sqlmock.NewRows(pagamentoColunasHeaderForHandler()).
+		AddRow(id, pedidoID, "PIX", uint8(1), valor, 0.0, valor, now, nil, status, now, now)
+}
+
+const deletePagamentoRegexH = `DELETE FROM pagamentos WHERE pagamento_id = \?`
+
+func TestDeletePagamento_Success(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 100.0))
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
+	mock.ExpectExec(deletePagamentoRegexH).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pagamentos/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeletePagamento_NaoEncontrado(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(999)).
+		WillReturnRows(emptyPagamentoRowsForHandler())
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pagamentos/999", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "pagamento não encontrado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDeletePagamento_NegadoParaNaoAdminForaDaCarteira cobre o cenário de
+// IDOR: vendedor não-admin tentando excluir pagamento de pedido de outro
+// vendedor recebe 404.
+func TestDeletePagamento_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// pedidoRowsForHandler(1, ...) tem vendedor_id=2, mas o usuário
+	// autenticado está vinculado ao vendedor 99.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 100.0))
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pagamentos/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "pagamento não encontrado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeletePagamento_IDInvalido(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pagamentos/abc", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "id inválido", body["error"])
+}
+
+// TestDeletePagamento_JaQuitado_409 cobre a regra do SecBrain: pagamento com
+// status_pagamento "Pago" ou "Pago com atraso" não pode ser excluído.
+func TestDeletePagamento_JaQuitado_409(t *testing.T) {
+	statusQuitados := []string{"Pago", "Pago com atraso"}
+	for _, status := range statusQuitados {
+		t.Run(status, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+
+			cfg := testCfg()
+			adminToken := generateToken(t, cfg, 1, "admin")
+
+			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
+				WithArgs(int64(1)).
+				WillReturnRows(pagamentoRowsComStatusForHandler(1, 1, 100.0, status))
+			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
+				WithArgs(int64(1)).
+				WillReturnRows(pagamentoRowsComStatusForHandler(1, 1, 100.0, status))
+
+			req, _ := http.NewRequest("DELETE", server.URL+"/api/pagamentos/1", nil)
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusConflict, resp.StatusCode)
+			body := decodeResponse(t, readBody(t, resp))
+			assert.Equal(t, "pagamento já quitado não pode ser excluído", body["error"])
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}

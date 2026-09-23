@@ -13,6 +13,7 @@ import {
   apiGetPedido,
   apiCreatePedido,
   apiUpdatePedido,
+  apiDeletePedido,
 } from "@/lib/api";
 import { Pedido, PedidoDetalhe, PedidoInput } from "@/lib/types";
 
@@ -120,6 +121,7 @@ export default function PedidosPage() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingPedido, setEditingPedido] = useState<PedidoDetalhe | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const loadPedidos = async () => {
     setLoading(true);
@@ -260,6 +262,35 @@ export default function PedidosPage() {
     setTimeout(() => setSuccess(null), 4000);
   };
 
+  const handleDelete = async (pedido: Pedido) => {
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir o pedido #${pedido.pedido_id_origem} - ${pedido.cliente_nome}?`
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    setDeletingId(pedido.pedido_id_origem);
+    try {
+      await apiDeletePedido(pedido.pedido_id_origem);
+      setPedidos((prev) =>
+        prev.filter((p) => p.pedido_id_origem !== pedido.pedido_id_origem)
+      );
+      if (selectedId === pedido.pedido_id_origem) {
+        setSelectedId(null);
+        setSelectedDetalhe(null);
+      }
+      setTotal((t) => Math.max(0, t - 1));
+      setSuccess(`Pedido #${pedido.pedido_id_origem} excluido com sucesso.`);
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erro ao excluir pedido.";
+      setError(message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const columns: Column<Pedido>[] = [
     {
       key: "cliente_nome",
@@ -331,7 +362,7 @@ export default function PedidosPage() {
     {
       key: "actions",
       header: "Acoes",
-      width: "170px",
+      width: "230px",
       align: "right",
       render: (p) => (
         <div className="inline-flex items-center justify-end gap-2">
@@ -351,6 +382,15 @@ export default function PedidosPage() {
             title="Editar pedido"
           >
             Editar
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => handleDelete(p)}
+            disabled={deletingId === p.pedido_id_origem}
+            title="Excluir pedido"
+          >
+            {deletingId === p.pedido_id_origem ? "Excluindo..." : "Excluir"}
           </Button>
         </div>
       ),

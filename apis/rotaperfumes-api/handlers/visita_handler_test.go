@@ -1023,3 +1023,145 @@ func TestUpdateVisita_ErroInterno(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ---------------------------------------------------------------------------
+// DeleteVisita DELETE /api/visitas/{id}
+// ---------------------------------------------------------------------------
+
+const deleteVisitaRegexH = `DELETE FROM visitas WHERE visita_id = \?`
+
+func TestDeleteVisita_Success(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
+	mock.ExpectExec(deleteVisitaRegexH).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/visitas/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeleteVisita_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// visitaRowsForHandler() tem vendedor_id=1 — usuário vinculado ao mesmo
+	// vendedor (dono do registro).
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
+	mock.ExpectExec(deleteVisitaRegexH).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/visitas/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeleteVisita_NaoEncontrada(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/visitas/999", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "visita não encontrada", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDeleteVisita_NegadoParaNaoAdminForaDaCarteira cobre o cenário de IDOR:
+// vendedor não-admin tentando excluir visita de outro vendedor recebe 404.
+func TestDeleteVisita_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// visitaRowsForHandler() tem vendedor_id=1, mas o usuário está vinculado
+	// ao vendedor 99.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(visitaRowsForHandler())
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/visitas/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "visita não encontrada", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeleteVisita_IDInvalido(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/visitas/abc", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "id inválido", body["error"])
+}

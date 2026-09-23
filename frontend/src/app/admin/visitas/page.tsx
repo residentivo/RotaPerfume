@@ -12,6 +12,7 @@ import {
   apiListVisitas,
   apiCreateVisita,
   apiUpdateVisita,
+  apiDeleteVisita,
   apiListVendedores,
   apiListClientes,
 } from "@/lib/api";
@@ -110,6 +111,7 @@ export default function VisitasPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingVisita, setEditingVisita] = useState<Visita | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Carrega vendedores/clientes uma vez, para os selects de filtro e para
   // exibir "ID - Nome" nas linhas da tabela (a API de visitas so retorna
@@ -274,6 +276,29 @@ export default function VisitasPage() {
     setTimeout(() => setSuccess(null), 4000);
   };
 
+  const handleDelete = async (visita: Visita) => {
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir a visita #${visita.visita_id}?`
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    setDeletingId(visita.visita_id);
+    try {
+      await apiDeleteVisita(visita.visita_id);
+      setVisitas((prev) => prev.filter((v) => v.visita_id !== visita.visita_id));
+      setTotal((t) => Math.max(0, t - 1));
+      setSuccess(`Visita #${visita.visita_id} excluida com sucesso.`);
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erro ao excluir visita.";
+      setError(message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const columns: Column<Visita>[] = [
     {
       key: "cliente_id",
@@ -337,7 +362,7 @@ export default function VisitasPage() {
     {
       key: "actions",
       header: "Acoes",
-      width: "110px",
+      width: "180px",
       align: "right",
       render: (v) => (
         <div className="inline-flex items-center justify-end gap-2">
@@ -348,6 +373,15 @@ export default function VisitasPage() {
             title="Editar visita"
           >
             Editar
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => handleDelete(v)}
+            disabled={deletingId === v.visita_id}
+            title="Excluir visita"
+          >
+            {deletingId === v.visita_id ? "Excluindo..." : "Excluir"}
           </Button>
         </div>
       ),

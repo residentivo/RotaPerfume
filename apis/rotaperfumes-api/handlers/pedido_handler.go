@@ -217,6 +217,10 @@ func pedidoErroParaStatus(err error) (status int, msg string, ok bool) {
 		return http.StatusBadRequest, "desconto_pct deve estar entre 0 e 100 em todos os itens", true
 	case errors.Is(err, services.ErrPedidoJaFaturadoNaoPodeAlterarItens):
 		return http.StatusConflict, "pedido já faturado: não é possível alterar os itens, apenas o status", true
+	case errors.Is(err, services.ErrPedidoPossuiPagamentosVinculados):
+		return http.StatusConflict, "pedido possui pagamentos vinculados", true
+	case errors.Is(err, services.ErrPedidoFaturadoNaoPodeSerExcluido):
+		return http.StatusConflict, "pedido faturado não pode ser excluído, apenas ter o status alterado", true
 	default:
 		return 0, "", false
 	}
@@ -305,4 +309,62 @@ func (h *PedidoHandler) UpdatePedido(w http.ResponseWriter, r *http.Request) {
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[pedidos] atualizado: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, pedido, "")
+}
+
+// DeletePedido DELETE /api/pedidos/{id}
+//
+// Hard delete: remove o pedido e seus itens definitivamente (não há
+// soft-delete para pedidos). Bloqueado (409) se o pedido tiver pagamentos
+// vinculados ou já estiver com status "Faturado" (nesse caso a única
+// alteração permitida é a de status, via PUT).
+// Retorna: 204 sem corpo, 404 se não existir (ou fora do escopo do
+// vendedor), 409 se houver pagamentos vinculados ou o pedido já estiver
+// faturado.
+// Acesso comum.
+func (h *PedidoHandler) DeletePedido(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pedidos] DeletePedido escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
+		return
+	}
+
+	pedido, err := h.svc.GetPedidoDetalhe(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, services.ErrPedidoNaoEncontrado) {
+			writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
+			return
+		}
+		log.Printf("[pedidos] DeletePedido buscar atual: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.Restrito && !scope.PermiteVendedor(pedido.VendedorID) {
+		writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
+		return
+	}
+
+	if err := h.svc.DeletePedido(r.Context(), h.db, id); err != nil {
+		if status, msg, ok := pedidoErroParaStatus(err); ok {
+			writeJSON(w, status, nil, msg)
+			return
+		}
+		log.Printf("[pedidos] DeletePedido: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[pedidos] excluído: id=%d por usuario role=%s", id, role)
+	writeNoContent(w)
 }

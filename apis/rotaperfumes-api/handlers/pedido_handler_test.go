@@ -861,3 +861,261 @@ func TestUpdatePedido_JaFaturadoTentaAlterarItens_409(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ---------------------------------------------------------------------------
+// DeletePedido DELETE /api/pedidos/{id}
+// ---------------------------------------------------------------------------
+
+// pedidoRowsForHandlerStatus é igual a pedidoRowsForHandler, mas permite
+// parametrizar o status (pedidoRowsForHandler sempre retorna "Faturado", que
+// bloquearia a exclusão nos cenários de sucesso do DeletePedido).
+func pedidoRowsForHandlerStatus(idOrigem int64, valorTotal float64, status string) *sqlmock.Rows {
+	now := time.Now()
+	return sqlmock.NewRows(pedidoColunasHeaderForHandler()).
+		AddRow(idOrigem, int64(1), int64(2), now, "App", status, valorTotal, now, now, "Cliente Teste", "Vendedor Teste")
+}
+
+const deleteItensPedidoRegexH = `DELETE FROM itens_pedido WHERE pedido_id = \?`
+const deletePedidoRegexH = `DELETE FROM pedidos WHERE pedido_id_origem = \?`
+const existsPagamentoPorPedidoRegexH = `SELECT 1 FROM pagamentos WHERE pedido_id = \? LIMIT 1`
+
+func TestDeletePedido_Success(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(itemPedidoRowsForHandler(1))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(existsPagamentoPorPedidoRegexH).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectBegin()
+	mock.ExpectExec(deleteItensPedidoRegexH).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec(deletePedidoRegexH).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeletePedido_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(itemPedidoRowsForHandler(1))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(existsPagamentoPorPedidoRegexH).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectBegin()
+	mock.ExpectExec(deleteItensPedidoRegexH).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec(deletePedidoRegexH).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeletePedido_NaoEncontrado(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(999)).
+		WillReturnRows(emptyPedidoRowsForHandler())
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/999", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "pedido não encontrado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDeletePedido_NegadoParaNaoAdminForaDaCarteira cobre o cenário de IDOR:
+// vendedor não-admin tentando excluir pedido de outro vendedor recebe 404
+// (não 403, para não confirmar a existência do registro).
+func TestDeletePedido_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// pedidoRowsForHandler(1, ...) tem vendedor_id=2, mas o usuário
+	// autenticado está vinculado ao vendedor 99.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 230.0))
+	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(itemPedidoRowsForHandler(1))
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "pedido não encontrado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeletePedido_IDInvalido(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/abc", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "id inválido", body["error"])
+}
+
+// TestDeletePedido_PagamentosVinculados_409 cobre a regra do SecBrain:
+// pedido com pagamentos vinculados não pode ser excluído.
+func TestDeletePedido_PagamentosVinculados_409(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(itemPedidoRowsForHandler(1))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
+	mock.ExpectQuery(existsPagamentoPorPedidoRegexH).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "pedido possui pagamentos vinculados", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDeletePedido_Faturado_409 cobre a regra do SecBrain: pedido faturado
+// não pode ser excluído, apenas ter o status alterado.
+func TestDeletePedido_Faturado_409(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	// pedidoRowsForHandler default já retorna status "Faturado".
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 230.0))
+	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(itemPedidoRowsForHandler(1))
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 230.0))
+	mock.ExpectQuery(existsPagamentoPorPedidoRegexH).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrNoRows)
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "pedido faturado não pode ser excluído, apenas ter o status alterado", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

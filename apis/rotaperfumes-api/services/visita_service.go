@@ -194,3 +194,20 @@ func (s *VisitaService) UpdateVisita(ctx context.Context, db *sql.DB, id int64, 
 	}
 	return atualizada, nil
 }
+
+// DeleteVisita remove uma visita (hard delete). Retorna
+// ErrVisitaNaoEncontrada se não existir. O scope check por carteira é
+// responsabilidade do handler chamador, feito antes de invocar este método.
+func (s *VisitaService) DeleteVisita(ctx context.Context, db *sql.DB, id int64) error {
+	if err := s.repo.Delete(ctx, db, id); err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrVisitaNaoEncontrada
+		}
+		return err
+	}
+
+	if s.Cfg.Verbose {
+		log.Printf("[visitas] excluída: id=%d", id)
+	}
+	return nil
+}

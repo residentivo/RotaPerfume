@@ -12,6 +12,7 @@ import {
   apiListOportunidades,
   apiCreateOportunidade,
   apiUpdateOportunidade,
+  apiDeleteOportunidade,
   apiListVendedores,
   apiListClientes,
 } from "@/lib/api";
@@ -141,6 +142,7 @@ export default function OportunidadesPage() {
   const [editingOportunidade, setEditingOportunidade] = useState<Oportunidade | null>(
     null
   );
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Carrega vendedores/clientes uma vez, para os selects de filtro e para
   // exibir "ID - Nome" nas linhas da tabela (a API de oportunidades so
@@ -319,6 +321,33 @@ export default function OportunidadesPage() {
     setTimeout(() => setSuccess(null), 4000);
   };
 
+  const handleDelete = async (oportunidade: Oportunidade) => {
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir a oportunidade #${oportunidade.oportunidade_id}?`
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    setDeletingId(oportunidade.oportunidade_id);
+    try {
+      await apiDeleteOportunidade(oportunidade.oportunidade_id);
+      setOportunidades((prev) =>
+        prev.filter((o) => o.oportunidade_id !== oportunidade.oportunidade_id)
+      );
+      setTotal((t) => Math.max(0, t - 1));
+      setSuccess(
+        `Oportunidade #${oportunidade.oportunidade_id} excluida com sucesso.`
+      );
+      setTimeout(() => setSuccess(null), 4000);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erro ao excluir oportunidade.";
+      setError(message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const columns: Column<Oportunidade>[] = [
     {
       key: "cliente_id",
@@ -411,7 +440,7 @@ export default function OportunidadesPage() {
     {
       key: "actions",
       header: "Acoes",
-      width: "110px",
+      width: "180px",
       align: "right",
       render: (o) => (
         <div className="inline-flex items-center justify-end gap-2">
@@ -422,6 +451,15 @@ export default function OportunidadesPage() {
             title="Editar oportunidade"
           >
             Editar
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => handleDelete(o)}
+            disabled={deletingId === o.oportunidade_id}
+            title="Excluir oportunidade"
+          >
+            {deletingId === o.oportunidade_id ? "Excluindo..." : "Excluir"}
           </Button>
         </div>
       ),

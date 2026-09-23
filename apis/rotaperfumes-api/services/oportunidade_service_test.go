@@ -575,3 +575,45 @@ func TestOportunidadeService_UpdateOportunidade(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// DeleteOportunidade
+// ---------------------------------------------------------------------------
+
+const deleteOportunidadeRegex = `DELETE FROM oportunidades WHERE oportunidade_id = \?`
+
+func TestOportunidadeService_DeleteOportunidade_Sucesso(t *testing.T) {
+	db, mock := newOportunidadeTestDB(t)
+	mock.ExpectExec(deleteOportunidadeRegex).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	svc := services.NewOportunidadeService(db, oportunidadeTestCfg(true))
+	err := svc.DeleteOportunidade(context.Background(), db, 1)
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestOportunidadeService_DeleteOportunidade_NaoEncontrada(t *testing.T) {
+	db, mock := newOportunidadeTestDB(t)
+	mock.ExpectExec(deleteOportunidadeRegex).
+		WithArgs(int64(999)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	svc := services.NewOportunidadeService(db, oportunidadeTestCfg(false))
+	err := svc.DeleteOportunidade(context.Background(), db, 999)
+	assert.ErrorIs(t, err, services.ErrOportunidadeNaoEncontrada)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestOportunidadeService_DeleteOportunidade_ErroRepo(t *testing.T) {
+	db, mock := newOportunidadeTestDB(t)
+	mock.ExpectExec(deleteOportunidadeRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrConnDone)
+
+	svc := services.NewOportunidadeService(db, oportunidadeTestCfg(false))
+	err := svc.DeleteOportunidade(context.Background(), db, 1)
+	assert.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

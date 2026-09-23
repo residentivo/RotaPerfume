@@ -492,3 +492,79 @@ func TestPagamentoService_UpdatePagamento_ComDataPagamento(t *testing.T) {
 	require.NotNil(t, p)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ---------------------------------------------------------------------------
+// DeletePagamento
+// ---------------------------------------------------------------------------
+
+// pagamentoRowsComStatus é igual a pagamentoRows, mas permite parametrizar o
+// status_pagamento (pagamentoRows sempre retorna "Em aberto").
+func pagamentoRowsComStatus(id, pedidoID int64, valor float64, status string) *sqlmock.Rows {
+	now := time.Now()
+	return sqlmock.NewRows(pagamentoColunasHeader()).
+		AddRow(id, pedidoID, "PIX", uint8(1), valor, 0.0, valor, now, nil, status, now, now)
+}
+
+const deletePagamentoRegex = `DELETE FROM pagamentos WHERE pagamento_id = \?`
+
+func TestPagamentoService_DeletePagamento_Sucesso(t *testing.T) {
+	db, mock := newPagamentoTestDB(t)
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pagamentoRows(1, 1, 100.0))
+	mock.ExpectExec(deletePagamentoRegex).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
+	err := svc.DeletePagamento(context.Background(), db, 1)
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPagamentoService_DeletePagamento_NaoEncontrado(t *testing.T) {
+	db, mock := newPagamentoTestDB(t)
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
+
+	svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
+	err := svc.DeletePagamento(context.Background(), db, 999)
+	assert.ErrorIs(t, err, services.ErrPagamentoNaoEncontrado)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestPagamentoService_DeletePagamento_JaQuitado_409 cobre a regra do
+// SecBrain: pagamento com status_pagamento "Pago" ou "Pago com atraso" não
+// pode ser excluído (preserva a trilha financeira).
+func TestPagamentoService_DeletePagamento_JaQuitado_409(t *testing.T) {
+	statusQuitados := []string{"Pago", "Pago com atraso"}
+	for _, status := range statusQuitados {
+		t.Run(status, func(t *testing.T) {
+			db, mock := newPagamentoTestDB(t)
+			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
+				WithArgs(int64(1)).
+				WillReturnRows(pagamentoRowsComStatus(1, 1, 100.0, status))
+
+			svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
+			err := svc.DeletePagamento(context.Background(), db, 1)
+			assert.ErrorIs(t, err, services.ErrPagamentoJaQuitadoNaoPodeSerExcluido)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestPagamentoService_DeletePagamento_ErroDeleteRepo(t *testing.T) {
+	db, mock := newPagamentoTestDB(t)
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pagamentoRows(1, 1, 100.0))
+	mock.ExpectExec(deletePagamentoRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrConnDone)
+
+	svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
+	err := svc.DeletePagamento(context.Background(), db, 1)
+	assert.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

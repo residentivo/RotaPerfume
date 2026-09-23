@@ -956,3 +956,146 @@ func TestListOportunidades_ListaVazia(t *testing.T) {
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ---------------------------------------------------------------------------
+// DeleteOportunidade DELETE /api/oportunidades/{id}
+// ---------------------------------------------------------------------------
+
+const deleteOportunidadeRegexH = `DELETE FROM oportunidades WHERE oportunidade_id = \?`
+
+func TestDeleteOportunidade_Success(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
+	mock.ExpectExec(deleteOportunidadeRegexH).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/oportunidades/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeleteOportunidade_PermitidoParaNaoAdmin(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// oportunidadeRowsForHandler() tem vendedor_id=1 — usuário vinculado ao
+	// mesmo vendedor (dono do registro).
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
+	mock.ExpectExec(deleteOportunidadeRegexH).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/oportunidades/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeleteOportunidade_NaoEncontrada(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/oportunidades/999", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "oportunidade não encontrada", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDeleteOportunidade_NegadoParaNaoAdminForaDaCarteira cobre o cenário de
+// IDOR: vendedor não-admin tentando excluir oportunidade de outro vendedor
+// recebe 404.
+func TestDeleteOportunidade_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	// oportunidadeRowsForHandler() tem vendedor_id=1, mas o usuário está
+	// vinculado ao vendedor 99.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(oportunidadeRowsForHandler())
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/oportunidades/1", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "oportunidade não encontrada", body["error"])
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDeleteOportunidade_IDInvalido(t *testing.T) {
+	server, db, _ := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	adminToken := generateToken(t, cfg, 1, "admin")
+
+	req, _ := http.NewRequest("DELETE", server.URL+"/api/oportunidades/abc", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "id inválido", body["error"])
+}

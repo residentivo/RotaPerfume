@@ -6,11 +6,31 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { apiListPedidos } from "@/lib/api";
 import {
   Pagamento,
   PagamentoCreateInput,
   PagamentoUpdateInput,
+  Pedido,
 } from "@/lib/types";
+
+const currencyFmt = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+});
+
+function fmtDate(dateStr: string): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString("pt-BR");
+}
+
+function pedidoOptionLabel(p: Pedido): string {
+  return `#${p.pedido_id_origem} - ${p.cliente_nome} - ${currencyFmt.format(
+    p.valor_total ?? 0
+  )} - ${fmtDate(p.data_pedido)}`;
+}
 
 interface PagamentoModalProps {
   open: boolean;
@@ -47,6 +67,9 @@ export function PagamentoModal({
   onSubmit,
 }: PagamentoModalProps) {
   const [pedidoId, setPedidoId] = useState("");
+  const [pedidoQuery, setPedidoQuery] = useState("");
+  const [pedidoOptions, setPedidoOptions] = useState<Pedido[]>([]);
+  const [loadingPedidos, setLoadingPedidos] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState(
     FORMA_PAGAMENTO_OPTIONS[0].value
   );
@@ -80,6 +103,8 @@ export function PagamentoModal({
         setStatusPagamento(pagamento.status_pagamento);
       } else {
         setPedidoId("");
+        setPedidoQuery("");
+        setPedidoOptions([]);
         setFormaPagamento(FORMA_PAGAMENTO_OPTIONS[0].value);
         setParcelas("1");
         setValor("");
@@ -92,13 +117,44 @@ export function PagamentoModal({
     }
   }, [open, mode, pagamento]);
 
+  // Busca a lista de pedidos para o select (create), com filtro por texto
+  // (parametro `q`) e debounce ao digitar. Refaz a busca a cada mudanca de
+  // pedidoQuery enquanto o modal estiver aberto em modo de criacao.
+  useEffect(() => {
+    if (!open || mode !== "create") return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setLoadingPedidos(true);
+      try {
+        const res = await apiListPedidos(
+          1,
+          20,
+          { q: pedidoQuery.trim() || undefined },
+          "data_pedido",
+          "desc"
+        );
+        if (!cancelled) {
+          setPedidoOptions(res.data);
+        }
+      } catch {
+        if (!cancelled) setPedidoOptions([]);
+      } finally {
+        if (!cancelled) setLoadingPedidos(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, mode, pedidoQuery]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     const pedidoIdNum = Number(pedidoId);
     if (mode === "create" && (!pedidoId.trim() || Number.isNaN(pedidoIdNum) || pedidoIdNum <= 0)) {
-      setError("Pedido (ID) e obrigatorio e deve ser um numero maior que zero.");
+      setError("Selecione um pedido.");
       return;
     }
     const parcelasNum = Number(parcelas);
@@ -196,17 +252,35 @@ export function PagamentoModal({
         )}
 
         {mode === "create" && (
-          <Input
-            label="ID do pedido"
-            type="number"
-            min="1"
-            step="1"
-            value={pedidoId}
-            onChange={(e) => setPedidoId(e.target.value)}
-            placeholder="Ex: 123"
-            required
-            autoFocus
-          />
+          <div className="space-y-2">
+            <Input
+              label="Buscar pedido"
+              value={pedidoQuery}
+              onChange={(e) => setPedidoQuery(e.target.value)}
+              placeholder="Filtrar por cliente ou ID do pedido"
+              autoFocus
+            />
+            <Select
+              label="Pedido"
+              options={[
+                {
+                  value: "",
+                  label: loadingPedidos
+                    ? "Carregando pedidos..."
+                    : pedidoOptions.length === 0
+                    ? "Nenhum pedido encontrado"
+                    : "Selecione um pedido",
+                },
+                ...pedidoOptions.map((p) => ({
+                  value: String(p.pedido_id_origem),
+                  label: pedidoOptionLabel(p),
+                })),
+              ]}
+              value={pedidoId}
+              onChange={(e) => setPedidoId(e.target.value)}
+              required
+            />
+          </div>
         )}
 
         <div className="grid grid-cols-2 gap-3">

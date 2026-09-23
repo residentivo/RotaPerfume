@@ -38,6 +38,14 @@ func writeJSON(w http.ResponseWriter, status int, data any, errMsg string) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// writeNoContent escreve uma resposta 204 sem corpo, usada pelos endpoints de
+// exclusão (DELETE) bem-sucedida. Diferente de writeJSON: um corpo em uma
+// resposta 204 violaria a semântica HTTP (RFC 9110 §15.3.5 — 204 não deve ter
+// corpo de mensagem).
+func writeNoContent(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // writeJSONWithPagination é igual a writeJSON + bloco pagination.
 func writeJSONWithPagination(w http.ResponseWriter, status int, data any, page, limit, total, pages int) {
 	w.Header().Set("Content-Type", "application/json")

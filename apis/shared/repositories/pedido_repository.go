@@ -460,6 +460,41 @@ func insertItensTx(ctx context.Context, tx *sql.Tx, pedidoID int64, itens []mode
 	return nil
 }
 
+// DeleteComItens remove um pedido e seus itens (itens_pedido) em uma única
+// transação (hard delete — não há coluna deleted_at nestas tabelas): se a
+// exclusão de qualquer uma das tabelas falhar, nada é removido. As regras de
+// negócio que bloqueiam a exclusão (pagamentos vinculados, status Faturado)
+// são responsabilidade do handler/service chamador — este método assume que
+// já foram checadas. Retorna ErrNotFound se o pedido não existir.
+func (r *PedidoRepository) DeleteComItens(ctx context.Context, db *sql.DB, id int64) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("repositories: begin tx delete pedido: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM itens_pedido WHERE pedido_id = ?`, id); err != nil {
+		return fmt.Errorf("repositories: delete itens_pedido: %w", err)
+	}
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM pedidos WHERE pedido_id_origem = ?`, id)
+	if err != nil {
+		return fmt.Errorf("repositories: delete pedido: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("repositories: delete pedido rowsAffected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("repositories: commit delete pedido: %w", err)
+	}
+	return nil
+}
+
 func scanPedidoListagem(s rowScanner) (*PedidoListagem, error) {
 	var p PedidoListagem
 	if err := s.Scan(

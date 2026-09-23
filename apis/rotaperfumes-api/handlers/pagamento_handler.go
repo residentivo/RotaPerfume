@@ -213,6 +213,8 @@ func pagamentoErroParaStatus(err error) (status int, msg string, ok bool) {
 		return http.StatusBadRequest, "data_vencimento inválida (use o formato AAAA-MM-DD)", true
 	case errors.Is(err, services.ErrDataPagamentoInvalida):
 		return http.StatusBadRequest, "data_pagamento inválida (use o formato AAAA-MM-DD)", true
+	case errors.Is(err, services.ErrPagamentoJaQuitadoNaoPodeSerExcluido):
+		return http.StatusConflict, "pagamento já quitado não pode ser excluído", true
 	default:
 		return 0, "", false
 	}
@@ -221,9 +223,11 @@ func pagamentoErroParaStatus(err error) (status int, msg string, ok bool) {
 // CreatePagamento POST /api/pagamentos
 //
 // Body: { "pedido_id": number, "forma_pagamento": string, "parcelas": number,
-//         "valor": number, "taxa_pct": number, "valor_liquido": number,
-//         "data_vencimento": "AAAA-MM-DD", "data_pagamento": "AAAA-MM-DD" (opcional),
-//         "status_pagamento": string }
+//
+//	"valor": number, "taxa_pct": number, "valor_liquido": number,
+//	"data_vencimento": "AAAA-MM-DD", "data_pagamento": "AAAA-MM-DD" (opcional),
+//	"status_pagamento": string }
+//
 // valor_liquido é exigido explicitamente no payload (não é calculado
 // automaticamente) — ver comentário de services.PagamentoInput.
 // Retorna: 201 com o pagamento criado.
@@ -265,9 +269,11 @@ func (h *PagamentoHandler) CreatePagamento(w http.ResponseWriter, r *http.Reques
 // UpdatePagamento PUT /api/pagamentos/{id}
 //
 // Body: { "forma_pagamento": string, "parcelas": number, "valor": number,
-//         "taxa_pct": number, "valor_liquido": number,
-//         "data_vencimento": "AAAA-MM-DD", "data_pagamento": "AAAA-MM-DD" (opcional),
-//         "status_pagamento": string }
+//
+//	"taxa_pct": number, "valor_liquido": number,
+//	"data_vencimento": "AAAA-MM-DD", "data_pagamento": "AAAA-MM-DD" (opcional),
+//	"status_pagamento": string }
+//
 // pagamento_id e pedido_id não são editáveis por esta rota.
 // Retorna: 200 com o pagamento atualizado, 404 se não existir, 400 se o payload for inválido.
 // Acesso comum (qualquer usuário autenticado).
@@ -308,4 +314,68 @@ func (h *PagamentoHandler) UpdatePagamento(w http.ResponseWriter, r *http.Reques
 
 	log.Printf("[pagamentos] atualizado: pagamento_id=%d", id)
 	writeJSON(w, http.StatusOK, pagamento, "")
+}
+
+// DeletePagamento DELETE /api/pagamentos/{id}
+//
+// Hard delete: remove o pagamento definitivamente (não há soft-delete para
+// pagamentos). Bloqueado (409) se status_pagamento já for "Pago" ou "Pago
+// com atraso" — preserva a trilha financeira de pagamentos já quitados.
+// Retorna: 204 sem corpo, 404 se não existir (ou fora do escopo do
+// vendedor), 409 se já estiver quitado.
+// Acesso comum (qualquer usuário autenticado).
+func (h *PagamentoHandler) DeletePagamento(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pagamentos] DeletePagamento escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
+		return
+	}
+
+	pagamento, err := h.svc.GetPagamentoByID(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, services.ErrPagamentoNaoEncontrado) {
+			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
+			return
+		}
+		log.Printf("[pagamentos] DeletePagamento: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	if scope.Restrito {
+		vendedorID, err := h.svc.VendedorIDDoPedido(r.Context(), h.db, pagamento.PedidoID)
+		if err != nil {
+			log.Printf("[pagamentos] DeletePagamento vendedor do pedido: %v", err)
+			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
+			return
+		}
+		if !scope.PermiteVendedor(vendedorID) {
+			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
+			return
+		}
+	}
+
+	if err := h.svc.DeletePagamento(r.Context(), h.db, id); err != nil {
+		if status, msg, ok := pagamentoErroParaStatus(err); ok {
+			writeJSON(w, status, nil, msg)
+			return
+		}
+		log.Printf("[pagamentos] DeletePagamento: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	log.Printf("[pagamentos] excluído: pagamento_id=%d", id)
+	writeNoContent(w)
 }

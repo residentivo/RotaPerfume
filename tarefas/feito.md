@@ -4,6 +4,54 @@
 
 ---
 
+## Seleção de pedido por combobox com busca na criação de pagamento — 2026-09-22
+**Agentes:** 🟢 FrontBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** pedido direto do usuário (não estava registrado em `tarefas/afazer.md`/`tarefas/fazendo.md` — nenhum card precisou ser movido; card criado diretamente em `feito.md`).
+
+**Descrição:** No modal de criação de pagamento (`frontend/src/components/PagamentoModal.tsx`), o antigo campo `<Input type="number">` de `pedido_id` (texto livre) foi substituído, no modo "create", por um campo de busca (filtra por nome do cliente ou ID do pedido, debounce de 350ms) + `<Select>` nativo, reaproveitando `apiListPedidos` já existente em `frontend/src/lib/api.ts` — sem novo endpoint de backend. Cada opção exibe `#<id> - <cliente_nome> - R$ <valor_total> - <data_pedido>`. Modo "edit" não foi alterado (`pedido_id` já era somente leitura, consistente com o backend que não permite alterar `pedido_id` via `PUT`). Validado com `tsc --noEmit`, sem erros.
+
+**Documentação (🔵 SubBrain):** sem mudança de API/contrato de backend — Postman e README não alterados neste card.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
+## Botão de excluir (delete) nas telas de Pedidos, Pagamentos, Oportunidades e Visitas — 2026-09-22
+**Agentes:** 🟣 SecBrain (regras) → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** pedido direto do usuário (não estava previamente registrado em `tarefas/afazer.md`/`tarefas/fazendo.md` — nenhum card precisou ser movido; card criado diretamente em `feito.md`).
+
+**Descrição:** Adição de botão "Excluir" nas 4 telas de listagem já existentes (Pedidos, Pagamentos, Oportunidades, Visitas), com hard delete no backend (sem soft-delete/exclusão lógica em nenhum dos 4 recursos).
+
+**Regras de negócio (🟣 SecBrain):**
+- Hard delete nos 4 recursos.
+- Scope check idêntico ao já usado em `GET`/`PUT` de cada recurso (owner check via `vendedorScope`/`resolverVendedorScope`, `apis/rotaperfumes-api/handlers/scope.go`): usuário `normal` só exclui registro da própria carteira, recebendo `404` — nunca `403` — para registro de outro vendedor (evita IDOR por enumeração de ID).
+- **Pedido:** bloqueado com `409` se tiver pagamento(s) vinculado(s), ou se `status = "Faturado"` (nesse caso só o status pode ser alterado, via `PUT`).
+- **Pagamento:** bloqueado com `409` se `status_pagamento` for `"Pago"` ou `"Pago com atraso"` (preserva a trilha financeira de pagamentos já quitados).
+- **Oportunidade** e **Visita:** sem restrição extra de negócio além do scope check.
+
+**Backend (🟡 BackBrain) — Go, `apis/rotaperfumes-api` e `apis/shared`:**
+- Novas rotas (`apis/rotaperfumes-api/routes/routes.go`), todas **acesso comum** (JWT obrigatório, sem `requireAdmin`): `DELETE /api/pedidos/{id}`, `DELETE /api/pagamentos/{id}`, `DELETE /api/oportunidades/{id}`, `DELETE /api/visitas/{id}`.
+- Handlers `DeletePedido`/`DeletePagamento`/`DeleteOportunidade`/`DeleteVisita` (`handlers/pedido_handler.go`, `handlers/pagamento_handler.go`, `handlers/oportunidade_handler.go`, `handlers/visita_handler.go`): validam `id`, resolvem `vendedorScope`, buscam o registro atual para checar dono (404 se fora do escopo) e então chamam o service. Retorno de sucesso: `204 No Content` sem corpo.
+- Services (`services/pedido_service.go`, `services/pagamento_service.go`, `services/oportunidade_service.go`, `services/visita_service.go`): novos métodos `DeletePedido`/`DeletePagamento`/`DeleteOportunidade`/`DeleteVisita`, com os novos erros de domínio `ErrPedidoPossuiPagamentosVinculados` ("pedido possui pagamentos vinculados: remova-os antes de excluir o pedido"), `ErrPedidoFaturadoNaoPodeSerExcluido` ("pedido faturado não pode ser excluído, apenas ter o status alterado") e `ErrPagamentoJaQuitadoNaoPodeSerExcluido` ("pagamento já quitado não pode ser excluído"), mapeados para `409` nos handlers.
+- Novos métodos de repositório (`apis/shared/repositories/`): `DeleteComItens` (pedido — remove pedido + itens), `ExistsByPedidoID` e `Delete` (pagamento), `Delete` (oportunidade e visita).
+
+**Frontend (🟢 FrontBrain) — Next.js, `frontend/`:**
+- Novas funções `apiDeletePedido`/`apiDeletePagamento`/`apiDeleteOportunidade`/`apiDeleteVisita` em `frontend/src/lib/api.ts`.
+- Botão "Excluir" com `confirm()` de confirmação, estado de loading e tratamento de erro (`404`/`409` exibidos ao usuário) nas 4 telas: `frontend/src/app/admin/pedidos/page.tsx`, `frontend/src/app/pagamentos/page.tsx`, `frontend/src/app/admin/oportunidades/page.tsx`, `frontend/src/app/admin/visitas/page.tsx`.
+
+**Testes (🔴 TestBrain):** 26 novos casos de teste (handlers + services) cobrindo sucesso (204), 404 fora do escopo do vendedor, 404 registro inexistente, e os bloqueios 409 (pedido com pagamento vinculado, pedido faturado, pagamento já quitado). Suíte completa (`go test ./...`) 100% verde em `apis/shared` e `apis/rotaperfumes-api`; cobertura 100% nos novos métodos de service.
+
+**Documentação (🔵 SubBrain):**
+- `postman/collection.json` — adicionadas 4 novas requests `DELETE`, uma em cada pasta já existente ("Pedidos", "Pagamentos", "Oportunidades", "Visitas"), logo após o respectivo "Editar": "Excluir Pedido (admin only)" (auth `{{admin_token}}`, seguindo o padrão já usado nas demais requests de Pedidos da collection — nota: o rótulo "admin only" da pasta Pedidos já estava desatualizado antes deste card, pois a rota real é acesso comum desde a mudança de escopo por carteira; correção dessa nomenclatura ficou fora do escopo aqui), "Excluir Pagamento (acesso comum)" (auth `{{vendedor_token}}`, com teste explícito validando que não é `403`), "Excluir Oportunidade (acesso comum, escopo por carteira)" e "Excluir Visita (acesso comum, escopo por carteira)" (ambas auth `{{admin_token}}`, seguindo o padrão dos requests de Editar já existentes nessas pastas). Cada request inclui exemplos de resposta `204 No Content`, `404 Not Found` (inexistente/fora da carteira) e, para Pedido e Pagamento, os cenários `409 Conflict` específicos de cada regra de negócio.
+- `postman/README.md` — adicionada nota "Botão de exclusão (2026-09-22)" no cabeçalho das 4 seções de endpoints (Pedidos, Pagamentos, Oportunidades, Visitas), removendo as antigas menções de "Não existe endpoint de DELETE"; nova subseção `#### DELETE /api/.../{id}` em cada uma, documentando auth, regras de bloqueio 409 (quando aplicável) e o comportamento de scope (404 para registro de outro vendedor). Seção "Testes automatizados (Postman)": adicionados os blocos `### Excluir Pedido`/`### Excluir Pagamento`/`### Excluir Oportunidade`/`### Excluir Visita`. Tabela "Resumo de testes por endpoint" atualizada com as 4 novas linhas.
+- `tarefas/afazer.md`/`tarefas/fazendo.md` — nenhuma alteração necessária: a feature não estava registrada em nenhum dos dois (pedido direto do usuário, sem passagem formal pelo Kanban antes da execução).
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## Bugfix menu "Vendedores" visível para vendedor + restrição de Estoque a admin — 2026-09-22
 **Agentes:** 🟢 FrontBrain, 🟡 BackBrain, 🔴 TestBrain (execução direta, pedido pontual do usuário) → documentação e fechamento por 🔵 SubBrain
 

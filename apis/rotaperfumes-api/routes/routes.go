@@ -52,18 +52,22 @@ import (
 //	POST /api/pedidos                   — acesso comum — cria pedido com itens (calcula valor_bruto/valor_total)
 //	GET  /api/pedidos/{id}               — acesso comum — detalhe de um pedido (com itens)
 //	PUT  /api/pedidos/{id}               — acesso comum — atualiza pedido e substitui a lista de itens
+//	DELETE /api/pedidos/{id}             — acesso comum — exclui pedido e seus itens (hard delete); bloqueado (409) se houver pagamentos vinculados ou status = Faturado
 //	GET  /api/pagamentos                — acesso comum (qualquer usuário autenticado) — lista pagamentos (paginado, filtros status_pagamento/forma_pagamento/pedido_id/vencimento_de/vencimento_ate, order_by/order_dir opcionais)
 //	POST /api/pagamentos                — acesso comum — cria pagamento
 //	GET  /api/pagamentos/{id}            — acesso comum — detalhe de um pagamento
 //	PUT  /api/pagamentos/{id}            — acesso comum — atualiza pagamento
+//	DELETE /api/pagamentos/{id}          — acesso comum — exclui pagamento (hard delete); bloqueado (409) se status_pagamento = Pago ou Pago com atraso
 //	GET  /api/oportunidades             — acesso comum (escopo por carteira) — lista oportunidades (paginado, filtros cliente_id/vendedor_id/etapa/origem/data_abertura_de/data_abertura_ate/q, order_by/order_dir opcionais)
 //	POST /api/oportunidades             — acesso comum (escopo por carteira) — cria oportunidade
 //	GET  /api/oportunidades/{id}        — acesso comum (escopo por carteira) — detalhe de uma oportunidade
 //	PUT  /api/oportunidades/{id}        — acesso comum (escopo por carteira) — atualiza oportunidade
+//	DELETE /api/oportunidades/{id}      — acesso comum (escopo por carteira) — exclui oportunidade (hard delete)
 //	GET  /api/visitas                   — acesso comum (escopo por carteira) — lista visitas (paginado, filtros cliente_id/vendedor_id/resultado/data_visita_de/data_visita_ate/q, order_by/order_dir opcionais)
 //	POST /api/visitas                   — acesso comum (escopo por carteira) — cria visita
 //	GET  /api/visitas/{id}               — acesso comum (escopo por carteira) — detalhe de uma visita
 //	PUT  /api/visitas/{id}               — acesso comum (escopo por carteira) — atualiza visita
+//	DELETE /api/visitas/{id}             — acesso comum (escopo por carteira) — exclui visita (hard delete)
 //	GET  /api/estoque                   — admin only — lista estoque (paginado; por padrão última posição por sku; filtros sku/data_de/data_ate/ruptura, order_by/order_dir/historico opcionais)
 //	POST /api/estoque                   — admin only — cria ajuste manual de estoque
 //	GET  /api/estoque/{id}               — admin only — detalhe de um registro de estoque
@@ -233,6 +237,10 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	updatePedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.UpdatePedido))
 	mux.Handle("PUT /api/pedidos/{id}", updatePedidoChain)
 
+	// Exclui pedido (hard delete, com itens): acesso comum.
+	deletePedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.DeletePedido))
+	mux.Handle("DELETE /api/pedidos/{id}", deletePedidoChain)
+
 	// Lista de pagamentos: acesso comum (qualquer usuário autenticado, sem
 	// exigir admin) — requireAuth=true, requireAdmin=false.
 	listPagamentosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.ListPagamentos))
@@ -250,6 +258,10 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	updatePagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.UpdatePagamento))
 	mux.Handle("PUT /api/pagamentos/{id}", updatePagamentoChain)
 
+	// Exclui pagamento (hard delete): acesso comum.
+	deletePagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.DeletePagamento))
+	mux.Handle("DELETE /api/pagamentos/{id}", deletePagamentoChain)
+
 	// Lista de oportunidades: acesso comum (escopo por carteira aplicado no handler).
 	listOportunidadesChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.ListOportunidades))
 	mux.Handle("GET /api/oportunidades", listOportunidadesChain)
@@ -266,6 +278,10 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	updateOportunidadeChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.UpdateOportunidade))
 	mux.Handle("PUT /api/oportunidades/{id}", updateOportunidadeChain)
 
+	// Exclui oportunidade (hard delete): acesso comum (escopo por carteira aplicado no handler).
+	deleteOportunidadeChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.DeleteOportunidade))
+	mux.Handle("DELETE /api/oportunidades/{id}", deleteOportunidadeChain)
+
 	// Lista de visitas: acesso comum (escopo por carteira aplicado no handler).
 	listVisitasChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.ListVisitas))
 	mux.Handle("GET /api/visitas", listVisitasChain)
@@ -281,6 +297,10 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	// Atualiza visita: acesso comum (escopo por carteira aplicado no handler).
 	updateVisitaChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.UpdateVisita))
 	mux.Handle("PUT /api/visitas/{id}", updateVisitaChain)
+
+	// Exclui visita (hard delete): acesso comum (escopo por carteira aplicado no handler).
+	deleteVisitaChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.DeleteVisita))
+	mux.Handle("DELETE /api/visitas/{id}", deleteVisitaChain)
 
 	// Lista de estoque: admin only (página de Estoque é restrita a administradores).
 	listEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.ListEstoque))

@@ -329,3 +329,59 @@ func (h *VisitaHandler) UpdateVisita(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[visitas] atualizada: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, visita, "")
 }
+
+// DeleteVisita DELETE /api/visitas/{id}
+//
+// Hard delete: remove a visita definitivamente (não há soft-delete para
+// visitas).
+// Retorna: 204 sem corpo, 404 se não existir (ou pertencer a outro
+// vendedor).
+// Acesso comum: usuário role=normal só pode excluir visita da própria
+// carteira (404 — não 403 — se pertencer a outro vendedor).
+func (h *VisitaHandler) DeleteVisita(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[visitas] DeleteVisita escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
+		return
+	}
+
+	atual, err := h.svc.GetVisitaByID(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, services.ErrVisitaNaoEncontrada) {
+			writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
+			return
+		}
+		log.Printf("[visitas] DeleteVisita buscar atual: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.Restrito && !scope.PermiteVendedor(atual.VendedorID) {
+		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
+		return
+	}
+
+	if err := h.svc.DeleteVisita(r.Context(), h.db, id); err != nil {
+		if status, msg, ok := visitaErroParaStatus(err); ok {
+			writeJSON(w, status, nil, msg)
+			return
+		}
+		log.Printf("[visitas] DeleteVisita: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[visitas] excluída: id=%d por usuario role=%s", id, role)
+	writeNoContent(w)
+}

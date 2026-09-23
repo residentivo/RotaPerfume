@@ -31,6 +31,16 @@ var (
 	// repositories.ErrPedidoJaFaturadoNaoPodeAlterarItens para uso em
 	// handlers, sem expor o pacote repositories diretamente.
 	ErrPedidoJaFaturadoNaoPodeAlterarItens = repositories.ErrPedidoJaFaturadoNaoPodeAlterarItens
+	// ErrPedidoPossuiPagamentosVinculados é retornado por DeletePedido quando
+	// existe ao menos um pagamento com pedido_id apontando para o pedido —
+	// exigência do SecBrain para preservar a integridade da trilha financeira.
+	ErrPedidoPossuiPagamentosVinculados = errors.New("pedido possui pagamentos vinculados: remova-os antes de excluir o pedido")
+	// ErrPedidoFaturadoNaoPodeSerExcluido é retornado por DeletePedido quando
+	// o pedido está com status "Faturado" — exigência do SecBrain: um pedido
+	// faturado só pode ter seu status alterado (ex: para "Entregue"), nunca
+	// ser excluído, pois já baixou estoque e pode ter registros financeiros
+	// associados.
+	ErrPedidoFaturadoNaoPodeSerExcluido = errors.New("pedido faturado não pode ser excluído, apenas ter o status alterado")
 )
 
 // dataPedidoLayout é o formato aceito para o campo data_pedido no payload de
@@ -56,15 +66,17 @@ type PedidoFiltro struct {
 
 // PedidoService agrega regras de negócio sobre pedidos e seus itens.
 type PedidoService struct {
-	repo *repositories.PedidoRepository
-	Cfg  *config.Config
+	repo          *repositories.PedidoRepository
+	pagamentoRepo *repositories.PagamentoRepository
+	Cfg           *config.Config
 }
 
 // NewPedidoService cria um PedidoService com pool de conexão injetado.
 func NewPedidoService(db *sql.DB, cfg *config.Config) *PedidoService {
 	return &PedidoService{
-		repo: repositories.NewPedidoRepository(),
-		Cfg:  cfg,
+		repo:          repositories.NewPedidoRepository(),
+		pagamentoRepo: repositories.NewPagamentoRepository(),
+		Cfg:           cfg,
 	}
 }
 
@@ -262,4 +274,48 @@ func (s *PedidoService) UpdatePedido(ctx context.Context, db *sql.DB, id int64, 
 	}
 
 	return s.GetPedidoDetalhe(ctx, db, id)
+}
+
+// DeletePedido remove um pedido e seus itens (hard delete), aplicando as
+// regras de negócio exigidas pelo SecBrain:
+//   - bloqueia a exclusão (ErrPedidoPossuiPagamentosVinculados) se existir
+//     qualquer pagamento vinculado ao pedido;
+//   - bloqueia a exclusão (ErrPedidoFaturadoNaoPodeSerExcluido) se o pedido
+//     estiver com status "Faturado" (só é alterável via mudança de status).
+//
+// Retorna ErrPedidoNaoEncontrado se o pedido não existir. O scope check por
+// carteira (vendedor) é responsabilidade do handler chamador, feito antes de
+// invocar este método.
+func (s *PedidoService) DeletePedido(ctx context.Context, db *sql.DB, id int64) error {
+	pedido, err := s.repo.GetByID(ctx, db, id)
+	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrPedidoNaoEncontrado
+		}
+		return err
+	}
+
+	possuiPagamentos, err := s.pagamentoRepo.ExistsByPedidoID(ctx, db, id)
+	if err != nil {
+		return err
+	}
+	if possuiPagamentos {
+		return ErrPedidoPossuiPagamentosVinculados
+	}
+
+	if pedido.Status == "Faturado" {
+		return ErrPedidoFaturadoNaoPodeSerExcluido
+	}
+
+	if err := s.repo.DeleteComItens(ctx, db, id); err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrPedidoNaoEncontrado
+		}
+		return err
+	}
+
+	if s.Cfg.Verbose {
+		log.Printf("[pedidos] excluído: id=%d", id)
+	}
+	return nil
 }

@@ -4445,6 +4445,122 @@
               "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
             }
           ]
+        },
+        {
+          "name": "Excluir Pedido (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204 No Content', function() {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pedidos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pedidos", "1"]
+            },
+            "description": "Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete — 2026-09-22).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pedido_id_origem`\n\n**Regras de negócio:**\n- Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (é preciso excluir/remover os pagamentos antes).\n- Bloqueado com `409` se o pedido já estiver com `status = \"Faturado\"` (nesse caso a única alteração permitida é a de status, via `PUT`).\n- Escopo idêntico ao `GET`/`PUT`: usuário `normal` só exclui pedido da própria carteira — `404` (não `403`) se pertencer a outro vendedor.\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — pedido não encontrado, ou pertence a outro vendedor (usuário `normal`)\n- `409` — pedido possui pagamentos vinculados, ou está com status `Faturado`"
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            },
+            {
+              "name": "404 Not Found — Pedido inexistente (ou de outro vendedor)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido não encontrado\"\n}"
+            },
+            {
+              "name": "409 Conflict — Pedido possui pagamentos vinculados",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido possui pagamentos vinculados: remova-os antes de excluir o pedido\"\n}"
+            },
+            {
+              "name": "409 Conflict — Pedido faturado não pode ser excluído",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido faturado não pode ser excluído, apenas ter o status alterado\"\n}"
+            }
+          ]
         }
       ]
     },
@@ -4887,6 +5003,105 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"pagamento não encontrado\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Excluir Pagamento (acesso comum)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204 No Content', function() {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "pm.test('Usuário NORMAL consegue excluir (não é 403)', function() {",
+                  "    pm.expect(pm.response.code).to.not.eql(403);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendedor_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pagamentos/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pagamentos", "1"]
+            },
+            "description": "Exclui definitivamente um pagamento (hard delete, sem soft-delete — 2026-09-22).\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pagamento_id`\n\n**Regras de negócio:**\n- Bloqueado com `409` se `status_pagamento` já for `\"Pago\"` ou `\"Pago com atraso\"` — preserva a trilha financeira de pagamentos já quitados.\n- Escopo idêntico ao `GET`/`PUT`: usuário `normal` só exclui pagamento de pedido da própria carteira — `404` (não `403`) se pertencer a outro vendedor.\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — pagamento não encontrado, ou pertence a pedido de outro vendedor (usuário `normal`)\n- `409` — pagamento já quitado (`Pago` ou `Pago com atraso`)"
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "1"]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            },
+            {
+              "name": "404 Not Found — Pagamento inexistente (ou de outro vendedor)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pagamento não encontrado\"\n}"
+            },
+            {
+              "name": "409 Conflict — Pagamento já quitado",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "1"]
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pagamento já quitado não pode ser excluído\"\n}"
             }
           ]
         }
@@ -5392,6 +5607,102 @@
                   "mode": "raw",
                   "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10\",\n    \"etapa\": \"Fechado ganho\",\n    \"probabilidade_pct\": 100,\n    \"valor_estimado\": 1200.5\n}"
                 },
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades", "1"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"oportunidade não encontrada\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Excluir Oportunidade (acesso comum, escopo por carteira)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204 No Content', function() {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/oportunidades/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "oportunidades", "1"]
+            },
+            "description": "Exclui definitivamente uma oportunidade (hard delete, sem soft-delete — 2026-09-22). Sem restrição extra de negócio (diferente de Pedido/Pagamento).\n\n**Acesso comum, com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar. Usuário `normal` tentando excluir uma oportunidade de **outro** vendedor recebe `404` (não `403`, para não expor a existência do registro).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só exclui oportunidade da própria carteira)\n\n**Path param:**\n- `id` (int64) — `oportunidade_id`\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — oportunidade não encontrada, ou pertence a outro vendedor (usuário `normal`)"
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades", "1"]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            },
+            {
+              "name": "404 Not Found — Oportunidade inexistente",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"oportunidade não encontrada\"\n}"
+            },
+            {
+              "name": "404 Not Found — usuário normal tentando excluir oportunidade de outro vendedor (IDOR bloqueado)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
                 "url": {
                   "raw": "{{base_url}}/api/oportunidades/1",
                   "host": ["{{base_url}}"],
@@ -5991,6 +6302,102 @@
                   "mode": "raw",
                   "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 60\n}"
                 },
+                "url": {
+                  "raw": "{{base_url}}/api/visitas/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas", "1"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"visita não encontrada\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Excluir Visita (acesso comum, escopo por carteira)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204 No Content', function() {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/visitas/1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "visitas", "1"]
+            },
+            "description": "Exclui definitivamente uma visita (hard delete, sem soft-delete — 2026-09-22). Sem restrição extra de negócio (diferente de Pedido/Pagamento).\n\n**Acesso comum, com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar. Usuário `normal` tentando excluir uma visita de **outro** vendedor recebe `404` (não `403`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só exclui visita da própria carteira)\n\n**Path param:**\n- `id` (int64) — `visita_id`\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — visita não encontrada, ou pertence a outro vendedor (usuário `normal`)"
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/visitas/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas", "1"]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            },
+            {
+              "name": "404 Not Found — Visita inexistente",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/visitas/999999",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas", "999999"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"visita não encontrada\"\n}"
+            },
+            {
+              "name": "404 Not Found — usuário normal tentando excluir visita de outro vendedor (IDOR bloqueado)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
                 "url": {
                   "raw": "{{base_url}}/api/visitas/1",
                   "host": ["{{base_url}}"],

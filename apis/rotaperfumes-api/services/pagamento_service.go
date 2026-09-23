@@ -27,6 +27,10 @@ var (
 	ErrDataVencimentoObrigatoria = errors.New("data_vencimento é obrigatória (use o formato AAAA-MM-DD)")
 	ErrDataVencimentoInvalida    = errors.New("data_vencimento inválida (use o formato AAAA-MM-DD)")
 	ErrDataPagamentoInvalida     = errors.New("data_pagamento inválida (use o formato AAAA-MM-DD)")
+	// ErrPagamentoJaQuitadoNaoPodeSerExcluido é retornado por DeletePagamento
+	// quando status_pagamento já é "Pago" ou "Pago com atraso" — exigência do
+	// SecBrain para preservar a trilha financeira de pagamentos já quitados.
+	ErrPagamentoJaQuitadoNaoPodeSerExcluido = errors.New("pagamento já quitado não pode ser excluído")
 )
 
 // dataPagamentoLayout é o formato aceito para data_vencimento/data_pagamento
@@ -283,4 +287,43 @@ func (s *PagamentoService) UpdatePagamento(ctx context.Context, db *sql.DB, paga
 		log.Printf("[pagamentos] atualizado: pagamento_id=%d status=%s", pagamentoID, statusPagamento)
 	}
 	return atualizado, nil
+}
+
+// statusPagamentoQuitados são os status que impedem a exclusão de um
+// pagamento (exigência do SecBrain): uma vez quitado, o registro deve ser
+// preservado como trilha financeira.
+var statusPagamentoQuitados = map[string]bool{
+	"Pago":            true,
+	"Pago com atraso": true,
+}
+
+// DeletePagamento remove um pagamento (hard delete). Retorna
+// ErrPagamentoNaoEncontrado se não existir e
+// ErrPagamentoJaQuitadoNaoPodeSerExcluido se status_pagamento já for "Pago"
+// ou "Pago com atraso". O scope check por carteira (via VendedorIDDoPedido) é
+// responsabilidade do handler chamador, feito antes de invocar este método.
+func (s *PagamentoService) DeletePagamento(ctx context.Context, db *sql.DB, pagamentoID int64) error {
+	pagamento, err := s.repo.GetByID(ctx, db, pagamentoID)
+	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrPagamentoNaoEncontrado
+		}
+		return err
+	}
+
+	if statusPagamentoQuitados[pagamento.StatusPagamento] {
+		return ErrPagamentoJaQuitadoNaoPodeSerExcluido
+	}
+
+	if err := s.repo.Delete(ctx, db, pagamentoID); err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrPagamentoNaoEncontrado
+		}
+		return err
+	}
+
+	if s.Cfg.Verbose {
+		log.Printf("[pagamentos] excluído: pagamento_id=%d", pagamentoID)
+	}
+	return nil
 }

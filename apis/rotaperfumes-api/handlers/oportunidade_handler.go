@@ -362,3 +362,59 @@ func (h *OportunidadeHandler) UpdateOportunidade(w http.ResponseWriter, r *http.
 	log.Printf("[oportunidades] atualizada: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, oportunidade, "")
 }
+
+// DeleteOportunidade DELETE /api/oportunidades/{id}
+//
+// Hard delete: remove a oportunidade definitivamente (não há soft-delete
+// para oportunidades).
+// Retorna: 204 sem corpo, 404 se não existir (ou pertencer a outro
+// vendedor).
+// Acesso comum: usuário role=normal só pode excluir oportunidade da própria
+// carteira (404 — não 403 — se pertencer a outro vendedor).
+func (h *OportunidadeHandler) DeleteOportunidade(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[oportunidades] DeleteOportunidade escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
+		return
+	}
+
+	atual, err := h.svc.GetOportunidadeByID(r.Context(), h.db, id)
+	if err != nil {
+		if errors.Is(err, services.ErrOportunidadeNaoEncontrada) {
+			writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
+			return
+		}
+		log.Printf("[oportunidades] DeleteOportunidade buscar atual: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.Restrito && !scope.PermiteVendedor(atual.VendedorID) {
+		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
+		return
+	}
+
+	if err := h.svc.DeleteOportunidade(r.Context(), h.db, id); err != nil {
+		if status, msg, ok := oportunidadeErroParaStatus(err); ok {
+			writeJSON(w, status, nil, msg)
+			return
+		}
+		log.Printf("[oportunidades] DeleteOportunidade: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
+	role, _ := middleware.GetRole(r.Context())
+	log.Printf("[oportunidades] excluída: id=%d por usuario role=%s", id, role)
+	writeNoContent(w)
+}
