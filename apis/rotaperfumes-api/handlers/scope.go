@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
 
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/shared/repositories"
@@ -41,14 +43,24 @@ func (s vendedorScope) PermiteVendedor(vendedorID int64) bool {
 	return s.VendedorID > 0 && s.VendedorID == vendedorID
 }
 
-// resolverVendedorScope calcula o escopo de carteira do usuário autenticado
-// a partir do contexto da requisição (userID/role injetados pelo
-// JWTMiddleware) e do vínculo id_vendedor persistido em usuarios.
+// msgVendedorDesligado é a mensagem exata (contrato SecBrain) devolvida com
+// 403 quando o usuário normal está vinculado a um vendedor desligado.
+const msgVendedorDesligado = "acesso bloqueado: vendedor desligado"
+
+// errVendedorDesligado é o erro sentinela retornado por resolverVendedorScope
+// quando o vendedor vinculado ao usuário está desligado.
+var errVendedorDesligado = errors.New("handlers: vendedor desligado")
+
+// resolverVendedorScopeBase calcula o escopo de carteira do usuário
+// autenticado a partir do contexto da requisição (userID/role injetados pelo
+// JWTMiddleware) e do vínculo id_vendedor persistido em usuarios, SEM checar
+// desligamento. Usado diretamente apenas pelo Dashboard, que responde 200
+// zerado + vendedor_desligado=true em vez de 403.
 //
 // Cada chamada executa sua própria consulta ao banco (sem cache L1),
 // garantindo que uma mudança de vínculo id_vendedor reflita imediatamente
 // nas próximas requisições, sem depender de reemissão do JWT.
-func resolverVendedorScope(ctx context.Context, db *sql.DB) (vendedorScope, error) {
+func resolverVendedorScopeBase(ctx context.Context, db *sql.DB) (vendedorScope, error) {
 	role, _ := middleware.GetRole(ctx)
 	if role == "admin" {
 		return vendedorScope{Restrito: false}, nil
@@ -72,6 +84,57 @@ func resolverVendedorScope(ctx context.Context, db *sql.DB) (vendedorScope, erro
 		return vendedorScope{Restrito: true, VendedorID: 0}, nil
 	}
 	return vendedorScope{Restrito: true, VendedorID: *idVendedor}, nil
+}
+
+// resolverVendedorScope calcula o escopo de carteira do usuário autenticado
+// (via resolverVendedorScopeBase) e, para usuário normal com vendedor
+// vinculado, bloqueia o acesso quando o vendedor está desligado
+// (data_desligamento preenchida), retornando errVendedorDesligado.
+//
+// Regras (contrato 🟣 SecBrain, fail-closed):
+//   - admin: sem consulta extra;
+//   - vendedor desligado: errVendedorDesligado (403 via responderErroEscopo);
+//   - vínculo órfão (vendedor inexistente): escopo "sem vendedor"
+//     (Restrito=true, VendedorID=0) — mesmo comportamento de id_vendedor NULL;
+//   - qualquer outro erro de banco: erro (500 via responderErroEscopo).
+//
+// Cada chamada executa suas próprias consultas ao banco (sem cache L1), para
+// que um desligamento bloqueie imediatamente as próximas requisições, sem
+// depender de reemissão do JWT.
+func resolverVendedorScope(r *http.Request, db *sql.DB) (vendedorScope, error) {
+	scope, err := resolverVendedorScopeBase(r.Context(), db)
+	if err != nil {
+		return vendedorScope{}, err
+	}
+	if !scope.Restrito || scope.VendedorID <= 0 {
+		return scope, nil
+	}
+
+	desligado, err := repositories.NewVendedorRepository().IsDesligado(r.Context(), db, scope.VendedorID)
+	switch {
+	case errors.Is(err, repositories.ErrNotFound):
+		return vendedorScope{Restrito: true, VendedorID: 0}, nil
+	case err != nil:
+		return vendedorScope{}, fmt.Errorf("handlers: checar vendedor desligado: %w", err)
+	case desligado:
+		userID, _ := middleware.GetUserID(r.Context())
+		log.Printf("[escopo] bloqueado vendedor_desligado user_id=%d vendedor_id=%d rota=%s",
+			userID, scope.VendedorID, r.Method+" "+r.URL.Path)
+		return vendedorScope{}, errVendedorDesligado
+	}
+	return scope, nil
+}
+
+// responderErroEscopo traduz o erro de resolverVendedorScope em resposta
+// HTTP: errVendedorDesligado → 403 com msgVendedorDesligado; qualquer outro
+// erro → log (com a tag do handler) + 500 "erro interno". Fail-closed.
+func responderErroEscopo(w http.ResponseWriter, tag string, err error) {
+	if errors.Is(err, errVendedorDesligado) {
+		writeJSON(w, http.StatusForbidden, nil, msgVendedorDesligado)
+		return
+	}
+	log.Printf("%s escopo: %v", tag, err)
+	writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 }
 
 // clienteNaCarteiraDoVendedor reporta se existe vínculo de carteira ativo

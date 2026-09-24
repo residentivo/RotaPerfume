@@ -54,7 +54,7 @@ func TestParseDataLancamento(t *testing.T) {
 		{
 			nome: "data válida",
 			in:   "2024-01-15",
-			want: timePtr(time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)),
+			want: timePtr(time.Date(2024, 1, 15, 0, 0, 0, 0, time.Local)),
 		},
 		{
 			nome:    "formato inválido",
@@ -131,7 +131,7 @@ func TestParseRow(t *testing.T) {
 				if row.DataLancamento == nil {
 					t.Fatalf("DataLancamento = nil, want não nil")
 				}
-				want := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+				want := time.Date(2024, 1, 15, 0, 0, 0, 0, time.Local)
 				if !row.DataLancamento.Equal(want) {
 					t.Errorf("DataLancamento = %v, want %v", row.DataLancamento, want)
 				}

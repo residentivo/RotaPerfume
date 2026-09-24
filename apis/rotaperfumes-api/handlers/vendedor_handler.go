@@ -89,10 +89,9 @@ func (h *VendedorHandler) ListClientesDoVendedor(w http.ResponseWriter, r *http.
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[vendedores] ListClientesDoVendedor escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[vendedores] ListClientesDoVendedor", err)
 		return
 	}
 	if scope.Restrito && !scope.PermiteVendedor(id) {

@@ -199,7 +199,7 @@ func (s dashboardScope) SemAcesso() bool {
 // (fail-closed: erro de banco vira 500). Em caso de erro, registra log,
 // responde 500 e retorna ok=false.
 func (h *DashboardHandler) resolverEscopo(w http.ResponseWriter, r *http.Request, acao string) (dashboardScope, bool) {
-	base, err := resolverVendedorScope(r.Context(), h.db)
+	base, err := resolverVendedorScopeBase(r.Context(), h.db)
 	if err != nil {
 		log.Printf("[dashboard] %s: %v", acao, err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")

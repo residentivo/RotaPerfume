@@ -98,6 +98,7 @@ func expectEscopoUsuarioH(mock sqlmock.Sqlmock, userID, vendedorID int64) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(userID).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(vendedorID))
+	expectVendedorDesligado(mock, vendedorID, false)
 }
 
 // expectCarteiraAtivaH registra o mock de clienteNaCarteiraDoVendedor com
@@ -240,6 +241,7 @@ func TestListPedidos_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	expectVendedorDesligado(mock, int64(2), false)
 	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pedidoFromRegexH + vendedorWhere).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
@@ -377,6 +379,7 @@ func TestGetPedido_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	expectVendedorDesligado(mock, int64(2), false)
 	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pedidoRowsForHandler(1, 230.0))
@@ -411,6 +414,7 @@ func TestGetPedido_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pedidoRowsForHandler(1, 230.0))
@@ -969,6 +973,7 @@ func TestDeletePedido_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	expectVendedorDesligado(mock, int64(2), false)
 	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
@@ -1043,6 +1048,7 @@ func TestDeletePedido_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pedidoRowsForHandler(1, 230.0))

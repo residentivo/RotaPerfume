@@ -117,6 +117,7 @@ func TestListClientes_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	expectVendedorDesligado(mock, 10, false)
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\)`).
 		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
@@ -276,6 +277,7 @@ func TestGetCliente_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	expectVendedorDesligado(mock, 10, false)
 	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(clienteRowsForHandler())
@@ -310,6 +312,7 @@ func TestGetCliente_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	expectVendedorDesligado(mock, 10, false)
 	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(clienteRowsForHandler())
@@ -445,6 +448,10 @@ func TestToggleAtivoCliente_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
+	mock.ExpectQuery(reUsuarioVendedor).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	expectVendedorDesligado(mock, 10, false)
 	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(clienteRowsForHandler())
@@ -520,6 +527,10 @@ func TestCreateCliente_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
+	mock.ExpectQuery(reUsuarioVendedor).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	expectVendedorDesligado(mock, 10, false)
 	mock.ExpectExec(`INSERT INTO clientes \(cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo\)`).
 		WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), true).
 		WillReturnResult(sqlmock.NewResult(101, 1))
@@ -686,6 +697,10 @@ func TestUpdateCliente_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
+	mock.ExpectQuery(reUsuarioVendedor).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	expectVendedorDesligado(mock, 10, false)
 	mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE cliente_id_origem = \?`).
 		WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))

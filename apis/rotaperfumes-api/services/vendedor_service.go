@@ -167,7 +167,7 @@ func validarVendedorInput(input VendedorInput, defaultHoje bool) (nome, regiao, 
 		err = ErrVendedorDataAdmissaoInvalida
 		return
 	}
-	dataAdmissao, parseErr := time.Parse(dataAdmissaoLayout, dataAdmissaoStr)
+	dataAdmissao, parseErr := time.ParseInLocation(dataAdmissaoLayout, dataAdmissaoStr, time.Local)
 	if parseErr != nil {
 		err = ErrVendedorDataAdmissaoInvalida
 		return

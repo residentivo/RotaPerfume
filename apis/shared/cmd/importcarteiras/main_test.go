@@ -16,8 +16,8 @@ func TestParseData(t *testing.T) {
 		want    time.Time
 		wantErr bool
 	}{
-		{"formato ISO (YYYY-MM-DD)", "2026-04-14", time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC), false},
-		{"formato BR (DD/MM/YYYY)", "14/04/2026", time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC), false},
+		{"formato ISO (YYYY-MM-DD)", "2026-04-14", time.Date(2026, 4, 14, 0, 0, 0, 0, time.Local), false},
+		{"formato BR (DD/MM/YYYY)", "14/04/2026", time.Date(2026, 4, 14, 0, 0, 0, 0, time.Local), false},
 		{"formato inválido", "14-04-2026", time.Time{}, true},
 		{"string vazia", "", time.Time{}, true},
 		{"data inexistente", "2026-13-40", time.Time{}, true},
@@ -69,7 +69,7 @@ func TestParseRow(t *testing.T) {
 				if row.DataFim == nil {
 					t.Fatalf("DataFim = nil, want não-nil")
 				}
-				want := time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC)
+				want := time.Date(2026, 4, 14, 0, 0, 0, 0, time.Local)
 				if !row.DataFim.Equal(want) {
 					t.Errorf("DataFim = %v, want %v", row.DataFim, want)
 				}
@@ -88,7 +88,7 @@ func TestParseRow(t *testing.T) {
 			nome:   "data no formato BR",
 			record: []string{"3", "5", "10", "10/05/2023", ""},
 			check: func(t *testing.T, row carteiraRow) {
-				want := time.Date(2023, 5, 10, 0, 0, 0, 0, time.UTC)
+				want := time.Date(2023, 5, 10, 0, 0, 0, 0, time.Local)
 				if !row.DataInicio.Equal(want) {
 					t.Errorf("DataInicio = %v, want %v", row.DataInicio, want)
 				}

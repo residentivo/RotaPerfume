@@ -11,9 +11,18 @@
  * 3. Se refresh OK -> backend seta novos cookies e reenviamos a requisição original
  * 4. Se refresh falhar -> redireciona para /login
  * 5. Lock/fila garante que apenas uma chamada de refresh aconteça por vez
+ * 6. Erros HTTP viram ApiError (com status). O 403 de vendedor desligado
+ *    NÃO dispara refresh nem logout: só notifica a sessão em memória.
  */
 
 import { clearTokens } from "./auth";
+import { ApiError } from "./apiError";
+import {
+  isVendedorDesligadoResponse,
+  notifyVendedorDesligado,
+} from "./vendedorDesligado";
+
+export { ApiError };
 
 // ============================================
 // Configuração
@@ -169,7 +178,7 @@ export async function fetchWithAuth<T = unknown>(
   };
 
   // Primeira tentativa
-  let response = await makeRequest();
+  const response = await makeRequest();
 
   // Se 401 e pode fazer refresh
   if (response.status === 401 && !noRefresh) {
@@ -184,8 +193,7 @@ export async function fetchWithAuth<T = unknown>(
           try {
             const retryResponse = await makeRequest();
             if (!retryResponse.ok) {
-              const error = await parseError(retryResponse);
-              reject(new Error(error));
+              reject(await toApiError(retryResponse));
               return;
             }
             const data = await parseResponse<T>(retryResponse);
@@ -214,8 +222,7 @@ export async function fetchWithAuth<T = unknown>(
         const retryResponse = await makeRequest();
 
         if (!retryResponse.ok) {
-          const error = await parseError(retryResponse);
-          throw new Error(error);
+          throw await toApiError(retryResponse);
         }
 
         return parseResponse<T>(retryResponse);
@@ -239,10 +246,10 @@ export async function fetchWithAuth<T = unknown>(
     }
   }
 
-  // Response não é 401 ou não pode fazer refresh
+  // Response não é 401 ou não pode fazer refresh. Inclui o 403 de vendedor
+  // desligado, que nunca passa pelo refresh/logout acima (só 401 passa).
   if (!response.ok) {
-    const error = await parseError(response);
-    throw new Error(error);
+    throw await toApiError(response);
   }
 
   return parseResponse<T>(response);
@@ -267,6 +274,23 @@ async function parseResponse<T>(res: Response): Promise<T> {
   }
 
   return data as T;
+}
+
+/**
+ * Monta o ApiError de uma resposta não-OK. Exportado para as listagens de
+ * api.ts que fazem fetch manual (envelope paginado). Se for o 403 de
+ * vendedor desligado, notifica a sessão (sem refresh/logout).
+ */
+export function buildApiError(status: number, message: string): ApiError {
+  if (isVendedorDesligadoResponse(status, message)) {
+    notifyVendedorDesligado();
+  }
+  return new ApiError(status, message);
+}
+
+/** Converte uma resposta não-OK em ApiError (status preservado). */
+async function toApiError(res: Response): Promise<ApiError> {
+  return buildApiError(res.status, await parseError(res));
 }
 
 async function parseError(res: Response): Promise<string> {

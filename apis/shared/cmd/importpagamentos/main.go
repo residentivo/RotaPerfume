@@ -252,7 +252,7 @@ func parsePagamentoRow(record []string) (pagamentoRow, error) {
 
 // parseData valida e normaliza uma data no layout ISO (2006-01-02).
 func parseData(v string) (string, error) {
-	t, err := time.Parse(dataLayout, v)
+	t, err := time.ParseInLocation(dataLayout, v, time.Local)
 	if err != nil {
 		return "", err
 	}

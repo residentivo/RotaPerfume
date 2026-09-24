@@ -6,7 +6,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
-import { getUser } from "@/lib/auth";
+import { useSessionUser, useVendedorDesligado } from "@/lib/session";
 import {
   apiDashboardMetrics,
   apiDashboardVendas,
@@ -16,7 +16,6 @@ import {
 import {
   DashboardMetrics,
   VendasSeries,
-  VendaDiaria,
   VendedorRanking,
   ClienteDashboardMetrics,
 } from "@/lib/types";
@@ -47,7 +46,7 @@ function fmtPercent(value: number): string {
 }
 
 function fmtDate(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
+  const [, m, d] = dateStr.split("-").map(Number);
   return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
 }
 
@@ -557,10 +556,11 @@ function MeuDesempenho({ vendedor }: { vendedor: VendedorRanking | undefined }) 
 
 function DashboardContent() {
   // ProtectedRoute so renderiza os filhos apos validar a sessao em
-  // /api/auth/me (e ressincronizar o cache), entao ler o usuario aqui e
-  // seguro no client. O escopo real (admin x vendedor) e aplicado pelo
+  // /api/auth/me; a sessao em memoria e a fonte da verdade (revalidada ao
+  // voltar o foco). O escopo real (admin x vendedor) e aplicado pelo
   // backend; aqui so muda a apresentacao.
-  const [currentUser] = useState(() => getUser());
+  const currentUser = useSessionUser();
+  const desligadoNaSessao = useVendedorDesligado();
   const isAdmin = currentUser?.role === "admin";
   const semVendedor = !isAdmin && !currentUser?.id_vendedor;
 
@@ -617,10 +617,11 @@ function DashboardContent() {
 
   // Usuario normal: o ranking vem com no maximo 1 linha (a dele).
   const meuDesempenho = isAdmin ? undefined : vendedores[0];
-  // Vendedor desligado: flag vem da API (/api/dashboard/metrics), nunca do
-  // cache local — o vinculo pode continuar existindo no usuario, mas o
-  // vendedor ter data_desligamento.
-  const vendedorDesligado = !isAdmin && metrics?.vendedor_desligado === true;
+  // Vendedor desligado: flag vem da API (/api/dashboard/metrics ou
+  // /api/auth/me via sessao em memoria), nunca do cache local — o vinculo
+  // pode continuar existindo no usuario, mas o vendedor ter data_desligamento.
+  const vendedorDesligado =
+    !isAdmin && (metrics?.vendedor_desligado === true || desligadoNaSessao);
   const temMeta = displayMetrics.meta_mes != null && displayMetrics.meta_mes > 0;
 
   return (
@@ -666,6 +667,9 @@ function DashboardContent() {
           </Alert>
         )}
 
+        {/* UI-02 (decisao do usuario: opcao b): o aviso aparece acima e os
+            KPIs/grafico continuam visiveis, zerados (a API devolve os dados
+            zerados nesses casos). */}
         {semVendedor ? (
           <Alert variant="warning" className="mb-6">
             Usuario sem vendedor vinculado. As metricas de vendas sao exibidas
@@ -678,8 +682,8 @@ function DashboardContent() {
             de desligamento, por isso nao ha metricas de vendas nem clientes
             na sua carteira; procure um administrador.
           </Alert>
-        ) : (
-        <>
+        ) : null}
+
         {/* KPI Cards */}
         <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
@@ -731,8 +735,8 @@ function DashboardContent() {
             <CardHeader
               title={
                 isAdmin
-                  ? "Vendas nos Ultimos 30 Dias"
-                  : `Minhas Vendas nos Ultimos ${chartsDias} Dias`
+                  ? `Vendas nos Últimos ${chartsDias} Dias`
+                  : `Minhas Vendas nos Últimos ${chartsDias} Dias`
               }
               subtitle={`Total: ${fmtCurrency(displayVendas.pontos.reduce((s, p) => s + p.total_vendas, 0))}`}
               action={
@@ -808,8 +812,6 @@ function DashboardContent() {
             <MeuDesempenho vendedor={meuDesempenho} />
           )}
         </Card>
-        </>
-        )}
 
         {/* Clientes */}
         {/* Admin: base global. Usuario normal: backend escopa pela carteira

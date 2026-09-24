@@ -63,6 +63,7 @@ func TestListPagamentos_Success_UsuarioComum(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	expectVendedorDesligado(mock, int64(10), false)
 	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH + vendedorWhere).
 		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
@@ -112,6 +113,7 @@ func TestListPagamentos_OrderBy(t *testing.T) {
 			mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 				WithArgs(int64(2)).
 				WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+			expectVendedorDesligado(mock, int64(10), false)
 			mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH + vendedorWhere).
 				WithArgs(int64(10)).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
@@ -177,6 +179,7 @@ func TestListPagamentos_PedidoIDInvalido(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	expectVendedorDesligado(mock, int64(10), false)
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/pagamentos?pedido_id=abc", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -217,6 +220,7 @@ func TestListPagamentos_ErroInterno(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	expectVendedorDesligado(mock, int64(10), false)
 	mock.ExpectQuery(`SELECT COUNT\(\*\)` + pagamentoFromRegexH + vendedorWhere).
 		WithArgs(int64(10)).
 		WillReturnError(sqlmock.ErrCancelled)
@@ -247,6 +251,7 @@ func TestGetPagamento_Success(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	expectVendedorDesligado(mock, int64(2), false)
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
@@ -281,6 +286,7 @@ func TestGetPagamento_NaoEncontrado(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	expectVendedorDesligado(mock, int64(2), false)
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnRows(emptyPagamentoRowsForHandler())
@@ -313,6 +319,7 @@ func TestGetPagamento_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
@@ -781,6 +788,7 @@ func TestDeletePagamento_Success(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	expectVendedorDesligado(mock, int64(2), false)
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
@@ -816,6 +824,7 @@ func TestDeletePagamento_NaoEncontrado(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	expectVendedorDesligado(mock, int64(2), false)
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnRows(emptyPagamentoRowsForHandler())
@@ -850,6 +859,7 @@ func TestDeletePagamento_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))

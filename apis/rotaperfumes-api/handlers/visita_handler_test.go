@@ -92,6 +92,7 @@ func TestListVisitas_PermitidoParaNaoAdmin_ForcaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	expectVendedorDesligado(mock, int64(2), false)
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM visitas` + vendedorWhere).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
@@ -319,6 +320,7 @@ func TestGetVisita_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	expectVendedorDesligado(mock, int64(1), false)
 	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(visitaRowsForHandler())
@@ -353,6 +355,7 @@ func TestGetVisita_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(visitaRowsForHandler())
@@ -447,6 +450,7 @@ func TestCreateVisita_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(5)))
+	expectVendedorDesligado(mock, int64(5), false)
 	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 		WithArgs(int64(5), int64(100)).
 		WillReturnRows(sqlmock.NewRows([]string{
@@ -526,6 +530,7 @@ func TestCreateVisita_ClienteForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(5)))
+	expectVendedorDesligado(mock, int64(5), false)
 	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 		WithArgs(int64(5), int64(100)).
 		WillReturnError(sql.ErrNoRows)
@@ -777,6 +782,7 @@ func TestUpdateVisita_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(visitaRowsForHandler())
@@ -812,6 +818,7 @@ func TestUpdateVisita_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	expectVendedorDesligado(mock, int64(1), false)
 	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(visitaRowsForHandler())
@@ -866,6 +873,7 @@ func TestUpdateVisita_ClienteForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	expectVendedorDesligado(mock, int64(1), false)
 	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(visitaRowsForHandler())
@@ -1069,6 +1077,7 @@ func TestDeleteVisita_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	expectVendedorDesligado(mock, int64(1), false)
 	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(visitaRowsForHandler())
@@ -1128,6 +1137,7 @@ func TestDeleteVisita_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + visitaColunasRegexH + ` FROM visitas WHERE visita_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(visitaRowsForHandler())

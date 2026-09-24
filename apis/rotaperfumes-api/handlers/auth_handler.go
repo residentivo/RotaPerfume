@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
@@ -43,6 +45,7 @@ const (
 type AuthHandler struct {
 	db                   *sql.DB
 	repo                 *repositories.UsuarioRepository
+	vendedorRepo         *repositories.VendedorRepository
 	auth                 *sharedsvc.AuthService
 	refreshSvc           *services.RefreshTokenService
 	senhaSvc             *services.SenhaHistoricoService
@@ -58,6 +61,7 @@ func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{
 		db:                   db,
 		repo:                 repositories.NewUsuarioRepository(),
+		vendedorRepo:         repositories.NewVendedorRepository(),
 		auth:                 sharedsvc.NewAuthService(),
 		refreshSvc:           services.NewRefreshTokenService(),
 		senhaSvc:             services.NewSenhaHistoricoService(),
@@ -547,16 +551,39 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vendedorDesligado, err := h.vendedorDesligadoDoUsuario(ctx, u)
+	if err != nil {
+		log.Printf("[auth] me: vendedor desligado: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":              u.ID,
-		"nome":            u.Nome,
-		"email":           u.Email,
-		"role":            u.Role,
-		"ativo":           u.Ativo,
-		"id_vendedor":     u.IDVendedor,
-		"created_at":      u.CreatedAt,
-		"ultimo_login_at": u.UltimoLoginAt,
+		"id":                 u.ID,
+		"nome":               u.Nome,
+		"email":              u.Email,
+		"role":               u.Role,
+		"ativo":              u.Ativo,
+		"id_vendedor":        u.IDVendedor,
+		"created_at":         u.CreatedAt,
+		"ultimo_login_at":    u.UltimoLoginAt,
+		"vendedor_desligado": vendedorDesligado,
 	}, "")
+}
+
+// vendedorDesligadoDoUsuario reporta se o usuário (não admin) está vinculado
+// a um vendedor desligado. Admin e usuário sem vínculo (ou com vínculo órfão)
+// retornam false sem erro. Consulta própria ao banco a cada chamada (sem
+// cache L1).
+func (h *AuthHandler) vendedorDesligadoDoUsuario(ctx context.Context, u *models.Usuario) (bool, error) {
+	if u.IsAdmin() || u.IDVendedor == nil || *u.IDVendedor <= 0 {
+		return false, nil
+	}
+	desligado, err := h.vendedorRepo.IsDesligado(ctx, h.db, *u.IDVendedor)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return false, nil
+	}
+	return desligado, err
 }
 
 // Logout POST /api/auth/logout

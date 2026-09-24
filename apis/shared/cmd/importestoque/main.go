@@ -178,7 +178,7 @@ func parseRow(record []string) (estoqueRow, error) {
 		return estoqueRow{}, fmt.Errorf("sku vazio")
 	}
 
-	dataSnapshot, err := time.Parse(dataSnapshotLayout, dataSnapshotRaw)
+	dataSnapshot, err := time.ParseInLocation(dataSnapshotLayout, dataSnapshotRaw, time.Local)
 	if err != nil {
 		return estoqueRow{}, fmt.Errorf("data_snapshot inválida (%q): %w", dataSnapshotRaw, err)
 	}

@@ -290,10 +290,10 @@ func parsePedidoRow(record []string) (pedidoRow, error) {
 // tenta o layout BR (02/01/2006), pois pedidos.csv mistura ambos os formatos.
 // Retorna erro se nenhum dos dois formatos casar.
 func parseDataPedido(v string) (time.Time, error) {
-	if t, err := time.Parse(dataPedidoLayout, v); err == nil {
+	if t, err := time.ParseInLocation(dataPedidoLayout, v, time.Local); err == nil {
 		return t, nil
 	}
-	return time.Parse(dataPedidoLayoutBR, v)
+	return time.ParseInLocation(dataPedidoLayoutBR, v, time.Local)
 }
 
 func isValidCanal(v string) bool {

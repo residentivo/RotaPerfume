@@ -139,7 +139,7 @@ func (s *VisitaService) validarVisitaInput(ctx context.Context, db *sql.DB, inpu
 		return nil, ErrVisitaVendedorInvalido
 	}
 
-	dataVisita, err := time.Parse(dataVisitaLayout, dataVisitaStr)
+	dataVisita, err := time.ParseInLocation(dataVisitaLayout, dataVisitaStr, time.Local)
 	if err != nil {
 		return nil, ErrVisitaDataInvalida
 	}

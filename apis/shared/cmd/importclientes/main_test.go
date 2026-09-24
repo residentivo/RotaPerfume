@@ -44,8 +44,8 @@ func TestParseData(t *testing.T) {
 		want    time.Time
 		wantErr bool
 	}{
-		{"formato ISO (YYYY-MM-DD)", "2023-05-10", time.Date(2023, 5, 10, 0, 0, 0, 0, time.UTC), false},
-		{"formato BR (DD/MM/YYYY)", "10/05/2023", time.Date(2023, 5, 10, 0, 0, 0, 0, time.UTC), false},
+		{"formato ISO (YYYY-MM-DD)", "2023-05-10", time.Date(2023, 5, 10, 0, 0, 0, 0, time.Local), false},
+		{"formato BR (DD/MM/YYYY)", "10/05/2023", time.Date(2023, 5, 10, 0, 0, 0, 0, time.Local), false},
 		{"formato inválido", "10-05-2023", time.Time{}, true},
 		{"string vazia", "", time.Time{}, true},
 		{"data inexistente", "2023-13-40", time.Time{}, true},

@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import { logout, getUser } from "@/lib/auth";
-import { User } from "@/lib/types";
+import { logout } from "@/lib/auth";
+import { useSessionUser, useVendedorDesligado } from "@/lib/session";
 
 interface NavDropdownItem {
   label: string;
@@ -44,12 +42,13 @@ function NavDropdown({ label, items }: { label: string; items: NavDropdownItem[]
 }
 
 export function Navbar() {
-  const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    setUser(getUser());
-  }, []);
+  // A Navbar so e renderizada dentro do ProtectedRoute, que popula a sessao
+  // em memoria via /api/auth/me antes de liberar os filhos; a sessao e a
+  // fonte da verdade (inclui id_vendedor e vendedor_desligado).
+  const user = useSessionUser();
+  // Proativo (UX): vendedor desligado nao ve os itens da carteira no menu.
+  // O bloqueio real e do backend (403).
+  const carteiraBloqueada = useVendedorDesligado();
 
   const handleLogout = () => {
     void logout();
@@ -87,24 +86,34 @@ export function Navbar() {
             </Link>
           )}
 
+          {/* Itens da carteira: ocultos para vendedor desligado (o
+              dropdown sem itens nao e renderizado). */}
           {user && (
             <NavDropdown
               label="ERP"
-              items={[
-                { label: "Clientes", href: "/admin/clientes" },
-                { label: "Oportunidades", href: "/admin/oportunidades" },
-                { label: "Visitas", href: "/admin/visitas" },
-              ]}
+              items={
+                carteiraBloqueada
+                  ? []
+                  : [
+                      { label: "Clientes", href: "/admin/clientes" },
+                      { label: "Oportunidades", href: "/admin/oportunidades" },
+                      { label: "Visitas", href: "/admin/visitas" },
+                    ]
+              }
             />
           )}
 
           {user && (
             <NavDropdown
               label="CRM"
-              items={[
-                { label: "Pagamentos", href: "/pagamentos" },
-                { label: "Pedidos", href: "/admin/pedidos" },
-              ]}
+              items={
+                carteiraBloqueada
+                  ? []
+                  : [
+                      { label: "Pagamentos", href: "/pagamentos" },
+                      { label: "Pedidos", href: "/admin/pedidos" },
+                    ]
+              }
             />
           )}
 

@@ -502,6 +502,7 @@ func TestListClientesDoVendedor_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	expectVendedorDesligado(mock, int64(1), false)
 	mock.ExpectQuery(vendedorExistsByIDRegexH).WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	mock.ExpectQuery(clienteResumoColunasRegexH + clienteResumoFromRegexH + ` WHERE ca\.vendedor_id = \? AND ca\.data_fim IS NULL ORDER BY c\.razao_social ASC`).
@@ -536,6 +537,7 @@ func TestListClientesDoVendedor_NegadoParaNaoAdminDeOutroVendedor(t *testing.T) 
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores/1/clientes", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)

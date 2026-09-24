@@ -45,10 +45,9 @@ func (h *VisitaHandler) ListVisitas(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("limit"),
 	)
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[visitas] ListVisitas escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[visitas] ListVisitas", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -100,10 +99,9 @@ func (h *VisitaHandler) GetVisita(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[visitas] GetVisita escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[visitas] GetVisita", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -185,10 +183,9 @@ func visitaErroParaStatus(err error) (status int, msg string, ok bool) {
 func (h *VisitaHandler) CreateVisita(w http.ResponseWriter, r *http.Request) {
 	role, _ := middleware.GetRole(r.Context())
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[visitas] CreateVisita escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[visitas] CreateVisita", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -257,10 +254,9 @@ func (h *VisitaHandler) UpdateVisita(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[visitas] UpdateVisita escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[visitas] UpdateVisita", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -345,10 +341,9 @@ func (h *VisitaHandler) DeleteVisita(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[visitas] DeleteVisita escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[visitas] DeleteVisita", err)
 		return
 	}
 	if scope.SemAcesso() {

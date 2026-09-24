@@ -35,6 +35,7 @@ build/
 *.out
 coverage.txt
 coverage.html
+frontend/coverage/
 
 # IDE
 .vscode/

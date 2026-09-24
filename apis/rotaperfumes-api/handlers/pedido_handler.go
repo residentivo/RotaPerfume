@@ -43,10 +43,9 @@ func (h *PedidoHandler) ListPedidos(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("limit"),
 	)
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pedidos] ListPedidos escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pedidos] ListPedidos", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -111,10 +110,9 @@ func (h *PedidoHandler) GetPedido(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pedidos] GetPedido escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pedidos] GetPedido", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -237,10 +235,9 @@ func pedidoErroParaStatus(err error) (status int, msg string, ok bool) {
 // ao vendedor vinculado; cliente_id deve pertencer à carteira ativa desse
 // vendedor). 403 se o usuário normal não tiver vendedor vinculado.
 func (h *PedidoHandler) CreatePedido(w http.ResponseWriter, r *http.Request) {
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pedidos] CreatePedido escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pedidos] CreatePedido", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -313,10 +310,9 @@ func (h *PedidoHandler) UpdatePedido(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pedidos] UpdatePedido escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pedidos] UpdatePedido", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -409,10 +405,9 @@ func (h *PedidoHandler) DeletePedido(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pedidos] DeletePedido escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pedidos] DeletePedido", err)
 		return
 	}
 	if scope.SemAcesso() {

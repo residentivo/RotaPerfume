@@ -110,6 +110,16 @@ Login com o usuário temporário (`qa.semvendedor@rotaperfumes.test`) e abra Ped
 - [ ] 5.3 O botão **Salvar** fica desabilitado.
 - [ ] 5.4 A lista de pedidos desse usuário vem vazia, porque ele não tem carteira.
 
+## 5b. Vínculo alterado pelo admin e vendedor desligado (sessão via /me)
+
+O vendedor travado do usuário normal vem da sessão em memória validada por `GET /api/auth/me`, e não do `auth_user` do localStorage. A sessão é revalidada quando o modal abre e quando a aba volta ao foco. O passo a passo completo está em `docs/roteiro-teste-manual-vendedor-desligado.md`, seções 5 e 6.
+
+- [ ] 5b.1 Com o usuário 5 logado, o admin troca o vínculo para o vendedor 7. Ao voltar o foco para a aba, **Novo Pedido** mostra o vendedor #7 travado e os clientes da carteira do 7, sem novo login.
+- [ ] 5b.2 Se o modal já estava aberto, o select "Vendedor" é atualizado para #7 ao voltar o foco.
+- [ ] 5b.3 O `POST /api/pedidos` sai com `"vendedor_id": 7`. Exclua o pedido e restaure o vínculo para o vendedor 4.
+- [ ] 5b.4 Com o vendedor do usuário **desligado**, `/admin/pedidos` mostra só o aviso "Seu vendedor foi desligado..." + "Ir para o Dashboard". O botão "Novo Pedido" não aparece, e a API responde 403 "acesso bloqueado: vendedor desligado".
+- [ ] 5b.5 A cobertura automatizada está em `frontend/src/components/admin/PedidoModal.test.tsx`.
+
 ## 6. Limpeza
 
 - [ ] 6.1 Pedidos de teste (1.5 e 3.3) excluídos.

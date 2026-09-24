@@ -45,10 +45,9 @@ func (h *OportunidadeHandler) ListOportunidades(w http.ResponseWriter, r *http.R
 		r.URL.Query().Get("limit"),
 	)
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[oportunidades] ListOportunidades escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[oportunidades] ListOportunidades", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -101,10 +100,9 @@ func (h *OportunidadeHandler) GetOportunidade(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[oportunidades] GetOportunidade escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[oportunidades] GetOportunidade", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -208,10 +206,9 @@ func oportunidadeErroParaStatus(err error) (status int, msg string, ok bool) {
 func (h *OportunidadeHandler) CreateOportunidade(w http.ResponseWriter, r *http.Request) {
 	role, _ := middleware.GetRole(r.Context())
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[oportunidades] CreateOportunidade escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[oportunidades] CreateOportunidade", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -285,10 +282,9 @@ func (h *OportunidadeHandler) UpdateOportunidade(w http.ResponseWriter, r *http.
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[oportunidades] UpdateOportunidade escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[oportunidades] UpdateOportunidade", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -378,10 +374,9 @@ func (h *OportunidadeHandler) DeleteOportunidade(w http.ResponseWriter, r *http.
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[oportunidades] DeleteOportunidade escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[oportunidades] DeleteOportunidade", err)
 		return
 	}
 	if scope.SemAcesso() {

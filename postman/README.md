@@ -95,7 +95,9 @@ Exemplos:
 
 #### GET /api/auth/me
 - **Auth:** Bearer Token
-- **Resposta:** `{ id, nome, email, role, ativo, id_vendedor, created_at, ultimo_login_at }`
+- **Resposta:** `{ id, nome, email, role, ativo, id_vendedor, created_at, ultimo_login_at, vendedor_desligado }`
+- **`vendedor_desligado` (bool, 2026-09-24):** `true` só para usuário `normal` vinculado a vendedor com `data_desligamento` preenchida. É `false` para admin, para usuário sem vínculo e para vínculo órfão (vendedor inexistente). O `/me` continua acessível para o vendedor desligado (não retorna `403`). O frontend usa este campo e o `id_vendedor` atualizado para revalidar a sessão (em vez de confiar só no `localStorage`) e exibir o aviso.
+- **Erros:** `401` não autenticado; `404` usuário não encontrado; `500` erro interno (inclui falha ao checar se o vendedor está desligado).
 
 #### POST /api/auth/reset-password
 - **Auth:** Bearer Token (qualquer role autenticado)
@@ -132,6 +134,32 @@ Exemplos:
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "usuario_id": <int64> }`
 - **Descrição:** Reseta a senha de um usuário para uma senha aleatória gerada pela API, enviada por email ao endereço cadastrado (revoga refresh tokens; `deve_trocar_senha` volta a `true`). Resposta inclui `email_enviado: boolean`.
+
+### Bloqueio de vendedor desligado nas rotas da carteira (2026-09-24)
+
+> **Decisão do usuário (2026-09-24):** o usuário `normal` vinculado a um vendedor desligado (`vendedores.data_desligamento` preenchida) fica bloqueado em **todas as rotas da carteira**, na leitura e na escrita. Contrato definido pelo 🟣 SecBrain e aplicado pelo 🟡 BackBrain em `apis/rotaperfumes-api/handlers/scope.go` (`resolverVendedorScope(r, db)` + `responderErroEscopo`).
+>
+> **Resposta de bloqueio:** `403` com corpo
+> ```json
+> {"success":false,"error":"acesso bloqueado: vendedor desligado"}
+> ```
+>
+> | Recurso | Rotas bloqueadas para o vendedor desligado |
+> |---------|--------------------------------------------|
+> | Clientes | `GET /api/clientes`, `GET /api/clientes/{id}`, `POST /api/clientes`, `PUT /api/clientes/{id}`, `PATCH /api/clientes/{id}/inativar` |
+> | Pedidos | `GET /api/pedidos`, `GET /api/pedidos/{id}`, `POST /api/pedidos`, `PUT /api/pedidos/{id}`, `DELETE /api/pedidos/{id}` |
+> | Pagamentos | `GET /api/pagamentos`, `GET /api/pagamentos/{id}`, `POST /api/pagamentos`, `PUT /api/pagamentos/{id}`, `DELETE /api/pagamentos/{id}` |
+> | Oportunidades | `GET /api/oportunidades`, `GET /api/oportunidades/{id}`, `POST /api/oportunidades`, `PUT /api/oportunidades/{id}`, `DELETE /api/oportunidades/{id}` |
+> | Visitas | `GET /api/visitas`, `GET /api/visitas/{id}`, `POST /api/visitas`, `PUT /api/visitas/{id}`, `DELETE /api/visitas/{id}` |
+> | Carteira do vendedor | `GET /api/vendedores/{id}/clientes` |
+>
+> - **Continuam acessíveis:** login, `POST /api/auth/refresh`, `GET /api/auth/me` (com `vendedor_desligado: true`) e o Dashboard (`/api/dashboard/*` responde `200` zerado, e `/metrics` traz `vendedor_desligado: true`; ver seção abaixo, **sem mudança** neste lote).
+> - **Checagem a cada requisição:** sem cache e sem depender de novo JWT. O desligamento bloqueia imediatamente, e a reativação libera imediatamente.
+> - **Admin** não é afetado. **Usuário `normal` sem vendedor vinculado** mantém o comportamento anterior. **Vínculo órfão** (vendedor inexistente) é tratado como "sem vendedor".
+> - **Falha ao checar o vendedor no banco:** `500` `"erro interno"` (fail-closed).
+> - Na collection, cada pasta (Clientes, Pedidos, Pagamentos, Oportunidades, Visitas) tem uma nota na descrição e o exemplo `403 Forbidden — Vendedor desligado (usuário normal)` na listagem e na criação, e também em "Listar Clientes do Vendedor".
+>
+> **Datas (BUG-01, 2026-09-24):** o formato das datas nas respostas **não mudou**. A correção (`time.ParseInLocation(..., time.Local)`) só eliminou o deslocamento de um dia na gravação: a data enviada como `AAAA-MM-DD` é gravada e lida no mesmo dia, inclusive em re-salvamentos.
 
 ### Dashboard (`/api/dashboard/*`) — acesso comum com escopo por vendedor
 
@@ -190,6 +218,10 @@ Exemplos:
 ### Clientes (`/api/clientes/*` admin only; `/api/dashboard/clientes` acesso comum com escopo da carteira)
 
 > Base de clientes importada de `dados/crm/clientes.csv` para a tabela `clientes` (ver seção "Importação de clientes (CRM)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Clientes"** da collection.
+>
+> **Vendedor desligado (2026-09-24):** as 5 rotas `/api/clientes*` respondem `403` `"acesso bloqueado: vendedor desligado"` para o usuário `normal` com vendedor desligado. Ver a seção "Bloqueio de vendedor desligado nas rotas da carteira".
+>
+> **Atenção (revisão pendente, 2026-09-24):** esta seção e a pasta da collection ainda descrevem `/api/clientes*` como "admin only". Em `apis/rotaperfumes-api/routes/routes.go` essas rotas usam `JWTMiddleware(cfg, true, false)` (**acesso comum**), com escopo por carteira aplicado no handler. Ver também o card **SEC-01** (IDOR em Create/Update/Toggle de clientes) em `tarefas/afazer.md`.
 
 #### GET /api/clientes
 - **Auth:** Bearer Token (admin)
@@ -502,6 +534,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 ### Me
 - `Status 200`
 - `Resposta contém dados do usuário`
+- `vendedor_desligado é booleano` (2026-09-24)
 
 ### Reset Password
 - `Status 200 para usuário autenticado`
@@ -722,7 +755,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Login — Vendedor | 6 | `vendedor_token`, `refresh_token` |
 | Logout | 2 | — |
 | Refresh Token | 4 | `token`, `refresh_token` |
-| Me | 2 | — |
+| Me | 3 | — |
 | Reset Password | 2 | — |
 | Listar Usuários | 3 | — |
 | Criar Usuário | 2 | — |
@@ -777,7 +810,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 |--------|-------------|
 | 400 | Body inválido ou campos obrigatórios ausentes |
 | 401 | Não autenticado (token ausente/inválido) ou credenciais inválidas |
-| 403 | Acesso restrito a administradores |
+| 403 | Acesso restrito a administradores; usuário `normal` sem vendedor vinculado (escritas); ou `"acesso bloqueado: vendedor desligado"` nas rotas da carteira (2026-09-24) |
 | 404 | Recurso não encontrado |
 | 409 | Conflito (ex.: e-mail duplicado) |
 | 500 | Erro interno do servidor |

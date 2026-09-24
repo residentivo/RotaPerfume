@@ -241,7 +241,7 @@ func parseDataLancamento(raw string) (*time.Time, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	t, err := time.Parse(dataLancamentoLayout, raw)
+	t, err := time.ParseInLocation(dataLancamentoLayout, raw, time.Local)
 	if err != nil {
 		return nil, err
 	}

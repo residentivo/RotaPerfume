@@ -52,10 +52,9 @@ func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request
 		r.URL.Query().Get("limit"),
 	)
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pagamentos] ListPagamentos escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pagamentos] ListPagamentos", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -113,10 +112,9 @@ func (h *PagamentoHandler) GetPagamento(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pagamentos] GetPagamento escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pagamentos] GetPagamento", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -262,10 +260,9 @@ func (h *PagamentoHandler) pedidoNoEscopo(w http.ResponseWriter, r *http.Request
 // pedido for de outro vendedor ou não existir). 403 se o usuário normal não
 // tiver vendedor vinculado.
 func (h *PagamentoHandler) CreatePagamento(w http.ResponseWriter, r *http.Request) {
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pagamentos] CreatePagamento escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pagamentos] CreatePagamento", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -336,10 +333,9 @@ func (h *PagamentoHandler) UpdatePagamento(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pagamentos] UpdatePagamento escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pagamentos] UpdatePagamento", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -410,10 +406,9 @@ func (h *PagamentoHandler) DeletePagamento(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[pagamentos] DeletePagamento escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[pagamentos] DeletePagamento", err)
 		return
 	}
 	if scope.SemAcesso() {

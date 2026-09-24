@@ -66,7 +66,7 @@ func parseFiltroData(s string) (*time.Time, error) {
 	if s == "" {
 		return nil, nil
 	}
-	t, err := time.Parse(estoqueDataLayout, s)
+	t, err := time.ParseInLocation(estoqueDataLayout, s, time.Local)
 	if err != nil {
 		return nil, ErrEstoqueDataInvalida
 	}
@@ -147,7 +147,7 @@ func (s *EstoqueService) validarEstoqueInput(ctx context.Context, db *sql.DB, in
 		err = ErrEstoqueDataObrigatoria
 		return
 	}
-	parsedData, parseErr := time.Parse(estoqueDataLayout, dataStr)
+	parsedData, parseErr := time.ParseInLocation(estoqueDataLayout, dataStr, time.Local)
 	if parseErr != nil {
 		err = ErrEstoqueDataInvalida
 		return

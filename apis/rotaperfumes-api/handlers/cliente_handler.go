@@ -61,10 +61,9 @@ func (h *ClienteHandler) ListClientes(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("limit"),
 	)
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[clientes] ListClientes escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[clientes] ListClientes", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -116,10 +115,9 @@ func (h *ClienteHandler) GetCliente(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope, err := resolverVendedorScope(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
 	if err != nil {
-		log.Printf("[clientes] GetCliente escopo: %v", err)
-		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		responderErroEscopo(w, "[clientes] GetCliente", err)
 		return
 	}
 	if scope.SemAcesso() {
@@ -170,6 +168,11 @@ func (h *ClienteHandler) ToggleAtivoCliente(w http.ResponseWriter, r *http.Reque
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	if _, err := resolverVendedorScope(r, h.db); err != nil {
+		responderErroEscopo(w, "[clientes] ToggleAtivoCliente", err)
 		return
 	}
 
@@ -251,6 +254,11 @@ func clienteErroParaStatus(err error) (status int, msg string, ok bool) {
 func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
 	role, _ := middleware.GetRole(r.Context())
 
+	if _, err := resolverVendedorScope(r, h.db); err != nil {
+		responderErroEscopo(w, "[clientes] CreateCliente", err)
+		return
+	}
+
 	var req CreateClienteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
@@ -292,6 +300,11 @@ func (h *ClienteHandler) UpdateCliente(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
+		return
+	}
+
+	if _, err := resolverVendedorScope(r, h.db); err != nil {
+		responderErroEscopo(w, "[clientes] UpdateCliente", err)
 		return
 	}
 

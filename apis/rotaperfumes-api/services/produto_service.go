@@ -173,7 +173,7 @@ func validarProdutoInput(input ProdutoInput, requireSKU bool) (sku, descricao, c
 	custoUnitario = input.CustoUnitario
 
 	if dataLancamentoStr != "" {
-		t, parseErr := time.Parse(dataLancamentoLayout, dataLancamentoStr)
+		t, parseErr := time.ParseInLocation(dataLancamentoLayout, dataLancamentoStr, time.Local)
 		if parseErr != nil {
 			err = ErrDataLancamentoInvalida
 			return

@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
+import { CarteiraGuard } from "@/components/layout/CarteiraGuard";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
 import { OportunidadeModal } from "@/components/admin/OportunidadeModal";
@@ -16,7 +17,7 @@ import {
   apiListVendedores,
   apiListClientes,
 } from "@/lib/api";
-import { getUser } from "@/lib/auth";
+import { useSessionUser } from "@/lib/session";
 import { Oportunidade, OportunidadeInput, Vendedor, Cliente } from "@/lib/types";
 
 type SortKey =
@@ -98,7 +99,7 @@ function fmtDate(dateStr: string | null): string {
   return d.toLocaleDateString("pt-BR");
 }
 
-export default function OportunidadesPage() {
+function OportunidadesContent() {
   const [oportunidades, setOportunidades] = useState<Oportunidade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,14 +115,19 @@ export default function OportunidadesPage() {
   // e o seletor "todos os vendedores" fica oculto. Admin mantém o filtro
   // livre (padrão anterior). Sem id_vendedor vinculado, o vendedor não tem
   // carteira: a lista permanece vazia (mesmo comportamento do backend).
-  const currentUser = getUser();
+  // Fonte da verdade: sessao em memoria validada por GET /api/auth/me
+  // (revalidada ao montar e ao voltar o foco), nao o localStorage.
+  const currentUser = useSessionUser();
   const isAdmin = currentUser?.role === "admin";
   const semCarteira = !isAdmin && !currentUser?.id_vendedor;
+  const meuVendedorId =
+    !isAdmin && currentUser?.id_vendedor ? String(currentUser.id_vendedor) : "";
 
   const [search, setSearch] = useState("");
-  const [vendedorFilter, setVendedorFilter] = useState(
-    !isAdmin && currentUser?.id_vendedor ? String(currentUser.id_vendedor) : ""
-  );
+  // Filtro livre so para admin; usuario normal usa sempre meuVendedorId
+  // (acompanha mudancas do vinculo sem novo login).
+  const [vendedorFilter, setVendedorFilter] = useState("");
+  const filtroVendedor = isAdmin ? vendedorFilter : meuVendedorId;
   const [clienteFilter, setClienteFilter] = useState("");
   const [etapaFilter, setEtapaFilter] = useState("");
   const [origemFilter, setOrigemFilter] = useState("");
@@ -222,7 +228,7 @@ export default function OportunidadesPage() {
         page,
         limit,
         {
-          vendedor_id: vendedorFilter ? Number(vendedorFilter) : undefined,
+          vendedor_id: filtroVendedor ? Number(filtroVendedor) : undefined,
           cliente_id: clienteFilter ? Number(clienteFilter) : undefined,
           etapa: etapaFilter || undefined,
           origem: origemFilter || undefined,
@@ -271,6 +277,7 @@ export default function OportunidadesPage() {
   }, [
     search,
     vendedorFilter,
+    meuVendedorId,
     clienteFilter,
     etapaFilter,
     origemFilter,
@@ -681,5 +688,13 @@ export default function OportunidadesPage() {
         onSubmit={handleModalSubmit}
       />
     </div>
+  );
+}
+
+export default function OportunidadesPage() {
+  return (
+    <CarteiraGuard title="Oportunidades">
+      <OportunidadesContent />
+    </CarteiraGuard>
   );
 }

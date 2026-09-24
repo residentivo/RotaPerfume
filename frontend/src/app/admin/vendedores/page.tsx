@@ -87,7 +87,6 @@ function VendedoresPageContent() {
 
   useEffect(() => {
     loadVendedores();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Reseta para pagina 1 quando busca/filtros/ordenacao mudam.

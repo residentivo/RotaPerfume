@@ -160,7 +160,7 @@ func validarPedidoInput(input PedidoInput) (pedido models.Pedido, itens []models
 		err = ErrDataPedidoInvalida
 		return
 	}
-	dataPedido, parseErr := time.Parse(dataPedidoLayout, dataPedidoStr)
+	dataPedido, parseErr := time.ParseInLocation(dataPedidoLayout, dataPedidoStr, time.Local)
 	if parseErr != nil {
 		err = ErrDataPedidoInvalida
 		return

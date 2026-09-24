@@ -192,7 +192,7 @@ func validarPagamentoInput(input PagamentoInput) (formaPagamento, statusPagament
 		err = ErrDataVencimentoObrigatoria
 		return
 	}
-	t, parseErr := time.Parse(dataPagamentoLayout, dataVencimentoStr)
+	t, parseErr := time.ParseInLocation(dataPagamentoLayout, dataVencimentoStr, time.Local)
 	if parseErr != nil {
 		err = ErrDataVencimentoInvalida
 		return
@@ -200,7 +200,7 @@ func validarPagamentoInput(input PagamentoInput) (formaPagamento, statusPagament
 	dataVencimento = t
 
 	if dataPagamentoStr != "" {
-		dp, parseErr := time.Parse(dataPagamentoLayout, dataPagamentoStr)
+		dp, parseErr := time.ParseInLocation(dataPagamentoLayout, dataPagamentoStr, time.Local)
 		if parseErr != nil {
 			err = ErrDataPagamentoInvalida
 			return

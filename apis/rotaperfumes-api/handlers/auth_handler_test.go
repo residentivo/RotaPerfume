@@ -968,6 +968,7 @@ func TestMe_Success(t *testing.T) {
 	assert.Equal(t, float64(3), data["id"])
 	assert.Equal(t, "João Silva", data["nome"])
 	assert.Equal(t, "normal", data["role"])
+	assert.Equal(t, false, data["vendedor_desligado"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

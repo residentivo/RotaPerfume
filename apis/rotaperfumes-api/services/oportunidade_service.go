@@ -171,7 +171,7 @@ func (s *OportunidadeService) validarOportunidadeInput(ctx context.Context, db *
 		}
 		dataAbertura = time.Now()
 	} else {
-		dataAbertura, err = time.Parse(dataOportunidadeLayout, dataAberturaStr)
+		dataAbertura, err = time.ParseInLocation(dataOportunidadeLayout, dataAberturaStr, time.Local)
 		if err != nil {
 			return nil, ErrOportunidadeDataAberturaInvalida
 		}
@@ -179,7 +179,7 @@ func (s *OportunidadeService) validarOportunidadeInput(ctx context.Context, db *
 
 	var dataFechamento *time.Time
 	if dataFechamentoStr != "" {
-		parsed, err := time.Parse(dataOportunidadeLayout, dataFechamentoStr)
+		parsed, err := time.ParseInLocation(dataOportunidadeLayout, dataFechamentoStr, time.Local)
 		if err != nil {
 			return nil, ErrOportunidadeDataFechamentoInvalida
 		}

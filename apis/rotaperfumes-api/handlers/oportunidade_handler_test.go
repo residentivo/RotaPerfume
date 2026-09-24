@@ -96,6 +96,7 @@ func TestListOportunidades_PermitidoParaNaoAdmin_ForcaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
+	expectVendedorDesligado(mock, int64(2), false)
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM oportunidades` + vendedorWhere).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
@@ -294,6 +295,7 @@ func TestGetOportunidade_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	expectVendedorDesligado(mock, int64(1), false)
 	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(oportunidadeRowsForHandler())
@@ -329,6 +331,7 @@ func TestGetOportunidade_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(oportunidadeRowsForHandler())
@@ -400,6 +403,7 @@ func TestCreateOportunidade_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) 
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(5)))
+	expectVendedorDesligado(mock, int64(5), false)
 	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 		WithArgs(int64(5), int64(100)).
 		WillReturnRows(sqlmock.NewRows([]string{
@@ -479,6 +483,7 @@ func TestCreateOportunidade_ClienteForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(5)))
+	expectVendedorDesligado(mock, int64(5), false)
 	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
 		WithArgs(int64(5), int64(100)).
 		WillReturnError(sql.ErrNoRows)
@@ -712,6 +717,7 @@ func TestUpdateOportunidade_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(oportunidadeRowsForHandler())
@@ -747,6 +753,7 @@ func TestUpdateOportunidade_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) 
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	expectVendedorDesligado(mock, int64(1), false)
 	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(oportunidadeRowsForHandler())
@@ -801,6 +808,7 @@ func TestUpdateOportunidade_ClienteForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	expectVendedorDesligado(mock, int64(1), false)
 	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(oportunidadeRowsForHandler())
@@ -1002,6 +1010,7 @@ func TestDeleteOportunidade_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(1)))
+	expectVendedorDesligado(mock, int64(1), false)
 	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(oportunidadeRowsForHandler())
@@ -1062,6 +1071,7 @@ func TestDeleteOportunidade_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+	expectVendedorDesligado(mock, int64(99), false)
 	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades WHERE oportunidade_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(oportunidadeRowsForHandler())

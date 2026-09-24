@@ -5,8 +5,9 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
+import { CarteiraGuard } from "@/components/layout/CarteiraGuard";
 import { Select } from "@/components/ui/Select";
-import { Table, Badge, Column } from "@/components/ui/Table";
+import { Table, Column } from "@/components/ui/Table";
 import { ClienteModal } from "@/components/admin/ClienteModal";
 import {
   apiListClientes,
@@ -75,7 +76,7 @@ function fmtCnpj(cnpj: string): string {
   );
 }
 
-export default function ClientesPage() {
+function ClientesContent() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -522,5 +523,13 @@ export default function ClientesPage() {
         onSubmit={handleModalSubmit}
       />
     </div>
+  );
+}
+
+export default function ClientesPage() {
+  return (
+    <CarteiraGuard title="Clientes">
+      <ClientesContent />
+    </CarteiraGuard>
   );
 }

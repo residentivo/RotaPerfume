@@ -28,9 +28,23 @@ export function clearTokens(): void {
 // User não é sensível - apenas dados públicos do perfil
 // ============================================
 
+// Grava apenas os campos conhecidos de User (whitelist). Campos extras que
+// venham da API (ex.: `vendedor_desligado` de /api/auth/me) ficam só em
+// memória (session.ts) e nunca vão para o localStorage.
 export function saveUser(user: User): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  const safe: User = {
+    id: user.id,
+    nome: user.nome,
+    email: user.email,
+    role: user.role,
+    ativo: user.ativo,
+    created_at: user.created_at,
+    updated_at: user.updated_at,
+    id_vendedor: user.id_vendedor ?? null,
+    vendedor_nome: user.vendedor_nome ?? null,
+  };
+  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(safe));
 }
 
 export function getUser(): User | null {

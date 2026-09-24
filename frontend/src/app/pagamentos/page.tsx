@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { CarteiraGuard } from "@/components/layout/CarteiraGuard";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -362,9 +363,8 @@ function PagamentosContent() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Navbar />
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <>
+      <div>
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Pagamentos</h1>
@@ -533,15 +533,22 @@ function PagamentosContent() {
           onClose={() => setModalOpen(false)}
           onSubmit={handleModalSubmit}
         />
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
 
 export default function PagamentosPage() {
   return (
     <ProtectedRoute>
-      <PagamentosContent />
+      <div className="min-h-screen bg-slate-50">
+        <Navbar />
+        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          <CarteiraGuard title="Pagamentos">
+            <PagamentosContent />
+          </CarteiraGuard>
+        </main>
+      </div>
     </ProtectedRoute>
   );
 }

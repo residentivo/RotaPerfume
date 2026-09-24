@@ -2,84 +2,93 @@
 
 ---
 
-## BUG-01: `data_pedido` gravada com um dia a menos (fuso UTC vs `loc=Local`) — prioridade ALTA
+## SEC-01: IDOR em Create/Update/Toggle de clientes — prioridade ALTA
 
+**Status:** não iniciado. Aguarda a priorização do usuário.
 **Camada:** Backend
-**Origem:** lote de 2026-09-24, durante a validação do card "Teste manual/e2e do `PedidoModal`" (em `fazendo.md`).
+**Origem:** 🟣 SecBrain, 2026-09-24, durante a definição do contrato de bloqueio do vendedor desligado.
 
-**Descrição:** Um pedido enviado com `data_pedido: "2026-09-24"` é gravado como `2026-09-23`.
-- **Causa provável:** `time.Parse("2006-01-02", ...)` gera meia-noite em UTC, e o DSN do MySQL usa `loc=Local` (UTC-3). Na conversão, a data recua para 21:00 do dia anterior.
-- **Ponto confirmado:** `apis/rotaperfumes-api/services/pedido_service.go:163`.
-- **Mesmo padrão (não reproduzido):** services de cliente, estoque, oportunidade, pagamento, produto, vendedor e visita.
-- **Impacto:** cada re-salvamento de um pedido no `PedidoModal` pode recuar mais um dia, porque o frontend reenvia a data já deslocada.
+**Descrição:** Em `apis/rotaperfumes-api/handlers/cliente_handler.go`, três handlers não chamam `resolverVendedorScope`:
+- `CreateCliente` (~l.251)
+- `UpdateCliente` (~l.291)
+- `ToggleAtivoCliente` (~l.169)
 
-**Ação esperada:**
-- 🟡 BackBrain corrigir a causa: `time.ParseInLocation` com o mesmo fuso do DSN, ou ajuste do DSN. Revisar todos os services que usam o mesmo padrão.
-- 🔴 TestBrain cobrir com testes: gravação e leitura da mesma data, e re-salvamento sem deslocamento.
-- 🔵 SubBrain atualizar o Postman, se o formato das datas na resposta mudar.
-
----
-
-## UI-01: título do gráfico do Dashboard (admin) fixo em "Vendas nos Ultimos 30 Dias"
-
-**Camada:** Frontend (menor)
-**Origem:** lote de 2026-09-24, durante a validação do card "Teste manual do Dashboard" (em `fazendo.md`).
-
-**Descrição:** Em `frontend/src/app/dashboard/page.tsx`, o título do gráfico do admin continua "Vendas nos Ultimos 30 Dias" mesmo quando o select de dias muda para outro valor.
-
-**Ação esperada:** 🟢 FrontBrain montar o título a partir do número de dias selecionado (ex.: "Vendas nos Últimos 7 Dias").
-
----
-
-## UI-02: layout do Dashboard para normal sem vendedor / com vendedor desligado (CONFIRMAR COM O USUÁRIO)
-
-**Camada:** Frontend (aguardando decisão)
-**Origem:** lote de 2026-09-24, durante a validação do card "Teste manual do Dashboard" (em `fazendo.md`).
-
-**Descrição:** Para o usuário `normal` sem vendedor vinculado e para o `normal` com vendedor desligado, `frontend/src/app/dashboard/page.tsx` mostra **só o aviso**. Não aparecem os KPIs zerados nem o gráfico com os dias zerados. O card original de teste manual esperava "aviso, números zerados e gráfico com dias zerados". A API devolve os dados zerados corretamente nos dois casos.
+Com isso, qualquer usuário `normal` consegue editar ou inativar **qualquer** cliente pelo id. O lote atual só adiciona nesses handlers o bloqueio do vendedor desligado.
 
 **Ação esperada:**
-- 🔵 SubBrain / 🤍 MegaBrain confirmar com o usuário o layout desejado: (a) só o aviso, como hoje, ou (b) aviso + KPIs zerados + gráfico zerado.
-- Se for (b), 🟢 FrontBrain ajustar `page.tsx` e 🔴 TestBrain atualizar `docs/roteiro-teste-manual-dashboard.md`.
-- Se for (a), ajustar só a expectativa do roteiro e do card de teste manual.
+- 🟡 BackBrain restringir Update e Toggle à carteira ativa via `clienteNaCarteiraDoVendedor`, respondendo `404` "cliente não encontrado" para clientes fora da carteira. Definir também a regra do Create para o usuário `normal`.
+- 🔴 TestBrain cobrir com testes.
+- 🔵 SubBrain atualizar o Postman.
 
 ---
 
-## Segurança: vendedor desligado ainda pode criar/editar pedidos, pagamentos, oportunidades e visitas (DECISÃO DE NEGÓCIO)
+## BUG-04: salvar registro sem alterações retorna 404 "não encontrado" — prioridade MÉDIA/ALTA
 
-**Camada:** Backend (aguardando decisão)
-**Origem:** 🟣 SecBrain, lote de 2026-09-24 (relacionado ao card "Dashboard de vendedor desligado", em `feito.md`).
+**Status:** não iniciado. Aguarda a priorização do usuário.
+**Camada:** Backend
+**Origem:** 🔴 TestBrain, 2026-09-24.
 
-**Descrição:** A decisão do usuário de 2026-09-24 ("bloquear o acesso" do vendedor desligado) cobriu **só o Dashboard**. `resolverVendedorScope` (`apis/rotaperfumes-api/handlers/scope.go`) ignora `vendedores.data_desligamento`. Com isso, um usuário `normal` vinculado a um vendedor desligado continua podendo listar, criar e editar pedidos, pagamentos, oportunidades e visitas da própria carteira.
+**Descrição:** Salvar um registro sem nenhuma alteração retorna `404` "não encontrado".
+- **Causa:** o DSN não tem `clientFoundRows=true` (`apis/shared/config/config.go:138` e `apis/shared/cmd/resetpassword/main.go:54`). O MySQL devolve `RowsAffected=0` em um `UPDATE` que não muda nada, e os repositórios tratam `n == 0` como `ErrNotFound`.
+- **Confirmado em:** `vendedor_repository.go:152-157` e `produto_repository.go:242-247`.
+- **Mesmo padrão em:**
+  - `cliente:188`, `estoque:247`, `oportunidade:205`, `pagamento:201`, `pedido:329` e `visita:187`
+  - `usuario:142/196/210/225`
+  - carteira
+- **Agravante:** ficou mais provável depois do BUG-01, porque re-salvar a mesma data não altera mais a linha.
+- **Teste já existente (pulado):** `TestIntegracao_UpdateSemAlteracao`.
 
 **Ação esperada:**
-- 🤍 MegaBrain / 🔵 SubBrain levar a decisão ao usuário: bloquear também as escritas (e talvez as leituras) do vendedor desligado, ou manter como está.
-- Se bloquear: 🟣 SecBrain definir os status (ex.: `403` "vendedor desligado"), 🟡 BackBrain aplicar em `resolverVendedorScope`, 🟢 FrontBrain exibir o aviso nas telas afetadas, 🔴 TestBrain cobrir e 🔵 SubBrain atualizar o Postman.
+- 🟣 SecBrain avaliar o impacto de `clientFoundRows=true`, por exemplo nas checagens de revogação de token e de lockout que dependem de `RowsAffected`.
+- 🟡 BackBrain corrigir.
+- 🔴 TestBrain reativar o teste `TestIntegracao_UpdateSemAlteracao`.
 
 ---
 
-## UX: `id_vendedor` do localStorage desatualizado após o admin mudar o vínculo do usuário
+## RISCO-01: datas antigas de início de horário de verão com `TZ=America/Sao_Paulo` (Linux/Docker) — prioridade BAIXA
 
+**Status:** não iniciado. Aguarda a priorização do usuário.
+**Camada:** Backend
+**Origem:** lote de 2026-09-24, durante o BUG-01 (card em `feito.md`).
+
+**Descrição:** Em datas de início de horário de verão, a meia-noite não existe (ex.: `2018-11-04`). Nesse caso, `time.ParseInLocation` devolve 23:00 do dia anterior. Não ocorre no Windows. O caso está documentado em `TestBUG01_HorarioDeVeraoHistorico` (skip).
+
+**Ação esperada:** decidir entre duas opções:
+- tratar as datas puras em UTC de ponta a ponta;
+- fixar `loc`/`TZ` do container em um fuso sem horário de verão.
+
+---
+
+## FE-01: corrida em `refreshSessionUser` mantém o bloqueio de vendedor desligado após a reativação — prioridade BAIXA
+
+**Status:** não iniciado. Aguarda a priorização do usuário.
 **Camada:** Frontend
-**Origem:** 🟣 SecBrain (2026-09-24).
+**Origem:** 2026-09-24, card "Segurança: vendedor desligado" (em `fazendo.md`).
 
-**Descrição:** O frontend guarda `id_vendedor` no `localStorage` no login. Se o admin mudar o vínculo usuário → vendedor, as telas `PedidoModal`, Oportunidades e Visitas continuam travando o vendedor antigo até um novo login. Não há vazamento de dados: o backend é a fonte da verdade e aplica o vendedor correto. É só um problema de experiência.
+**Descrição:** Em `frontend/src/lib/session.ts:68-75`, a revalidação de focus/mount reutiliza a promise em voo originada pelo `403` (`origem403: true`) e não limpa `bloqueado403`. Com isso, o bloqueio pode continuar na tela depois que o vendedor é reativado. Corrige sozinho no próximo focus.
 
-**Ação esperada:** 🟢 FrontBrain avaliar atualizar os dados do usuário via `GET /api/auth/me` (que já devolve `id_vendedor`) ao carregar a aplicação ou ao abrir esses formulários, em vez de confiar só no `localStorage`. 🔴 TestBrain incluir o cenário no roteiro manual.
+**Ação esperada:** 🟢 FrontBrain corrigir a corrida. 🔴 TestBrain cobrir o cenário em `session.test.ts`.
 
 ---
 
-## Tooling frontend: `npm run lint` quebrado e ausência de runner de testes
+## FE-02 (nota de design): Dashboard depende da API para zerar os dados de vendedor desligado / sem vendedor — prioridade BAIXA
 
-**Camada:** Frontend (tooling)
-**Origem:** 🟢 FrontBrain (2026-09-24).
+**Status:** não iniciado. Aguarda a priorização do usuário.
+**Camada:** Frontend
+**Origem:** 2026-09-24, card UI-02 (em `fazendo.md`).
 
-**Descrição:**
-- `npm run lint` falha, porque `next lint` foi removido no Next 16 e o projeto não tem ESLint configurado.
-- O frontend não tem runner de testes. `make test-frontend` termina com `|| true` e, por isso, nunca falha.
+**Descrição:** `frontend/src/app/dashboard/page.tsx:603-616` não força zeros para o usuário `normal` sem vendedor ou com vendedor desligado. Hoje o backend já devolve os dados zerados, então a tela fica correta. Se a API mudar, a tela pode exibir números.
 
-Hoje a única verificação automática do frontend é o typecheck.
+**Ação esperada:** 🟢 FrontBrain avaliar se o frontend deve forçar os zeros nesses dois casos.
 
-**Ação esperada:**
-- 🟢 FrontBrain configurar o ESLint (flat config, `eslint.config.mjs`) e ajustar o script `lint`.
-- 🔴 TestBrain escolher e configurar um runner (ex.: Vitest + Testing Library), remover o `|| true` do `Makefile` e criar os primeiros testes (ex.: `dashboard/page.tsx`, `PedidoModal.tsx`).
+---
+
+## FE-03: 34 warnings `react-hooks/set-state-in-effect` — prioridade BAIXA
+
+**Status:** não iniciado. Aguarda a priorização do usuário.
+**Camada:** Frontend
+**Origem:** 2026-09-24, card "Tooling frontend" (em `feito.md`).
+
+**Descrição:** O ESLint configurado neste lote aponta 34 warnings `react-hooks/set-state-in-effect`. Por enquanto, a regra está como `warn`.
+
+**Ação esperada:** 🟢 FrontBrain fazer um refactor dedicado para eliminar o `setState` dentro de `useEffect` e voltar a regra para `error`. 🔴 TestBrain garantir que os testes continuam verdes.

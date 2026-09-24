@@ -19,7 +19,7 @@ import {
   apiListProdutos,
   apiListClientesDoVendedor,
 } from "@/lib/api";
-import { getUser } from "@/lib/auth";
+import { getSessionUser, refreshSessionUser, useSessionUser } from "@/lib/session";
 
 // Traduz mensagens de erro do backend para textos mais amigaveis. Hoje trata
 // o 400 "cliente nao pertence a carteira deste vendedor" (escopo por carteira
@@ -124,24 +124,39 @@ export function PedidoModal({
   const [loadingClientes, setLoadingClientes] = useState(false);
   const [clientesError, setClientesError] = useState<string | null>(null);
 
-  // Usuario logado (lido no client ao abrir o modal). Usuario nao-admin tem o
-  // vendedor travado no proprio id_vendedor — o backend tambem forca isso em
-  // POST/PUT /api/pedidos.
-  const [isAdmin, setIsAdmin] = useState(true);
-  const [ownVendedorId, setOwnVendedorId] = useState<number | null>(null);
-  const [ownVendedorNome, setOwnVendedorNome] = useState<string | null>(null);
+  // Usuario logado: sessao em memoria validada por GET /api/auth/me (fonte da
+  // verdade; revalidada ao montar o ProtectedRoute, ao voltar o foco da aba e
+  // ao abrir este modal). Usuario nao-admin tem o vendedor travado no proprio
+  // id_vendedor — o backend tambem forca isso em POST/PUT /api/pedidos.
+  const sessionUser = useSessionUser();
+  const isAdmin = sessionUser?.role === "admin";
+  const ownVendedorId =
+    !isAdmin && sessionUser?.id_vendedor ? sessionUser.id_vendedor : null;
+  const ownVendedorNome = !isAdmin ? sessionUser?.vendedor_nome ?? null : null;
   const semCarteira = !isAdmin && !ownVendedorId;
+
+  // Ao abrir, rebusca /me para pegar um vinculo alterado pelo admin.
+  useEffect(() => {
+    if (!open) return;
+    refreshSessionUser().catch(() => {
+      // Falha aqui nao bloqueia o formulario; o backend valida o vendedor.
+    });
+  }, [open]);
+
+  // Mantem o vendedor travado sincronizado com a sessao (usuario normal).
+  useEffect(() => {
+    if (open && !isAdmin) {
+      setVendedorId(ownVendedorId ? String(ownVendedorId) : "");
+    }
+  }, [open, isAdmin, ownVendedorId]);
 
   useEffect(() => {
     if (open) {
       setError(null);
       setSubmitting(false);
-      const user = getUser();
+      const user = getSessionUser();
       const admin = user?.role === "admin";
       const ownId = !admin && user?.id_vendedor ? user.id_vendedor : null;
-      setIsAdmin(admin);
-      setOwnVendedorId(ownId);
-      setOwnVendedorNome(!admin ? user?.vendedor_nome ?? null : null);
       const lockedVendedor = !admin ? (ownId ? String(ownId) : "") : null;
       if (mode === "edit" && pedido) {
         setClienteId(String(pedido.cliente_id));

@@ -62,7 +62,7 @@ func TestParseRow(t *testing.T) {
 				if row.Ruptura {
 					t.Errorf("Ruptura = true, want false")
 				}
-				want := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+				want := time.Date(2024, 6, 1, 0, 0, 0, 0, time.Local)
 				if !row.DataSnapshot.Equal(want) {
 					t.Errorf("DataSnapshot = %v, want %v", row.DataSnapshot, want)
 				}

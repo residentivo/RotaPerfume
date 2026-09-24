@@ -166,7 +166,7 @@ func validarClienteInput(input ClienteInput, defaultHoje bool) (razaoSocial, cnp
 		err = ErrDataCadastroInvalida
 		return
 	}
-	dataCadastro, parseErr := time.Parse(dataCadastroLayout, dataCadastroStr)
+	dataCadastro, parseErr := time.ParseInLocation(dataCadastroLayout, dataCadastroStr, time.Local)
 	if parseErr != nil {
 		err = ErrDataCadastroInvalida
 		return

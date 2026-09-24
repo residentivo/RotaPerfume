@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
+import { CarteiraGuard } from "@/components/layout/CarteiraGuard";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
 import { PedidoModal } from "@/components/admin/PedidoModal";
@@ -88,7 +89,7 @@ const statusColor: Record<string, string> = {
   Cancelado: "bg-red-100 text-red-700",
 };
 
-export default function PedidosPage() {
+function PedidosContent() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -682,5 +683,13 @@ export default function PedidosPage() {
         onSubmit={handleModalSubmit}
       />
     </div>
+  );
+}
+
+export default function PedidosPage() {
+  return (
+    <CarteiraGuard title="Pedidos">
+      <PedidosContent />
+    </CarteiraGuard>
   );
 }

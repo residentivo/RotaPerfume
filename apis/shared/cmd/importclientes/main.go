@@ -228,7 +228,7 @@ func normalizeCNPJ(raw string) string {
 func parseData(raw string) (time.Time, error) {
 	var lastErr error
 	for _, layout := range dateLayouts {
-		if t, err := time.Parse(layout, raw); err == nil {
+		if t, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
 			return t, nil
 		} else {
 			lastErr = err

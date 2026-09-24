@@ -4,6 +4,49 @@
 
 ---
 
+## Lote 2 de 2026-09-24: 2 cards concluídos (de 6)
+
+> Lote executado pelo 🤍 MegaBrain com os 6 cards que estavam em `afazer.md`. BUG-01 e Tooling do frontend foram concluídos. UI-01, UI-02, Segurança do vendedor desligado e UX do `id_vendedor` foram implementados e cobertos por testes, mas continuam em `fazendo.md` até o usuário validar no navegador. Os follow-ups deste lote estão em `afazer.md`: SEC-01, BUG-04, RISCO-01, FE-01, FE-02 e FE-03.
+>
+> **Documentação (🔵 SubBrain) do lote:** `postman/collection.json` e `postman/README.md` foram atualizados com o contrato `403` "acesso bloqueado: vendedor desligado" nas rotas da carteira, o campo `vendedor_desligado` em `GET /api/auth/me` e a nota de datas do BUG-01.
+
+## BUG-01: `data_pedido` gravada com um dia a menos (fuso UTC vs `loc=Local`) — 2026-09-24
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** lote de 2026-09-24, durante a validação do card "Teste manual/e2e do `PedidoModal`". Um pedido enviado com `data_pedido: "2026-09-24"` era gravado como `2026-09-23`: `time.Parse` gerava meia-noite em UTC, e o DSN usa `loc=Local` (UTC-3). Cada re-salvamento podia recuar mais um dia.
+
+**O que foi feito:**
+- **🟡 BackBrain:** `time.Parse` → `time.ParseInLocation(..., time.Local)` em 11 pontos dos services (`apis/rotaperfumes-api/services/`) e nos importadores `apis/shared/cmd/*`. O DSN continua com `loc=Local`.
+- **🔴 TestBrain:**
+  - `apis/rotaperfumes-api/services/data_local_internal_test.go`: 11 pontos × 6 fusos × 5 datas.
+  - `apis/rotaperfumes-api/services/data_local_integration_test.go` (roda com `INTEGRATION=1`): 24/24 casos gravam, leem e re-salvam sem deslocamento.
+  - `parse_data_local_test.go` em 4 importadores (`importpedidos`, `importpagamentos`, `importoportunidades`, `importvisitas`).
+  - Cobertura de `services`: **94,3%**.
+
+**Documentação (🔵 SubBrain):** o formato das datas na resposta não mudou. Foi incluída uma nota em `postman/README.md` e nas pastas Pedidos, Pagamentos, Oportunidades e Visitas da collection.
+
+**Follow-ups:** **RISCO-01** (horário de verão histórico com `TZ=America/Sao_Paulo`) e **BUG-04** (salvar sem alterações retorna 404, mais provável após esta correção), ambos em `afazer.md`.
+
+## Tooling frontend: `npm run lint` quebrado e ausência de runner de testes — 2026-09-24
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → fechamento por 🔵 SubBrain
+
+**Origem:** 🟢 FrontBrain (2026-09-24). `next lint` foi removido no Next 16, não havia ESLint configurado, e `make test-frontend` terminava com `|| true`, então nunca falhava.
+
+**O que foi feito:**
+- **🟢 FrontBrain:**
+  - ESLint com flat config (`frontend/eslint.config.mjs`), eslint 9 + eslint-config-next 16.
+  - O script `lint` agora é `eslint .`.
+  - Resultado: **0 erros**, 38 warnings. Desses, 34 são `react-hooks/set-state-in-effect`, configurada como `warn`.
+- **🔴 TestBrain:**
+  - Vitest 4 + Testing Library + jsdom (`frontend/vitest.config.mts`, `frontend/vitest.setup.ts`).
+  - Scripts `test`, `test:watch` e `test:coverage`.
+  - `make test-frontend` sem `|| true`.
+  - Resultado: **9 arquivos / 129 testes verdes**, cobertura de **91,96% das linhas** no escopo configurado.
+
+**Follow-up:** **FE-03** (eliminar os 34 warnings `react-hooks/set-state-in-effect` e voltar a regra para `error`) em `afazer.md`.
+
+---
+
 ## Lote de 2026-09-24: 8 cards concluídos (de 10)
 
 > Lote executado pelo 🤍 MegaBrain com os 10 cards que estavam em `afazer.md`. Os 2 cards de teste manual (PedidoModal e Dashboard) continuam em `fazendo.md` até o usuário validar no navegador. Os follow-ups deste lote estão em `afazer.md`: BUG-01, UI-01, UI-02, vendedor desligado nas escritas, `id_vendedor` no localStorage e tooling do frontend.

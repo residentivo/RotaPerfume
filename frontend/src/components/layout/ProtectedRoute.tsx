@@ -2,8 +2,8 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getUser, saveUser, clearUser } from "@/lib/auth";
-import { apiMe } from "@/lib/api";
+import { getUser, clearUser } from "@/lib/auth";
+import { clearSession, getSessionUser, refreshSessionUser } from "@/lib/session";
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -12,67 +12,78 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
-  const [authorized, setAuthorized] = useState(false);
+  // Se a sessao em memoria ja foi validada por /me (navegacao client-side
+  // entre telas), renderiza de imediato e revalida em segundo plano.
+  const [authorized, setAuthorized] = useState(() => {
+    const u = getSessionUser();
+    return !!u && (!requireAdmin || u.role === "admin");
+  });
 
   useEffect(() => {
     let cancelled = false;
 
-    async function validate() {
+    async function validate(background: boolean) {
       const cachedUser = getUser();
 
       // Sem usuario em cache: nunca logou neste navegador (ou logout ja
       // limpou o cache) - manda direto pro login sem round-trip.
-      if (!cachedUser) {
+      if (!cachedUser && !getSessionUser()) {
         router.replace("/login");
         return;
       }
 
       // SEGURANCA: o cache em localStorage nao e HttpOnly e pode ser
       // adulterado via DevTools (ex.: trocar role para "admin"). Por isso
-      // a decisao de autorizacao da UI nunca deve confiar cegamente nele -
-      // revalidamos a sessao/role direto no backend (GET /api/auth/me, que
-      // exige o cookie HttpOnly de access_token) antes de liberar a tela.
+      // a decisao de autorizacao da UI nunca confia nele - revalidamos a
+      // sessao/role direto no backend (GET /api/auth/me, que exige o cookie
+      // HttpOnly de access_token). O resultado fica na sessao em memoria
+      // (session.ts), fonte da verdade para id_vendedor e vendedor_desligado.
       try {
-        const freshUser = await apiMe();
+        const freshUser = await refreshSessionUser();
         if (cancelled) return;
 
-        // Ressincroniza o cache local com o valor real vindo do backend
-        // (corrige qualquer adulteracao local e mantem o cache util para
-        // outras telas nao protegidas, ex.: saudacao no header).
-        saveUser(freshUser);
-
         if (requireAdmin && freshUser.role !== "admin") {
-          // Nao redirecionar para /dashboard aqui: a pagina de dashboard
-          // tambem exige requireAdmin, o que causava um loop infinito de
-          // redirect para usuarios nao-admin (ex.: role "vendedor"),
-          // deixando a tela travada em "Verificando autenticacao...".
-          // Redireciona para uma rota acessivel a qualquer usuario
-          // autenticado.
+          // Nao redirecionar para /dashboard (loop historico com
+          // requireAdmin); vai para uma rota acessivel a qualquer usuario.
+          setAuthorized(false);
           router.replace("/pagamentos");
           return;
         }
 
         setAuthorized(true);
-        setReady(true);
       } catch {
         if (cancelled) return;
-        // /api/auth/me falhou (401 mesmo apos tentativa de refresh, erro de
-        // rede, etc.) - trata como sessao invalida: nao ha base segura para
-        // decidir o que renderizar.
+        // Revalidacao em segundo plano (foco da aba): uma falha de rede nao
+        // derruba a sessao. Se foi 401 sem refresh possivel, o apiClient ja
+        // redireciona para o login.
+        if (background) return;
+        // /api/auth/me falhou na montagem - sessao invalida: nao ha base
+        // segura para decidir o que renderizar.
         clearUser();
+        clearSession();
         router.replace("/login");
       }
     }
 
-    validate();
+    validate(false);
+
+    // Revalida quando a aba volta a ficar visivel (ex.: admin mudou o
+    // vinculo usuario -> vendedor enquanto o usuario estava em outra aba).
+    const onVisible = () => {
+      if (document.visibilityState === "visible") validate(true);
+    };
+    const onFocus = () => validate(true);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
     };
   }, [router, requireAdmin]);
 
-  if (!ready || !authorized) {
+  if (!authorized) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">

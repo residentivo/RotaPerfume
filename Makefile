@@ -151,7 +151,7 @@ test-integration: ## Roda testes de integração (requer DB)
 	INTEGRATION=1 $(MAKE) test
 
 test-frontend:
-	cd frontend && npm test -- --passWithNoTests || true
+	cd frontend && npm test
 
 lint: ## Vet em todos os módulos
 	cd apis/shared && go vet ./...

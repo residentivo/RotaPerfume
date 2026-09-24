@@ -3,6 +3,7 @@ import {
   LoginResponse,
   ResetPasswordRequest,
   User,
+  MeResponse,
   UserRole,
   DashboardMetrics,
   VendasSeries,
@@ -37,7 +38,7 @@ import {
   EstoqueInput,
   ListEstoqueFilters,
 } from "./types";
-import { fetchWithAuth } from "./apiClient";
+import { buildApiError, fetchWithAuth } from "./apiClient";
 
 export interface CreateUserRequest {
   nome: string;
@@ -102,8 +103,8 @@ export async function apiRefreshToken(refresh_token: string): Promise<{
   });
 }
 
-export async function apiMe(): Promise<User> {
-  return fetchWithAuth<User>("/api/auth/me", {
+export async function apiMe(): Promise<MeResponse> {
+  return fetchWithAuth<MeResponse>("/api/auth/me", {
     method: "GET",
   });
 }
@@ -173,7 +174,7 @@ export async function apiListUsers(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
 
   if (parsed && typeof parsed === "object") {
@@ -316,7 +317,7 @@ export async function apiDashboardVendedores(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
 
   // Tenta extrair {data, page, limit, total, pages}
@@ -387,7 +388,7 @@ export async function apiListSenhaHistorico(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
   if (parsed && typeof parsed === "object") {
     const d = parsed as Record<string, unknown>;
@@ -562,7 +563,7 @@ export async function apiListClientes(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
 
   if (parsed && typeof parsed === "object") {
@@ -694,7 +695,7 @@ export async function apiListProdutos(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
 
   if (parsed && typeof parsed === "object") {
@@ -818,7 +819,7 @@ export async function apiListPedidos(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
 
   if (parsed && typeof parsed === "object") {
@@ -934,7 +935,7 @@ export async function apiListPagamentos(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
 
   if (parsed && typeof parsed === "object") {
@@ -1051,7 +1052,7 @@ export async function apiListOportunidades(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
 
   if (parsed && typeof parsed === "object") {
@@ -1163,7 +1164,7 @@ export async function apiListVisitas(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
 
   if (parsed && typeof parsed === "object") {
@@ -1275,7 +1276,7 @@ export async function apiListEstoque(
       if ("error" in d) errorMessage = String(d.error);
       else if ("message" in d) errorMessage = String(d.message);
     }
-    throw new Error(errorMessage);
+    throw buildApiError(res.status, errorMessage);
   }
 
   if (parsed && typeof parsed === "object") {

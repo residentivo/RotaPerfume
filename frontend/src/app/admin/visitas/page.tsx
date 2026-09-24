@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
+import { CarteiraGuard } from "@/components/layout/CarteiraGuard";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
 import { VisitaModal } from "@/components/admin/VisitaModal";
@@ -16,7 +17,7 @@ import {
   apiListVendedores,
   apiListClientes,
 } from "@/lib/api";
-import { getUser } from "@/lib/auth";
+import { useSessionUser } from "@/lib/session";
 import { Visita, VisitaInput, Vendedor, Cliente } from "@/lib/types";
 
 type SortKey =
@@ -70,7 +71,7 @@ function fmtDate(dateStr: string | null): string {
   return d.toLocaleDateString("pt-BR");
 }
 
-export default function VisitasPage() {
+function VisitasContent() {
   const [visitas, setVisitas] = useState<Visita[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,14 +87,19 @@ export default function VisitasPage() {
   // e o seletor "todos os vendedores" fica oculto. Admin mantém o filtro
   // livre (padrão anterior). Sem id_vendedor vinculado, o vendedor não tem
   // carteira: a lista permanece vazia (mesmo comportamento do backend).
-  const currentUser = getUser();
+  // Fonte da verdade: sessao em memoria validada por GET /api/auth/me
+  // (revalidada ao montar e ao voltar o foco), nao o localStorage.
+  const currentUser = useSessionUser();
   const isAdmin = currentUser?.role === "admin";
   const semCarteira = !isAdmin && !currentUser?.id_vendedor;
+  const meuVendedorId =
+    !isAdmin && currentUser?.id_vendedor ? String(currentUser.id_vendedor) : "";
 
   const [search, setSearch] = useState("");
-  const [vendedorFilter, setVendedorFilter] = useState(
-    !isAdmin && currentUser?.id_vendedor ? String(currentUser.id_vendedor) : ""
-  );
+  // Filtro livre so para admin; usuario normal usa sempre meuVendedorId
+  // (acompanha mudancas do vinculo sem novo login).
+  const [vendedorFilter, setVendedorFilter] = useState("");
+  const filtroVendedor = isAdmin ? vendedorFilter : meuVendedorId;
   const [clienteFilter, setClienteFilter] = useState("");
   const [resultadoFilter, setResultadoFilter] = useState("");
   const [dataVisitaDe, setDataVisitaDe] = useState("");
@@ -191,7 +197,7 @@ export default function VisitasPage() {
         page,
         limit,
         {
-          vendedor_id: vendedorFilter ? Number(vendedorFilter) : undefined,
+          vendedor_id: filtroVendedor ? Number(filtroVendedor) : undefined,
           cliente_id: clienteFilter ? Number(clienteFilter) : undefined,
           resultado: resultadoFilter || undefined,
           data_visita_de: dataVisitaDe || undefined,
@@ -236,7 +242,15 @@ export default function VisitasPage() {
     }, 350);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, vendedorFilter, clienteFilter, resultadoFilter, dataVisitaDe, dataVisitaAte]);
+  }, [
+    search,
+    vendedorFilter,
+    meuVendedorId,
+    clienteFilter,
+    resultadoFilter,
+    dataVisitaDe,
+    dataVisitaAte,
+  ]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -594,5 +608,13 @@ export default function VisitasPage() {
         onSubmit={handleModalSubmit}
       />
     </div>
+  );
+}
+
+export default function VisitasPage() {
+  return (
+    <CarteiraGuard title="Visitas">
+      <VisitasContent />
+    </CarteiraGuard>
   );
 }

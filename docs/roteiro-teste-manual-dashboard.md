@@ -54,7 +54,7 @@ Marque cada checkbox depois de conferir no navegador. Os números de referência
 - [ ] 1.2 Os KPIs se chamam **"Minhas Vendas"**, **"Meus Pedidos"**, **"Meu Ticket Medio"** e **"Minha Meta"**, sem "Ranking Vendedores".
 - [ ] 1.3 No período "Mês", Minhas Vendas bate com a query de referência (em 2026-09-24: **R$ 75.148,43**, 29 pedidos, ticket R$ 2.591,33) e **não** com o total da empresa.
 - [ ] 1.4 Minha Meta mostra **R$ 55.000,00** (só a meta dele, não a soma de todos) com "Atingido: ~136,6%".
-- [ ] 1.5 O gráfico se chama "Minhas Vendas nos Ultimos N Dias". Trocar 7/14/30/60 dias recarrega a série com só as vendas dele. Dias sem venda aparecem como barra zerada.
+- [ ] 1.5 O gráfico se chama "Minhas Vendas nos Últimos N Dias" e o N acompanha o select (7/14/30/60). Trocar o select recarrega a série com só as vendas dele. Dias sem venda aparecem como barra zerada.
 - [ ] 1.6 O card de metas se chama "Minha Meta" e mostra só a linha do Rafael Carvalho.
 - [ ] 1.7 No lugar do "Ranking de Vendedores" aparece o card **"Meu Desempenho"** ("Seus indicadores no ranking de vendas"), com os indicadores dele: total, pedidos, ticket, meta e atingimento.
 - [ ] 1.8 A seção de clientes tem o título **"Clientes da minha carteira"** e o subtítulo "Somente clientes vinculados ao seu vendedor". "Meus Clientes" = **60**, ativos = **54**, inativos = **6** (em 2026-09-24), batendo com a query de referência e **não** com o total da base (3.040).
@@ -65,20 +65,22 @@ Marque cada checkbox depois de conferir no navegador. Os números de referência
 ## 2. Normal sem vendedor
 
 - [ ] 2.1 Aparece o aviso amarelo: "Usuario sem vendedor vinculado. As metricas de vendas sao exibidas apenas para usuarios vinculados a um vendedor; solicite o vinculo a um administrador."
-- [ ] 2.2 Nenhum número da empresa aparece: vendas, pedidos, ticket e meta ficam zerados ou ocultos, e o mesmo vale para os clientes (0 e listas vazias).
-- [ ] 2.3 Gráfico: se estiver visível, mostra os N dias com **barras zeradas** e total R$ 0,00. A API devolve os dias preenchidos com zero.
-- [ ] 2.4 Não aparece nenhuma mensagem de erro vermelha. Todas as chamadas voltam 200 com valores zerados.
-
-> **Observação para o FrontBrain/SubBrain:** na versão de `page.tsx` lida em 2026-09-24, quando há aviso (sem vendedor ou desligado) a tela renderiza **só o aviso** e esconde KPIs, gráfico e clientes. O card pede "aviso, números zerados e gráfico com dias zerados". Confirme qual comportamento vale e ajuste o item 2.2/2.3 se o layout final esconder os cards.
+- [ ] 2.2 **UI-02 opção (b):** o aviso fica **acima** dos cards, e os KPIs continuam **visíveis e zerados**: "Minhas Vendas" R$ 0,00, "Meus Pedidos" 0, "Meu Ticket Medio" R$ 0,00, "Minha Meta" "-" ("Sem meta cadastrada"). Nenhum número da empresa aparece.
+- [ ] 2.3 O gráfico continua **visível**, com o título "Minhas Vendas nos Últimos N Dias" e o subtítulo "Total: R$ 0,00". As barras vêm zeradas (a API devolve os N dias com zero) ou aparece "Nenhum dado de vendas no periodo".
+- [ ] 2.4 Os clientes aparecem zerados: "Meus Clientes", ativos, inativos e novos = 0, e "por Segmento"/"por UF" mostram "Sem dados disponiveis". "Meu Desempenho" mostra "Nenhum dado de desempenho encontrado".
+- [ ] 2.5 Não aparece nenhuma mensagem de erro vermelha. Todas as chamadas voltam 200 com valores zerados.
+- [ ] 2.6 Trocar o select do gráfico para 7 dias muda o título para "Minhas Vendas nos Últimos 7 Dias", e o aviso continua visível.
 
 ## 3. Normal com vendedor desligado (Henrique Rodrigues, vendedor 1)
 
 - [ ] 3.1 Aparece o aviso amarelo: "Vendedor desligado. O vendedor vinculado ao seu usuario possui data de desligamento, por isso nao ha metricas de vendas nem clientes na sua carteira; procure um administrador."
 - [ ] 3.2 O aviso de "sem vendedor" **não** aparece. É o aviso específico de desligado.
-- [ ] 3.3 Vendas, pedidos, ticket e meta ficam zerados (ou ocultos). Mesmo que o vendedor 1 tenha vendas históricas, **nada** é exibido.
-- [ ] 3.4 Os clientes ficam zerados (ou ocultos), embora o vendedor 1 ainda tenha 82 clientes em carteira ativa.
-- [ ] 3.5 Ranking e "Meu Desempenho" vêm vazios.
-- [ ] 3.6 Bloqueio imediato (opcional): como admin, preencha `data_desligamento` de um vendedor ativo e recarregue o Dashboard do usuário dele, sem novo login. O aviso de desligado aparece. **Desfaça** depois (`UPDATE vendedores SET data_desligamento = NULL WHERE id = <id>;`).
+- [ ] 3.3 **UI-02 opção (b):** os KPIs continuam **visíveis e zerados** (R$ 0,00 / 0 / R$ 0,00 / "-"). Mesmo que o vendedor 1 tenha vendas históricas, nenhum valor dele aparece.
+- [ ] 3.4 O gráfico continua **visível e zerado** ("Total: R$ 0,00") e o título acompanha o select ("Minhas Vendas nos Últimos N Dias").
+- [ ] 3.5 Os clientes aparecem zerados (0 e listas vazias), embora o vendedor 1 ainda tenha 82 clientes em carteira ativa.
+- [ ] 3.6 "Meu Desempenho" mostra "Nenhum dado de desempenho encontrado".
+- [ ] 3.7 O menu não mostra os itens da carteira: os dropdowns **ERP** (Clientes, Oportunidades, Visitas) e **CRM** (Pagamentos, Pedidos) não aparecem. "Dashboard" e "Trocar Senha" continuam no menu. O roteiro completo do desligado está em `docs/roteiro-teste-manual-vendedor-desligado.md`.
+- [ ] 3.8 Bloqueio sem novo login (opcional): como admin, preencha `data_desligamento` de um vendedor ativo. Na aba do usuário dele, **troque de aba e volte** (ou recarregue). O aviso de desligado aparece e os KPIs zeram, sem novo login. **Desfaça** depois (`UPDATE vendedores SET data_desligamento = NULL WHERE id = <id>;`).
 
 ## 4. Admin
 
@@ -89,7 +91,8 @@ Marque cada checkbox depois de conferir no navegador. Os números de referência
 - [ ] 4.5 O "Ranking de Vendedores" (Top 10 por volume) mostra 10 linhas. Em 2026-09-24 o líder era Débora Ribeiro, com R$ 158.830,30 e 158,83% da meta. A API informa `total: 36` vendedores com vendas no ranking.
 - [ ] 4.6 A seção de clientes usa os rótulos globais ("Total de Clientes" etc.): **3.040** clientes, 2.823 ativos, 217 inativos. O título "Clientes da minha carteira" **não** aparece.
 - [ ] 4.7 Não aparece nenhum aviso amarelo.
-- [ ] 4.8 O título do gráfico é "Vendas nos Ultimos 30 Dias" mesmo quando se escolhe 7/14/60 dias no select. **Achado menor de UI:** para o admin o título não acompanha o select (no normal ele acompanha). Veja a seção de achados.
+- [ ] 4.8 **UI-01:** o título do gráfico acompanha o select. Com o padrão, é "Vendas nos Últimos 30 Dias". Escolher 7, 14 e 60 muda para "Vendas nos Últimos 7 Dias", "... 14 Dias" e "... 60 Dias", e a série é recarregada (`GET /api/dashboard/vendas?dias=N`).
+- [ ] 4.9 Um admin cujo usuário tenha `id_vendedor` desligado **não** vê aviso: admin nunca é bloqueado.
 
 ## 5. Valores com centavos (sem truncar)
 
@@ -101,7 +104,7 @@ Marque cada checkbox depois de conferir no navegador. Os números de referência
 ## 6. Limpeza
 
 - [ ] 6.1 Usuário temporário removido.
-- [ ] 6.2 `data_desligamento` restaurada se o item 3.6 foi executado.
+- [ ] 6.2 `data_desligamento` restaurada se o item 3.8 foi executado.
 
 ---
 
@@ -153,5 +156,12 @@ Conferência no banco: carteira ativa do vendedor 4 = 60 clientes, 54 ativos; pe
 ### Achados
 
 - **BUG-01 (backend, ver `docs/roteiro-teste-manual-pedidomodal.md`):** a `data_pedido` é gravada com 1 dia a menos (UTC vs `loc=Local`). No Dashboard, os pedidos de teste criados com data 2026-09-24 apareceram no dia **2026-09-23** da série de vendas do vendedor 4 (`{"dia":"2026-09-23","total_pedidos":2,"total_vendas":78.39}`, soma exata dos 2 pedidos de teste). Os pedidos de teste foram excluídos depois.
-- **UI-01 (frontend, menor):** para o admin, o título do gráfico é fixo "Vendas nos Ultimos 30 Dias" e não acompanha o select de 7/14/60 dias.
-- **UI-02 (frontend, a confirmar):** para usuário sem vendedor ou com vendedor desligado, a tela exibe só o aviso e esconde KPIs e gráfico. O card de teste esperava "números zerados e gráfico com dias zerados". Confirmar a intenção com o FrontBrain.
+- **UI-01 (frontend) - resolvido:** o título do gráfico agora é dinâmico ("Vendas nos Últimos N Dias" para o admin, "Minhas Vendas nos Últimos N Dias" para o normal) e acompanha o select. Veja o item 4.8.
+- **UI-02 (frontend) - resolvido, opção (b):** para usuário sem vendedor ou com vendedor desligado, a tela mostra o aviso **e** mantém KPIs, gráfico e clientes visíveis e zerados. Veja os itens 2.2 a 2.4 e 3.3 a 3.6.
+
+### Testes automatizados (frontend)
+
+Os itens abaixo também são cobertos por testes automatizados, que rodam com `make test-frontend` ou `cd frontend && npm test`:
+
+- `frontend/src/app/dashboard/page.test.tsx`: título do gráfico em 7/14/30/60 dias (admin e normal). Aviso + KPIs/gráfico zerados para normal sem vendedor, desligado pela sessão (`/me` ou 403) e desligado por `metrics.vendedor_desligado`. Sem aviso para admin e para normal ativo.
+- `frontend/src/components/layout/Navbar.test.tsx`: itens da carteira ocultos para o desligado.
