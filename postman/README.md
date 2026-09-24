@@ -139,7 +139,10 @@ Exemplos:
 > - **admin:** vê todos os números, sem filtro.
 > - **normal com vendedor vinculado:** vê só os próprios números. `meta_mes` é a meta do próprio vendedor. `top_vendedores`, `metas_vendedores` e o ranking de `/vendedores` trazem no máximo a linha dele.
 > - **normal sem vendedor vinculado:** recebe `200` com tudo zerado ou vazio (não é erro). `/metrics` volta zerado, com `top_vendedores: []` e `metas_vendedores: []`. `/vendas` volta com os N dias, todos zerados. `/vendedores` volta com `data: []` e `total=0`, `pages=0`.
-> - `/api/dashboard/clientes` **não mudou**: continua global (métricas da base de clientes).
+> - **normal com vendedor desligado ou inexistente (2026-09-24, decisão do usuário: bloquear o acesso):** se o vendedor vinculado tem `vendedores.data_desligamento` preenchida (ou não existe mais), os quatro endpoints (`/metrics`, `/vendas`, `/vendedores`, `/clientes`) respondem como no caso "sem vendedor vinculado", zerados ou vazios. `/metrics` traz `vendedor_desligado: true` para o frontend mostrar o aviso. Se a checagem do vendedor falhar no banco, a resposta é `500`.
+> - **Campo `vendedor_desligado` (bool, só em `/metrics`):** `true` apenas para o usuário normal com vendedor desligado. É `false` em todos os outros casos, inclusive admin, normal com vendedor ativo e normal sem vendedor.
+> - **`/api/dashboard/clientes` com escopo da carteira (2026-09-24):** o admin continua com a visão global. O normal vê só os clientes da carteira ativa do próprio vendedor (`carteiras.data_fim IS NULL`). Ver a seção "Clientes" abaixo.
+> - **Contrato das listas e dos valores (2026-09-24):** `top_vendedores`, `metas_vendedores`, `por_segmento` e `por_uf` vêm sempre como `[]` quando vazios, nunca `null`. `total_vendas` (no topo, em `top_vendedores[]` e no ranking) e `metas_vendedores[].realizado` são `float64` com centavos, e os percentuais são calculados a partir desse valor.
 >
 > **Regra de negócio: pedidos de cliente transferido (decisão do usuário, 2026-09-23).**
 > - O pedido pertence ao vendedor que o registrou (`pedidos.vendedor_id`), e não ao vendedor que tem o cliente na carteira hoje.
@@ -152,21 +155,23 @@ Exemplos:
 - **Descrição:** Métricas gerais: `total_vendas`, `total_vendas_qtd`, `total_pedidos`, `ticket_medio`, `top_vendedores`, `metas_vendedores` e `meta_mes`.
 - **Período `week`:** considera os últimos 7 dias corridos (`DATE_SUB(CURDATE(), INTERVAL 6 DAY)` até hoje), não a semana civil.
 - **Campo `meta_mes`:** para o admin, é a soma real de `vendedores.meta_mensal` dos vendedores ativos (`GetMetaMensalTotal`), sem fallback calculado. Para o normal, é a meta do próprio vendedor.
-- **Normal sem vendedor:** `200` com todos os valores `0` e as listas `[]` (`EmptyMetrics`).
+- **Normal sem vendedor:** `200` com todos os valores `0` e as listas `[]` (`EmptyMetrics`), `vendedor_desligado: false`.
+- **Normal com vendedor desligado (2026-09-24):** `200` zerado (mesmo `EmptyMetrics`) com `vendedor_desligado: true`.
+- **Exemplo (admin, com centavos):** `{ "periodo": "month", "total_vendas": 152300.57, "total_vendas_qtd": 234, "total_pedidos": 234, "ticket_medio": 650.86, "top_vendedores": [{ "id": 7, "nome": "Débora Ribeiro", "total_vendas": 9500.57, "meta": 10000.00, "percentual_meta": 95.0057, "quantidade_vendas": 14 }], "metas_vendedores": [{ "id": 7, ..., "realizado": 9500.57, "percentual": 95.0057 }], "meta_mes": 180000.00, "vendedor_desligado": false }`.
 
 #### GET /api/dashboard/vendas
 - **Auth:** Bearer Token (qualquer usuário autenticado; escopo por vendedor para o normal)
 - **Query:** `?dias=30` (padrão 30, máx 365)
 - **Descrição:** Série temporal de vendas dos últimos N dias. Para o normal, considera só os pedidos do próprio vendedor.
 - **Resposta:** `data: { dias: number, pontos: [{ dia: "YYYY-MM-DD", total_vendas: number, total_pedidos: number }] }`. Há um ponto para cada dia do intervalo. Dias sem venda vêm com `total_vendas`/`total_pedidos` zerados, nunca omitidos, para que o gráfico "Vendas nos Últimos 30 Dias" não fique vazio.
-- **Normal sem vendedor:** `200` com os N dias, todos zerados (`EmptyVendasSeries`).
+- **Normal sem vendedor ou com vendedor desligado:** `200` com os N dias, todos zerados (`EmptyVendasSeries`).
 
 #### GET /api/dashboard/vendedores
 - **Auth:** Bearer Token (qualquer usuário autenticado; escopo por vendedor para o normal)
 - **Query:** `?page=1&limit=20`
 - **Descrição:** Ranking de vendedores (total de vendas, meta, percentual). O normal recebe no máximo a própria linha.
 - **Ordenação:** por `meta_mensal DESC`, com desempate por `atingimento_meta DESC` (calculado no SQL, antes da paginação).
-- **Normal sem vendedor:** `200` com `data: []` e paginação `total=0`, `pages=0`.
+- **Normal sem vendedor ou com vendedor desligado:** `200` com `data: []` e paginação `total=0`, `pages=0`.
 
 ### Histórico de Senhas (`/api/senha-historico/*`) — admin only
 
@@ -182,7 +187,7 @@ Exemplos:
 - **Descrição:** Histórico de senhas de um usuário específico
 - **Ordenação:** mesmas regras de `GET /api/senha-historico` acima (`order_by`/`order_dir`).
 
-### Clientes (`/api/clientes/*` e `/api/dashboard/clientes`) — admin only
+### Clientes (`/api/clientes/*` admin only; `/api/dashboard/clientes` acesso comum com escopo da carteira)
 
 > Base de clientes importada de `dados/crm/clientes.csv` para a tabela `clientes` (ver seção "Importação de clientes (CRM)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Clientes"** da collection.
 
@@ -213,9 +218,14 @@ Exemplos:
 - **Descrição:** Ativa ou inativa o cliente
 
 #### GET /api/dashboard/clientes
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira do vendedor para o normal). A rota usa `JWTMiddleware(cfg, true, false)`, então não há `403`.
 - **Query:** `?periodo=today|week|month` (padrão: `month`)
 - **Descrição:** Métricas agregadas da base de clientes: `total_clientes`, `total_ativos`, `total_inativos`, `novos_no_periodo`, `por_segmento` (array `{segmento, total}`) e `por_uf` (array `{uf, total}`)
+- **Escopo (decisão do usuário, 2026-09-24):**
+  - **admin:** visão global da base de clientes.
+  - **normal com vendedor ativo:** só os clientes da carteira ativa do próprio vendedor (`carteiras.data_fim IS NULL`).
+  - **normal sem vendedor, com vendedor desligado ou com vendedor inexistente:** `200` zerado: `{"periodo":"month","total_clientes":0,"total_ativos":0,"total_inativos":0,"novos_no_periodo":0,"por_segmento":[],"por_uf":[]}`.
+- **Listas:** `por_segmento` e `por_uf` vêm sempre como `[]` quando vazias, nunca `null`.
 - **Período `week`:** considera os últimos 7 dias corridos (`DATE_SUB(CURDATE(), INTERVAL 6 DAY)` até hoje), não a semana civil.
 
 ### Produtos (`/api/produtos/*`) — GET acesso comum, POST/PUT/PATCH admin only
@@ -296,7 +306,7 @@ Exemplos:
 > **Escopo por carteira em Create/Update (2026-09-23):** o mesmo bypass corrigido em Pedidos existia em Pagamentos (apontado pelo 🟣 SecBrain). Agora, para usuário `normal`, o handler (`pagamento_handler.go`, helper `pedidoNoEscopo`) valida que o pedido do pagamento pertence ao vendedor do usuário logado:
 > - **`POST /api/pagamentos`:** `403` (`"usuário sem vendedor vinculado"`) se o usuário não tiver vendedor vinculado; `404` (`"pedido não encontrado"`) se `pedido_id` for de outro vendedor **ou** não existir.
 > - **`PUT /api/pagamentos/{id}`:** `404` (`"pagamento não encontrado"`) se o usuário não tiver vendedor vinculado ou se o pagamento pertencer a pedido de outro vendedor.
-> - **Inconsistência conhecida (follow-up em `tarefas/afazer.md`):** `POST` com `pedido_id` inexistente retorna `400` para `admin` (validação do service) e `404` para `normal` (checagem de escopo).
+> - **Status padronizado (2026-09-24):** `POST` com `pedido_id` inexistente retorna `404` `"pedido não encontrado"` para `admin` e `normal`. Antes o admin recebia `400`. O corpo é idêntico ao de pedido de outro vendedor, então não permite enumeração (parecer do 🟣 SecBrain). `pedido_id` ausente ou `<= 0` continua `400` `"pedido_id é obrigatório"`.
 > - Usuário `admin` não sofre essas restrições.
 >
 > **Nota de schema:** a chave primária da tabela é literalmente `pagamento_id` (BIGINT AUTO_INCREMENT), não o padrão `id` desacoplado usado nas demais tabelas — decisão explícita do usuário, alinhada 1:1 ao `pagamento_id` do CSV de origem.
@@ -310,7 +320,7 @@ Exemplos:
 #### POST /api/pagamentos
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Body:** `{ "pedido_id", "forma_pagamento", "parcelas", "valor", "taxa_pct", "valor_liquido", "data_vencimento" ("AAAA-MM-DD"), "data_pagamento" (opcional, "AAAA-MM-DD"), "status_pagamento" }`
-- **Descrição:** Cria um novo pagamento. `pedido_id` deve existir em `pedidos`. `valor_liquido` é sempre exigido explicitamente no payload — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento em relação ao cálculo direto). `pagamento_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com o pagamento criado; `400` em caso de validação (inclusive `pedido_id` inexistente, para `admin`).
+- **Descrição:** Cria um novo pagamento. `pedido_id` deve existir em `pedidos`. `valor_liquido` é sempre exigido explicitamente no payload — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento em relação ao cálculo direto). `pagamento_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com o pagamento criado; `400` em caso de validação (inclusive `pedido_id` ausente ou `<= 0`); `404` `"pedido não encontrado"` se `pedido_id` não existir (admin e normal, desde 2026-09-24).
 - **Escopo (usuário `normal`, 2026-09-23):** `403` `"usuário sem vendedor vinculado"` se não houver vendedor vinculado; `404` `"pedido não encontrado"` se `pedido_id` pertencer a outro vendedor ou não existir.
 
 #### GET /api/pagamentos/{id}
@@ -343,7 +353,9 @@ Exemplos:
 | POST | `/api/vendedores/{id}/clientes` | admin only (vincula/transfere cliente) | `403` |
 | DELETE | `/api/vendedores/{id}/clientes/{clienteId}` | admin only (encerra vínculo) | `403` |
 
-> O `403` retorna `{"success": false, "error": "acesso restrito a administradores"}`. Observação: `GET /api/vendedores` ainda expõe `meta_mensal` a usuários `normal` (follow-up opcional registrado em `tarefas/afazer.md`).
+> O `403` retorna `{"success": false, "error": "acesso restrito a administradores"}`. 
+>
+> **`meta_mensal` fora da listagem (confirmado em 2026-09-24):** `GET /api/vendedores` devolve `VendedorResumo` (`id`, `nome`, `regiao`, `uf`, `data_desligamento`) para **todos** os perfis, sem `meta_mensal`. O usuário `normal` não recebe a meta de ninguém. O admin obtém `meta_mensal` pelo detalhe `GET /api/vendedores/{id}` (admin only). O código já estava assim; o 🔴 TestBrain adicionou um teste de regressão.
 
 ### Oportunidades (`/api/oportunidades/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-22)
 
@@ -520,7 +532,8 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 ### Dashboard — Métricas
 - `Status 200`
-- `Dados de métricas presentes` (`total_vendas`, `total_pedidos`, `ticket_medio`, `periodo`)
+- `Dados de métricas presentes` (`total_vendas`, `total_pedidos`, `ticket_medio`, `periodo`, `meta_mes`; `vendedor_desligado` é booleano)
+- `top_vendedores e metas_vendedores são arrays (nunca null)` (adicionado em 2026-09-24)
 
 ### Dashboard — Vendas
 - `Status 200`
@@ -533,7 +546,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Paginação presente`
 - `Cada vendedor tem métricas`
 
-> Os testes de Dashboard usam `{{admin_token}}`. Se forem executados com `{{vendedor_token}}` (normal), os números vêm restritos ao próprio vendedor, e o ranking tem no máximo 1 linha. Se o usuário normal não tiver vendedor vinculado, os números vêm zerados e as listas vazias, e os testes continuam passando, porque a estrutura da resposta é a mesma.
+> Os testes de Dashboard usam `{{admin_token}}`. Se forem executados com `{{vendedor_token}}` (normal), os números vêm restritos ao próprio vendedor, e o ranking tem no máximo 1 linha. Se o usuário normal não tiver vendedor vinculado, ou se o vendedor estiver desligado, os números vêm zerados e as listas vazias, e os testes continuam passando, porque a estrutura da resposta é a mesma. No caso do vendedor desligado, `/metrics` traz `vendedor_desligado: true`. O teste "Dashboard — Clientes" também passa com `{{vendedor_token}}` (desde 2026-09-24 a rota é de acesso comum, com escopo da carteira).
 
 ### Histórico de Senhas — Todos
 - `Status 200`
@@ -716,7 +729,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Atualizar Usuário | 2 | — |
 | Ativar/Inativar | 2 | — |
 | Reset Password Admin | 2 | — |
-| Dashboard — Métricas | 2 | — |
+| Dashboard — Métricas | 3 | — |
 | Dashboard — Vendas | 3 | — |
 | Dashboard — Vendedores | 4 | — |
 | Histórico — Todos | 3 | — |

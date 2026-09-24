@@ -3,6 +3,7 @@ package repositories_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -176,6 +177,48 @@ func TestVendedorExistsByID(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, exists)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestVendedorIsDesligado(t *testing.T) {
+	const q = `SELECT data_desligamento IS NOT NULL FROM vendedores WHERE id = \? LIMIT 1`
+	testes := []struct {
+		nome          string
+		setup         func(e *sqlmock.ExpectedQuery)
+		wantDesligado bool
+		wantNotFound  bool
+		wantErr       bool
+	}{
+		{"ativo", func(e *sqlmock.ExpectedQuery) {
+			e.WillReturnRows(sqlmock.NewRows([]string{"d"}).AddRow(0))
+		}, false, false, false},
+		{"desligado", func(e *sqlmock.ExpectedQuery) {
+			e.WillReturnRows(sqlmock.NewRows([]string{"d"}).AddRow(1))
+		}, true, false, false},
+		{"inexistente", func(e *sqlmock.ExpectedQuery) {
+			e.WillReturnError(sql.ErrNoRows)
+		}, false, true, true},
+		{"erro de banco", func(e *sqlmock.ExpectedQuery) {
+			e.WillReturnError(sql.ErrConnDone)
+		}, false, false, true},
+	}
+	for _, tt := range testes {
+		t.Run(tt.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+			tt.setup(mock.ExpectQuery(q).WithArgs(int64(3)))
+
+			desligado, err := repositories.NewVendedorRepository().IsDesligado(context.Background(), db, 3)
+
+			assert.Equal(t, tt.wantDesligado, desligado)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Equal(t, tt.wantNotFound, errors.Is(err, repositories.ErrNotFound))
+			} else {
+				require.NoError(t, err)
+			}
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}

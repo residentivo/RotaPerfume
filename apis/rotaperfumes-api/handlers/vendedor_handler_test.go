@@ -199,6 +199,51 @@ func TestListVendedores_PermitidoParaNaoAdmin(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestListVendedores_Normal_SemMetaMensal é regressão de segurança: GET
+// /api/vendedores (acesso comum) devolve apenas VendedorResumo — a meta
+// mensal dos colegas nunca deve aparecer para usuário normal.
+func TestListVendedores_Normal_SemMetaMensal(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	userToken := generateToken(t, testCfg(), 2, "normal")
+
+	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+ORDER BY nome ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
+			AddRow(int64(1), "Vendedor Um", "Sudeste", "SP", nil).
+			AddRow(int64(2), "Vendedor Dois", "Sul", "PR", time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)))
+
+	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	raw := readBody(t, resp)
+	assert.NotContains(t, string(raw), "meta_mensal")
+
+	body := decodeResponse(t, raw)
+	lista := body["data"].([]any)
+	require.Len(t, lista, 2)
+	for _, item := range lista {
+		v := item.(map[string]any)
+		assert.NotContains(t, v, "meta_mensal")
+		assert.ElementsMatch(t, []string{"id", "nome", "regiao", "uf", "data_desligamento"}, mapKeys(v))
+	}
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func mapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func TestListVendedores_NaoAutenticado(t *testing.T) {
 	server, db, _ := setupTestServer(t)
 	defer server.Close()

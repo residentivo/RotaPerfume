@@ -195,7 +195,9 @@ func pagamentoErroParaStatus(err error) (status int, msg string, ok bool) {
 	case errors.Is(err, services.ErrPedidoIDObrigatorio):
 		return http.StatusBadRequest, "pedido_id é obrigatório", true
 	case errors.Is(err, services.ErrPedidoNaoEncontrado):
-		return http.StatusBadRequest, "pedido não encontrado", true
+		// 404 igual ao do escopo restrito (pedidoNoEscopo): mesmo status e
+		// corpo para "inexistente" e "de outro vendedor", sem enumeração.
+		return http.StatusNotFound, "pedido não encontrado", true
 	case errors.Is(err, services.ErrFormaPagamentoInvalida):
 		return http.StatusBadRequest, "forma_pagamento inválida", true
 	case errors.Is(err, services.ErrStatusPagamentoInvalido):

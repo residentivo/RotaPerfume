@@ -23,11 +23,19 @@ import {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function fmtCurrency(value: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(value);
+// Valores monetarios chegam do backend como float com centavos (ex.: 1234.56);
+// o Intl formata com 2 casas decimais, sem truncar. Valores ausentes/invalidos
+// viram 0 para nunca exibir "NaN".
+const currencyFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function fmtCurrency(value: number | null | undefined): string {
+  const n = Number(value);
+  return currencyFormatter.format(Number.isFinite(n) ? n : 0);
 }
 
 function fmtNumber(value: number): string {
@@ -609,6 +617,10 @@ function DashboardContent() {
 
   // Usuario normal: o ranking vem com no maximo 1 linha (a dele).
   const meuDesempenho = isAdmin ? undefined : vendedores[0];
+  // Vendedor desligado: flag vem da API (/api/dashboard/metrics), nunca do
+  // cache local — o vinculo pode continuar existindo no usuario, mas o
+  // vendedor ter data_desligamento.
+  const vendedorDesligado = !isAdmin && metrics?.vendedor_desligado === true;
   const temMeta = displayMetrics.meta_mes != null && displayMetrics.meta_mes > 0;
 
   return (
@@ -659,6 +671,12 @@ function DashboardContent() {
             Usuario sem vendedor vinculado. As metricas de vendas sao exibidas
             apenas para usuarios vinculados a um vendedor; solicite o vinculo a
             um administrador.
+          </Alert>
+        ) : vendedorDesligado ? (
+          <Alert variant="warning" className="mb-6">
+            Vendedor desligado. O vendedor vinculado ao seu usuario possui data
+            de desligamento, por isso nao ha metricas de vendas nem clientes
+            na sua carteira; procure um administrador.
           </Alert>
         ) : (
         <>
@@ -794,29 +812,41 @@ function DashboardContent() {
         )}
 
         {/* Clientes */}
+        {/* Admin: base global. Usuario normal: backend escopa pela carteira
+            do vendedor vinculado. */}
         <div className="mt-6">
+          {!isAdmin && (
+            <div className="mb-3">
+              <h2 className="text-lg font-semibold text-slate-900">
+                Clientes da minha carteira
+              </h2>
+              <p className="text-sm text-slate-500">
+                Somente clientes vinculados ao seu vendedor
+              </p>
+            </div>
+          )}
           <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
-              label="Total de Clientes"
+              label={isAdmin ? "Total de Clientes" : "Meus Clientes"}
               value={fmtNumber(clienteMetrics?.total_clientes ?? 0)}
               sub={`Periodo: ${PERIOD_LABELS[periodo]}`}
               icon={<IconUsers />}
             />
             <KpiCard
-              label="Clientes Ativos"
+              label={isAdmin ? "Clientes Ativos" : "Meus Clientes Ativos"}
               value={fmtNumber(clienteMetrics?.total_ativos ?? 0)}
               sub="Situacao ativa"
               accent
               icon={<IconUsers />}
             />
             <KpiCard
-              label="Clientes Inativos"
+              label={isAdmin ? "Clientes Inativos" : "Meus Clientes Inativos"}
               value={fmtNumber(clienteMetrics?.total_inativos ?? 0)}
               sub="Situacao inativa"
               icon={<IconUsers />}
             />
             <KpiCard
-              label="Novos no Periodo"
+              label={isAdmin ? "Novos no Periodo" : "Meus Novos no Periodo"}
               value={fmtNumber(clienteMetrics?.novos_no_periodo ?? 0)}
               sub={`Cadastrados em: ${PERIOD_LABELS[periodo]}`}
               icon={<IconUsers />}
@@ -826,8 +856,12 @@ function DashboardContent() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader
-                title="Clientes por Segmento"
-                subtitle="Distribuicao por segmento de mercado"
+                title={isAdmin ? "Clientes por Segmento" : "Meus Clientes por Segmento"}
+                subtitle={
+                  isAdmin
+                    ? "Distribuicao por segmento de mercado"
+                    : "Distribuicao da sua carteira por segmento de mercado"
+                }
               />
               {loading && clienteMetrics === null ? (
                 <div className="flex h-32 items-center justify-center">
@@ -846,8 +880,12 @@ function DashboardContent() {
 
             <Card>
               <CardHeader
-                title="Clientes por UF"
-                subtitle="Distribuicao por estado"
+                title={isAdmin ? "Clientes por UF" : "Meus Clientes por UF"}
+                subtitle={
+                  isAdmin
+                    ? "Distribuicao por estado"
+                    : "Distribuicao da sua carteira por estado"
+                }
               />
               {loading && clienteMetrics === null ? (
                 <div className="flex h-32 items-center justify-center">

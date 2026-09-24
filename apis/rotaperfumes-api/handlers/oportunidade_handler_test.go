@@ -99,7 +99,7 @@ func TestListOportunidades_PermitidoParaNaoAdmin_ForcaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM oportunidades` + vendedorWhere).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT ` + oportunidadeColunasRegexH + ` FROM oportunidades` + vendedorWhere + ` ORDER BY oportunidade_id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+oportunidadeColunasRegexH+` FROM oportunidades`+vendedorWhere+` ORDER BY oportunidade_id ASC LIMIT \? OFFSET \?`).
 		WithArgs(int64(2), 20, 0).
 		WillReturnRows(oportunidadeRowsForHandler())
 

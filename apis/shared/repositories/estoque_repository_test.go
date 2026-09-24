@@ -167,7 +167,7 @@ func TestEstoqueList_OrderBy(t *testing.T) {
 
 			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM estoque").
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-			mock.ExpectQuery("SELECT .+ FROM estoque.+" + tt.orderRegexp + " LIMIT \\? OFFSET \\?").
+			mock.ExpectQuery("SELECT .+ FROM estoque.+"+tt.orderRegexp+" LIMIT \\? OFFSET \\?").
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(estoqueColumns))
 
@@ -277,7 +277,7 @@ func TestEstoqueUltimaPosicaoPorSku_RespeitaFiltroDeData(t *testing.T) {
 
 	whereRegexp := "WHERE e\\.data_snapshot >= \\? AND e\\.data_snapshot <= \\?"
 
-	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM \\(.+" + whereRegexp + "\\) ranked WHERE rn = 1").
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM \\(.+"+whereRegexp+"\\) ranked WHERE rn = 1").
 		WithArgs("2024-01-01", "2024-01-31").
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
 
@@ -285,7 +285,7 @@ func TestEstoqueUltimaPosicaoPorSku_RespeitaFiltroDeData(t *testing.T) {
 	rows := sqlmock.NewRows(estoqueColumns).
 		AddRow(estoqueRow(5, dataAte, "SKU1", "Perfume 1", 3, false, now, now)...)
 
-	mock.ExpectQuery("SELECT .+ FROM \\(.+" + whereRegexp + "\\) ranked WHERE rn = 1 ORDER BY data_snapshot DESC LIMIT \\? OFFSET \\?").
+	mock.ExpectQuery("SELECT .+ FROM \\(.+"+whereRegexp+"\\) ranked WHERE rn = 1 ORDER BY data_snapshot DESC LIMIT \\? OFFSET \\?").
 		WithArgs("2024-01-01", "2024-01-31", 10, 0).
 		WillReturnRows(rows)
 

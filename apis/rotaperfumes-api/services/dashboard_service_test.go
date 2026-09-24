@@ -336,7 +336,7 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}).AddRow("SP", 40))
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(true))
-		metrics, err := svc.GetClienteMetrics(context.Background(), db, "month")
+		metrics, err := svc.GetClienteMetrics(context.Background(), db, "month", 0)
 		require.NoError(t, err)
 		assert.Equal(t, "month", metrics["periodo"])
 		assert.Equal(t, 100, metrics["total_clientes"])
@@ -346,13 +346,67 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
+	t.Run("vendedorID > 0 restringe todas as contagens à carteira ativa", func(t *testing.T) {
+		db, mock := newDashboardTestDB(t)
+		carteira := `cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\)`
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ` + carteira + `$`).
+			WithArgs(int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(4))
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \? AND `+carteira+`$`).
+			WithArgs(true, int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(3))
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \? AND `+carteira+`$`).
+			WithArgs(false, int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro >= DATE_SUB\(CURDATE\(\), INTERVAL 6 DAY\) AND ` + carteira + `$`).
+			WithArgs(int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+		mock.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total\s+FROM clientes WHERE ` + carteira + `\s+GROUP BY segmento`).
+			WithArgs(int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}))
+		mock.ExpectQuery(`SELECT uf, COUNT\(\*\) AS total\s+FROM clientes WHERE ` + carteira + `\s+GROUP BY uf`).
+			WithArgs(int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}))
+
+		svc := services.NewDashboardService(db, dashboardTestCfg(true))
+		metrics, err := svc.GetClienteMetrics(context.Background(), db, "week", 7)
+		require.NoError(t, err)
+		assert.Equal(t, 4, metrics["total_clientes"])
+		assert.Equal(t, 3, metrics["total_ativos"])
+		assert.Equal(t, 1, metrics["total_inativos"])
+		assert.Equal(t, 0, metrics["novos_no_periodo"])
+		_, m := jsonKeys(t, metrics)
+		assert.Equal(t, []any{}, m["por_segmento"])
+		assert.Equal(t, []any{}, m["por_uf"])
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("EmptyClienteMetrics tem o mesmo formato, zerado e sem queries", func(t *testing.T) {
+		for _, verbose := range []bool{false, true} {
+			db, mock := newDashboardTestDB(t)
+			svc := services.NewDashboardService(db, dashboardTestCfg(verbose))
+			keys, m := jsonKeys(t, svc.EmptyClienteMetrics("today"))
+			assert.ElementsMatch(t, []string{
+				"periodo", "total_clientes", "total_ativos", "total_inativos",
+				"novos_no_periodo", "por_segmento", "por_uf",
+			}, keys)
+			assert.Equal(t, "today", m["periodo"])
+			for _, k := range []string{"total_clientes", "total_ativos", "total_inativos", "novos_no_periodo"} {
+				assert.Equal(t, 0.0, m[k], k)
+			}
+			assert.Equal(t, []any{}, m["por_segmento"])
+			assert.Equal(t, []any{}, m["por_uf"])
+			assert.NoError(t, mock.ExpectationsWereMet())
+		}
+	})
+
 	t.Run("erro no CountTotal é propagado", func(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes`).
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetClienteMetrics(context.Background(), db, "today")
+		metrics, err := svc.GetClienteMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -374,7 +428,7 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetClienteMetrics(context.Background(), db, "today")
+		metrics, err := svc.GetClienteMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())

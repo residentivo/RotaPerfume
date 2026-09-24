@@ -602,3 +602,52 @@ func TestUpdatePagamento_Normal_ProprioEscopo(t *testing.T) {
 	assert.True(t, body["success"].(bool))
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ---------------------------------------------------------------------------
+// CreatePagamento (admin) — 404 único para pedido inexistente
+// ---------------------------------------------------------------------------
+
+// Admin com pedido inexistente recebe o mesmo 404 "pedido não encontrado"
+// do escopo restrito — status único para pedido ausente, em qualquer papel.
+func TestCreatePagamento_Admin_PedidoInexistente_404IgualNormal(t *testing.T) {
+	executar := func(role string, setup func(sqlmock.Sqlmock)) (int, map[string]any) {
+		server, db, mock := setupTestServer(t)
+		defer server.Close()
+		defer db.Close()
+		setup(mock)
+		status, body := doReq(t, "POST", server.URL+"/api/pagamentos", generateToken(t, testCfg(), 2, role), validPagamentoPayload())
+		assert.NoError(t, mock.ExpectationsWereMet())
+		return status, body
+	}
+
+	stAdmin, bodyAdmin := executar("admin", func(m sqlmock.Sqlmock) {
+		m.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).WithArgs(int64(1)).
+			WillReturnError(sql.ErrNoRows)
+	})
+	stNormal, bodyNormal := executar("normal", func(m sqlmock.Sqlmock) {
+		expectEscopoUsuarioH(m, 2, 99)
+		m.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(emptyPedidoRowsForHandler())
+	})
+
+	assert.Equal(t, http.StatusNotFound, stAdmin)
+	assert.Equal(t, "pedido não encontrado", bodyAdmin["error"])
+	assert.Equal(t, stNormal, stAdmin)
+	assert.Equal(t, bodyNormal, bodyAdmin)
+}
+
+// Admin com pedido_id <= 0 continua 400 (validação do service), sem
+// consultar o banco.
+func TestCreatePagamento_Admin_PedidoIDAusente_400(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	payload := validPagamentoPayload()
+	payload["pedido_id"] = 0
+
+	status, body := doReq(t, "POST", server.URL+"/api/pagamentos", generateToken(t, testCfg(), 1, "admin"), payload)
+
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, "pedido_id é obrigatório", body["error"])
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

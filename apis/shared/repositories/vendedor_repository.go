@@ -84,6 +84,22 @@ func (r *VendedorRepository) ExistsByID(ctx context.Context, db *sql.DB, id int6
 	return true, nil
 }
 
+// IsDesligado reporta se o vendedor tem data_desligamento preenchida.
+// Retorna ErrNotFound se o vendedor não existir. Cada chamada executa sua
+// própria consulta (sem cache L1), para que um desligamento reflita
+// imediatamente nas próximas requisições.
+func (r *VendedorRepository) IsDesligado(ctx context.Context, db *sql.DB, id int64) (bool, error) {
+	const q = `SELECT data_desligamento IS NOT NULL FROM vendedores WHERE id = ? LIMIT 1`
+	var desligado int64
+	if err := db.QueryRowContext(ctx, q, id).Scan(&desligado); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrNotFound
+		}
+		return false, fmt.Errorf("repositories: vendedor desligado: %w", err)
+	}
+	return desligado != 0, nil
+}
+
 // GetByID busca um vendedor pelo ID (ativo ou não). Retorna ErrNotFound se não existir.
 func (r *VendedorRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (*models.Vendedor, error) {
 	q := "SELECT " + vendedorColunas + " FROM vendedores WHERE id = ? LIMIT 1"

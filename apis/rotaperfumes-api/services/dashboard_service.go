@@ -72,17 +72,19 @@ func (s *DashboardService) GetMetrics(ctx context.Context, db *sql.DB, periodo s
 	}
 
 	return metricsResponse(periodo, totalVendasValor, totalVendasQuantidade, totalPedidos,
-		ticketMedio, topVendedores, metas, metaMensalTotal), nil
+		ticketMedio, topVendedores, metas, metaMensalTotal, false), nil
 }
 
 // EmptyMetrics retorna as metricas zeradas (mesmo formato de GetMetrics),
-// usadas quando o usuario normal nao tem vendedor vinculado.
-func (s *DashboardService) EmptyMetrics(periodo string) map[string]any {
+// usadas quando o usuario normal nao tem vendedor vinculado ou quando o
+// vendedor vinculado esta desligado. vendedorDesligado preenche o flag
+// vendedor_desligado da resposta (aviso exibido pelo frontend).
+func (s *DashboardService) EmptyMetrics(periodo string, vendedorDesligado bool) map[string]any {
 	if s.Cfg.Verbose {
-		log.Printf("[dashboard] EmptyMetrics periodo=%s (sem vendedor vinculado)", periodo)
+		log.Printf("[dashboard] EmptyMetrics periodo=%s vendedor_desligado=%t (sem acesso)", periodo, vendedorDesligado)
 	}
 	return metricsResponse(periodo, 0, 0, 0, 0,
-		[]repositories.VendedorRanking{}, []repositories.MetaVendedor{}, 0)
+		[]repositories.VendedorRanking{}, []repositories.MetaVendedor{}, 0, vendedorDesligado)
 }
 
 // metricsResponse monta o payload de /api/dashboard/metrics.
@@ -94,16 +96,18 @@ func metricsResponse(
 	topVendedores []repositories.VendedorRanking,
 	metas []repositories.MetaVendedor,
 	metaMes float64,
+	vendedorDesligado bool,
 ) map[string]any {
 	return map[string]any{
-		"periodo":          periodo,
-		"total_vendas":     totalVendas,
-		"total_vendas_qtd": totalVendasQtd,
-		"total_pedidos":    totalPedidos,
-		"ticket_medio":     ticketMedio,
-		"top_vendedores":   topVendedores,
-		"metas_vendedores": metas,
-		"meta_mes":         metaMes,
+		"periodo":            periodo,
+		"total_vendas":       totalVendas,
+		"total_vendas_qtd":   totalVendasQtd,
+		"total_pedidos":      totalPedidos,
+		"ticket_medio":       ticketMedio,
+		"top_vendedores":     topVendedores,
+		"metas_vendedores":   metas,
+		"meta_mes":           metaMes,
+		"vendedor_desligado": vendedorDesligado,
 	}
 }
 
@@ -151,36 +155,59 @@ func (s *DashboardService) GetVendedoresRanking(ctx context.Context, db *sql.DB,
 // (geral, ativos, inativos), novos cadastros no periodo informado e a
 // distribuicao por segmento e por UF.
 // periodo: "today" (dia atual), "week" (ultimos 7 dias) ou "month" (mes atual).
-func (s *DashboardService) GetClienteMetrics(ctx context.Context, db *sql.DB, periodo string) (map[string]any, error) {
+// vendedorID > 0 (usuario normal) restringe aos clientes da carteira ativa
+// do vendedor; 0 (admin) considera todos.
+func (s *DashboardService) GetClienteMetrics(ctx context.Context, db *sql.DB, periodo string, vendedorID int64) (map[string]any, error) {
 	if s.Cfg.Verbose {
-		log.Printf("[dashboard] GetClienteMetrics periodo=%s", periodo)
+		log.Printf("[dashboard] GetClienteMetrics periodo=%s vendedor_id=%d", periodo, vendedorID)
 	}
 
-	total, err := s.clienteRepo.CountTotal(ctx, db)
+	total, err := s.clienteRepo.CountTotal(ctx, db, vendedorID)
 	if err != nil {
 		return nil, err
 	}
-	totalAtivos, err := s.clienteRepo.CountPorAtivo(ctx, db, true)
+	totalAtivos, err := s.clienteRepo.CountPorAtivo(ctx, db, true, vendedorID)
 	if err != nil {
 		return nil, err
 	}
-	totalInativos, err := s.clienteRepo.CountPorAtivo(ctx, db, false)
+	totalInativos, err := s.clienteRepo.CountPorAtivo(ctx, db, false, vendedorID)
 	if err != nil {
 		return nil, err
 	}
-	novosNoPeriodo, err := s.clienteRepo.CountNovosNoPeriodo(ctx, db, periodo)
+	novosNoPeriodo, err := s.clienteRepo.CountNovosNoPeriodo(ctx, db, periodo, vendedorID)
 	if err != nil {
 		return nil, err
 	}
-	porSegmento, err := s.clienteRepo.CountPorSegmento(ctx, db)
+	porSegmento, err := s.clienteRepo.CountPorSegmento(ctx, db, vendedorID)
 	if err != nil {
 		return nil, err
 	}
-	porUF, err := s.clienteRepo.CountPorUF(ctx, db)
+	porUF, err := s.clienteRepo.CountPorUF(ctx, db, vendedorID)
 	if err != nil {
 		return nil, err
 	}
 
+	return clienteMetricsResponse(periodo, total, totalAtivos, totalInativos, novosNoPeriodo, porSegmento, porUF), nil
+}
+
+// EmptyClienteMetrics retorna as metricas de clientes zeradas (mesmo formato
+// de GetClienteMetrics, listas como []), sem consultar o banco. Usada quando
+// o escopo do usuario nao permite ver nenhum cliente.
+func (s *DashboardService) EmptyClienteMetrics(periodo string) map[string]any {
+	if s.Cfg.Verbose {
+		log.Printf("[dashboard] EmptyClienteMetrics periodo=%s (sem acesso)", periodo)
+	}
+	return clienteMetricsResponse(periodo, 0, 0, 0, 0,
+		[]repositories.SegmentoContagem{}, []repositories.UFContagem{})
+}
+
+// clienteMetricsResponse monta o payload de /api/dashboard/clientes.
+func clienteMetricsResponse(
+	periodo string,
+	total, totalAtivos, totalInativos, novosNoPeriodo int,
+	porSegmento []repositories.SegmentoContagem,
+	porUF []repositories.UFContagem,
+) map[string]any {
 	return map[string]any{
 		"periodo":          periodo,
 		"total_clientes":   total,
@@ -189,5 +216,5 @@ func (s *DashboardService) GetClienteMetrics(ctx context.Context, db *sql.DB, pe
 		"novos_no_periodo": novosNoPeriodo,
 		"por_segmento":     porSegmento,
 		"por_uf":           porUF,
-	}, nil
+	}
 }

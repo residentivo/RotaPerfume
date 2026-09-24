@@ -143,6 +143,9 @@ func TestGetMetrics_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(reVendedorDesligado).
+		WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"desligado"}).AddRow(0))
 	mock.ExpectQuery(`SELECT COALESCE\(SUM\(valor_total\), 0\), COUNT\(\*\)\s+FROM pedidos`).
 		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"valor", "quantidade"}).AddRow(1000.0, 5))
@@ -321,6 +324,9 @@ func TestGetVendas_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(reVendedorDesligado).
+		WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"desligado"}).AddRow(0))
 	mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
 		WithArgs(30, int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
@@ -409,6 +415,9 @@ func TestGetVendedores_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(reVendedorDesligado).
+		WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"desligado"}).AddRow(0))
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL AND id = \?`).
 		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
@@ -530,7 +539,14 @@ func TestGetClientes_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mockDashboardClientesQueries(mock)
+	// Escopo por carteira: usuário normal vinculado ao vendedor 10 (ativo).
+	mock.ExpectQuery(reUsuarioVendedor).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(reVendedorDesligado).
+		WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"desligado"}).AddRow(0))
+	expectClientesMetricsEscopo(mock, 10)
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/clientes", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)

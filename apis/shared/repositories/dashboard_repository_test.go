@@ -3,6 +3,7 @@ package repositories_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"testing"
@@ -286,6 +287,37 @@ func TestDashboardGetTopVendedores_Vazio(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, result, 0)
+	// Slice vazio inicializado: serializa como [] (nunca null).
+	require.NotNil(t, result)
+	raw, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.Equal(t, "[]", string(raw))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDashboardGetTopVendedores_EnrichPreservaCentavos garante que o total
+// de vendas não é truncado para inteiro e que o percentual é calculado a
+// partir do valor com centavos.
+func TestDashboardGetTopVendedores_EnrichPreservaCentavos(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectQuery("SELECT v\\.id, v\\.nome, v\\.meta_mensal AS meta FROM vendedores v WHERE v\\.data_desligamento IS NULL ORDER BY v\\.meta_mensal DESC LIMIT \\?").
+		WithArgs(5).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}).
+			AddRow(1, "Vendedor A", 1000.0))
+	mock.ExpectQuery("SELECT vendedor_id, .+ FROM pedidos WHERE vendedor_id IN \\(\\?\\) AND YEAR\\(data_pedido\\).+").
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"vendedor_id", "total", "qtd"}).
+			AddRow(1, 1234.56, 2))
+
+	repo := repositories.NewDashboardRepository()
+	result, err := repo.GetTopVendedores(context.Background(), db, 5, 0)
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, 1234.56, result[0].TotalVendas)
+	assert.InDelta(t, 123.456, result[0].PercentualMeta, 1e-9)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -360,6 +392,36 @@ func TestDashboardGetMetasVendedores_Vazio(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, result, 0)
+	// Slice vazio inicializado: serializa como [] (nunca null).
+	require.NotNil(t, result)
+	raw, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.Equal(t, "[]", string(raw))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestDashboardGetMetasVendedores_EnrichPreservaCentavos garante que o
+// realizado não é truncado para inteiro e que o percentual é calculado a
+// partir do valor com centavos.
+func TestDashboardGetMetasVendedores_EnrichPreservaCentavos(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectQuery("SELECT v\\.id, v\\.nome, v\\.regiao, v\\.uf, v\\.meta_mensal AS meta FROM vendedores v WHERE v\\.data_desligamento IS NULL ORDER BY v\\.meta_mensal DESC").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta"}).
+			AddRow(1, "Vendedor A", "Sudeste", "SP", 200.0))
+	mock.ExpectQuery("SELECT vendedor_id, .+ FROM pedidos WHERE vendedor_id IN \\(\\?\\) AND YEAR\\(data_pedido\\).+").
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"vendedor_id", "total", "qtd"}).
+			AddRow(1, 99.99, 1))
+
+	repo := repositories.NewDashboardRepository()
+	result, err := repo.GetMetasVendedores(context.Background(), db, 0)
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, 99.99, result[0].Realizado)
+	assert.InDelta(t, 49.995, result[0].Percentual, 1e-9)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

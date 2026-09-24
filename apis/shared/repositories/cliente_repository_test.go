@@ -63,7 +63,7 @@ func TestClienteCountNovosNoPeriodo_Success(t *testing.T) {
 
 			repo := repositories.NewClienteRepository()
 			ctx := context.Background()
-			total, err := repo.CountNovosNoPeriodo(ctx, db, tt.periodo)
+			total, err := repo.CountNovosNoPeriodo(ctx, db, tt.periodo, 0)
 
 			require.NoError(t, err)
 			assert.Equal(t, 3, total)
@@ -129,6 +129,112 @@ func TestClienteList_SemFiltroVendedorID(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+const carteiraAtivaWhereRegexp = `cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\)`
+
+// TestClienteContagens_EscopoCarteira garante que vendedorID > 0 aplica o
+// mesmo predicado de carteira ativa da listagem em todas as contagens do
+// dashboard (combinado com AND onde já existe WHERE), sempre por
+// placeholder; e que vendedorID = 0 (admin) não adiciona restrição.
+func TestClienteContagens_EscopoCarteira(t *testing.T) {
+	ctx := context.Background()
+	repo := repositories.NewClienteRepository()
+
+	t.Run("CountTotal", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ` + carteiraAtivaWhereRegexp + `$`).
+			WithArgs(int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(4))
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes$`).
+			WithoutArgs().
+			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(40))
+
+		total, err := repo.CountTotal(ctx, db, 7)
+		require.NoError(t, err)
+		assert.Equal(t, 4, total)
+		total, err = repo.CountTotal(ctx, db, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 40, total)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("CountPorAtivo", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \? AND `+carteiraAtivaWhereRegexp+`$`).
+			WithArgs(true, int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(3))
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \?$`).
+			WithArgs(false).
+			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(9))
+
+		total, err := repo.CountPorAtivo(ctx, db, true, 7)
+		require.NoError(t, err)
+		assert.Equal(t, 3, total)
+		total, err = repo.CountPorAtivo(ctx, db, false, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 9, total)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("CountNovosNoPeriodo", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro = CURDATE\(\) AND ` + carteiraAtivaWhereRegexp + `$`).
+			WithArgs(int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
+
+		total, err := repo.CountNovosNoPeriodo(ctx, db, "today", 7)
+		require.NoError(t, err)
+		assert.Equal(t, 1, total)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("CountPorSegmento", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		mock.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total FROM clientes WHERE ` + carteiraAtivaWhereRegexp + ` GROUP BY segmento ORDER BY total DESC`).
+			WithArgs(int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}).AddRow("varejo", 2))
+		mock.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total FROM clientes GROUP BY segmento ORDER BY total DESC`).
+			WithoutArgs().
+			WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}))
+
+		out, err := repo.CountPorSegmento(ctx, db, 7)
+		require.NoError(t, err)
+		require.Len(t, out, 1)
+		assert.Equal(t, "varejo", out[0].Segmento)
+
+		vazio, err := repo.CountPorSegmento(ctx, db, 0)
+		require.NoError(t, err)
+		require.NotNil(t, vazio, "sem linhas deve devolver slice vazio, nunca nil")
+		assert.Len(t, vazio, 0)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("CountPorUF", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		mock.ExpectQuery(`SELECT uf, COUNT\(\*\) AS total FROM clientes WHERE ` + carteiraAtivaWhereRegexp + ` GROUP BY uf ORDER BY total DESC`).
+			WithArgs(int64(7)).
+			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}))
+		mock.ExpectQuery(`SELECT uf, COUNT\(\*\) AS total FROM clientes GROUP BY uf ORDER BY total DESC`).
+			WithoutArgs().
+			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}).AddRow("SP", 5))
+
+		vazio, err := repo.CountPorUF(ctx, db, 7)
+		require.NoError(t, err)
+		require.NotNil(t, vazio, "sem linhas deve devolver slice vazio, nunca nil")
+		assert.Len(t, vazio, 0)
+
+		out, err := repo.CountPorUF(ctx, db, 0)
+		require.NoError(t, err)
+		require.Len(t, out, 1)
+		assert.Equal(t, "SP", out[0].UF)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
 // TestClienteCountNovosNoPeriodo_DBError garante que erros do banco são
 // propagados (sem fallback silencioso, diferente do dashboard_repository).
 func TestClienteCountNovosNoPeriodo_DBError(t *testing.T) {
@@ -140,7 +246,7 @@ func TestClienteCountNovosNoPeriodo_DBError(t *testing.T) {
 
 	repo := repositories.NewClienteRepository()
 	ctx := context.Background()
-	_, err := repo.CountNovosNoPeriodo(ctx, db, "week")
+	_, err := repo.CountNovosNoPeriodo(ctx, db, "week", 0)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

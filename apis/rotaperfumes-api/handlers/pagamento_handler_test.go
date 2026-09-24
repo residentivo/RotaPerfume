@@ -443,7 +443,7 @@ func TestCreatePagamento_PedidoNaoEncontrado(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.Equal(t, "pedido não encontrado", body["error"])
 

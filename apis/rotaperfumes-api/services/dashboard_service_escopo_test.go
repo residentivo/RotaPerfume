@@ -49,15 +49,20 @@ func TestDashboardService_EmptyMetrics_MesmoFormato(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, mock.ExpectationsWereMet())
 
-				vazio := svc.EmptyMetrics(periodo)
+				vazio := svc.EmptyMetrics(periodo, verbose)
 
-				keysNormal, _ := jsonKeys(t, normal)
+				keysNormal, mNormal := jsonKeys(t, normal)
 				keysVazio, m := jsonKeys(t, vazio)
 				assert.Equal(t, keysNormal, keysVazio)
 				assert.ElementsMatch(t, []string{
 					"periodo", "total_vendas", "total_vendas_qtd", "total_pedidos",
 					"ticket_medio", "top_vendedores", "metas_vendedores", "meta_mes",
+					"vendedor_desligado",
 				}, keysVazio)
+
+				// GetMetrics nunca sinaliza desligamento; EmptyMetrics repassa o flag.
+				assert.Equal(t, false, mNormal["vendedor_desligado"])
+				assert.Equal(t, verbose, m["vendedor_desligado"])
 
 				assert.Equal(t, periodo, m["periodo"])
 				for _, k := range []string{"total_vendas", "total_vendas_qtd", "total_pedidos", "ticket_medio", "meta_mes"} {

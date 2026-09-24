@@ -145,6 +145,10 @@ export interface DashboardMetrics {
   meta_mes?: number;
   atingimento_meta?: number; // 0..100
   periodo: DashboardPeriodo;
+  // true quando o usuario normal esta vinculado a um vendedor com
+  // data_desligamento; nesse caso o backend devolve todos os numeros
+  // zerados e as listas vazias. Sempre false/ausente para admin.
+  vendedor_desligado?: boolean;
 }
 
 export interface VendaDiaria {

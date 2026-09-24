@@ -1,10 +1,11 @@
 package handlers_test
 
 // Testes do escopo por vendedor do Dashboard (/metrics, /vendas,
-// /vendedores). Regra: o pedido pertence a pedidos.vendedor_id; usuário
-// normal vê só os próprios números; admin vê tudo; normal sem vendedor
-// vinculado recebe 200 com payload zerado/vazio sem consultar pedidos/
-// vendedores.
+// /vendedores, /clientes). Regra: o pedido pertence a pedidos.vendedor_id e
+// o cliente à carteira ativa do vendedor; usuário normal vê só os próprios
+// números; admin vê tudo; normal sem vendedor vinculado, com vendedor
+// inexistente ou com vendedor desligado recebe 200 com payload zerado/vazio
+// sem consultar pedidos/vendedores/clientes.
 
 import (
 	"database/sql"
@@ -27,17 +28,18 @@ const (
 )
 
 const (
-	reUsuarioVendedor = `SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`
-	reVendasTotais    = `SELECT COALESCE\(SUM\(valor_total\), 0\), COUNT\(\*\)\s+FROM pedidos`
-	reTotalPedidos    = `SELECT COUNT\(\*\) FROM pedidos\s+WHERE`
-	reTopVendedores   = `SELECT\s+v\.id,\s+v\.nome,\s+v\.meta_mensal AS meta\s+FROM vendedores v`
-	reMetasVendedores = `SELECT\s+v\.id,\s+v\.nome,\s+v\.regiao,\s+v\.uf,\s+v\.meta_mensal AS meta\s+FROM vendedores v`
-	reMetaMensalTotal = `SELECT COALESCE\(SUM\(meta_mensal\), 0\)\s+FROM vendedores\s+WHERE data_desligamento IS NULL`
-	reEnrichVendas    = `SELECT vendedor_id,\s+COALESCE\(SUM\(valor_total\), 0\),\s+COUNT\(\*\)\s+FROM pedidos\s+WHERE vendedor_id IN \(\?\)`
-	reSerieVendas     = `SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data`
-	reSerieDias       = `SELECT DATE_FORMAT\(DATE_SUB\(CURDATE\(\), INTERVAL n DAY\), '%Y-%m-%d'\) AS dia`
-	reRankingCount    = `SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`
-	reRankingLista    = `(?s)SELECT.*FROM vendedores v.*LEFT JOIN.*LIMIT \? OFFSET \?`
+	reUsuarioVendedor   = `SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`
+	reVendedorDesligado = `SELECT data_desligamento IS NOT NULL FROM vendedores WHERE id = \? LIMIT 1`
+	reVendasTotais      = `SELECT COALESCE\(SUM\(valor_total\), 0\), COUNT\(\*\)\s+FROM pedidos`
+	reTotalPedidos      = `SELECT COUNT\(\*\) FROM pedidos\s+WHERE`
+	reTopVendedores     = `SELECT\s+v\.id,\s+v\.nome,\s+v\.meta_mensal AS meta\s+FROM vendedores v`
+	reMetasVendedores   = `SELECT\s+v\.id,\s+v\.nome,\s+v\.regiao,\s+v\.uf,\s+v\.meta_mensal AS meta\s+FROM vendedores v`
+	reMetaMensalTotal   = `SELECT COALESCE\(SUM\(meta_mensal\), 0\)\s+FROM vendedores\s+WHERE data_desligamento IS NULL`
+	reEnrichVendas      = `SELECT vendedor_id,\s+COALESCE\(SUM\(valor_total\), 0\),\s+COUNT\(\*\)\s+FROM pedidos\s+WHERE vendedor_id IN \(\?\)`
+	reSerieVendas       = `SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data`
+	reSerieDias         = `SELECT DATE_FORMAT\(DATE_SUB\(CURDATE\(\), INTERVAL n DAY\), '%Y-%m-%d'\) AS dia`
+	reRankingCount      = `SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`
+	reRankingLista      = `(?s)SELECT.*FROM vendedores v.*LEFT JOIN.*LIMIT \? OFFSET \?`
 )
 
 var rankingCols = []string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}
@@ -52,10 +54,76 @@ func doDashboardGet(t *testing.T, server *httptest.Server, path, token string) (
 	return resp, decodeResponse(t, readBody(t, resp))
 }
 
+// expectEscopoVendedor prepara o escopo de um usuário normal vinculado a um
+// vendedor ATIVO (data_desligamento NULL).
 func expectEscopoVendedor(mock sqlmock.Sqlmock, vendedorID int64) {
 	mock.ExpectQuery(reUsuarioVendedor).
 		WithArgs(escopoUsuarioNormal).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(vendedorID))
+	expectVendedorDesligado(mock, vendedorID, false)
+}
+
+// expectVendedorDesligado prepara a consulta de desligamento do vendedor
+// feita por DashboardHandler.resolverEscopo.
+func expectVendedorDesligado(mock sqlmock.Sqlmock, vendedorID int64, desligado bool) {
+	v := 0
+	if desligado {
+		v = 1
+	}
+	mock.ExpectQuery(reVendedorDesligado).
+		WithArgs(vendedorID).
+		WillReturnRows(sqlmock.NewRows([]string{"desligado"}).AddRow(v))
+}
+
+// dashboardPaths são os 4 endpoints do Dashboard, todos sujeitos ao mesmo
+// escopo (resolverEscopo).
+var dashboardPaths = []string{
+	"/api/dashboard/metrics",
+	"/api/dashboard/vendas",
+	"/api/dashboard/vendedores",
+	"/api/dashboard/clientes",
+}
+
+// clientesCarteiraRe é o predicado de carteira ativa usado na listagem de
+// clientes e nas contagens de /api/dashboard/clientes.
+const clientesCarteiraRe = `cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\)`
+
+// expectClientesMetricsEscopo prepara as 6 queries de GetClienteMetrics
+// restritas à carteira ativa do vendedor informado (periodo=month).
+func expectClientesMetricsEscopo(mock sqlmock.Sqlmock, vendedorID int64) {
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ` + clientesCarteiraRe + `$`).
+		WithArgs(vendedorID).
+		WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(3))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \? AND `+clientesCarteiraRe+`$`).
+		WithArgs(true, vendedorID).
+		WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(2))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \? AND `+clientesCarteiraRe+`$`).
+		WithArgs(false, vendedorID).
+		WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE YEAR\(data_cadastro\) = YEAR\(CURDATE\(\)\) AND MONTH\(data_cadastro\) = MONTH\(CURDATE\(\)\) AND ` + clientesCarteiraRe + `$`).
+		WithArgs(vendedorID).
+		WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
+	mock.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total\s+FROM clientes WHERE ` + clientesCarteiraRe + `\s+GROUP BY segmento`).
+		WithArgs(vendedorID).
+		WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}).AddRow("varejo", 3))
+	mock.ExpectQuery(`SELECT uf, COUNT\(\*\) AS total\s+FROM clientes WHERE ` + clientesCarteiraRe + `\s+GROUP BY uf`).
+		WithArgs(vendedorID).
+		WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}).AddRow("PR", 3))
+}
+
+// verifyClientesVazio confere o payload zerado de /api/dashboard/clientes
+// (contagens 0 e listas [] — nunca null).
+func verifyClientesVazio(periodo string) func(t *testing.T, body map[string]any) {
+	return func(t *testing.T, body map[string]any) {
+		data := body["data"].(map[string]any)
+		assert.Len(t, data, 7)
+		assert.Equal(t, periodo, data["periodo"])
+		for _, k := range []string{"total_clientes", "total_ativos", "total_inativos", "novos_no_periodo"} {
+			assert.Equal(t, 0.0, data[k], k)
+		}
+		assert.Equal(t, []any{}, data["por_segmento"])
+		assert.Equal(t, []any{}, data["por_uf"])
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +145,7 @@ func TestDashboardEscopo_Metrics_NormalVeSoVendedorB(t *testing.T) {
 			mock.ExpectQuery(reTotalPedidos + `.*AND vendedor_id = \?`).
 				WithArgs(escopoVendedorB).
 				WillReturnRows(sqlmock.NewRows([]string{"t"}).AddRow(1))
-			mock.ExpectQuery(reTopVendedores + `\s+WHERE v\.data_desligamento IS NULL AND v\.id = \?`).
+			mock.ExpectQuery(reTopVendedores+`\s+WHERE v\.data_desligamento IS NULL AND v\.id = \?`).
 				WithArgs(escopoVendedorB, 10).
 				WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}).AddRow(escopoVendedorB, "Vendedor B", 100.0))
 			mock.ExpectQuery(reEnrichVendas).
@@ -102,6 +170,7 @@ func TestDashboardEscopo_Metrics_NormalVeSoVendedorB(t *testing.T) {
 			assert.Equal(t, 1.0, data["total_pedidos"])
 			assert.Equal(t, 50.0, data["ticket_medio"])
 			assert.Equal(t, 100.0, data["meta_mes"])
+			assert.Equal(t, false, data["vendedor_desligado"])
 
 			for _, chave := range []string{"top_vendedores", "metas_vendedores"} {
 				lista := data[chave].([]any)
@@ -133,7 +202,7 @@ func TestDashboardEscopo_Vendas_NormalFiltraVendedorB(t *testing.T) {
 
 			hoje := time.Now().Format("2006-01-02")
 			expectEscopoVendedor(mock, escopoVendedorB)
-			mock.ExpectQuery(reSerieVendas + `.*AND vendedor_id = \?\s+GROUP BY`).
+			mock.ExpectQuery(reSerieVendas+`.*AND vendedor_id = \?\s+GROUP BY`).
 				WithArgs(tt.dias, escopoVendedorB).
 				WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}).AddRow(hoje, 50.0, 1))
 			mock.ExpectQuery(reSerieDias).
@@ -228,8 +297,9 @@ func TestDashboardEscopo_SemVendedor_RespostaZerada(t *testing.T) {
 	}{
 		{"metrics", "/api/dashboard/metrics?periodo=week", func(t *testing.T, body map[string]any) {
 			data := body["data"].(map[string]any)
-			assert.Len(t, data, 8)
+			assert.Len(t, data, 9)
 			assert.Equal(t, "week", data["periodo"])
+			assert.Equal(t, false, data["vendedor_desligado"])
 			for _, k := range []string{"total_vendas", "total_vendas_qtd", "total_pedidos", "ticket_medio", "meta_mes"} {
 				assert.Equal(t, 0.0, data[k], k)
 			}
@@ -261,6 +331,7 @@ func TestDashboardEscopo_SemVendedor_RespostaZerada(t *testing.T) {
 			assert.Equal(t, 0.0, pag["total"])
 			assert.Equal(t, 0.0, pag["pages"])
 		}},
+		{"clientes", "/api/dashboard/clientes?periodo=today", verifyClientesVazio("today")},
 	}
 
 	for _, sv := range semVendedor {
@@ -290,7 +361,7 @@ func TestDashboardEscopo_SemVendedor_RespostaZerada(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDashboardEscopo_ErroResolverEscopo_500(t *testing.T) {
-	for _, path := range []string{"/api/dashboard/metrics", "/api/dashboard/vendas", "/api/dashboard/vendedores"} {
+	for _, path := range dashboardPaths {
 		t.Run(path, func(t *testing.T) {
 			server, db, mock := setupTestServer(t)
 			defer server.Close()
@@ -335,6 +406,20 @@ func TestDashboardEscopo_Admin_SemFiltro(t *testing.T) {
 			m.ExpectQuery(reSerieVendas + `.*AND status NOT IN \('cancelado', 'devolvido'\)\s+GROUP BY`).WithArgs(5).
 				WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 		}},
+		{"clientes", "/api/dashboard/clientes", func(m sqlmock.Sqlmock) {
+			m.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes$`).WithoutArgs().
+				WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(10))
+			m.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \?$`).WithArgs(true).
+				WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(8))
+			m.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \?$`).WithArgs(false).
+				WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(2))
+			m.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE YEAR\(data_cadastro\) = YEAR\(CURDATE\(\)\) AND MONTH\(data_cadastro\) = MONTH\(CURDATE\(\)\)$`).WithoutArgs().
+				WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
+			m.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total\s+FROM clientes\s+GROUP BY segmento`).WithoutArgs().
+				WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}))
+			m.ExpectQuery(`SELECT uf, COUNT\(\*\) AS total\s+FROM clientes\s+GROUP BY uf`).WithoutArgs().
+				WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}))
+		}},
 		{"vendedores", "/api/dashboard/vendedores", func(m sqlmock.Sqlmock) {
 			m.ExpectQuery(reRankingCount + `$`).WithoutArgs().
 				WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(2))
@@ -354,8 +439,18 @@ func TestDashboardEscopo_Admin_SemFiltro(t *testing.T) {
 			// Admin não consulta usuarios.id_vendedor.
 			tt.expect(mock)
 
-			resp, _ := doDashboardGet(t, server, tt.path, token)
+			resp, body := doDashboardGet(t, server, tt.path, token)
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			switch tt.nome {
+			case "metrics":
+				assert.Equal(t, false, body["data"].(map[string]any)["vendedor_desligado"])
+			case "clientes":
+				data := body["data"].(map[string]any)
+				assert.Equal(t, 10.0, data["total_clientes"])
+				// Sem linhas: listas vazias serializam como [] (nunca null).
+				assert.Equal(t, []any{}, data["por_segmento"])
+				assert.Equal(t, []any{}, data["por_uf"])
+			}
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -389,6 +484,159 @@ func TestDashboardEscopo_Metrics_PeriodoInvalido_NaoResolveEscopo(t *testing.T) 
 // Verbose: log de escopo em resolverEscopo
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Vendedor desligado / inexistente -> bloqueado no Dashboard
+// ---------------------------------------------------------------------------
+
+// Usuário normal cujo vendedor vinculado tem data_desligamento preenchida é
+// tratado como "sem vendedor": 200 com payload zerado nos 4 endpoints, sem
+// nenhuma query a pedidos/vendedores/clientes (se o handler seguisse até o
+// repositório, o sqlmock falharia com 500). /metrics sinaliza
+// vendedor_desligado=true.
+func TestDashboardEscopo_VendedorDesligado_RespostaZerada(t *testing.T) {
+	endpoints := []struct {
+		nome   string
+		path   string
+		verify func(t *testing.T, body map[string]any)
+	}{
+		{"metrics", "/api/dashboard/metrics?periodo=today", func(t *testing.T, body map[string]any) {
+			data := body["data"].(map[string]any)
+			assert.Len(t, data, 9)
+			assert.Equal(t, "today", data["periodo"])
+			assert.Equal(t, true, data["vendedor_desligado"])
+			for _, k := range []string{"total_vendas", "total_vendas_qtd", "total_pedidos", "ticket_medio", "meta_mes"} {
+				assert.Equal(t, 0.0, data[k], k)
+			}
+			assert.Equal(t, []any{}, data["top_vendedores"])
+			assert.Equal(t, []any{}, data["metas_vendedores"])
+		}},
+		{"vendas", "/api/dashboard/vendas?dias=7", func(t *testing.T, body map[string]any) {
+			data := body["data"].(map[string]any)
+			pontos := data["pontos"].([]any)
+			require.Len(t, pontos, 7)
+			for _, p := range pontos {
+				assert.Equal(t, 0.0, p.(map[string]any)["total_vendas"])
+			}
+		}},
+		{"vendedores", "/api/dashboard/vendedores", func(t *testing.T, body map[string]any) {
+			assert.Equal(t, []any{}, body["data"])
+			assert.Equal(t, 0.0, body["pagination"].(map[string]any)["total"])
+		}},
+		{"clientes", "/api/dashboard/clientes", verifyClientesVazio("month")},
+	}
+	for _, ep := range endpoints {
+		t.Run(ep.nome, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+			token := generateToken(t, testCfg(), escopoUsuarioNormal, "normal")
+
+			mock.ExpectQuery(reUsuarioVendedor).WithArgs(escopoUsuarioNormal).
+				WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(escopoVendedorB))
+			expectVendedorDesligado(mock, escopoVendedorB, true)
+
+			resp, body := doDashboardGet(t, server, ep.path, token)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.True(t, body["success"].(bool))
+			ep.verify(t, body)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// Vínculo id_vendedor apontando para vendedor inexistente: sem acesso
+// (payload zerado), mas /metrics não sinaliza desligamento.
+func TestDashboardEscopo_VendedorInexistente_RespostaZerada(t *testing.T) {
+	for _, path := range dashboardPaths {
+		t.Run(path, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+			token := generateToken(t, testCfg(), escopoUsuarioNormal, "normal")
+
+			mock.ExpectQuery(reUsuarioVendedor).WithArgs(escopoUsuarioNormal).
+				WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(escopoVendedorB))
+			mock.ExpectQuery(reVendedorDesligado).WithArgs(escopoVendedorB).
+				WillReturnError(sql.ErrNoRows)
+
+			resp, body := doDashboardGet(t, server, path, token)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.True(t, body["success"].(bool))
+			if path == "/api/dashboard/metrics" {
+				data := body["data"].(map[string]any)
+				assert.Equal(t, false, data["vendedor_desligado"])
+				assert.Equal(t, 0.0, data["total_vendas"])
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// Erro de banco ao consultar o desligamento -> 500 (fail-closed), nunca
+// dados globais.
+func TestDashboardEscopo_ErroConsultaDesligamento_500(t *testing.T) {
+	for _, path := range dashboardPaths {
+		t.Run(path, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+			token := generateToken(t, testCfg(), escopoUsuarioNormal, "normal")
+
+			mock.ExpectQuery(reUsuarioVendedor).WithArgs(escopoUsuarioNormal).
+				WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(escopoVendedorB))
+			mock.ExpectQuery(reVendedorDesligado).WithArgs(escopoVendedorB).
+				WillReturnError(sql.ErrConnDone)
+
+			resp, body := doDashboardGet(t, server, path, token)
+			assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+			assert.Equal(t, "erro interno", body["error"])
+			assert.Nil(t, body["data"])
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// /clientes: normal vê só a própria carteira ativa
+// ---------------------------------------------------------------------------
+
+func TestDashboardEscopo_Clientes_NormalFiltraCarteira(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+	token := generateToken(t, testCfg(), escopoUsuarioNormal, "normal")
+
+	expectEscopoVendedor(mock, escopoVendedorB)
+	expectClientesMetricsEscopo(mock, escopoVendedorB)
+
+	resp, body := doDashboardGet(t, server, "/api/dashboard/clientes", token)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	data := body["data"].(map[string]any)
+	assert.Equal(t, "month", data["periodo"])
+	assert.Equal(t, 3.0, data["total_clientes"])
+	assert.Equal(t, 2.0, data["total_ativos"])
+	assert.Equal(t, 1.0, data["total_inativos"])
+	assert.Equal(t, 1.0, data["novos_no_periodo"])
+	assert.Len(t, data["por_segmento"].([]any), 1)
+	assert.Len(t, data["por_uf"].([]any), 1)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// /clientes com periodo inválido -> 400 antes de resolver o escopo.
+func TestDashboardEscopo_Clientes_PeriodoInvalido_NaoResolveEscopo(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+	token := generateToken(t, testCfg(), escopoUsuarioNormal, "normal")
+
+	expectEscopoVendedor(mock, escopoVendedorB)
+
+	resp, body := doDashboardGet(t, server, "/api/dashboard/clientes?periodo=ano", token)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Equal(t, "periodo deve ser 'today', 'week' ou 'month'", body["error"])
+	assert.Error(t, mock.ExpectationsWereMet(), "query de escopo não deveria ter sido executada")
+}
+
 func TestDashboardEscopo_Verbose_SemVendedor(t *testing.T) {
 	cfg := testCfg()
 	cfg.Verbose = true
@@ -405,6 +653,7 @@ func TestDashboardEscopo_Verbose_SemVendedor(t *testing.T) {
 		{"metrics", h.GetMetrics, "/api/dashboard/metrics"},
 		{"vendas", h.GetVendas, "/api/dashboard/vendas"},
 		{"vendedores", h.GetVendedores, "/api/dashboard/vendedores"},
+		{"clientes", h.GetClientes, "/api/dashboard/clientes"},
 	}
 	token := generateToken(t, cfg, escopoUsuarioNormal, "normal")
 	for _, c := range chains {

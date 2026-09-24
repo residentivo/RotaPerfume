@@ -173,7 +173,7 @@ func (r *DashboardRepository) GetTopVendedores(ctx context.Context, db *sql.DB, 
 	}
 	defer rows.Close()
 
-	var result []VendedorRanking
+	result := make([]VendedorRanking, 0)
 	for rows.Next() {
 		var vr VendedorRanking
 		if err := rows.Scan(&vr.ID, &vr.Nome, &vr.Meta); err != nil {
@@ -191,6 +191,14 @@ func (r *DashboardRepository) GetTopVendedores(ctx context.Context, db *sql.DB, 
 	}
 
 	return result, nil
+}
+
+// vendasVendedor agrega as vendas do mes de um vendedor. total permanece
+// float64 (centavos preservados) para que percentuais sejam calculados sem
+// truncamento.
+type vendasVendedor struct {
+	total float64
+	qtd   int
 }
 
 // enrichWithVendas atualiza TotalVendas e PercentualMeta a partir de pedidos.
@@ -227,10 +235,7 @@ func (r *DashboardRepository) enrichWithVendas(ctx context.Context, db *sql.DB, 
 	}
 	defer rows.Close()
 
-	salesMap := make(map[int64]struct {
-		total int
-		qtd   int
-	})
+	salesMap := make(map[int64]vendasVendedor)
 
 	for rows.Next() {
 		var vid int64
@@ -239,15 +244,12 @@ func (r *DashboardRepository) enrichWithVendas(ctx context.Context, db *sql.DB, 
 		if err := rows.Scan(&vid, &total, &qtd); err != nil {
 			continue
 		}
-		salesMap[vid] = struct {
-			total int
-			qtd   int
-		}{total: int(total.Float64), qtd: int(qtd.Int64)}
+		salesMap[vid] = vendasVendedor{total: total.Float64, qtd: int(qtd.Int64)}
 	}
 
 	for i := range ranking {
 		if sale, ok := salesMap[ranking[i].ID]; ok {
-			ranking[i].TotalVendas = float64(sale.total)
+			ranking[i].TotalVendas = sale.total
 			ranking[i].QuantidadeVendas = sale.qtd
 			if ranking[i].Meta > 0 {
 				ranking[i].PercentualMeta = (ranking[i].TotalVendas / ranking[i].Meta) * 100
@@ -289,7 +291,7 @@ func (r *DashboardRepository) GetMetasVendedores(ctx context.Context, db *sql.DB
 	}
 	defer rows.Close()
 
-	var result []MetaVendedor
+	result := make([]MetaVendedor, 0)
 	for rows.Next() {
 		var mv MetaVendedor
 		if err := rows.Scan(&mv.ID, &mv.Nome, &mv.Regiao, &mv.UF, &mv.Meta); err != nil {
@@ -340,10 +342,7 @@ func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql
 	}
 	defer rows.Close()
 
-	salesMap := make(map[int64]struct {
-		total int
-		qtd   int
-	})
+	salesMap := make(map[int64]vendasVendedor)
 
 	for rows.Next() {
 		var vid int64
@@ -352,15 +351,12 @@ func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql
 		if err := rows.Scan(&vid, &total, &qtd); err != nil {
 			continue
 		}
-		salesMap[vid] = struct {
-			total int
-			qtd   int
-		}{total: int(total.Float64), qtd: int(qtd.Int64)}
+		salesMap[vid] = vendasVendedor{total: total.Float64, qtd: int(qtd.Int64)}
 	}
 
 	for i := range metas {
 		if sale, ok := salesMap[metas[i].ID]; ok {
-			metas[i].Realizado = float64(sale.total)
+			metas[i].Realizado = sale.total
 			metas[i].QuantidadeVendas = sale.qtd
 			if metas[i].Meta > 0 {
 				metas[i].Percentual = (metas[i].Realizado / metas[i].Meta) * 100

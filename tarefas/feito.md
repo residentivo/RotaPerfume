@@ -4,6 +4,112 @@
 
 ---
 
+## Lote de 2026-09-24: 8 cards concluídos (de 10)
+
+> Lote executado pelo 🤍 MegaBrain com os 10 cards que estavam em `afazer.md`. Os 2 cards de teste manual (PedidoModal e Dashboard) continuam em `fazendo.md` até o usuário validar no navegador. Os follow-ups deste lote estão em `afazer.md`: BUG-01, UI-01, UI-02, vendedor desligado nas escritas, `id_vendedor` no localStorage e tooling do frontend.
+>
+> **Verificação final (🔴 TestBrain):** `go vet` e `go test` OK nos 2 módulos. Cobertura: `handlers` 82,7%, `services` 94,1%, `shared/repositories` 83,0%. Typecheck do frontend OK (🟢 FrontBrain).
+
+## Elevar cobertura do pacote `handlers` para o mínimo de 80% — 2026-09-24
+**Agentes:** 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** 🔴 TestBrain, durante os cards de escopo de 2026-09-23. A cobertura de `handlers` estava abaixo de 80%.
+
+**O que foi feito:**
+- **🔴 TestBrain:** novo `apis/rotaperfumes-api/handlers/auth_refresh_logout_test.go`, que cobre os fluxos de refresh e logout. Cobertura de `handlers`: **78,3% → 82,7%**, acima do mínimo de 80%.
+
+## Padronizar status de `POST /api/pagamentos` com pedido inexistente (400 admin vs 404 normal) — 2026-09-24
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** 🟡 BackBrain / 🔴 TestBrain, durante o card "Scope check em Create/Update de Pedidos" (2026-09-23).
+
+**O que foi feito:**
+- **🟣 SecBrain:** recomendou `404` para os dois perfis. O corpo é idêntico ao de pedido de outro vendedor, então não permite enumeração.
+- **🟡 BackBrain:** `apis/rotaperfumes-api/handlers/pagamento_handler.go`: `POST /api/pagamentos` com `pedido_id` inexistente agora retorna `404` "pedido não encontrado" para admin e normal. `pedido_id <= 0` continua `400` "pedido_id é obrigatório".
+- **🟢 FrontBrain:** nenhuma mudança. `PagamentoModal` já exibe a mensagem do `404`.
+- **🔴 TestBrain:** testes ajustados em `pagamento_handler_test.go` e `escopo_escrita_pedido_pagamento_test.go`.
+
+**Documentação (🔵 SubBrain):**
+- `postman/README.md`: a nota "Inconsistência conhecida" foi trocada por "Status padronizado (2026-09-24)", e a descrição de `POST /api/pagamentos` foi atualizada.
+- `postman/collection.json`: em "Criar Pagamento", a descrição e os códigos de erro foram atualizados. O exemplo "400 pedido não encontrado (admin)" virou "404 Not Found — pedido inexistente (admin)", e entrou o exemplo "400 Bad Request — pedido_id ausente ou <= 0".
+
+## Remover `meta_mensal` da resposta de `GET /api/vendedores` para usuário normal — 2026-09-24
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** 🟣 SecBrain, durante o card "Rotas de Vendedores admin-only" (2026-09-23). Decisão do usuário: omitir o campo para `normal`.
+
+**O que foi feito:**
+- **🟡 BackBrain:** verificou que `GET /api/vendedores` já devolvia `VendedorResumo` (`id`, `nome`, `regiao`, `uf`, `data_desligamento`), sem `meta_mensal`, para **todos** os perfis. O admin obtém a meta via `GET /api/vendedores/{id}` (admin only). **Nenhuma mudança de código.**
+- **🔴 TestBrain:** teste de regressão garantindo que `meta_mensal` não aparece na listagem (`vendedor_handler_test.go` / `vendedor_repository_test.go`).
+
+**Documentação (🔵 SubBrain):** `postman/README.md`: a nota desatualizada da seção Vendedores ("ainda expõe `meta_mensal`") foi substituída pela descrição correta do `VendedorResumo`.
+
+## Aplicar `gofmt` em testes de Oportunidades, Visitas e Estoque — 2026-09-24
+**Agentes:** 🔴 TestBrain → fechamento por 🔵 SubBrain
+
+**O que foi feito:**
+- **🔴 TestBrain:** `gofmt -w` em `apis/rotaperfumes-api/handlers/oportunidade_handler_test.go`, `apis/rotaperfumes-api/handlers/visita_handler_test.go` e `apis/shared/repositories/estoque_repository_test.go`. Só formatação. `go test` e `go vet` continuam OK.
+
+## Bug: total de vendas truncado para `int` em `enrichWithVendas` / `enrichMetasWithVendas` (perda de centavos) — 2026-09-24
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** card "Pedido com cliente transferido / escopo do Dashboard" (2026-09-23).
+
+**O que foi feito:**
+- **🟡 BackBrain:** `apis/shared/repositories/dashboard_repository.go`: `top_vendedores[].total_vendas` e `metas_vendedores[].realizado` agora são `float64` com centavos. O percentual é calculado a partir do valor `float64`.
+- **🟢 FrontBrain:** `fmtCurrency` em `frontend/src/app/dashboard/page.tsx` passou a mostrar 2 casas decimais.
+- **🔴 TestBrain:** casos com centavos em `dashboard_repository_test.go`.
+
+**Documentação (🔵 SubBrain):** os exemplos de `GET /api/dashboard/metrics` na collection e no README agora têm centavos (ex.: `9500.57`, percentual `95.0057`).
+
+## Padronizar `top_vendedores`/`metas_vendedores` vazios como `[]` (hoje `null`) — 2026-09-24
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** card "Pedido com cliente transferido / escopo do Dashboard" (2026-09-23).
+
+**O que foi feito:**
+- **🟡 BackBrain:** `apis/shared/repositories/dashboard_repository.go`: `top_vendedores` e `metas_vendedores` (e também `por_segmento`/`por_uf` do dashboard de clientes) sempre devolvem `[]` quando vazios.
+- **🔴 TestBrain:** caso vazio coberto nos testes do repositório.
+
+**Documentação (🔵 SubBrain):**
+- `postman/collection.json`: o teste de "Dashboard — Métricas" ganhou a asserção "top_vendedores e metas_vendedores são arrays (nunca null)", e o exemplo "Métricas do dia" mostra listas `[]`.
+- `postman/README.md`: nota de contrato das listas na seção Dashboard.
+
+## Dashboard de vendedor desligado (`data_desligamento`): bloquear acesso — 2026-09-24
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** card "Pedido com cliente transferido / escopo do Dashboard" (2026-09-23). Decisão do usuário (2026-09-24): bloquear o acesso.
+
+**O que foi feito:**
+- **🟡 BackBrain:**
+  - `apis/rotaperfumes-api/handlers/dashboard_handler.go`: um usuário normal com vendedor desligado (`data_desligamento` preenchida) ou com vendedor inexistente recebe os 4 endpoints (`metrics`, `vendas`, `vendedores`, `clientes`) vazios ou zerados. Erro de banco nessa checagem retorna `500`.
+  - `apis/rotaperfumes-api/services/dashboard_service.go`: `/api/dashboard/metrics` ganhou o campo `vendedor_desligado`. Ele é `true` só para o vendedor desligado e `false` nos demais casos, inclusive para o admin.
+  - `apis/shared/repositories/vendedor_repository.go`: suporte à checagem.
+- **🟢 FrontBrain:** `frontend/src/lib/types.ts` recebeu `vendedor_desligado`. `frontend/src/app/dashboard/page.tsx` mostra o aviso de vendedor desligado com base nesse flag da API.
+- **🔴 TestBrain:** casos de vendedor desligado nos testes de handler, service e repositório do dashboard.
+
+**Documentação (🔵 SubBrain):**
+- `postman/collection.json`: a descrição de "Dashboard — Métricas" documenta o `vendedor_desligado` e o `500`. Todos os exemplos têm o campo, e há um novo exemplo "200 OK — Normal com vendedor desligado (zerado, vendedor_desligado=true)". As descrições de "Vendas" e "Ranking Vendedores" cobrem o caso desligado.
+- `postman/README.md`: seção Dashboard com a regra do vendedor desligado e do campo `vendedor_desligado`.
+
+**Follow-up:** o bloqueio vale só para o Dashboard. As escritas (pedidos, pagamentos, oportunidades e visitas) continuam liberadas para o vendedor desligado. Card de decisão de negócio em `afazer.md`.
+
+## `GET /api/dashboard/clientes`: escopo da carteira para usuário normal — 2026-09-24
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** card "Pedido com cliente transferido / escopo do Dashboard" (2026-09-23). Decisão do usuário (2026-09-24): restringir à carteira do vendedor.
+
+**O que foi feito:**
+- **🟡 BackBrain:** em `dashboard_handler.go`, `dashboard_service.go` e `apis/shared/repositories/cliente_repository.go`, o `normal` vê só os clientes da carteira ativa do próprio vendedor (`data_fim IS NULL`), e o admin continua com a visão global. Sem acesso (sem vendedor, desligado ou inexistente), a resposta é `{"periodo":"month","total_clientes":0,"total_ativos":0,"total_inativos":0,"novos_no_periodo":0,"por_segmento":[],"por_uf":[]}`.
+- **🟢 FrontBrain:** `dashboard/page.tsx` usa os rótulos "Meus Clientes" e "Clientes da minha carteira" para o normal.
+- **🔴 TestBrain:** perfis admin e normal cobertos. Novos `apis/shared/repositories/cliente_repository_contagens_erro_test.go` e `apis/rotaperfumes-api/services/dashboard_service_cliente_erros_test.go`.
+
+**Documentação (🔵 SubBrain):**
+- `postman/collection.json`: a descrição de "Dashboard — Clientes" passou de "apenas admin" para acesso comum com escopo. O `403` saiu dos códigos de erro e entrou o `500`. O exemplo "403 Não é admin" foi substituído por "200 OK — Normal (só a carteira do próprio vendedor)" e "200 OK — Normal sem vendedor / vendedor desligado (zerado)".
+- `postman/README.md`: o título da seção Clientes e o item `GET /api/dashboard/clientes` descrevem o escopo. A nota "`/api/dashboard/clientes` não mudou" da seção Dashboard foi substituída.
+
+---
+
 ## Validar com o negócio: pedido com cliente transferido (visibilidade de pedidos antigos + escopo do Dashboard) — 2026-09-23
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
 
