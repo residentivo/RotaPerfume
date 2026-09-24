@@ -65,7 +65,13 @@ export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
   function Turnstile({ onVerify, onExpire, onError }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const widgetIdRef = useRef<string | undefined>(undefined);
-    const [scriptLoaded, setScriptLoaded] = useState(false);
+    // Se o script já foi carregado por outra tela (navegação client-side,
+    // ex: login -> trocar-senha), `window.turnstile` já existe e o widget
+    // pode ser renderizado de imediato — o next/script deduplica pelo `src`
+    // e não dispara `onLoad` de novo.
+    const [scriptLoaded, setScriptLoaded] = useState(
+      () => typeof window !== "undefined" && Boolean(window.turnstile)
+    );
 
     const removeWidget = () => {
       if (window.turnstile && widgetIdRef.current) {
@@ -126,7 +132,10 @@ export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
         <Script
           src="https://challenges.cloudflare.com/turnstile/v0/api.js"
           strategy="afterInteractive"
-          onLoad={() => setScriptLoaded(true)}
+          // `onReady` dispara no primeiro load E em todo mount posterior com
+          // o script já carregado (diferente de `onLoad`, que só dispara uma
+          // vez por `src`). Setar true repetidamente é no-op para o React.
+          onReady={() => setScriptLoaded(true)}
         />
         <div ref={containerRef} />
       </>

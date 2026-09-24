@@ -440,7 +440,11 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	if !h.auth.VerifyPassword(u.PasswordHash, req.SenhaAtual) {
 		log.Printf("[auth] reset-password: senha atual incorreta: user_id=%d", uid)
 		h.resetPasswordLimiter.RegisterFailure(resetKey)
-		writeJSON(w, http.StatusUnauthorized, nil, "senha atual incorreta")
+		// 400 (e não 401): o usuário está autenticado. 401 fica reservado para
+		// sessão/JWT inválido — o frontend trata 401 como token expirado, faz
+		// refresh e reenvia o body com o mesmo captchaToken (uso único),
+		// mascarando este erro como "captcha inválido".
+		writeJSON(w, http.StatusBadRequest, nil, "senha atual incorreta")
 		return
 	}
 

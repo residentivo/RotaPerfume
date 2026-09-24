@@ -734,6 +734,34 @@ func TestResetPassword_NovaSenhaIgualASenhaAtual(t *testing.T) {
 	}
 }
 
+// TestResetPassword_SenhaAtualIncorreta_Retorna400 (BUG-03) garante que
+// senha_atual incorreta responde 400 e não 401: o usuário está autenticado e
+// o frontend trata todo 401 como token expirado (refresh + reenvio com o mesmo
+// captchaToken de uso único), o que mascarava o erro como "captcha inválido".
+func TestResetPassword_SenhaAtualIncorreta_Retorna400(t *testing.T) {
+	server, db, mock, _ := setupTestServerWithAuthHandler(t)
+	defer server.Close()
+	defer db.Close()
+
+	cfg := testCfg()
+	userToken := generateToken(t, cfg, 2, "normal")
+
+	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaAtual999!")
+
+	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
+		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "senha-incorreta", "nova_senha": "QualquerSenhaForte1!"})))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, "senha atual incorreta", body["error"])
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 // TestResetPassword_NovaSenhaIgualAoHistorico garante que a troca é recusada
 // quando a nova senha coincide com uma das 2 senhas mais recentes do
 // histórico (mesmo não sendo a senha atual), com a mensagem genérica de
@@ -819,7 +847,7 @@ func TestResetPassword_ReusoConta_NoRateLimiter(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+userToken)
 		resp, err := client.Do(req)
 		require.NoError(t, err)
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "tentativa de senha_atual incorreta %d", i+1)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "tentativa de senha_atual incorreta %d", i+1)
 		resp.Body.Close()
 	}
 

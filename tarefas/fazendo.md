@@ -4,6 +4,21 @@
 
 ---
 
+## BUG-02: botão "Alterar Senha" nunca habilita em `/trocar-senha`
+
+**Início:** 2026-09-24
+**Passo atual:** Correção aplicada pelo 🟢 FrontBrain (typecheck OK); aguardando o usuário validar no navegador.
+
+**Causa:** o usuário chega em `/trocar-senha` por navegação client-side (login → `router.replace` ou link da Navbar), com o script do Turnstile já carregado na tela de login. O `next/script` deduplica pelo `src` e não dispara `onLoad` de novo; o widget não era renderizado, nenhum token chegava e o botão (`disabled={isTurnstileEnabled && !captchaToken}`) ficava travado.
+
+**Correção:** `frontend/src/components/ui/Turnstile.tsx` troca `onLoad` por `onReady` e inicia `scriptLoaded` como true quando `window.turnstile` já existe. O captcha continua obrigatório.
+
+**BUG-03 (achado na validação, 2026-09-24):** com a senha atual errada, a tela mostrava "Nao foi possivel validar o captcha". A API respondia `401 senha atual incorreta`; o `fetchWithAuth` tratava como token expirado, fazia refresh e reenviava o mesmo `captchaToken` (uso único), que o Cloudflare recusava. 🟡 BackBrain mudou para `400` em `auth_handler.go` (`ResetPassword`), ajustou os testes e criou `TestResetPassword_SenhaAtualIncorreta_Retorna400` (`go vet`/`go test` OK). Postman atualizado.
+
+**Ação esperada:** logar com usuário que precisa trocar a senha → o widget do captcha aparece em `/trocar-senha` → após o desafio, o botão habilita e a troca funciona. Repetir entrando pelo link da Navbar.
+
+---
+
 ## Teste manual/e2e do `PedidoModal` no navegador (usuário normal e admin)
 
 **Início:** 2026-09-24

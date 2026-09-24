@@ -732,7 +732,7 @@
           "host": ["{{base_url}}"],
           "path": ["api", "auth", "reset-password"]
         },
-        "description": "O usuário autenticado troca a própria senha.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{token}}\n```\n\n**Body:**\n- `senha_atual` (string, obrigatório) — senha atual (comparada com hash)\n- `nova_senha` (string, obrigatório) — nova senha (mínimo 6 caracteres)\n- `captchaToken` (string, **obrigatório**) — token do widget Cloudflare Turnstile, validado server-side (fail-closed). Este endpoint também ganhou rate limiting dedicado: 10 falhas em 5 minutos bloqueiam por 10 minutos.\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"mensagem\": \"senha alterada com sucesso\"\n  }\n}\n```\n\n**Segurança:** Após a troca, todos os refresh tokens do usuário são revogados.\n\n**Códigos de erro:**\n- `400` — `senha_atual`, `nova_senha` ou `captchaToken` vazios, ou `nova_senha` < 6 chars\n- `401` — `senha_atual` incorreta, ou `captchaToken` inválido/expirado\n- `401` — não autenticado\n- `429` — rate limit excedido (10 falhas / 5 min, bloqueio de 10 min)"
+        "description": "O usuário autenticado troca a própria senha.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{token}}\n```\n\n**Body:**\n- `senha_atual` (string, obrigatório) — senha atual (comparada com hash)\n- `nova_senha` (string, obrigatório) — nova senha (mínimo 6 caracteres)\n- `captchaToken` (string, **obrigatório**) — token do widget Cloudflare Turnstile, validado server-side (fail-closed). Este endpoint também ganhou rate limiting dedicado: 10 falhas em 5 minutos bloqueiam por 10 minutos.\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"mensagem\": \"senha alterada com sucesso\"\n  }\n}\n```\n\n**Segurança:** Após a troca, todos os refresh tokens do usuário são revogados.\n\n**Códigos de erro:**\n- `400` — `senha_atual`, `nova_senha` ou `captchaToken` vazios, ou `nova_senha` < 6 chars\n- `400` — `senha_atual` incorreta (\"senha atual incorreta\"; não é 401 para o frontend não tratar como sessão expirada e reenviar o captcha de uso único)\n- `400` — `captchaToken` inválido/expirado (\"captcha inválido ou ausente\")\n- `401` — não autenticado\n- `429` — rate limit excedido (10 falhas / 5 min, bloqueio de 10 min)"
       },
       "response": [
         {
@@ -768,7 +768,7 @@
           "body": "{\n  \"success\": true,\n  \"data\": {\n    \"mensagem\": \"senha alterada com sucesso\"\n  }\n}"
         },
         {
-          "name": "401 Unauthorized — Senha atual incorreta",
+          "name": "400 Bad Request — Senha atual incorreta",
           "originalRequest": {
             "method": "POST",
             "header": [
@@ -787,8 +787,8 @@
               "path": ["api", "auth", "reset-password"]
             }
           },
-          "status": "Unauthorized",
-          "code": 401,
+          "status": "Bad Request",
+          "code": 400,
           "_postman_previewlanguage": "json",
           "header": [
             {
