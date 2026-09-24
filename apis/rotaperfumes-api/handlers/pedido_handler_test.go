@@ -92,6 +92,31 @@ func expectCreatePedidoSuccessH(mock sqlmock.Sqlmock) {
 		WillReturnRows(itemPedidoRowsForHandler(100))
 }
 
+// expectEscopoUsuarioH registra o mock do resolverVendedorScope para um
+// usuário role=normal vinculado ao vendedor informado.
+func expectEscopoUsuarioH(mock sqlmock.Sqlmock, userID, vendedorID int64) {
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(vendedorID))
+}
+
+// expectCarteiraAtivaH registra o mock de clienteNaCarteiraDoVendedor com
+// vínculo ativo encontrado.
+func expectCarteiraAtivaH(mock sqlmock.Sqlmock, vendedorID, clienteID int64) {
+	mock.ExpectQuery(`SELECT carteira_id_origem, cliente_id, vendedor_id, data_inicio, data_fim, created_at, updated_at\s+FROM carteiras\s+WHERE vendedor_id = \? AND cliente_id = \? AND data_fim IS NULL\s+LIMIT 1`).
+		WithArgs(vendedorID, clienteID).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"carteira_id_origem", "cliente_id", "vendedor_id", "data_inicio", "data_fim", "created_at", "updated_at",
+		}).AddRow(int64(500), clienteID, vendedorID, time.Now(), nil, time.Now(), time.Now()))
+}
+
+// expectEscopoCarteiraPedidoH combina escopo do usuário + carteira ativa
+// (fluxo de CreatePedido para role=normal).
+func expectEscopoCarteiraPedidoH(mock sqlmock.Sqlmock, userID, vendedorID, clienteID int64) {
+	expectEscopoUsuarioH(mock, userID, vendedorID)
+	expectCarteiraAtivaH(mock, vendedorID, clienteID)
+}
+
 // ---------------------------------------------------------------------------
 // ListPedidos GET /api/pedidos
 // ---------------------------------------------------------------------------
@@ -449,6 +474,9 @@ func TestCreatePedido_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
+	// Escopo por carteira: usuário 2 vinculado ao vendedor 2, cliente 1 na
+	// carteira ativa desse vendedor.
+	expectEscopoCarteiraPedidoH(mock, 2, 2, 1)
 	expectCreatePedidoSuccessH(mock)
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/pedidos", makeJSON(validPedidoPayload()))
@@ -694,6 +722,17 @@ func TestUpdatePedido_PermitidoParaNaoAdmin(t *testing.T) {
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
+
+	// Escopo por carteira: usuário 2 -> vendedor 2; pedido 1 pertence ao
+	// vendedor 2 (pedidoRowsForHandler) e cliente 1 está na carteira ativa.
+	expectEscopoUsuarioH(mock, 2, 2)
+	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pedidoRowsForHandler(1, 230.0))
+	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
+		WithArgs(int64(1)).
+		WillReturnRows(itemPedidoRowsForHandler(1))
+	expectCarteiraAtivaH(mock, 2, 1)
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexH).

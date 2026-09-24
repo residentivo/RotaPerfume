@@ -232,12 +232,43 @@ func pedidoErroParaStatus(err error) (status int, msg string, ok bool) {
 // valor_bruto de cada item e valor_total do pedido são calculados no backend.
 // pedido_id_origem é gerado automaticamente pelo sistema.
 // Retorna: 201 com o pedido criado (incluindo itens).
-// Acesso comum.
+// Acesso comum (escopo por carteira): usuário role=normal só pode criar
+// pedido para a própria carteira (vendedor_id do payload é ignorado e forçado
+// ao vendedor vinculado; cliente_id deve pertencer à carteira ativa desse
+// vendedor). 403 se o usuário normal não tiver vendedor vinculado.
 func (h *PedidoHandler) CreatePedido(w http.ResponseWriter, r *http.Request) {
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pedidos] CreatePedido escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusForbidden, nil, "usuário sem vendedor vinculado")
+		return
+	}
+
 	var req CreatePedidoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
+	}
+
+	if scope.Restrito {
+		// Usuário role=normal: nunca confia no vendedor_id do payload — força
+		// à própria carteira (evita forjar pedido para outro vendedor).
+		req.VendedorID = scope.VendedorID
+
+		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		if err != nil {
+			log.Printf("[pedidos] CreatePedido checar carteira: %v", err)
+			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+			return
+		}
+		if !pertence {
+			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
+			return
+		}
 	}
 
 	input := services.PedidoInput{
@@ -272,7 +303,9 @@ func (h *PedidoHandler) CreatePedido(w http.ResponseWriter, r *http.Request) {
 // e valor_total são recalculados no backend.
 // Retorna: 200 com o pedido atualizado (incluindo itens), 404 se não existir,
 // 400 se o payload for inválido.
-// Acesso comum.
+// Acesso comum (escopo por carteira): usuário role=normal só pode atualizar
+// pedido da própria carteira (404 se pertencer a outro vendedor), não pode
+// reatribuir vendedor_id e o cliente_id deve pertencer à sua carteira ativa.
 func (h *PedidoHandler) UpdatePedido(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -280,10 +313,58 @@ func (h *PedidoHandler) UpdatePedido(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pedidos] UpdatePedido escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
+		return
+	}
+
+	if scope.Restrito {
+		// Só o escopo restrito precisa do registro atual (para checar a
+		// posse); admin segue direto ao service, que já retorna 404 se o
+		// pedido não existir.
+		atual, err := h.svc.GetPedidoDetalhe(r.Context(), h.db, id)
+		if err != nil {
+			if errors.Is(err, services.ErrPedidoNaoEncontrado) {
+				writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
+				return
+			}
+			log.Printf("[pedidos] UpdatePedido buscar atual: %v", err)
+			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+			return
+		}
+		if !scope.PermiteVendedor(atual.VendedorID) {
+			writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
+			return
+		}
+	}
+
 	var req UpdatePedidoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
+	}
+
+	if scope.Restrito {
+		// Usuário role=normal: nunca confia no vendedor_id do payload — força
+		// à própria carteira (evita reatribuir o pedido a outro vendedor).
+		req.VendedorID = scope.VendedorID
+
+		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		if err != nil {
+			log.Printf("[pedidos] UpdatePedido checar carteira: %v", err)
+			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+			return
+		}
+		if !pertence {
+			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
+			return
+		}
 	}
 
 	input := services.PedidoInput{

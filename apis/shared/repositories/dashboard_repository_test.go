@@ -40,7 +40,7 @@ func TestDashboardGetVendasTotais_Success(t *testing.T) {
 
 			repo := repositories.NewDashboardRepository()
 			ctx := context.Background()
-			valor, qtd, err := repo.GetVendasTotais(ctx, db, tt.periodo)
+			valor, qtd, err := repo.GetVendasTotais(ctx, db, tt.periodo, 0)
 
 			require.NoError(t, err)
 			assert.Equal(t, 1500.50, valor)
@@ -59,7 +59,7 @@ func TestDashboardGetVendasTotais_TabelaNaoExiste(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	valor, qtd, err := repo.GetVendasTotais(ctx, db, "today")
+	valor, qtd, err := repo.GetVendasTotais(ctx, db, "today", 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0.0, valor)
@@ -76,7 +76,7 @@ func TestDashboardGetVendasTotais_DBError(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, _, err := repo.GetVendasTotais(ctx, db, "today")
+	_, _, err := repo.GetVendasTotais(ctx, db, "today", 0)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -102,7 +102,7 @@ func TestDashboardGetTotalPedidos_Success(t *testing.T) {
 
 			repo := repositories.NewDashboardRepository()
 			ctx := context.Background()
-			total, err := repo.GetTotalPedidos(ctx, db, tt.periodo)
+			total, err := repo.GetTotalPedidos(ctx, db, tt.periodo, 0)
 
 			require.NoError(t, err)
 			assert.Equal(t, 7, total)
@@ -124,7 +124,7 @@ func TestDashboardGetVendasTotais_PeriodoWeek_UsaDateSub(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	valor, qtd, err := repo.GetVendasTotais(ctx, db, "week")
+	valor, qtd, err := repo.GetVendasTotais(ctx, db, "week", 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 999.0, valor)
@@ -143,7 +143,7 @@ func TestDashboardGetTotalPedidos_PeriodoWeek_UsaDateSub(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	total, err := repo.GetTotalPedidos(ctx, db, "week")
+	total, err := repo.GetTotalPedidos(ctx, db, "week", 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 4, total)
@@ -159,7 +159,7 @@ func TestDashboardGetTotalPedidos_TabelaNaoExiste(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	total, err := repo.GetTotalPedidos(ctx, db, "today")
+	total, err := repo.GetTotalPedidos(ctx, db, "today", 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, total)
@@ -175,7 +175,7 @@ func TestDashboardGetTotalPedidos_DBError(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, err := repo.GetTotalPedidos(ctx, db, "today")
+	_, err := repo.GetTotalPedidos(ctx, db, "today", 0)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -190,7 +190,7 @@ func TestDashboardGetMetaMensalTotal_Success(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	meta, err := repo.GetMetaMensalTotal(ctx, db)
+	meta, err := repo.GetMetaMensalTotal(ctx, db, 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 35000.75, meta)
@@ -207,7 +207,7 @@ func TestDashboardGetMetaMensalTotal_TabelaVazia(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	meta, err := repo.GetMetaMensalTotal(ctx, db)
+	meta, err := repo.GetMetaMensalTotal(ctx, db, 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0.0, meta)
@@ -223,7 +223,7 @@ func TestDashboardGetMetaMensalTotal_TabelaNaoExiste(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	meta, err := repo.GetMetaMensalTotal(ctx, db)
+	meta, err := repo.GetMetaMensalTotal(ctx, db, 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0.0, meta)
@@ -239,7 +239,7 @@ func TestDashboardGetMetaMensalTotal_DBError(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, err := repo.GetMetaMensalTotal(ctx, db)
+	_, err := repo.GetMetaMensalTotal(ctx, db, 0)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -261,7 +261,7 @@ func TestDashboardGetTopVendedores_ComEnrich(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	result, err := repo.GetTopVendedores(ctx, db, 5)
+	result, err := repo.GetTopVendedores(ctx, db, 5, 0)
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -282,7 +282,7 @@ func TestDashboardGetTopVendedores_Vazio(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	result, err := repo.GetTopVendedores(ctx, db, 5)
+	result, err := repo.GetTopVendedores(ctx, db, 5, 0)
 
 	require.NoError(t, err)
 	assert.Len(t, result, 0)
@@ -299,7 +299,7 @@ func TestDashboardGetTopVendedores_TabelaNaoExiste(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	result, err := repo.GetTopVendedores(ctx, db, 5)
+	result, err := repo.GetTopVendedores(ctx, db, 5, 0)
 
 	require.NoError(t, err)
 	assert.Len(t, result, 0)
@@ -316,7 +316,7 @@ func TestDashboardGetTopVendedores_DBError(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, err := repo.GetTopVendedores(ctx, db, 5)
+	_, err := repo.GetTopVendedores(ctx, db, 5, 0)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -337,7 +337,7 @@ func TestDashboardGetMetasVendedores_ComEnrich(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	result, err := repo.GetMetasVendedores(ctx, db)
+	result, err := repo.GetMetasVendedores(ctx, db, 0)
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -356,7 +356,7 @@ func TestDashboardGetMetasVendedores_Vazio(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	result, err := repo.GetMetasVendedores(ctx, db)
+	result, err := repo.GetMetasVendedores(ctx, db, 0)
 
 	require.NoError(t, err)
 	assert.Len(t, result, 0)
@@ -372,7 +372,7 @@ func TestDashboardGetMetasVendedores_QueryError(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, err := repo.GetMetasVendedores(ctx, db)
+	_, err := repo.GetMetasVendedores(ctx, db, 0)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -393,7 +393,7 @@ func TestDashboardGetVendasSeries_Success(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	series, err := repo.GetVendasSeries(ctx, db, 1)
+	series, err := repo.GetVendasSeries(ctx, db, 1, 0)
 
 	require.NoError(t, err)
 	require.Len(t, series, 1)
@@ -465,7 +465,7 @@ func TestDashboardGetVendasSeries_FormatoDataISO_BuildFullSeries(t *testing.T) {
 
 			repo := repositories.NewDashboardRepository()
 			ctx := context.Background()
-			series, err := repo.GetVendasSeries(ctx, db, tt.dias)
+			series, err := repo.GetVendasSeries(ctx, db, tt.dias, 0)
 
 			require.NoError(t, err)
 			require.Len(t, series, len(tt.diasDaSerieBD))
@@ -508,7 +508,7 @@ func TestDashboardGetVendasSeries_TabelaNaoExiste(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	series, err := repo.GetVendasSeries(ctx, db, 3)
+	series, err := repo.GetVendasSeries(ctx, db, 3, 0)
 
 	require.NoError(t, err)
 	assert.Len(t, series, 3)
@@ -525,7 +525,7 @@ func TestDashboardGetVendasSeries_DBError(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, err := repo.GetVendasSeries(ctx, db, 3)
+	_, err := repo.GetVendasSeries(ctx, db, 3, 0)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -541,7 +541,7 @@ func TestDashboardGetVendasSeries_SemRegistros(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	series, err := repo.GetVendasSeries(ctx, db, 2)
+	series, err := repo.GetVendasSeries(ctx, db, 2, 0)
 
 	require.NoError(t, err)
 	assert.Len(t, series, 2)
@@ -577,7 +577,7 @@ func TestDashboardGetVendasSeries_EmptySeries_FormatoDataReal(t *testing.T) {
 
 			repo := repositories.NewDashboardRepository()
 			ctx := context.Background()
-			series, err := repo.GetVendasSeries(ctx, db, tt.dias)
+			series, err := repo.GetVendasSeries(ctx, db, tt.dias, 0)
 
 			require.NoError(t, err)
 			require.Len(t, series, tt.dias)
@@ -622,7 +622,7 @@ func TestDashboardGetVendasSeries_BuildFullSeriesErro(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	series, err := repo.GetVendasSeries(ctx, db, 1)
+	series, err := repo.GetVendasSeries(ctx, db, 1, 0)
 
 	require.NoError(t, err)
 	// fallback: emptySeries quando a query de datas falha.
@@ -644,7 +644,7 @@ func TestDashboardGetVendedoresRanking_ComVendas(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	result, total, err := repo.GetVendedoresRanking(ctx, db, 1, 10)
+	result, total, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
@@ -670,7 +670,7 @@ func TestDashboardGetVendedoresRanking_Vazio(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	result, total, err := repo.GetVendedoresRanking(ctx, db, 1, 10)
+	result, total, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, total)
@@ -691,7 +691,7 @@ func TestDashboardGetVendedoresRanking_Defaults(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, _, err := repo.GetVendedoresRanking(ctx, db, 0, 0)
+	_, _, err := repo.GetVendedoresRanking(ctx, db, 0, 0, 0)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -710,7 +710,7 @@ func TestDashboardGetVendedoresRanking_LimitCap(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, _, err := repo.GetVendedoresRanking(ctx, db, 1, 200)
+	_, _, err := repo.GetVendedoresRanking(ctx, db, 1, 200, 0)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -725,7 +725,7 @@ func TestDashboardGetVendedoresRanking_CountError(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, _, err := repo.GetVendedoresRanking(ctx, db, 1, 10)
+	_, _, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -764,7 +764,7 @@ func TestDashboardGetVendedoresRanking_EmpateMeta_OrdenaPorAtingimento(t *testin
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	result, total, err := repo.GetVendedoresRanking(ctx, db, 1, 10)
+	result, total, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, 3, total)
@@ -804,7 +804,7 @@ func TestDashboardGetVendedoresRanking_QueryError(t *testing.T) {
 
 	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
-	_, _, err := repo.GetVendedoresRanking(ctx, db, 1, 10)
+	_, _, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

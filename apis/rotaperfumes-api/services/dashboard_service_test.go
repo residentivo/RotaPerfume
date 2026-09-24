@@ -56,7 +56,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		expectMetricsHappyPath(mock)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(true))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today")
+		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		require.NoError(t, err)
 		assert.Equal(t, "today", metrics["periodo"])
 		assert.Equal(t, 1000.0, metrics["total_vendas"])
@@ -82,7 +82,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"meta_total"}).AddRow(0.0))
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "month")
+		metrics, err := svc.GetMetrics(context.Background(), db, "month", 0)
 		require.NoError(t, err)
 		assert.Equal(t, 0.0, metrics["ticket_medio"])
 		assert.Equal(t, 0.0, metrics["meta_mes"])
@@ -95,7 +95,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today")
+		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -109,7 +109,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today")
+		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -126,7 +126,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today")
+		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -145,7 +145,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today")
+		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -166,7 +166,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today")
+		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -189,7 +189,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"dia"}).AddRow("2024-01-01"))
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(true))
-		series, err := svc.GetVendasSeries(context.Background(), db, 7)
+		series, err := svc.GetVendasSeries(context.Background(), db, 7, 0)
 		require.NoError(t, err)
 		require.NotNil(t, series)
 
@@ -211,7 +211,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WillReturnError(sql.ErrNoRows) // não contém texto "doesn't exist" -> repo retorna erro real
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		series, err := svc.GetVendasSeries(context.Background(), db, 7)
+		series, err := svc.GetVendasSeries(context.Background(), db, 7, 0)
 		// Como sql.ErrNoRows não é reconhecido como "tabela não existe" pelo
 		// repo, o erro é propagado.
 		assert.Error(t, err)
@@ -227,7 +227,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
 		// sql.ErrConnDone também não contém "doesn't exist" -> erro propagado.
-		series, err := svc.GetVendasSeries(context.Background(), db, 3)
+		series, err := svc.GetVendasSeries(context.Background(), db, 3, 0)
 		assert.Error(t, err)
 		assert.Nil(t, series)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -241,7 +241,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WillReturnError(errTabelaNaoExiste)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		series, err := svc.GetVendasSeries(context.Background(), db, 4)
+		series, err := svc.GetVendasSeries(context.Background(), db, 4, 0)
 		require.NoError(t, err)
 		require.NotNil(t, series)
 
@@ -272,7 +272,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(true))
-		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20)
+		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, 0)
 		require.NoError(t, err)
 		assert.Len(t, ranking, 0)
 		assert.Equal(t, 0, total)
@@ -289,7 +289,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 				AddRow(int64(1), "João", "Sudeste", "SP", 10000.0, 5000.0, 5, 50.0))
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20)
+		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, 0)
 		require.NoError(t, err)
 		require.Len(t, ranking, 1)
 		assert.Equal(t, 1, total)
@@ -305,7 +305,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20)
+		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, 0)
 		assert.Nil(t, ranking)
 		assert.Equal(t, 0, total)
 		assert.Error(t, err)

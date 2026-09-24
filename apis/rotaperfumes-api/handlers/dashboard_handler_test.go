@@ -139,7 +139,25 @@ func TestGetMetrics_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mockDashboardMetricsQueries(mock)
+	// Escopo por vendedor: usuário normal vinculado ao vendedor 10.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(`SELECT COALESCE\(SUM\(valor_total\), 0\), COUNT\(\*\)\s+FROM pedidos`).
+		WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"valor", "quantidade"}).AddRow(1000.0, 5))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM pedidos\s+WHERE`).
+		WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(5))
+	mock.ExpectQuery(`SELECT\s+v\.id,\s+v\.nome,\s+v\.meta_mensal AS meta\s+FROM vendedores v`).
+		WithArgs(int64(10), 10).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}))
+	mock.ExpectQuery(`SELECT\s+v\.id,\s+v\.nome,\s+v\.regiao,\s+v\.uf,\s+v\.meta_mensal AS meta\s+FROM vendedores v`).
+		WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta"}))
+	mock.ExpectQuery(`SELECT COALESCE\(SUM\(meta_mensal\), 0\)\s+FROM vendedores\s+WHERE data_desligamento IS NULL AND id = \?`).
+		WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"meta"}).AddRow(2000.0))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/metrics", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -299,8 +317,12 @@ func TestGetVendas_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
+	// Escopo por vendedor: usuário normal vinculado ao vendedor 10.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
 	mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data,\s+COALESCE\(SUM\(valor_total\), 0\) AS valor,\s+COUNT\(\*\) AS quantidade\s+FROM pedidos`).
-		WithArgs(30).
+		WithArgs(30, int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/vendas", nil)
@@ -383,10 +405,15 @@ func TestGetVendedores_PermitidoParaNaoAdmin(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`).
+	// Escopo por vendedor: usuário normal vinculado ao vendedor 10.
+	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
+		WithArgs(int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL AND id = \?`).
+		WithArgs(int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectQuery(`(?s)SELECT.*FROM vendedores v.*LEFT JOIN.*ORDER BY v\.meta_mensal DESC, atingimento_meta DESC.*LIMIT \? OFFSET \?`).
-		WithArgs(20, 0).
+	mock.ExpectQuery(`(?s)SELECT.*FROM vendedores v.*LEFT JOIN.*WHERE v\.data_desligamento IS NULL AND v\.id = \?.*ORDER BY v\.meta_mensal DESC, atingimento_meta DESC.*LIMIT \? OFFSET \?`).
+		WithArgs(int64(10), 20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
 	req, _ := http.NewRequest("GET", server.URL+"/api/dashboard/vendedores", nil)

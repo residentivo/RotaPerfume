@@ -17,11 +17,12 @@ import (
 //
 // Acesso comum: diferente das demais telas administrativas (produtos,
 // clientes, pedidos), Pagamentos é liberado a qualquer usuário autenticado
-// (admin ou normal) — por isso, ao contrário de ProdutoHandler/PedidoHandler,
-// os métodos abaixo NÃO verificam middleware.GetRole/RoleAdmin. O controle de
-// acesso (exigir JWT válido, sem exigir admin) é feito inteiramente pela
-// cadeia de middleware registrada em routes.go
-// (middleware.JWTMiddleware(cfg, true, false)).
+// (admin ou normal). A autenticação (JWT válido, sem exigir admin) é feita
+// pela cadeia de middleware registrada em routes.go
+// (middleware.JWTMiddleware(cfg, true, false)); o escopo por carteira
+// (role=normal só enxerga/altera pagamentos de pedidos do próprio vendedor,
+// via pedidos.vendedor_id) é aplicado em cada método com
+// resolverVendedorScope.
 type PagamentoHandler struct {
 	db  *sql.DB
 	svc *services.PagamentoService
@@ -220,6 +221,29 @@ func pagamentoErroParaStatus(err error) (status int, msg string, ok bool) {
 	}
 }
 
+// pedidoNoEscopo verifica se o pedido informado pertence à carteira do
+// escopo restrito. Se não pertencer (ou não existir), escreve 404 com
+// msgNaoEncontrado — mesmo corpo de "inexistente", para não revelar registros
+// de terceiros — e retorna false. Erro inesperado de banco vira 500.
+// Retorna true quando o chamador pode prosseguir.
+func (h *PagamentoHandler) pedidoNoEscopo(w http.ResponseWriter, r *http.Request, scope vendedorScope, pedidoID int64, op, msgNaoEncontrado string) bool {
+	vendedorID, err := h.svc.VendedorIDDoPedido(r.Context(), h.db, pedidoID)
+	if err != nil {
+		if errors.Is(err, services.ErrPedidoNaoEncontrado) {
+			writeJSON(w, http.StatusNotFound, nil, msgNaoEncontrado)
+			return false
+		}
+		log.Printf("[pagamentos] %s vendedor do pedido: %v", op, err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return false
+	}
+	if !scope.PermiteVendedor(vendedorID) {
+		writeJSON(w, http.StatusNotFound, nil, msgNaoEncontrado)
+		return false
+	}
+	return true
+}
+
 // CreatePagamento POST /api/pagamentos
 //
 // Body: { "pedido_id": number, "forma_pagamento": string, "parcelas": number,
@@ -231,12 +255,34 @@ func pagamentoErroParaStatus(err error) (status int, msg string, ok bool) {
 // valor_liquido é exigido explicitamente no payload (não é calculado
 // automaticamente) — ver comentário de services.PagamentoInput.
 // Retorna: 201 com o pagamento criado.
-// Acesso comum (qualquer usuário autenticado).
+// Acesso comum (escopo por carteira): usuário role=normal só pode lançar
+// pagamento em pedido da própria carteira (404 "pedido não encontrado" se o
+// pedido for de outro vendedor ou não existir). 403 se o usuário normal não
+// tiver vendedor vinculado.
 func (h *PagamentoHandler) CreatePagamento(w http.ResponseWriter, r *http.Request) {
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pagamentos] CreatePagamento escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusForbidden, nil, "usuário sem vendedor vinculado")
+		return
+	}
+
 	var req CreatePagamentoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
+	}
+
+	// pedido_id <= 0 segue para o service, que responde 400 "pedido_id é
+	// obrigatório" (nenhum registro é criado nesse caso).
+	if scope.Restrito && req.PedidoID > 0 {
+		if !h.pedidoNoEscopo(w, r, scope, req.PedidoID, "CreatePagamento", "pedido não encontrado") {
+			return
+		}
 	}
 
 	input := services.PagamentoInput{
@@ -276,12 +322,43 @@ func (h *PagamentoHandler) CreatePagamento(w http.ResponseWriter, r *http.Reques
 //
 // pagamento_id e pedido_id não são editáveis por esta rota.
 // Retorna: 200 com o pagamento atualizado, 404 se não existir, 400 se o payload for inválido.
-// Acesso comum (qualquer usuário autenticado).
+// Acesso comum (escopo por carteira): usuário role=normal só pode atualizar
+// pagamento de pedido da própria carteira (404 "pagamento não encontrado"
+// caso contrário). Como pedido_id não é editável (UpdatePagamentoRequest não
+// o expõe e o service não o altera), não há como mover o pagamento para um
+// pedido de outro vendedor.
 func (h *PagamentoHandler) UpdatePagamento(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
+	}
+
+	scope, err := resolverVendedorScope(r.Context(), h.db)
+	if err != nil {
+		log.Printf("[pagamentos] UpdatePagamento escopo: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
+		return
+	}
+
+	if scope.Restrito {
+		atual, err := h.svc.GetPagamentoByID(r.Context(), h.db, id)
+		if err != nil {
+			if errors.Is(err, services.ErrPagamentoNaoEncontrado) {
+				writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
+				return
+			}
+			log.Printf("[pagamentos] UpdatePagamento buscar atual: %v", err)
+			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+			return
+		}
+		if !h.pedidoNoEscopo(w, r, scope, atual.PedidoID, "UpdatePagamento", "pagamento não encontrado") {
+			return
+		}
 	}
 
 	var req UpdatePagamentoRequest

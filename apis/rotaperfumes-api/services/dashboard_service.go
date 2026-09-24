@@ -28,81 +28,123 @@ func NewDashboardService(db *sql.DB, cfg *config.Config) *DashboardService {
 
 // GetMetrics retorna metricas agregadas de vendas para o periodo informado.
 // periodo: "today" (dia atual), "week" (ultimos 7 dias) ou "month" (mes atual).
-func (s *DashboardService) GetMetrics(ctx context.Context, db *sql.DB, periodo string) (map[string]any, error) {
+// vendedorID > 0 (usuario normal) restringe todos os numeros ao proprio
+// vendedor (pedidos.vendedor_id); 0 (admin) considera todos.
+func (s *DashboardService) GetMetrics(ctx context.Context, db *sql.DB, periodo string, vendedorID int64) (map[string]any, error) {
 	if s.Cfg.Verbose {
-		log.Printf("[dashboard] GetMetrics periodo=%s", periodo)
+		log.Printf("[dashboard] GetMetrics periodo=%s vendedor_id=%d", periodo, vendedorID)
 	}
 
 	// Vendas do dia/mes (sera 0 se tabela pedidos nao existir).
-	totalVendasValor, totalVendasQuantidade, err := s.repo.GetVendasTotais(ctx, db, periodo)
+	totalVendasValor, totalVendasQuantidade, err := s.repo.GetVendasTotais(ctx, db, periodo, vendedorID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Total de pedidos.
-	totalPedidos, err := s.repo.GetTotalPedidos(ctx, db, periodo)
+	totalPedidos, err := s.repo.GetTotalPedidos(ctx, db, periodo, vendedorID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Ranking top 10 vendedores (por valor de vendas).
-	topVendedores, err := s.repo.GetTopVendedores(ctx, db, 10)
+	topVendedores, err := s.repo.GetTopVendedores(ctx, db, 10, vendedorID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Metas: comparativo real vs meta dos vendedores ativos.
-	metas, err := s.repo.GetMetasVendedores(ctx, db)
+	metas, err := s.repo.GetMetasVendedores(ctx, db, vendedorID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Meta mensal total: soma de meta_mensal dos vendedores ativos.
-	metaMensalTotal, err := s.repo.GetMetaMensalTotal(ctx, db)
+	// Meta mensal total: soma de meta_mensal dos vendedores ativos (no escopo).
+	metaMensalTotal, err := s.repo.GetMetaMensalTotal(ctx, db, vendedorID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Ticket medio.
+	// Ticket medio (derivado dos totais ja filtrados pelo escopo).
 	var ticketMedio float64
 	if totalVendasQuantidade > 0 {
 		ticketMedio = totalVendasValor / float64(totalVendasQuantidade)
 	}
 
+	return metricsResponse(periodo, totalVendasValor, totalVendasQuantidade, totalPedidos,
+		ticketMedio, topVendedores, metas, metaMensalTotal), nil
+}
+
+// EmptyMetrics retorna as metricas zeradas (mesmo formato de GetMetrics),
+// usadas quando o usuario normal nao tem vendedor vinculado.
+func (s *DashboardService) EmptyMetrics(periodo string) map[string]any {
+	if s.Cfg.Verbose {
+		log.Printf("[dashboard] EmptyMetrics periodo=%s (sem vendedor vinculado)", periodo)
+	}
+	return metricsResponse(periodo, 0, 0, 0, 0,
+		[]repositories.VendedorRanking{}, []repositories.MetaVendedor{}, 0)
+}
+
+// metricsResponse monta o payload de /api/dashboard/metrics.
+func metricsResponse(
+	periodo string,
+	totalVendas float64,
+	totalVendasQtd, totalPedidos int,
+	ticketMedio float64,
+	topVendedores []repositories.VendedorRanking,
+	metas []repositories.MetaVendedor,
+	metaMes float64,
+) map[string]any {
 	return map[string]any{
 		"periodo":          periodo,
-		"total_vendas":     totalVendasValor,
-		"total_vendas_qtd": totalVendasQuantidade,
+		"total_vendas":     totalVendas,
+		"total_vendas_qtd": totalVendasQtd,
 		"total_pedidos":    totalPedidos,
 		"ticket_medio":     ticketMedio,
 		"top_vendedores":   topVendedores,
 		"metas_vendedores": metas,
-		"meta_mes":         metaMensalTotal,
-	}, nil
+		"meta_mes":         metaMes,
+	}
 }
 
 // GetVendasSeries retorna serie temporal de vendas dos ultimos N dias, no
 // formato {dias, pontos} esperado pelo frontend (VendasSeries).
-func (s *DashboardService) GetVendasSeries(ctx context.Context, db *sql.DB, dias int) (map[string]any, error) {
+// vendedorID > 0 restringe aos pedidos do vendedor; 0 (admin) = todos.
+func (s *DashboardService) GetVendasSeries(ctx context.Context, db *sql.DB, dias int, vendedorID int64) (map[string]any, error) {
 	if s.Cfg.Verbose {
-		log.Printf("[dashboard] GetVendasSeries dias=%d", dias)
+		log.Printf("[dashboard] GetVendasSeries dias=%d vendedor_id=%d", dias, vendedorID)
 	}
-	pontos, err := s.repo.GetVendasSeries(ctx, db, dias)
+	pontos, err := s.repo.GetVendasSeries(ctx, db, dias, vendedorID)
 	if err != nil {
 		return nil, err
 	}
+	return vendasSeriesResponse(dias, pontos), nil
+}
+
+// EmptyVendasSeries retorna a serie zerada (todos os N dias com zero), no
+// mesmo formato de GetVendasSeries, sem consultar o banco.
+func (s *DashboardService) EmptyVendasSeries(dias int) map[string]any {
+	if s.Cfg.Verbose {
+		log.Printf("[dashboard] EmptyVendasSeries dias=%d (sem vendedor vinculado)", dias)
+	}
+	return vendasSeriesResponse(dias, s.repo.EmptySeries(dias))
+}
+
+// vendasSeriesResponse monta o payload de /api/dashboard/vendas.
+func vendasSeriesResponse(dias int, pontos []map[string]any) map[string]any {
 	return map[string]any{
 		"dias":   dias,
 		"pontos": pontos,
-	}, nil
+	}
 }
 
 // GetVendedoresRanking retorna ranking paginado de vendedores com vendas e meta.
-func (s *DashboardService) GetVendedoresRanking(ctx context.Context, db *sql.DB, page, limit int) ([]map[string]any, int, error) {
+// vendedorID > 0 restringe à linha do proprio vendedor; 0 (admin) = todos.
+func (s *DashboardService) GetVendedoresRanking(ctx context.Context, db *sql.DB, page, limit int, vendedorID int64) ([]map[string]any, int, error) {
 	if s.Cfg.Verbose {
-		log.Printf("[dashboard] GetVendedoresRanking page=%d limit=%d", page, limit)
+		log.Printf("[dashboard] GetVendedoresRanking page=%d limit=%d vendedor_id=%d", page, limit, vendedorID)
 	}
-	return s.repo.GetVendedoresRanking(ctx, db, page, limit)
+	return s.repo.GetVendedoresRanking(ctx, db, page, limit, vendedorID)
 }
 
 // GetClienteMetrics retorna metricas agregadas da base de clientes: totais

@@ -33,10 +33,24 @@ func periodoWhereClause(periodo string) string {
 	}
 }
 
+// vendedorFilter devolve o trecho SQL "AND <coluna> = ?" e o argumento
+// correspondente quando vendedorID > 0 (usuário normal, escopo restrito).
+// Para vendedorID <= 0 (admin, sem filtro) devolve string vazia e nenhum
+// argumento. A coluna é sempre uma constante do código (nunca entrada do
+// usuário); o valor vai exclusivamente por placeholder.
+func vendedorFilter(coluna string, vendedorID int64) (string, []any) {
+	if vendedorID <= 0 {
+		return "", nil
+	}
+	return " AND " + coluna + " = ?", []any{vendedorID}
+}
+
 // GetVendasTotais retorna (valor_total, quantidade) de vendas no periodo.
 // Se a tabela pedidos não existir, retorna (0, 0).
 // periodo: "today" = dia atual, "week" = ultimos 7 dias, "month" = mes atual.
-func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, periodo string) (float64, int, error) {
+// vendedorID > 0 restringe aos pedidos do vendedor (pedidos.vendedor_id);
+// vendedorID = 0 (admin) considera todos os pedidos.
+func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, periodo string, vendedorID int64) (float64, int, error) {
 	// Tenta buscar da tabela pedidos (se existir).
 	// A query abaixo usa um filtro de periodo baseado na coluna data_pedido (se existir).
 	// Se a tabela nao existir, a query falha e retornamos 0,0.
@@ -44,14 +58,15 @@ func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, p
 	var quantidade sql.NullInt64
 
 	whereClause := periodoWhereClause(periodo)
+	filtroVendedor, args := vendedorFilter("vendedor_id", vendedorID)
 
 	// Query genérica que só funciona se a tabela pedidos existir.
 	q := fmt.Sprintf(`
 		SELECT COALESCE(SUM(valor_total), 0), COUNT(*)
 		FROM pedidos
-		WHERE %s AND status NOT IN ('cancelado', 'devolvido')`, whereClause)
+		WHERE %s AND status NOT IN ('cancelado', 'devolvido')%s`, whereClause, filtroVendedor)
 
-	err := db.QueryRowContext(ctx, q).Scan(&valorTotal, &quantidade)
+	err := db.QueryRowContext(ctx, q, args...).Scan(&valorTotal, &quantidade)
 	if err != nil {
 		if isTableNotFound(err) {
 			// Tabela pedidos ainda não existe - retorna zeros.
@@ -72,15 +87,17 @@ func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, p
 }
 
 // GetTotalPedidos retorna o total de pedidos no periodo.
-func (r *DashboardRepository) GetTotalPedidos(ctx context.Context, db *sql.DB, periodo string) (int, error) {
+// vendedorID > 0 restringe aos pedidos do vendedor; 0 (admin) = todos.
+func (r *DashboardRepository) GetTotalPedidos(ctx context.Context, db *sql.DB, periodo string, vendedorID int64) (int, error) {
 	whereClause := periodoWhereClause(periodo)
+	filtroVendedor, args := vendedorFilter("vendedor_id", vendedorID)
 
 	q := fmt.Sprintf(`
 		SELECT COUNT(*) FROM pedidos
-		WHERE %s AND status NOT IN ('cancelado', 'devolvido')`, whereClause)
+		WHERE %s AND status NOT IN ('cancelado', 'devolvido')%s`, whereClause, filtroVendedor)
 
 	var total sql.NullInt64
-	err := db.QueryRowContext(ctx, q).Scan(&total)
+	err := db.QueryRowContext(ctx, q, args...).Scan(&total)
 	if err != nil {
 		if isTableNotFound(err) {
 			return 0, nil
@@ -96,16 +113,18 @@ func (r *DashboardRepository) GetTotalPedidos(ctx context.Context, db *sql.DB, p
 
 // GetMetaMensalTotal retorna a soma de meta_mensal de todos os vendedores
 // ativos (sem data_desligamento). Se a tabela vendedores nao existir,
-// retorna 0.
-func (r *DashboardRepository) GetMetaMensalTotal(ctx context.Context, db *sql.DB) (float64, error) {
+// retorna 0. vendedorID > 0 considera apenas a meta_mensal do próprio
+// vendedor; 0 (admin) soma todos os vendedores ativos.
+func (r *DashboardRepository) GetMetaMensalTotal(ctx context.Context, db *sql.DB, vendedorID int64) (float64, error) {
 	var metaTotal sql.NullFloat64
 
+	filtroVendedor, args := vendedorFilter("id", vendedorID)
 	q := `
 		SELECT COALESCE(SUM(meta_mensal), 0)
 		FROM vendedores
-		WHERE data_desligamento IS NULL`
+		WHERE data_desligamento IS NULL` + filtroVendedor
 
-	err := db.QueryRowContext(ctx, q).Scan(&metaTotal)
+	err := db.QueryRowContext(ctx, q, args...).Scan(&metaTotal)
 	if err != nil {
 		if isTableNotFound(err) {
 			return 0, nil
@@ -130,20 +149,22 @@ type VendedorRanking struct {
 }
 
 // GetTopVendedores retorna o ranking dos top N vendedores por valor de vendas no mes atual.
-func (r *DashboardRepository) GetTopVendedores(ctx context.Context, db *sql.DB, limit int) ([]VendedorRanking, error) {
+// vendedorID > 0 restringe à linha do próprio vendedor; 0 (admin) = todos.
+func (r *DashboardRepository) GetTopVendedores(ctx context.Context, db *sql.DB, limit int, vendedorID int64) ([]VendedorRanking, error) {
 	// Join entre vendedores e pedidos (se existir).
 	// Para funcionar sem pedidos, retornamos vendedores ativos ordenados por meta.
+	filtroVendedor, args := vendedorFilter("v.id", vendedorID)
 	q := `
 		SELECT
 			v.id,
 			v.nome,
 			v.meta_mensal AS meta
 		FROM vendedores v
-		WHERE v.data_desligamento IS NULL
+		WHERE v.data_desligamento IS NULL` + filtroVendedor + `
 		ORDER BY v.meta_mensal DESC
 		LIMIT ?`
 
-	rows, err := db.QueryContext(ctx, q, limit)
+	rows, err := db.QueryContext(ctx, q, append(args, limit)...)
 	if err != nil {
 		if isTableNotFound(err) {
 			return []VendedorRanking{}, nil
@@ -248,7 +269,9 @@ type MetaVendedor struct {
 }
 
 // GetMetasVendedores retorna todas as metas dos vendedores ativos com comparativo.
-func (r *DashboardRepository) GetMetasVendedores(ctx context.Context, db *sql.DB) ([]MetaVendedor, error) {
+// vendedorID > 0 restringe à linha do próprio vendedor; 0 (admin) = todos.
+func (r *DashboardRepository) GetMetasVendedores(ctx context.Context, db *sql.DB, vendedorID int64) ([]MetaVendedor, error) {
+	filtroVendedor, args := vendedorFilter("v.id", vendedorID)
 	q := `
 		SELECT
 			v.id,
@@ -257,10 +280,10 @@ func (r *DashboardRepository) GetMetasVendedores(ctx context.Context, db *sql.DB
 			v.uf,
 			v.meta_mensal AS meta
 		FROM vendedores v
-		WHERE v.data_desligamento IS NULL
+		WHERE v.data_desligamento IS NULL` + filtroVendedor + `
 		ORDER BY v.meta_mensal DESC`
 
-	rows, err := db.QueryContext(ctx, q)
+	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("GetMetasVendedores: %w", err)
 	}
@@ -347,18 +370,21 @@ func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql
 }
 
 // GetVendasSeries retorna serie temporal (data -> valor, quantidade) dos ultimos N dias.
-func (r *DashboardRepository) GetVendasSeries(ctx context.Context, db *sql.DB, dias int) ([]map[string]any, error) {
+// vendedorID > 0 restringe aos pedidos do vendedor; 0 (admin) = todos.
+func (r *DashboardRepository) GetVendasSeries(ctx context.Context, db *sql.DB, dias int, vendedorID int64) ([]map[string]any, error) {
+	filtroVendedor, filtroArgs := vendedorFilter("vendedor_id", vendedorID)
 	q := `
 		SELECT DATE_FORMAT(data_pedido, '%Y-%m-%d') AS data,
 			   COALESCE(SUM(valor_total), 0) AS valor,
 			   COUNT(*) AS quantidade
 		FROM pedidos
 		WHERE data_pedido >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
-		  AND status NOT IN ('cancelado', 'devolvido')
+		  AND status NOT IN ('cancelado', 'devolvido')` + filtroVendedor + `
 		GROUP BY DATE_FORMAT(data_pedido, '%Y-%m-%d')
 		ORDER BY data ASC`
 
-	rows, err := db.QueryContext(ctx, q, dias)
+	args := append([]any{dias}, filtroArgs...)
+	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		if isTableNotFound(err) {
 			// Gera serie vazia com dias zeros.
@@ -402,6 +428,13 @@ func (r *DashboardRepository) GetVendasSeries(ctx context.Context, db *sql.DB, d
 	// Monta serie completa (todos os dias do range, mesmo sem vendas).
 	series := r.buildFullSeries(ctx, db, dias, seriesMap)
 	return series, nil
+}
+
+// EmptySeries retorna a serie de vendas zerada para os ultimos N dias, no
+// mesmo formato de GetVendasSeries ({dia, total_vendas, total_pedidos}).
+// Usada quando o escopo do usuario nao permite ver nenhum pedido.
+func (r *DashboardRepository) EmptySeries(dias int) []map[string]any {
+	return r.emptySeries(dias)
 }
 
 // emptySeries retorna uma serie com zeros para os ultimos N dias.
@@ -542,7 +575,9 @@ func (r *DashboardRepository) buildFullSeries(ctx context.Context, db *sql.DB, d
 }
 
 // GetVendedoresRanking retorna ranking paginado de vendedores com vendas, meta e percentual.
-func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.DB, page, limit int) ([]map[string]any, int, error) {
+// vendedorID > 0 restringe à linha do próprio vendedor (total coerente: 0
+// ou 1); 0 (admin) = todos os vendedores ativos.
+func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.DB, page, limit int, vendedorID int64) ([]map[string]any, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -554,16 +589,19 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 	}
 	offset := (page - 1) * limit
 
-	// Total de vendedores ativos.
+	// Total de vendedores ativos (no escopo).
+	filtroCount, countArgs := vendedorFilter("id", vendedorID)
 	var total int
 	if err := db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM vendedores WHERE data_desligamento IS NULL`).Scan(&total); err != nil {
+		`SELECT COUNT(*) FROM vendedores WHERE data_desligamento IS NULL`+filtroCount,
+		countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("GetVendedoresRanking count: %w", err)
 	}
 
 	// Lista de vendedores com vendas do mes, ordenados por meta e, em caso de
 	// empate, por atingimento da meta — ordenacao feita no banco, antes do
 	// LIMIT/OFFSET, para que a paginacao seja consistente entre paginas.
+	filtroLista, listaArgs := vendedorFilter("v.id", vendedorID)
 	q := `
 		SELECT
 			v.id, v.nome, v.regiao, v.uf, v.meta_mensal,
@@ -578,11 +616,11 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 			  AND status NOT IN ('cancelado', 'devolvido')
 			GROUP BY vendedor_id
 		) p ON p.vendedor_id = v.id
-		WHERE v.data_desligamento IS NULL
+		WHERE v.data_desligamento IS NULL` + filtroLista + `
 		ORDER BY v.meta_mensal DESC, atingimento_meta DESC
 		LIMIT ? OFFSET ?`
 
-	rows, err := db.QueryContext(ctx, q, limit, offset)
+	rows, err := db.QueryContext(ctx, q, append(listaArgs, limit, offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("GetVendedoresRanking: %w", err)
 	}

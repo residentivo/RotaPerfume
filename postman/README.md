@@ -133,26 +133,40 @@ Exemplos:
 - **Body:** `{ "usuario_id": <int64> }`
 - **Descrição:** Reseta a senha de um usuário para uma senha aleatória gerada pela API, enviada por email ao endereço cadastrado (revoga refresh tokens; `deve_trocar_senha` volta a `true`). Resposta inclui `email_enviado: boolean`.
 
-### Dashboard (`/api/dashboard/*`) — admin only
+### Dashboard (`/api/dashboard/*`) — acesso comum com escopo por vendedor
+
+> **Escopo por vendedor (2026-09-23):** `/api/dashboard/metrics`, `/api/dashboard/vendas` e `/api/dashboard/vendedores` aceitam qualquer usuário autenticado e filtram os números pelo vendedor vinculado ao usuário (`pedidos.vendedor_id`). O filtro é resolvido no handler (`resolverEscopo`):
+> - **admin:** vê todos os números, sem filtro.
+> - **normal com vendedor vinculado:** vê só os próprios números. `meta_mes` é a meta do próprio vendedor. `top_vendedores`, `metas_vendedores` e o ranking de `/vendedores` trazem no máximo a linha dele.
+> - **normal sem vendedor vinculado:** recebe `200` com tudo zerado ou vazio (não é erro). `/metrics` volta zerado, com `top_vendedores: []` e `metas_vendedores: []`. `/vendas` volta com os N dias, todos zerados. `/vendedores` volta com `data: []` e `total=0`, `pages=0`.
+> - `/api/dashboard/clientes` **não mudou**: continua global (métricas da base de clientes).
+>
+> **Regra de negócio: pedidos de cliente transferido (decisão do usuário, 2026-09-23).**
+> - O pedido pertence ao vendedor que o registrou (`pedidos.vendedor_id`), e não ao vendedor que tem o cliente na carteira hoje.
+> - Depois que o cliente é transferido, o novo vendedor **não vê** os pedidos antigos desse cliente. Isso vale para pedidos, pagamentos e Dashboard. Só o admin vê todos.
+> - O vendedor original continua vendo os pedidos que registrou, mas não consegue editá-los. `PUT /api/pedidos/{id}` retorna `400` "cliente não pertence à carteira deste vendedor", porque a edição valida a carteira ativa.
 
 #### GET /api/dashboard/metrics
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado; escopo por vendedor para o normal)
 - **Query:** `?periodo=today|week|month&ano=2026&mes=9`
-- **Descrição:** Métricas gerais (total de vendas, pedidos, ticket médio, vendedores ativos, meta do mês)
+- **Descrição:** Métricas gerais: `total_vendas`, `total_vendas_qtd`, `total_pedidos`, `ticket_medio`, `top_vendedores`, `metas_vendedores` e `meta_mes`.
 - **Período `week`:** considera os últimos 7 dias corridos (`DATE_SUB(CURDATE(), INTERVAL 6 DAY)` até hoje), não a semana civil.
-- **Campo `meta_mes`:** soma real de `vendedores.meta_mensal` dos vendedores ativos (`GetMetaMensalTotal`), sem fallback calculado — dado 100% vindo do banco.
+- **Campo `meta_mes`:** para o admin, é a soma real de `vendedores.meta_mensal` dos vendedores ativos (`GetMetaMensalTotal`), sem fallback calculado. Para o normal, é a meta do próprio vendedor.
+- **Normal sem vendedor:** `200` com todos os valores `0` e as listas `[]` (`EmptyMetrics`).
 
 #### GET /api/dashboard/vendas
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado; escopo por vendedor para o normal)
 - **Query:** `?dias=30` (padrão 30, máx 365)
-- **Descrição:** Série temporal de vendas dos últimos N dias
-- **Resposta:** `data: { dias: number, pontos: [{ dia: "YYYY-MM-DD", total_vendas: number, total_pedidos: number }] }` — um ponto por dia do intervalo, com `total_vendas`/`total_pedidos` zerados nos dias sem venda (nunca omitidos), evitando o gráfico "Vendas nos Últimos 30 Dias" ficar vazio.
+- **Descrição:** Série temporal de vendas dos últimos N dias. Para o normal, considera só os pedidos do próprio vendedor.
+- **Resposta:** `data: { dias: number, pontos: [{ dia: "YYYY-MM-DD", total_vendas: number, total_pedidos: number }] }`. Há um ponto para cada dia do intervalo. Dias sem venda vêm com `total_vendas`/`total_pedidos` zerados, nunca omitidos, para que o gráfico "Vendas nos Últimos 30 Dias" não fique vazio.
+- **Normal sem vendedor:** `200` com os N dias, todos zerados (`EmptyVendasSeries`).
 
 #### GET /api/dashboard/vendedores
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado; escopo por vendedor para o normal)
 - **Query:** `?page=1&limit=20`
-- **Descrição:** Ranking de vendedores (total de vendas, meta, percentual)
+- **Descrição:** Ranking de vendedores (total de vendas, meta, percentual). O normal recebe no máximo a própria linha.
 - **Ordenação:** por `meta_mensal DESC`, com desempate por `atingimento_meta DESC` (calculado no SQL, antes da paginação).
+- **Normal sem vendedor:** `200` com `data: []` e paginação `total=0`, `pages=0`.
 
 ### Histórico de Senhas (`/api/senha-historico/*`) — admin only
 
@@ -235,34 +249,42 @@ Exemplos:
 - **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
 - **Descrição:** Ativa ou inativa o produto (exclusão lógica)
 
-### Pedidos (`/api/pedidos/*`) — admin only
+### Pedidos (`/api/pedidos/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-23)
 
 > Tela master-detail: lista de pedidos + sub-lista de itens (produtos) de cada pedido. Base importada de `dados/erp/pedidos.csv` (28.729 linhas) e `dados/erp/itens_pedido.csv` (197.724 linhas) para as tabelas `pedidos`/`itens_pedido` (ver seção "Importação de pedidos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pedidos"** da collection.
+>
+> **Escopo por carteira em Create/Update (2026-09-23):** todas as rotas de Pedidos usam a cadeia `middleware.JWTMiddleware(cfg, true, false)` (qualquer usuário autenticado). A restrição de dono é aplicada no handler (`apis/rotaperfumes-api/handlers/pedido_handler.go`, mesmo padrão `vendedorScope`/`resolverVendedorScope` de Oportunidades/Visitas). Para usuário `normal`:
+> - **`POST /api/pedidos`:** `403` (`"usuário sem vendedor vinculado"`) se o usuário não tiver vendedor vinculado; `vendedor_id` do payload é **ignorado** e forçado ao vendedor do usuário logado; `cliente_id` precisa pertencer à carteira ativa (`data_fim IS NULL`) desse vendedor, senão `400` (`"cliente não pertence à carteira deste vendedor"`).
+> - **`PUT /api/pedidos/{id}`:** `404` (`"pedido não encontrado"`, corpo idêntico ao de pedido inexistente) se o usuário não tiver vendedor vinculado ou se o pedido pertencer a outro vendedor — evita enumeração de IDs; `vendedor_id` do payload é forçado ao vendedor do usuário (não é possível reatribuir o pedido); `cliente_id` fora da carteira → `400`.
+> - **Efeito colateral aceito:** se o cliente de um pedido antigo tiver sido transferido para outro vendedor, o usuário `normal` não consegue mais editar esse pedido (`400` de carteira). Admin não é afetado.
+> - Usuário `admin` não sofre nenhuma dessas restrições.
 >
 > **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/pedidos/{id}` — hard delete (sem exclusão lógica). Ver detalhes abaixo.
 
 #### GET /api/pedidos
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Query (todos opcionais):** `?page=1&limit=20&status=Faturado&canal=App&cliente_id=1&vendedor_id=1&data_inicio=2026-01-01&data_fim=2026-12-31&q=perfumaria&order_by=data_pedido&order_dir=desc`
 - **Descrição:** Lista pedidos paginada (total + pages), com filtros exatos por `status` (`Cancelado`|`Em separação`|`Entregue`|`Faturado`), `canal` (`App`|`Telefone`|`Visita`|`WhatsApp`), `cliente_id`, `vendedor_id`, intervalo `data_inicio`/`data_fim` (`AAAA-MM-DD`) e busca livre (`q`) pela razão social do cliente. Cada item traz o cabeçalho do pedido enriquecido com `cliente_nome`/`vendedor_nome`, sem os itens.
 - **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome` (default: `id`; `id` é um alias de coluna aceito pela API, mapeado para `pedido_id_origem` — não existe mais campo `id` na resposta); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/pedidos
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Body:** `{ "cliente_id", "vendedor_id", "data_pedido" ("AAAA-MM-DD"), "canal", "status", "itens": [{ "produto_id", "quantidade", "preco_praticado", "desconto_pct" }] }`
 - **Descrição:** Cria um novo pedido com seus itens. `valor_bruto` de cada item e `valor_total` do pedido são calculados no backend (não aceitos no body). `pedido_id_origem` é a PK `BIGINT AUTO_INCREMENT` gerada nativamente pelo MySQL. Exige ao menos um item. Retorna `201` com o pedido criado (incluindo itens); `400` em caso de validação. Não existe mais campo `id` — `pedido_id_origem`/`item_id_origem` são os identificadores.
+- **Escopo (usuário `normal`, 2026-09-23):** `403` `"usuário sem vendedor vinculado"` se não houver vendedor vinculado; `vendedor_id` do body é ignorado e forçado ao vendedor do usuário; `400` `"cliente não pertence à carteira deste vendedor"` se `cliente_id` estiver fora da carteira ativa.
 
 #### GET /api/pedidos/{id}
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira; `404` para pedido de outro vendedor)
 - **Descrição:** Retorna o detalhe de um pedido pelo `pedido_id_origem` (PK; o path param continua se chamando `id` na rota), incluindo a lista de itens (`itens`, cada um enriquecido com `produto_sku`/`produto_descricao` via JOIN) — usado na tela master-detail.
 
 #### PUT /api/pedidos/{id}
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Body:** mesmo formato do `POST /api/pedidos`
 - **Descrição:** Atualiza os dados de um pedido existente e substitui integralmente a lista de itens (delete + insert). `valor_bruto`/`valor_total` são recalculados no backend. Retorna `200` com o pedido atualizado (incluindo itens), `404` se não existir, `400` se o payload for inválido.
+- **Escopo (usuário `normal`, 2026-09-23):** `404` `"pedido não encontrado"` (mesmo corpo de inexistente) se o usuário não tiver vendedor vinculado ou o pedido for de outro vendedor; `vendedor_id` do body é forçado ao vendedor do usuário; `400` `"cliente não pertence à carteira deste vendedor"` se `cliente_id` estiver fora da carteira ativa.
 
 #### DELETE /api/pedidos/{id} (adicionado em 2026-09-22)
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Descrição:** Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete). Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (`"pedido possui pagamentos vinculados: remova-os antes de excluir o pedido"`) ou se já estiver com `status = "Faturado"` (`"pedido faturado não pode ser excluído, apenas ter o status alterado"` — nesse caso a única alteração permitida é a de status, via `PUT`). Escopo idêntico ao `GET`/`PUT`: `404` (não `403`) se o pedido pertencer a outro vendedor. Retorna `204` sem corpo em caso de sucesso.
 
 ### Pagamentos (`/api/pagamentos/*`) — **acesso comum (não é admin only)**
@@ -270,6 +292,12 @@ Exemplos:
 > **Diferente de Clientes/Produtos/Pedidos (todos admin only), Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`.** A cadeia de middleware usada é `middleware.JWTMiddleware(cfg, true, false)` (`requireAuth=true`, `requireAdmin=false`), enquanto as demais telas usam `(cfg, true, true)`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum.
 >
 > **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/pagamentos/{id}` — hard delete (sem exclusão lógica). Ver detalhes abaixo.
+>
+> **Escopo por carteira em Create/Update (2026-09-23):** o mesmo bypass corrigido em Pedidos existia em Pagamentos (apontado pelo 🟣 SecBrain). Agora, para usuário `normal`, o handler (`pagamento_handler.go`, helper `pedidoNoEscopo`) valida que o pedido do pagamento pertence ao vendedor do usuário logado:
+> - **`POST /api/pagamentos`:** `403` (`"usuário sem vendedor vinculado"`) se o usuário não tiver vendedor vinculado; `404` (`"pedido não encontrado"`) se `pedido_id` for de outro vendedor **ou** não existir.
+> - **`PUT /api/pagamentos/{id}`:** `404` (`"pagamento não encontrado"`) se o usuário não tiver vendedor vinculado ou se o pagamento pertencer a pedido de outro vendedor.
+> - **Inconsistência conhecida (follow-up em `tarefas/afazer.md`):** `POST` com `pedido_id` inexistente retorna `400` para `admin` (validação do service) e `404` para `normal` (checagem de escopo).
+> - Usuário `admin` não sofre essas restrições.
 >
 > **Nota de schema:** a chave primária da tabela é literalmente `pagamento_id` (BIGINT AUTO_INCREMENT), não o padrão `id` desacoplado usado nas demais tabelas — decisão explícita do usuário, alinhada 1:1 ao `pagamento_id` do CSV de origem.
 
@@ -282,7 +310,8 @@ Exemplos:
 #### POST /api/pagamentos
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Body:** `{ "pedido_id", "forma_pagamento", "parcelas", "valor", "taxa_pct", "valor_liquido", "data_vencimento" ("AAAA-MM-DD"), "data_pagamento" (opcional, "AAAA-MM-DD"), "status_pagamento" }`
-- **Descrição:** Cria um novo pagamento. `pedido_id` deve existir em `pedidos`. `valor_liquido` é sempre exigido explicitamente no payload — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento em relação ao cálculo direto). `pagamento_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com o pagamento criado; `400` em caso de validação (inclusive `pedido_id` inexistente).
+- **Descrição:** Cria um novo pagamento. `pedido_id` deve existir em `pedidos`. `valor_liquido` é sempre exigido explicitamente no payload — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento em relação ao cálculo direto). `pagamento_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com o pagamento criado; `400` em caso de validação (inclusive `pedido_id` inexistente, para `admin`).
+- **Escopo (usuário `normal`, 2026-09-23):** `403` `"usuário sem vendedor vinculado"` se não houver vendedor vinculado; `404` `"pedido não encontrado"` se `pedido_id` pertencer a outro vendedor ou não existir.
 
 #### GET /api/pagamentos/{id}
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
@@ -292,10 +321,29 @@ Exemplos:
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Body:** mesmo formato do `POST /api/pagamentos`, exceto `pedido_id`
 - **Descrição:** Atualiza os campos editáveis de um pagamento existente. `pagamento_id` e `pedido_id` **não** são editáveis por esta rota (o vínculo com o pedido de origem é definitivo — para reatribuir a outro pedido, o fluxo correto é excluir/recriar). Retorna `200` com o pagamento atualizado, `404` se não existir, `400` se o payload for inválido.
+- **Escopo (usuário `normal`, 2026-09-23):** `404` `"pagamento não encontrado"` se o usuário não tiver vendedor vinculado ou o pagamento pertencer a pedido de outro vendedor.
 
 #### DELETE /api/pagamentos/{id} (adicionado em 2026-09-22)
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Descrição:** Exclui definitivamente um pagamento (hard delete, sem soft-delete). Bloqueado com `409` se `status_pagamento` já for `"Pago"` ou `"Pago com atraso"` (`"pagamento já quitado não pode ser excluído"`) — preserva a trilha financeira de pagamentos já quitados. Escopo idêntico ao `GET`/`PUT`: `404` (não `403`) se o pagamento pertencer a pedido de outro vendedor. Retorna `204` sem corpo em caso de sucesso.
+
+### Vendedores (`/api/vendedores/*`) — admin only, exceto 2 GETs (atualizado em 2026-09-23)
+
+> Até 2026-09-22 todas as rotas `/api/vendedores*` usavam `JWTMiddleware(cfg, true, false)` (acesso comum) — a restrição a admin existia só no frontend. O 🟣 SecBrain identificou que um usuário `normal` podia gerenciar vendedores via API, ler a carteira de qualquer vendedor (`GET /api/vendedores/{id}`) e — crítico — transferir clientes de outros vendedores para a própria carteira (`POST /api/vendedores/{id}/clientes`). Desde 2026-09-23 (`routes/routes.go`):
+
+| Método | Rota | Acesso | Usuário `normal` |
+|--------|------|--------|------------------|
+| GET | `/api/vendedores` | acesso comum | `200` (lista para popular selects) |
+| GET | `/api/vendedores/{id}/clientes` | acesso comum | `200` (dropdown em cascata Vendedor → Cliente) |
+| POST | `/api/vendedores` | admin only | `403` |
+| GET | `/api/vendedores/{id}` | admin only | `403` |
+| PUT | `/api/vendedores/{id}` | admin only | `403` |
+| DELETE | `/api/vendedores/{id}` | admin only (inativa via `data_desligamento`) | `403` |
+| POST | `/api/vendedores/{id}/reativar` | admin only | `403` |
+| POST | `/api/vendedores/{id}/clientes` | admin only (vincula/transfere cliente) | `403` |
+| DELETE | `/api/vendedores/{id}/clientes/{clienteId}` | admin only (encerra vínculo) | `403` |
+
+> O `403` retorna `{"success": false, "error": "acesso restrito a administradores"}`. Observação: `GET /api/vendedores` ainda expõe `meta_mensal` a usuários `normal` (follow-up opcional registrado em `tarefas/afazer.md`).
 
 ### Oportunidades (`/api/oportunidades/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-22)
 
@@ -484,6 +532,8 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Lista de vendedores retornada`
 - `Paginação presente`
 - `Cada vendedor tem métricas`
+
+> Os testes de Dashboard usam `{{admin_token}}`. Se forem executados com `{{vendedor_token}}` (normal), os números vêm restritos ao próprio vendedor, e o ranking tem no máximo 1 linha. Se o usuário normal não tiver vendedor vinculado, os números vêm zerados e as listas vazias, e os testes continuam passando, porque a estrutura da resposta é a mesma.
 
 ### Histórico de Senhas — Todos
 - `Status 200`

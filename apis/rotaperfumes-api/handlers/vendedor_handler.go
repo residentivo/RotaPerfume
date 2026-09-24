@@ -53,7 +53,7 @@ func (h *VendedorHandler) ListVendedores(w http.ResponseWriter, r *http.Request)
 //
 // Response: {success, data: vendedor com a lista de clientes vinculados
 // (carteira ativa), error}
-// Acesso comum.
+// Admin only (JWTMiddleware com requireAdmin=true; role=normal recebe 403).
 func (h *VendedorHandler) GetVendedor(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -169,7 +169,7 @@ func vendedorErroParaStatus(err error) (status int, msg string, ok bool) {
 //
 // Body: { "nome": string, "regiao": string, "uf": string, "data_admissao": "AAAA-MM-DD" (opcional, default hoje), "meta_mensal": number }
 // Retorna: 201 com o vendedor criado.
-// Acesso comum.
+// Admin only (JWTMiddleware com requireAdmin=true; role=normal recebe 403).
 func (h *VendedorHandler) CreateVendedor(w http.ResponseWriter, r *http.Request) {
 	role, _ := middleware.GetRole(r.Context())
 
@@ -207,7 +207,7 @@ func (h *VendedorHandler) CreateVendedor(w http.ResponseWriter, r *http.Request)
 // Body: { "nome": string, "regiao": string, "uf": string, "data_admissao": "AAAA-MM-DD", "meta_mensal": number }
 // data_desligamento não é editável por esta rota (ver DeleteVendedor).
 // Retorna: 200 com o vendedor atualizado, 404 se não existir, 400 se o payload for inválido.
-// Acesso comum.
+// Admin only (JWTMiddleware com requireAdmin=true; role=normal recebe 403).
 func (h *VendedorHandler) UpdateVendedor(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -251,7 +251,7 @@ func (h *VendedorHandler) UpdateVendedor(w http.ResponseWriter, r *http.Request)
 // carteiras/pedidos vinculados ao vendedor (ver ReativarVendedor para
 // reverter).
 // Retorna: 200 com o vendedor atualizado, 404 se não existir.
-// Acesso comum.
+// Admin only (JWTMiddleware com requireAdmin=true; role=normal recebe 403).
 func (h *VendedorHandler) DeleteVendedor(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -280,7 +280,7 @@ func (h *VendedorHandler) DeleteVendedor(w http.ResponseWriter, r *http.Request)
 // Reverte o soft-delete: limpa data_desligamento, tornando o vendedor ativo
 // novamente (ver DeleteVendedor).
 // Retorna: 200 com o vendedor atualizado, 404 se não existir.
-// Acesso comum.
+// Admin only (JWTMiddleware com requireAdmin=true; role=normal recebe 403).
 func (h *VendedorHandler) ReativarVendedor(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -317,7 +317,7 @@ type VincularClienteRequest struct {
 // Body: { "cliente_id": number }
 // Retorna: 201 com o ClienteResumo do cliente vinculado, 404 se vendedor ou
 // cliente não existirem, 400 se o payload for inválido.
-// Acesso comum.
+// Admin only (JWTMiddleware com requireAdmin=true; role=normal recebe 403).
 func (h *VendedorHandler) VincularCliente(w http.ResponseWriter, r *http.Request) {
 	vendedorID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -357,7 +357,7 @@ func (h *VendedorHandler) VincularCliente(w http.ResponseWriter, r *http.Request
 // vínculos do cliente com outros vendedores).
 // Retorna: 200 se encerrado com sucesso, 404 se não houver vínculo ativo
 // entre os dois.
-// Acesso comum.
+// Admin only (JWTMiddleware com requireAdmin=true; role=normal recebe 403).
 func (h *VendedorHandler) DesvincularCliente(w http.ResponseWriter, r *http.Request) {
 	vendedorID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {

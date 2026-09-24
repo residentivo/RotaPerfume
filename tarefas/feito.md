@@ -4,6 +4,114 @@
 
 ---
 
+## Validar com o negócio: pedido com cliente transferido (visibilidade de pedidos antigos + escopo do Dashboard) — 2026-09-23
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** efeito colateral aceito no card "Scope check em Create/Update de Pedidos" (2026-09-23). Um pedido cujo cliente foi transferido para outro vendedor não pode mais ser editado pelo vendedor original (`400` carteira).
+
+**Decisão do usuário (2026-09-23):**
+- "Não mostrar os pedidos antigos do cliente ao novo vendedor; só o admin vê todos."
+- Dashboard: "só os números dele".
+
+**Regra resultante:**
+- O pedido pertence ao vendedor que o registrou (`pedidos.vendedor_id`).
+- Depois da transferência do cliente, o novo vendedor não vê os pedidos antigos desse cliente. Isso vale para pedidos, pagamentos e Dashboard.
+- O vendedor original continua vendo os próprios pedidos, mas não consegue editá-los (`400` carteira, comportamento mantido).
+- O admin vê tudo.
+
+**O que foi feito:**
+- **🟣 SecBrain:** a auditoria mostrou que pedidos e pagamentos já filtravam por `pedidos.vendedor_id`, então a regra já era cumprida nessas telas. O Dashboard era global, e qualquer usuário autenticado via os números de todos. Esse era o único gap.
+- **🟡 BackBrain:**
+  - `apis/rotaperfumes-api/handlers/dashboard_handler.go`: novo helper `resolverEscopo`, usado em `GetMetrics`, `GetVendas` e `GetVendedores`. Usuário normal sem vendedor recebe `200` zerado ou vazio.
+  - `apis/rotaperfumes-api/services/dashboard_service.go`: parâmetro `vendedorID` em `GetMetrics`, `GetVendasSeries` e `GetVendedoresRanking`. Novos `EmptyMetrics` e `EmptyVendasSeries`.
+  - `apis/shared/repositories/dashboard_repository.go`: filtro `vendedorFilter` aplicado às consultas e novo `EmptySeries`.
+  - Testes existentes ajustados para as novas assinaturas.
+  - `/api/dashboard/clientes` não mudou.
+- **🟢 FrontBrain:** `frontend/src/app/dashboard/page.tsx`:
+  - Rótulos "Minhas Vendas", "Meus Pedidos" e "Minha Meta" para o usuário normal.
+  - Card "Meu Desempenho" no lugar do ranking.
+  - Aviso para usuário sem vendedor vinculado.
+  - Tolerância a `null` e `[]` nas listas.
+- **🔴 TestBrain:** 4 arquivos de teste novos:
+  - `apis/shared/repositories/dashboard_repository_escopo_test.go`
+  - `apis/shared/repositories/dashboard_repository_internal_test.go`
+  - `apis/rotaperfumes-api/handlers/dashboard_escopo_handler_test.go`
+  - `apis/rotaperfumes-api/services/dashboard_service_escopo_test.go`
+
+  Cobertura: `handlers` 78,1%, `services` 93,7%, `repositories` 80,3%.
+
+**Documentação (🔵 SubBrain):**
+- `postman/README.md`: a seção Dashboard deixou de dizer "admin only" e agora tem uma nota de escopo por vendedor (admin, normal, normal sem vendedor) e a regra de negócio do cliente transferido. `metrics`, `vendas` e `vendedores` descrevem o comportamento do normal. Há também uma nota nos testes automatizados sobre o uso de `{{vendedor_token}}`.
+- `postman/collection.json`:
+  - As descrições de "Dashboard — Métricas", "Vendas" e "Ranking Vendedores" agora documentam o escopo e a regra de negócio. O `403` saiu dos códigos de erro e entrou o `500`.
+  - Os exemplos "403 Não é admin" foram substituídos por "200 Normal (só os próprios números / só a própria linha)" e "200 Normal sem vendedor vinculado" (zerado, N dias zerados, lista vazia).
+
+**Follow-ups:** registrados em `afazer.md`: bug de centavos em `enrichWithVendas`, `null` vs `[]`, vendedor desligado, escopo de `/dashboard/clientes` e teste manual do Dashboard.
+
+## Aplicar scope check (owner check + client scoping) em Create/Update de Pedidos — 2026-09-23
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** identificado por 🟣 SecBrain e confirmado por 🟡 BackBrain durante o card "Menu do vendedor: Visitas/Oportunidades + escopo por carteira; Produtos movido para Administração" (2026-09-22). Gap pré-existente em `pedido_handler.go`.
+
+**Problema:** `CreatePedido`/`UpdatePedido` aceitavam `vendedor_id` do payload sem validar escopo. Um usuário `normal` podia forjar ou reatribuir um pedido para outro vendedor. O 🟣 SecBrain achou o mesmo bypass em Pagamentos (Create/Update), que foi incluído no card.
+
+**O que foi feito:**
+- **🟣 SecBrain:** parecer confirmando o gap em Pedidos e ampliando o escopo para Pagamentos. Definiu os status: `403` para usuário sem vendedor no Create, `404` com corpo idêntico ao de registro inexistente (sem enumeração) no Update/owner check, e `400` para cliente fora da carteira.
+- **🟡 BackBrain:**
+  - `apis/rotaperfumes-api/handlers/pedido_handler.go`:
+    - `CreatePedido`: `403` "usuário sem vendedor vinculado"; `vendedor_id` forçado ao vendedor do usuário; `400` "cliente não pertence à carteira deste vendedor".
+    - `UpdatePedido`: `404` "pedido não encontrado" para usuário sem vendedor, pedido de outro vendedor ou inexistente (corpo idêntico); `vendedor_id` forçado; `400` para cliente fora da carteira.
+  - `apis/rotaperfumes-api/handlers/pagamento_handler.go`:
+    - Novo helper `pedidoNoEscopo`.
+    - `CreatePagamento`: `403` sem vendedor; `404` "pedido não encontrado" para pedido de outro vendedor ou inexistente.
+    - `UpdatePagamento`: `404` "pagamento não encontrado" sem vendedor ou para pagamento de outro vendedor.
+  - Testes existentes ajustados: `pagamento_handler_test.go` passou a usar token admin em Create/Update; `pedido_handler_test.go` ganhou mocks de escopo.
+- **🟢 FrontBrain:** `frontend/src/components/admin/PedidoModal.tsx`:
+  - Usuário `normal`: vendedor travado em `user.id_vendedor`; se não houver vendedor, mostra aviso e bloqueia o botão Salvar.
+  - Clientes carregados por `apiListClientesDoVendedor`, em cascata vendedor → cliente (também para admin).
+  - Na edição, o cliente atual é mantido na lista como "(fora da carteira)".
+  - Mensagem amigável para o `400` de carteira.
+  - Typecheck OK; lint não configurado.
+- **🔴 TestBrain:** novo `apis/rotaperfumes-api/handlers/escopo_escrita_pedido_pagamento_test.go`. `go test ./...` e `go vet` OK. Cobertura de `handlers`: 73,9% → 77,7%.
+
+**Efeito colateral aceito:** um pedido cujo cliente foi transferido para outro vendedor não pode mais ser editado pelo usuário `normal` (`400`). Precisa ser validado com o negócio (follow-up em `afazer.md`).
+
+**Documentação (🔵 SubBrain):**
+- `postman/README.md`: seção Pedidos deixou de dizer "admin only" e agora descreve o escopo por carteira em POST/PUT. Seção Pagamentos ganhou as regras de escopo em POST/PUT e a nota sobre a inconsistência 400/404.
+- `postman/collection.json`:
+  - "Criar Pedido" e "Editar Pedido" renomeados para "acesso comum, escopo por carteira", com descrições e códigos de erro atualizados.
+  - Os exemplos "403 Não é admin" foram substituídos por "400 Cliente fora da carteira" e "403 sem vendedor vinculado".
+  - "Criar Pagamento" e "Editar Pagamento" com escopo documentado e novos exemplos `404` e `403`.
+
+## Rotas de Vendedores (`/api/vendedores*`) restritas a admin no backend — 2026-09-23
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** identificado por 🟢 FrontBrain (2026-09-22) durante o bugfix "menu 'Vendedores' aparecia para login de vendedor".
+
+**Problema:** todas as rotas `/api/vendedores*` usavam `JWTMiddleware(cfg, true, false)`, ou seja, acesso comum. A restrição a admin existia só no frontend. O 🟣 SecBrain encontrou dois riscos além do card:
+- `GET /api/vendedores/{id}` expunha a carteira de qualquer vendedor.
+- `POST /api/vendedores/{id}/clientes` permitia a um usuário `normal` transferir clientes de outros vendedores para a própria carteira (**crítico**).
+
+**O que foi feito:**
+- **🟣 SecBrain:** parecer confirmando a intenção admin-only. Manteve com acesso comum só as duas rotas GET usadas por fluxos de vendedor: `GET /api/vendedores` (selects) e `GET /api/vendedores/{id}/clientes` (dropdown em cascata).
+- **🟡 BackBrain:** `apis/rotaperfumes-api/routes/routes.go` passou a usar `requireAdmin=true` (usuário `normal` recebe `403`) em:
+  - `POST /api/vendedores`
+  - `GET/PUT/DELETE /api/vendedores/{id}`
+  - `POST /api/vendedores/{id}/reativar`
+  - `POST /api/vendedores/{id}/clientes`
+  - `DELETE /api/vendedores/{id}/clientes/{clienteId}`
+
+  Doc comments de `vendedor_handler.go` e o índice de rotas em `routes.go` foram atualizados.
+- **🔴 TestBrain:** novo `apis/rotaperfumes-api/routes/routes_test.go`, que cobre `403` para `normal` nas rotas restritas e acesso para `admin` e nas rotas comuns. Cobertura de `routes`: 0% → 97,6%.
+
+**Documentação (🔵 SubBrain):**
+- `postman/README.md`: nova seção "Vendedores" com a tabela de acesso por rota.
+- `postman/collection.json`: nota em "Listar Clientes do Vendedor" sobre quais rotas continuam com acesso comum e quais passaram a ser admin only. A collection não tinha requests para as demais rotas de vendedores.
+
+**Responsável:** 🤍 MegaBrain
+
+---
+
 ## Bugfix: sem mensagem clara ao trocar senha pela mesma senha atual — 2026-09-23
 **Agentes:** 🟡 BackBrain + 🟢 FrontBrain (em paralelo)
 

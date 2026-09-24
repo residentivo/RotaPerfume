@@ -6,6 +6,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { getUser } from "@/lib/auth";
 import {
   apiDashboardMetrics,
   apiDashboardVendas,
@@ -484,7 +485,77 @@ function IconUsers() {
 
 // ─── Content ─────────────────────────────────────────────────────────────────
 
+// ─── Meu Desempenho (usuario normal) ─────────────────────────────────────────
+
+function MeuDesempenho({ vendedor }: { vendedor: VendedorRanking | undefined }) {
+  if (!vendedor) {
+    return (
+      <div className="py-8 text-center text-sm text-slate-400">
+        Nenhum dado de desempenho encontrado
+      </div>
+    );
+  }
+
+  const pct = vendedor.atingimento_meta ?? 0;
+  const barColor =
+    pct >= 100 ? "bg-emerald-500" : pct >= 70 ? "bg-amber-400" : "bg-red-400";
+
+  const stats: { label: string; value: string; highlight?: boolean }[] = [
+    { label: "Vendas", value: fmtCurrency(vendedor.total_vendas ?? 0), highlight: true },
+    { label: "Pedidos", value: fmtNumber(vendedor.total_pedidos ?? 0) },
+    { label: "Ticket Medio", value: fmtCurrency(vendedor.ticket_medio ?? 0) },
+    { label: "Meta", value: vendedor.meta != null ? fmtCurrency(vendedor.meta) : "-" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm font-medium text-slate-900">
+        {vendedor.vendedor_id} - {vendedor.vendedor_nome}
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+              {s.label}
+            </p>
+            <p
+              className={[
+                "mt-1 text-lg font-semibold",
+                s.highlight ? "text-emerald-700" : "text-slate-900",
+              ].join(" ")}
+            >
+              {s.value}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div>
+        <div className="mb-1 flex items-center justify-between text-xs">
+          <span className="font-medium text-slate-600">Atingimento da meta</span>
+          <span className="font-medium text-slate-600">
+            {pct > 0 ? fmtPercent(pct) : "-"}
+          </span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className={["h-full rounded-full transition-all", barColor].join(" ")}
+            style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardContent() {
+  // ProtectedRoute so renderiza os filhos apos validar a sessao em
+  // /api/auth/me (e ressincronizar o cache), entao ler o usuario aqui e
+  // seguro no client. O escopo real (admin x vendedor) e aplicado pelo
+  // backend; aqui so muda a apresentacao.
+  const [currentUser] = useState(() => getUser());
+  const isAdmin = currentUser?.role === "admin";
+  const semVendedor = !isAdmin && !currentUser?.id_vendedor;
+
   const [periodo, setPeriodo] = useState<PeriodFilter>("month");
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [vendasSeries, setVendasSeries] = useState<VendasSeries | null>(null);
@@ -506,7 +577,7 @@ function DashboardContent() {
       ]);
       setMetrics(m);
       setVendasSeries(v);
-      setVendedores((vd.data ?? []).slice(0, 10));
+      setVendedores((Array.isArray(vd?.data) ? vd.data : []).slice(0, 10));
       setClienteMetrics(cm);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar dados");
@@ -533,8 +604,12 @@ function DashboardContent() {
 
   const displayVendas: VendasSeries = {
     dias: vendasSeries?.dias ?? chartsDias,
-    pontos: vendasSeries?.pontos ?? [],
+    pontos: Array.isArray(vendasSeries?.pontos) ? vendasSeries.pontos : [],
   };
+
+  // Usuario normal: o ranking vem com no maximo 1 linha (a dele).
+  const meuDesempenho = isAdmin ? undefined : vendedores[0];
+  const temMeta = displayMetrics.meta_mes != null && displayMetrics.meta_mes > 0;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -545,7 +620,9 @@ function DashboardContent() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
             <p className="mt-0.5 text-sm text-slate-500">
-              Visao geral das metricas de vendas
+              {isAdmin
+                ? "Visao geral das metricas de vendas"
+                : "Suas metricas de vendas"}
             </p>
           </div>
 
@@ -577,33 +654,56 @@ function DashboardContent() {
           </Alert>
         )}
 
+        {semVendedor ? (
+          <Alert variant="warning" className="mb-6">
+            Usuario sem vendedor vinculado. As metricas de vendas sao exibidas
+            apenas para usuarios vinculados a um vendedor; solicite o vinculo a
+            um administrador.
+          </Alert>
+        ) : (
+        <>
         {/* KPI Cards */}
         <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
-            label="Total de Vendas"
+            label={isAdmin ? "Total de Vendas" : "Minhas Vendas"}
             value={fmtCurrency(displayMetrics.total_vendas)}
             sub={`Periodo: ${PERIOD_LABELS[periodo]}`}
             accent
             icon={<IconCurrency />}
           />
           <KpiCard
-            label="Pedidos"
+            label={isAdmin ? "Pedidos" : "Meus Pedidos"}
             value={fmtNumber(displayMetrics.total_pedidos)}
             sub="Pedidos realizados"
             icon={<IconCart />}
           />
           <KpiCard
-            label="Ticket Medio"
+            label={isAdmin ? "Ticket Medio" : "Meu Ticket Medio"}
             value={fmtCurrency(displayMetrics.ticket_medio)}
             sub="Por pedido"
             icon={<IconTicket />}
           />
-          <KpiCard
-            label="Ranking Vendedores"
-            value={vendedores.length > 0 ? fmtCurrency(vendedores[0]?.total_vendas ?? 0) : "-"}
-            sub={vendedores[0] ? `Lider: ${vendedores[0].vendedor_nome}` : "Carregando..."}
-            icon={<IconRanking />}
-          />
+          {isAdmin ? (
+            <KpiCard
+              label="Ranking Vendedores"
+              value={vendedores.length > 0 ? fmtCurrency(vendedores[0]?.total_vendas ?? 0) : "-"}
+              sub={vendedores[0] ? `Lider: ${vendedores[0].vendedor_nome}` : "Carregando..."}
+              icon={<IconRanking />}
+            />
+          ) : (
+            <KpiCard
+              label="Minha Meta"
+              value={temMeta ? fmtCurrency(displayMetrics.meta_mes ?? 0) : "-"}
+              sub={
+                temMeta
+                  ? `Atingido: ${fmtPercent(
+                      (displayMetrics.total_vendas / (displayMetrics.meta_mes ?? 1)) * 100
+                    )}`
+                  : "Sem meta cadastrada"
+              }
+              icon={<IconRanking />}
+            />
+          )}
         </div>
 
         {/* Charts Row */}
@@ -611,7 +711,11 @@ function DashboardContent() {
           {/* Grafico de Vendas */}
           <Card className="lg:col-span-2">
             <CardHeader
-              title="Vendas nos Ultimos 30 Dias"
+              title={
+                isAdmin
+                  ? "Vendas nos Ultimos 30 Dias"
+                  : `Minhas Vendas nos Ultimos ${chartsDias} Dias`
+              }
               subtitle={`Total: ${fmtCurrency(displayVendas.pontos.reduce((s, p) => s + p.total_vendas, 0))}`}
               action={
                 <select
@@ -637,28 +741,34 @@ function DashboardContent() {
 
           {/* Metas */}
           <Card>
-            <CardHeader title="Acompanhamento de Metas" />
+            <CardHeader title={isAdmin ? "Acompanhamento de Metas" : "Minha Meta"} />
             <div className="space-y-4">
-              {displayMetrics.meta_mes != null && displayMetrics.meta_mes > 0 ? (
+              {temMeta ? (
                 <GoalProgress
-                  label="Meta Mensal de Vendas"
+                  label={isAdmin ? "Meta Mensal de Vendas" : "Minha Meta Mensal"}
                   current={displayMetrics.total_vendas}
-                  target={displayMetrics.meta_mes}
+                  target={displayMetrics.meta_mes ?? 0}
                 />
               ) : (
                 <div className="py-8 text-center text-sm text-slate-400">
-                  Nenhuma meta de vendas cadastrada
+                  {isAdmin
+                    ? "Nenhuma meta de vendas cadastrada"
+                    : "Nenhuma meta cadastrada para voce"}
                 </div>
               )}
             </div>
           </Card>
         </div>
 
-        {/* Ranking Table */}
+        {/* Ranking Table (admin) / Meu Desempenho (normal) */}
         <Card>
           <CardHeader
-            title="Ranking de Vendedores"
-            subtitle="Top 10 por volume de vendas no periodo"
+            title={isAdmin ? "Ranking de Vendedores" : "Meu Desempenho"}
+            subtitle={
+              isAdmin
+                ? "Top 10 por volume de vendas no periodo"
+                : "Seus indicadores no ranking de vendas"
+            }
             action={
               <Button
                 variant="ghost"
@@ -674,10 +784,14 @@ function DashboardContent() {
             <div className="flex items-center justify-center py-12">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
             </div>
-          ) : (
+          ) : isAdmin ? (
             <RankingTable vendedores={vendedores} />
+          ) : (
+            <MeuDesempenho vendedor={meuDesempenho} />
           )}
         </Card>
+        </>
+        )}
 
         {/* Clientes */}
         <div className="mt-6">

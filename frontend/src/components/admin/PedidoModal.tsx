@@ -10,11 +10,30 @@ import {
   PedidoDetalhe,
   PedidoInput,
   ItemPedidoInput,
-  Cliente,
+  ClienteResumo,
   Vendedor,
   Produto,
 } from "@/lib/types";
-import { apiListClientes, apiListVendedores, apiListProdutos } from "@/lib/api";
+import {
+  apiListVendedores,
+  apiListProdutos,
+  apiListClientesDoVendedor,
+} from "@/lib/api";
+import { getUser } from "@/lib/auth";
+
+// Traduz mensagens de erro do backend para textos mais amigaveis. Hoje trata
+// o 400 "cliente nao pertence a carteira deste vendedor" (escopo por carteira
+// aplicado em POST/PUT /api/pedidos para usuarios nao-admin).
+function friendlyPedidoError(message: string): string {
+  const normalized = message
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+  if (normalized.includes("nao pertence") && normalized.includes("carteira")) {
+    return "O cliente selecionado nao pertence a carteira ativa do vendedor. Escolha um cliente da carteira e tente novamente.";
+  }
+  return message;
+}
 
 interface PedidoModalProps {
   open: boolean;
@@ -94,19 +113,39 @@ export function PedidoModal({
 
   // Listas auxiliares para os selects (mesmo padrão do UserModal com
   // apiListVendedores).
-  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loadingAux, setLoadingAux] = useState(false);
   const [auxError, setAuxError] = useState<string | null>(null);
 
+  // Clientes em cascata pelo vendedor selecionado (carteira ativa via
+  // GET /api/vendedores/{id}/clientes), mesmo padrao de Visita/Oportunidade.
+  const [clientes, setClientes] = useState<ClienteResumo[]>([]);
+  const [loadingClientes, setLoadingClientes] = useState(false);
+  const [clientesError, setClientesError] = useState<string | null>(null);
+
+  // Usuario logado (lido no client ao abrir o modal). Usuario nao-admin tem o
+  // vendedor travado no proprio id_vendedor — o backend tambem forca isso em
+  // POST/PUT /api/pedidos.
+  const [isAdmin, setIsAdmin] = useState(true);
+  const [ownVendedorId, setOwnVendedorId] = useState<number | null>(null);
+  const [ownVendedorNome, setOwnVendedorNome] = useState<string | null>(null);
+  const semCarteira = !isAdmin && !ownVendedorId;
+
   useEffect(() => {
     if (open) {
       setError(null);
       setSubmitting(false);
+      const user = getUser();
+      const admin = user?.role === "admin";
+      const ownId = !admin && user?.id_vendedor ? user.id_vendedor : null;
+      setIsAdmin(admin);
+      setOwnVendedorId(ownId);
+      setOwnVendedorNome(!admin ? user?.vendedor_nome ?? null : null);
+      const lockedVendedor = !admin ? (ownId ? String(ownId) : "") : null;
       if (mode === "edit" && pedido) {
         setClienteId(String(pedido.cliente_id));
-        setVendedorId(String(pedido.vendedor_id));
+        setVendedorId(lockedVendedor ?? String(pedido.vendedor_id));
         setDataPedido(pedido.data_pedido ? pedido.data_pedido.slice(0, 10) : "");
         setCanal(pedido.canal);
         setStatus(pedido.status);
@@ -123,7 +162,7 @@ export function PedidoModal({
         );
       } else {
         setClienteId("");
-        setVendedorId("");
+        setVendedorId(lockedVendedor ?? "");
         setDataPedido(todayISO());
         setCanal("App");
         setStatus("Em separação");
@@ -158,14 +197,9 @@ export function PedidoModal({
       return all;
     };
 
-    Promise.all([
-      apiListClientes(1, 100, { ativo: true }),
-      apiListVendedores(),
-      loadAllProdutos(),
-    ])
-      .then(([clientesRes, vendedoresRes, todosProdutos]) => {
+    Promise.all([apiListVendedores(), loadAllProdutos()])
+      .then(([vendedoresRes, todosProdutos]) => {
         if (cancelled) return;
-        setClientes(clientesRes.data);
         setVendedores(vendedoresRes);
         setProdutos(todosProdutos);
       })
@@ -174,7 +208,7 @@ export function PedidoModal({
           const message =
             err instanceof Error
               ? err.message
-              : "Erro ao carregar clientes/vendedores/produtos.";
+              : "Erro ao carregar vendedores/produtos.";
           setAuxError(message);
         }
       })
@@ -186,27 +220,111 @@ export function PedidoModal({
     };
   }, [open]);
 
-  const clienteOptions = useMemo(
-    () => [
-      { value: "", label: "Selecione um cliente" },
-      ...clientes.map((c) => ({
-        value: String(c.cliente_id_origem),
-        label: `#${c.cliente_id_origem} - ${c.razao_social}`,
-      })),
-    ],
-    [clientes]
-  );
+  // Na edicao, o cliente original do pedido deve continuar selecionado mesmo
+  // que nao esteja (mais) na carteira ativa do vendedor. So vale enquanto o
+  // vendedor selecionado for o proprio vendedor do pedido.
+  const clienteOriginal =
+    mode === "edit" && pedido && vendedorId === String(pedido.vendedor_id)
+      ? { id: String(pedido.cliente_id), nome: pedido.cliente_nome }
+      : null;
+  const clienteOriginalId = clienteOriginal?.id ?? "";
 
-  const vendedorOptions = useMemo(
-    () => [
-      { value: "", label: "Selecione um vendedor" },
+  // Dropdown em cascata: sempre que o Vendedor selecionado mudar, recarrega
+  // a lista de Clientes via GET /api/vendedores/{id}/clientes (mesmo padrao
+  // de VisitaModal/OportunidadeModal, para admin e usuario comum).
+  useEffect(() => {
+    if (!open) return;
+    if (!vendedorId) {
+      setClientes([]);
+      setClientesError(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingClientes(true);
+    setClientesError(null);
+    apiListClientesDoVendedor(Number(vendedorId))
+      .then((res) => {
+        if (cancelled) return;
+        setClientes(res);
+        // Limpa a selecao se o cliente nao pertence a carteira do vendedor,
+        // exceto o cliente original do pedido em edicao.
+        setClienteId((prev) =>
+          prev &&
+          (res.some((c) => String(c.id) === prev) || prev === clienteOriginalId)
+            ? prev
+            : ""
+        );
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          const message =
+            err instanceof Error
+              ? err.message
+              : "Erro ao carregar clientes do vendedor.";
+          setClientesError(message);
+          setClientes([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingClientes(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, vendedorId]);
+
+  const clienteOptions = useMemo(() => {
+    const opts = [
+      {
+        value: "",
+        label: !vendedorId
+          ? "Selecione um vendedor primeiro"
+          : loadingClientes
+          ? "Carregando clientes..."
+          : "Selecione um cliente",
+      },
+      ...clientes.map((c) => ({
+        value: String(c.id),
+        label: `#${c.id} - ${c.razao_social}`,
+      })),
+    ];
+    if (
+      clienteOriginal &&
+      !clientes.some((c) => String(c.id) === clienteOriginal.id)
+    ) {
+      opts.push({
+        value: clienteOriginal.id,
+        label: `#${clienteOriginal.id} - ${clienteOriginal.nome}${
+          loadingClientes ? "" : " (fora da carteira)"
+        }`,
+      });
+    }
+    return opts;
+  }, [clientes, vendedorId, loadingClientes, clienteOriginal?.id, clienteOriginal?.nome]);
+
+  const vendedorOptions = useMemo(() => {
+    const opts = [
+      { value: "", label: isAdmin ? "Selecione um vendedor" : "Sem vendedor vinculado" },
       ...vendedores.map((v) => ({
         value: String(v.id),
         label: `#${v.id} - ${v.nome}${v.data_desligamento ? " [X]" : ""}`,
       })),
-    ],
-    [vendedores]
-  );
+    ];
+    // Usuario comum: garante que o proprio vendedor aparece no select travado
+    // mesmo que a lista (escopada) ainda nao tenha carregado.
+    if (
+      !isAdmin &&
+      ownVendedorId &&
+      !vendedores.some((v) => v.id === ownVendedorId)
+    ) {
+      opts.push({
+        value: String(ownVendedorId),
+        label: `#${ownVendedorId} - ${ownVendedorNome ?? "Meu vendedor"}`,
+      });
+    }
+    return opts;
+  }, [vendedores, isAdmin, ownVendedorId, ownVendedorNome]);
 
   const produtoOptions = useMemo(
     () => [
@@ -257,6 +375,12 @@ export function PedidoModal({
     e.preventDefault();
     setError(null);
 
+    if (semCarteira) {
+      setError(
+        "Seu usuario nao esta vinculado a um vendedor. Solicite ao administrador o vinculo para registrar pedidos."
+      );
+      return;
+    }
     if (!clienteId) {
       setError("Cliente e obrigatorio.");
       return;
@@ -317,7 +441,9 @@ export function PedidoModal({
       });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Erro ao salvar pedido.";
+        err instanceof Error
+          ? friendlyPedidoError(err.message)
+          : "Erro ao salvar pedido.";
       setError(message);
     } finally {
       setSubmitting(false);
@@ -335,25 +461,36 @@ export function PedidoModal({
         {error && <Alert variant="error">{error}</Alert>}
         {auxError && (
           <Alert variant="error">
-            Nao foi possivel carregar clientes/vendedores/produtos: {auxError}
+            Nao foi possivel carregar vendedores/produtos: {auxError}
+          </Alert>
+        )}
+        {clientesError && (
+          <Alert variant="error">
+            Nao foi possivel carregar clientes do vendedor: {clientesError}
+          </Alert>
+        )}
+        {semCarteira && (
+          <Alert variant="warning">
+            Seu usuario nao esta vinculado a um vendedor, por isso nao e
+            possivel registrar pedidos. Solicite o vinculo ao administrador.
           </Alert>
         )}
 
         <div className="grid grid-cols-2 gap-3">
           <Select
-            label="Cliente"
-            value={clienteId}
-            onChange={(e) => setClienteId(e.target.value)}
-            options={clienteOptions}
-            disabled={loadingAux}
-            required
-          />
-          <Select
             label="Vendedor"
             value={vendedorId}
             onChange={(e) => setVendedorId(e.target.value)}
             options={vendedorOptions}
-            disabled={loadingAux}
+            disabled={loadingAux || !isAdmin}
+            required
+          />
+          <Select
+            label="Cliente"
+            value={clienteId}
+            onChange={(e) => setClienteId(e.target.value)}
+            options={clienteOptions}
+            disabled={!vendedorId || loadingClientes}
             required
           />
         </div>
@@ -476,7 +613,11 @@ export function PedidoModal({
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="submit" loading={submitting} disabled={loadingAux}>
+          <Button
+            type="submit"
+            loading={submitting}
+            disabled={loadingAux || loadingClientes || semCarteira}
+          >
             {mode === "create" ? "Criar pedido" : "Salvar alteracoes"}
           </Button>
         </div>

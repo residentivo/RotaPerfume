@@ -24,14 +24,14 @@ import (
 //	PATCH /api/usuarios/{id}/inativar   — admin only — ativar/inativar
 //	POST /api/admin/reset-password      — admin only — resetar senha de outro usuário
 //	GET  /api/vendedores                — acesso comum — lista vendedores ativos (sem paginação)
-//	POST /api/vendedores                — acesso comum — criar vendedor
-//	GET  /api/vendedores/{id}           — acesso comum — detalhe de um vendedor (com clientes vinculados)
-//	PUT  /api/vendedores/{id}           — acesso comum — atualizar vendedor
-//	DELETE /api/vendedores/{id}         — acesso comum — inativar vendedor (soft-delete via data_desligamento)
-//	POST   /api/vendedores/{id}/reativar — acesso comum — reativar vendedor (limpa data_desligamento)
-//	POST   /api/vendedores/{id}/clientes — acesso comum — vincula cliente à carteira do vendedor (transfere automaticamente se já vinculado a outro vendedor)
+//	POST /api/vendedores                — admin only — criar vendedor
+//	GET  /api/vendedores/{id}           — admin only — detalhe de um vendedor (com clientes vinculados)
+//	PUT  /api/vendedores/{id}           — admin only — atualizar vendedor
+//	DELETE /api/vendedores/{id}         — admin only — inativar vendedor (soft-delete via data_desligamento)
+//	POST   /api/vendedores/{id}/reativar — admin only — reativar vendedor (limpa data_desligamento)
+//	POST   /api/vendedores/{id}/clientes — admin only — vincula cliente à carteira do vendedor (transfere automaticamente se já vinculado a outro vendedor)
 //	GET    /api/vendedores/{id}/clientes — acesso comum — lista clientes vinculados (carteira ativa) ao vendedor
-//	DELETE /api/vendedores/{id}/clientes/{clienteId} — acesso comum — encerra vínculo ativo entre vendedor e cliente
+//	DELETE /api/vendedores/{id}/clientes/{clienteId} — admin only — encerra vínculo ativo entre vendedor e cliente
 //	GET  /api/senha-historico           — admin only — todo histórico de senhas (paginado, order_by/order_dir opcionais)
 //	GET  /api/senha-historico/{user_id} — admin only — histórico de um usuário (paginado, order_by/order_dir opcionais)
 //	GET  /api/dashboard/metrics         — acesso comum — métricas gerais (vendas, pedidos, ticket medio)
@@ -49,14 +49,14 @@ import (
 //	PUT  /api/produtos/{id}             — admin only — atualizar produto
 //	PATCH /api/produtos/{id}/inativar   — admin only — ativar/inativar produto
 //	GET  /api/pedidos                   — acesso comum — lista pedidos (paginado, filtros status/canal/cliente_id/vendedor_id/data_inicio/data_fim/q, order_by/order_dir opcionais)
-//	POST /api/pedidos                   — acesso comum — cria pedido com itens (calcula valor_bruto/valor_total)
-//	GET  /api/pedidos/{id}               — acesso comum — detalhe de um pedido (com itens)
-//	PUT  /api/pedidos/{id}               — acesso comum — atualiza pedido e substitui a lista de itens
+//	POST /api/pedidos                   — acesso comum (escopo por carteira) — cria pedido com itens (calcula valor_bruto/valor_total)
+//	GET  /api/pedidos/{id}               — acesso comum (escopo por carteira) — detalhe de um pedido (com itens)
+//	PUT  /api/pedidos/{id}               — acesso comum (escopo por carteira) — atualiza pedido e substitui a lista de itens
 //	DELETE /api/pedidos/{id}             — acesso comum — exclui pedido e seus itens (hard delete); bloqueado (409) se houver pagamentos vinculados ou status = Faturado
 //	GET  /api/pagamentos                — acesso comum (qualquer usuário autenticado) — lista pagamentos (paginado, filtros status_pagamento/forma_pagamento/pedido_id/vencimento_de/vencimento_ate, order_by/order_dir opcionais)
-//	POST /api/pagamentos                — acesso comum — cria pagamento
-//	GET  /api/pagamentos/{id}            — acesso comum — detalhe de um pagamento
-//	PUT  /api/pagamentos/{id}            — acesso comum — atualiza pagamento
+//	POST /api/pagamentos                — acesso comum (escopo por carteira) — cria pagamento
+//	GET  /api/pagamentos/{id}            — acesso comum (escopo por carteira) — detalhe de um pagamento
+//	PUT  /api/pagamentos/{id}            — acesso comum (escopo por carteira) — atualiza pagamento
 //	DELETE /api/pagamentos/{id}          — acesso comum — exclui pagamento (hard delete); bloqueado (409) se status_pagamento = Pago ou Pago com atraso
 //	GET  /api/oportunidades             — acesso comum (escopo por carteira) — lista oportunidades (paginado, filtros cliente_id/vendedor_id/etapa/origem/data_abertura_de/data_abertura_ate/q, order_by/order_dir opcionais)
 //	POST /api/oportunidades             — acesso comum (escopo por carteira) — cria oportunidade
@@ -126,15 +126,18 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	senhaTodosChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(senhaH.ListarTodos))
 	mux.Handle("/api/senha-historico", senhaTodosChain)
 
-	// Dashboard metrics: acesso comum (qualquer usuário autenticado).
+	// Dashboard metrics: acesso comum (qualquer usuário autenticado)
+	// (escopo por vendedor: normal vê só os próprios números).
 	metricsChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetMetrics))
 	mux.Handle("/api/dashboard/metrics", metricsChain)
 
-	// Dashboard vendas (serie temporal): acesso comum.
+	// Dashboard vendas (serie temporal): acesso comum
+	// (escopo por vendedor: normal vê só os próprios números).
 	vendasChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetVendas))
 	mux.Handle("/api/dashboard/vendas", vendasChain)
 
-	// Dashboard vendedores (ranking): acesso comum.
+	// Dashboard vendedores (ranking): acesso comum
+	// (escopo por vendedor: normal vê só os próprios números).
 	vendedoresChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetVendedores))
 	mux.Handle("/api/dashboard/vendedores", vendedoresChain)
 
@@ -142,33 +145,34 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	listVendedoresChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.ListVendedores))
 	mux.Handle("GET /api/vendedores", listVendedoresChain)
 
-	// Cria vendedor: acesso comum.
-	createVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.CreateVendedor))
+	// Cria vendedor: admin only (gestão de vendedores/carteiras é restrita a
+	// administradores — parecer SecBrain).
+	createVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.CreateVendedor))
 	mux.Handle("POST /api/vendedores", createVendedorChain)
 
-	// Detalhe de vendedor (com clientes vinculados): acesso comum.
-	getVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.GetVendedor))
+	// Detalhe de vendedor (com clientes vinculados): admin only.
+	getVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.GetVendedor))
 	mux.Handle("GET /api/vendedores/{id}", getVendedorChain)
 
-	// Atualiza vendedor: acesso comum.
-	updateVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.UpdateVendedor))
+	// Atualiza vendedor: admin only.
+	updateVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.UpdateVendedor))
 	mux.Handle("PUT /api/vendedores/{id}", updateVendedorChain)
 
-	// Inativa vendedor (soft-delete via data_desligamento): acesso comum.
-	deleteVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.DeleteVendedor))
+	// Inativa vendedor (soft-delete via data_desligamento): admin only.
+	deleteVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.DeleteVendedor))
 	mux.Handle("DELETE /api/vendedores/{id}", deleteVendedorChain)
 
-	// Reativa vendedor (limpa data_desligamento): acesso comum.
-	reativarVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.ReativarVendedor))
+	// Reativa vendedor (limpa data_desligamento): admin only.
+	reativarVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.ReativarVendedor))
 	mux.Handle("POST /api/vendedores/{id}/reativar", reativarVendedorChain)
 
 	// Vincula cliente à carteira do vendedor (transfere automaticamente se já
-	// vinculado a outro vendedor): acesso comum.
-	vincularClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.VincularCliente))
+	// vinculado a outro vendedor): admin only.
+	vincularClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.VincularCliente))
 	mux.Handle("POST /api/vendedores/{id}/clientes", vincularClienteChain)
 
-	// Desvincula cliente da carteira do vendedor (encerra vínculo ativo): acesso comum.
-	desvincularClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.DesvincularCliente))
+	// Desvincula cliente da carteira do vendedor (encerra vínculo ativo): admin only.
+	desvincularClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.DesvincularCliente))
 	mux.Handle("DELETE /api/vendedores/{id}/clientes/{clienteId}", desvincularClienteChain)
 
 	// Lista clientes vinculados (carteira ativa) a um vendedor: acesso comum
@@ -225,7 +229,7 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	listPedidosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.ListPedidos))
 	mux.Handle("GET /api/pedidos", listPedidosChain)
 
-	// Cria pedido (com itens): acesso comum.
+	// Cria pedido (com itens): acesso comum (escopo por carteira aplicado no handler).
 	createPedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.CreatePedido))
 	mux.Handle("POST /api/pedidos", createPedidoChain)
 
@@ -233,7 +237,7 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	getPedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.GetPedido))
 	mux.Handle("GET /api/pedidos/{id}", getPedidoChain)
 
-	// Atualiza pedido (substitui itens): acesso comum.
+	// Atualiza pedido (substitui itens): acesso comum (escopo por carteira aplicado no handler).
 	updatePedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.UpdatePedido))
 	mux.Handle("PUT /api/pedidos/{id}", updatePedidoChain)
 
@@ -246,7 +250,7 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	listPagamentosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.ListPagamentos))
 	mux.Handle("GET /api/pagamentos", listPagamentosChain)
 
-	// Cria pagamento: acesso comum.
+	// Cria pagamento: acesso comum (escopo por carteira aplicado no handler).
 	createPagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.CreatePagamento))
 	mux.Handle("POST /api/pagamentos", createPagamentoChain)
 
@@ -254,7 +258,7 @@ func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.Usu
 	getPagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.GetPagamento))
 	mux.Handle("GET /api/pagamentos/{id}", getPagamentoChain)
 
-	// Atualiza pagamento: acesso comum.
+	// Atualiza pagamento: acesso comum (escopo por carteira aplicado no handler).
 	updatePagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.UpdatePagamento))
 	mux.Handle("PUT /api/pagamentos/{id}", updatePagamentoChain)
 

@@ -364,7 +364,7 @@ func TestCreatePagamento_Success(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	userToken := generateToken(t, cfg, 1, "admin")
 
 	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
@@ -410,7 +410,7 @@ func TestCreatePagamento_JSONInvalido(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	userToken := generateToken(t, cfg, 1, "admin")
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/pagamentos", bytes.NewBufferString("{invalido"))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -430,7 +430,7 @@ func TestCreatePagamento_PedidoNaoEncontrado(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	userToken := generateToken(t, cfg, 1, "admin")
 
 	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
@@ -555,7 +555,7 @@ func TestCreatePagamento_ValidacaoNegocio(t *testing.T) {
 			defer db.Close()
 
 			cfg := testCfg()
-			userToken := generateToken(t, cfg, 2, "normal")
+			userToken := generateToken(t, cfg, 1, "admin")
 
 			payload := tc.payload()
 			// pedido_id=0 falha antes de tocar o repo; caso contrário, o
@@ -589,7 +589,7 @@ func TestUpdatePagamento_Success(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	userToken := generateToken(t, cfg, 1, "admin")
 
 	mock.ExpectExec(`UPDATE pagamentos\s+SET forma_pagamento = \?, parcelas = \?, valor = \?, taxa_pct = \?, valor_liquido = \?, data_vencimento = \?, data_pagamento = \?, status_pagamento = \?\s+WHERE pagamento_id = \?`).
 		WithArgs("PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto", int64(1)).
@@ -625,7 +625,7 @@ func TestUpdatePagamento_IgnoraPedidoIDNoPayload(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	userToken := generateToken(t, cfg, 1, "admin")
 
 	mock.ExpectExec(`UPDATE pagamentos`).
 		WithArgs("PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto", int64(1)).
@@ -658,7 +658,7 @@ func TestUpdatePagamento_IDInvalido(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	userToken := generateToken(t, cfg, 1, "admin")
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/pagamentos/abc", makeJSON(validPagamentoPayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -678,7 +678,7 @@ func TestUpdatePagamento_JSONInvalido(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	userToken := generateToken(t, cfg, 1, "admin")
 
 	req, _ := http.NewRequest("PUT", server.URL+"/api/pagamentos/1", bytes.NewBufferString("{invalido"))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -698,7 +698,7 @@ func TestUpdatePagamento_ValidacaoNegocio(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	userToken := generateToken(t, cfg, 1, "admin")
 
 	payload := validPagamentoPayload()
 	payload["forma_pagamento"] = "Bitcoin"
@@ -721,7 +721,7 @@ func TestUpdatePagamento_NaoEncontrado(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+	userToken := generateToken(t, cfg, 1, "admin")
 
 	mock.ExpectExec(`UPDATE pagamentos`).
 		WithArgs("PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto", int64(999)).
