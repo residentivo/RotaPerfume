@@ -4,9 +4,9 @@
 
 ---
 
-## Lote 3 de 2026-09-24: 4 cards concluídos (de 6)
+## Lote 3 de 2026-09-24: 6 cards concluídos (de 6)
 
-> Lote executado pelo 🤍 MegaBrain, a pedido do usuário, com os 6 follow-ups do Lote 2. BUG-04, RISCO-01, FE-01 e FE-02 foram concluídos. SEC-01 e FE-03 foram implementados e cobertos por testes, mas continuam em `fazendo.md` até o usuário validar no navegador. Os follow-ups deste lote estão em `afazer.md`: SEC-02, SEC-03, NEG-01, BUG-06, FE-04 e FE-05. O card BUG-05 (em `fazendo.md`) é tratado em outra sessão.
+> Lote executado pelo 🤍 MegaBrain, a pedido do usuário, com os 6 follow-ups do Lote 2. BUG-04, RISCO-01, FE-01 e FE-02 foram concluídos em 2026-09-24. SEC-01 e FE-03 foram implementados e cobertos por testes em 2026-09-24 e validados pelo usuário no navegador em 2026-09-25. Os follow-ups deste lote estão em `afazer.md`: SEC-02, SEC-03, NEG-01, BUG-06, FE-04 e FE-05. O card BUG-05 (em `fazendo.md`) é tratado em outra sessão.
 >
 > **Documentação (🔵 SubBrain) do lote:** `postman/collection.json` e `postman/README.md`:
 > - Contrato do SEC-01 em `POST`/`PUT`/`PATCH` de clientes.
@@ -72,6 +72,52 @@
   - Os estados de loading e de erro passaram a ser derivados no render.
   - Respostas obsoletas são descartadas.
 - **🔴 TestBrain:** testes com payload cheio: mesmo que a API devolva números, a tela mostra zeros nesses dois casos.
+
+## SEC-01: IDOR em Create/Update/Toggle de clientes — 2026-09-24
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Validado pelo usuário no navegador em 2026-09-25** (roteiro `docs/roteiro-teste-manual-clientes.md`): OK.
+
+**Origem:** 🟣 SecBrain, durante a definição do contrato de bloqueio do vendedor desligado (lote 2). Em `apis/rotaperfumes-api/handlers/cliente_handler.go`, `CreateCliente`, `UpdateCliente` e `ToggleAtivoCliente` não chamavam `resolverVendedorScope`. Com isso, qualquer usuário `normal` conseguia editar ou inativar qualquer cliente pelo id.
+
+**O que foi feito:**
+- **🟣 SecBrain:** contrato para o usuário `normal`:
+  - `PUT /api/clientes/{id}` e `PATCH /api/clientes/{id}/inativar`: fora da carteira ativa, ou sem vendedor → `404` "cliente não encontrado"; falha ao checar a carteira → `500`; vendedor desligado → `403`, como antes.
+  - `POST /api/clientes`: sem vendedor → `403` "usuário sem vendedor vinculado"; com vendedor → `201`, com o cliente vinculado automaticamente à carteira do vendedor.
+  - Admin: sem mudança.
+- **🟡 BackBrain:** `apis/rotaperfumes-api/handlers/cliente_handler.go`:
+  - Novo helper `autorizarEscritaCliente`, checado antes de ler o body.
+  - `ClienteService.CreateClienteNaCarteira`: cria o cliente e o vínculo de carteira numa única transação.
+- **🟢 FrontBrain:** na tela de clientes, o botão fica desabilitado quando não há permissão, os erros 403 e 404 são tratados e a lista é recarregada.
+- **🔴 TestBrain:**
+  - `apis/rotaperfumes-api/handlers/cliente_sec01_cobertura_test.go`
+  - integração HTTP em `handlers/sec01_bug04_risco01_http_integration_test.go`
+  - `apis/rotaperfumes-api/services/cliente_na_carteira_test.go`
+  - `frontend/src/app/admin/clientes/page.test.tsx`
+  - roteiro `docs/roteiro-teste-manual-clientes.md`
+
+**Documentação (🔵 SubBrain):** Postman atualizado. Na pasta Clientes:
+- Todos os itens foram renomeados para "acesso comum, escopo por carteira".
+- Os exemplos `403` "não é admin", que não valiam mais, foram trocados pelos 404/403 do contrato.
+- Os testes que verificavam `id` agora verificam `cliente_id_origem`.
+- O `postman/README.md` tem a tabela do contrato.
+
+## FE-03: 34 warnings `react-hooks/set-state-in-effect` — 2026-09-24
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário no navegador em 2026-09-25** (roteiro `docs/roteiro-smoke-pos-fe03.md`): OK.
+
+**Origem:** card "Tooling frontend" (lote 2). O ESLint apontava 34 warnings `react-hooks/set-state-in-effect`, com a regra rebaixada para `warn`.
+
+**O que foi feito:**
+- **🟢 FrontBrain:**
+  - `npm run lint` agora dá **0 erros e 0 warnings**, e a regra `react-hooks/set-state-in-effect` voltou para `error`.
+  - Novo hook `frontend/src/lib/useResetOnOpen.ts`.
+  - 9 páginas e 9 modais refatorados para tirar o `setState` de dentro de `useEffect`.
+- **🔴 TestBrain:**
+  - Suíte com **604 testes passando**, mais 18 `it.fails` que documentam o bug **FE-04** (em `afazer.md`).
+  - Cobertura de **87% das linhas**.
+  - Roteiro de smoke `docs/roteiro-smoke-pos-fe03.md`.
 
 ---
 

@@ -6,7 +6,7 @@
 >
 > **BUG-05 (2026-09-24):** relato do usuário (inativar vendedor deve inativar o usuário vinculado). Em execução pelo 🟡 BackBrain.
 >
-> **Lote 3 de 2026-09-24:** a pedido do usuário, o 🤍 MegaBrain executou os 6 cards que estavam em `afazer.md`. **BUG-04**, **RISCO-01**, **FE-01** e **FE-02** foram concluídos e movidos para `feito.md`. **SEC-01** e **FE-03** foram implementados e cobertos por testes automatizados e aguardam a validação do usuário no navegador (roteiros `docs/roteiro-teste-manual-clientes.md` e `docs/roteiro-smoke-pos-fe03.md`). Os cards estão no fim do arquivo. Os follow-ups do lote (SEC-02, SEC-03, NEG-01, BUG-06, FE-04 e FE-05) estão em `afazer.md`, aguardando priorização.
+> **Lote 3 de 2026-09-24:** a pedido do usuário, o 🤍 MegaBrain executou os 6 cards que estavam em `afazer.md`. **BUG-04**, **RISCO-01**, **FE-01** e **FE-02** foram concluídos e movidos para `feito.md`. **SEC-01** e **FE-03** foram validados pelo usuário no navegador em 2026-09-25 (roteiros `docs/roteiro-teste-manual-clientes.md` e `docs/roteiro-smoke-pos-fe03.md`) e também foram movidos para `feito.md`. O Lote 3 está concluído (6 de 6). Os follow-ups do lote (SEC-02, SEC-03, NEG-01, BUG-06, FE-04 e FE-05) estão em `afazer.md`, aguardando priorização.
 
 ---
 
@@ -217,70 +217,3 @@ Registrar evidências e abrir bugs, se houver.
 **Ação esperada:**
 - 🟡 BackBrain implementa e cobre com testes.
 - 🔵 SubBrain atualiza a documentação e o Postman se a resposta da API mudar.
-
----
-
-## SEC-01: IDOR em Create/Update/Toggle de clientes — prioridade ALTA
-
-**Início:** 2026-09-24 (Lote 3)
-**Passo atual:** Implementado e coberto por testes automatizados; aguardando o usuário validar no navegador pelo roteiro `docs/roteiro-teste-manual-clientes.md`.
-
-**Andamento (2026-09-24):**
-- **🟣 SecBrain:** contrato para o usuário `normal`:
-  - `PUT /api/clientes/{id}` e `PATCH /api/clientes/{id}/inativar`: fora da carteira ativa, ou sem vendedor → `404` "cliente não encontrado"; falha ao checar a carteira → `500`; vendedor desligado → `403`, como antes.
-  - `POST /api/clientes`: sem vendedor → `403` "usuário sem vendedor vinculado"; com vendedor → `201`, com o cliente vinculado automaticamente à carteira do vendedor.
-  - Admin: sem mudança.
-- **🟡 BackBrain:** `apis/rotaperfumes-api/handlers/cliente_handler.go`:
-  - Novo helper `autorizarEscritaCliente`, checado antes de ler o body.
-  - `ClienteService.CreateClienteNaCarteira`: cria o cliente e o vínculo de carteira numa única transação.
-- **🟢 FrontBrain:** na tela de clientes, o botão fica desabilitado quando não há permissão, os erros 403 e 404 são tratados e a lista é recarregada.
-- **🔴 TestBrain:**
-  - `apis/rotaperfumes-api/handlers/cliente_sec01_cobertura_test.go`
-  - integração HTTP em `handlers/sec01_bug04_risco01_http_integration_test.go`
-  - `apis/rotaperfumes-api/services/cliente_na_carteira_test.go`
-  - `frontend/src/app/admin/clientes/page.test.tsx`
-  - roteiro `docs/roteiro-teste-manual-clientes.md`
-- **🔵 SubBrain:** Postman atualizado. Na pasta Clientes:
-  - Todos os itens foram renomeados para "acesso comum, escopo por carteira".
-  - Os exemplos `403` "não é admin", que não valiam mais, foram trocados pelos 404/403 do contrato.
-  - Os testes que verificavam `id` agora verificam `cliente_id_origem`.
-  - O README tem a tabela do contrato.
-
-**Camada:** Backend
-**Origem:** 🟣 SecBrain, 2026-09-24, durante a definição do contrato de bloqueio do vendedor desligado.
-
-**Descrição:** Em `apis/rotaperfumes-api/handlers/cliente_handler.go`, três handlers não chamam `resolverVendedorScope`:
-- `CreateCliente` (~l.251)
-- `UpdateCliente` (~l.291)
-- `ToggleAtivoCliente` (~l.169)
-
-Com isso, qualquer usuário `normal` consegue editar ou inativar **qualquer** cliente pelo id. O lote atual só adiciona nesses handlers o bloqueio do vendedor desligado.
-
-**Ação esperada:**
-- 🟡 BackBrain restringir Update e Toggle à carteira ativa via `clienteNaCarteiraDoVendedor`, respondendo `404` "cliente não encontrado" para clientes fora da carteira. Definir também a regra do Create para o usuário `normal`.
-- 🔴 TestBrain cobrir com testes.
-- 🔵 SubBrain atualizar o Postman.
-
----
-
-## FE-03: 34 warnings `react-hooks/set-state-in-effect` — prioridade BAIXA
-
-**Início:** 2026-09-24 (Lote 3)
-**Passo atual:** Implementado e coberto por testes automatizados; aguardando o usuário validar no navegador pelo roteiro `docs/roteiro-smoke-pos-fe03.md`.
-
-**Andamento (2026-09-24):**
-- **🟢 FrontBrain:**
-  - `npm run lint` agora dá **0 erros e 0 warnings**, e a regra `react-hooks/set-state-in-effect` voltou para `error`.
-  - Novo hook `frontend/src/lib/useResetOnOpen.ts`.
-  - 9 páginas e 9 modais refatorados para tirar o `setState` de dentro de `useEffect`.
-- **🔴 TestBrain:**
-  - Suíte com **604 testes passando**, mais 18 `it.fails` que documentam o bug **FE-04** (em `afazer.md`).
-  - Cobertura de **87% das linhas**.
-  - Roteiro de smoke `docs/roteiro-smoke-pos-fe03.md`.
-
-**Camada:** Frontend
-**Origem:** 2026-09-24, card "Tooling frontend" (em `feito.md`).
-
-**Descrição:** O ESLint configurado neste lote aponta 34 warnings `react-hooks/set-state-in-effect`. Por enquanto, a regra está como `warn`.
-
-**Ação esperada:** 🟢 FrontBrain fazer um refactor dedicado para eliminar o `setState` dentro de `useEffect` e voltar a regra para `error`. 🔴 TestBrain garantir que os testes continuam verdes.
