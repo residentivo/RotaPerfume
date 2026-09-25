@@ -1,6 +1,8 @@
 # Fazendo
 
-> **Lote 1 (2026-09-24):** o 🤍 MegaBrain executou os 10 cards que vieram de `afazer.md`. 8 foram concluídos e movidos para `feito.md`. Os cards BUG-02, "Teste manual/e2e do `PedidoModal`" e "Teste manual do Dashboard" aguardam a validação do usuário no navegador.
+> **Lote 1 (2026-09-24):** o 🤍 MegaBrain executou os 10 cards que vieram de `afazer.md`. 8 foram concluídos e movidos para `feito.md`. Os cards BUG-02 e "Teste manual do Dashboard" aguardam a validação do usuário no navegador. O card "Teste manual/e2e do `PedidoModal`" foi validado pelo usuário no navegador em 2026-09-25 e movido para `feito.md`.
+>
+> **UI-04 (2026-09-25):** relato do usuário durante a validação do `PedidoModal` (accordion de itens do pedido abre no fim da tabela). Correção aplicada pelo 🟢 FrontBrain; aguardando a validação do usuário no navegador.
 >
 > **Lote 2 (2026-09-24):** o 🤍 MegaBrain executou os 6 cards que estavam em `afazer.md`. **BUG-01** e **Tooling do frontend** foram concluídos e movidos para `feito.md`. Os 4 cards abaixo (UI-01, UI-02, Segurança do vendedor desligado e UX do `id_vendedor`) foram implementados e cobertos por testes automatizados e aguardam a validação do usuário no navegador, pelos roteiros indicados em cada card. As decisões do usuário de 2026-09-24 sobre UI-02 e sobre o vendedor desligado estão registradas nos respectivos cards. Os follow-ups do lote (SEC-01, BUG-04, RISCO-01, FE-01, FE-02 e FE-03) viraram o Lote 3.
 >
@@ -25,36 +27,25 @@
 
 ---
 
-## Teste manual/e2e do `PedidoModal` no navegador (usuário normal e admin)
+## UI-04: accordion de itens do pedido abre no fim da tabela
 
-**Início:** 2026-09-24
-**Passo atual:** Validação via API concluída pelo 🔴 TestBrain (ver roteiro em `docs/roteiro-teste-manual-pedidomodal.md`); aguardando o usuário executar o roteiro no navegador.
+**Início:** 2026-09-25
+**Passo atual:** Correção aplicada pelo 🟢 FrontBrain em 2026-09-25; aguardando o usuário validar no navegador.
 
-**Origem:** 🟢 FrontBrain, durante o card "Scope check em Create/Update de Pedidos" (2026-09-23).
+**Andamento (2026-09-25):**
+- Novo prop opcional `renderExpanded` em `frontend/src/components/ui/Table.tsx` (Fragment por linha e `<tr>` extra com `colSpan`).
+- Novo componente `frontend/src/components/admin/PedidoItensDetalhe.tsx`.
+- `frontend/src/app/admin/pedidos/page.tsx`: removido o bloco do fim da tabela e criado o helper `fecharItens()`, que também limpa o erro antigo.
+- Novo teste em `frontend/src/app/crudPaginas.test.tsx`.
+- Resultados: tsc OK; vitest com 19/19 arquivos (635 passaram, 18 falhas esperadas, 2 pulados); eslint OK.
+- Não existe layout mobile separado. Em telas estreitas, o detalhe fica dentro do scroll horizontal da tabela.
 
-**Descrição:** As mudanças em `frontend/src/components/admin/PedidoModal.tsx` foram validadas só com typecheck. Não houve teste no navegador. As mudanças são:
-- Vendedor travado para usuário `normal`.
-- Aviso e botão Salvar bloqueado quando não há vendedor vinculado.
-- Cascata vendedor → cliente via `apiListClientesDoVendedor`.
-- Cliente "(fora da carteira)" mantido na edição.
-- Mensagem amigável para o `400` de carteira.
+**Camada:** Frontend
+**Origem:** relato do usuário durante a validação do `PedidoModal` (2026-09-25).
 
-**DECISÃO DO USUÁRIO (2026-09-24):**
-- 🔴 TestBrain valida via API com os perfis `admin`, `normal` com vendedor e `normal` sem vendedor.
-- 🔴 TestBrain escreve em `docs/` um roteiro de checagem manual para o usuário executar no navegador.
-- **O card permanece em `fazendo.md` até o usuário validar.**
+**Descrição:** Em `frontend/src/app/admin/pedidos/page.tsx`, ao clicar em "Itens" numa linha, o detalhe dos itens aparece abaixo da tabela inteira, num bloco separado (por volta da linha 600). O detalhe deveria abrir como linha expandida logo após a linha clicada.
 
-**Andamento (2026-09-24):**
-- 🔴 TestBrain validou via API todos os fluxos (admin, normal com vendedor, normal sem vendedor, normal com vendedor desligado) e registrou as evidências em `docs/roteiro-teste-manual-pedidomodal.md`.
-- Neste lote foi registrado em `afazer.md` o **BUG-01** (`data_pedido` gravada com um dia a menos). O bug afeta este fluxo: cada re-salvamento no `PedidoModal` pode recuar mais um dia. Leve isso em conta ao executar o roteiro.
-
-**Ação esperada:** validar os fluxos abaixo:
-- Criar e editar pedido como `admin`.
-- Criar e editar pedido como `normal` com vendedor vinculado.
-- Usuário `normal` sem vendedor vinculado.
-- Edição de pedido com cliente fora da carteira.
-
-Registrar evidências e abrir bugs, se houver.
+**Ação esperada:** o usuário clica em "Itens" em qualquer linha, inclusive no meio da página e no layout mobile (cards), e o detalhe aparece logo abaixo dessa linha.
 
 ---
 
@@ -217,55 +208,3 @@ Registrar evidências e abrir bugs, se houver.
 **Ação esperada:**
 - 🟡 BackBrain implementa e cobre com testes.
 - 🔵 SubBrain atualiza a documentação e o Postman se a resposta da API mudar.
-
----
-
-## UI-03: coluna própria para o ID principal nas tabelas
-
-**Início:** 2026-09-25
-**Passo atual:** Implementado pelo 🟢 FrontBrain (typecheck OK) e coberto pelo 🔴 TestBrain (634 testes passando, 0 falhas); aguardando validação do usuário no navegador.
-
-**Camada:** Frontend
-**Origem:** pedido do usuário, 2026-09-25: "em todas as telas, crie uma coluna com o ID principal ao invés de colocar junto ao nome."
-
-**Descrição:** Várias tabelas das telas de `frontend/src/app/admin/` mostram o ID principal junto ao nome, na mesma célula (ex.: `#id - razao_social`). O ID deve passar para uma coluna própria, e a coluna do nome deve mostrar só o nome.
-
-**Padrão de referência:** a coluna `ID` que já existe em `frontend/src/app/admin/usuarios/page.tsx` (por volta da linha 280):
-- key `"id"`, header `"ID"`, largura `80px`, ordenável (sortable);
-- estilo `font-mono text-xs`;
-- valor exibido como `#{id}`.
-
-**Telas afetadas e ID principal:**
-
-| Tela | ID principal | Situação atual |
-| --- | --- | --- |
-| clientes | `cliente_id_origem` | `#id - razao_social` |
-| estoque | `id` | ID junto ao `sku` |
-| oportunidades | `oportunidade_id` | ID junto ao texto principal (FrontBrain confirma a célula) |
-| pedidos | `pedido_id_origem` | ID junto a `cliente_nome` |
-| produtos | `id` | ID junto a `descricao` |
-| senha-historico | `id` | ID junto ao texto principal (FrontBrain confirma a célula) |
-| usuarios | `id` | coluna `ID` já existe; só remover o `#id -` do nome |
-| vendedores | `id` | ID junto a `nome` |
-| visitas | `visita_id` | ID junto ao texto principal (FrontBrain confirma a célula) |
-| pagamentos | `pagamento_id` | ID junto a `forma_pagamento` |
-
-**Fora de escopo:**
-- Chaves estrangeiras exibidas em outras colunas (cliente, vendedor, `usuario_id` etc.).
-- Labels de select.
-- Toasts e mensagens de confirmação.
-
-**Responsáveis:**
-- 🟢 FrontBrain aplica o padrão nas 10 telas (typecheck OK).
-- 🔴 TestBrain ajusta os testes que conferem o texto das células (ex.: `#id - nome`) e cobre a nova coluna.
-- 🔵 SubBrain atualiza o manual das telas ao concluir.
-
-**Resultado (2026-09-25):**
-- Coluna "ID" (primeira, ordenável, `#id` em `font-mono`) em clientes, estoque, oportunidades, pedidos, produtos, senha-historico, usuarios, vendedores, visitas e pagamentos. O prefixo `#id -` foi removido das colunas de nome.
-- Oportunidades e visitas não exibiam o ID antes. Senha-historico ganhou ordenação por `id` (`order_by=id`).
-- Pedidos: o header da coluna do nome passou de "Pedido" para "Cliente" (a coluna continua abrindo os itens).
-- Pagamentos: a antiga coluna "Pagamento" virou a coluna "ID". O botão "Editar pagamento" foi para a coluna "Forma".
-- Testes ajustados: `crudPaginas.test.tsx`, `listasPaginadas.test.tsx`, `admin/crudAdmin.test.tsx` e `admin/listasAdmin.test.tsx`, com novos blocos "UI-03 coluna ID".
-- **Pendência fora do escopo:** `frontend/src/components/admin/VendedorModal.tsx:57` ainda mostra `#id - razao_social` na lista de clientes vinculados dentro do modal do vendedor.
-
-**Ação esperada do usuário:** validar visualmente as tabelas no navegador. Em cada tela, conferir que o ID aparece em coluna própria, ordenável, e que a coluna do nome não traz mais o `#id -`.

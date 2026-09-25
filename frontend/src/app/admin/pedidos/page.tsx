@@ -9,6 +9,7 @@ import { CarteiraGuard } from "@/components/layout/CarteiraGuard";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
 import { PedidoModal } from "@/components/admin/PedidoModal";
+import { PedidoItensDetalhe } from "@/components/admin/PedidoItensDetalhe";
 import {
   apiListPedidos,
   apiGetPedido,
@@ -109,7 +110,8 @@ function PedidosContent() {
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(0);
 
-  // Master-detail: pedido selecionado (itens exibidos abaixo da tabela).
+  // Master-detail em accordion: pedido selecionado tem seus itens exibidos em
+  // uma linha expandida logo abaixo da propria linha na tabela.
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedDetalhe, setSelectedDetalhe] = useState<PedidoDetalhe | null>(
     null
@@ -220,11 +222,15 @@ function PedidosContent() {
     }
   };
 
+  const fecharItens = () => {
+    setSelectedId(null);
+    setSelectedDetalhe(null);
+    setItensError(null);
+  };
+
   const toggleItens = (pedido: Pedido) => {
     if (selectedId === pedido.pedido_id_origem) {
-      setSelectedId(null);
-      setSelectedDetalhe(null);
-      setItensError(null);
+      fecharItens();
       return;
     }
     setSelectedId(pedido.pedido_id_origem);
@@ -296,8 +302,7 @@ function PedidosContent() {
         prev.filter((p) => p.pedido_id_origem !== pedido.pedido_id_origem)
       );
       if (selectedId === pedido.pedido_id_origem) {
-        setSelectedId(null);
-        setSelectedDetalhe(null);
+        fecharItens();
       }
       setTotal((t) => Math.max(0, t - 1));
       setSuccess(`Pedido #${pedido.pedido_id_origem} excluido com sucesso.`);
@@ -546,6 +551,17 @@ function PedidosContent() {
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={(key) => handleSort(key as SortKey)}
+            renderExpanded={(p) =>
+              selectedId === p.pedido_id_origem ? (
+                <PedidoItensDetalhe
+                  pedidoId={p.pedido_id_origem}
+                  detalhe={selectedDetalhe}
+                  loading={loadingItens}
+                  error={itensError}
+                  onClose={fecharItens}
+                />
+              ) : null
+            }
             emptyMessage={
               search || statusFilter || canalFilter || dataInicio || dataFim
                 ? "Nenhum pedido encontrado para os filtros aplicados."
@@ -600,102 +616,6 @@ function PedidosContent() {
           </div>
         )}
       </Card>
-
-      {selectedId !== null && (
-        <Card className="mt-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-800">
-              Itens do pedido #{selectedId}
-            </h2>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setSelectedId(null);
-                setSelectedDetalhe(null);
-              }}
-            >
-              Fechar
-            </Button>
-          </div>
-
-          {itensError && <Alert variant="error">{itensError}</Alert>}
-
-          {loadingItens && (
-            <div className="flex items-center justify-center py-8">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
-            </div>
-          )}
-
-          {!loadingItens && selectedDetalhe && (
-            <div>
-              <div className="max-h-80 overflow-y-auto overflow-x-auto rounded-md border border-slate-200">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="sticky top-0 z-10 bg-slate-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
-                        Produto
-                      </th>
-                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-600">
-                        Qtd
-                      </th>
-                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-600">
-                        Preco praticado
-                      </th>
-                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-600">
-                        Desconto
-                      </th>
-                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-600">
-                        Valor bruto
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {selectedDetalhe.itens.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="px-4 py-6 text-center text-sm text-slate-500"
-                        >
-                          Este pedido nao possui itens.
-                        </td>
-                      </tr>
-                    )}
-                    {selectedDetalhe.itens.map((item) => (
-                      <tr
-                        key={item.item_id_origem}
-                        className="hover:bg-slate-50"
-                      >
-                        <td className="px-4 py-2 text-sm text-slate-700">
-                          #{item.produto_id} - {item.produto_descricao}{" "}
-                          <span className="text-xs text-slate-400">
-                            ({item.produto_sku})
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-right text-sm text-slate-700">
-                          {item.quantidade}
-                        </td>
-                        <td className="px-4 py-2 text-right text-sm text-slate-700">
-                          {fmtValor(item.preco_praticado)}
-                        </td>
-                        <td className="px-4 py-2 text-right text-sm text-slate-700">
-                          {item.desconto_pct}%
-                        </td>
-                        <td className="px-4 py-2 text-right text-sm font-medium text-slate-800">
-                          {fmtValor(item.valor_bruto)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-3 flex justify-end text-sm font-semibold text-slate-800">
-                Total do pedido: {fmtValor(selectedDetalhe.valor_total)}
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
 
       <div className="mt-4 text-xs text-slate-400">
         <strong>Nota:</strong> A busca e os filtros de status/canal/periodo sao

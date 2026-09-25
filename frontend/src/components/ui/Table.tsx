@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { Fragment, ReactNode } from "react";
 
 export interface Column<T> {
   key: keyof T | string;
@@ -24,6 +24,12 @@ interface TableProps<T> {
   sortDir?: "asc" | "desc";
   /** Chamado quando o usuario clica em um cabecalho `sortable` */
   onSort?: (key: keyof T | string) => void;
+  /**
+   * Conteudo expandido (accordion) de uma linha. Quando retorna algo diferente
+   * de null/undefined/false, e renderizado em uma <tr> extra logo abaixo da
+   * linha, ocupando todas as colunas.
+   */
+  renderExpanded?: (row: T) => ReactNode;
 }
 
 export function Table<T>({
@@ -35,6 +41,7 @@ export function Table<T>({
   sortKey,
   sortDir,
   onSort,
+  renderExpanded,
 }: TableProps<T>) {
   if (loading) {
     return (
@@ -90,27 +97,41 @@ export function Table<T>({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
-          {data.map((row) => (
-            <tr key={keyExtractor(row)} className="hover:bg-slate-50">
-              {columns.map((col) => (
-                <td
-                  key={String(col.key)}
-                  className={[
-                    "whitespace-nowrap px-4 py-3 text-sm text-slate-700",
-                    col.align === "center"
-                      ? "text-center"
-                      : col.align === "right"
-                      ? "text-right"
-                      : "text-left",
-                  ].join(" ")}
-                >
-                  {col.render
-                    ? col.render(row)
-                    : String((row as Record<string, unknown>)[col.key as string] ?? "")}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {data.map((row) => {
+            const expanded = renderExpanded ? renderExpanded(row) : null;
+            const hasExpanded =
+              expanded !== null && expanded !== undefined && expanded !== false;
+            return (
+              <Fragment key={keyExtractor(row)}>
+                <tr className="hover:bg-slate-50">
+                  {columns.map((col) => (
+                    <td
+                      key={String(col.key)}
+                      className={[
+                        "whitespace-nowrap px-4 py-3 text-sm text-slate-700",
+                        col.align === "center"
+                          ? "text-center"
+                          : col.align === "right"
+                          ? "text-right"
+                          : "text-left",
+                      ].join(" ")}
+                    >
+                      {col.render
+                        ? col.render(row)
+                        : String((row as Record<string, unknown>)[col.key as string] ?? "")}
+                    </td>
+                  ))}
+                </tr>
+                {hasExpanded && (
+                  <tr data-expanded-row="true" className="bg-slate-50">
+                    <td colSpan={columns.length} className="px-4 py-3">
+                      {expanded}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

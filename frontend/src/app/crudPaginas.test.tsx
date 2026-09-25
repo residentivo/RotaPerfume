@@ -425,6 +425,41 @@ describe("Pedidos - itens do pedido (master-detail)", () => {
     expect(screen.queryByText("Itens do pedido #5")).not.toBeInTheDocument();
   });
 
+  it("detalhe abre como accordion logo abaixo da linha clicada (nao no fim da tabela)", async () => {
+    api.apiListPedidos.mockResolvedValue(pagina([pedido(7), pedido(6), pedido(5)]));
+    render(<PedidosPage />);
+    await aposMontagem("Cliente 5");
+
+    // Abre pela linha do meio (pedido #6).
+    const linha6 = screen.getByRole("button", { name: "Cliente 6" }).closest("tr")!;
+    await userEvent.click(within(linha6).getByRole("button", { name: "Itens" }));
+    const titulo = await screen.findByText("Itens do pedido #6");
+    expect(await screen.findByText(/#50 - Perfume 50/)).toBeInTheDocument();
+
+    const linhaDetalhe = titulo.closest("tr")!;
+    expect(linhaDetalhe).toHaveAttribute("data-expanded-row", "true");
+    expect(linha6.nextElementSibling).toBe(linhaDetalhe);
+    // A linha do pedido #5 vem depois do detalhe.
+    const linha5 = screen.getByRole("button", { name: "Cliente 5" }).closest("tr")!;
+    expect(linhaDetalhe.nextElementSibling).toBe(linha5);
+    // O detalhe ocupa todas as colunas da tabela.
+    expect(linhaDetalhe.querySelector("td")).toHaveAttribute(
+      "colspan",
+      String(linha6.querySelectorAll("td").length)
+    );
+
+    // Trocar para outro pedido move o detalhe para baixo da nova linha.
+    await userEvent.click(screen.getByRole("button", { name: "Cliente 5" }));
+    const titulo5 = await screen.findByText("Itens do pedido #5");
+    expect(screen.queryByText("Itens do pedido #6")).not.toBeInTheDocument();
+    expect(linha5.nextElementSibling).toBe(titulo5.closest("tr"));
+
+    // "Fechar" recolhe o accordion.
+    await userEvent.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(screen.queryByText("Itens do pedido #5")).not.toBeInTheDocument();
+    expect(document.querySelector('[data-expanded-row="true"]')).toBeNull();
+  });
+
   it("erro ao carregar os itens mostra o alerta", async () => {
     api.apiGetPedido.mockRejectedValue(new Error("itens indisponiveis"));
     render(<PedidosPage />);

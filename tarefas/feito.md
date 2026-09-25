@@ -4,6 +4,50 @@
 
 ---
 
+## Teste manual/e2e do `PedidoModal` no navegador (usuário normal e admin) — 2026-09-25
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → validação do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário no navegador em 2026-09-25:** OK. Durante a validação, o usuário relatou o **UI-04** (accordion de itens do pedido abre no fim da tabela), aberto em `fazendo.md`.
+
+**Camada:** Frontend (teste)
+**Origem:** 🟢 FrontBrain, durante o card "Scope check em Create/Update de Pedidos" (2026-09-23). As mudanças em `frontend/src/components/admin/PedidoModal.tsx` tinham sido validadas só com typecheck.
+
+**Escopo validado:**
+- Vendedor travado para usuário `normal`.
+- Aviso e botão Salvar bloqueado quando não há vendedor vinculado.
+- Cascata vendedor → cliente via `apiListClientesDoVendedor`.
+- Cliente "(fora da carteira)" mantido na edição.
+- Mensagem amigável para o `400` de carteira.
+
+**Resultado:**
+- **🔴 TestBrain (2026-09-24):** validou via API os perfis admin, normal com vendedor, normal sem vendedor e normal com vendedor desligado. Evidências e roteiro manual em `docs/roteiro-teste-manual-pedidomodal.md`.
+- **Usuário (2026-09-25):** executou o roteiro no navegador (criar/editar como `admin`, como `normal` com vendedor, `normal` sem vendedor e edição com cliente fora da carteira).
+
+---
+
+## UI-03: coluna própria para o ID principal nas tabelas — 2026-09-25
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário no navegador em 2026-09-25:** OK.
+
+**Camada:** Frontend
+**Origem:** pedido do usuário, 2026-09-25: "em todas as telas, crie uma coluna com o ID principal ao invés de colocar junto ao nome." Várias tabelas de `frontend/src/app/admin/` mostravam o ID principal na mesma célula do nome (ex.: `#id - razao_social`).
+
+**Padrão de referência:** a coluna `ID` que já existia em `frontend/src/app/admin/usuarios/page.tsx` (key `"id"`, header `"ID"`, largura `80px`, ordenável, estilo `font-mono text-xs`, valor `#{id}`).
+
+**Fora de escopo:** chaves estrangeiras exibidas em outras colunas (cliente, vendedor, `usuario_id` etc.), labels de select, toasts e mensagens de confirmação.
+
+**Resultado (2026-09-25):**
+- Coluna "ID" (primeira, ordenável, `#id` em `font-mono`) em clientes, estoque, oportunidades, pedidos, produtos, senha-historico, usuarios, vendedores, visitas e pagamentos. O prefixo `#id -` foi removido das colunas de nome.
+- Oportunidades e visitas não exibiam o ID antes. Senha-historico ganhou ordenação por `id` (`order_by=id`).
+- Pedidos: o header da coluna do nome passou de "Pedido" para "Cliente" (a coluna continua abrindo os itens).
+- Pagamentos: a antiga coluna "Pagamento" virou a coluna "ID". O botão "Editar pagamento" foi para a coluna "Forma".
+- **🟢 FrontBrain:** padrão aplicado nas 10 telas (typecheck OK).
+- **🔴 TestBrain:** testes ajustados em `crudPaginas.test.tsx`, `listasPaginadas.test.tsx`, `admin/crudAdmin.test.tsx` e `admin/listasAdmin.test.tsx`, com novos blocos "UI-03 coluna ID". Suíte com **634 testes passando, 0 falhas**.
+- **Pendência fora do escopo:** `frontend/src/components/admin/VendedorModal.tsx:57` ainda mostra `#id - razao_social` na lista de clientes vinculados dentro do modal do vendedor.
+
+---
+
 ## Lote 3 de 2026-09-24: 6 cards concluídos (de 6)
 
 > Lote executado pelo 🤍 MegaBrain, a pedido do usuário, com os 6 follow-ups do Lote 2. BUG-04, RISCO-01, FE-01 e FE-02 foram concluídos em 2026-09-24. SEC-01 e FE-03 foram implementados e cobertos por testes em 2026-09-24 e validados pelo usuário no navegador em 2026-09-25. Os follow-ups deste lote estão em `afazer.md`: SEC-02, SEC-03, NEG-01, BUG-06, FE-04 e FE-05. O card BUG-05 (em `fazendo.md`) é tratado em outra sessão.
