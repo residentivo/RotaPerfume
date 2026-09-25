@@ -217,3 +217,55 @@ Registrar evidências e abrir bugs, se houver.
 **Ação esperada:**
 - 🟡 BackBrain implementa e cobre com testes.
 - 🔵 SubBrain atualiza a documentação e o Postman se a resposta da API mudar.
+
+---
+
+## UI-03: coluna própria para o ID principal nas tabelas
+
+**Início:** 2026-09-25
+**Passo atual:** Implementado pelo 🟢 FrontBrain (typecheck OK) e coberto pelo 🔴 TestBrain (634 testes passando, 0 falhas); aguardando validação do usuário no navegador.
+
+**Camada:** Frontend
+**Origem:** pedido do usuário, 2026-09-25: "em todas as telas, crie uma coluna com o ID principal ao invés de colocar junto ao nome."
+
+**Descrição:** Várias tabelas das telas de `frontend/src/app/admin/` mostram o ID principal junto ao nome, na mesma célula (ex.: `#id - razao_social`). O ID deve passar para uma coluna própria, e a coluna do nome deve mostrar só o nome.
+
+**Padrão de referência:** a coluna `ID` que já existe em `frontend/src/app/admin/usuarios/page.tsx` (por volta da linha 280):
+- key `"id"`, header `"ID"`, largura `80px`, ordenável (sortable);
+- estilo `font-mono text-xs`;
+- valor exibido como `#{id}`.
+
+**Telas afetadas e ID principal:**
+
+| Tela | ID principal | Situação atual |
+| --- | --- | --- |
+| clientes | `cliente_id_origem` | `#id - razao_social` |
+| estoque | `id` | ID junto ao `sku` |
+| oportunidades | `oportunidade_id` | ID junto ao texto principal (FrontBrain confirma a célula) |
+| pedidos | `pedido_id_origem` | ID junto a `cliente_nome` |
+| produtos | `id` | ID junto a `descricao` |
+| senha-historico | `id` | ID junto ao texto principal (FrontBrain confirma a célula) |
+| usuarios | `id` | coluna `ID` já existe; só remover o `#id -` do nome |
+| vendedores | `id` | ID junto a `nome` |
+| visitas | `visita_id` | ID junto ao texto principal (FrontBrain confirma a célula) |
+| pagamentos | `pagamento_id` | ID junto a `forma_pagamento` |
+
+**Fora de escopo:**
+- Chaves estrangeiras exibidas em outras colunas (cliente, vendedor, `usuario_id` etc.).
+- Labels de select.
+- Toasts e mensagens de confirmação.
+
+**Responsáveis:**
+- 🟢 FrontBrain aplica o padrão nas 10 telas (typecheck OK).
+- 🔴 TestBrain ajusta os testes que conferem o texto das células (ex.: `#id - nome`) e cobre a nova coluna.
+- 🔵 SubBrain atualiza o manual das telas ao concluir.
+
+**Resultado (2026-09-25):**
+- Coluna "ID" (primeira, ordenável, `#id` em `font-mono`) em clientes, estoque, oportunidades, pedidos, produtos, senha-historico, usuarios, vendedores, visitas e pagamentos. O prefixo `#id -` foi removido das colunas de nome.
+- Oportunidades e visitas não exibiam o ID antes. Senha-historico ganhou ordenação por `id` (`order_by=id`).
+- Pedidos: o header da coluna do nome passou de "Pedido" para "Cliente" (a coluna continua abrindo os itens).
+- Pagamentos: a antiga coluna "Pagamento" virou a coluna "ID". O botão "Editar pagamento" foi para a coluna "Forma".
+- Testes ajustados: `crudPaginas.test.tsx`, `listasPaginadas.test.tsx`, `admin/crudAdmin.test.tsx` e `admin/listasAdmin.test.tsx`, com novos blocos "UI-03 coluna ID".
+- **Pendência fora do escopo:** `frontend/src/components/admin/VendedorModal.tsx:57` ainda mostra `#id - razao_social` na lista de clientes vinculados dentro do modal do vendedor.
+
+**Ação esperada do usuário:** validar visualmente as tabelas no navegador. Em cada tela, conferir que o ID aparece em coluna própria, ordenável, e que a coluna do nome não traz mais o `#id -`.

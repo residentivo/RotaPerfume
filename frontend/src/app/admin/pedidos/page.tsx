@@ -313,8 +313,19 @@ function PedidosContent() {
 
   const columns: Column<Pedido>[] = [
     {
+      key: "pedido_id_origem",
+      header: "ID",
+      width: "80px",
+      align: "left",
+      sortable: true,
+      sortValue: (p) => p.pedido_id_origem,
+      render: (p) => (
+        <span className="font-mono text-xs">#{p.pedido_id_origem}</span>
+      ),
+    },
+    {
       key: "cliente_nome",
-      header: "Pedido",
+      header: "Cliente",
       sortable: true,
       render: (p) => (
         <button
@@ -323,7 +334,7 @@ function PedidosContent() {
           className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
           title="Ver itens do pedido"
         >
-          #{p.pedido_id_origem} - {p.cliente_nome}
+          {p.cliente_nome}
         </button>
       ),
     },

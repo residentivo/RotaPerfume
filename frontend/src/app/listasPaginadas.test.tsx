@@ -114,7 +114,7 @@ const TELAS: Tela[] = [
       status: "Faturado",
       valor_total: 10,
     }),
-    texto: (id) => `#${id} - Cliente ${id}`,
+    texto: (id) => `Cliente ${id}`,
     ordemPadrao: ["id", "desc"],
     ordenar: { header: "Status", orderBy: "status" },
     filtro: { label: "Status", tipo: "select", valor: "Faturado", campo: "status", esperado: "Faturado" },
@@ -135,7 +135,7 @@ const TELAS: Tela[] = [
       data_pagamento: null,
       status_pagamento: "Pago",
     }),
-    texto: (id) => `#${id} - PIX`,
+    texto: (id) => `#${id}`,
     ordemPadrao: ["pagamento_id", "desc"],
     ordenar: { header: "Forma", orderBy: "forma_pagamento" },
     filtro: {
@@ -161,7 +161,7 @@ const TELAS: Tela[] = [
       data_cadastro: "2026-01-10",
       ativo: true,
     }),
-    texto: (id) => `#${id} - Loja ${id}`,
+    texto: (id) => `Loja ${id}`,
     ordemPadrao: ["id", "asc"],
     ordenar: { header: "Segmento", orderBy: "segmento" },
     filtro: { label: "Status", tipo: "select", valor: "inativo", campo: "ativo", esperado: false },
@@ -223,7 +223,7 @@ const TELAS: Tela[] = [
       saldo: 5,
       ruptura: false,
     }),
-    texto: (id) => `#${id} - SKU${id}`,
+    texto: (id) => `SKU${id}`,
     ordemPadrao: ["sku", "asc"],
     ordenar: { header: "Saldo", orderBy: "saldo" },
     filtro: { label: "Ruptura", tipo: "select", valor: "sim", campo: "ruptura", esperado: true },
@@ -245,7 +245,7 @@ const TELAS: Tela[] = [
       data_lancamento: null,
       ativo: true,
     }),
-    texto: (id) => `#${id} - Perfume ${id}`,
+    texto: (id) => `Perfume ${id}`,
     ordemPadrao: ["id", "asc"],
     ordenar: { header: "Marca", orderBy: "marca" },
     filtro: { label: "Marca", tipo: "input", valor: "Chanel", campo: "marca", esperado: "Chanel" },
@@ -532,7 +532,108 @@ describe("Estoque - admin vem da sessao (/me), nao do localStorage", () => {
     localStorage.setItem("auth_user", JSON.stringify({ ...ADMIN, role: "admin" }));
     sessao.user = user;
     render(<EstoquePage />);
-    await screen.findByText("#100 - SKU100");
+    await screen.findByText("SKU100");
     expect(!!screen.queryByRole("button", { name: "+ Novo registro" })).toBe(visivel);
+  });
+});
+
+// ─── UI-03: coluna propria para o ID principal ────────────────────────────────
+
+/** Texto do cabecalho sem os indicadores de ordenacao. */
+function textoCabecalho(el: Element): string {
+  return (el.textContent ?? "").replace(/[↑↓↕]/g, "").trim();
+}
+
+interface ColunaId {
+  nome: string;
+  /** Cabecalho da coluna do nome/descricao (null = tela sem coluna de nome). */
+  nomeHeader: string | null;
+  /** Texto esperado na coluna do nome para o id 100. */
+  nomeTexto: string | null;
+  /** order_by/dir esperados apos clicar no cabecalho "ID". */
+  ordenarId: [string, "asc" | "desc"];
+}
+
+const COLUNA_ID: ColunaId[] = [
+  { nome: "pedidos", nomeHeader: "Cliente", nomeTexto: "Cliente 100", ordenarId: ["id", "asc"] },
+  { nome: "pagamentos", nomeHeader: "Forma", nomeTexto: "PIX", ordenarId: ["pagamento_id", "asc"] },
+  { nome: "clientes", nomeHeader: "Razao Social", nomeTexto: "Loja 100", ordenarId: ["id", "desc"] },
+  { nome: "estoque", nomeHeader: "SKU", nomeTexto: "SKU100", ordenarId: ["id", "asc"] },
+  { nome: "produtos", nomeHeader: "Descricao", nomeTexto: "Perfume 100", ordenarId: ["id", "desc"] },
+  { nome: "oportunidades", nomeHeader: null, nomeTexto: null, ordenarId: ["id", "asc"] },
+  { nome: "visitas", nomeHeader: null, nomeTexto: null, ordenarId: ["id", "asc"] },
+];
+
+describe.each(COLUNA_ID)("UI-03 coluna ID - $nome", (c) => {
+  const t = TELAS.find((x) => x.nome === c.nome)!;
+  beforeEach(() => mockPorPagina(t));
+
+  it("primeira coluna e 'ID' e a celula mostra #<id> em fonte mono", async () => {
+    render(<t.Page />);
+    const celulaId = await screen.findByText("#100");
+
+    const headers = screen.getAllByRole("columnheader");
+    expect(textoCabecalho(headers[0])).toBe("ID");
+    expect(headers.filter((h) => textoCabecalho(h) === "ID")).toHaveLength(1);
+
+    expect(celulaId).toHaveClass("font-mono");
+    const linha = celulaId.closest("tr")!;
+    const celulas = within(linha).getAllByRole("cell");
+    expect(celulas[0]).toHaveTextContent(/^#100$/);
+  });
+
+  it("coluna do nome nao tem mais o prefixo '#<id> - '", async () => {
+    if (!c.nomeHeader) return; // telas sem coluna de nome propria
+    render(<t.Page />);
+    const linha = (await screen.findByText("#100")).closest("tr")!;
+    const headers = screen.getAllByRole("columnheader").map(textoCabecalho);
+    const idx = headers.indexOf(c.nomeHeader);
+    expect(idx).toBeGreaterThan(0);
+
+    const celula = within(linha).getAllByRole("cell")[idx];
+    expect(celula).toHaveTextContent(c.nomeTexto!);
+    expect(celula.textContent).not.toMatch(/#100\s*-/);
+    expect(screen.queryByText(/^#100 - /)).toBeNull();
+  });
+
+  it("clicar no cabecalho 'ID' ordena pelo id na API", async () => {
+    await montarCarregada(t);
+    await userEvent.click(botaoCabecalho("ID"));
+    await waitFor(() =>
+      expect(ultima(t)).toMatchObject({ orderBy: c.ordenarId[0], orderDir: c.ordenarId[1] })
+    );
+  });
+});
+
+describe("UI-03 - especificos", () => {
+  it("pedidos: cabecalho da coluna do nome virou 'Cliente' (nao 'Pedido')", async () => {
+    const t = TELAS.find((x) => x.nome === "pedidos")!;
+    mockPorPagina(t);
+    render(<t.Page />);
+    await screen.findByText("#100");
+    const headers = screen.getAllByRole("columnheader").map(textoCabecalho);
+    expect(headers).toContain("Cliente");
+    expect(headers).not.toContain("Pedido");
+    // O nome do cliente e o botao que abre os itens/edicao.
+    expect(screen.getByRole("button", { name: "Cliente 100" })).toHaveAttribute(
+      "title",
+      "Ver itens do pedido"
+    );
+  });
+
+  it("pagamentos: ID e texto puro e o botao 'Editar pagamento' fica na coluna Forma", async () => {
+    const t = TELAS.find((x) => x.nome === "pagamentos")!;
+    mockPorPagina(t);
+    render(<t.Page />);
+    const celulaId = await screen.findByText("#100");
+    expect(celulaId.tagName).toBe("SPAN");
+    expect(celulaId.closest("button")).toBeNull();
+
+    const headers = screen.getAllByRole("columnheader").map(textoCabecalho);
+    expect(headers).not.toContain("Pagamento");
+    const linha = celulaId.closest("tr")!;
+    const celulaForma = within(linha).getAllByRole("cell")[headers.indexOf("Forma")];
+    const botao = within(celulaForma).getByRole("button", { name: "PIX" });
+    expect(botao).toHaveAttribute("title", "Editar pagamento");
   });
 });

@@ -298,7 +298,7 @@ function UsuariosPageContent() {
           className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
           title="Editar usuario"
         >
-          #{u.id} - {u.nome}
+          {u.nome}
         </button>
       ),
     },

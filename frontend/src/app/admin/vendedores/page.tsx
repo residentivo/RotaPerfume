@@ -284,6 +284,15 @@ function VendedoresPageContent() {
 
   const columns: Column<Vendedor>[] = [
     {
+      key: "id",
+      header: "ID",
+      width: "80px",
+      align: "left",
+      sortable: true,
+      sortValue: (v) => v.id,
+      render: (v) => <span className="font-mono text-xs">#{v.id}</span>,
+    },
+    {
       key: "nome",
       header: "Vendedor",
       sortable: true,
@@ -294,7 +303,7 @@ function VendedoresPageContent() {
           className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
           title="Editar vendedor"
         >
-          #{v.id} - {v.nome}
+          {v.nome}
         </button>
       ),
     },

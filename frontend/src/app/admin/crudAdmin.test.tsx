@@ -85,7 +85,7 @@ describe("Usuarios - CRUD", () => {
   ])("criar (%s) recarrega a lista e informa", async (_n, enviado, msg) => {
     api.apiCreateUser.mockResolvedValue({ ...bia, id: 3, nome: "Caio", email_enviado: enviado });
     render(<UsuariosPage />);
-    await screen.findByText("#2 - Bia");
+    await screen.findByText("Bia");
     await userEvent.click(screen.getByRole("button", { name: "+ Novo Usuario" }));
     const d = await dialogo();
     await waitFor(() => expect(within(d).getByLabelText("Vendedor vinculado (opcional)")).toBeEnabled());
@@ -99,7 +99,7 @@ describe("Usuarios - CRUD", () => {
   it("editar atualiza a linha", async () => {
     api.apiUpdateUser.mockResolvedValue({ ...bia, nome: "Bia Souza" });
     render(<UsuariosPage />);
-    await userEvent.click(await screen.findByText("#2 - Bia"));
+    await userEvent.click(await screen.findByText("Bia"));
     const d = await dialogo();
     await waitFor(() => expect(within(d).getByLabelText("Vendedor vinculado (opcional)")).toBeEnabled());
     await userEvent.click(within(d).getByRole("button", { name: "Salvar alteracoes" }));
@@ -114,7 +114,7 @@ describe("Usuarios - CRUD", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     preparar();
     render(<UsuariosPage />);
-    await screen.findByText("#2 - Bia");
+    await screen.findByText("Bia");
     await userEvent.click(screen.getByTitle("Clique para inativar"));
     expect(await screen.findByText(msg)).toBeInTheDocument();
     expect(api.apiToggleUserStatus).toHaveBeenCalledWith(2, false);
@@ -128,7 +128,7 @@ describe("Usuarios - CRUD", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     preparar();
     render(<UsuariosPage />);
-    await screen.findByText("#2 - Bia");
+    await screen.findByText("Bia");
     await userEvent.click(screen.getByRole("button", { name: "Resetar" }));
     expect(await screen.findByText(msg)).toBeInTheDocument();
   });
@@ -136,7 +136,7 @@ describe("Usuarios - CRUD", () => {
   it("cancelar confirmacoes nao chama a API", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<UsuariosPage />);
-    await screen.findByText("#2 - Bia");
+    await screen.findByText("Bia");
     await userEvent.click(screen.getByTitle("Clique para inativar"));
     await userEvent.click(screen.getByRole("button", { name: "Resetar" }));
     expect(api.apiToggleUserStatus).not.toHaveBeenCalled();
@@ -161,8 +161,8 @@ describe("Vendedores - CRUD", () => {
   });
 
   it.each<[string, string, "apiDeleteVendedor" | "apiReativarVendedor", string]>([
-    ["inativar ativo", "#3 - Vend 3", "apiDeleteVendedor", 'Vendedor "Vend 3" inativado com sucesso.'],
-    ["reativar inativo", "#4 - Vend 4", "apiReativarVendedor", 'Vendedor "Vend 4" reativado com sucesso.'],
+    ["inativar ativo", "Vend 3", "apiDeleteVendedor", 'Vendedor "Vend 3" inativado com sucesso.'],
+    ["reativar inativo", "Vend 4", "apiReativarVendedor", 'Vendedor "Vend 4" reativado com sucesso.'],
   ])("%s", async (_n, linha, fn, msg) => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     api[fn].mockResolvedValue({});
@@ -174,8 +174,8 @@ describe("Vendedores - CRUD", () => {
   });
 
   it.each<[string, "apiDeleteVendedor" | "apiReativarVendedor", string]>([
-    ["#3 - Vend 3", "apiDeleteVendedor", "erro inativar"],
-    ["#4 - Vend 4", "apiReativarVendedor", "erro reativar"],
+    ["Vend 3", "apiDeleteVendedor", "erro inativar"],
+    ["Vend 4", "apiReativarVendedor", "erro reativar"],
   ])("erro ao alternar %s mostra a mensagem", async (linha, fn, msg) => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     api[fn].mockRejectedValue(new Error(msg));
@@ -188,7 +188,7 @@ describe("Vendedores - CRUD", () => {
   it("criar recarrega a lista", async () => {
     api.apiCreateVendedor.mockResolvedValue({ ...ativo, id: 9, nome: "Novo" });
     render(<VendedoresPage />);
-    await screen.findByText("#3 - Vend 3");
+    await screen.findByText("Vend 3");
     await userEvent.click(screen.getByRole("button", { name: "+ Novo Vendedor" }));
     const d = await dialogo();
     await userEvent.type(within(d).getByLabelText("Nome"), "Novo");
@@ -201,7 +201,7 @@ describe("Vendedores - CRUD", () => {
   it("editar busca o detalhe, salva e recarrega", async () => {
     api.apiUpdateVendedor.mockResolvedValue({});
     render(<VendedoresPage />);
-    await userEvent.click(await screen.findByText("#3 - Vend 3"));
+    await userEvent.click(await screen.findByText("Vend 3"));
     const d = await dialogo();
     await within(d).findByText("Nenhum cliente vinculado a este vendedor.");
     await userEvent.click(within(d).getByRole("button", { name: "Salvar alteracoes" }));
@@ -229,7 +229,7 @@ describe("Produtos - CRUD", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     preparar();
     render(<ProdutosPage />);
-    await screen.findByText("#50 - Perfume 50");
+    await screen.findByText("Perfume 50");
     await esperarDebounce();
     await userEvent.click(screen.getByTitle("Clique para inativar"));
     expect(await screen.findByText(msg)).toBeInTheDocument();
@@ -238,19 +238,19 @@ describe("Produtos - CRUD", () => {
   it("editar atualiza a linha", async () => {
     api.apiUpdateProduto.mockResolvedValue({ ...perfume, descricao: "Perfume Novo" });
     render(<ProdutosPage />);
-    await screen.findByText("#50 - Perfume 50");
+    await screen.findByText("Perfume 50");
     await esperarDebounce();
-    await userEvent.click(await screen.findByText("#50 - Perfume 50"));
+    await userEvent.click(await screen.findByText("Perfume 50"));
     const d = await dialogo();
     await userEvent.click(within(d).getByRole("button", { name: "Salvar alteracoes" }));
     expect(await screen.findByText('Produto "Perfume Novo" atualizado com sucesso.')).toBeInTheDocument();
-    expect(screen.getByText("#50 - Perfume Novo")).toBeInTheDocument();
+    expect(screen.getByText("Perfume Novo")).toBeInTheDocument();
   });
 
   it("criar recarrega a lista", async () => {
     api.apiCreateProduto.mockResolvedValue({ ...perfume, id: 51, descricao: "Outro" });
     render(<ProdutosPage />);
-    await screen.findByText("#50 - Perfume 50");
+    await screen.findByText("Perfume 50");
     await esperarDebounce();
     await userEvent.click(screen.getByRole("button", { name: "+ Novo Produto" }));
     const d = await dialogo();
@@ -279,7 +279,7 @@ describe("Estoque - CRUD (admin)", () => {
   it("editar salva so o saldo e atualiza a linha", async () => {
     api.apiUpdateEstoque.mockResolvedValue({ ...registro, saldo: 9 });
     render(<EstoquePage />);
-    await screen.findByText("#5 - SKU-5");
+    await screen.findByText("SKU-5");
     await esperarDebounce();
     await userEvent.click((await screen.findAllByTitle("Editar registro de estoque"))[0]);
     const d = await dialogo();
@@ -293,9 +293,9 @@ describe("Estoque - CRUD (admin)", () => {
   it("criar recarrega a lista", async () => {
     api.apiCreateEstoque.mockResolvedValue({ ...registro, id: 6, sku: "SKU-6" });
     render(<EstoquePage />);
-    await screen.findByText("#5 - SKU-5");
+    await screen.findByText("SKU-5");
     await esperarDebounce();
-    await screen.findByText("#5 - SKU-5");
+    await screen.findByText("SKU-5");
     await userEvent.click(screen.getByRole("button", { name: "+ Novo registro" }));
     const d = await dialogo();
     await userEvent.type(within(d).getByLabelText("SKU"), "SKU-6");
@@ -312,7 +312,7 @@ describe("Estoque - CRUD (admin)", () => {
   ])("erro ao salvar: %s", async (_n, erro, msg) => {
     api.apiUpdateEstoque.mockRejectedValue(new Error(erro));
     render(<EstoquePage />);
-    await screen.findByText("#5 - SKU-5");
+    await screen.findByText("SKU-5");
     await esperarDebounce();
     await userEvent.click((await screen.findAllByTitle("Editar registro de estoque"))[0]);
     const d = await dialogo();

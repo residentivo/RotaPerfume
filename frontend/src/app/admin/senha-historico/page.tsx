@@ -10,7 +10,7 @@ import { Select } from "@/components/ui/Select";
 import { apiListSenhaHistorico } from "@/lib/api";
 import { SenhaHistoricoItem, TipoReset } from "@/lib/types";
 
-type SortKey = "created_at" | "usuario_nome" | "tipo_reset" | "resetado_por_nome" | "ip_origem";
+type SortKey = "id" | "created_at" | "usuario_nome" | "tipo_reset" | "resetado_por_nome" | "ip_origem";
 type SortDir = "asc" | "desc";
 
 // Mapeia a sortKey interna do frontend para o campo aceito pelo backend em
@@ -19,6 +19,7 @@ type SortDir = "asc" | "desc";
 // existem la, entao nao enviamos order_by para essas colunas (a ordenacao
 // cai no default do backend: id desc).
 const ORDER_BY_MAP: Partial<Record<SortKey, string>> = {
+  id: "id",
   created_at: "created_at",
   tipo_reset: "tipo_reset",
 };
@@ -202,6 +203,15 @@ export default function SenhaHistoricoPage() {
   }, [items, search]);
 
   const columns: Column<SenhaHistoricoItem>[] = [
+    {
+      key: "id",
+      header: "ID",
+      width: "80px",
+      align: "left",
+      sortable: true,
+      sortValue: (it) => it.id,
+      render: (it) => <span className="font-mono text-xs">#{it.id}</span>,
+    },
     {
       key: "created_at",
       header: "Data/Hora",

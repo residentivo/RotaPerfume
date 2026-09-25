@@ -102,7 +102,7 @@ describe("Clientes - criacao (SEC-01)", () => {
   it("apos criar, recarrega a lista e o cliente novo aparece para o usuario normal", async () => {
     useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
     render(<ClientesPage />);
-    await screen.findByText("#10 - Loja A");
+    await screen.findByText("Loja A");
 
     api.apiCreateCliente.mockResolvedValue(cliente(11, "Loja Nova"));
     api.apiListClientes.mockResolvedValue(
@@ -111,7 +111,7 @@ describe("Clientes - criacao (SEC-01)", () => {
     const chamadasAntes = api.apiListClientes.mock.calls.length;
     await preencherNovoCliente();
 
-    expect(await screen.findByText("#11 - Loja Nova")).toBeInTheDocument();
+    expect(await screen.findByText("Loja Nova")).toBeInTheDocument();
     expect(api.apiListClientes.mock.calls.length).toBeGreaterThan(chamadasAntes);
     expect(screen.getByText('Cliente "Loja Nova" criado com sucesso.')).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -136,7 +136,7 @@ describe("Clientes - erros da API (SEC-01)", () => {
     useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
     api.apiUpdateCliente.mockRejectedValue(new ApiError(404, "cliente não encontrado"));
     render(<ClientesPage />);
-    await screen.findByText("#10 - Loja A");
+    await screen.findByText("Loja A");
     const chamadasAntes = api.apiListClientes.mock.calls.length;
     api.apiListClientes.mockResolvedValue(page([]));
 
@@ -147,7 +147,7 @@ describe("Clientes - erros da API (SEC-01)", () => {
     expect(await screen.findByText("cliente não encontrado")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(api.apiListClientes.mock.calls.length).toBeGreaterThan(chamadasAntes);
-    await waitFor(() => expect(screen.queryByText("#10 - Loja A")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Loja A")).not.toBeInTheDocument());
   });
 
   it("404 ao inativar mostra a mensagem da API e recarrega a lista", async () => {
@@ -155,7 +155,7 @@ describe("Clientes - erros da API (SEC-01)", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     api.apiToggleClienteStatus.mockRejectedValue(new ApiError(404, "cliente não encontrado"));
     render(<ClientesPage />);
-    await screen.findByText("#10 - Loja A");
+    await screen.findByText("Loja A");
     const chamadasAntes = api.apiListClientes.mock.calls.length;
 
     api.apiListClientes.mockResolvedValue(page([]));
@@ -163,7 +163,7 @@ describe("Clientes - erros da API (SEC-01)", () => {
 
     expect(await screen.findByText("cliente não encontrado")).toBeInTheDocument();
     expect(api.apiListClientes.mock.calls.length).toBeGreaterThan(chamadasAntes);
-    await waitFor(() => expect(screen.queryByText("#10 - Loja A")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Loja A")).not.toBeInTheDocument());
   });
 
   it("403 ao inativar mostra a mensagem da API", async () => {
@@ -173,7 +173,7 @@ describe("Clientes - erros da API (SEC-01)", () => {
       new ApiError(403, "usuário sem vendedor vinculado")
     );
     render(<ClientesPage />);
-    await screen.findByText("#10 - Loja A");
+    await screen.findByText("Loja A");
     await userEvent.click(screen.getByRole("button", { name: /Ativo/ }));
     expect(await screen.findByText("usuário sem vendedor vinculado")).toBeInTheDocument();
   });
@@ -221,7 +221,7 @@ describe("Clientes - motivo do bloqueio e fallbacks (SEC-01)", () => {
     useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
     api.apiUpdateCliente.mockRejectedValue(new ApiError(404, ""));
     render(<ClientesPage />);
-    await screen.findByText("#10 - Loja A");
+    await screen.findByText("Loja A");
     await userEvent.click(screen.getByRole("button", { name: "Editar" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Salvar alteracoes" }));
@@ -232,12 +232,12 @@ describe("Clientes - motivo do bloqueio e fallbacks (SEC-01)", () => {
     useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
     api.apiUpdateCliente.mockResolvedValue(cliente(10, "Loja A Editada"));
     render(<ClientesPage />);
-    await screen.findByText("#10 - Loja A");
+    await screen.findByText("Loja A");
     const antes = api.apiListClientes.mock.calls.length;
     await userEvent.click(screen.getByRole("button", { name: "Editar" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Salvar alteracoes" }));
-    expect(await screen.findByText("#10 - Loja A Editada")).toBeInTheDocument();
+    expect(await screen.findByText("Loja A Editada")).toBeInTheDocument();
     expect(screen.getByText('Cliente "Loja A Editada" atualizado com sucesso.')).toBeInTheDocument();
     expect(api.apiListClientes.mock.calls.length).toBe(antes);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -248,7 +248,7 @@ describe("Clientes - motivo do bloqueio e fallbacks (SEC-01)", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     api.apiToggleClienteStatus.mockResolvedValue(cliente(10, "Loja A", { ativo: false }));
     render(<ClientesPage />);
-    await screen.findByText("#10 - Loja A");
+    await screen.findByText("Loja A");
     await userEvent.click(screen.getByRole("button", { name: /Ativo/ }));
     expect(await screen.findByText("Cliente inativado com sucesso.")).toBeInTheDocument();
     expect(api.apiToggleClienteStatus).toHaveBeenCalledWith(10, false);
@@ -258,7 +258,7 @@ describe("Clientes - motivo do bloqueio e fallbacks (SEC-01)", () => {
     useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
     vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<ClientesPage />);
-    await screen.findByText("#10 - Loja A");
+    await screen.findByText("Loja A");
     await userEvent.click(screen.getByRole("button", { name: /Ativo/ }));
     expect(api.apiToggleClienteStatus).not.toHaveBeenCalled();
   });

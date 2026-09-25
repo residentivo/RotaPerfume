@@ -219,6 +219,15 @@ function ProdutosPageContent() {
 
   const columns: Column<Produto>[] = [
     {
+      key: "id",
+      header: "ID",
+      width: "80px",
+      align: "left",
+      sortable: true,
+      sortValue: (p) => p.id,
+      render: (p) => <span className="font-mono text-xs">#{p.id}</span>,
+    },
+    {
       key: "descricao",
       header: "Descricao",
       sortable: true,
@@ -229,7 +238,7 @@ function ProdutosPageContent() {
           className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
           title="Editar produto"
         >
-          #{p.id} - {p.descricao}
+          {p.descricao}
         </button>
       ),
     },

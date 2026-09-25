@@ -270,17 +270,13 @@ function PagamentosContent() {
   const columns: Column<Pagamento>[] = [
     {
       key: "pagamento_id",
-      header: "Pagamento",
+      header: "ID",
+      width: "80px",
+      align: "left",
       sortable: true,
+      sortValue: (p) => p.pagamento_id,
       render: (p) => (
-        <button
-          type="button"
-          onClick={() => openEdit(p)}
-          className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
-          title="Editar pagamento"
-        >
-          #{p.pagamento_id} - {p.forma_pagamento}
-        </button>
+        <span className="font-mono text-xs">#{p.pagamento_id}</span>
       ),
     },
     {
@@ -297,7 +293,16 @@ function PagamentosContent() {
       header: "Forma",
       width: "160px",
       sortable: true,
-      render: (p) => <span className="text-slate-600">{p.forma_pagamento}</span>,
+      render: (p) => (
+        <button
+          type="button"
+          onClick={() => openEdit(p)}
+          className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
+          title="Editar pagamento"
+        >
+          {p.forma_pagamento}
+        </button>
+      ),
     },
     {
       key: "valor",

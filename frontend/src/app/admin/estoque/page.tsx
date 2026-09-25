@@ -193,6 +193,15 @@ function EstoquePageContent() {
 
   const columns: Column<Estoque>[] = [
     {
+      key: "id",
+      header: "ID",
+      width: "80px",
+      align: "left",
+      sortable: true,
+      sortValue: (e) => e.id,
+      render: (e) => <span className="font-mono text-xs">#{e.id}</span>,
+    },
+    {
       key: "sku",
       header: "SKU",
       sortable: true,
@@ -205,7 +214,7 @@ function EstoquePageContent() {
             title="Editar registro de estoque"
           >
             <span className="block font-mono text-xs font-medium text-slate-900 hover:underline">
-              #{e.id} - {e.sku}
+              {e.sku}
             </span>
             {e.produto_descricao && (
               <span className="block text-xs text-slate-500">
@@ -216,7 +225,7 @@ function EstoquePageContent() {
         ) : (
           <span>
             <span className="block font-mono text-xs font-medium text-slate-900">
-              #{e.id} - {e.sku}
+              {e.sku}
             </span>
             {e.produto_descricao && (
               <span className="block text-xs text-slate-500">

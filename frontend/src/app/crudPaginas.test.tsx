@@ -157,7 +157,7 @@ const TELAS: Tela[] = [
     update: "apiUpdatePedido",
     create: "apiCreatePedido",
     linha: pedido,
-    texto: "#5 - Cliente 5",
+    texto: "Cliente 5",
     tituloExcluir: "Excluir pedido",
     msgExcluido: "Pedido #5 excluido com sucesso.",
     tituloEditar: "Editar pedido",
@@ -184,7 +184,7 @@ const TELAS: Tela[] = [
     update: "apiUpdatePagamento",
     create: "apiCreatePagamento",
     linha: pagamento,
-    texto: "#5 - PIX",
+    texto: "PIX",
     tituloExcluir: "Excluir pagamento",
     msgExcluido: "Pagamento #5 excluido com sucesso.",
     tituloEditar: "Editar pagamento",
@@ -415,7 +415,7 @@ describe("Pedidos - itens do pedido (master-detail)", () => {
 
   it("'Itens' mostra os itens do pedido e 'Ocultar itens' esconde", async () => {
     render(<PedidosPage />);
-    await aposMontagem("#5 - Cliente 5");
+    await aposMontagem("Cliente 5");
     await userEvent.click(screen.getByRole("button", { name: "Itens" }));
     expect(await screen.findByText("Itens do pedido #5")).toBeInTheDocument();
     expect(await screen.findByText(/#50 - Perfume 50/)).toBeInTheDocument();
@@ -428,7 +428,7 @@ describe("Pedidos - itens do pedido (master-detail)", () => {
   it("erro ao carregar os itens mostra o alerta", async () => {
     api.apiGetPedido.mockRejectedValue(new Error("itens indisponiveis"));
     render(<PedidosPage />);
-    await aposMontagem("#5 - Cliente 5");
+    await aposMontagem("Cliente 5");
     await userEvent.click(screen.getByRole("button", { name: "Itens" }));
     expect(await screen.findByText("itens indisponiveis")).toBeInTheDocument();
   });
@@ -436,7 +436,7 @@ describe("Pedidos - itens do pedido (master-detail)", () => {
   it("erro ao abrir o pedido para edicao mostra o alerta e nao abre o modal", async () => {
     api.apiGetPedido.mockRejectedValue(new Error("pedido sumiu"));
     render(<PedidosPage />);
-    await aposMontagem("#5 - Cliente 5");
+    await aposMontagem("Cliente 5");
     await userEvent.click(screen.getByTitle("Editar pedido"));
     expect(await screen.findByText("pedido sumiu")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -446,7 +446,7 @@ describe("Pedidos - itens do pedido (master-detail)", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     api.apiDeletePedido.mockResolvedValue(undefined);
     render(<PedidosPage />);
-    await aposMontagem("#5 - Cliente 5");
+    await aposMontagem("Cliente 5");
     await userEvent.click(screen.getByRole("button", { name: "Itens" }));
     await screen.findByText("Itens do pedido #5");
     await userEvent.click(screen.getByTitle("Excluir pedido"));

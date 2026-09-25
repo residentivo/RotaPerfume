@@ -336,6 +336,15 @@ function VisitasContent() {
 
   const columns: Column<Visita>[] = [
     {
+      key: "visita_id",
+      header: "ID",
+      width: "80px",
+      align: "left",
+      sortable: true,
+      sortValue: (v) => v.visita_id,
+      render: (v) => <span className="font-mono text-xs">#{v.visita_id}</span>,
+    },
+    {
       key: "cliente_id",
       header: "Cliente",
       sortable: true,

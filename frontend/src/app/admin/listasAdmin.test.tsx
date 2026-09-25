@@ -8,7 +8,7 @@
  */
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SenhaHistoricoItem, User, Vendedor } from "@/lib/types";
 
@@ -96,15 +96,15 @@ describe("Usuarios (FE-03)", () => {
     await act(async () =>
       d.resolve({ data: [usuario(100)], page: 1, limit: 20, total: 1, pages: 1 })
     );
-    expect(await screen.findByText("#100 - Usuario 100")).toBeInTheDocument();
+    expect(await screen.findByText("Usuario 100")).toBeInTheDocument();
     expect(spinner()).toBeNull();
   });
 
   it("paginacao e ordenacao disparam busca com os parametros certos", async () => {
     render(<UsuariosPage />);
-    await screen.findByText("#100 - Usuario 100");
+    await screen.findByText("Usuario 100");
     await userEvent.click(screen.getByTitle("Proxima pagina"));
-    expect(await screen.findByText("#200 - Usuario 200")).toBeInTheDocument();
+    expect(await screen.findByText("Usuario 200")).toBeInTheDocument();
     expect(api.apiListUsers).toHaveBeenLastCalledWith(2, 20, "id", "asc");
 
     await userEvent.click(botaoCabecalho("Nome"));
@@ -113,21 +113,21 @@ describe("Usuarios (FE-03)", () => {
 
   it("filtro na pagina 2 volta para a 1 com uma unica busca; na pagina 1 nao busca de novo", async () => {
     render(<UsuariosPage />);
-    await screen.findByText("#100 - Usuario 100");
+    await screen.findByText("Usuario 100");
     await userEvent.click(screen.getByTitle("Proxima pagina"));
-    await screen.findByText("#200 - Usuario 200");
+    await screen.findByText("Usuario 200");
 
     const antes = api.apiListUsers.mock.calls.length;
     await userEvent.selectOptions(screen.getByLabelText("Perfil"), "admin");
-    await screen.findByText("#101 - Usuario 101");
+    await screen.findByText("Usuario 101");
     expect(api.apiListUsers.mock.calls.length).toBe(antes + 1);
     expect(api.apiListUsers).toHaveBeenLastCalledWith(1, 20, "id", "asc");
     // Filtro client-side aplicado sobre a pagina.
-    expect(screen.queryByText("#100 - Usuario 100")).not.toBeInTheDocument();
+    expect(screen.queryByText("Usuario 100")).not.toBeInTheDocument();
 
     const naPagina1 = api.apiListUsers.mock.calls.length;
     await userEvent.selectOptions(screen.getByLabelText("Perfil"), "");
-    expect(await screen.findByText("#100 - Usuario 100")).toBeInTheDocument();
+    expect(await screen.findByText("Usuario 100")).toBeInTheDocument();
     expect(api.apiListUsers.mock.calls.length).toBe(naPagina1);
   });
 
@@ -141,13 +141,13 @@ describe("Usuarios (FE-03)", () => {
   it("modal: novo abre resetado; editar abre preenchido", async () => {
     api.apiListVendedores.mockResolvedValue([]);
     render(<UsuariosPage />);
-    await screen.findByText("#100 - Usuario 100");
+    await screen.findByText("Usuario 100");
     await userEvent.click(screen.getByRole("button", { name: "+ Novo Usuario" }));
     const dialog = await screen.findByRole("dialog");
     expect((within(dialog).getByLabelText("Nome completo") as HTMLInputElement).value).toBe("");
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
 
-    await userEvent.click(screen.getByText("#100 - Usuario 100"));
+    await userEvent.click(screen.getByText("Usuario 100"));
     const edit = await screen.findByRole("dialog");
     expect((within(edit).getByLabelText("Nome completo") as HTMLInputElement).value).toBe(
       "Usuario 100"
@@ -260,11 +260,11 @@ describe("Vendedores (FE-03)", () => {
   it("loading -> carrega uma vez e pagina localmente", async () => {
     render(<VendedoresPage />);
     expect(spinner()).not.toBeNull();
-    expect(await screen.findByText("#1 - Vend 01")).toBeInTheDocument();
-    expect(screen.queryByText("#21 - Vend 21")).not.toBeInTheDocument();
+    expect(await screen.findByText("Vend 01")).toBeInTheDocument();
+    expect(screen.queryByText("Vend 21")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByTitle("Proxima pagina"));
-    expect(await screen.findByText("#21 - Vend 21")).toBeInTheDocument();
+    expect(await screen.findByText("Vend 21")).toBeInTheDocument();
     expect(api.apiListVendedores).toHaveBeenCalledTimes(1);
   });
 
@@ -273,9 +273,9 @@ describe("Vendedores (FE-03)", () => {
     ["ordenacao", async (u) => u.click(botaoCabecalho("Vendedor"))],
   ])("mudar %s volta para a pagina 1", async (_n, mudar) => {
     render(<VendedoresPage />);
-    await screen.findByText("#1 - Vend 01");
+    await screen.findByText("Vend 01");
     await userEvent.click(screen.getByTitle("Proxima pagina"));
-    await screen.findByText("#21 - Vend 21");
+    await screen.findByText("Vend 21");
     await mudar(userEvent.setup());
     // Pagina 1: "Pagina anterior" desabilitado.
     await waitFor(() => expect(screen.getByTitle("Pagina anterior")).toBeDisabled());
@@ -286,5 +286,74 @@ describe("Vendedores (FE-03)", () => {
     render(<VendedoresPage />);
     expect(await screen.findByText("sem vendedores")).toBeInTheDocument();
     expect(spinner()).toBeNull();
+  });
+});
+
+// ─── UI-03: coluna propria para o ID principal ────────────────────────────────
+
+function textoCabecalho(el: Element): string {
+  return (el.textContent ?? "").replace(/[↑↓↕]/g, "").trim();
+}
+
+function primeiraCelulaDaLinha(n: number): HTMLElement {
+  const linhas = screen.getAllByRole("row").filter((r) => within(r).queryAllByRole("cell").length);
+  return within(linhas[n]).getAllByRole("cell")[0];
+}
+
+describe("UI-03 coluna ID - telas administrativas", () => {
+  beforeEach(() => {
+    api.apiListUsers.mockResolvedValue({ data: [usuario(100)], page: 1, limit: 20, total: 1, pages: 1 });
+    api.apiListVendedores.mockResolvedValue(Array.from({ length: 25 }, (_, i) => vend(i + 1)));
+    api.apiListSenhaHistorico.mockResolvedValue({ data: [item(100)], page: 1, limit: 20, total: 1, pages: 1 });
+  });
+
+  it.each<[string, () => ReactElement, string, string, string]>([
+    ["usuarios", () => <UsuariosPage />, "#100", "Nome", "Usuario 100"],
+    ["vendedores", () => <VendedoresPage />, "#1", "Vendedor", "Vend 01"],
+    ["senha-historico", () => <SenhaHistoricoPage />, "#100", "Usuario", "Pessoa 100"],
+  ])("%s: primeira coluna 'ID' com #<id> em fonte mono", async (_n, Page, idTexto, nomeHeader, nome) => {
+    render(Page());
+    const celulaId = await screen.findByText(idTexto);
+    const headers = screen.getAllByRole("columnheader");
+    expect(textoCabecalho(headers[0])).toBe("ID");
+    expect(celulaId).toHaveClass("font-mono");
+    const linha = celulaId.closest("tr")!;
+    expect(within(linha).getAllByRole("cell")[0]).toHaveTextContent(new RegExp(`^${idTexto}$`));
+    const idx = headers.map(textoCabecalho).indexOf(nomeHeader);
+    expect(idx).toBeGreaterThan(0);
+    expect(within(linha).getAllByRole("cell")[idx]).toHaveTextContent(nome);
+  });
+
+  it.each<[string, () => ReactElement, string]>([
+    ["usuarios", () => <UsuariosPage />, "Usuario 100"],
+    ["vendedores", () => <VendedoresPage />, "Vend 01"],
+  ])("%s: nome nao tem mais o prefixo '#<id> - '", async (_n, Page, nome) => {
+    render(Page());
+    const botao = await screen.findByRole("button", { name: nome });
+    expect(botao.textContent).toBe(nome);
+    expect(screen.queryByText(/^#\d+ - (Usuario|Vend) /)).toBeNull();
+  });
+
+  it("vendedores: ordenar pelo ID ordena localmente asc/desc", async () => {
+    render(<VendedoresPage />);
+    await screen.findByText("Vend 01");
+    await userEvent.click(botaoCabecalho("ID"));
+    await waitFor(() => expect(primeiraCelulaDaLinha(0)).toHaveTextContent(/^#1$/));
+    await userEvent.click(botaoCabecalho("ID"));
+    await waitFor(() => expect(primeiraCelulaDaLinha(0)).toHaveTextContent(/^#25$/));
+    expect(api.apiListVendedores).toHaveBeenCalledTimes(1);
+  });
+
+  it("senha-historico: ordenar pelo ID envia order_by=id para a API", async () => {
+    render(<SenhaHistoricoPage />);
+    await screen.findByText("#100");
+    await userEvent.click(botaoCabecalho("ID"));
+    await waitFor(() =>
+      expect(api.apiListSenhaHistorico).toHaveBeenLastCalledWith(1, 20, undefined, undefined, "id", "asc")
+    );
+    await userEvent.click(botaoCabecalho("ID"));
+    await waitFor(() =>
+      expect(api.apiListSenhaHistorico).toHaveBeenLastCalledWith(1, 20, undefined, undefined, "id", "desc")
+    );
   });
 });

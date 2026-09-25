@@ -378,6 +378,17 @@ function OportunidadesContent() {
 
   const columns: Column<Oportunidade>[] = [
     {
+      key: "oportunidade_id",
+      header: "ID",
+      width: "80px",
+      align: "left",
+      sortable: true,
+      sortValue: (o) => o.oportunidade_id,
+      render: (o) => (
+        <span className="font-mono text-xs">#{o.oportunidade_id}</span>
+      ),
+    },
+    {
       key: "cliente_id",
       header: "Cliente",
       sortable: true,

@@ -303,6 +303,17 @@ function ClientesContent() {
 
   const columns: Column<Cliente>[] = [
     {
+      key: "cliente_id_origem",
+      header: "ID",
+      width: "80px",
+      align: "left",
+      sortable: true,
+      sortValue: (c) => c.cliente_id_origem,
+      render: (c) => (
+        <span className="font-mono text-xs">#{c.cliente_id_origem}</span>
+      ),
+    },
+    {
       key: "razao_social",
       header: "Razao Social",
       sortable: true,
@@ -313,7 +324,7 @@ function ClientesContent() {
           className="font-medium text-slate-900 hover:text-primary-600 hover:underline text-left"
           title="Editar cliente"
         >
-          #{c.cliente_id_origem} - {c.razao_social}
+          {c.razao_social}
         </button>
       ),
     },
