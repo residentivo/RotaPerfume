@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDebounceFiltros, useUltimaResposta } from "@/lib/useListaSegura";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -77,6 +78,10 @@ function ProdutosPageContent() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingProduto, setEditingProduto] = useState<Produto | null>(null);
 
+  // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
+  // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  const executarBusca = useUltimaResposta();
+
   // Busca separada em requisicao pura + aplicacao do resultado no callback
   // assincrono (.then): o efeito nunca chama setState de forma sincrona.
   const buscarProdutos = () =>
@@ -119,7 +124,7 @@ function ProdutosPageContent() {
   const loadProdutos = async () => {
     setLoading(true);
     setError(null);
-    await buscarProdutos().then(aplicarProdutos, aplicarErroProdutos);
+    await executarBusca(buscarProdutos(), aplicarProdutos, aplicarErroProdutos);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -133,22 +138,21 @@ function ProdutosPageContent() {
   }
 
   useEffect(() => {
-    buscarProdutos().then(aplicarProdutos, aplicarErroProdutos);
+    executarBusca(buscarProdutos(), aplicarProdutos, aplicarErroProdutos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 
   // Debounce da busca textual e reset para pagina 1 quando filtros mudam
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (page !== 1) {
-        setPage(1);
-      } else {
-        loadProdutos();
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, categoriaFilter, marcaFilter, statusFilter]);
+  // FE-04: o debounce nao dispara na montagem, so quando a chave dos filtros
+  // muda (evita a busca dupla e a tabela voltando para a pagina 1).
+  const chaveFiltros = JSON.stringify([search, categoriaFilter, marcaFilter, statusFilter]);
+  useDebounceFiltros(chaveFiltros, () => {
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      loadProdutos();
+    }
+  });
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {

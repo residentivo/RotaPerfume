@@ -348,6 +348,34 @@ describe("PedidoModal - outros perfis", () => {
     expect(vendedorSelect().value).toBe("");
   });
 
+  // SEC-03: GET /api/vendedores escopado para o usuario normal.
+  it("SEC-03: normal com lista escopada (so o proprio vendedor) fica travado nele", async () => {
+    api.apiMe.mockResolvedValue(me({ id_vendedor: 7, vendedor_nome: "Vend 7" }));
+    await refreshSessionUser();
+    api.apiListVendedores.mockResolvedValue([
+      { id: 7, nome: "Vend 7", regiao: "S", uf: "SP", data_desligamento: null },
+    ]);
+    renderModal();
+
+    await waitFor(() => expect(vendedorSelect().value).toBe("7"));
+    expect(vendedorSelect()).toBeDisabled();
+    await screen.findByRole("option", { name: "#700 - Cliente 700" });
+    expect(screen.getAllByRole("option", { name: "#7 - Vend 7" })).toHaveLength(1);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Criar pedido" })).toBeEnabled());
+  });
+
+  it("SEC-03: normal sem vinculo com lista vazia: 'Sem vendedor vinculado' e criar desabilitado", async () => {
+    api.apiMe.mockResolvedValue(me({ id_vendedor: null, vendedor_nome: null }));
+    await refreshSessionUser();
+    api.apiListVendedores.mockResolvedValue([]);
+    renderModal();
+
+    expect(await screen.findByRole("option", { name: "Sem vendedor vinculado" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Criar pedido" })).toBeDisabled());
+    expect(vendedorSelect()).toBeDisabled();
+    expect(api.apiListClientesDoVendedor).not.toHaveBeenCalled();
+  });
+
   it("falha em /me ao abrir nao bloqueia o formulario e mantem o vendedor da sessao", async () => {
     api.apiMe.mockResolvedValueOnce(me({ id_vendedor: 7 }));
     await refreshSessionUser();

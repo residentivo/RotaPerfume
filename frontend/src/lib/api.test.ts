@@ -2,27 +2,26 @@
  * Contrato HTTP de lib/api.ts (URLs, metodos, corpo, query string e
  * normalizacao das respostas paginadas). A camada de transporte e mockada:
  * - fetchWithAuth (apiClient) para as rotas que usam o interceptador;
- * - fetch global para as listagens que chamam fetch direto.
+ * - fetchEnvelopeWithAuth (apiClient) para as listagens paginadas (FE-05);
+ * - fetch global stubado so para garantir que nada chama fetch direto.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./apiError";
 
 const client = vi.hoisted(() => ({
   fetchWithAuth: vi.fn(),
-  buildApiError: vi.fn(),
+  fetchEnvelopeWithAuth: vi.fn(),
 }));
 vi.mock("./apiClient", () => client);
 
 import * as api from "./api";
 
-const BASE = "http://api.test";
 const fetchMock = vi.fn();
 
 beforeEach(() => {
   client.fetchWithAuth.mockReset();
   client.fetchWithAuth.mockResolvedValue({ ok: true });
-  client.buildApiError.mockReset();
-  client.buildApiError.mockImplementation((s: number, m: string) => new ApiError(s, m));
+  client.fetchEnvelopeWithAuth.mockReset();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -145,12 +144,7 @@ describe("rotas via fetchWithAuth", () => {
   });
 });
 
-// ─── Listagens com fetch direto ───────────────────────────────────────────────
-
-function resposta(status: number, corpo: unknown, statusText = "Status") {
-  const raw = corpo === undefined ? "" : typeof corpo === "string" ? corpo : JSON.stringify(corpo);
-  return { ok: status >= 200 && status < 300, status, statusText, text: async () => raw };
-}
+// ─── Listagens paginadas (fetchEnvelopeWithAuth, FE-05) ─────────────────────────────────────────────────────────────────────
 
 interface Lista {
   nome: string;
@@ -159,8 +153,6 @@ interface Lista {
   minima: () => Promise<{ data: unknown[]; page: number; limit: number; total: number; pages: number }>;
   url: string;
   urlMinima: string;
-  /** Aceita o envelope { data, pagination }. */
-  pagination: boolean;
 }
 
 const LISTAS: Lista[] = [
@@ -170,7 +162,6 @@ const LISTAS: Lista[] = [
     minima: () => api.apiListUsers(2, 5),
     url: "/api/usuarios?page=1&limit=20&order_by=nome&order_dir=asc",
     urlMinima: "/api/usuarios?page=2&limit=5",
-    pagination: true,
   },
   {
     nome: "apiDashboardVendedores",
@@ -178,7 +169,6 @@ const LISTAS: Lista[] = [
     minima: () => api.apiDashboardVendedores(2, 5),
     url: "/api/dashboard/vendedores?page=1&limit=10",
     urlMinima: "/api/dashboard/vendedores?page=2&limit=5",
-    pagination: false,
   },
   {
     nome: "apiListSenhaHistorico",
@@ -186,7 +176,6 @@ const LISTAS: Lista[] = [
     minima: () => api.apiListSenhaHistorico(2, 5),
     url: "/api/senha-historico/4?page=1&limit=20&usuario_id=4&tipo=admin&order_by=created_at&order_dir=desc",
     urlMinima: "/api/senha-historico?page=2&limit=5",
-    pagination: false,
   },
   {
     nome: "apiListClientes",
@@ -194,7 +183,6 @@ const LISTAS: Lista[] = [
     minima: () => api.apiListClientes(2, 5),
     url: "/api/clientes?page=1&limit=20&uf=SP&segmento=Varejo&ativo=false&q=lo&order_by=id&order_dir=asc",
     urlMinima: "/api/clientes?page=2&limit=5",
-    pagination: true,
   },
   {
     nome: "apiListProdutos",
@@ -202,7 +190,6 @@ const LISTAS: Lista[] = [
     minima: () => api.apiListProdutos(2, 5),
     url: "/api/produtos?page=1&limit=20&categoria=C&marca=M&ativo=true&q=p&order_by=id&order_dir=desc",
     urlMinima: "/api/produtos?page=2&limit=5",
-    pagination: true,
   },
   {
     nome: "apiListPedidos",
@@ -217,7 +204,6 @@ const LISTAS: Lista[] = [
     minima: () => api.apiListPedidos(2, 5),
     url: "/api/pedidos?page=1&limit=20&status=Faturado&canal=App&cliente_id=1&vendedor_id=2&data_inicio=2026-01-01&data_fim=2026-02-01&q=x&order_by=id&order_dir=desc",
     urlMinima: "/api/pedidos?page=2&limit=5",
-    pagination: true,
   },
   {
     nome: "apiListPagamentos",
@@ -232,7 +218,6 @@ const LISTAS: Lista[] = [
     minima: () => api.apiListPagamentos(2, 5),
     url: "/api/pagamentos?page=1&limit=20&status_pagamento=Pago&forma_pagamento=PIX&pedido_id=3&vencimento_de=2026-01-01&vencimento_ate=2026-02-01&order_by=valor&order_dir=asc",
     urlMinima: "/api/pagamentos?page=2&limit=5",
-    pagination: true,
   },
   {
     nome: "apiListOportunidades",
@@ -247,7 +232,6 @@ const LISTAS: Lista[] = [
     minima: () => api.apiListOportunidades(2, 5),
     url: "/api/oportunidades?page=1&limit=20&cliente_id=1&vendedor_id=2&etapa=E&origem=O&data_abertura_de=2026-01-01&data_abertura_ate=2026-02-01&q=x&order_by=id&order_dir=desc",
     urlMinima: "/api/oportunidades?page=2&limit=5",
-    pagination: true,
   },
   {
     nome: "apiListVisitas",
@@ -262,7 +246,6 @@ const LISTAS: Lista[] = [
     minima: () => api.apiListVisitas(2, 5),
     url: "/api/visitas?page=1&limit=20&cliente_id=1&vendedor_id=2&resultado=R&data_visita_de=2026-01-01&data_visita_ate=2026-02-01&q=x&order_by=id&order_dir=desc",
     urlMinima: "/api/visitas?page=2&limit=5",
-    pagination: true,
   },
   {
     nome: "apiListEstoque",
@@ -271,23 +254,25 @@ const LISTAS: Lista[] = [
     minima: () => api.apiListEstoque(2, 5),
     url: "/api/estoque?page=1&limit=20&sku=S&data_de=2026-01-01&data_ate=2026-02-01&ruptura=false&order_by=sku&order_dir=asc",
     urlMinima: "/api/estoque?page=2&limit=5",
-    pagination: true,
   },
 ];
 
 describe.each(LISTAS)("$nome", (l) => {
-  it("monta a URL com filtros e ordenacao, com cookie (credentials: include)", async () => {
-    fetchMock.mockResolvedValue(resposta(200, []));
+  it("usa fetchEnvelopeWithAuth (refresh no 401) com GET e a URL com filtros e ordenacao", async () => {
+    client.fetchEnvelopeWithAuth.mockResolvedValue([]);
     await l.chamar();
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(`${BASE}${l.url}`);
-    expect(init).toMatchObject({ method: "GET", credentials: "include" });
+    expect(client.fetchEnvelopeWithAuth).toHaveBeenCalledTimes(1);
+    const [url, init] = client.fetchEnvelopeWithAuth.mock.calls[0];
+    expect(url).toBe(l.url);
+    expect(init).toEqual({ method: "GET" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(client.fetchWithAuth).not.toHaveBeenCalled();
   });
 
   it("sem filtros envia so page e limit", async () => {
-    fetchMock.mockResolvedValue(resposta(200, []));
+    client.fetchEnvelopeWithAuth.mockResolvedValue([]);
     await l.minima();
-    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}${l.urlMinima}`);
+    expect(client.fetchEnvelopeWithAuth.mock.calls[0][0]).toBe(l.urlMinima);
   });
 
   it.each<[string, unknown, { data: unknown[]; page: number; limit: number; total: number; pages: number }]>([
@@ -295,32 +280,25 @@ describe.each(LISTAS)("$nome", (l) => {
     ["envelope sem paginacao usa os padroes", { data: [1, 2, 3] }, { data: [1, 2, 3], page: 2, limit: 5, total: 3, pages: 1 }],
     ["array puro", [7, 8], { data: [7, 8], page: 2, limit: 5, total: 2, pages: 1 }],
     ["objeto sem data", { foo: 1 }, { data: [], page: 2, limit: 5, total: 0, pages: 0 }],
-    ["corpo vazio", undefined, { data: [], page: 2, limit: 5, total: 0, pages: 0 }],
+    ["corpo vazio", null, { data: [], page: 2, limit: 5, total: 0, pages: 0 }],
     ["texto nao-JSON", "ok", { data: [], page: 2, limit: 5, total: 0, pages: 0 }],
   ])("resposta: %s", async (_n, corpo, esperado) => {
-    fetchMock.mockResolvedValue(resposta(200, corpo));
+    client.fetchEnvelopeWithAuth.mockResolvedValue(corpo);
     await expect(l.minima()).resolves.toEqual(esperado);
   });
 
-  it.runIf(l.pagination)("aceita o envelope { data, pagination }", async () => {
-    fetchMock.mockResolvedValue(
-      resposta(200, { data: [1], pagination: { page: 4, limit: 1, total: 8, pages: 8 } })
-    );
+  it("aceita o envelope { data, pagination }", async () => {
+    client.fetchEnvelopeWithAuth.mockResolvedValue({
+      data: [1],
+      pagination: { page: 4, limit: 1, total: 8, pages: 8 },
+    });
     await expect(l.minima()).resolves.toEqual({ data: [1], page: 4, limit: 1, total: 8, pages: 8 });
   });
 
-  it.each<[string, unknown, string]>([
-    ["campo error", { error: "acesso bloqueado: vendedor desligado" }, "acesso bloqueado: vendedor desligado"],
-    ["campo message", { message: "falhou" }, "falhou"],
-    ["sem corpo", undefined, "Erro 500: Server Error"],
-    ["corpo texto", "boom", "Erro 500: Server Error"],
-  ])("erro HTTP com %s vira ApiError via buildApiError", async (_n, corpo, msg) => {
-    const status = msg.startsWith("acesso") ? 403 : 500;
-    fetchMock.mockResolvedValue(resposta(status, corpo, "Server Error"));
+  it("propaga o ApiError do cliente HTTP", async () => {
+    client.fetchEnvelopeWithAuth.mockRejectedValue(new ApiError(403, "bloqueado"));
     const err = await l.minima().catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err.message).toBe(msg);
-    expect(err.status).toBe(status);
-    expect(client.buildApiError).toHaveBeenCalledWith(status, msg);
+    expect(err).toMatchObject({ status: 403, message: "bloqueado" });
   });
 });

@@ -20,6 +20,13 @@
 //     - cnpj: remove tudo que não for dígito (o CSV mistura formatos com e sem máscara).
 //     - data_cadastro: aceita "2006-01-02" e "02/01/2006" (ambos aparecem no CSV real).
 //     - ativo: 'S' -> true, 'N' -> false (case-insensitive).
+//     3.1 NEG-01: clientes.cnpj é UNIQUE (uq_clientes_cnpj). Linhas com CNPJ já
+//     visto antes no CSV são unificadas na 1ª ocorrência (não são gravadas;
+//     os importadores dependentes redirecionam o cliente_id delas via
+//     cmd/internal/clientesdedup). O total unificado vai para o log. O dígito
+//     verificador NÃO é validado (dados fictícios; o DV vale só na API).
+//     Linha cujo CNPJ já pertence a outro cliente no banco é pulada
+//     (conflitos_cnpj) — nunca aborta com 1062.
 //  4. Faz upsert via INSERT ... ON DUPLICATE KEY UPDATE usando
 //     `cliente_id_origem` como chave de idempotência (UNIQUE KEY na tabela).
 //  5. Loga contadores finais: total de linhas lidas, importadas (insert),
@@ -30,6 +37,7 @@ package main
 import (
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -40,9 +48,10 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 
+	"github.com/rotaperfumes/shared/cmd/internal/clientesdedup"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -83,6 +92,11 @@ func main() {
 	}
 	log.Printf("importclientes: %d linhas válidas lidas, %d linhas com erro de parsing", len(rows), parseErrs)
 
+	lidas := len(rows)
+	rows, unificadas := unificarPorCNPJ(rows)
+	log.Printf("importclientes: %d linhas unificadas por CNPJ duplicado (mantida a 1ª ocorrência de cada CNPJ); %d clientes a gravar",
+		unificadas, len(rows))
+
 	if *dryRun {
 		log.Printf("importclientes: --dry-run informado, nada foi gravado no banco")
 		return
@@ -98,10 +112,41 @@ func main() {
 		log.Fatalf("importclientes: ping no banco falhou: %v", err)
 	}
 
-	inserted, updated, failed := upsertAll(db, rows)
+	res := upsertAll(db, rows)
 
-	log.Printf("importclientes: OK — lidos=%d inseridos_ou_inalterados=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
-		len(rows), inserted, updated, failed, parseErrs)
+	log.Printf("importclientes: OK — lidos=%d unificados=%d inseridos_ou_inalterados=%d atualizados=%d conflitos_cnpj=%d erros_upsert=%d erros_parsing=%d",
+		lidas, unificadas, res.inserted, res.updated, res.conflitosCNPJ, res.failed, parseErrs)
+}
+
+// unificarPorCNPJ remove do lote as linhas cujo CNPJ já apareceu antes no
+// CSV (NEG-01: clientes.cnpj é UNIQUE). Fica a 1ª ocorrência; as seguintes
+// são descartadas e logadas. Os importadores dependentes (carteiras,
+// pedidos, oportunidades, visitas) redirecionam o cliente_id das cópias para
+// o sobrevivente via clientesdedup. O DV do CNPJ não é validado aqui.
+func unificarPorCNPJ(rows []clienteRow) (mantidas []clienteRow, unificadas int) {
+	regs := make([]clientesdedup.Registro, len(rows))
+	for i, r := range rows {
+		regs[i] = clientesdedup.Registro{ClienteID: r.ClienteIDOrigem, CNPJ: r.CNPJ}
+	}
+	copias := clientesdedup.Calcular(regs)
+
+	mantidas = make([]clienteRow, 0, len(rows))
+	for _, r := range rows {
+		if sobrevivente, ehCopia := copias[r.ClienteIDOrigem]; ehCopia {
+			log.Printf("importclientes: cliente_id=%d unificado em cliente_id=%d (CNPJ duplicado)", r.ClienteIDOrigem, sobrevivente)
+			unificadas++
+			continue
+		}
+		mantidas = append(mantidas, r)
+	}
+	return mantidas, unificadas
+}
+
+// isDuplicateCNPJ reporta se err é o MySQL 1062 no índice uq_clientes_cnpj
+// (o CNPJ do CSV já pertence a outro cliente no banco, ex.: criado pela API).
+func isDuplicateCNPJ(err error) bool {
+	var myErr *mysql.MySQLError
+	return errors.As(err, &myErr) && myErr.Number == 1062 && strings.Contains(myErr.Message, "uq_clientes_cnpj")
 }
 
 // resolveCSVPath decide o caminho final do CSV, na ordem:
@@ -249,9 +294,24 @@ func parseAtivo(raw string) (bool, error) {
 	}
 }
 
+// resultadoUpsert agrega os contadores do upsertAll.
+type resultadoUpsert struct {
+	inserted      int // INSERT novo ou linha já existente sem alteração
+	updated       int // UPDATE com alteração real
+	conflitosCNPJ int // CNPJ já pertence a OUTRO cliente no banco (pulado)
+	failed        int // demais erros de banco
+}
+
 // upsertAll grava todas as linhas no banco via INSERT ... ON DUPLICATE KEY UPDATE,
 // usando cliente_id_origem como chave de idempotência.
-func upsertAll(db *sql.DB, rows []clienteRow) (inserted, updated, failed int) {
+//
+// NEG-01: com o índice UNIQUE uq_clientes_cnpj, uma linha cujo CNPJ já
+// pertence a OUTRO cliente no banco (ex.: cadastrado pela API) é pulada e
+// contada em conflitosCNPJ. Sem essa checagem prévia, o ON DUPLICATE KEY
+// UPDATE sobrescreveria silenciosamente o outro cliente (o conflito seria no
+// índice de CNPJ, não na PK) ou falharia com 1062. O 1062 que ainda escapar
+// (ex.: escrita concorrente) também é contado como conflito, sem abortar.
+func upsertAll(db *sql.DB, rows []clienteRow) resultadoUpsert {
 	const query = `
 		INSERT INTO clientes
 			(cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo)
@@ -268,22 +328,42 @@ func upsertAll(db *sql.DB, rows []clienteRow) (inserted, updated, failed int) {
 			ativo = VALUES(ativo)
 	`
 
+	donos, err := loadDonosCNPJ(db)
+	if err != nil {
+		log.Fatalf("importclientes: falha ao carregar CNPJs existentes: %v", err)
+	}
+
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		log.Fatalf("importclientes: prepare falhou: %v", err)
 	}
 	defer stmt.Close()
 
+	var res resultadoUpsert
 	for _, row := range rows {
+		if dono, ok := donos.dono(row.CNPJ); ok && dono != row.ClienteIDOrigem {
+			log.Printf("importclientes: cliente_id_origem=%d pulado: CNPJ já pertence a outro cliente no banco (cliente_id_origem=%d)",
+				row.ClienteIDOrigem, dono)
+			res.conflitosCNPJ++
+			continue
+		}
+
 		result, err := stmt.Exec(
 			row.ClienteIDOrigem, row.CNPJ, row.RazaoSocial, row.Segmento,
 			row.Cidade, row.UF, row.Bairro, row.DataCadastro.Format("2006-01-02"), row.Ativo,
 		)
 		if err != nil {
+			if isDuplicateCNPJ(err) {
+				log.Printf("importclientes: cliente_id_origem=%d pulado: CNPJ duplicado (1062 uq_clientes_cnpj)", row.ClienteIDOrigem)
+				res.conflitosCNPJ++
+				continue
+			}
 			log.Printf("importclientes: erro no upsert de cliente_id_origem=%d: %v", row.ClienteIDOrigem, err)
-			failed++
+			res.failed++
 			continue
 		}
+		donos.gravar(row.ClienteIDOrigem, row.CNPJ)
+
 		// Com clientFoundRows=true no DSN (BUG-04), o MySQL devolve, via ON
 		// DUPLICATE KEY UPDATE: 1 = INSERT novo OU linha já existente sem
 		// alteração; 2 = UPDATE com alteração real. Por isso o contador
@@ -291,15 +371,54 @@ func upsertAll(db *sql.DB, rows []clienteRow) (inserted, updated, failed int) {
 		affected, _ := result.RowsAffected()
 		switch affected {
 		case 1:
-			inserted++
-		case 2:
-			updated++
+			res.inserted++
 		default:
-			// affected == 0: não ocorre com clientFoundRows=true (mantido por robustez).
-			updated++
+			// 2 = UPDATE com alteração; 0 não ocorre com clientFoundRows=true
+			// (mantido por robustez).
+			res.updated++
 		}
 	}
-	return inserted, updated, failed
+	return res
+}
+
+// donosCNPJ mantém, em memória, quem é o dono de cada CNPJ no banco durante
+// a importação (cnpj → cliente_id_origem e o inverso, para liberar o CNPJ
+// antigo quando uma linha troca de CNPJ).
+type donosCNPJ struct {
+	porCNPJ map[string]int64
+	porID   map[int64]string
+}
+
+func (d donosCNPJ) dono(cnpj string) (int64, bool) {
+	id, ok := d.porCNPJ[cnpj]
+	return id, ok
+}
+
+func (d donosCNPJ) gravar(id int64, cnpj string) {
+	if antigo, ok := d.porID[id]; ok && antigo != cnpj {
+		delete(d.porCNPJ, antigo)
+	}
+	d.porID[id] = cnpj
+	d.porCNPJ[cnpj] = id
+}
+
+// loadDonosCNPJ carrega cnpj → cliente_id_origem de todos os clientes do banco.
+func loadDonosCNPJ(db *sql.DB) (donosCNPJ, error) {
+	d := donosCNPJ{porCNPJ: map[string]int64{}, porID: map[int64]string{}}
+	rows, err := db.Query("SELECT cliente_id_origem, cnpj FROM clientes")
+	if err != nil {
+		return d, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var cnpj string
+		if err := rows.Scan(&id, &cnpj); err != nil {
+			return d, err
+		}
+		d.gravar(id, cnpj)
+	}
+	return d, rows.Err()
 }
 
 // findProjectRoot sobe a árvore de diretórios a partir do cwd até achar a

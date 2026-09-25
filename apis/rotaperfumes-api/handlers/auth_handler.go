@@ -347,14 +347,22 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refresh bem-sucedido até aqui: limpa o contador de falhas do IP.
-	h.refreshLimiter.RegisterSuccess(refreshIPKey)
-
-	// Revoga o refresh token antigo (single-use).
-	if err := h.refreshSvc.RevokeToken(ctx, h.db, refreshTokenInput); err != nil {
-		log.Printf("[auth] refresh: RevokeToken: %v", err)
-		// Não falha, apenas loga.
+	// Revoga o refresh token antigo (single-use) de forma atômica, reutilizando
+	// o ID obtido na validação. Em uma corrida entre duas requisições com o
+	// mesmo token, só uma revoga; a outra recebe 401 sem emitir tokens.
+	rotation, err := h.refreshSvc.BeginRotation(ctx, h.db, rt.ID)
+	if err != nil {
+		if errors.Is(err, services.ErrRefreshTokenRevoked) {
+			log.Printf("[auth] refresh: token já revogado por requisição concorrente: user_id=%d", u.ID)
+			h.refreshLimiter.RegisterFailure(refreshIPKey)
+			writeJSON(w, http.StatusUnauthorized, nil, "refresh token revogado")
+			return
+		}
+		log.Printf("[auth] refresh: BeginRotation: %v", err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
 	}
+	defer rotation.Rollback() // no-op após Issue bem-sucedido
 
 	// Gera novo access token.
 	newAccessToken, err := h.auth.GenerateJWT(h.cfg, u.ID, u.Role)
@@ -364,12 +372,16 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Gera novo refresh token.
-	newRefreshToken, err := h.refreshSvc.GenerateRefreshToken(ctx, h.db, u.ID, ipOrigem, userAgent)
+	// Gera novo refresh token na mesma transação da revogação e confirma.
+	newRefreshToken, err := rotation.Issue(ctx, u.ID, ipOrigem, userAgent)
 	if err != nil {
 		log.Printf("[auth] refresh: GenerateRefreshToken: %v", err)
-		// Não falha, retorna sem refresh token.
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return
 	}
+
+	// Refresh concluído: limpa o contador de falhas do IP.
+	h.refreshLimiter.RegisterSuccess(refreshIPKey)
 
 	log.Printf("[auth] refresh OK: user_id=%d", u.ID)
 
@@ -597,7 +609,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	refreshInput := extractRefreshToken(r, req.RefreshToken)
 	if refreshInput != "" {
 		if err := h.refreshSvc.RevokeToken(ctx, h.db, refreshInput); err != nil {
-			if !errors.Is(err, services.ErrRefreshTokenNotFound) {
+			if !errors.Is(err, services.ErrRefreshTokenNotFound) && !errors.Is(err, services.ErrRefreshTokenRevoked) {
 				log.Printf("[auth] logout: RevokeToken: %v", err)
 			}
 		}

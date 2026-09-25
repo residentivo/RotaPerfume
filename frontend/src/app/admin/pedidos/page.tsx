@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  useDebounceFiltros,
+  useExcluidos,
+  useUltimaResposta,
+} from "@/lib/useListaSegura";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -126,6 +131,13 @@ function PedidosContent() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
+  // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  const executarBusca = useUltimaResposta();
+  // FE-04: linha excluida nao reaparece por uma resposta que saiu antes do
+  // DELETE e chegou depois dele.
+  const excluidos = useExcluidos((x: Pedido) => x.pedido_id_origem);
+
   // Busca separada em requisicao pura + aplicacao do resultado no callback
   // assincrono (.then): o efeito nunca chama setState de forma sincrona.
   const buscarPedidos = () =>
@@ -166,7 +178,7 @@ function PedidosContent() {
   const loadPedidos = async () => {
     setLoading(true);
     setError(null);
-    await buscarPedidos().then(aplicarPedidos, aplicarErroPedidos);
+    await executarBusca(buscarPedidos().then(excluidos.filtrar), aplicarPedidos, aplicarErroPedidos);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -180,22 +192,21 @@ function PedidosContent() {
   }
 
   useEffect(() => {
-    buscarPedidos().then(aplicarPedidos, aplicarErroPedidos);
+    executarBusca(buscarPedidos().then(excluidos.filtrar), aplicarPedidos, aplicarErroPedidos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 
   // Debounce da busca textual e reset para pagina 1 quando filtros mudam
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (page !== 1) {
-        setPage(1);
-      } else {
-        loadPedidos();
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, statusFilter, canalFilter, dataInicio, dataFim]);
+  // FE-04: o debounce nao dispara na montagem, so quando a chave dos filtros
+  // muda (evita a busca dupla e a tabela voltando para a pagina 1).
+  const chaveFiltros = JSON.stringify([search, statusFilter, canalFilter, dataInicio, dataFim]);
+  useDebounceFiltros(chaveFiltros, () => {
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      loadPedidos();
+    }
+  });
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -298,6 +309,7 @@ function PedidosContent() {
     setDeletingId(pedido.pedido_id_origem);
     try {
       await apiDeletePedido(pedido.pedido_id_origem);
+      excluidos.marcar(pedido.pedido_id_origem);
       setPedidos((prev) =>
         prev.filter((p) => p.pedido_id_origem !== pedido.pedido_id_origem)
       );

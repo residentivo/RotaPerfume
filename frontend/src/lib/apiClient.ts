@@ -9,8 +9,13 @@
  * 1. fetchWithAuth() chama a API com credentials: "include" (cookie vai sozinho)
  * 2. Se resposta 401 -> tenta POST /api/auth/refresh (também via cookie)
  * 3. Se refresh OK -> backend seta novos cookies e reenviamos a requisição original
- * 4. Se refresh falhar -> redireciona para /login
+ * 4. Se refresh falhar -> redireciona para /login. Exceção (SEC-02,
+ *    multi-aba): se o refresh voltar 401, outra aba pode já ter renovado os
+ *    cookies; a requisição original é repetida UMA vez e só um novo 401
+ *    leva ao logout. 429, timeout e erro de rede não repetem.
  * 5. Lock/fila garante que apenas uma chamada de refresh aconteça por vez
+ *    na aba; entre abas, o refresh é serializado por Web Locks
+ *    (`navigator.locks`, "rp-auth-refresh") quando o navegador suporta
  * 6. Erros HTTP viram ApiError (com status). O 403 de vendedor desligado
  *    NÃO dispara refresh nem logout: só notifica a sessão em memória.
  */
@@ -53,7 +58,18 @@ function onRefreshComplete(success: boolean): void {
 // API Call para refresh
 // ============================================
 
-async function callRefreshToken(): Promise<boolean> {
+/**
+ * Resultado do POST /api/auth/refresh (SEC-02): o status HTTP, ou
+ * "timeout"/"erro" quando nao houve resposta. Quem chama decide o que fazer
+ * com cada caso (ex.: 401 pode significar que outra aba ja renovou).
+ */
+export type RefreshStatus = number | "timeout" | "erro";
+
+function refreshOk(status: RefreshStatus): boolean {
+  return typeof status === "number" && status >= 200 && status < 300;
+}
+
+async function callRefreshToken(): Promise<RefreshStatus> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REFRESH_TIMEOUT);
@@ -73,18 +89,44 @@ async function callRefreshToken(): Promise<boolean> {
 
     if (!res.ok) {
       console.warn("[apiClient] Refresh falhou com status:", res.status);
-      return false;
     }
 
-    return true;
+    return res.status;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       console.warn("[apiClient] Refresh timeout");
-    } else {
-      console.error("[apiClient] Erro no refresh:", error);
+      return "timeout";
     }
-    return false;
+    console.error("[apiClient] Erro no refresh:", error);
+    return "erro";
   }
+}
+
+// Nome do Web Lock que serializa o refresh entre abas do mesmo navegador.
+const REFRESH_LOCK = "rp-auth-refresh";
+
+/**
+ * SEC-02 (multi-aba): os cookies sao compartilhados entre as abas, entao
+ * duas abas renovando ao mesmo tempo com o mesmo refresh_token geram um 401
+ * na segunda (o backend revoga o token no primeiro uso). Quando o navegador
+ * suporta Web Locks, o refresh e serializado entre as abas: a segunda so
+ * chama o refresh depois que a primeira terminou (com o cookie ja novo).
+ * Sem suporte, chama direto; o retry apos o 401 do refresh (fetchWithAuth)
+ * cobre a corrida.
+ */
+async function refreshSerializado(): Promise<RefreshStatus> {
+  const locks =
+    typeof navigator !== "undefined"
+      ? (navigator as Navigator & { locks?: LockManager }).locks
+      : undefined;
+  if (locks && typeof locks.request === "function") {
+    try {
+      return await locks.request(REFRESH_LOCK, () => callRefreshToken());
+    } catch {
+      return "erro";
+    }
+  }
+  return callRefreshToken();
 }
 
 // ============================================
@@ -151,13 +193,40 @@ export interface ApiClientOptions extends RequestInit {
   noRefresh?: boolean;
   /** Headers adicionais */
   headers?: HeadersInit;
+  /**
+   * Se true, devolve o corpo JSON inteiro, sem desenvelopar `data`. Usado
+   * pelas listagens paginadas ({data, pagination} / {data, page, ...}).
+   * Prefira `fetchEnvelopeWithAuth`.
+   */
+  keepEnvelope?: boolean;
+}
+
+// Respostas de requisicoes feitas com `keepEnvelope` (ver makeRequest).
+const respostasComEnvelope = new WeakSet<Response>();
+
+/**
+ * Igual ao `fetchWithAuth` (mesmo refresh automatico no 401 e mesmo
+ * tratamento de erro), mas devolve o corpo inteiro da resposta, sem
+ * desenvelopar `data`. As listagens paginadas precisam da paginacao que vem
+ * junto com `data`.
+ */
+export function fetchEnvelopeWithAuth<T = unknown>(
+  endpoint: string,
+  options: ApiClientOptions = {}
+): Promise<T> {
+  return fetchWithAuth<T>(endpoint, { ...options, keepEnvelope: true });
 }
 
 export async function fetchWithAuth<T = unknown>(
   endpoint: string,
   options: ApiClientOptions = {}
 ): Promise<T> {
-  const { noRefresh = false, headers: customHeaders, ...fetchOptions } = options;
+  const {
+    noRefresh = false,
+    headers: customHeaders,
+    keepEnvelope = false,
+    ...fetchOptions
+  } = options;
 
   const makeRequest = async (): Promise<Response> => {
     const url = endpoint.startsWith("http") ? endpoint : `${API_BASE}${endpoint}`;
@@ -170,11 +239,15 @@ export async function fetchWithAuth<T = unknown>(
     const mergedHeaders = { ...defaultHeaders, ...customHeaders };
 
     // access_token vai via cookie HttpOnly — o navegador o anexa sozinho.
-    return fetch(url, {
+    const res = await fetch(url, {
       ...fetchOptions,
       headers: mergedHeaders,
       credentials: "include",
     });
+    // FE-05: marca a resposta para o parseResponse devolver o corpo inteiro
+    // (envelope paginado). Vale tambem para o reenvio apos o refresh.
+    if (keepEnvelope) respostasComEnvelope.add(res);
+    return res;
   };
 
   // Primeira tentativa
@@ -210,9 +283,9 @@ export async function fetchWithAuth<T = unknown>(
     showRefreshIndicator();
 
     try {
-      const refreshed = await callRefreshToken();
+      const status = await refreshSerializado();
 
-      if (refreshed) {
+      if (refreshOk(status)) {
         // Notifica todas as requisições pendentes
         onRefreshComplete(true);
         isRefreshing = false;
@@ -226,15 +299,45 @@ export async function fetchWithAuth<T = unknown>(
         }
 
         return parseResponse<T>(retryResponse);
-      } else {
-        // Refresh falhou
-        onRefreshComplete(false);
+      }
+
+      // SEC-02 (multi-aba): refresh com 401 pode significar que outra aba ja
+      // renovou (o refresh_token do cookie foi rotacionado e o antigo, que
+      // esta aba enviou, foi revogado). Os cookies novos valem para esta aba
+      // tambem: repete a requisicao original UMA vez antes de deslogar.
+      // 429 (rate limit), timeout e erro de rede NAO repetem.
+      let retryAposOutraAba: Response | null = null;
+      if (status === 401) {
+        try {
+          retryAposOutraAba = await makeRequest();
+        } catch (err) {
+          // Falha de rede no retry: nao desloga, mas libera a fila.
+          onRefreshComplete(false);
+          isRefreshing = false;
+          hideRefreshIndicator();
+          throw err;
+        }
+      }
+
+      if (retryAposOutraAba && retryAposOutraAba.status !== 401) {
+        // Sessao valida: libera a fila (as pendentes repetem com o cookie novo).
+        onRefreshComplete(true);
         isRefreshing = false;
         hideRefreshIndicator();
-        clearTokens();
-        redirectToLogin();
-        throw new Error("Sessão expirada. Faça login novamente.");
+
+        if (!retryAposOutraAba.ok) {
+          throw await toApiError(retryAposOutraAba);
+        }
+        return parseResponse<T>(retryAposOutraAba);
       }
+
+      // Refresh falhou (e, se foi 401, o retry tambem deu 401): logout.
+      onRefreshComplete(false);
+      isRefreshing = false;
+      hideRefreshIndicator();
+      clearTokens();
+      redirectToLogin();
+      throw new Error("Sessão expirada. Faça login novamente.");
     } catch (error) {
       isRefreshing = false;
       hideRefreshIndicator();
@@ -268,7 +371,8 @@ async function parseResponse<T>(res: Response): Promise<T> {
     data = text;
   }
 
-  // Desenvelope: {data: ...} -> ...
+  // Desenvelope: {data: ...} -> ... (exceto quando pedido o envelope inteiro)
+  if (respostasComEnvelope.has(res)) return data as T;
   if (data && typeof data === "object" && "data" in data) {
     return (data as { data: T }).data;
   }

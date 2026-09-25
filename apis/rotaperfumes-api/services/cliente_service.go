@@ -148,6 +148,14 @@ func validarClienteInput(input ClienteInput, defaultHoje bool) (razaoSocial, cnp
 		err = ErrCNPJObrigatorio
 		return
 	}
+	// NEG-01: aceita máscara e grava só os dígitos. O dígito verificador é
+	// checado à parte, em toda gravação (Create e Update — NEG-04).
+	cnpjDigitos, cnpjOK := normalizarCNPJ(cnpj)
+	if !cnpjOK || !cnpjFormatoValido(cnpjDigitos) {
+		err = ErrCNPJInvalido
+		return
+	}
+	cnpj = cnpjDigitos
 	if segmento == "" {
 		err = ErrSegmentoObrigatorio
 		return
@@ -185,6 +193,9 @@ func novoClienteValidado(input ClienteInput) (*models.Cliente, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !cnpjDigitosValidos(cnpj) {
+		return nil, ErrCNPJInvalido
+	}
 	return &models.Cliente{
 		CNPJ:         cnpj,
 		RazaoSocial:  razaoSocial,
@@ -206,7 +217,7 @@ func (s *ClienteService) CreateCliente(ctx context.Context, db *sql.DB, input Cl
 		return nil, err
 	}
 	if err := s.repo.Create(ctx, db, c); err != nil {
-		return nil, err
+		return nil, mapearErroCNPJDuplicado(err)
 	}
 
 	if s.Cfg.Verbose {
@@ -236,7 +247,7 @@ func (s *ClienteService) CreateClienteNaCarteira(ctx context.Context, db *sql.DB
 	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
 
 	if err := s.repo.Create(ctx, tx, c); err != nil {
-		return nil, err
+		return nil, mapearErroCNPJDuplicado(err)
 	}
 	vinculo := &models.Carteira{
 		ClienteID:  c.ClienteIDOrigem,
@@ -258,6 +269,17 @@ func (s *ClienteService) CreateClienteNaCarteira(ctx context.Context, db *sql.DB
 	return c, nil
 }
 
+// mapearErroCNPJDuplicado traduz a violação do índice UNIQUE de CNPJ
+// (repositories.ErrCNPJDuplicado) em ErrCNPJDuplicado; demais erros passam
+// inalterados.
+func mapearErroCNPJDuplicado(err error) error {
+	if errors.Is(err, repositories.ErrCNPJDuplicado) {
+		log.Printf("[clientes] cnpj duplicado recusado (uq_clientes_cnpj)")
+		return ErrCNPJDuplicado
+	}
+	return err
+}
+
 // inicioDoDia devolve a meia-noite (time.Local) do dia de t — usada para
 // colunas DATE, evitando carregar hora/minuto no valor gravado.
 func inicioDoDia(t time.Time) time.Time {
@@ -274,6 +296,18 @@ func (s *ClienteService) UpdateCliente(ctx context.Context, db *sql.DB, id int64
 		return nil, err
 	}
 
+	// NEG-04: o dígito verificador é exigido em TODA gravação, inclusive
+	// quando o CNPJ enviado é igual ao atual. Cliente legado/importado com
+	// DV inválido só volta a ser salvo depois de ter o CNPJ corrigido.
+	// A existência do cliente (404) é verificada pelo próprio repo.Update
+	// (RowsAffected=0 com clientFoundRows=true).
+	if !cnpjDigitosValidos(cnpj) {
+		if s.Cfg.Verbose {
+			log.Printf("[clientes] update recusado: id=%d cnpj com dígito verificador inválido", id)
+		}
+		return nil, ErrCNPJInvalido
+	}
+
 	c := &models.Cliente{
 		CNPJ:         cnpj,
 		RazaoSocial:  razaoSocial,
@@ -287,7 +321,7 @@ func (s *ClienteService) UpdateCliente(ctx context.Context, db *sql.DB, id int64
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrClienteNaoEncontrado
 		}
-		return nil, err
+		return nil, mapearErroCNPJDuplicado(err)
 	}
 
 	atualizado, err := s.repo.GetByID(ctx, db, id)

@@ -100,6 +100,26 @@ describe("Usuarios (FE-03)", () => {
     expect(spinner()).toBeNull();
   });
 
+  it("FE-04: resposta obsoleta (pagina 2 chega depois da 3) nao sobrescreve a mais nova", async () => {
+    render(<UsuariosPage />);
+    await screen.findByText("Usuario 100");
+    const p2 = deferred<unknown>();
+    const p3 = deferred<unknown>();
+    api.apiListUsers.mockReturnValueOnce(p2.promise).mockReturnValueOnce(p3.promise);
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+
+    await act(async () =>
+      p3.resolve({ data: [usuario(300)], page: 3, limit: 20, total: 60, pages: 3 })
+    );
+    await screen.findByText("Usuario 300");
+    await act(async () =>
+      p2.resolve({ data: [usuario(200)], page: 2, limit: 20, total: 60, pages: 3 })
+    );
+    expect(screen.getByText("Usuario 300")).toBeInTheDocument();
+    expect(screen.queryByText("Usuario 200")).not.toBeInTheDocument();
+  });
+
   it("paginacao e ordenacao disparam busca com os parametros certos", async () => {
     render(<UsuariosPage />);
     await screen.findByText("Usuario 100");
@@ -187,6 +207,22 @@ describe("Historico de senha (FE-03)", () => {
     expect(await screen.findByText("#100 - Pessoa 100")).toBeInTheDocument();
     expect(api.apiListSenhaHistorico).toHaveBeenCalledWith(1, 20, undefined, undefined, "created_at", "desc");
     expect(api.apiListSenhaHistorico).toHaveBeenCalledTimes(1);
+  });
+
+  it("FE-04: resposta obsoleta (pagina 2 chega depois da 3) nao sobrescreve a mais nova", async () => {
+    render(<SenhaHistoricoPage />);
+    await screen.findByText("#100 - Pessoa 100");
+    const p2 = deferred<unknown>();
+    const p3 = deferred<unknown>();
+    api.apiListSenhaHistorico.mockReturnValueOnce(p2.promise).mockReturnValueOnce(p3.promise);
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+
+    await act(async () => p3.resolve({ data: [item(300)], page: 3, limit: 20, total: 60, pages: 3 }));
+    await screen.findByText("#300 - Pessoa 300");
+    await act(async () => p2.resolve({ data: [item(200)], page: 2, limit: 20, total: 60, pages: 3 }));
+    expect(screen.getByText("#300 - Pessoa 300")).toBeInTheDocument();
+    expect(screen.queryByText("#200 - Pessoa 200")).not.toBeInTheDocument();
   });
 
   it("paginacao e ordenacao pela API", async () => {

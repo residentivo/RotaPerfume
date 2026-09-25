@@ -266,7 +266,7 @@ func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 	for _, s := range invalidas {
 		t.Run(s, func(t *testing.T) {
 			_, _, _, _, _, _, _, err := validarClienteInput(ClienteInput{
-				CNPJ: "1", RazaoSocial: "C", Segmento: "S", Cidade: "C", UF: "PR", DataCadastro: s,
+				CNPJ: "11222333000181", RazaoSocial: "C", Segmento: "S", Cidade: "C", UF: "PR", DataCadastro: s,
 			}, false)
 			assert.ErrorIs(t, err, ErrDataCadastroInvalida)
 

@@ -182,6 +182,8 @@ describe("fetchWithAuth - 401 continua disparando refresh", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
       .mockResolvedValueOnce(jsonResponse(401, { error: "refresh invalido" }))
+      // SEC-02: retry unico da original tambem com 401
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
       // logout: nunca resolve, para nao disparar navegacao no jsdom
       .mockReturnValueOnce(new Promise(() => {}));
 
@@ -192,6 +194,7 @@ describe("fetchWithAuth - 401 continua disparando refresh", () => {
     expect(calledUrls()).toEqual([
       "http://api.test/api/pedidos",
       "http://api.test/api/auth/refresh",
+      "http://api.test/api/pedidos",
       "http://api.test/api/auth/logout",
     ]);
   });
@@ -203,6 +206,200 @@ describe("fetchWithAuth - 401 continua disparando refresh", () => {
       client.fetchWithAuth("/api/auth/login", { method: "POST", noRefresh: true })
     ).rejects.toMatchObject({ status: 401, message: "credenciais invalidas" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// SEC-02: os cookies sao compartilhados entre abas. Se outra aba renovou
+// primeiro, o refresh desta aba volta 401 (token antigo revogado), mas os
+// cookies novos ja valem: a requisicao original e repetida uma unica vez.
+describe("fetchWithAuth - refresh multi-aba (SEC-02)", () => {
+  it("refresh 401 -> retry OK: devolve os dados e NAO desloga", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockResolvedValueOnce(jsonResponse(401, { error: "refresh token revogado" }))
+      .mockResolvedValueOnce(jsonResponse(200, { success: true, data: { ok: 1 } }));
+
+    await expect(client.fetchWithAuth("/api/pedidos")).resolves.toEqual({ ok: 1 });
+
+    expect(calledUrls()).toEqual([
+      "http://api.test/api/pedidos",
+      "http://api.test/api/auth/refresh",
+      "http://api.test/api/pedidos",
+    ]);
+    expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+  });
+
+  it("refresh 401 -> retry com erro nao-401: rejeita com o ApiError, sem logout", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockResolvedValueOnce(jsonResponse(401, {}))
+      .mockResolvedValueOnce(jsonResponse(500, { error: "falhou" }));
+
+    await expect(client.fetchWithAuth("/api/pedidos")).rejects.toMatchObject({
+      status: 500,
+      message: "falhou",
+    });
+    expect(calledUrls().some((u) => u.includes("/api/auth/logout"))).toBe(false);
+    expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+  });
+
+  it("refresh 401 -> retry 401: desloga (um unico retry)", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockResolvedValueOnce(jsonResponse(401, {}))
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    await expect(client.fetchWithAuth("/api/pedidos")).rejects.toThrow("Sessão expirada");
+    expect(calledUrls().filter((u) => u.endsWith("/api/pedidos"))).toHaveLength(2);
+    expect(calledUrls().filter((u) => u.endsWith("/api/auth/refresh"))).toHaveLength(1);
+    expect(calledUrls()).toContain("http://api.test/api/auth/logout");
+    expect(localStorage.getItem("auth_user")).toBeNull();
+  });
+
+  it("refresh 429: nao repete a requisicao e segue o fluxo de logout", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockResolvedValueOnce(jsonResponse(429, { error: "muitas tentativas" }))
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    await expect(client.fetchWithAuth("/api/pedidos")).rejects.toThrow("Sessão expirada");
+    expect(calledUrls()).toEqual([
+      "http://api.test/api/pedidos",
+      "http://api.test/api/auth/refresh",
+      "http://api.test/api/auth/logout",
+    ]);
+  });
+
+  it("refresh com timeout: nao repete a requisicao", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockRejectedValueOnce(Object.assign(new Error("aborted"), { name: "AbortError" }))
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    await expect(client.fetchWithAuth("/api/pedidos")).rejects.toThrow("Sessão expirada");
+    expect(calledUrls()).toEqual([
+      "http://api.test/api/pedidos",
+      "http://api.test/api/auth/refresh",
+      "http://api.test/api/auth/logout",
+    ]);
+  });
+
+  it("refresh 401 -> retry OK libera as requisicoes concorrentes da fila", async () => {
+    let releaseRefresh: (r: Response) => void = () => {};
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith("/api/auth/refresh")) {
+        return new Promise<Response>((res) => {
+          releaseRefresh = res;
+        });
+      }
+      const n = fetchMock.mock.calls.filter((c) => c[0] === url).length;
+      return Promise.resolve(
+        n === 1
+          ? jsonResponse(401, { error: "expirado" })
+          : jsonResponse(200, { data: url.slice(-1) })
+      );
+    });
+
+    const pa = client.fetchWithAuth("/api/a");
+    const pb = client.fetchWithAuth("/api/b");
+    await vi.waitFor(() => {
+      expect(calledUrls().filter((u) => u.endsWith("/api/auth/refresh"))).toHaveLength(1);
+      expect(calledUrls().filter((u) => u.endsWith("/api/b"))).toHaveLength(1);
+    });
+    releaseRefresh(jsonResponse(401, { error: "refresh token revogado" }));
+
+    await expect(pa).resolves.toBe("a");
+    await expect(pb).resolves.toBe("b");
+    expect(calledUrls().filter((u) => u.endsWith("/api/auth/refresh"))).toHaveLength(1);
+    expect(calledUrls().some((u) => u.includes("/api/auth/logout"))).toBe(false);
+  });
+
+  it("com Web Locks, o refresh roda dentro do lock rp-auth-refresh", async () => {
+    const request = vi.fn((_nome: string, cb: () => Promise<unknown>) => cb());
+    vi.stubGlobal("navigator", { ...navigator, locks: { request } });
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockResolvedValueOnce(jsonResponse(200, {}))
+      .mockResolvedValueOnce(jsonResponse(200, { data: 1 }));
+
+    await expect(client.fetchWithAuth("/api/x")).resolves.toBe(1);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0][0]).toBe("rp-auth-refresh");
+  });
+
+  // 🔴 TestBrain (Lote 4): caminhos de borda do retry unico.
+  it("refresh 401 -> retry com falha de rede: rejeita com o erro de rede, sem logout, e libera a fila", async () => {
+    let releaseRefresh: (r: Response) => void = () => {};
+    let chamadasA = 0;
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith("/api/auth/refresh")) {
+        return new Promise<Response>((res) => {
+          releaseRefresh = res;
+        });
+      }
+      if (url.endsWith("/api/a")) {
+        chamadasA++;
+        return chamadasA === 1
+          ? Promise.resolve(jsonResponse(401, { error: "expirado" }))
+          : Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return Promise.resolve(jsonResponse(401, { error: "expirado" }));
+    });
+
+    const pa = client.fetchWithAuth("/api/a");
+    const pb = client.fetchWithAuth("/api/b");
+    await vi.waitFor(() => {
+      expect(calledUrls().filter((u) => u.endsWith("/api/auth/refresh"))).toHaveLength(1);
+      expect(calledUrls().filter((u) => u.endsWith("/api/b"))).toHaveLength(1);
+    });
+    releaseRefresh(jsonResponse(401, { error: "refresh token revogado" }));
+
+    await expect(pa).rejects.toThrow("Failed to fetch");
+    // A requisicao pendente na fila e rejeitada (nao fica pendurada).
+    await expect(pb).rejects.toThrow("Sessão expirada");
+    expect(calledUrls().filter((u) => u.endsWith("/api/a"))).toHaveLength(2);
+    expect(calledUrls().some((u) => u.includes("/api/auth/logout"))).toBe(false);
+    expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+  });
+
+  it.each<[string, () => Promise<Response>]>([
+    ["erro de rede no refresh", () => Promise.reject(new TypeError("Failed to fetch"))],
+    ["refresh 500", () => Promise.resolve(jsonResponse(500, { error: "erro interno" }))],
+  ])("%s: nao repete a requisicao original e desloga", async (_n, refreshResp) => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockImplementationOnce(refreshResp)
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    await expect(client.fetchWithAuth("/api/pedidos")).rejects.toThrow("Sessão expirada");
+    expect(calledUrls()).toEqual([
+      "http://api.test/api/pedidos",
+      "http://api.test/api/auth/refresh",
+      "http://api.test/api/auth/logout",
+    ]);
+  });
+
+  it("Web Locks rejeitando: trata como erro (sem retry) e desloga", async () => {
+    const request = vi.fn(() => Promise.reject(new Error("lock abortado")));
+    vi.stubGlobal("navigator", { ...navigator, locks: { request } });
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    await expect(client.fetchWithAuth("/api/x")).rejects.toThrow("Sessão expirada");
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(calledUrls()).toEqual(["http://api.test/api/x", "http://api.test/api/auth/logout"]);
+  });
+
+  it("refresh 401 -> retry OK com keepEnvelope devolve o envelope inteiro", async () => {
+    const envelope = { data: [1], pagination: { page: 1, total: 1 } };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockResolvedValueOnce(jsonResponse(401, {}))
+      .mockResolvedValueOnce(jsonResponse(200, envelope));
+
+    await expect(client.fetchEnvelopeWithAuth("/api/pedidos")).resolves.toEqual(envelope);
   });
 });
 

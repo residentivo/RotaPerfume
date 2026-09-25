@@ -7,7 +7,8 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Visita, VisitaInput, Vendedor, ClienteResumo } from "@/lib/types";
-import { useResetOnOpen } from "@/lib/useResetOnOpen";
+import { useAjustarAoMudar, useResetOnOpen } from "@/lib/useResetOnOpen";
+import { useVendedorTravado, vendedorInicial } from "@/lib/useVendedorTravado";
 import { apiListVendedores, apiListClientesDoVendedor } from "@/lib/api";
 
 interface VisitaModalProps {
@@ -54,13 +55,25 @@ export function VisitaModal({
   const [loadingClientes, setLoadingClientes] = useState(false);
   const [clientesError, setClientesError] = useState<string | null>(null);
 
+  // SEC-03: usuario normal tem o vendedor travado no proprio id_vendedor da
+  // sessao (/me). GET /api/vendedores devolve so ele ([] sem vinculo).
+  const travado = useVendedorTravado();
+  const { normal, vendedorTravadoId, vendedorTravadoNome, semVendedor } = travado;
+
+  // Mantem o vendedor travado sincronizado com a sessao (usuario normal).
+  useAjustarAoMudar([open, normal, vendedorTravadoId], () => {
+    if (open && normal) {
+      setVendedorId(vendedorTravadoId ? String(vendedorTravadoId) : "");
+    }
+  });
+
   // Reseta o formulario ao abrir (ou quando as props mudam com o modal
   // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
   useResetOnOpen(open, [mode, visita], () => {
     setError(null);
     setSubmitting(false);
     if (mode === "edit" && visita) {
-      setVendedorId(String(visita.vendedor_id));
+      setVendedorId(vendedorInicial(travado, String(visita.vendedor_id)));
       setClienteId(String(visita.cliente_id));
       setDataVisita(
         visita.data_visita ? visita.data_visita.slice(0, 10) : todayISO()
@@ -68,7 +81,7 @@ export function VisitaModal({
       setResultado(visita.resultado);
       setDuracaoMin(String(visita.duracao_min));
     } else {
-      setVendedorId("");
+      setVendedorId(vendedorInicial(travado, ""));
       setClienteId("");
       setDataVisita(todayISO());
       setResultado(RESULTADO_OPTIONS[0].value);
@@ -156,16 +169,24 @@ export function VisitaModal({
     };
   }, [open, vendedorId]);
 
-  const vendedorOptions = useMemo(
-    () => [
-      { value: "", label: "Selecione um vendedor" },
+  const vendedorOptions = useMemo(() => {
+    const opts = [
+      { value: "", label: semVendedor ? "Sem vendedor vinculado" : "Selecione um vendedor" },
       ...vendedores.map((v) => ({
         value: String(v.id),
         label: `#${v.id} - ${v.nome}${v.data_desligamento ? " [X]" : ""}`,
       })),
-    ],
-    [vendedores]
-  );
+    ];
+    // Usuario normal: o proprio vendedor aparece no select travado mesmo
+    // antes da lista (escopada) carregar.
+    if (vendedorTravadoId && !vendedores.some((v) => v.id === vendedorTravadoId)) {
+      opts.push({
+        value: String(vendedorTravadoId),
+        label: `#${vendedorTravadoId} - ${vendedorTravadoNome ?? "Meu vendedor"}`,
+      });
+    }
+    return opts;
+  }, [vendedores, semVendedor, vendedorTravadoId, vendedorTravadoNome]);
 
   const clienteOptions = useMemo(
     () => [
@@ -189,6 +210,12 @@ export function VisitaModal({
     e.preventDefault();
     setError(null);
 
+    if (semVendedor) {
+      setError(
+        "Seu usuario nao esta vinculado a um vendedor. Solicite ao administrador o vinculo para registrar visitas."
+      );
+      return;
+    }
     if (!vendedorId) {
       setError("Vendedor e obrigatorio.");
       return;
@@ -248,6 +275,12 @@ export function VisitaModal({
             Nao foi possivel carregar clientes do vendedor: {clientesError}
           </Alert>
         )}
+        {semVendedor && (
+          <Alert variant="warning">
+            Seu usuario nao esta vinculado a um vendedor, por isso nao e
+            possivel registrar visitas. Solicite o vinculo ao administrador.
+          </Alert>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Select
@@ -255,7 +288,7 @@ export function VisitaModal({
             value={vendedorId}
             onChange={(e) => setVendedorId(e.target.value)}
             options={vendedorOptions}
-            disabled={loadingVendedores}
+            disabled={loadingVendedores || normal}
             required
           />
           <Select
@@ -301,7 +334,7 @@ export function VisitaModal({
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="submit" loading={submitting} disabled={loadingVendedores}>
+          <Button type="submit" loading={submitting} disabled={loadingVendedores || semVendedor}>
             {mode === "create" ? "Criar visita" : "Salvar alteracoes"}
           </Button>
         </div>

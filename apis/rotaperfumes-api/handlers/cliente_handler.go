@@ -214,14 +214,17 @@ func (h *ClienteHandler) ToggleAtivoCliente(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Escopo antes do decode (SEC-01): sem acesso → 404 mesmo com body inválido.
 	if !h.autorizarEscritaCliente(w, r, "ToggleAtivoCliente", id) {
 		return
 	}
 
-	var req ToggleAtivoClienteRequest
-	_ = json.NewDecoder(r.Body).Decode(&req) // body opcional, ignora erro
+	ativo, ok := lerAtivoOpcional(w, r) // vazio/null/{} = toggle; inválido = 400
+	if !ok {
+		return
+	}
 
-	cliente, err := h.svc.ToggleAtivoCliente(r.Context(), h.db, id, req.Ativo)
+	cliente, err := h.svc.ToggleAtivoCliente(r.Context(), h.db, id, ativo)
 	if err != nil {
 		if errors.Is(err, services.ErrClienteNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "cliente não encontrado")
@@ -274,6 +277,12 @@ func clienteErroParaStatus(err error) (status int, msg string, ok bool) {
 		return http.StatusBadRequest, "razão social é obrigatória", true
 	case errors.Is(err, services.ErrCNPJObrigatorio):
 		return http.StatusBadRequest, "cnpj é obrigatório", true
+	case errors.Is(err, services.ErrCNPJInvalido):
+		return http.StatusBadRequest, "cnpj inválido", true
+	case errors.Is(err, services.ErrCNPJDuplicado):
+		// Mensagem genérica (NEG-01): nunca revela id, vendedor ou razão
+		// social do cliente que já usa o CNPJ.
+		return http.StatusConflict, "cnpj já cadastrado", true
 	case errors.Is(err, services.ErrSegmentoObrigatorio):
 		return http.StatusBadRequest, "segmento é obrigatório", true
 	case errors.Is(err, services.ErrCidadeObrigatoria):

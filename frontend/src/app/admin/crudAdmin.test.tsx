@@ -57,8 +57,8 @@ async function dialogo() {
   return screen.findByRole("dialog");
 }
 
-/** Produtos e estoque fazem uma 2a busca 350ms apos montar (debounce dos
- * filtros; ver BUG FE-04). Espera ela antes de interagir. */
+/** Espera a janela do debounce dos filtros (350ms) passar. Desde o FE-04 ele
+ * nao dispara na montagem; a espera garante que nao ha busca extra. */
 async function esperarDebounce() {
   await act(() => new Promise((r) => setTimeout(r, 420)));
 }
@@ -303,7 +303,8 @@ describe("Estoque - CRUD (admin)", () => {
     await userEvent.type(within(d).getByLabelText("Saldo"), "1");
     await userEvent.click(within(d).getByRole("button", { name: "Criar registro" }));
     expect(await screen.findByText("Registro de estoque #6 (SKU-6) criado com sucesso.")).toBeInTheDocument();
-    expect(api.apiListEstoque).toHaveBeenCalledTimes(3); // montagem + debounce + recarga
+    // FE-04: montagem + recarga (o debounce nao dispara mais na montagem).
+    expect(api.apiListEstoque).toHaveBeenCalledTimes(2);
   });
 
   it.each<[string, string, string]>([

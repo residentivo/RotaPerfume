@@ -1,116 +1,78 @@
 # A Fazer
 
----
-
-## SEC-02: corrida no refresh token gera dois pares de tokens — prioridade MÉDIA
-
-**Status:** não iniciado. Aguarda a priorização do usuário.
-**Camada:** Backend (+ Frontend)
-**Origem:** Lote 3 de 2026-09-24.
-
-**Descrição:** `apis/rotaperfumes-api/handlers/auth_handler.go` (~l.311-357) valida e revoga o refresh token em passos separados e ignora o erro da revogação. Duas chamadas de refresh simultâneas com o mesmo token geram dois pares de tokens válidos.
-
-**Ação esperada:**
-- 🟡 BackBrain:
-  - `Revoke` com `WHERE id = ? AND revoked_at IS NULL`.
-  - Se `n == 0`, devolver `ErrRefreshTokenRevoked` e responder `401` antes de gerar os novos tokens.
-  - Registrar a falha no `refreshLimiter`.
-- 🟢 FrontBrain (multi-aba): repetir a requisição original uma vez antes de deslogar.
-- 🔴 TestBrain: dois refresh em paralelo com o mesmo token → um `200` e um `401`.
-- 🔵 SubBrain atualizar o Postman.
+> **Lote 4 concluído em 2026-09-25.** SEC-02, SEC-03, NEG-01, BUG-06, FE-04 e FE-05, mais os derivados SEC-05, NEG-03, NEG-04 e DB-01, estão todos em `feito.md` (aceite do usuário em 2026-09-25). Nenhuma divergência do roteiro do Lote 4 ficou pendente.
+>
+> **Follow-ups do Lote 4 (2026-09-25):** os cards abaixo foram registrados pelo 🔴 TestBrain durante a regressão do Lote 4. Eles continuam no backlog e aguardam a priorização do usuário.
 
 ---
 
-## SEC-03: `GET /api/vendedores` sem escopo — prioridade BAIXA
+## FE-06: mensagem enganosa quando o retry após o refresh falha por rede — prioridade BAIXA
 
-**Status:** não iniciado. Aguarda a priorização do usuário.
-**Camada:** Backend
-**Origem:** Lote 3 de 2026-09-24.
-
-**Descrição:** Em `apis/rotaperfumes-api/handlers/vendedor_handler.go` (~l.41), o usuário `normal` recebe todos os vendedores, e o bloqueio de vendedor desligado não é aplicado.
-
-**Ação esperada:**
-- 🟣 SecBrain / 🟡 BackBrain:
-  - Devolver ao usuário `normal` só o próprio vendedor e aplicar o bloqueio de vendedor desligado.
-  - Avaliar também o bloqueio de desligado em `GET /api/produtos` e `GET /api/produtos/{id}`.
-- 🟢 FrontBrain: conferir os selects que usam a listagem.
-- 🔴 TestBrain cobrir.
-- 🔵 SubBrain atualizar o Postman.
-
----
-
-## NEG-01: validação e duplicidade de CNPJ (DECISÃO DE NEGÓCIO) — prioridade BAIXA
-
-**Status:** não iniciado. Aguarda a priorização e a decisão do usuário.
-**Camada:** Backend / Database
-**Origem:** Lote 3 de 2026-09-24.
-
-**Descrição:** O índice `idx_clientes_cnpj` não é `UNIQUE`, e não há validação de 14 dígitos no CNPJ.
-
-**Ação esperada:**
-- 🤍 MegaBrain / 🔵 SubBrain levar a decisão ao usuário.
-- Proposta:
-  - `400` "cnpj inválido" para CNPJ fora do formato.
-  - Política de duplicidade com `409` genérico, sem revelar a qual vendedor o cliente pertence.
-- Depois da decisão: 🌸 DataBrain (índice), 🟡 BackBrain, 🔴 TestBrain e 🔵 SubBrain (Postman).
-
----
-
-## BUG-06: `PATCH /inativar` com body inválido inverte o estado — prioridade MÉDIA
-
-**Status:** não iniciado. Aguarda a priorização do usuário.
-**Camada:** Backend
-**Origem:** Lote 3 de 2026-09-24.
-
-**Descrição:** Três handlers ignoram o erro de decode do body:
-- `cliente_handler.go` (~l.222)
-- `produto_handler.go` (~l.113)
-- `usuario_handler.go` (~l.303)
-
-Um body inválido, como `{"ativo":"false"}` (string), é tratado como omitido e **alterna** o estado.
-
-**Ação esperada:**
-- 🟡 BackBrain responder `400` quando o body vier preenchido e inválido. O body vazio continua fazendo toggle.
-- 🔴 TestBrain cobrir.
-- 🔵 SubBrain atualizar o Postman.
-
----
-
-## FE-04: resposta obsoleta sobrescreve a mais nova nas listagens — prioridade MÉDIA
-
-**Status:** não iniciado. Aguarda a priorização do usuário.
+**Status:** não iniciado; aguarda a priorização do usuário
 **Camada:** Frontend
-**Origem:** Lote 3 de 2026-09-24 (documentado pelo 🔴 TestBrain durante o FE-03). O problema já existia antes do FE-03.
+**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
 
-**Descrição:** O problema aparece de três formas:
-1. **Paginação rápida:** a resposta de uma página antiga sobrescreve a da página atual. Efeitos afetados:
-   - `admin/pedidos:181`, `pagamentos:181`, `admin/clientes:181`
-   - `oportunidades:281`, `visitas:249`
-   - `estoque:125`, `produtos:136`
-   - provavelmente também `usuarios:131` e `senha-historico:165`
-2. **Debounce dos filtros disparado na montagem** (`setTimeout` em `pedidos:187` etc.) com `page=1`:
-   - A listagem faz duas buscas ao abrir.
-   - A tabela pode voltar à página 1 enquanto o paginador mostra a página 2.
-3. **Linha excluída reaparece** em pedidos, pagamentos, oportunidades e visitas.
+**Descrição:** Em `frontend/src/lib/apiClient.ts`, quando o retry após o refresh com `401` falha por erro de rede, as requisições da fila são rejeitadas com "Sessão expirada. Faça login novamente.", mas o usuário não é deslogado. A mensagem é enganosa.
 
 **Ação esperada:**
-- 🟢 FrontBrain:
-  - Aplicar o padrão `cancelado`/chave (como no Dashboard e nos modais).
-  - Não disparar o debounce na montagem.
-- 🔴 TestBrain: os 18 testes `it.fails` já existem. Ao corrigir, trocar `it.fails` por `it`.
+- 🟢 FrontBrain: usar uma mensagem de erro de rede nesse caso.
+- 🔴 TestBrain cobrir.
 
 ---
 
-## FE-05: listagens chamam `fetch` direto, sem refresh automático no 401 — prioridade BAIXA
+## SEC-04: corrida legítima no refresh conta no rate limit por IP — prioridade BAIXA
 
-**Status:** não iniciado. Aguarda a priorização do usuário.
-**Camada:** Frontend
-**Origem:** Lote 3 de 2026-09-24.
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Backend (+ Segurança)
+**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
 
 **Descrição:**
-- As funções `apiList*`, `apiDashboardVendedores` e `apiListSenhaHistorico` (`frontend/src/lib/api.ts`) chamam `fetch` direto. Por isso, um `401` não dispara o refresh automático do `fetchWithAuth`.
-- Incluir na mesma correção: em `frontend/src/app/admin/clientes/page.tsx` (~l.96), enquanto o `/me` carrega, o motivo do botão desabilitado diz "Usuario sem vendedor vinculado". O problema é só de texto.
+- Cada `401` de revogação concorrente no refresh conta no `refreshLimiter` por IP. Com 10 falhas, a API responde `429`.
+- No front, um `429` no refresh leva ao logout.
+- Várias abas, ou vários usuários atrás do mesmo IP (NAT), podem cair nisso.
 
 **Ação esperada:**
-- 🟢 FrontBrain migrar essas funções para `fetchWithAuth` e ajustar o texto durante o carregamento.
+- 🟣 SecBrain: avaliar a solução (por exemplo, não contar a corrida legítima ou usar uma chave por token/usuário).
+- 🟡 BackBrain aplicar.
 - 🔴 TestBrain cobrir.
+
+---
+
+## DOC-01: roteiro de vendedor desligado usa um usuário que não faz mais login — prioridade BAIXA
+
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Documentação
+**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
+
+**Descrição:** `docs/roteiro-teste-manual-vendedor-desligado.md` usa `henrique.rodrigues` (usuário id 2), que está com `ativo=0` (efeito do BUG-05) e não faz mais login.
+
+**Ação esperada:**
+- 🔴 TestBrain / 🔵 SubBrain: trocar para `thiago.silva` (usuário id 4, vendedor 3 desligado) ou descrever o novo comportamento.
+
+---
+
+## NEG-02: aceitar o CNPJ alfanumérico da Receita (DECISÃO DE NEGÓCIO) — prioridade BAIXA
+
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Backend / Database / Frontend
+**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
+
+**Descrição:** O CNPJ alfanumérico da Receita está vigente desde julho de 2026. Hoje a API aceita só dígitos, e o schema usa `CHAR(14)` com dígito verificador módulo 11 numérico.
+
+**Ação esperada:**
+- 🤍 MegaBrain: levar a decisão ao usuário.
+
+---
+
+## DOC-02: manual da base de dados com o índice `uq_clientes_cnpj` — prioridade BAIXA
+
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Documentação
+**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
+
+**Descrição:** Atualizar o manual da base de dados com o índice `uq_clientes_cnpj` e a unificação dos CNPJs duplicados. Depende da aplicação da migração 19 (`make db-fix-cnpj-unique`).
+
+**Atualização (2026-09-25):** a migração 19 está aplicada no banco local (confirmado na execução do roteiro do Lote 4). O card está desbloqueado. O DB-01 foi fechado (log de vínculos vazio é o esperado; ver `feito.md`).
+
+**Ação esperada:**
+- 🔵 SubBrain: atualizar o manual depois que a migração 19 for aplicada.

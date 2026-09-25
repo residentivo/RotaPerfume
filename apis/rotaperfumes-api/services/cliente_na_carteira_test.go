@@ -40,7 +40,7 @@ func (meiaNoiteDeHoje) Match(v driver.Value) bool {
 
 func inputClienteValido() services.ClienteInput {
 	return services.ClienteInput{
-		CNPJ: "12345678000199", RazaoSocial: "Empresa", Segmento: "varejo",
+		CNPJ: "11222333000181", RazaoSocial: "Empresa", Segmento: "varejo",
 		Cidade: "Curitiba", UF: "pr", Bairro: "Centro", DataCadastro: "2024-02-10",
 	}
 }
@@ -60,7 +60,7 @@ func TestClienteService_CreateClienteNaCarteira(t *testing.T) {
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectBegin()
 				m.ExpectExec(reInsertClienteS).
-					WithArgs("12345678000199", "Empresa", "varejo", "Curitiba", "PR", "Centro", sqlmock.AnyArg(), true).
+					WithArgs("11222333000181", "Empresa", "varejo", "Curitiba", "PR", "Centro", sqlmock.AnyArg(), true).
 					WillReturnResult(sqlmock.NewResult(555, 1))
 				m.ExpectExec(reInsertCarteiraS).
 					WithArgs(int64(555), int64(10), meiaNoiteDeHoje{}, nil).

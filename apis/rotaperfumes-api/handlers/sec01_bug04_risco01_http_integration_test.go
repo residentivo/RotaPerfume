@@ -147,7 +147,7 @@ func (c *itCtx) nome(tag string) string {
 }
 
 func (c *itCtx) cnpj() string {
-	return fmt.Sprintf("9%013d", (time.Now().UnixNano()/1000+c.seq.Add(1))%1e13)
+	return cnpjValidoTeste(9e11 + (time.Now().UnixNano()/1000+c.seq.Add(1))%1e11)
 }
 
 // req faz a chamada HTTP. body pode ser nil, string (cru) ou qualquer valor

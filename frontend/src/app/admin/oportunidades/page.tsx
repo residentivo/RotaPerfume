@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  useDebounceFiltros,
+  useExcluidos,
+  useUltimaResposta,
+} from "@/lib/useListaSegura";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -210,6 +215,13 @@ function OportunidadesContent() {
     [clientes]
   );
 
+  // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
+  // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  const executarBusca = useUltimaResposta();
+  // FE-04: linha excluida nao reaparece por uma resposta que saiu antes do
+  // DELETE e chegou depois dele.
+  const excluidos = useExcluidos((x: Oportunidade) => x.oportunidade_id);
+
   // Busca separada em requisicao pura + aplicacao do resultado no callback
   // assincrono (.then): o efeito nunca chama setState de forma sincrona.
   // Vendedor sem carteira vinculada (id_vendedor null): não há dados a
@@ -264,7 +276,7 @@ function OportunidadesContent() {
   const loadOportunidades = async () => {
     setLoading(true);
     setError(null);
-    await buscarOportunidades().then(aplicarOportunidades, aplicarErroOportunidades);
+    await executarBusca(buscarOportunidades().then(excluidos.filtrar), aplicarOportunidades, aplicarErroOportunidades);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -278,24 +290,16 @@ function OportunidadesContent() {
   }
 
   useEffect(() => {
-    buscarOportunidades().then(aplicarOportunidades, aplicarErroOportunidades);
+    executarBusca(buscarOportunidades().then(excluidos.filtrar), aplicarOportunidades, aplicarErroOportunidades);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 
   // Debounce da busca textual e reset para pagina 1 quando filtros mudam.
   // Selects (vendedor/cliente/etapa/origem) tambem passam por este efeito,
   // mas como o debounce e curto (350ms) o efeito pratico e quase imediato.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (page !== 1) {
-        setPage(1);
-      } else {
-        loadOportunidades();
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
+  // FE-04: o debounce nao dispara na montagem, so quando a chave dos filtros
+  // muda (evita a busca dupla e a tabela voltando para a pagina 1).
+  const chaveFiltros = JSON.stringify([
     search,
     vendedorFilter,
     meuVendedorId,
@@ -305,6 +309,13 @@ function OportunidadesContent() {
     dataAberturaDe,
     dataAberturaAte,
   ]);
+  useDebounceFiltros(chaveFiltros, () => {
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      loadOportunidades();
+    }
+  });
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -359,6 +370,7 @@ function OportunidadesContent() {
     setDeletingId(oportunidade.oportunidade_id);
     try {
       await apiDeleteOportunidade(oportunidade.oportunidade_id);
+      excluidos.marcar(oportunidade.oportunidade_id);
       setOportunidades((prev) =>
         prev.filter((o) => o.oportunidade_id !== oportunidade.oportunidade_id)
       );

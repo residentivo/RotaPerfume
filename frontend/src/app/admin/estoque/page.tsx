@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDebounceFiltros, useUltimaResposta } from "@/lib/useListaSegura";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -69,6 +70,10 @@ function EstoquePageContent() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingEstoque, setEditingEstoque] = useState<Estoque | null>(null);
 
+  // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
+  // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  const executarBusca = useUltimaResposta();
+
   // Busca separada em requisicao pura + aplicacao do resultado no callback
   // assincrono (.then): o efeito nunca chama setState de forma sincrona.
   const buscarEstoque = () =>
@@ -108,7 +113,7 @@ function EstoquePageContent() {
   const loadEstoque = async () => {
     setLoading(true);
     setError(null);
-    await buscarEstoque().then(aplicarEstoque, aplicarErroEstoque);
+    await executarBusca(buscarEstoque(), aplicarEstoque, aplicarErroEstoque);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -122,22 +127,21 @@ function EstoquePageContent() {
   }
 
   useEffect(() => {
-    buscarEstoque().then(aplicarEstoque, aplicarErroEstoque);
+    executarBusca(buscarEstoque(), aplicarEstoque, aplicarErroEstoque);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 
   // Debounce da busca textual/data e reset para pagina 1 quando filtros mudam
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (page !== 1) {
-        setPage(1);
-      } else {
-        loadEstoque();
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, dataFiltro, rupturaFilter]);
+  // FE-04: o debounce nao dispara na montagem, so quando a chave dos filtros
+  // muda (evita a busca dupla e a tabela voltando para a pagina 1).
+  const chaveFiltros = JSON.stringify([search, dataFiltro, rupturaFilter]);
+  useDebounceFiltros(chaveFiltros, () => {
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      loadEstoque();
+    }
+  });
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {

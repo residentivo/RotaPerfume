@@ -109,10 +109,12 @@ func (h *ProdutoHandler) ToggleAtivoProduto(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var req ToggleAtivoProdutoRequest
-	_ = json.NewDecoder(r.Body).Decode(&req) // body opcional, ignora erro
+	ativo, ok := lerAtivoOpcional(w, r) // vazio/null/{} = toggle; inválido = 400
+	if !ok {
+		return
+	}
 
-	produto, err := h.svc.ToggleAtivoProduto(r.Context(), h.db, id, req.Ativo)
+	produto, err := h.svc.ToggleAtivoProduto(r.Context(), h.db, id, ativo)
 	if err != nil {
 		if errors.Is(err, services.ErrProdutoNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "produto não encontrado")

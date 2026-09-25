@@ -70,7 +70,7 @@ func TestIntegracaoSEC01_CreateClienteNaCarteira(t *testing.T) {
 
 	input := func(tag string) services.ClienteInput {
 		return services.ClienteInput{
-			CNPJ: "ZZ" + sufixo[len(sufixo)-12:], RazaoSocial: "ZZ-TEST-SEC01-" + tag + "-" + sufixo,
+			CNPJ: cnpjValidoTeste(time.Now().UnixNano()), RazaoSocial: "ZZ-TEST-SEC01-" + tag + "-" + sufixo,
 			Segmento: "Teste", Cidade: "Curitiba", UF: "PR",
 		}
 	}

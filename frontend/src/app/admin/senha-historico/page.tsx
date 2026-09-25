@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useUltimaResposta } from "@/lib/useListaSegura";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -105,6 +106,10 @@ export default function SenhaHistoricoPage() {
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
+  // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  const executarBusca = useUltimaResposta();
+
   // Busca separada em requisicao pura + aplicacao do resultado no callback
   // assincrono (.then): o efeito nunca chama setState de forma sincrona.
   const buscar = () =>
@@ -140,7 +145,7 @@ export default function SenhaHistoricoPage() {
   const load = async () => {
     setLoading(true);
     setError(null);
-    await buscar().then(aplicar, aplicarErro);
+    await executarBusca(buscar(), aplicar, aplicarErro);
   };
 
   // Reset para pagina 1 quando filtros mudam — ajustado durante o render
@@ -163,7 +168,7 @@ export default function SenhaHistoricoPage() {
   }
 
   useEffect(() => {
-    buscar().then(aplicar, aplicarErro);
+    executarBusca(buscar(), aplicar, aplicarErro);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, tipo, sortKey, sortDir]);
 

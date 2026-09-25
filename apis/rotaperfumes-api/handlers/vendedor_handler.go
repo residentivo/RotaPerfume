@@ -37,9 +37,29 @@ func NewVendedorHandler(db *sql.DB, cfg *config.Config) *VendedorHandler {
 // Antes filtrava só ativos, o que fazia vendedores inativos vinculados a
 // registros existentes sumirem das opções (bug corrigido).
 // Response: {success, data: [{id, nome, regiao, uf, data_desligamento}], error}
-// Acesso comum.
+//
+// Escopo (SEC-03, contrato 🟣 SecBrain):
+//   - admin: todos os vendedores (ativos e desligados);
+//   - normal com vendedor desligado: 403 "acesso bloqueado: vendedor desligado";
+//   - normal sem vínculo (ou vínculo órfão): 200 com data [];
+//   - normal com vínculo: 200 com data [só o próprio vendedor].
 func (h *VendedorHandler) ListVendedores(w http.ResponseWriter, r *http.Request) {
-	vendedores, err := h.svc.ListVendedores(r.Context(), h.db)
+	scope, err := resolverVendedorScope(r, h.db)
+	if err != nil {
+		responderErroEscopo(w, "[vendedores] ListVendedores", err)
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusOK, []any{}, "")
+		return
+	}
+
+	var vendedores any
+	if scope.Restrito {
+		vendedores, err = h.svc.ListVendedorProprio(r.Context(), h.db, scope.VendedorID)
+	} else {
+		vendedores, err = h.svc.ListVendedores(r.Context(), h.db)
+	}
 	if err != nil {
 		log.Printf("[vendedores] ListVendedores: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")

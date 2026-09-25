@@ -48,6 +48,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 
+	"github.com/rotaperfumes/shared/cmd/internal/clientesdedup"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -105,10 +106,84 @@ func main() {
 	}
 	log.Printf("importcarteiras: %d clientes carregados para lookup", len(clienteIDs))
 
+	// NEG-01: cópias de CNPJ duplicado no clientes.csv apontam para o
+	// sobrevivente; vínculos da cópia equivalentes a um já existente no
+	// grupo são descartados (mesma regra de sql/19_alter_clientes_cnpj_unique.sql).
+	lidos := len(rows)
+	projectRoot, _ := findProjectRoot()
+	unificacao := clientesdedup.Redirecionar("importcarteiras", projectRoot, clienteIDs)
+	rows, descartadas := descartarVinculosEquivalentes(rows, unificacao)
+	log.Printf("importcarteiras: %d carteira(s) de cliente unificado descartada(s) por vínculo equivalente (mesmo vendedor e data_inicio)", descartadas)
+
 	inserted, updated, failed := upsertAll(db, rows, clienteIDs)
 
-	log.Printf("importcarteiras: OK — lidos=%d inseridos_ou_inalterados=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
-		len(rows), inserted, updated, failed, parseErrs)
+	log.Printf("importcarteiras: OK — lidos=%d descartados_unificacao=%d inseridos_ou_inalterados=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
+		lidos, descartadas, inserted, updated, failed, parseErrs)
+}
+
+// chaveVinculo identifica um vínculo de carteira após a unificação de
+// clientes: espelha a UNIQUE (cliente_id, vendedor_id, data_inicio).
+type chaveVinculo struct {
+	clienteID  int64
+	vendedorID int64
+	dataInicio string
+}
+
+// descartarVinculosEquivalentes remove, entre as linhas cujo cliente foi
+// unificado, as que colidiriam na UNIQUE (cliente_id, vendedor_id,
+// data_inicio) com outra linha do mesmo grupo. Sem isso, o ON DUPLICATE KEY
+// UPDATE sobrescreveria o data_fim do vínculo do sobrevivente com o da cópia.
+// Fica a linha do próprio sobrevivente; se ele não tiver, a de menor
+// carteira_id_origem. A ordem original das linhas mantidas é preservada.
+func descartarVinculosEquivalentes(rows []carteiraRow, u clientesdedup.Unificacao) (mantidas []carteiraRow, descartadas int) {
+	if len(u) == 0 {
+		return rows, 0
+	}
+	chave := func(r carteiraRow) chaveVinculo {
+		return chaveVinculo{u.Canonico(r.ClienteIDOrigem), r.VendedorID, r.DataInicio.Format("2006-01-02")}
+	}
+	preferida := func(a, b carteiraRow) bool { // a é preferível a b?
+		aSobrevivente := u.Canonico(a.ClienteIDOrigem) == a.ClienteIDOrigem
+		bSobrevivente := u.Canonico(b.ClienteIDOrigem) == b.ClienteIDOrigem
+		if aSobrevivente != bSobrevivente {
+			return aSobrevivente
+		}
+		return a.CarteiraIDOrigem < b.CarteiraIDOrigem
+	}
+
+	// Só entram na disputa as linhas de clientes de um grupo unificado
+	// (cópia ou sobrevivente); as demais passam intactas.
+	sobreviventes := make(map[int64]bool, len(u))
+	for _, s := range u {
+		sobreviventes[s] = true
+	}
+	doGrupo := func(r carteiraRow) bool {
+		_, copia := u[r.ClienteIDOrigem]
+		return copia || sobreviventes[r.ClienteIDOrigem]
+	}
+
+	vencedora := make(map[chaveVinculo]carteiraRow, len(rows))
+	for _, r := range rows {
+		if !doGrupo(r) {
+			continue
+		}
+		k := chave(r)
+		if atual, ok := vencedora[k]; !ok || preferida(r, atual) {
+			vencedora[k] = r
+		}
+	}
+
+	mantidas = make([]carteiraRow, 0, len(rows))
+	for _, r := range rows {
+		if doGrupo(r) && vencedora[chave(r)].CarteiraIDOrigem != r.CarteiraIDOrigem {
+			log.Printf("importcarteiras: carteira_id_origem=%d descartada: vínculo equivalente ao de carteira_id_origem=%d após unificar o cliente_id=%d",
+				r.CarteiraIDOrigem, vencedora[chave(r)].CarteiraIDOrigem, r.ClienteIDOrigem)
+			descartadas++
+			continue
+		}
+		mantidas = append(mantidas, r)
+	}
+	return mantidas, descartadas
 }
 
 // resolveCSVPath decide o caminho final do CSV, na ordem:

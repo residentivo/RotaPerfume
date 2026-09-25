@@ -315,11 +315,16 @@ function botaoCabecalho(header: string): HTMLElement {
 interface Deferred<T> {
   promise: Promise<T>;
   resolve: (v: T) => void;
+  reject: (e: unknown) => void;
 }
 function deferred<T>(): Deferred<T> {
   let resolve: (v: T) => void = () => {};
-  const promise = new Promise<T>((r) => (resolve = r));
-  return { promise, resolve };
+  let reject: (e: unknown) => void = () => {};
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 const ADMIN: MeResponse = {
@@ -430,12 +435,9 @@ describe.each(TELAS)("Listagem $nome (FE-03)", (t) => {
     ).toBe(false);
   });
 
-  // BUG FE-04 (reportado ao Analista, nao corrigido aqui): as listagens nao
-  // descartam respostas obsoletas. Se a pagina 2 responder depois da 3, a
-  // tabela mostra os dados da pagina 2 com o paginador na pagina 3.
-  // `it.fails` documenta o bug: quando for corrigido, este teste passa a
-  // falhar e o `.fails` deve ser removido.
-  it.fails("resposta obsoleta (pagina 2 chega depois da 3) nao sobrescreve a mais nova", async () => {
+  // FE-04 (corrigido): so a busca mais recente aplica o resultado. Se a
+  // pagina 2 responder depois da 3, a resposta da 2 e descartada.
+  it("resposta obsoleta (pagina 2 chega depois da 3) nao sobrescreve a mais nova", async () => {
     await montarCarregada(t);
     const p2 = deferred<ReturnType<typeof resposta>>();
     const p3 = deferred<ReturnType<typeof resposta>>();
@@ -453,17 +455,39 @@ describe.each(TELAS)("Listagem $nome (FE-03)", (t) => {
     expect(screen.queryByText(t.texto(200))).not.toBeInTheDocument();
   });
 
-  // BUG FE-04 (variante): o efeito de debounce dos filtros tambem roda na
-  // montagem e, 350ms depois, dispara uma 2a busca com o `page` capturado
-  // na montagem (1). Se o usuario ja foi para a pagina 2, a tabela volta a
-  // mostrar a pagina 1 com o paginador na 2.
-  it.fails("pagina trocada logo apos abrir a tela nao e sobrescrita pela busca do debounce", async () => {
+  // FE-04 (corrigido): o debounce dos filtros nao dispara na montagem, entao
+  // nao ha 2a busca da pagina 1 sobrescrevendo a pagina 2.
+  it("pagina trocada logo apos abrir a tela nao e sobrescrita pela busca do debounce", async () => {
     render(<t.Page />);
     await screen.findByText(t.texto(100));
     await userEvent.click(screen.getByTitle("Proxima pagina"));
     await screen.findByText(t.texto(200));
     await esperarDebounce();
     expect(screen.getByText(t.texto(200))).toBeInTheDocument();
+  });
+
+  it("abrir a tela faz uma unica busca (o debounce nao dispara na montagem)", async () => {
+    render(<t.Page />);
+    await screen.findByText(t.texto(100));
+    await esperarDebounce();
+    expect(chamadas(t)).toHaveLength(1);
+    expect(ultima(t)).toMatchObject({ page: 1 });
+  });
+
+  it("erro de uma resposta obsoleta nao aparece por cima da pagina atual", async () => {
+    await montarCarregada(t);
+    const p2 = deferred<ReturnType<typeof resposta>>();
+    const p3 = deferred<ReturnType<typeof resposta>>();
+    api[t.listFn].mockReturnValueOnce(p2.promise).mockReturnValueOnce(p3.promise);
+
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+    await act(async () => p3.resolve(resposta(t, [300])));
+    await screen.findByText(t.texto(300));
+    await act(async () => p2.reject(new Error("falha da pagina 2")));
+
+    expect(screen.getByText(t.texto(300))).toBeInTheDocument();
+    expect(screen.queryByText("falha da pagina 2")).not.toBeInTheDocument();
   });
 });
 

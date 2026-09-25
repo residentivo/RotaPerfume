@@ -74,6 +74,20 @@ func (s *VendedorService) ListVendedores(ctx context.Context, db *sql.DB) ([]rep
 	return vendedores, nil
 }
 
+// ListVendedorProprio retorna, no mesmo formato de ListVendedores, apenas o
+// vendedor vendedorID (escopo do usuário normal). O filtro é feito no SQL.
+// Lista vazia (não nula) se o vendedor não existir.
+func (s *VendedorService) ListVendedorProprio(ctx context.Context, db *sql.DB, vendedorID int64) ([]repositories.VendedorResumo, error) {
+	vendedores, err := s.repo.ListResumoByID(ctx, db, vendedorID)
+	if err != nil {
+		return nil, err
+	}
+	if s.Cfg.Verbose {
+		log.Printf("[vendedores] list escopo: vendedor_id=%d total=%d", vendedorID, len(vendedores))
+	}
+	return vendedores, nil
+}
+
 // GetVendedorDetalhe busca um vendedor e a lista de clientes atualmente
 // vinculados a ele (carteira ativa). Retorna ErrVendedorNaoEncontrado se o
 // vendedor não existir.

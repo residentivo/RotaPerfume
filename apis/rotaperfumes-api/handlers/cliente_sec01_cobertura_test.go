@@ -110,7 +110,7 @@ func TestSEC01_Update_CamposExtrasDeCarteiraIgnorados(t *testing.T) {
 			expectEscopoUsuarioH(mock, 2, 10)
 			expectCarteiraAtivaH(mock, 10, 1)
 			mock.ExpectExec(reUpdateClienteH).
-				WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(1)).
+				WithArgs("11222333000181", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(1)).
 				WillReturnResult(sqlmock.NewResult(0, 1))
 			mock.ExpectQuery(reSelectClienteH).WithArgs(int64(1)).WillReturnRows(clienteRowsForHandler())
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useUltimaResposta } from "@/lib/useListaSegura";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -78,6 +79,10 @@ function UsuariosPageContent() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
+  // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
+  // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  const executarBusca = useUltimaResposta();
+
   // Busca separada em requisicao pura + aplicacao do resultado no callback
   // assincrono (.then): o efeito nunca chama setState de forma sincrona.
   const buscarUsers = () => apiListUsers(page, limit, sortKey, sortDir);
@@ -105,7 +110,7 @@ function UsuariosPageContent() {
   const loadUsers = async () => {
     setLoading(true);
     setError(null);
-    await buscarUsers().then(aplicarUsers, aplicarErroUsers);
+    await executarBusca(buscarUsers(), aplicarUsers, aplicarErroUsers);
   };
 
   // Reset para pagina 1 quando filtros mudam — ajustado durante o render
@@ -128,7 +133,7 @@ function UsuariosPageContent() {
   }
 
   useEffect(() => {
-    buscarUsers().then(aplicarUsers, aplicarErroUsers);
+    executarBusca(buscarUsers(), aplicarUsers, aplicarErroUsers);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 

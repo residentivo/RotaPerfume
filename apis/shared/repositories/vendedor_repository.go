@@ -54,6 +54,35 @@ func (r *VendedorRepository) List(ctx context.Context, db *sql.DB) ([]VendedorRe
 	if err != nil {
 		return nil, fmt.Errorf("repositories: list vendedores: %w", err)
 	}
+	return scanVendedoresResumo(rows)
+}
+
+// ListResumoByID retorna, no mesmo formato de List, apenas o vendedor com o
+// id informado (ativo ou não). Devolve lista vazia (não nula) se não existir.
+// Usado para restringir GET /api/vendedores ao próprio vendedor do usuário
+// normal — o filtro é aplicado no SQL, nunca em memória.
+func (r *VendedorRepository) ListResumoByID(ctx context.Context, db *sql.DB, id int64) ([]VendedorResumo, error) {
+	const q = `
+		SELECT id, nome, regiao, uf, data_desligamento
+		FROM vendedores
+		WHERE id = ?
+		LIMIT 1`
+	rows, err := db.QueryContext(ctx, q, id)
+	if err != nil {
+		return nil, fmt.Errorf("repositories: list vendedor por id: %w", err)
+	}
+	out, err := scanVendedoresResumo(rows)
+	if err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = []VendedorResumo{}
+	}
+	return out, nil
+}
+
+// scanVendedoresResumo lê as linhas de VendedorResumo e fecha rows.
+func scanVendedoresResumo(rows *sql.Rows) ([]VendedorResumo, error) {
 	defer rows.Close()
 
 	var out []VendedorResumo

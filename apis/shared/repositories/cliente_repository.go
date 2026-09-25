@@ -333,6 +333,9 @@ func (r *ClienteRepository) Create(ctx context.Context, db Execer, c *models.Cli
 		c.Ativo,
 	)
 	if err != nil {
+		if isDuplicateKey(err, uqClientesCNPJ) {
+			return fmt.Errorf("repositories: create cliente: %w", ErrCNPJDuplicado)
+		}
 		return fmt.Errorf("repositories: create cliente: %w", err)
 	}
 	id, err := res.LastInsertId()
@@ -361,6 +364,9 @@ func (r *ClienteRepository) Update(ctx context.Context, db *sql.DB, id int64, c 
 		id,
 	)
 	if err != nil {
+		if isDuplicateKey(err, uqClientesCNPJ) {
+			return fmt.Errorf("repositories: update cliente: %w", ErrCNPJDuplicado)
+		}
 		return fmt.Errorf("repositories: update cliente: %w", err)
 	}
 	n, err := res.RowsAffected()

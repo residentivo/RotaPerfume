@@ -150,7 +150,7 @@ func TestRefreshTokenRevoke_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
 		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -166,7 +166,7 @@ func TestRefreshTokenRevoke_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
 		WithArgs(sqlmock.AnyArg(), int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -182,7 +182,7 @@ func TestRefreshTokenRevoke_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
 		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnError(sql.ErrConnDone)
 

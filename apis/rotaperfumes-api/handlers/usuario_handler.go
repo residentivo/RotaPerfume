@@ -299,11 +299,13 @@ func (h *UsuarioHandler) ToggleAtivoUsuario(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var req SetAtivoRequest
-	_ = json.NewDecoder(r.Body).Decode(&req) // body opcional, ignora erro
+	ativo, ok := lerAtivoOpcional(w, r) // vazio/null/{} = toggle; inválido = 400
+	if !ok {
+		return
+	}
 
 	ctx := r.Context()
-	u, err := h.svc.ToggleAtivoUsuario(ctx, h.db, id, req.Ativo)
+	u, err := h.svc.ToggleAtivoUsuario(ctx, h.db, id, ativo)
 	if err != nil {
 		if errors.Is(err, services.ErrUsuarioNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "usuário não encontrado")

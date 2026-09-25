@@ -83,6 +83,31 @@ describe("Clientes - botao + Novo Cliente (SEC-01)", () => {
     render(<ClientesPage />);
     expect(await screen.findByRole("button", { name: "+ Novo Cliente" })).toBeDisabled();
   });
+
+  // FE-05: enquanto o /me carrega, o motivo nao pode afirmar "sem vendedor".
+  it("sessao ainda sem /me mostra texto de carregamento, nao 'sem vendedor vinculado'", async () => {
+    useSessionUserMock.mockReturnValue(null);
+    render(<ClientesPage />);
+    const botao = await screen.findByRole("button", { name: "+ Novo Cliente" });
+    expect(botao).toHaveAttribute("title", "Carregando dados do usuario...");
+    expect(screen.getByText("Carregando dados do usuario...")).toBeInTheDocument();
+    expect(screen.queryByText(/sem vendedor vinculado/)).not.toBeInTheDocument();
+  });
+
+  it("depois que o /me chega sem vendedor, o texto de carregamento da lugar ao motivo real", async () => {
+    useSessionUserMock.mockReturnValue(null);
+    const { rerender } = render(<ClientesPage />);
+    await screen.findByText("Carregando dados do usuario...");
+
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: null }));
+    rerender(<ClientesPage />);
+    expect(
+      await screen.findByText(
+        "Usuario sem vendedor vinculado: solicite o vinculo a um administrador."
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Carregando dados do usuario...")).not.toBeInTheDocument();
+  });
 });
 
 async function preencherNovoCliente() {

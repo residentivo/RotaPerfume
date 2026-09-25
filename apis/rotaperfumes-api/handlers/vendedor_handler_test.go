@@ -172,68 +172,142 @@ func TestListVendedores_ErroInterno(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestListVendedores_PermitidoParaNaoAdmin(t *testing.T) {
-	server, db, mock := setupTestServer(t)
-	defer server.Close()
-	defer db.Close()
+// Regexes do escopo de vendedor (SEC-03) usados nos testes de GET
+// /api/vendedores com usuário normal.
+const (
+	reVendScopeUsuario     = `SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`
+	reVendScopeDesligado   = `SELECT data_desligamento IS NOT NULL FROM vendedores WHERE id = \? LIMIT 1`
+	reVendListaResumoPorID = `SELECT id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+WHERE id = \?\s+LIMIT 1`
+)
 
-	cfg := testCfg()
-	userToken := generateToken(t, cfg, 2, "normal")
+var vendedorResumoColsH = []string{"id", "nome", "regiao", "uf", "data_desligamento"}
 
-	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+ORDER BY nome ASC`).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
-			AddRow(int64(1), "Vendedor Um", "Sudeste", "SP", nil).
-			AddRow(int64(2), "Vendedor Dois", "Sul", "PR", nil))
-
-	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
-	req.Header.Set("Authorization", "Bearer "+userToken)
-
-	resp, err := (&http.Client{}).Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-// TestListVendedores_Normal_SemMetaMensal é regressão de segurança: GET
-// /api/vendedores (acesso comum) devolve apenas VendedorResumo — a meta
-// mensal dos colegas nunca deve aparecer para usuário normal.
-func TestListVendedores_Normal_SemMetaMensal(t *testing.T) {
-	server, db, mock := setupTestServer(t)
-	defer server.Close()
-	defer db.Close()
-
-	userToken := generateToken(t, testCfg(), 2, "normal")
-
-	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento\s+FROM vendedores\s+ORDER BY nome ASC`).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}).
-			AddRow(int64(1), "Vendedor Um", "Sudeste", "SP", nil).
-			AddRow(int64(2), "Vendedor Dois", "Sul", "PR", time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)))
-
-	req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
-	req.Header.Set("Authorization", "Bearer "+userToken)
-
-	resp, err := (&http.Client{}).Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	raw := readBody(t, resp)
-	assert.NotContains(t, string(raw), "meta_mensal")
-
-	body := decodeResponse(t, raw)
-	lista := body["data"].([]any)
-	require.Len(t, lista, 2)
-	for _, item := range lista {
-		v := item.(map[string]any)
-		assert.NotContains(t, v, "meta_mensal")
-		assert.ElementsMatch(t, []string{"id", "nome", "regiao", "uf", "data_desligamento"}, mapKeys(v))
+// TestListVendedores_EscopoUsuarioNormal (SEC-03): o usuário normal só vê o
+// próprio vendedor; sem vínculo (ou vínculo órfão) recebe []; vendedor
+// desligado recebe 403. O filtro é feito no SQL (WHERE id = ?), nunca
+// listando todos os vendedores.
+func TestListVendedores_EscopoUsuarioNormal(t *testing.T) {
+	cases := []struct {
+		name       string
+		setup      func(mock sqlmock.Sqlmock)
+		wantStatus int
+		wantErr    string
+		wantIDs    []float64
+	}{
+		{
+			name: "com vínculo ativo devolve só o próprio vendedor",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(reVendScopeUsuario).WithArgs(int64(2)).
+					WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(7)))
+				mock.ExpectQuery(reVendScopeDesligado).WithArgs(int64(7)).
+					WillReturnRows(sqlmock.NewRows([]string{"d"}).AddRow(int64(0)))
+				mock.ExpectQuery(reVendListaResumoPorID).WithArgs(int64(7)).
+					WillReturnRows(sqlmock.NewRows(vendedorResumoColsH).AddRow(int64(7), "Vendedor Sete", "Sul", "PR", nil))
+			},
+			wantStatus: http.StatusOK,
+			wantIDs:    []float64{7},
+		},
+		{
+			name: "sem vínculo (id_vendedor NULL) devolve lista vazia",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(reVendScopeUsuario).WithArgs(int64(2)).
+					WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
+			},
+			wantStatus: http.StatusOK,
+			wantIDs:    []float64{},
+		},
+		{
+			name: "vínculo órfão (vendedor inexistente) devolve lista vazia",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(reVendScopeUsuario).WithArgs(int64(2)).
+					WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
+				mock.ExpectQuery(reVendScopeDesligado).WithArgs(int64(99)).
+					WillReturnRows(sqlmock.NewRows([]string{"d"}))
+			},
+			wantStatus: http.StatusOK,
+			wantIDs:    []float64{},
+		},
+		{
+			name: "vendedor removido entre o escopo e a listagem devolve lista vazia",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(reVendScopeUsuario).WithArgs(int64(2)).
+					WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(7)))
+				mock.ExpectQuery(reVendScopeDesligado).WithArgs(int64(7)).
+					WillReturnRows(sqlmock.NewRows([]string{"d"}).AddRow(int64(0)))
+				mock.ExpectQuery(reVendListaResumoPorID).WithArgs(int64(7)).
+					WillReturnRows(sqlmock.NewRows(vendedorResumoColsH))
+			},
+			wantStatus: http.StatusOK,
+			wantIDs:    []float64{},
+		},
+		{
+			name: "vendedor desligado recebe 403",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(reVendScopeUsuario).WithArgs(int64(2)).
+					WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(7)))
+				mock.ExpectQuery(reVendScopeDesligado).WithArgs(int64(7)).
+					WillReturnRows(sqlmock.NewRows([]string{"d"}).AddRow(int64(1)))
+			},
+			wantStatus: http.StatusForbidden,
+			wantErr:    "acesso bloqueado: vendedor desligado",
+		},
+		{
+			name: "erro ao resolver escopo retorna 500",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(reVendScopeUsuario).WithArgs(int64(2)).WillReturnError(sql.ErrConnDone)
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantErr:    "erro interno",
+		},
+		{
+			name: "erro na listagem filtrada retorna 500",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(reVendScopeUsuario).WithArgs(int64(2)).
+					WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(7)))
+				mock.ExpectQuery(reVendScopeDesligado).WithArgs(int64(7)).
+					WillReturnRows(sqlmock.NewRows([]string{"d"}).AddRow(int64(0)))
+				mock.ExpectQuery(reVendListaResumoPorID).WithArgs(int64(7)).WillReturnError(sql.ErrConnDone)
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantErr:    "erro interno",
+		},
 	}
-	assert.NoError(t, mock.ExpectationsWereMet())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server, db, mock := setupTestServer(t)
+			defer server.Close()
+			defer db.Close()
+			tc.setup(mock)
+
+			req, _ := http.NewRequest("GET", server.URL+"/api/vendedores", nil)
+			req.Header.Set("Authorization", "Bearer "+generateToken(t, testCfg(), 2, "normal"))
+			resp, err := (&http.Client{}).Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
+			raw := readBody(t, resp)
+			body := decodeResponse(t, raw)
+			if tc.wantErr != "" {
+				assert.Equal(t, false, body["success"])
+				assert.Nil(t, body["data"])
+				assert.Equal(t, tc.wantErr, body["error"])
+			} else {
+				assert.Equal(t, true, body["success"])
+				lista, ok := body["data"].([]any)
+				require.True(t, ok, "data deve ser um array (nunca null)")
+				ids := []float64{}
+				for _, item := range lista {
+					v := item.(map[string]any)
+					ids = append(ids, v["id"].(float64))
+					assert.ElementsMatch(t, []string{"id", "nome", "regiao", "uf", "data_desligamento"}, mapKeys(v))
+				}
+				assert.Equal(t, tc.wantIDs, ids)
+				assert.NotContains(t, string(raw), "meta_mensal")
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 func mapKeys(m map[string]any) []string {

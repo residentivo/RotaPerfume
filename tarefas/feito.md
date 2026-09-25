@@ -4,6 +4,371 @@
 
 ---
 
+## NEG-04: troca errada de CNPJ legado não pode ser desfeita pela tela/API (DECISÃO DE NEGÓCIO) — 2026-09-25
+**Agentes:** 🔴 TestBrain → decisão do usuário → 🟡 BackBrain → 🔴 TestBrain → revalidação do roteiro → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** aceite após o roteiro manual lote 4 e a revalidação do NEG-04.
+
+**Camada:** Backend
+**Início:** 2026-09-25
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 4 (2026-09-25), divergência D3 (item 4.8).
+
+**Causa:** o DV só era exigido quando o CNPJ mudava. Um CNPJ legado inválido era aceito se mantido, mas recusado se reenviado depois de uma troca. Assim, uma troca errada não podia ser desfeita pela tela/API.
+
+**Decisão do usuário (2026-09-25):** "validar o CNPJ em toda gravação".
+- **Impacto aceito:** cerca de 2.970 clientes importados com DV inválido só podem ser editados depois que o CNPJ for corrigido.
+- Voltar a um CNPJ legado só é possível por SQL.
+
+**O que foi feito:**
+- **🟡 BackBrain** (`apis/rotaperfumes-api/services/cliente_service.go`, `UpdateCliente`):
+  - Todo PUT exige CNPJ com DV válido, mesmo quando é igual ao atual. Se não tiver, responde `400` "cnpj inválido" sem nenhuma query.
+  - Saiu o SELECT prévio. O `404` vem do UPDATE com 0 linhas (`clientFoundRows=true`), e id inexistente com DV inválido dá `400`.
+  - O `/inativar` continua sem exigir DV.
+- **🔴 TestBrain:**
+  - Testes novos: `TestClienteService_UpdateCliente_DVInvalidoTemPrecedenciaSobre404`, `TestUpdateCliente_CNPJ` (legado com e sem máscara), `TestToggleAtivoCliente_CNPJLegadoDVInvalido` e `TestIntegracaoHTTP_NEG04_CNPJLegadoDVInvalido`.
+  - `go test ./...` OK nos dois módulos (handlers 87,9%, services 94,7%) e integração OK.
+- **🔵 SubBrain:**
+  - Postman (README e descrições da collection) com a regra nova.
+  - CNPJ dos exemplos trocado de `12345678000199` para `11222333000181` (JSON validado, 0 ocorrências restantes).
+  - O README registra a migração 19 como aplicada.
+  - Roteiro com 4.7, 4.7b, 4.8 e 4.13 reescritos ou novos.
+- **Revalidação (🔴 TestBrain, 2026-09-25, API reiniciada às 18:22 com o código do NEG-04):**
+  - **4.7:** pela tela, o PUT no cliente 9 mantendo o CNPJ legado deu `400` "cnpj inválido". A mensagem apareceu no modal, e o banco ficou inalterado (inclusive `updated_at`).
+  - **4.7b:** o PUT mantendo o CNPJ no cliente de teste com CNPJ válido deu `200`.
+  - **4.8:** a troca por um CNPJ válido e inédito deu `200` e gravou só os dígitos. A volta ao legado pela API deu `400`, e foi feita por SQL.
+  - **4.13:** inativar e reativar o cliente 9 com o CNPJ legado deu `200` nos dois.
+  - **Limpeza:** cliente de teste apagado, cliente 9 restaurado, 3000 clientes e 3637 carteiras.
+
+---
+
+## NEG-01: validação e duplicidade de CNPJ (DECISÃO DE NEGÓCIO) — 2026-09-25
+**Agentes:** 🌸 DataBrain → 🟡 BackBrain → 🔴 TestBrain → roteiro manual do Lote 4 → decisões NEG-03/NEG-04 e verificação DB-01 → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** aceite após o roteiro manual lote 4 e a revalidação do NEG-04.
+
+**Camada:** Backend / Database
+**Início:** 2026-09-25
+**Origem:** Lote 3 de 2026-09-24.
+
+**Causa:** o índice `idx_clientes_cnpj` não era `UNIQUE`, e não havia validação de 14 dígitos no CNPJ.
+
+**Decisões do usuário (2026-09-25):**
+- Bloquear duplicado com índice UNIQUE, `400` "cnpj inválido" e `409` genérico sem revelar o vendedor.
+- Os duplicados existentes foram unificados no cliente de menor id, com os registros vinculados transferidos.
+
+**O que foi feito:**
+- **🌸 DataBrain:** migração `sql/19_alter_clientes_cnpj_unique.sql` (e o `19_revert`), backup `clientes_merge_backup_20260925`, targets `make db-fix-cnpj-unique`/`db-revert-cnpj-unique` e `09_ddl` atualizado. Aplicada no banco local: 3000 clientes, 0 duplicados, só `uq_clientes_cnpj`.
+- **🟡 BackBrain:**
+  - `services/cnpj.go`: máscara, 14 dígitos e DV módulo 11.
+  - `409` via erro 1062 (`repositories/mysql_errors.go`).
+  - Importadores com deduplicação (`shared/cmd/internal/clientesdedup`).
+- **🔴 TestBrain:** cobertura unitária e de integração (`cliente_cnpj_test.go`, `cnpj_internal_test.go`, `lote4_http_integration_test.go`, dedup dos importadores).
+- **🔵 SubBrain:** Postman atualizado (`201` com máscara, `400`, `409`). O manual da base de dados continua no card DOC-02 (`afazer.md`).
+- **Roteiro manual (2026-09-25):** seção 1 e seção 4 OK. As divergências viraram cards derivados, todos em `feito.md`:
+  - **DB-01:** log de vínculos vazio é o esperado.
+  - **NEG-03:** DV inválido recebe `400` antes da checagem de duplicidade; comportamento mantido.
+  - **NEG-04:** toda gravação exige DV válido; implementado.
+- **Revalidação do NEG-04 (2026-09-25):** 4.7 (`400`, banco inalterado), 4.7b (`200`), 4.8 (`200` na troca; volta ao legado só por SQL) e 4.13 (`/inativar` `200`) OK. Limpeza feita (3000 clientes, 3637 carteiras).
+- **Observação:** o CNPJ alfanumérico da Receita continua no card NEG-02 (`afazer.md`).
+
+---
+
+## NEG-03: CNPJ legado duplicado com DV inválido responde "cnpj inválido" em vez de "já cadastrado" (DECISÃO DE NEGÓCIO) — 2026-09-25
+**Agentes:** 🔴 TestBrain → decisão do usuário → fechamento por 🔵 SubBrain
+
+**Decidido pelo usuário em 2026-09-25:** MANTER o comportamento atual. **Sem mudança de código.**
+
+**Camada:** Backend
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 4 (2026-09-25), divergência D2 (itens 4.5, 4.6, 4.10 e 4.11).
+
+**Comportamento aceito:**
+- Um CNPJ com DV inválido é recusado com `400` "cnpj inválido" e não é gravado. Isso vale também para o CNPJ de um cliente legado que já existe (ex.: `17810801326773`).
+- A verificação de duplicidade (`409` "cnpj já cadastrado") só vale para CNPJ válido (ex.: `23124329212779` → `409`).
+- O índice `uq_clientes_cnpj` continua protegendo contra duplicados.
+- Contexto: só 28 dos 3000 CNPJs da base têm DV válido (os importados são fictícios).
+
+**O que foi feito:**
+- 🔵 SubBrain: a nota do 4.5 e o D2 da seção "Execução 2026-09-25 (TestBrain)" em `docs/roteiro-teste-manual-lote4.md` registram o "comportamento aceito (NEG-03, decidido em 2026-09-25)".
+
+---
+
+## DB-01: log de vínculos da migração 19 (`clientes_merge_backup_20260925_vinculos`) está vazio — 2026-09-25
+**Agentes:** 🔴 TestBrain → 🌸 DataBrain → decisão do usuário → fechamento por 🔵 SubBrain
+
+**Veredito do 🌸 DataBrain em 2026-09-25:** log vazio é o esperado, sem defeito. **Sem mudança de SQL.** Fechamento decidido pelo usuário em 2026-09-25.
+
+**Camada:** Database
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 4 (2026-09-25), item 1.6.
+
+**Situação:** com a migração 19 aplicada e reaplicada, as contagens estavam corretas, mas `clientes_merge_backup_20260925_vinculos` tinha 0 linhas.
+
+**Evidências (🌸 DataBrain):**
+- `sql/19_alter_clientes_cnpj_unique.sql` grava o log (linhas 154-186) **antes** do DELETE (189-191) e dos UPDATEs (194-208), na mesma transação e com o mesmo filtro.
+- As 40 cópias (ids 3001 a 3040) nunca tiveram filhos: os CSVs de `dados/crm` e `dados/erp` não têm `cliente_id` acima de 3000, e no banco as quatro tabelas (pedidos, carteiras, oportunidades e visitas) dão 0 para `cliente_id > 3000`.
+- A reversão `19_revert` funciona com o log vazio: ela reinsere as 40 cópias, e os passos 3 e 4 não mexem em nada.
+
+**O que foi feito:**
+- 🔵 SubBrain: item 1.6 de `docs/roteiro-teste-manual-lote4.md` reescrito (o log fica vazio com os dados atuais, com a consulta de conferência `cliente_id > 3000` = 0). O aviso de verificação pendente foi removido, e a seção de execução registra "log vazio é o esperado (DB-01, fechado)".
+- O card DOC-02 (manual da base de dados) pode descrever o log com base neste veredito.
+
+---
+
+## FE-04: resposta obsoleta sobrescreve a mais nova nas listagens — 2026-09-25
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → roteiro manual do Lote 4 → validação do 6.3 em produção → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** aceite após o roteiro manual lote 4 e a confirmação do 6.3 em produção.
+
+**Camada:** Frontend
+**Início:** 2026-09-25
+**Origem:** Lote 3 de 2026-09-24 (documentado pelo 🔴 TestBrain durante o FE-03). O problema já existia antes do FE-03.
+
+**Causa:** as listagens não descartavam respostas obsoletas. Havia três efeitos:
+1. Na paginação rápida, a resposta de uma página antiga sobrescrevia a da página atual.
+2. O debounce dos filtros disparava na montagem: eram duas buscas ao abrir, e a tabela podia voltar à página 1 enquanto o paginador mostrava a página 2.
+3. A linha excluída reaparecia em pedidos, pagamentos, oportunidades e visitas.
+
+**O que foi feito:**
+- **🟢 FrontBrain:** hook `lib/useListaSegura.ts` (`useUltimaResposta`, `useDebounceFiltros`, `useExcluidos`) aplicado nas 9 listagens.
+- **🔴 TestBrain:** os 18 `it.fails` viraram `it` (`useListaSegura.test.ts`, `listasPaginadas.test.tsx`, `listasAdmin.test.tsx`, `crudPaginas.test.tsx`, `crudAdmin.test.tsx`; vitest 701/701).
+- **Roteiro manual (2026-09-25):**
+  - 6.1, 6.2, 6.4, 6.5 e 6.6 OK em todas as telas aplicáveis (respostas forçadas fora de ordem). 6.1 e 6.2 não se aplicam a `/admin/usuarios` (3 páginas) nem a `/admin/senha-historico` (1 página).
+  - D6: as pré-condições do 6.6 (pagamento "Em aberto" e pedido sem pagamento) foram incluídas no roteiro.
+- **6.3 em produção (2026-09-25, 🔴 TestBrain):**
+  - Ambiente: `next build --webpack` numa cópia do frontend, servida por `next start -p 3001`.
+  - As 9 listagens fizeram **1 único GET** ao abrir, sem GET extra do debounce em 1,5 s.
+  - Os 2 GETs vistos em `next dev` vêm só do `reactStrictMode`. O D4 ficou resolvido como comportamento esperado do modo dev.
+
+---
+
+## FE-05: listagens chamam `fetch` direto, sem refresh automático no 401 — 2026-09-25
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → roteiro manual do Lote 4 → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** aceite após o roteiro manual lote 4.
+
+**Camada:** Frontend
+**Início:** 2026-09-25
+**Origem:** Lote 3 de 2026-09-24.
+
+**Causa:** as funções `apiList*`, `apiDashboardVendedores` e `apiListSenhaHistorico` (`frontend/src/lib/api.ts`) chamavam `fetch` direto, e um `401` não disparava o refresh automático do `fetchWithAuth`. Em `admin/clientes`, enquanto o `/me` carregava, o motivo do botão desabilitado dizia "Usuario sem vendedor vinculado".
+
+**O que foi feito:**
+- **🟢 FrontBrain:** `fetchEnvelopeWithAuth`/`keepEnvelope` em `apiClient.ts`; as 10 funções de listagem foram migradas. Em `admin/clientes`, o texto durante o carregamento passou a ser "Carregando dados do usuario...".
+- **🔴 TestBrain:** `frontend/src/lib/apiListagensRefresh.test.ts` (refresh, fila única, logout, 403 de desligado, envelope preservado) e `app/admin/clientes/page.test.tsx` (vitest 701/701).
+- **Roteiro manual (2026-09-25):**
+  - 7.1 a 7.3 OK nas 10 telas (estoque e produtos como admin; em senha-historico, o gatilho foi o select "Itens por pagina").
+  - 7.4: refresh `400` sem cookie, logout e `/login` sem repetir o `GET`. É o comportamento aceito no **SEC-05** (decidido em 2026-09-25, em `feito.md`).
+  - 7.5 (D5): o texto de carregamento não chega a aparecer, porque o ProtectedRoute mostra "Verificando autenticacao..." até o `/me` responder. O objetivo (nunca mostrar o motivo errado) é atendido, e o roteiro foi ajustado.
+
+---
+
+## SEC-02: corrida no refresh token gera dois pares de tokens — 2026-09-25
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → roteiro manual do Lote 4 → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** aceite após o roteiro manual lote 4.
+
+**Camada:** Backend (+ Frontend)
+**Início:** 2026-09-25
+**Origem:** Lote 3 de 2026-09-24.
+
+**Causa:** `auth_handler.go` validava e revogava o refresh token em passos separados e ignorava o erro da revogação. Duas chamadas de refresh simultâneas com o mesmo token geravam dois pares de tokens válidos.
+
+**O que foi feito:**
+- **🟡 BackBrain:**
+  - Revoke condicional (`WHERE id = ? AND revoked_at IS NULL`) e rotação transacional (`BeginRotation`/`Issue`).
+  - Na corrida, a requisição que perde recebe `401` "refresh token revogado" (conta no rate limit).
+  - Erro de banco na revogação ou na gravação do novo refresh token → `500` "erro interno", sem cookie.
+- **🟢 FrontBrain:** `apiClient.ts` repete a requisição uma vez após um refresh com `401` e usa `navigator.locks` com o lock `"rp-auth-refresh"` (multi-aba).
+- **🔴 TestBrain:** `TestRefresh_CorridaParalela`, `auth_refresh_logout_test.go`, `refresh_rotation_test.go`, `lote4_repository_test.go`, integração do Lote 4 (8 rodadas com um 200 e um 401) e `apiClient.test.ts`.
+- **🔵 SubBrain:** Postman atualizado (exemplos `401` e `500` em "Refresh Token" e README).
+- **Roteiro manual (2026-09-25):**
+  - 2.1, 2.2, 2.4, 2.5, 2.6 e 2.7 OK (corrida real em duas abas, Web Lock funcionando). 2.3 não verificado (log da API no debugger).
+  - 2.8 (D1): sem cookie, o refresh responde `400`, e o front faz logout e vai para `/login`. É o comportamento aceito no **SEC-05** (decidido em 2026-09-25, sem mudança de código, em `feito.md`).
+- **Follow-ups em `afazer.md`:** SEC-04 (corrida legítima conta no rate limit por IP) e FE-06 (mensagem enganosa quando o retry falha por rede).
+
+---
+
+## SEC-05: refresh sem cookie responde `400` em vez de `401` (DECISÃO) — 2026-09-25
+**Agentes:** 🔴 TestBrain → decisão do usuário → fechamento por 🔵 SubBrain
+
+**Decidido pelo usuário em 2026-09-25:** manter o comportamento atual. **Sem mudança de código.**
+
+**Camada:** Backend / Frontend
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 4 (2026-09-25), divergência D1 (itens 2.8 e 7.4).
+
+**Comportamento aceito:** sem nenhum cookie, `POST /api/auth/refresh` responde `400` "refresh_token é obrigatório (body ou cookie)". O `apiClient` então chama `/api/auth/logout` e redireciona para `/login` sem repetir o `GET`. O resultado final é seguro.
+
+**O que foi feito:**
+- 🔵 SubBrain: itens 2.8 e 7.4 e a seção "Execução 2026-09-25 (TestBrain)" de `docs/roteiro-teste-manual-lote4.md` registram o comportamento como aceito.
+- Desbloqueou SEC-02 e FE-05 em `fazendo.md`.
+
+---
+
+## BUG-06: `PATCH /inativar` com body inválido inverte o estado — 2026-09-25
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → roteiro manual do Lote 4 → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** aceite do usuário após o roteiro manual lote 4.
+
+**Camada:** Backend
+**Início:** 2026-09-25
+**Origem:** Lote 3 de 2026-09-24.
+
+**Causa:** três handlers (`cliente_handler.go`, `produto_handler.go` e `usuario_handler.go`) ignoravam o erro de decode do body. Um body inválido, como `{"ativo":"false"}`, era tratado como omitido e alternava o estado.
+
+**O que foi feito:**
+- **🟡 BackBrain:** novo `handlers/ativo_body.go`. Body preenchido e inválido → `400` "body JSON inválido". Vazio, `null`, `{}` ou `{"ativo":null}` → toggle; `{"ativo":true|false}` → define o valor. Em clientes, o decode vem depois do escopo: sem acesso ao registro, `404` antes do `400` (SEC-01).
+- **🔴 TestBrain:** `handlers/inativar_body_test.go` e a integração em `lote4_http_integration_test.go` (go test: shared 823 PASS, api 1777 PASS; smoke HTTP 38/38 OK).
+- **🔵 SubBrain:** Postman atualizado (exemplo `400` nos três PATCH `/inativar` e `404` antes do `400` em clientes; README).
+- **Roteiro manual (2026-09-25):** itens 5.1 a 5.10 OK nos 3 endpoints, sem divergência.
+
+---
+
+## SEC-03: `GET /api/vendedores` sem escopo — 2026-09-25
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → roteiro manual do Lote 4 → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** aceite do usuário após o roteiro manual lote 4.
+
+**Camada:** Backend
+**Início:** 2026-09-25
+**Origem:** Lote 3 de 2026-09-24.
+
+**Causa:** em `apis/rotaperfumes-api/handlers/vendedor_handler.go`, o usuário `normal` recebia todos os vendedores, e o bloqueio de vendedor desligado não era aplicado.
+
+**O que foi feito:**
+- **🟡 BackBrain:** escopo aplicado em `vendedor_handler.go`, com `ListResumoByID`. Admin vê todos; `normal` com vínculo vê só o próprio vendedor; sem vínculo recebe `data: []`; vendedor desligado recebe `403`. `/api/produtos` não é bloqueado (decisão do 🟣 SecBrain: é catálogo).
+- **🟢 FrontBrain:** hook `useVendedorTravado.ts`; `OportunidadeModal` e `VisitaModal` travam o vendedor. O `PedidoModal` já estava correto.
+- **Limitação:** no `PedidoModal`, um `403` derruba o carregamento de produtos, mas o `CarteiraGuard` já bloqueia a tela.
+- **🔴 TestBrain:** `vendedor_handler_test.go`, `services/vendedor_proprio_test.go`, `VendedorTravado.test.tsx` e a integração do Lote 4.
+- **🔵 SubBrain:** Postman atualizado (nova pasta "Vendedores" com os 4 exemplos e README).
+- **Roteiro manual (2026-09-25):** itens 3.1 a 3.8 OK, sem divergência.
+
+---
+
+## BUG-02: botão "Alterar Senha" nunca habilita em `/trocar-senha` (inclui BUG-03) — 2026-09-25
+**Agentes:** 🟢 FrontBrain → 🟡 BackBrain → validação do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** OK.
+
+**Camada:** Frontend (+ Backend no BUG-03)
+**Início:** 2026-09-24
+
+**Causa:** ao chegar em `/trocar-senha` por navegação client-side, com o script do Turnstile já carregado, o `next/script` deduplicava pelo `src` e não disparava `onLoad`. O widget não renderizava, nenhum token chegava e o botão ficava travado.
+
+**O que foi feito:**
+- **🟢 FrontBrain:** `frontend/src/components/ui/Turnstile.tsx` troca `onLoad` por `onReady` e inicia `scriptLoaded` como true quando `window.turnstile` já existe. O captcha continua obrigatório.
+- **BUG-03 (achado na validação):** com a senha atual errada, a tela mostrava "Nao foi possivel validar o captcha", porque o `401` fazia o `fetchWithAuth` dar refresh e reenviar o mesmo `captchaToken` (uso único). 🟡 BackBrain mudou a resposta para `400` em `auth_handler.go` (`ResetPassword`), ajustou os testes e criou `TestResetPassword_SenhaAtualIncorreta_Retorna400` (`go vet`/`go test` OK). Postman atualizado.
+
+---
+
+## UI-04: accordion de itens do pedido abre no fim da tabela — 2026-09-25
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → validação do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** OK.
+
+**Camada:** Frontend
+**Origem:** relato do usuário durante a validação do `PedidoModal` (2026-09-25).
+
+**O que foi feito:**
+- Novo prop opcional `renderExpanded` em `frontend/src/components/ui/Table.tsx` (Fragment por linha e `<tr>` extra com `colSpan`): o detalhe abre logo abaixo da linha clicada.
+- Novo componente `frontend/src/components/admin/PedidoItensDetalhe.tsx`.
+- `frontend/src/app/admin/pedidos/page.tsx`: removido o bloco do fim da tabela; helper `fecharItens()` também limpa o erro antigo.
+- Novo teste em `frontend/src/app/crudPaginas.test.tsx`. tsc OK; vitest 19/19 arquivos (635 passaram, 18 falhas esperadas do FE-04, 2 pulados); eslint OK.
+- Não existe layout mobile separado: em telas estreitas, o detalhe fica dentro do scroll horizontal da tabela.
+
+---
+
+## Teste manual do Dashboard no navegador (normal com vendedor, normal sem vendedor, admin) — 2026-09-25
+**Agentes:** 🔴 TestBrain → validação do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** OK.
+
+**Camada:** Frontend (teste)
+**Origem:** 🟢 FrontBrain, durante o card "Pedido com cliente transferido / escopo do Dashboard" (2026-09-23).
+
+**Escopo validado (`frontend/src/app/dashboard/page.tsx`):**
+- Rótulos "Minhas Vendas", "Meus Pedidos", "Minha Meta", "Meus Clientes" e "Clientes da minha carteira" para o usuário `normal`.
+- Card "Meu Desempenho" no lugar do ranking; ranking completo para `admin`.
+- Avisos de usuário sem vendedor e de vendedor desligado (`vendedor_desligado` da API).
+- Tolerância a `null`/`[]` e valores monetários com 2 casas (`fmtCurrency`).
+- `/api/dashboard/clientes` com escopo da carteira.
+
+**Resultado:**
+- **🔴 TestBrain (2026-09-24):** validou via API os perfis admin, normal com vendedor, normal sem vendedor e normal com vendedor desligado; roteiro e evidências em `docs/roteiro-teste-manual-dashboard.md`. As divergências viraram UI-01 e UI-02 (abaixo).
+- **Usuário (2026-09-25):** executou o roteiro no navegador.
+
+---
+
+## UI-01: título do gráfico do Dashboard (admin) fixo em "Vendas nos Ultimos 30 Dias" — 2026-09-25
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → validação do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** OK.
+
+**Camada:** Frontend (menor)
+**Origem:** validação do card "Teste manual do Dashboard" (2026-09-24).
+
+**O que foi feito:** 🟢 FrontBrain montou o título a partir dos dias selecionados em `frontend/src/app/dashboard/page.tsx` (ex.: "Vendas nos Últimos 7 Dias"). 🔴 TestBrain cobriu em `frontend/src/app/dashboard/page.test.tsx` (7/14/30/60 dias) e atualizou o item 4.8 de `docs/roteiro-teste-manual-dashboard.md`.
+
+---
+
+## UI-02: layout do Dashboard para normal sem vendedor / com vendedor desligado — 2026-09-25
+**Agentes:** 🔵 SubBrain / 🤍 MegaBrain (decisão) → 🟢 FrontBrain → 🔴 TestBrain → validação do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** OK.
+
+**Camada:** Frontend
+**Origem:** validação do card "Teste manual do Dashboard" (2026-09-24): a tela mostrava só o aviso, sem KPIs nem gráfico zerados.
+
+**DECISÃO DO USUÁRIO (2026-09-24):** opção **(b)** — aviso + KPIs zerados + gráfico com os dias zerados.
+
+**O que foi feito:** 🟢 FrontBrain implementou a opção (b) em `frontend/src/app/dashboard/page.tsx`. 🔴 TestBrain cobriu em `frontend/src/app/dashboard/page.test.tsx` e atualizou `docs/roteiro-teste-manual-dashboard.md` (itens 2.2-2.6 e 3.3-3.8). O Dashboard depende da API para zerar os dados (follow-up FE-02, já concluído).
+
+---
+
+## Segurança: vendedor desligado ainda podia criar/editar pedidos, pagamentos, oportunidades e visitas (DECIDIDO: bloquear) — 2026-09-25
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain (Postman) → validação do usuário
+
+**Validado pelo usuário em 2026-09-25:** OK.
+
+**Camada:** Backend (com impacto em Frontend, Testes e Postman)
+**Origem:** 🟣 SecBrain, lote de 2026-09-24. `resolverVendedorScope` ignorava `vendedores.data_desligamento`.
+
+**DECISÃO DO USUÁRIO (2026-09-24):** bloquear o usuário `normal` vinculado a vendedor desligado em todas as rotas da carteira (leitura e escrita). Login e Dashboard continuavam acessíveis — premissa depois alterada pelo BUG-05 (o usuário vinculado passa a ser inativado e perde o login).
+
+**O que foi feito:**
+- **🟣 SecBrain:** contrato `403` `{"success":false,"error":"acesso bloqueado: vendedor desligado"}` em todas as rotas da carteira, fail-closed (`500` em falha de banco).
+- **🟡 BackBrain (`apis/rotaperfumes-api/handlers/scope.go`):** `resolverVendedorScope` checa `data_desligamento` a cada requisição; `resolverVendedorScopeBase` restrito ao Dashboard (`200` zerado com `vendedor_desligado: true`); `errVendedorDesligado` + `responderErroEscopo`. Aplicado em clientes, pedidos, pagamentos, oportunidades, visitas e `GET /api/vendedores/{id}/clientes`. `GET /api/auth/me` devolve `vendedor_desligado`.
+- **🟢 FrontBrain:** `ApiError`, `frontend/src/lib/vendedorDesligado.ts`, `frontend/src/lib/session.ts`, `frontend/src/components/layout/CarteiraGuard.tsx`; Navbar oculta os itens da carteira.
+- **🔴 TestBrain:** `escopo_desligado_cobertura_test.go` e `scope_internal_test.go` (cobertura de `handlers` 87,3%); testes Vitest de sessão/layout; roteiro `docs/roteiro-teste-manual-vendedor-desligado.md`.
+- **🔵 SubBrain:** `postman/collection.json` e `postman/README.md` com notas e exemplos `403` nas pastas da carteira e `vendedor_desligado` no `/me`.
+- **Follow-ups:** FE-01 e SEC-01 (ambos concluídos no Lote 3).
+
+---
+
+## UX: `id_vendedor` do localStorage desatualizado após o admin mudar o vínculo do usuário — 2026-09-25
+**Agentes:** 🟣 SecBrain (origem) → 🟢 FrontBrain → 🔴 TestBrain → validação do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** OK.
+
+**Camada:** Frontend
+**Origem:** 🟣 SecBrain (2026-09-24). `PedidoModal`, Oportunidades e Visitas travavam o vendedor antigo até novo login (sem vazamento de dados: o backend já aplicava o vendedor correto).
+
+**O que foi feito:** 🟢 FrontBrain passou a revalidar o usuário via `GET /api/auth/me` (`frontend/src/lib/session.ts`) em vez de confiar só no `localStorage`. 🔴 TestBrain cobriu em `session.test.ts`, `ProtectedRoute.test.tsx` e `PedidoModal.test.tsx` e escreveu os roteiros (`docs/roteiro-teste-manual-vendedor-desligado.md`, seção 6; `docs/roteiro-teste-manual-pedidomodal.md`, seção 5b).
+
+---
+
+## BUG-05: inativar vendedor não inativava o usuário vinculado — 2026-09-25
+**Agentes:** 🤍 MegaBrain (decisão) → 🟡 BackBrain → validação do usuário → fechamento por 🔵 SubBrain
+
+**Validado pelo usuário em 2026-09-25:** OK.
+
+**Camada:** Backend
+**Origem:** relato do usuário, 2026-09-24. `DeleteVendedor` só gravava `vendedores.data_desligamento`; o usuário vinculado continuava com `ativo = 1` e fazia login.
+
+**Decisão do 🤍 MegaBrain (2026-09-24):** inativar os usuários vinculados na mesma operação atômica. Reativar o vendedor **não** reativa os usuários (reativação manual na tela de usuários). Isso altera a premissa do card "Segurança: vendedor desligado" (o login do usuário vinculado deixa de ficar acessível).
+
+**O que foi feito:** 🟡 BackBrain implementou `inativarVendedorEUsuarios` em `apis/rotaperfumes-api/services/vendedor_service.go`: desligamento do vendedor e `ativo = 0` dos usuários vinculados numa única transação.
+
+---
+
 ## Teste manual/e2e do `PedidoModal` no navegador (usuário normal e admin) — 2026-09-25
 **Agentes:** 🟢 FrontBrain → 🔴 TestBrain → validação do usuário → fechamento por 🔵 SubBrain
 

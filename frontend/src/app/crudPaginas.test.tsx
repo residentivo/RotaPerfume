@@ -114,8 +114,9 @@ function pagina<T>(data: T[]) {
   return { data, page: 1, limit: 20, total: data.length, pages: 1 };
 }
 
-/** Espera a busca extra do debounce de filtros (350ms) que roda na montagem
- * (ver BUG FE-04 em listasPaginadas.test.tsx) antes de interagir. */
+/** Espera a lista carregar e a janela do debounce de filtros (350ms) passar
+ * antes de interagir. Desde o FE-04 o debounce nao dispara na montagem; a
+ * espera garante que nenhuma busca extra aconteceria. */
 async function aposMontagem(texto: string) {
   await screen.findByRole("button", { name: texto });
   await act(() => new Promise((r) => setTimeout(r, 420)));
@@ -312,29 +313,36 @@ describe.each(TELAS)("CRUD $nome", (t) => {
     expect(screen.queryByRole("button", { name: t.texto })).not.toBeInTheDocument();
   });
 
-  // BUG FE-04 (variante): a busca extra do debounce da montagem (350ms)
-  // nao e descartada. Se ela sair antes de um DELETE ser gravado e responder
-  // depois dele (consulta lenta), a linha excluida volta para a tabela.
-  // Remover o `.fails` quando corrigido.
-  it.fails("excluir com a busca do debounce em voo: a resposta antiga nao ressuscita a linha", async () => {
+  // FE-04 (corrigido): uma busca que sai antes do DELETE ser gravado e
+  // responde depois dele (consulta lenta) nao ressuscita a linha excluida.
+  // Antes do FE-04 essa busca era a do debounce da montagem; hoje o debounce
+  // nao dispara na montagem, entao o teste provoca a busca trocando
+  // "Itens por pagina" com o DELETE em voo.
+  it("excluir com uma busca em voo: a resposta antiga nao ressuscita a linha", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     let resolverDel: (v?: unknown) => void = () => {};
     api[t.del].mockReturnValue(new Promise((r) => (resolverDel = r)));
     render(<t.Page />);
-    await screen.findByRole("button", { name: t.texto });
+    await aposMontagem(t.texto);
+    expect(api[t.list]).toHaveBeenCalledTimes(1);
 
-    // 2a busca (debounce) sai com o snapshot anterior ao DELETE e demora.
+    await userEvent.click(screen.getByTitle(t.tituloExcluir));
+
+    // Nova busca sai com o snapshot anterior ao DELETE e demora.
     let resolverLista: (v: unknown) => void = () => {};
     api[t.list].mockReturnValueOnce(new Promise((r) => (resolverLista = r)));
-    await userEvent.click(screen.getByTitle(t.tituloExcluir));
+    await userEvent.selectOptions(screen.getByLabelText("Itens por pagina"), "50");
     await waitFor(() => expect(api[t.list]).toHaveBeenCalledTimes(2));
 
     resolverDel();
     await screen.findByText(t.msgExcluido);
-    expect(screen.queryByRole("button", { name: t.texto })).not.toBeInTheDocument();
 
-    await act(async () => resolverLista(pagina([t.linha(5)])));
-    expect(screen.queryByRole("button", { name: t.texto })).not.toBeInTheDocument();
+    await act(async () => resolverLista(pagina([t.linha(5), t.linha(6)])));
+    // A linha 6 (nao excluida) aparece; a 5 continua fora.
+    expect(await screen.findByText("#6")).toBeInTheDocument();
+    expect(screen.queryByText("#5")).not.toBeInTheDocument();
+    expect(screen.queryAllByTitle(t.tituloExcluir)).toHaveLength(1);
+    expect(api[t.del]).toHaveBeenCalledWith(5);
   });
 
   it("excluir: cancelar a confirmacao nao chama a API", async () => {

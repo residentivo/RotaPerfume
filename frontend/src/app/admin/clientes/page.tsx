@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDebounceFiltros, useUltimaResposta } from "@/lib/useListaSegura";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -93,7 +94,11 @@ function ClientesContent() {
   const isAdmin = currentUser?.role === "admin";
   const semCarteira = !isAdmin && !currentUser?.id_vendedor;
   const podeCriar = isAdmin || (!semCarteira && !vendedorDesligado);
-  const motivoSemCriar = semCarteira
+  // FE-05: enquanto o /me nao chega (user null), nao da para afirmar que o
+  // usuario nao tem vendedor; o botao fica desabilitado com texto de espera.
+  const motivoSemCriar = !currentUser
+    ? "Carregando dados do usuario..."
+    : semCarteira
     ? "Usuario sem vendedor vinculado: solicite o vinculo a um administrador."
     : vendedorDesligado
     ? "Vendedor desligado: cadastro de clientes bloqueado."
@@ -120,6 +125,10 @@ function ClientesContent() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
+
+  // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
+  // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  const executarBusca = useUltimaResposta();
 
   // Busca da pagina atual separada em: requisicao pura (sem setState) +
   // aplicacao do resultado, que roda no callback assincrono (.then) — o
@@ -164,7 +173,7 @@ function ClientesContent() {
   const loadClientes = async () => {
     setLoading(true);
     setError(null);
-    await buscarClientes().then(aplicarClientes, aplicarErroClientes);
+    await executarBusca(buscarClientes(), aplicarClientes, aplicarErroClientes);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -178,22 +187,21 @@ function ClientesContent() {
   }
 
   useEffect(() => {
-    buscarClientes().then(aplicarClientes, aplicarErroClientes);
+    executarBusca(buscarClientes(), aplicarClientes, aplicarErroClientes);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 
   // Debounce da busca textual e reset para pagina 1 quando filtros mudam
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (page !== 1) {
-        setPage(1);
-      } else {
-        loadClientes();
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, ufFilter, segmentoFilter, statusFilter]);
+  // FE-04: o debounce nao dispara na montagem, so quando a chave dos filtros
+  // muda (evita a busca dupla e a tabela voltando para a pagina 1).
+  const chaveFiltros = JSON.stringify([search, ufFilter, segmentoFilter, statusFilter]);
+  useDebounceFiltros(chaveFiltros, () => {
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      loadClientes();
+    }
+  });
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {

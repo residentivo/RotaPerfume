@@ -38,7 +38,7 @@ import {
   EstoqueInput,
   ListEstoqueFilters,
 } from "./types";
-import { buildApiError, fetchWithAuth } from "./apiClient";
+import { fetchEnvelopeWithAuth, fetchWithAuth } from "./apiClient";
 
 export interface CreateUserRequest {
   nome: string;
@@ -75,6 +75,53 @@ export interface ListUsersResponse {
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+interface Paginado<L extends unknown[]> {
+  data: L;
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+/**
+ * GET de listagem paginada via `fetchEnvelopeWithAuth` (FE-05): passa pelo
+ * refresh automatico no 401 e pelo tratamento de erro do `fetchWithAuth`
+ * (ApiError com status, 403 de vendedor desligado), mas recebe o corpo
+ * inteiro para ler a paginacao. Normaliza os formatos aceitos:
+ * - `{ data, pagination: { page, limit, total, pages } }`
+ * - `{ data, page, limit, total, pages }`
+ * - array puro
+ * `page`/`limit` pedidos entram como padrao quando a resposta nao informa.
+ */
+async function listarPaginado<L extends unknown[]>(
+  path: string,
+  page: number,
+  limit: number
+): Promise<Paginado<L>> {
+  const parsed = await fetchEnvelopeWithAuth<unknown>(path, { method: "GET" });
+
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const d = parsed as Record<string, unknown>;
+    if ("data" in d && Array.isArray(d.data)) {
+      const pag = (d.pagination && typeof d.pagination === "object"
+        ? (d.pagination as Record<string, unknown>)
+        : d) as Record<string, unknown>;
+      return {
+        data: d.data as L,
+        page: Number(pag.page ?? page),
+        limit: Number(pag.limit ?? limit),
+        total: Number(pag.total ?? (d.data as unknown[]).length),
+        pages: Number(pag.pages ?? 1),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return { data: parsed as L, page, limit, total: parsed.length, pages: 1 };
+  }
+  return { data: [] as unknown[] as L, page, limit, total: 0, pages: 0 };
+}
 
 export async function apiLogin(
   email: string,
@@ -153,51 +200,7 @@ export async function apiListUsers(
   if (orderBy) qs.set("order_by", orderBy);
   if (orderDir) qs.set("order_dir", orderDir);
 
-  const res = await fetch(`${API_BASE}/api/usuarios?${qs.toString()}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      // Envelope do backend: { success, data, pagination: {page, limit, total, pages} }
-      const pag = (d.pagination && typeof d.pagination === "object"
-        ? (d.pagination as Record<string, unknown>)
-        : d) as Record<string, unknown>;
-      return {
-        data: d.data as User[],
-        page: Number(pag.page ?? page),
-        limit: Number(pag.limit ?? limit),
-        total: Number(pag.total ?? (d.data as unknown[]).length),
-        pages: Number(pag.pages ?? 1),
-      };
-    }
-  }
-
-  if (Array.isArray(parsed)) {
-    return { data: parsed as User[], page, limit, total: parsed.length, pages: 1 };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<User[]>(`/api/usuarios?${qs.toString()}`, page, limit);
 }
 
 // POST /api/usuarios — admin cria novo usuario
@@ -289,62 +292,7 @@ export async function apiDashboardVendedores(
 ): Promise<VendedoresRankingResponse> {
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
 
-  // Endpoint devolve envelope com data + meta de paginacao, sem desenvelope
-  const res = await fetch(
-    `${API_BASE}/api/dashboard/vendedores?${qs.toString()}`,
-    {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
-    }
-  );
-
-  // Necessário fazer parse manual pois este endpoint retorna estrutura customizada
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-
-  // Tenta extrair {data, page, limit, total, pages}
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      return {
-        data: d.data as VendedorRanking[],
-        page: Number(d.page ?? page),
-        limit: Number(d.limit ?? limit),
-        total: Number(d.total ?? (d.data as unknown[]).length),
-        pages: Number(d.pages ?? 1),
-      };
-    }
-  }
-
-  // Fallback: array puro
-  if (Array.isArray(parsed)) {
-    return {
-      data: parsed as VendedorRanking[],
-      page,
-      limit,
-      total: parsed.length,
-      pages: 1,
-    };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<VendedorRanking[]>(`/api/dashboard/vendedores?${qs.toString()}`, page, limit);
 }
 
 // === Senha Historico ===
@@ -367,45 +315,7 @@ export async function apiListSenhaHistorico(
   if (orderDir) params.set("order_dir", orderDir);
 
   const path = `/api/senha-historico${usuarioId ? `/${usuarioId}` : ""}`;
-  const res = await fetch(`${API_BASE}${path}?${params.toString()}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-
-  // Mesmo pattern de parse do dashboard vendedores
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      return {
-        data: d.data as SenhaHistoricoResponse["data"],
-        page: Number(d.page ?? page),
-        limit: Number(d.limit ?? limit),
-        total: Number(d.total ?? (d.data as unknown[]).length),
-        pages: Number(d.pages ?? 1),
-      };
-    }
-  }
-  if (Array.isArray(parsed)) {
-    return { data: parsed as SenhaHistoricoResponse["data"], page, limit, total: parsed.length, pages: 1 };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<SenhaHistoricoResponse["data"]>(`${path}?${params.toString()}`, page, limit);
 }
 
 // === Vendedores ===
@@ -542,50 +452,7 @@ export async function apiListClientes(
   if (orderBy) qs.set("order_by", orderBy);
   if (orderDir) qs.set("order_dir", orderDir);
 
-  const res = await fetch(`${API_BASE}/api/clientes?${qs.toString()}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      const pag = (d.pagination && typeof d.pagination === "object"
-        ? (d.pagination as Record<string, unknown>)
-        : d) as Record<string, unknown>;
-      return {
-        data: d.data as Cliente[],
-        page: Number(pag.page ?? page),
-        limit: Number(pag.limit ?? limit),
-        total: Number(pag.total ?? (d.data as unknown[]).length),
-        pages: Number(pag.pages ?? 1),
-      };
-    }
-  }
-
-  if (Array.isArray(parsed)) {
-    return { data: parsed as Cliente[], page, limit, total: parsed.length, pages: 1 };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<Cliente[]>(`/api/clientes?${qs.toString()}`, page, limit);
 }
 
 // GET /api/clientes/{id} — detalhe de um cliente
@@ -674,50 +541,7 @@ export async function apiListProdutos(
   if (orderBy) qs.set("order_by", orderBy);
   if (orderDir) qs.set("order_dir", orderDir);
 
-  const res = await fetch(`${API_BASE}/api/produtos?${qs.toString()}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      const pag = (d.pagination && typeof d.pagination === "object"
-        ? (d.pagination as Record<string, unknown>)
-        : d) as Record<string, unknown>;
-      return {
-        data: d.data as Produto[],
-        page: Number(pag.page ?? page),
-        limit: Number(pag.limit ?? limit),
-        total: Number(pag.total ?? (d.data as unknown[]).length),
-        pages: Number(pag.pages ?? 1),
-      };
-    }
-  }
-
-  if (Array.isArray(parsed)) {
-    return { data: parsed as Produto[], page, limit, total: parsed.length, pages: 1 };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<Produto[]>(`/api/produtos?${qs.toString()}`, page, limit);
 }
 
 // GET /api/produtos/{id} — detalhe de um produto
@@ -798,50 +622,7 @@ export async function apiListPedidos(
   if (orderBy) qs.set("order_by", orderBy);
   if (orderDir) qs.set("order_dir", orderDir);
 
-  const res = await fetch(`${API_BASE}/api/pedidos?${qs.toString()}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      const pag = (d.pagination && typeof d.pagination === "object"
-        ? (d.pagination as Record<string, unknown>)
-        : d) as Record<string, unknown>;
-      return {
-        data: d.data as Pedido[],
-        page: Number(pag.page ?? page),
-        limit: Number(pag.limit ?? limit),
-        total: Number(pag.total ?? (d.data as unknown[]).length),
-        pages: Number(pag.pages ?? 1),
-      };
-    }
-  }
-
-  if (Array.isArray(parsed)) {
-    return { data: parsed as Pedido[], page, limit, total: parsed.length, pages: 1 };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<Pedido[]>(`/api/pedidos?${qs.toString()}`, page, limit);
 }
 
 // GET /api/pedidos/{id} — detalhe de um pedido (cabecalho + itens)
@@ -914,50 +695,7 @@ export async function apiListPagamentos(
   if (orderBy) qs.set("order_by", orderBy);
   if (orderDir) qs.set("order_dir", orderDir);
 
-  const res = await fetch(`${API_BASE}/api/pagamentos?${qs.toString()}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      const pag = (d.pagination && typeof d.pagination === "object"
-        ? (d.pagination as Record<string, unknown>)
-        : d) as Record<string, unknown>;
-      return {
-        data: d.data as Pagamento[],
-        page: Number(pag.page ?? page),
-        limit: Number(pag.limit ?? limit),
-        total: Number(pag.total ?? (d.data as unknown[]).length),
-        pages: Number(pag.pages ?? 1),
-      };
-    }
-  }
-
-  if (Array.isArray(parsed)) {
-    return { data: parsed as Pagamento[], page, limit, total: parsed.length, pages: 1 };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<Pagamento[]>(`/api/pagamentos?${qs.toString()}`, page, limit);
 }
 
 // GET /api/pagamentos/{id} — detalhe de um pagamento (id = pagamento_id)
@@ -1031,50 +769,7 @@ export async function apiListOportunidades(
   if (orderBy) qs.set("order_by", orderBy);
   if (orderDir) qs.set("order_dir", orderDir);
 
-  const res = await fetch(`${API_BASE}/api/oportunidades?${qs.toString()}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      const pag = (d.pagination && typeof d.pagination === "object"
-        ? (d.pagination as Record<string, unknown>)
-        : d) as Record<string, unknown>;
-      return {
-        data: d.data as Oportunidade[],
-        page: Number(pag.page ?? page),
-        limit: Number(pag.limit ?? limit),
-        total: Number(pag.total ?? (d.data as unknown[]).length),
-        pages: Number(pag.pages ?? 1),
-      };
-    }
-  }
-
-  if (Array.isArray(parsed)) {
-    return { data: parsed as Oportunidade[], page, limit, total: parsed.length, pages: 1 };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<Oportunidade[]>(`/api/oportunidades?${qs.toString()}`, page, limit);
 }
 
 // GET /api/oportunidades/{id} — detalhe de uma oportunidade
@@ -1143,50 +838,7 @@ export async function apiListVisitas(
   if (orderBy) qs.set("order_by", orderBy);
   if (orderDir) qs.set("order_dir", orderDir);
 
-  const res = await fetch(`${API_BASE}/api/visitas?${qs.toString()}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      const pag = (d.pagination && typeof d.pagination === "object"
-        ? (d.pagination as Record<string, unknown>)
-        : d) as Record<string, unknown>;
-      return {
-        data: d.data as Visita[],
-        page: Number(pag.page ?? page),
-        limit: Number(pag.limit ?? limit),
-        total: Number(pag.total ?? (d.data as unknown[]).length),
-        pages: Number(pag.pages ?? 1),
-      };
-    }
-  }
-
-  if (Array.isArray(parsed)) {
-    return { data: parsed as Visita[], page, limit, total: parsed.length, pages: 1 };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<Visita[]>(`/api/visitas?${qs.toString()}`, page, limit);
 }
 
 // GET /api/visitas/{id} — detalhe de uma visita
@@ -1255,50 +907,7 @@ export async function apiListEstoque(
   if (orderBy) qs.set("order_by", orderBy);
   if (orderDir) qs.set("order_dir", orderDir);
 
-  const res = await fetch(`${API_BASE}/api/estoque?${qs.toString()}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-
-  const raw = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = raw ? JSON.parse(raw) : null;
-  } catch {
-    parsed = raw;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Erro ${res.status}: ${res.statusText}`;
-    if (parsed && typeof parsed === "object") {
-      const d = parsed as Record<string, unknown>;
-      if ("error" in d) errorMessage = String(d.error);
-      else if ("message" in d) errorMessage = String(d.message);
-    }
-    throw buildApiError(res.status, errorMessage);
-  }
-
-  if (parsed && typeof parsed === "object") {
-    const d = parsed as Record<string, unknown>;
-    if ("data" in d && Array.isArray(d.data)) {
-      const pag = (d.pagination && typeof d.pagination === "object"
-        ? (d.pagination as Record<string, unknown>)
-        : d) as Record<string, unknown>;
-      return {
-        data: d.data as Estoque[],
-        page: Number(pag.page ?? page),
-        limit: Number(pag.limit ?? limit),
-        total: Number(pag.total ?? (d.data as unknown[]).length),
-        pages: Number(pag.pages ?? 1),
-      };
-    }
-  }
-
-  if (Array.isArray(parsed)) {
-    return { data: parsed as Estoque[], page, limit, total: parsed.length, pages: 1 };
-  }
-  return { data: [], page, limit, total: 0, pages: 0 };
+  return listarPaginado<Estoque[]>(`/api/estoque?${qs.toString()}`, page, limit);
 }
 
 // GET /api/estoque/{id} — detalhe de um registro de estoque

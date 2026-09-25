@@ -31,8 +31,9 @@ func NewRefreshTokenRepository() *RefreshTokenRepository {
 // RefreshTokenRepository agrupa queries da tabela refresh_tokens.
 type RefreshTokenRepository struct{}
 
-// Create insere um novo refresh token.
-func (r *RefreshTokenRepository) Create(ctx context.Context, db *sql.DB, rt *RefreshToken) error {
+// Create insere um novo refresh token. Aceita Execer (*sql.DB ou *sql.Tx)
+// para participar da transação de rotação (revoga o antigo + insere o novo).
+func (r *RefreshTokenRepository) Create(ctx context.Context, db Execer, rt *RefreshToken) error {
 	const q = `
 		INSERT INTO refresh_tokens (usuario_id, token_hash, expires_at, ip_origem, user_agent)
 		VALUES (?, ?, ?, ?, ?)`
@@ -59,14 +60,21 @@ func (r *RefreshTokenRepository) FindByTokenHash(ctx context.Context, db *sql.DB
 	return scanRefreshToken(row)
 }
 
-// Revoke marca um refresh token como revogado (preenche revoked_at).
-func (r *RefreshTokenRepository) Revoke(ctx context.Context, db *sql.DB, id int64) error {
-	const q = `UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?`
+// Revoke marca um refresh token como revogado (preenche revoked_at) de forma
+// atômica: o UPDATE só afeta o registro se ele ainda não foi revogado. Em duas
+// requisições concorrentes com o mesmo token, só uma revoga; a outra recebe
+// ErrNotFound (0 linhas afetadas = inexistente ou já revogado).
+// Aceita Execer (*sql.DB ou *sql.Tx) para participar de transação.
+func (r *RefreshTokenRepository) Revoke(ctx context.Context, db Execer, id int64) error {
+	const q = `UPDATE refresh_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL`
 	res, err := db.ExecContext(ctx, q, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("repositories: revoke refresh_token: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("repositories: revoke refresh_token rows affected: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}

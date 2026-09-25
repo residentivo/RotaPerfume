@@ -65,6 +65,20 @@ Exemplos:
 >
 > **Fluxo real de senha (produção/novos usuários):** a partir da criação de usuário (`POST /api/usuarios`) ou reset de senha pelo admin (`POST /api/admin/reset-password`), a API **não usa mais senha fixa**. Ela gera uma senha aleatória segura (`crypto/rand`, mínimo 12 caracteres, com maiúscula/minúscula/dígito/símbolo garantidos) e a envia por email (SMTP) ao endereço cadastrado do usuário. A senha gerada nunca é exposta pela API — nem em logs, nem na resposta HTTP. Ambas as respostas (criação e reset) incluem um campo `email_enviado: boolean` informando se o envio de fato ocorreu (será `false` se o SMTP não estiver configurado, caso em que a API usa um serviço "noop" que apenas loga o envio, sem quebrar a operação de criação/reset).
 
+## Mudanças de contrato do Lote 4 (2026-09-25)
+
+> Resumo das mudanças. O detalhe está em cada endpoint abaixo e nos exemplos marcados com `(SEC-02 | SEC-03 | BUG-06 | NEG-01, 2026-09-25)` na collection. Os cards continuam em `tarefas/fazendo.md` até a validação do usuário.
+>
+> **Envelope de erro:** `{"success": false, "error": "..."}`. O `writeJSON` (`handlers/response.go`) omite `data` quando é nulo, então as respostas de erro **não** trazem `"data": null`.
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| SEC-02 | `POST /api/auth/refresh` | Novo `401` `"refresh token revogado"` quando uma requisição concorrente já usou o token (conta no rate limit). Falha ao gravar o novo refresh token → `500` `"erro interno"`, sem cookie (antes: `200` sem refresh). Erro de banco na revogação → `500`. |
+| SEC-03 | `GET /api/vendedores` | Admin: todos (sem mudança). `normal` com vínculo: `data` só com o próprio vendedor (`id, nome, regiao, uf, data_desligamento`). Sem vínculo: `data: []`. Vendedor desligado: `403` `"acesso bloqueado: vendedor desligado"`. |
+| BUG-06 | `PATCH /api/clientes\|produtos\|usuarios/{id}/inativar` | Body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`. Vazio, `null`, `{}` ou `{"ativo":null}` → toggle. `{"ativo":true\|false}` → define o valor. Em clientes, sem acesso ao registro continua `404` antes do `400`. |
+| NEG-01 | `POST`/`PUT /api/clientes` | Novo `400` `"cnpj inválido"` (formato, 14 dígitos ou dígito verificador). Novo `409` `"cnpj já cadastrado"` (genérico). Aceita máscara; grava e devolve só dígitos. CNPJ válido usado nos exemplos: `11222333000181`. |
+| NEG-04 | `PUT /api/clientes/{id}` | O dígito verificador é exigido em **toda** gravação, mesmo quando o CNPJ enviado é igual ao atual (antes só era exigido se o CNPJ mudasse). DV inválido → `400` `"cnpj inválido"` sem consultar o banco, inclusive para id inexistente (antes: `404`). Clientes legados com DV inválido só podem ser editados depois de corrigir o CNPJ. `PATCH /inativar` não valida o CNPJ. |
+
 ## Endpoints
 
 ### Healthcheck
@@ -87,6 +101,10 @@ Exemplos:
 - **Body:** `{ "refresh_token": "..." }`
 - **Resposta:** Novo par `{ "access_token", "refresh_token", "token_type", "expires_in" }`
 - **Nota:** O refresh token antigo é revogado (single-use)
+- **Corrida entre requisições (SEC-02, 2026-09-25):** a revogação agora é condicional e a rotação é transacional (`BeginRotation`/`Issue`). Se duas requisições usam o mesmo refresh token ao mesmo tempo, só uma recebe o novo par; a outra recebe `401` `{"success":false,"error":"refresh token revogado"}`. Essa falha **conta no rate limit** de refresh.
+- **Falha de banco (SEC-02):** erro ao revogar o token antigo ou ao gravar o novo refresh token → `500` `"erro interno"`, **sem cookie e sem novo refresh token**. Antes, a falha ao gravar o novo refresh token respondia `200` só com o access token.
+- **Erros:** `400` `"refresh_token é obrigatório"`; `401` inválido/expirado/revogado; `429` rate limit; `500` erro interno.
+- **Frontend (SEC-02):** `apiClient.ts` serializa o refresh entre abas com `navigator.locks` (lock `"rp-auth-refresh"`) e, se o refresh responder `401`, repete a requisição original uma única vez.
 
 #### POST /api/auth/logout
 - **Auth:** nenhuma (usa `refresh_token` no body)
@@ -127,6 +145,7 @@ Exemplos:
 - **Auth:** Bearer Token (admin)
 - **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
 - **Descrição:** Ativa ou inativa o usuário
+- **Body inválido (BUG-06, 2026-09-25):** vazio, `null`, `{}` ou `{"ativo":null}` → toggle; `{"ativo":true|false}` → define o valor; body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`, sem alterar o usuário. Antes esses bodies caíam no toggle.
 
 ### Admin (`/api/admin/*`) — admin only
 
@@ -152,6 +171,7 @@ Exemplos:
 > | Oportunidades | `GET /api/oportunidades`, `GET /api/oportunidades/{id}`, `POST /api/oportunidades`, `PUT /api/oportunidades/{id}`, `DELETE /api/oportunidades/{id}` |
 > | Visitas | `GET /api/visitas`, `GET /api/visitas/{id}`, `POST /api/visitas`, `PUT /api/visitas/{id}`, `DELETE /api/visitas/{id}` |
 > | Carteira do vendedor | `GET /api/vendedores/{id}/clientes` |
+> | Lista de vendedores (SEC-03, 2026-09-25) | `GET /api/vendedores` |
 >
 > - **Continuam acessíveis:** login, `POST /api/auth/refresh`, `GET /api/auth/me` (com `vendedor_desligado: true`) e o Dashboard (`/api/dashboard/*` responde `200` zerado, e `/metrics` traz `vendedor_desligado: true`; ver seção abaixo, **sem mudança** neste lote).
 > - **Checagem a cada requisição:** sem cache e sem depender de novo JWT. O desligamento bloqueia imediatamente, e a reativação libera imediatamente.
@@ -241,6 +261,10 @@ Exemplos:
 > - **Leitura:** `GET /api/clientes` devolve só a carteira ativa do vendedor (lista vazia para usuário sem vendedor). `GET /api/clientes/{id}` fora da carteira devolve `404`.
 >
 > **Salvar sem alterações (BUG-04, 2026-09-24):** `PUT`/`PATCH` com os mesmos valores já gravados responde `200`. Antes respondia `404` "não encontrado".
+>
+> **CNPJ validado e único (NEG-01, 2026-09-25):** `POST`/`PUT` validam o CNPJ e o banco tem índice UNIQUE `uq_clientes_cnpj` (migração `sql/19_alter_clientes_cnpj_unique.sql`). Os clientes duplicados foram unificados no de menor id, com os registros vinculados transferidos (decisão do usuário, 2026-09-25). A migração está aplicada no banco local desde 2026-09-25 (índice `uq_clientes_cnpj` ativo), então o `409` é disparado pelo banco. Em um banco novo, aplique com `make db-fix-cnpj-unique`; sem ela, o `409` não acontece.
+>
+> **Body do PATCH inativar (BUG-06, 2026-09-25):** body preenchido e inválido → `400` `"body JSON inválido"`, mas só depois da checagem de escopo: sem acesso ao registro continua `404`.
 
 #### GET /api/clientes
 - **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira para o `normal`)
@@ -253,6 +277,7 @@ Exemplos:
 - **Escopo (SEC-01):** usuário `normal` sem vendedor → `403` `"usuário sem vendedor vinculado"`. Com vendedor → `201`, e o cliente é vinculado automaticamente à carteira do vendedor. Admin: sem mudança.
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" (opcional, "AAAA-MM-DD", default hoje) }`
 - **Descrição:** Cria um novo cliente. `cliente_id_origem` é a PK `BIGINT AUTO_INCREMENT` da tabela, gerada nativamente pelo MySQL (não é aceita no body), e `ativo` é sempre `true` na criação. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação. Não existe mais campo `id` — `cliente_id_origem` é o único identificador.
+- **CNPJ (NEG-01, 2026-09-25):** aceita com ou sem máscara (`11.222.333/0001-81` ou `11222333000181`); grava e devolve só os 14 dígitos. `400` `"cnpj inválido"` para caractere fora de dígitos/máscara (inclui letras: o CNPJ alfanumérico da Receita ainda não é aceito), quantidade diferente de 14 dígitos, todos os dígitos iguais ou dígito verificador (módulo 11) errado. `409` `"cnpj já cadastrado"` se outro cliente já usa o CNPJ; a mensagem é genérica e não revela qual cliente.
 - **Nota histórica (resolvida):** versões anteriores geravam `cliente_id_origem` via `MAX(cliente_id_origem) + 1` sem transação/lock explícito, com risco teórico de colisão em criações concorrentes. Esse débito técnico foi eliminado na tarefa "Promover colunas \*_id_origem a PK autoincremento" (2026-09-15) — a geração agora é feita nativamente pelo MySQL via `AUTO_INCREMENT`.
 
 #### GET /api/clientes/{id}
@@ -265,6 +290,7 @@ Exemplos:
 - **Sem alterações (BUG-04):** `200`.
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" ("AAAA-MM-DD") }`
 - **Descrição:** Atualiza os dados de um cliente existente. `cliente_id_origem` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/clientes/{id}/inativar` para alterar `ativo`). Retorna `200` com o cliente atualizado, `404` se não existir, `400` se o payload for inválido.
+- **CNPJ (NEG-01, 2026-09-25):** mesma normalização do `POST` (máscara aceita, grava só dígitos). **Toda gravação exige CNPJ válido (NEG-04, 2026-09-25):** formato (14 dígitos) e dígito verificador, mesmo quando o CNPJ enviado é igual ao atual. DV inválido → `400` `"cnpj inválido"`, sem consultar o banco e sem gravar; por isso, id inexistente com DV inválido responde `400`, e não `404` (o `404` vem do UPDATE com 0 linhas, sem SELECT prévio). Clientes legados com DV inválido só podem ser editados depois de corrigir o CNPJ (antes do NEG-04, o DV só era exigido se o CNPJ mudasse). `PATCH /api/clientes/{id}/inativar` não valida o CNPJ. `409` `"cnpj já cadastrado"` se o novo CNPJ pertence a outro cliente. O escopo é checado antes: sem acesso, `404` mesmo com CNPJ inválido.
 
 #### PATCH /api/clientes/{id}/inativar
 - **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira ativa para o `normal`)
@@ -272,6 +298,7 @@ Exemplos:
 - **Descrição:** Ativa ou inativa o cliente
 - **Escopo (SEC-01):** usuário `normal` fora da carteira ativa, ou sem vendedor → `404` `"cliente não encontrado"`. Falha ao checar a carteira → `500`. Vendedor desligado → `403`.
 - **Mesmo valor (BUG-04):** enviar `ativo` igual ao estado atual responde `200`.
+- **Body inválido (BUG-06, 2026-09-25):** vazio, `null`, `{}` ou `{"ativo":null}` → toggle; `{"ativo":true|false}` → define o valor; body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`. O body só é lido **depois** da checagem de escopo: sem acesso ao registro, a resposta continua `404` (SEC-01).
 
 #### GET /api/dashboard/clientes
 - **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira do vendedor para o normal). A rota usa `JWTMiddleware(cfg, true, false)`, então não há `403`.
@@ -314,6 +341,7 @@ Exemplos:
 - **Auth:** Bearer Token (admin) — usuário `normal` recebe `403`
 - **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
 - **Descrição:** Ativa ou inativa o produto (exclusão lógica)
+- **Body inválido (BUG-06, 2026-09-25):** vazio, `null`, `{}` ou `{"ativo":null}` → toggle; `{"ativo":true|false}` → define o valor; body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`, sem alterar o produto.
 
 ### Pedidos (`/api/pedidos/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-23)
 
@@ -399,7 +427,7 @@ Exemplos:
 
 | Método | Rota | Acesso | Usuário `normal` |
 |--------|------|--------|------------------|
-| GET | `/api/vendedores` | acesso comum | `200` (lista para popular selects) |
+| GET | `/api/vendedores` | acesso comum, com escopo (SEC-03, 2026-09-25) | `200` só com o próprio vendedor; `200` `data: []` sem vínculo; `403` se o vendedor estiver desligado |
 | GET | `/api/vendedores/{id}/clientes` | acesso comum | `200` (dropdown em cascata Vendedor → Cliente) |
 | POST | `/api/vendedores` | admin only | `403` |
 | GET | `/api/vendedores/{id}` | admin only | `403` |
@@ -412,6 +440,16 @@ Exemplos:
 > O `403` retorna `{"success": false, "error": "acesso restrito a administradores"}`. 
 >
 > **`meta_mensal` fora da listagem (confirmado em 2026-09-24):** `GET /api/vendedores` devolve `VendedorResumo` (`id`, `nome`, `regiao`, `uf`, `data_desligamento`) para **todos** os perfis, sem `meta_mensal`. O usuário `normal` não recebe a meta de ninguém. O admin obtém `meta_mensal` pelo detalhe `GET /api/vendedores/{id}` (admin only). O código já estava assim; o 🔴 TestBrain adicionou um teste de regressão.
+>
+> **Escopo da listagem (SEC-03, 2026-09-25):** antes, qualquer usuário autenticado recebia a lista completa de vendedores. Agora `GET /api/vendedores` (`vendedor_handler.go`, `ListResumoByID`):
+> - **admin:** todos os vendedores, ativos e desligados (sem mudança);
+> - **`normal` com vendedor vinculado:** `200` com `data: [{id, nome, regiao, uf, data_desligamento}]` contendo só o próprio vendedor;
+> - **`normal` sem vínculo (ou vínculo órfão):** `200` com `data: []`;
+> - **`normal` com vendedor desligado:** `403` `{"success":false,"error":"acesso bloqueado: vendedor desligado"}`;
+> - falha ao resolver o escopo: `500` `"erro interno"`.
+> - `GET /api/produtos` **não** foi bloqueado (decisão do 🟣 SecBrain: é catálogo).
+> - No frontend, `useVendedorTravado.ts` trava o campo vendedor nos modais de Oportunidade e Visita; o `PedidoModal` já estava correto.
+> - Na collection: pasta **"Vendedores"** → "Listar Vendedores (escopo por usuário)", com os quatro exemplos.
 
 ### Oportunidades (`/api/oportunidades/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-22)
 

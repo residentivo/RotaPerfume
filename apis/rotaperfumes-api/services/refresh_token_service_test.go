@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/services"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 func newRefreshTokenTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
@@ -166,7 +165,7 @@ func TestRefreshTokenService_RevokeToken(t *testing.T) {
 		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 			WithArgs(hashOf(token)).
 			WillReturnRows(rows)
-		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \?`).
+		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
 			WithArgs(sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -200,20 +199,20 @@ func TestRefreshTokenService_RevokeToken(t *testing.T) {
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("token some entre find e revoke (corrida) retorna ErrNotFound do repo", func(t *testing.T) {
+	t.Run("token revogado entre find e revoke (corrida) retorna ErrRefreshTokenRevoked", func(t *testing.T) {
 		db, mock := newRefreshTokenTestDB(t)
 		rows := sqlmock.NewRows(refreshTokenColunas()).
 			AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(1*time.Hour), nil, "127.0.0.1", "curl/8.0")
 		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 			WithArgs(hashOf(token)).
 			WillReturnRows(rows)
-		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \?`).
+		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
 			WithArgs(sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		svc := services.NewRefreshTokenService()
 		err := svc.RevokeToken(context.Background(), db, token)
-		assert.ErrorIs(t, err, repositories.ErrNotFound)
+		assert.ErrorIs(t, err, services.ErrRefreshTokenRevoked)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }

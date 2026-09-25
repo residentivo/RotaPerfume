@@ -14,11 +14,17 @@
 --     necessidade de UNIQUE separada (a PK já garante unicidade). Coluna
 --     padronizada para BIGINT (era INT).
 --   - `cnpj` é normalizado (somente dígitos, 14 chars) na importação, pois
---     o CSV traz formatos mistos (com/sem máscara, com espaços). NÃO é
---     UNIQUE: a análise do CSV encontrou ~40 CNPJs duplicados associados a
---     `cliente_id` distintos (provavelmente filiais/registros duplicados na
---     origem) — index normal para busca/filtro, sem constraint de unicidade,
---     para não quebrar a importação de dados reais.
+--     o CSV traz formatos mistos (com/sem máscara, com espaços).
+--   - ATUALIZAÇÃO (2026-09-25, NEG-01): `cnpj` passou a ser UNIQUE
+--     (`uq_clientes_cnpj`, substitui o antigo índice simples
+--     `idx_clientes_cnpj`) por decisão do usuário de bloquear CNPJ
+--     duplicado. O CSV de origem traz 40 CNPJs duplicados (cópias com
+--     cliente_id 3001..3040 e razão social em MAIÚSCULAS). Em bancos
+--     existentes, eles foram unificados no menor cliente_id por
+--     sql/19_alter_clientes_cnpj_unique.sql (make db-fix-cnpj-unique).
+--     O importador (apis/shared/cmd/importclientes) precisa descartar ou
+--     unificar os duplicados do CSV, senão falha com erro 1062
+--     (ER_DUP_ENTRY) no `uq_clientes_cnpj`.
 --   - `ativo` vira TINYINT(1) (0/1), convertido de 'S'/'N' do CSV.
 --   - `data_cadastro` vira DATE. O CSV mistura formatos YYYY-MM-DD e
 --     DD/MM/YYYY — o importador Go normaliza ambos antes do INSERT.
@@ -46,7 +52,7 @@ CREATE TABLE IF NOT EXISTS `clientes` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Data de criação do registro',
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Data de última atualização',
     PRIMARY KEY (`cliente_id_origem`),
-    KEY `idx_clientes_cnpj` (`cnpj`),
+    UNIQUE KEY `uq_clientes_cnpj` (`cnpj`),
     KEY `idx_clientes_uf` (`uf`),
     KEY `idx_clientes_segmento` (`segmento`),
     KEY `idx_clientes_ativo` (`ativo`),

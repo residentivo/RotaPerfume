@@ -50,6 +50,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 
+	"github.com/rotaperfumes/shared/cmd/internal/clientesdedup"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -107,6 +108,9 @@ func main() {
 		log.Fatalf("importvisitas: falha ao carregar lookup de clientes: %v", err)
 	}
 	log.Printf("importvisitas: %d clientes carregados para lookup", len(clienteIDs))
+	// NEG-01: cópias de CNPJ duplicado no clientes.csv apontam para o sobrevivente.
+	projectRoot, _ := findProjectRoot()
+	clientesdedup.Redirecionar("importvisitas", projectRoot, clienteIDs)
 
 	inserted, updated, failed := upsertAll(db, rows, clienteIDs)
 

@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  useDebounceFiltros,
+  useExcluidos,
+  useUltimaResposta,
+} from "@/lib/useListaSegura";
 import { Navbar } from "@/components/layout/Navbar";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { CarteiraGuard } from "@/components/layout/CarteiraGuard";
@@ -117,6 +122,13 @@ function PagamentosContent() {
   );
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
+  // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  const executarBusca = useUltimaResposta();
+  // FE-04: linha excluida nao reaparece por uma resposta que saiu antes do
+  // DELETE e chegou depois dele.
+  const excluidos = useExcluidos((x: Pagamento) => x.pagamento_id);
+
   // Busca separada em requisicao pura + aplicacao do resultado no callback
   // assincrono (.then): o efeito nunca chama setState de forma sincrona.
   const buscarPagamentos = () => {
@@ -164,7 +176,7 @@ function PagamentosContent() {
   const loadPagamentos = async () => {
     setLoading(true);
     setError(null);
-    await buscarPagamentos().then(aplicarPagamentos, aplicarErroPagamentos);
+    await executarBusca(buscarPagamentos().then(excluidos.filtrar), aplicarPagamentos, aplicarErroPagamentos);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -178,22 +190,21 @@ function PagamentosContent() {
   }
 
   useEffect(() => {
-    buscarPagamentos().then(aplicarPagamentos, aplicarErroPagamentos);
+    executarBusca(buscarPagamentos().then(excluidos.filtrar), aplicarPagamentos, aplicarErroPagamentos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 
   // Debounce dos filtros e reset para pagina 1 quando eles mudam
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (page !== 1) {
-        setPage(1);
-      } else {
-        loadPagamentos();
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, formaFilter, pedidoIdFilter, vencimentoDe, vencimentoAte]);
+  // FE-04: o debounce nao dispara na montagem, so quando a chave dos filtros
+  // muda (evita a busca dupla e a tabela voltando para a pagina 1).
+  const chaveFiltros = JSON.stringify([statusFilter, formaFilter, pedidoIdFilter, vencimentoDe, vencimentoAte]);
+  useDebounceFiltros(chaveFiltros, () => {
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      loadPagamentos();
+    }
+  });
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -252,6 +263,7 @@ function PagamentosContent() {
     setDeletingId(pagamento.pagamento_id);
     try {
       await apiDeletePagamento(pagamento.pagamento_id);
+      excluidos.marcar(pagamento.pagamento_id);
       setPagamentos((prev) =>
         prev.filter((p) => p.pagamento_id !== pagamento.pagamento_id)
       );

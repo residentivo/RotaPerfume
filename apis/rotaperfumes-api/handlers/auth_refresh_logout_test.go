@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -155,20 +156,123 @@ func TestRefresh_Cenarios(t *testing.T) {
 	}
 }
 
+const revokeCondSQL = `UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`
+
+func expectUsuarioAtivo(mock sqlmock.Sqlmock, uid int64) {
+	agora := time.Now()
+	mock.ExpectQuery(usuarioByIDSQL).WithArgs(uid).
+		WillReturnRows(sqlmock.NewRows(usuarioCols).
+			AddRow(uid, "Ana", "ana@test.com", "hash", "normal", int64(2), true, false, agora, agora, nil, "Vend"))
+}
+
+func refreshCookies(resp *http.Response) (access, refresh string) {
+	for _, c := range resp.Cookies() {
+		switch c.Name {
+		case "access_token":
+			access = c.Value
+		case "refresh_token":
+			refresh = c.Value
+		}
+	}
+	return access, refresh
+}
+
 // TestRefresh_Sucesso valida o fluxo completo: valida o token, busca o
-// usuário, revoga o antigo (single-use), gera novo access+refresh via
-// Set-Cookie HttpOnly. Parametrizado para os casos em que a revogação ou a
-// geração do novo refresh token falham (o handler só loga, não falha).
+// usuário, revoga o antigo de forma atômica (UPDATE condicional em tx),
+// insere o novo na mesma tx e devolve access+refresh via Set-Cookie HttpOnly.
 func TestRefresh_Sucesso(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	expectRefreshValido(mock, 5)
+	expectUsuarioAtivo(mock, 5)
+	mock.ExpectBegin()
+	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnResult(sqlmock.NewResult(11, 1))
+	mock.ExpectCommit()
+
+	resp := postRefresh(t, server.URL+"/api/auth/refresh", map[string]string{"refresh_token": refreshTokenTexto}, "")
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	assert.Equal(t, true, body["success"])
+	data := body["data"].(map[string]any)
+	assert.Equal(t, "Bearer", data["token_type"])
+	assert.Equal(t, float64(24*60*60), data["expires_in"])
+
+	for _, c := range resp.Cookies() {
+		assert.True(t, c.HttpOnly, "cookie %s deve ser HttpOnly", c.Name)
+	}
+	access, refresh := refreshCookies(resp)
+	assert.NotEmpty(t, access, "novo access_token deve vir em Set-Cookie")
+	assert.NotEmpty(t, refresh)
+	assert.NotEqual(t, refreshTokenTexto, refresh, "refresh token deve ser rotacionado")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestRefresh_FalhasNaRotacao cobre (SEC-02) os erros depois da validação:
+// token revogado por requisição concorrente (UPDATE afeta 0 linhas) → 401;
+// erros de banco na revogação/begin/insert/commit → 500. Em nenhum caso um
+// token é emitido (sem Set-Cookie).
+func TestRefresh_FalhasNaRotacao(t *testing.T) {
 	cases := []struct {
-		name              string
-		revokeErr         error
-		insertErr         error
-		wantRefreshCookie bool
+		name       string
+		setup      func(mock sqlmock.Sqlmock)
+		wantStatus int
+		wantErr    string
 	}{
-		{name: "tudo ok", wantRefreshCookie: true},
-		{name: "revogação falha mas segue", revokeErr: errors.New("falha revoke"), wantRefreshCookie: true},
-		{name: "insert do novo refresh falha, sem cookie de refresh", insertErr: errors.New("falha insert"), wantRefreshCookie: false},
+		{
+			name: "revogação concorrente (0 linhas) retorna 401",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectBegin()
+				mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectRollback()
+			},
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    "refresh token revogado",
+		},
+		{
+			name: "erro de banco na revogação retorna 500",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectBegin()
+				mock.ExpectExec(revokeCondSQL).WillReturnError(errors.New("falha revoke"))
+				mock.ExpectRollback()
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantErr:    "erro interno",
+		},
+		{
+			name: "erro ao abrir transação retorna 500",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectBegin().WillReturnError(errors.New("falha begin"))
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantErr:    "erro interno",
+		},
+		{
+			name: "insert do novo refresh falha retorna 500 e desfaz a revogação",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectBegin()
+				mock.ExpectExec(revokeCondSQL).WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnError(errors.New("falha insert"))
+				mock.ExpectRollback()
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantErr:    "erro interno",
+		},
+		{
+			name: "commit falha retorna 500",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectBegin()
+				mock.ExpectExec(revokeCondSQL).WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnResult(sqlmock.NewResult(11, 1))
+				mock.ExpectCommit().WillReturnError(errors.New("falha commit"))
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantErr:    "erro interno",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -176,56 +280,103 @@ func TestRefresh_Sucesso(t *testing.T) {
 			defer server.Close()
 			defer db.Close()
 
-			agora := time.Now()
 			expectRefreshValido(mock, 5)
-			mock.ExpectQuery(usuarioByIDSQL).WithArgs(int64(5)).
-				WillReturnRows(sqlmock.NewRows(usuarioCols).
-					AddRow(int64(5), "Ana", "ana@test.com", "hash", "normal", int64(2), true, false, agora, agora, nil, "Vend"))
-			// RevokeToken: busca pelo hash e faz UPDATE.
-			expectRefreshValido(mock, 5)
-			if tc.revokeErr != nil {
-				mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \?`).WillReturnError(tc.revokeErr)
-			} else {
-				mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \?`).
-					WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
-			}
-			if tc.insertErr != nil {
-				mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnError(tc.insertErr)
-			} else {
-				mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnResult(sqlmock.NewResult(11, 1))
-			}
+			expectUsuarioAtivo(mock, 5)
+			tc.setup(mock)
 
 			resp := postRefresh(t, server.URL+"/api/auth/refresh", map[string]string{"refresh_token": refreshTokenTexto}, "")
 			defer resp.Body.Close()
 
-			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
 			body := decodeResponse(t, readBody(t, resp))
-			assert.Equal(t, true, body["success"])
-			data := body["data"].(map[string]any)
-			assert.Equal(t, "Bearer", data["token_type"])
-			assert.Equal(t, float64(24*60*60), data["expires_in"])
-
-			var access, refresh string
-			for _, c := range resp.Cookies() {
-				switch c.Name {
-				case "access_token":
-					access = c.Value
-					assert.True(t, c.HttpOnly)
-				case "refresh_token":
-					refresh = c.Value
-					assert.True(t, c.HttpOnly)
-				}
-			}
-			assert.NotEmpty(t, access, "novo access_token deve vir em Set-Cookie")
-			if tc.wantRefreshCookie {
-				assert.NotEmpty(t, refresh)
-				assert.NotEqual(t, refreshTokenTexto, refresh, "refresh token deve ser rotacionado")
-			} else {
-				assert.Empty(t, refresh)
-			}
+			assert.Equal(t, false, body["success"])
+			assert.Nil(t, body["data"])
+			assert.Equal(t, tc.wantErr, body["error"])
+			access, refresh := refreshCookies(resp)
+			assert.Empty(t, access, "nenhum access_token pode ser emitido")
+			assert.Empty(t, refresh, "nenhum refresh_token pode ser emitido")
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+// TestRefresh_CorridaParalela (SEC-02): duas chamadas simultâneas com o mesmo
+// refresh token. O UPDATE condicional só afeta uma linha para uma delas; a
+// outra recebe 401 sem emitir tokens. Resultado esperado: um 200 e um 401.
+func TestRefresh_CorridaParalela(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+	mock.MatchExpectationsInOrder(false)
+
+	for i := 0; i < 2; i++ {
+		expectRefreshValido(mock, 5)
+		expectUsuarioAtivo(mock, 5)
+		mock.ExpectBegin()
+	}
+	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnResult(sqlmock.NewResult(11, 1))
+	mock.ExpectCommit()
+	mock.ExpectRollback()
+
+	type resultado struct {
+		status  int
+		refresh string
+	}
+	var wg sync.WaitGroup
+	resultados := make(chan resultado, 2)
+	start := make(chan struct{})
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			resp := postRefresh(t, server.URL+"/api/auth/refresh", map[string]string{"refresh_token": refreshTokenTexto}, "")
+			defer resp.Body.Close()
+			_, refresh := refreshCookies(resp)
+			resultados <- resultado{status: resp.StatusCode, refresh: refresh}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(resultados)
+
+	got := map[int]int{}
+	emitidos := 0
+	for r := range resultados {
+		got[r.status]++
+		if r.refresh != "" {
+			emitidos++
+		}
+	}
+	assert.Equal(t, map[int]int{http.StatusOK: 1, http.StatusUnauthorized: 1}, got)
+	assert.Equal(t, 1, emitidos, "só um par de tokens pode ser emitido")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestRefresh_RevogacaoConcorrenteContaNoRateLimit: o 401 por revogação
+// concorrente registra falha no refreshLimiter; após 10 falhas, 429.
+func TestRefresh_RevogacaoConcorrenteContaNoRateLimit(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	for i := 0; i < 10; i++ {
+		expectRefreshValido(mock, 5)
+		expectUsuarioAtivo(mock, 5)
+		mock.ExpectBegin()
+		mock.ExpectExec(revokeCondSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectRollback()
+		resp := postRefresh(t, server.URL+"/api/auth/refresh", map[string]string{"refresh_token": refreshTokenTexto}, "")
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		resp.Body.Close()
+	}
+
+	resp := postRefresh(t, server.URL+"/api/auth/refresh", map[string]string{"refresh_token": refreshTokenTexto}, "")
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // TestRefresh_RateLimitPorIP garante que, após refreshMaxFailures (10)
@@ -264,7 +415,7 @@ func TestLogout_Cenarios(t *testing.T) {
 			body: map[string]string{"refresh_token": refreshTokenTexto},
 			setup: func(mock sqlmock.Sqlmock) {
 				expectRefreshValido(mock, 1)
-				mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \?`).
+				mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			},
 		},
