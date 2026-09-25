@@ -19,7 +19,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -124,10 +123,9 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 						assert.Equal(t, data, dataComoAPI(t, lido.DataAdmissao), "JSON ciclo %d", ciclo)
 
 						in.DataAdmissao = dataComoAPI(t, lido.DataAdmissao)
-						// Varia meta_mensal a cada ciclo: um UPDATE sem nenhuma
-						// coluna alterada devolve RowsAffected=0 no MySQL e o
-						// repositório responde ErrNotFound (ver
-						// TestIntegracao_UpdateSemAlteracao).
+						// Varia meta_mensal a cada ciclo para que o re-save
+						// altere a linha de fato (o caso "sem alteração" é
+						// coberto por TestIntegracao_UpdateSemAlteracao).
 						in.MetaMensal = float64(ciclo)
 						_, err = svc.UpdateVendedor(ctx, db, v.ID, in)
 						require.NoError(t, err)
@@ -172,12 +170,11 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 // TestIntegracao_UpdateSemAlteracao verifica o cenário "abrir a tela de
 // edição e salvar sem mudar nada" (o mesmo fluxo de re-save do BUG-01).
 //
-// BUG CONHECIDO (reportado ao 🔵 SubBrain, não corrigido aqui): o DSN não
-// usa clientFoundRows=true, então o MySQL devolve RowsAffected=0 para um
-// UPDATE que não altera nenhuma coluna, e os repositórios traduzem n == 0
-// em ErrNotFound → a API responde 404 "não encontrado" para um registro que
-// existe. Enquanto o comportamento persistir o teste é pulado com a
-// explicação; após a correção passa a validar o sucesso.
+// BUG-04 (corrigido): sem clientFoundRows=true no DSN o MySQL devolvia
+// RowsAffected=0 para um UPDATE que não altera nenhuma coluna, e os
+// repositórios traduziam n == 0 em ErrNotFound → 404 para um registro que
+// existe. Com a flag, RowsAffected conta linhas encontradas e o re-save sem
+// alteração responde sucesso.
 func TestIntegracao_UpdateSemAlteracao(t *testing.T) {
 	if os.Getenv("INTEGRATION") != "1" {
 		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
@@ -198,9 +195,6 @@ func TestIntegracao_UpdateSemAlteracao(t *testing.T) {
 		})
 
 		_, err = svc.UpdateVendedor(ctx, db, v.ID, in)
-		if errors.Is(err, services.ErrVendedorNaoEncontrado) {
-			t.Skipf("BUG conhecido: UPDATE sem alteração → RowsAffected=0 → %v (vendedor id=%d existe)", err, v.ID)
-		}
 		assert.NoError(t, err)
 	})
 
@@ -218,9 +212,152 @@ func TestIntegracao_UpdateSemAlteracao(t *testing.T) {
 		})
 
 		_, err = svc.UpdateProduto(ctx, db, p.ID, in)
-		if errors.Is(err, services.ErrProdutoNaoEncontrado) {
-			t.Skipf("BUG conhecido: UPDATE sem alteração → RowsAffected=0 → %v (produto id=%d existe)", err, p.ID)
-		}
 		assert.NoError(t, err)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// BUG-05: inativar vendedor inativa os usuários vinculados.
+//
+// Cria 3 vendedores TEMPORÁRIOS (nome ZZ-TEST-BUG05-*):
+//   - A: com 2 usuários vinculados (alvo do DeleteVendedor);
+//   - B: com 1 usuário de controle (não pode ser afetado);
+//   - C: sem usuários (DeleteVendedor deve funcionar mesmo assim).
+// Mais 1 usuário de controle sem vendedor (id_vendedor NULL).
+// Usuários usam e-mail zz-test-bug05-<sufixo>-*@teste.local. O t.Cleanup
+// apaga os usuários ANTES dos vendedores (Cleanup é LIFO) e só por id +
+// prefixo — nenhum dado pré-existente é tocado.
+// ---------------------------------------------------------------------------
+
+const bug05Prefixo = "ZZ-TEST-BUG05-"
+
+func bug05CriarVendedor(t *testing.T, ctx context.Context, db *sql.DB, svc *services.VendedorService, nome string) int64 {
+	t.Helper()
+	v, err := svc.CreateVendedor(ctx, db, services.VendedorInput{
+		Nome: nome, Regiao: "Teste", UF: "PR", DataAdmissao: "2024-01-01", MetaMensal: 1,
+	})
+	require.NoError(t, err)
+	require.NotZero(t, v.ID)
+	t.Cleanup(func() {
+		_, err := db.Exec("DELETE FROM vendedores WHERE id = ? AND nome LIKE 'ZZ-TEST-BUG05-%'", v.ID)
+		assert.NoError(t, err)
+	})
+	return v.ID
+}
+
+// bug05CriarUsuario insere direto no banco (sem service de usuário, para não
+// gerar senha_historico/refresh_tokens). vendedorID <= 0 grava NULL.
+func bug05CriarUsuario(t *testing.T, db *sql.DB, email string, vendedorID int64) int64 {
+	t.Helper()
+	var idVend sql.NullInt64
+	if vendedorID > 0 {
+		idVend = sql.NullInt64{Int64: vendedorID, Valid: true}
+	}
+	res, err := db.Exec(
+		`INSERT INTO usuarios (nome, email, password_hash, role, id_vendedor, ativo) VALUES (?, ?, ?, 'normal', ?, 1)`,
+		bug05Prefixo+"usuario", email, "$2a$12$zztestbug05hashnaousadoparaloginxxxxxxxxxxxxxxxxxxxxxx", idVend,
+	)
+	require.NoError(t, err)
+	id, err := res.LastInsertId()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := db.Exec("DELETE FROM usuarios WHERE id = ? AND email LIKE 'zz-test-bug05-%'", id)
+		assert.NoError(t, err)
+	})
+	return id
+}
+
+func bug05Ativo(t *testing.T, db *sql.DB, usuarioID int64) int {
+	t.Helper()
+	var ativo int
+	require.NoError(t, db.QueryRow("SELECT ativo FROM usuarios WHERE id = ?", usuarioID).Scan(&ativo))
+	return ativo
+}
+
+func bug05DataDesligamento(t *testing.T, db *sql.DB, vendedorID int64) sql.NullString {
+	t.Helper()
+	var s sql.NullString
+	require.NoError(t, db.QueryRow(
+		"SELECT DATE_FORMAT(data_desligamento, '%Y-%m-%d') FROM vendedores WHERE id = ?", vendedorID).Scan(&s))
+	return s
+}
+
+func TestIntegracaoBUG05_InativarVendedorInativaUsuarios(t *testing.T) {
+	if os.Getenv("INTEGRATION") != "1" {
+		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
+	}
+	db := abrirDBIntegracao(t)
+	ctx := context.Background()
+	svc := services.NewVendedorService(db, &config.Config{})
+	sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
+	email := func(n string) string { return fmt.Sprintf("zz-test-bug05-%s-%s@teste.local", sufixo, n) }
+
+	// Vendedores primeiro → seus Cleanups rodam por último (LIFO).
+	vendA := bug05CriarVendedor(t, ctx, db, svc, bug05Prefixo+sufixo+"-A")
+	vendB := bug05CriarVendedor(t, ctx, db, svc, bug05Prefixo+sufixo+"-B")
+	vendC := bug05CriarVendedor(t, ctx, db, svc, bug05Prefixo+sufixo+"-C")
+
+	u1 := bug05CriarUsuario(t, db, email("a1"), vendA)
+	u2 := bug05CriarUsuario(t, db, email("a2"), vendA)
+	ctrlOutroVend := bug05CriarUsuario(t, db, email("b1"), vendB)
+	ctrlSemVend := bug05CriarUsuario(t, db, email("nulo"), 0)
+
+	hoje := time.Now().Format("2006-01-02")
+
+	t.Run("DeleteVendedor inativa usuarios vinculados", func(t *testing.T) {
+		v, err := svc.DeleteVendedor(ctx, db, vendA)
+		require.NoError(t, err)
+		require.NotNil(t, v)
+		require.NotNil(t, v.DataDesligamento, "retorno do service deve trazer data_desligamento")
+
+		dd := bug05DataDesligamento(t, db, vendA)
+		assert.True(t, dd.Valid, "data_desligamento deve ser preenchida")
+		assert.Equal(t, hoje, dd.String)
+
+		for _, tc := range []struct {
+			nome  string
+			id    int64
+			ativo int
+		}{
+			{"usuario vinculado 1", u1, 0},
+			{"usuario vinculado 2", u2, 0},
+			{"controle de outro vendedor", ctrlOutroVend, 1},
+			{"controle sem vendedor", ctrlSemVend, 1},
+		} {
+			t.Run(tc.nome, func(t *testing.T) {
+				assert.Equal(t, tc.ativo, bug05Ativo(t, db, tc.id))
+			})
+		}
+		assert.False(t, bug05DataDesligamento(t, db, vendB).Valid, "vendedor B não pode ser afetado")
+	})
+
+	t.Run("ReativarVendedor limpa data e NAO reativa usuarios", func(t *testing.T) {
+		v, err := svc.ReativarVendedor(ctx, db, vendA)
+		require.NoError(t, err)
+		require.NotNil(t, v)
+		assert.Nil(t, v.DataDesligamento)
+
+		assert.False(t, bug05DataDesligamento(t, db, vendA).Valid, "data_desligamento deve voltar a NULL")
+		for _, id := range []int64{u1, u2} {
+			assert.Equal(t, 0, bug05Ativo(t, db, id), "usuario %d deve continuar inativo", id)
+		}
+		assert.Equal(t, 1, bug05Ativo(t, db, ctrlOutroVend))
+		assert.Equal(t, 1, bug05Ativo(t, db, ctrlSemVend))
+	})
+
+	t.Run("DeleteVendedor sem usuarios", func(t *testing.T) {
+		v, err := svc.DeleteVendedor(ctx, db, vendC)
+		require.NoError(t, err)
+		require.NotNil(t, v)
+		dd := bug05DataDesligamento(t, db, vendC)
+		assert.True(t, dd.Valid)
+		assert.Equal(t, hoje, dd.String)
+	})
+
+	t.Run("DeleteVendedor inexistente nao altera usuarios", func(t *testing.T) {
+		_, err := svc.DeleteVendedor(ctx, db, -1)
+		assert.ErrorIs(t, err, services.ErrVendedorNaoEncontrado)
+		assert.Equal(t, 1, bug05Ativo(t, db, ctrlOutroVend))
+		assert.Equal(t, 1, bug05Ativo(t, db, ctrlSemVend))
 	})
 }

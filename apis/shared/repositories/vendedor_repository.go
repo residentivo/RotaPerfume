@@ -161,7 +161,8 @@ func (r *VendedorRepository) Update(ctx context.Context, db *sql.DB, id int64, v
 
 // SetDataDesligamento define (ou limpa, se nil) a data de desligamento de um
 // vendedor — soft-delete/reativação. Retorna ErrNotFound se não existir.
-func (r *VendedorRepository) SetDataDesligamento(ctx context.Context, db *sql.DB, id int64, dataDesligamento *sql.NullTime) error {
+// Aceita *sql.DB ou *sql.Tx (ver Execer).
+func (r *VendedorRepository) SetDataDesligamento(ctx context.Context, db Execer, id int64, dataDesligamento *sql.NullTime) error {
 	const q = `UPDATE vendedores SET data_desligamento = ? WHERE id = ?`
 	res, err := db.ExecContext(ctx, q, dataDesligamento, id)
 	if err != nil {
@@ -170,6 +171,31 @@ func (r *VendedorRepository) SetDataDesligamento(ctx context.Context, db *sql.DB
 	n, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("repositories: set data_desligamento vendedor rowsAffected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// MarcarDesligamento grava a data de desligamento de um vendedor SEM
+// sobrescrever uma data já existente (COALESCE): desligar de novo um vendedor
+// já desligado preserva a data original. Idempotente. Retorna ErrNotFound se
+// o vendedor não existir — com clientFoundRows=true no DSN, RowsAffected
+// conta linhas encontradas, então 0 significa "id inexistente" mesmo quando
+// nada muda. Aceita *sql.DB ou *sql.Tx (ver Execer).
+//
+// Para limpar a data (reativação), use SetDataDesligamento com NullTime
+// inválido.
+func (r *VendedorRepository) MarcarDesligamento(ctx context.Context, db Execer, id int64, dataDesligamento time.Time) error {
+	const q = `UPDATE vendedores SET data_desligamento = COALESCE(data_desligamento, ?) WHERE id = ?`
+	res, err := db.ExecContext(ctx, q, dataDesligamento, id)
+	if err != nil {
+		return fmt.Errorf("repositories: marcar desligamento vendedor: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("repositories: marcar desligamento vendedor rowsAffected: %w", err)
 	}
 	if n == 0 {
 		return ErrNotFound

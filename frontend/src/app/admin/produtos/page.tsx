@@ -77,44 +77,63 @@ function ProdutosPageContent() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingProduto, setEditingProduto] = useState<Produto | null>(null);
 
+  // Busca separada em requisicao pura + aplicacao do resultado no callback
+  // assincrono (.then): o efeito nunca chama setState de forma sincrona.
+  const buscarProdutos = () =>
+    apiListProdutos(
+      page,
+      limit,
+      {
+        categoria: categoriaFilter || undefined,
+        marca: marcaFilter || undefined,
+        ativo:
+          statusFilter === ""
+            ? undefined
+            : statusFilter === "ativo",
+        q: search.trim() || undefined,
+      },
+      sortKey,
+      sortDir
+    );
+
+  const aplicarProdutos = (res: Awaited<ReturnType<typeof apiListProdutos>>) => {
+    setProdutos(res.data);
+    setTotal(res.total);
+    setPages(res.pages);
+    setLoading(false);
+  };
+
+  const aplicarErroProdutos = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar produtos. O endpoint /api/produtos pode nao existir no backend.";
+    setError(message);
+    setProdutos([]);
+    setTotal(0);
+    setPages(0);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (handlers e timers).
   const loadProdutos = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await apiListProdutos(
-        page,
-        limit,
-        {
-          categoria: categoriaFilter || undefined,
-          marca: marcaFilter || undefined,
-          ativo:
-            statusFilter === ""
-              ? undefined
-              : statusFilter === "ativo",
-          q: search.trim() || undefined,
-        },
-        sortKey,
-        sortDir
-      );
-      setProdutos(res.data);
-      setTotal(res.total);
-      setPages(res.pages);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar produtos. O endpoint /api/produtos pode nao existir no backend.";
-      setError(message);
-      setProdutos([]);
-      setTotal(0);
-      setPages(0);
-    } finally {
-      setLoading(false);
-    }
+    await buscarProdutos().then(aplicarProdutos, aplicarErroProdutos);
   };
 
+  // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
+  // "ajustar estado quando a entrada muda") e o efeito so faz a busca.
+  const chaveLista = `${page}|${limit}|${sortKey}|${sortDir}`;
+  const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  if (chaveAnterior !== chaveLista) {
+    setChaveAnterior(chaveLista);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    loadProdutos();
+    buscarProdutos().then(aplicarProdutos, aplicarErroProdutos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 

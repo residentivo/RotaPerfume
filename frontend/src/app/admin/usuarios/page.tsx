@@ -78,37 +78,59 @@ function UsuariosPageContent() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
+  // Busca separada em requisicao pura + aplicacao do resultado no callback
+  // assincrono (.then): o efeito nunca chama setState de forma sincrona.
+  const buscarUsers = () => apiListUsers(page, limit, sortKey, sortDir);
+
+  const aplicarUsers = (res: Awaited<ReturnType<typeof apiListUsers>>) => {
+    setUsers(res.data);
+    setTotal(res.total);
+    setPages(res.pages);
+    setLoading(false);
+  };
+
+  const aplicarErroUsers = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar usuarios. O endpoint /api/usuarios pode nao existir no backend.";
+    setError(message);
+    setUsers([]);
+    setTotal(0);
+    setPages(0);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (apos criar/editar).
   const loadUsers = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await apiListUsers(page, limit, sortKey, sortDir);
-      setUsers(res.data);
-      setTotal(res.total);
-      setPages(res.pages);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar usuarios. O endpoint /api/usuarios pode nao existir no backend.";
-      setError(message);
-      setUsers([]);
-      setTotal(0);
-      setPages(0);
-    } finally {
-      setLoading(false);
-    }
+    await buscarUsers().then(aplicarUsers, aplicarErroUsers);
   };
 
+  // Reset para pagina 1 quando filtros mudam — ajustado durante o render
+  // (padrao "ajustar estado quando a entrada muda"), sem efeito.
+  const chaveFiltros = `${search}|${roleFilter}|${statusFilter}|${vendedorFilter}`;
+  const [filtrosAnteriores, setFiltrosAnteriores] = useState(chaveFiltros);
+  if (filtrosAnteriores !== chaveFiltros) {
+    setFiltrosAnteriores(chaveFiltros);
+    setPage(1);
+  }
+
+  // Paginacao/ordenacao mudou: liga o loading durante o render e o efeito
+  // so faz a busca.
+  const chaveLista = `${page}|${limit}|${sortKey}|${sortDir}`;
+  const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  if (chaveAnterior !== chaveLista) {
+    setChaveAnterior(chaveLista);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    loadUsers();
+    buscarUsers().then(aplicarUsers, aplicarErroUsers);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
-
-  // Reset para pagina 1 quando filtros mudam
-  useEffect(() => {
-    setPage(1);
-  }, [search, roleFilter, statusFilter, vendedorFilter]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {

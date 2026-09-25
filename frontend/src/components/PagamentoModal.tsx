@@ -13,6 +13,7 @@ import {
   PagamentoUpdateInput,
   Pedido,
 } from "@/lib/types";
+import { useResetOnOpen } from "@/lib/useResetOnOpen";
 
 const currencyFmt = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -85,37 +86,37 @@ export function PagamentoModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setSubmitting(false);
-      if (mode === "edit" && pagamento) {
-        setPedidoId(String(pagamento.pedido_id));
-        setFormaPagamento(pagamento.forma_pagamento);
-        setParcelas(String(pagamento.parcelas));
-        setValor(String(pagamento.valor));
-        setTaxaPct(String(pagamento.taxa_pct));
-        setValorLiquido(String(pagamento.valor_liquido));
-        setDataVencimento(pagamento.data_vencimento.slice(0, 10));
-        setDataPagamento(
-          pagamento.data_pagamento ? pagamento.data_pagamento.slice(0, 10) : ""
-        );
-        setStatusPagamento(pagamento.status_pagamento);
-      } else {
-        setPedidoId("");
-        setPedidoQuery("");
-        setPedidoOptions([]);
-        setFormaPagamento(FORMA_PAGAMENTO_OPTIONS[0].value);
-        setParcelas("1");
-        setValor("");
-        setTaxaPct("0");
-        setValorLiquido("");
-        setDataVencimento("");
-        setDataPagamento("");
-        setStatusPagamento(STATUS_PAGAMENTO_OPTIONS[0].value);
-      }
+  // Reseta o formulario ao abrir (ou quando as props mudam com o modal
+  // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  useResetOnOpen(open, [mode, pagamento], () => {
+    setError(null);
+    setSubmitting(false);
+    if (mode === "edit" && pagamento) {
+      setPedidoId(String(pagamento.pedido_id));
+      setFormaPagamento(pagamento.forma_pagamento);
+      setParcelas(String(pagamento.parcelas));
+      setValor(String(pagamento.valor));
+      setTaxaPct(String(pagamento.taxa_pct));
+      setValorLiquido(String(pagamento.valor_liquido));
+      setDataVencimento(pagamento.data_vencimento.slice(0, 10));
+      setDataPagamento(
+        pagamento.data_pagamento ? pagamento.data_pagamento.slice(0, 10) : ""
+      );
+      setStatusPagamento(pagamento.status_pagamento);
+    } else {
+      setPedidoId("");
+      setPedidoQuery("");
+      setPedidoOptions([]);
+      setFormaPagamento(FORMA_PAGAMENTO_OPTIONS[0].value);
+      setParcelas("1");
+      setValor("");
+      setTaxaPct("0");
+      setValorLiquido("");
+      setDataVencimento("");
+      setDataPagamento("");
+      setStatusPagamento(STATUS_PAGAMENTO_OPTIONS[0].value);
     }
-  }, [open, mode, pagamento]);
+  });
 
   // Busca a lista de pedidos para o select (create), com filtro por texto
   // (parametro `q`) e debounce ao digitar. Refaz a busca a cada mudanca de

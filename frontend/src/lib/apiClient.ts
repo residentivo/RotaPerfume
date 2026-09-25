@@ -349,6 +349,9 @@ export function forceLogout(message = "Sessão expirada"): void {
       method: "POST",
       credentials: "include",
     }).finally(() => {
+      // Intencional: modulo fora de componente (sem useRouter) e o logout precisa de
+      // recarga completa para descartar sessao em memoria, caches e estado do React.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = "/login";
     });
   }

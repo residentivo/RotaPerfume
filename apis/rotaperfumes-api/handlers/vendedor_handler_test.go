@@ -818,9 +818,14 @@ func TestDeleteVendedor_Success(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = COALESCE\(data_desligamento, \?\) WHERE id = \?`).
 		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
 	mock.ExpectQuery(vendedorGetColunasRegexH).
 		WithArgs(int64(1)).
 		WillReturnRows(vendedorGetRowsH(1, "João Vendedor", time.Now()))
@@ -850,9 +855,11 @@ func TestDeleteVendedor_NaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = COALESCE\(data_desligamento, \?\) WHERE id = \?`).
 		WithArgs(sqlmock.AnyArg(), int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/vendedores/999", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)

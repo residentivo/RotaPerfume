@@ -13,6 +13,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 )
 
@@ -154,6 +155,47 @@ func (h *ClienteHandler) GetCliente(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cliente, "")
 }
 
+// autorizarEscritaCliente aplica o escopo de carteira (SEC-01) às rotas que
+// alteram um cliente existente (Update/Toggle), ANTES de ler o body:
+//   - erro ao resolver escopo → 403 (vendedor desligado) ou 500;
+//   - usuário normal sem vendedor vinculado → 404 "cliente não encontrado";
+//   - usuário normal cujo vendedor não tem vínculo ativo com o cliente →
+//     404 "cliente não encontrado" (mesma mensagem do cliente inexistente,
+//     para não vazar a existência de clientes de outras carteiras);
+//   - admin → sem restrição.
+//
+// Devolve false quando a resposta de erro já foi escrita.
+//
+// Regra: os DTOs de Update/Toggle não têm vendedor_id. Se um dia ganharem,
+// o valor deve ser ignorado ou forçado a scope.VendedorID para usuário
+// normal (mesmo padrão de CreateOportunidade), nunca aceito do payload.
+func (h *ClienteHandler) autorizarEscritaCliente(w http.ResponseWriter, r *http.Request, handler string, clienteID int64) bool {
+	scope, err := resolverVendedorScope(r, h.db)
+	if err != nil {
+		responderErroEscopo(w, "[clientes] "+handler, err)
+		return false
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusNotFound, nil, "cliente não encontrado")
+		return false
+	}
+	if !scope.Restrito {
+		return true
+	}
+
+	pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, clienteID)
+	if err != nil {
+		log.Printf("[clientes] %s checar carteira: %v", handler, err)
+		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+		return false
+	}
+	if !pertence {
+		writeJSON(w, http.StatusNotFound, nil, "cliente não encontrado")
+		return false
+	}
+	return true
+}
+
 // ToggleAtivoClienteRequest body do PATCH /api/clientes/{id}/inativar.
 type ToggleAtivoClienteRequest struct {
 	Ativo *bool `json:"ativo"` // omitido = toggle
@@ -163,7 +205,8 @@ type ToggleAtivoClienteRequest struct {
 //
 // Body opcional: { "ativo": bool } — omitido = toggle
 // Response: {success, data: cliente atualizado, error}
-// Acesso comum.
+// Acesso comum: usuário role=normal só altera clientes da própria carteira
+// ativa (fora dela, ou sem vendedor vinculado → 404 "cliente não encontrado").
 func (h *ClienteHandler) ToggleAtivoCliente(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -171,8 +214,7 @@ func (h *ClienteHandler) ToggleAtivoCliente(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if _, err := resolverVendedorScope(r, h.db); err != nil {
-		responderErroEscopo(w, "[clientes] ToggleAtivoCliente", err)
+	if !h.autorizarEscritaCliente(w, r, "ToggleAtivoCliente", id) {
 		return
 	}
 
@@ -250,12 +292,20 @@ func clienteErroParaStatus(err error) (status int, msg string, ok bool) {
 // Body: { "cnpj": string, "razao_social": string, "segmento": string, "cidade": string, "uf": string, "bairro": string, "data_cadastro": "AAAA-MM-DD" (opcional, default hoje) }
 // cliente_id_origem é gerado automaticamente pelo sistema.
 // Retorna: 201 com o cliente criado.
-// Acesso comum.
+// Acesso comum. Usuário role=normal: sem vendedor vinculado → 403 "usuário
+// sem vendedor vinculado"; com vendedor, o cliente é criado já vinculado à
+// carteira desse vendedor (data_inicio = hoje), na mesma transação. Admin cria
+// só o cliente, sem carteira.
 func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
 	role, _ := middleware.GetRole(r.Context())
 
-	if _, err := resolverVendedorScope(r, h.db); err != nil {
+	scope, err := resolverVendedorScope(r, h.db)
+	if err != nil {
 		responderErroEscopo(w, "[clientes] CreateCliente", err)
+		return
+	}
+	if scope.SemAcesso() {
+		writeJSON(w, http.StatusForbidden, nil, "usuário sem vendedor vinculado")
 		return
 	}
 
@@ -275,7 +325,7 @@ func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
 		DataCadastro: req.DataCadastro,
 	}
 
-	cliente, err := h.svc.CreateCliente(r.Context(), h.db, input)
+	cliente, err := h.criarCliente(r, scope, input)
 	if err != nil {
 		if status, msg, ok := clienteErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
@@ -286,8 +336,23 @@ func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[clientes] criado: id=%d por usuario role=%s", cliente.ClienteIDOrigem, role)
+	if scope.Restrito {
+		log.Printf("[clientes] criado: id=%d por usuario role=%s vendedor_id=%d carteira_vinculada=true",
+			cliente.ClienteIDOrigem, role, scope.VendedorID)
+	} else {
+		log.Printf("[clientes] criado: id=%d por usuario role=%s", cliente.ClienteIDOrigem, role)
+	}
 	writeJSON(w, http.StatusCreated, cliente, "")
+}
+
+// criarCliente escolhe o fluxo de criação conforme o escopo: usuário normal
+// cria cliente + vínculo de carteira com o próprio vendedor numa única
+// transação (SEC-01); admin cria só o cliente, sem carteira.
+func (h *ClienteHandler) criarCliente(r *http.Request, scope vendedorScope, input services.ClienteInput) (*models.Cliente, error) {
+	if scope.Restrito {
+		return h.svc.CreateClienteNaCarteira(r.Context(), h.db, input, scope.VendedorID)
+	}
+	return h.svc.CreateCliente(r.Context(), h.db, input)
 }
 
 // UpdateCliente PUT /api/clientes/{id}
@@ -295,7 +360,8 @@ func (h *ClienteHandler) CreateCliente(w http.ResponseWriter, r *http.Request) {
 // Body: { "cnpj": string, "razao_social": string, "segmento": string, "cidade": string, "uf": string, "bairro": string, "data_cadastro": "AAAA-MM-DD" }
 // cliente_id_origem e ativo não são editáveis por esta rota.
 // Retorna: 200 com o cliente atualizado, 404 se não existir, 400 se o payload for inválido.
-// Acesso comum.
+// Acesso comum: usuário role=normal só edita clientes da própria carteira
+// ativa (fora dela, ou sem vendedor vinculado → 404 "cliente não encontrado").
 func (h *ClienteHandler) UpdateCliente(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -303,8 +369,7 @@ func (h *ClienteHandler) UpdateCliente(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := resolverVendedorScope(r, h.db); err != nil {
-		responderErroEscopo(w, "[clientes] UpdateCliente", err)
+	if !h.autorizarEscritaCliente(w, r, "UpdateCliente", id) {
 		return
 	}
 

@@ -144,7 +144,8 @@ func (r *CarteiraRepository) ReativarVinculo(ctx context.Context, db *sql.DB, id
 
 // Create insere um novo vínculo de carteira e preenche c.CarteiraIDOrigem
 // com o id gerado nativamente pelo AUTO_INCREMENT do MySQL.
-func (r *CarteiraRepository) Create(ctx context.Context, db *sql.DB, c *models.Carteira) error {
+// Aceita *sql.DB ou *sql.Tx (ver Execer).
+func (r *CarteiraRepository) Create(ctx context.Context, db Execer, c *models.Carteira) error {
 	const q = `
 		INSERT INTO carteiras (cliente_id, vendedor_id, data_inicio, data_fim)
 		VALUES (?, ?, ?, ?)`

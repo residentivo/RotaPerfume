@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/tz"
 )
 
 // comLocal troca time.Local durante o teste e restaura ao final.
@@ -303,23 +304,18 @@ func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 // 2018-11-04 00:00 não existe no fuso e o Go normaliza para
 // 2018-11-03 23:00 -03 — o dia de calendário recua 1 dia.
 //
-// RISCO RESIDUAL (reportado ao 🔵 SubBrain, não corrigido aqui): só ocorre
-// quando time.Local carrega regras históricas de DST (ex.: Linux/Docker com
-// TZ=America/Sao_Paulo). No Windows, time.Local é montado só com as regras
-// atuais (sem DST no Brasil desde 2019) e o problema não se manifesta.
-// O teste é pulado (com a explicação) enquanto o comportamento persistir;
-// quando o código tratar o caso, ele passa a validar a data preservada.
+// CORRIGIDO (RISCO-01): o processo não usa mais o fuso do SO. O pacote
+// shared/tz (importado em branco por shared/config, que este pacote importa)
+// fixa time.Local em -03:00 sem horário de verão, em qualquer SO/container.
+// O teste valida que o time.Local vigente no pacote é o fuso fixo e que,
+// nele, as datas de antigo início de DST são preservadas.
 func TestBUG01_HorarioDeVeraoHistorico(t *testing.T) {
-	sp, err := time.LoadLocation("America/Sao_Paulo")
-	require.NoError(t, err)
-	comLocal(t, sp)
+	require.Same(t, tz.Local, time.Local, "time.Local deve ser o fuso fixo de shared/tz")
+	comLocal(t, tz.Local)
 
 	for _, p := range parsersDeData() {
 		t.Run(p.nome, func(t *testing.T) {
 			got := p.parse(t, "2018-11-04")
-			if got.Format("2006-01-02") == "2018-11-03" {
-				t.Skipf("risco conhecido BUG-01b: início de DST à meia-noite desloca a data (%s)", got)
-			}
 			y, m, d := got.In(time.Local).Date()
 			assert.Equal(t, 2018, y)
 			assert.Equal(t, time.November, m)

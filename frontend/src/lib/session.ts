@@ -20,16 +20,16 @@ interface SessionState {
   user: MeResponse | null;
   /**
    * true quando alguma rota da carteira respondeu o 403 de vendedor
-   * desligado. So e limpo por uma revalidacao "normal" (montagem/foco) em
-   * que /me devolva explicitamente vendedor_desligado:false — nunca pela
-   * rebusca disparada pelo proprio 403, para nao gerar loop de requisicoes.
+   * desligado. So e limpo por uma revalidacao "normal" (montagem/foco),
+   * iniciada depois do ultimo 403, em que /me devolva explicitamente
+   * vendedor_desligado:false — nunca pela rebusca disparada pelo proprio 403
+   * (evita loop de requisicoes). O logout (clearSession) tambem limpa.
    */
   bloqueado403: boolean;
 }
 
 let state: SessionState = { user: null, bloqueado403: false };
 const listeners = new Set<() => void>();
-let inflight: Promise<MeResponse> | null = null;
 
 function setState(next: Partial<SessionState>): void {
   state = { ...state, ...next };
@@ -58,29 +58,93 @@ export function getSessionUser(): MeResponse | null {
 }
 
 /**
+ * Relogio logico da sessao. Cada 403 de vendedor desligado e cada /me
+ * iniciado recebem um numero crescente. Invariante (SecBrain, FE-01):
+ * `bloqueado403` so e limpo pela resposta de um /me NORMAL que foi INICIADO
+ * depois do ultimo 403 (`seq > seqBloqueio`) e que traz
+ * `vendedor_desligado === false` explicito. Cache do localStorage,
+ * `undefined` ou erro de rede nunca limpam o bloqueio.
+ */
+let seqCounter = 0;
+let seqBloqueio = 0;
+
+interface Inflight {
+  promise: Promise<MeResponse>;
+  origem403: boolean;
+  /** seq do /me; null enquanto a chamada encadeada ainda nao comecou. */
+  seq: number | null;
+}
+let inflight: Inflight | null = null;
+
+function runMe(entry: Inflight): Promise<MeResponse> {
+  const mySeq = ++seqCounter;
+  entry.seq = mySeq;
+  return apiMe().then((user) => {
+    saveUser(user);
+    const next: Partial<SessionState> = { user };
+    if (
+      !entry.origem403 &&
+      mySeq > seqBloqueio &&
+      user.vendedor_desligado === false
+    ) {
+      next.bloqueado403 = false;
+    }
+    setState(next);
+    return user;
+  });
+}
+
+function track(entry: Inflight, promise: Promise<MeResponse>): Promise<MeResponse> {
+  entry.promise = promise.finally(() => {
+    if (inflight === entry) inflight = null;
+  });
+  inflight = entry;
+  return entry.promise;
+}
+
+/**
  * Busca /api/auth/me e atualiza a sessao em memoria + o cache (whitelist) do
- * localStorage. Chamadas concorrentes compartilham a mesma requisicao.
- * Erros sao propagados ao chamador (ex.: ProtectedRoute decide o logout).
+ * localStorage. Erros sao propagados ao chamador (ex.: ProtectedRoute decide
+ * o logout).
+ *
+ * Compartilhamento de requisicoes concorrentes:
+ * - chamada de origem 403 reaproveita qualquer /me em voo (so rebusca dados,
+ *   nunca limpa o bloqueio);
+ * - chamada normal reaproveita um /me normal em voo apenas se ele ja foi
+ *   iniciado depois do ultimo 403 (ou ainda vai iniciar). Se o /me em voo e
+ *   de origem 403, ou foi iniciado antes do ultimo 403, encadeia um /me novo
+ *   depois dele — assim a revalidacao normal nunca e "engolida" por uma
+ *   resposta que nao pode limpar o bloqueio.
  */
 export function refreshSessionUser(
   opts: { origem403?: boolean } = {}
 ): Promise<MeResponse> {
-  if (!inflight) {
-    inflight = apiMe()
-      .then((user) => {
-        saveUser(user);
-        const next: Partial<SessionState> = { user };
-        if (!opts.origem403 && user.vendedor_desligado === false) {
-          next.bloqueado403 = false;
-        }
-        setState(next);
-        return user;
-      })
-      .finally(() => {
-        inflight = null;
-      });
+  const origem403 = opts.origem403 === true;
+  const atual = inflight;
+
+  if (atual) {
+    if (origem403) return atual.promise;
+    const podeReaproveitar =
+      !atual.origem403 && (atual.seq === null || atual.seq > seqBloqueio);
+    if (podeReaproveitar) return atual.promise;
+
+    const encadeada: Inflight = {
+      promise: undefined as unknown as Promise<MeResponse>,
+      origem403: false,
+      seq: null,
+    };
+    return track(
+      encadeada,
+      atual.promise.catch(() => undefined).then(() => runMe(encadeada))
+    );
   }
-  return inflight;
+
+  const entry: Inflight = {
+    promise: undefined as unknown as Promise<MeResponse>,
+    origem403,
+    seq: null,
+  };
+  return track(entry, runMe(entry));
 }
 
 export function clearSession(): void {
@@ -88,9 +152,11 @@ export function clearSession(): void {
 }
 
 // 403 "acesso bloqueado: vendedor desligado" recebido em qualquer rota:
-// marca o bloqueio e rebusca /me (sem refresh de token nem logout).
+// marca o bloqueio (gravando seqBloqueio) e rebusca /me (sem refresh de
+// token nem logout).
 if (typeof window !== "undefined") {
   subscribeVendedorDesligado(() => {
+    seqBloqueio = ++seqCounter;
     if (!state.bloqueado403) setState({ bloqueado403: true });
     refreshSessionUser({ origem403: true }).catch(() => {
       // Falha ao rebuscar /me nao muda o bloqueio ja detectado.

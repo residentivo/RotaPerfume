@@ -10,6 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	// Fixa time.Local em -03:00 (sem horário de verão) antes de qualquer
+	// sql.Open — ver pacote tz (RISCO-01). Todo binário que usa config.DSN()
+	// herda o fuso por este import.
+	_ "github.com/rotaperfumes/shared/tz"
 )
 
 // Config agrega todas as configurações da aplicação.
@@ -133,9 +138,24 @@ func parseAllowedOrigins(raw string) []string {
 
 // DSN monta a connection string para o driver go-sql-driver/mysql.
 // Inclui parseTime=true para que colunas TIMESTAMP sejam tipadas como time.Time.
+//
+// loc=Local: time.Local é fixado em -03:00 pelo pacote tz (import em branco
+// acima). Não adicionar time_zone ao DSN.
+//
+// clientFoundRows=true (BUG-04): RowsAffected passa a contar as linhas
+// ENCONTRADAS pelo WHERE, não só as alteradas. Assim, um UPDATE que não muda
+// nenhum valor devolve 1 (sucesso) em vez de 0 (que os repositórios traduzem
+// para ErrNotFound/404).
+//
+// REGRA DO PROJETO: operações do tipo "só se ainda não usado/revogado/
+// desligado" DEVEM colocar a condição no WHERE (ex.: "... WHERE id = ? AND
+// revogado_em IS NULL") ou usar COALESCE no SET. Nunca deduzir "não mudou"
+// a partir de RowsAffected=0 — com clientFoundRows=true isso não acontece
+// mais quando a linha existe. Manter este DSN idêntico ao de
+// cmd/resetpassword.
 func (c *Config) DSN() string {
 	return fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local",
+		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true",
 		c.DBUsuario, c.DBSenha, c.DBHost, c.DBPort, c.DBName,
 	)
 }

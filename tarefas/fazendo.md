@@ -2,7 +2,11 @@
 
 > **Lote 1 (2026-09-24):** o 🤍 MegaBrain executou os 10 cards que vieram de `afazer.md`. 8 foram concluídos e movidos para `feito.md`. Os cards BUG-02, "Teste manual/e2e do `PedidoModal`" e "Teste manual do Dashboard" aguardam a validação do usuário no navegador.
 >
-> **Lote 2 (2026-09-24):** o 🤍 MegaBrain executou os 6 cards que estavam em `afazer.md`. **BUG-01** e **Tooling do frontend** foram concluídos e movidos para `feito.md`. Os 4 cards abaixo (UI-01, UI-02, Segurança do vendedor desligado e UX do `id_vendedor`) foram implementados e cobertos por testes automatizados e aguardam a validação do usuário no navegador, pelos roteiros indicados em cada card. As decisões do usuário de 2026-09-24 sobre UI-02 e sobre o vendedor desligado estão registradas nos respectivos cards. Os follow-ups do lote (SEC-01, BUG-04, RISCO-01, FE-01, FE-02 e FE-03) estão em `afazer.md`, aguardando priorização.
+> **Lote 2 (2026-09-24):** o 🤍 MegaBrain executou os 6 cards que estavam em `afazer.md`. **BUG-01** e **Tooling do frontend** foram concluídos e movidos para `feito.md`. Os 4 cards abaixo (UI-01, UI-02, Segurança do vendedor desligado e UX do `id_vendedor`) foram implementados e cobertos por testes automatizados e aguardam a validação do usuário no navegador, pelos roteiros indicados em cada card. As decisões do usuário de 2026-09-24 sobre UI-02 e sobre o vendedor desligado estão registradas nos respectivos cards. Os follow-ups do lote (SEC-01, BUG-04, RISCO-01, FE-01, FE-02 e FE-03) viraram o Lote 3.
+>
+> **BUG-05 (2026-09-24):** relato do usuário (inativar vendedor deve inativar o usuário vinculado). Em execução pelo 🟡 BackBrain.
+>
+> **Lote 3 de 2026-09-24:** a pedido do usuário, o 🤍 MegaBrain executou os 6 cards que estavam em `afazer.md`. **BUG-04**, **RISCO-01**, **FE-01** e **FE-02** foram concluídos e movidos para `feito.md`. **SEC-01** e **FE-03** foram implementados e cobertos por testes automatizados e aguardam a validação do usuário no navegador (roteiros `docs/roteiro-teste-manual-clientes.md` e `docs/roteiro-smoke-pos-fe03.md`). Os cards estão no fim do arquivo. Os follow-ups do lote (SEC-02, SEC-03, NEG-01, BUG-06, FE-04 e FE-05) estão em `afazer.md`, aguardando priorização.
 
 ---
 
@@ -171,6 +175,7 @@ Registrar evidências e abrir bugs, se houver.
   - Roteiro manual `docs/roteiro-teste-manual-vendedor-desligado.md`.
 - **🔵 SubBrain:** Postman atualizado (`postman/collection.json` e `postman/README.md`). Cada pasta da carteira ganhou uma nota e exemplos `403`, e o `/me` ganhou `vendedor_desligado`.
 - **Follow-ups:** **FE-01** (corrida em `refreshSessionUser`) em `afazer.md`. O card **SEC-01** (IDOR em clientes) foi aberto durante a definição do contrato.
+- **Observação (2026-09-24, BUG-05):** por decisão do 🤍 MegaBrain, inativar o vendedor passa a inativar também os usuários vinculados (`ativo = 0`). Com isso, o login do usuário de vendedor desligado **deixa de ficar acessível**, o que altera a premissa deste card ("Login e Dashboard continuam acessíveis"). Ver card **BUG-05** abaixo.
 
 **Ação esperada (original):**
 - 🤍 MegaBrain / 🔵 SubBrain levar a decisão ao usuário: bloquear também as escritas (e talvez as leituras) do vendedor desligado, ou manter como está. *(Concluído: bloquear leitura e escrita.)*
@@ -191,3 +196,91 @@ Registrar evidências e abrir bugs, se houver.
 **Descrição:** O frontend guarda `id_vendedor` no `localStorage` no login. Se o admin mudar o vínculo usuário → vendedor, as telas `PedidoModal`, Oportunidades e Visitas continuam travando o vendedor antigo até um novo login. Não há vazamento de dados: o backend é a fonte da verdade e aplica o vendedor correto. É só um problema de experiência.
 
 **Ação esperada:** 🟢 FrontBrain avaliar atualizar os dados do usuário via `GET /api/auth/me` (que já devolve `id_vendedor`) ao carregar a aplicação ou ao abrir esses formulários, em vez de confiar só no `localStorage`. 🔴 TestBrain incluir o cenário no roteiro manual.
+
+---
+
+## BUG-05: inativar vendedor não inativa o usuário vinculado — prioridade ALTA
+
+**Início:** 2026-09-24
+**Passo atual:** 🟡 BackBrain implementando.
+
+**Camada:** Backend
+**Origem:** relato do usuário, 2026-09-24.
+
+**Descrição:** Ao inativar um vendedor (`DeleteVendedor` em `apis/rotaperfumes-api/services/vendedor_service.go`), só `vendedores.data_desligamento` é gravado. O usuário vinculado continua com `ativo = 1` e consegue fazer login. A regra pedida pelo usuário é inativar também o usuário vinculado.
+
+**Decisão do 🤍 MegaBrain (2026-09-24):**
+- Inativar os usuários vinculados na mesma operação (atômica).
+- Reativar o vendedor **não** reativa os usuários automaticamente. A reativação é manual, na tela de usuários.
+- Isso altera o comportamento do card "Segurança: vendedor desligado", em que o login do usuário continuava acessível. A observação foi registrada no "Andamento" daquele card.
+
+**Ação esperada:**
+- 🟡 BackBrain implementa e cobre com testes.
+- 🔵 SubBrain atualiza a documentação e o Postman se a resposta da API mudar.
+
+---
+
+## SEC-01: IDOR em Create/Update/Toggle de clientes — prioridade ALTA
+
+**Início:** 2026-09-24 (Lote 3)
+**Passo atual:** Implementado e coberto por testes automatizados; aguardando o usuário validar no navegador pelo roteiro `docs/roteiro-teste-manual-clientes.md`.
+
+**Andamento (2026-09-24):**
+- **🟣 SecBrain:** contrato para o usuário `normal`:
+  - `PUT /api/clientes/{id}` e `PATCH /api/clientes/{id}/inativar`: fora da carteira ativa, ou sem vendedor → `404` "cliente não encontrado"; falha ao checar a carteira → `500`; vendedor desligado → `403`, como antes.
+  - `POST /api/clientes`: sem vendedor → `403` "usuário sem vendedor vinculado"; com vendedor → `201`, com o cliente vinculado automaticamente à carteira do vendedor.
+  - Admin: sem mudança.
+- **🟡 BackBrain:** `apis/rotaperfumes-api/handlers/cliente_handler.go`:
+  - Novo helper `autorizarEscritaCliente`, checado antes de ler o body.
+  - `ClienteService.CreateClienteNaCarteira`: cria o cliente e o vínculo de carteira numa única transação.
+- **🟢 FrontBrain:** na tela de clientes, o botão fica desabilitado quando não há permissão, os erros 403 e 404 são tratados e a lista é recarregada.
+- **🔴 TestBrain:**
+  - `apis/rotaperfumes-api/handlers/cliente_sec01_cobertura_test.go`
+  - integração HTTP em `handlers/sec01_bug04_risco01_http_integration_test.go`
+  - `apis/rotaperfumes-api/services/cliente_na_carteira_test.go`
+  - `frontend/src/app/admin/clientes/page.test.tsx`
+  - roteiro `docs/roteiro-teste-manual-clientes.md`
+- **🔵 SubBrain:** Postman atualizado. Na pasta Clientes:
+  - Todos os itens foram renomeados para "acesso comum, escopo por carteira".
+  - Os exemplos `403` "não é admin", que não valiam mais, foram trocados pelos 404/403 do contrato.
+  - Os testes que verificavam `id` agora verificam `cliente_id_origem`.
+  - O README tem a tabela do contrato.
+
+**Camada:** Backend
+**Origem:** 🟣 SecBrain, 2026-09-24, durante a definição do contrato de bloqueio do vendedor desligado.
+
+**Descrição:** Em `apis/rotaperfumes-api/handlers/cliente_handler.go`, três handlers não chamam `resolverVendedorScope`:
+- `CreateCliente` (~l.251)
+- `UpdateCliente` (~l.291)
+- `ToggleAtivoCliente` (~l.169)
+
+Com isso, qualquer usuário `normal` consegue editar ou inativar **qualquer** cliente pelo id. O lote atual só adiciona nesses handlers o bloqueio do vendedor desligado.
+
+**Ação esperada:**
+- 🟡 BackBrain restringir Update e Toggle à carteira ativa via `clienteNaCarteiraDoVendedor`, respondendo `404` "cliente não encontrado" para clientes fora da carteira. Definir também a regra do Create para o usuário `normal`.
+- 🔴 TestBrain cobrir com testes.
+- 🔵 SubBrain atualizar o Postman.
+
+---
+
+## FE-03: 34 warnings `react-hooks/set-state-in-effect` — prioridade BAIXA
+
+**Início:** 2026-09-24 (Lote 3)
+**Passo atual:** Implementado e coberto por testes automatizados; aguardando o usuário validar no navegador pelo roteiro `docs/roteiro-smoke-pos-fe03.md`.
+
+**Andamento (2026-09-24):**
+- **🟢 FrontBrain:**
+  - `npm run lint` agora dá **0 erros e 0 warnings**, e a regra `react-hooks/set-state-in-effect` voltou para `error`.
+  - Novo hook `frontend/src/lib/useResetOnOpen.ts`.
+  - 9 páginas e 9 modais refatorados para tirar o `setState` de dentro de `useEffect`.
+- **🔴 TestBrain:**
+  - Suíte com **604 testes passando**, mais 18 `it.fails` que documentam o bug **FE-04** (em `afazer.md`).
+  - Cobertura de **87% das linhas**.
+  - Roteiro de smoke `docs/roteiro-smoke-pos-fe03.md`.
+
+**Camada:** Frontend
+**Origem:** 2026-09-24, card "Tooling frontend" (em `feito.md`).
+
+**Descrição:** O ESLint configurado neste lote aponta 34 warnings `react-hooks/set-state-in-effect`. Por enquanto, a regra está como `warn`.
+
+**Ação esperada:** 🟢 FrontBrain fazer um refactor dedicado para eliminar o `setState` dentro de `useEffect` e voltar a regra para `error`. 🔴 TestBrain garantir que os testes continuam verdes.

@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { User, UserRole, Vendedor } from "@/lib/types";
+import { useResetOnOpen } from "@/lib/useResetOnOpen";
 import { apiListVendedores } from "@/lib/api";
 
 interface UserModalProps {
@@ -45,33 +46,38 @@ export function UserModal({
   const [vendedoresError, setVendedoresError] = useState<string | null>(null);
   const [loadingVendedores, setLoadingVendedores] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setSubmitting(false);
-      if (mode === "edit" && user) {
-        setNome(user.nome);
-        setEmail(user.email);
-        setRole(user.role);
-        setIdVendedor(
-          user.id_vendedor !== null && user.id_vendedor !== undefined
-            ? String(user.id_vendedor)
-            : ""
-        );
-      } else {
-        setNome("");
-        setEmail("");
-        setRole("normal");
-        setIdVendedor("");
-      }
+  // Reseta o formulario ao abrir (ou quando as props mudam com o modal
+  // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  useResetOnOpen(open, [mode, user], () => {
+    setError(null);
+    setSubmitting(false);
+    if (mode === "edit" && user) {
+      setNome(user.nome);
+      setEmail(user.email);
+      setRole(user.role);
+      setIdVendedor(
+        user.id_vendedor !== null && user.id_vendedor !== undefined
+          ? String(user.id_vendedor)
+          : ""
+      );
+    } else {
+      setNome("");
+      setEmail("");
+      setRole("normal");
+      setIdVendedor("");
     }
-  }, [open, mode, user]);
+  });
+
+  // Parte sincrona (liga o loading / limpa o erro) roda durante o render
+  // ao abrir; o efeito so busca e aplica o resultado nos callbacks.
+  useResetOnOpen(open, [], () => {
+    setLoadingVendedores(true);
+    setVendedoresError(null);
+  });
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLoadingVendedores(true);
-    setVendedoresError(null);
     apiListVendedores()
       .then((data) => {
         if (!cancelled) setVendedores(data);

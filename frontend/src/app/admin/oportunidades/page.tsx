@@ -210,54 +210,75 @@ function OportunidadesContent() {
     [clientes]
   );
 
-  const loadOportunidades = async () => {
-    // Vendedor sem carteira vinculada (id_vendedor null): não há dados a
-    // buscar, mantém a lista vazia sem chamar a API.
-    if (semCarteira) {
-      setLoading(false);
-      setError(null);
-      setOportunidades([]);
-      setTotal(0);
-      setPages(0);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiListOportunidades(
-        page,
-        limit,
-        {
-          vendedor_id: filtroVendedor ? Number(filtroVendedor) : undefined,
-          cliente_id: clienteFilter ? Number(clienteFilter) : undefined,
-          etapa: etapaFilter || undefined,
-          origem: origemFilter || undefined,
-          data_abertura_de: dataAberturaDe || undefined,
-          data_abertura_ate: dataAberturaAte || undefined,
-          q: search.trim() || undefined,
-        },
-        ORDER_BY_MAP[sortKey],
-        sortDir
-      );
-      setOportunidades(res.data);
-      setTotal(res.total);
-      setPages(res.pages);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar oportunidades. O endpoint /api/oportunidades pode nao existir no backend.";
-      setError(message);
-      setOportunidades([]);
-      setTotal(0);
-      setPages(0);
-    } finally {
-      setLoading(false);
-    }
+  // Busca separada em requisicao pura + aplicacao do resultado no callback
+  // assincrono (.then): o efeito nunca chama setState de forma sincrona.
+  // Vendedor sem carteira vinculada (id_vendedor null): não há dados a
+  // buscar, resolve uma lista vazia sem chamar a API.
+  const buscarOportunidades = (): Promise<{
+    data: Oportunidade[];
+    total: number;
+    pages: number;
+  }> => {
+    if (semCarteira) return Promise.resolve({ data: [], total: 0, pages: 0 });
+    return apiListOportunidades(
+      page,
+      limit,
+      {
+        vendedor_id: filtroVendedor ? Number(filtroVendedor) : undefined,
+        cliente_id: clienteFilter ? Number(clienteFilter) : undefined,
+        etapa: etapaFilter || undefined,
+        origem: origemFilter || undefined,
+        data_abertura_de: dataAberturaDe || undefined,
+        data_abertura_ate: dataAberturaAte || undefined,
+        q: search.trim() || undefined,
+      },
+      ORDER_BY_MAP[sortKey],
+      sortDir
+    );
   };
 
+  const aplicarOportunidades = (res: {
+    data: Oportunidade[];
+    total: number;
+    pages: number;
+  }) => {
+    setOportunidades(res.data);
+    setTotal(res.total);
+    setPages(res.pages);
+    setLoading(false);
+  };
+
+  const aplicarErroOportunidades = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar oportunidades. O endpoint /api/oportunidades pode nao existir no backend.";
+    setError(message);
+    setOportunidades([]);
+    setTotal(0);
+    setPages(0);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (handlers e timers).
+  const loadOportunidades = async () => {
+    setLoading(true);
+    setError(null);
+    await buscarOportunidades().then(aplicarOportunidades, aplicarErroOportunidades);
+  };
+
+  // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
+  // "ajustar estado quando a entrada muda") e o efeito so faz a busca.
+  const chaveLista = `${page}|${limit}|${sortKey}|${sortDir}`;
+  const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  if (chaveAnterior !== chaveLista) {
+    setChaveAnterior(chaveLista);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    loadOportunidades();
+    buscarOportunidades().then(aplicarOportunidades, aplicarErroOportunidades);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 

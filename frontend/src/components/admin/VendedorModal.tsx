@@ -14,6 +14,7 @@ import {
   apiDesvincularCliente,
 } from "@/lib/api";
 import { Cliente, ClienteResumo, VendedorCompleto, VendedorDetalhe, VendedorInput } from "@/lib/types";
+import { useAjustarAoMudar, useResetOnOpen } from "@/lib/useResetOnOpen";
 
 interface VendedorModalProps {
   open: boolean;
@@ -143,37 +144,44 @@ export function VendedorModal({
   const [removendoId, setRemovendoId] = useState<number | null>(null);
   const [removerError, setRemoverError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setSubmitting(false);
-      if (mode === "edit" && vendedor) {
-        setNome(vendedor.nome);
-        setRegiao(vendedor.regiao);
-        setUf(vendedor.uf);
-        setDataAdmissao(
-          vendedor.data_admissao ? vendedor.data_admissao.slice(0, 10) : todayISO()
-        );
-        setMetaMensal(String(vendedor.meta_mensal ?? 0));
-      } else {
-        setNome("");
-        setRegiao("");
-        setUf("");
-        setDataAdmissao(todayISO());
-        setMetaMensal("0");
-      }
+  // Reseta o formulario ao abrir (ou quando as props mudam com o modal
+  // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  useResetOnOpen(open, [mode, vendedor], () => {
+    setError(null);
+    setSubmitting(false);
+    if (mode === "edit" && vendedor) {
+      setNome(vendedor.nome);
+      setRegiao(vendedor.regiao);
+      setUf(vendedor.uf);
+      setDataAdmissao(
+        vendedor.data_admissao ? vendedor.data_admissao.slice(0, 10) : todayISO()
+      );
+      setMetaMensal(String(vendedor.meta_mensal ?? 0));
+    } else {
+      setNome("");
+      setRegiao("");
+      setUf("");
+      setDataAdmissao(todayISO());
+      setMetaMensal("0");
     }
-  }, [open, mode, vendedor]);
+  });
 
-  useEffect(() => {
+  // Detalhe (clientes vinculados): a parte sincrona roda durante o render
+  // quando open/mode/vendedor mudam (useAjustarAoMudar); o efeito so busca
+  // e aplica o resultado nos callbacks assincronos.
+  useAjustarAoMudar([open, mode, vendedor], () => {
+    setDetalheError(null);
     if (!open || mode !== "edit" || !vendedor) {
       setDetalhe(null);
-      setDetalheError(null);
+      setLoadingDetalhe(false);
       return;
     }
-    let cancelled = false;
     setLoadingDetalhe(true);
-    setDetalheError(null);
+  });
+
+  useEffect(() => {
+    if (!open || mode !== "edit" || !vendedor) return;
+    let cancelled = false;
     apiGetVendedor(vendedor.id)
       .then((res) => {
         // O backend pode retornar `clientes: null` em JSON quando o vendedor
@@ -202,21 +210,24 @@ export function VendedorModal({
   // Carrega clientes ativos para popular o combobox de vinculo (mesmo padrao
   // do PedidoModal, via GET /api/clientes). Reseta os estados auxiliares
   // toda vez que o modal abre.
-  useEffect(() => {
-    if (!open || mode !== "edit" || !vendedor) {
-      setTodosClientes([]);
-      setClienteSelecionado("");
-      setClientesError(null);
-      setVincularError(null);
-      setRemoverError(null);
-      return;
-    }
-    let cancelled = false;
+  // Parte sincrona (reset dos estados auxiliares) roda durante o render
+  // quando open/mode/vendedor mudam; o efeito so busca.
+  useAjustarAoMudar([open, mode, vendedor], () => {
     setClienteSelecionado("");
+    setClientesError(null);
     setVincularError(null);
     setRemoverError(null);
+    if (!open || mode !== "edit" || !vendedor) {
+      setTodosClientes([]);
+      setLoadingClientes(false);
+      return;
+    }
     setLoadingClientes(true);
-    setClientesError(null);
+  });
+
+  useEffect(() => {
+    if (!open || mode !== "edit" || !vendedor) return;
+    let cancelled = false;
     apiListClientes(1, 100, { ativo: true })
       .then((res) => {
         if (!cancelled) setTodosClientes(res.data);

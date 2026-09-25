@@ -380,3 +380,165 @@ describe("PedidoModal - outros perfis", () => {
     ).toBeInTheDocument();
   });
 });
+
+// ─── FE-03: reset ao abrir e cascata vendedor -> cliente ─────────────────────
+
+describe("PedidoModal - FE-03 (reset ao abrir e cascata)", () => {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const pedidoEdit = {
+    pedido_id_origem: 5,
+    cliente_id: 301,
+    cliente_nome: "Cliente 301",
+    vendedor_id: 3,
+    data_pedido: "2026-09-01T00:00:00Z",
+    canal: "WhatsApp",
+    status: "Faturado",
+    valor_total: 20,
+    itens: [
+      { item_id_origem: 1, produto_id: 50, quantidade: 2, preco_praticado: 10, desconto_pct: 5 },
+    ],
+  } as unknown as PedidoDetalhe;
+
+  function deferred<T>() {
+    let resolve: (v: T) => void = () => {};
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  function montarControlado(props: Partial<Parameters<typeof PedidoModal>[0]> = {}) {
+    const base = {
+      open: true,
+      mode: "create" as "create" | "edit",
+      pedido: null as PedidoDetalhe | null,
+      onClose: vi.fn(),
+      onSubmit: vi.fn().mockResolvedValue(undefined),
+      ...props,
+    };
+    const r = render(<PedidoModal {...base} />);
+    return {
+      set: (p: Partial<typeof base>) => {
+        Object.assign(base, p);
+        r.rerender(<PedidoModal {...base} />);
+      },
+    };
+  }
+
+  function v(label: string): string {
+    return (screen.getByLabelText(label) as HTMLInputElement).value;
+  }
+
+  async function comoAdmin() {
+    api.apiMe.mockResolvedValue(me({ role: "admin", id_vendedor: null }));
+    await refreshSessionUser();
+  }
+
+  it("admin: editar abre preenchido (cabecalho, itens e cliente original)", async () => {
+    await comoAdmin();
+    api.apiListClientesDoVendedor.mockResolvedValue([cliente(302)]);
+    montarControlado({ mode: "edit", pedido: pedidoEdit });
+
+    expect(screen.getByText("Editar Pedido")).toBeInTheDocument();
+    expect(v("Data do pedido")).toBe("2026-09-01");
+    expect(v("Canal")).toBe("WhatsApp");
+    expect(v("Status")).toBe("Faturado");
+    expect(v("Qtd")).toBe("2");
+    expect(v("Preco")).toBe("10");
+    expect(v("Desc. %")).toBe("5");
+    await waitFor(() => expect(vendedorSelect().value).toBe("3"));
+    // Cliente fora da carteira atual continua selecionado na edicao.
+    expect(
+      await screen.findByRole("option", { name: "#301 - Cliente 301 (fora da carteira)" })
+    ).toBeInTheDocument();
+    expect(v("Cliente")).toBe("301");
+  });
+
+  it("admin: editar -> fechar -> novo abre resetado", async () => {
+    await comoAdmin();
+    const m = montarControlado({ mode: "edit", pedido: pedidoEdit });
+    await waitFor(() => expect(vendedorSelect().value).toBe("3"));
+    m.set({ open: false });
+    m.set({ open: true, mode: "create", pedido: null });
+
+    expect(screen.getByText("Novo Pedido")).toBeInTheDocument();
+    expect(vendedorSelect().value).toBe("");
+    expect(v("Cliente")).toBe("");
+    expect(v("Data do pedido")).toBe(hoje);
+    expect(v("Canal")).toBe("App");
+    expect(v("Status")).toBe("Em separação");
+    expect(screen.getAllByLabelText("Produto")).toHaveLength(1);
+    expect(v("Qtd")).toBe("1");
+  });
+
+  it("normal: novo sujo -> fechar -> reabrir volta resetado e com o vendedor travado", async () => {
+    api.apiMe.mockResolvedValue(me({ id_vendedor: 7 }));
+    await refreshSessionUser();
+    const m = montarControlado();
+    await screen.findByRole("option", { name: "#700 - Cliente 700" });
+    await userEvent.selectOptions(screen.getByLabelText("Cliente"), "700");
+    await userEvent.click(screen.getByRole("button", { name: "+ Adicionar item" }));
+    expect(screen.getAllByLabelText("Produto")).toHaveLength(2);
+
+    m.set({ open: false });
+    m.set({ open: true });
+    expect(screen.getAllByLabelText("Produto")).toHaveLength(1);
+    expect(vendedorSelect().value).toBe("7");
+    await screen.findByRole("option", { name: "#700 - Cliente 700" });
+    expect(v("Cliente")).toBe("");
+  });
+
+  it("admin: limpar o vendedor com a busca de clientes em voo nao deixa o loading travado", async () => {
+    await comoAdmin();
+    montarControlado();
+    await waitFor(() => expect(vendedorSelect()).toBeEnabled());
+    const d = deferred<ClienteResumo[]>();
+    api.apiListClientesDoVendedor.mockReturnValueOnce(d.promise);
+
+    await userEvent.selectOptions(vendedorSelect(), "9");
+    expect(screen.getByRole("option", { name: "Carregando clientes..." })).toBeInTheDocument();
+    await userEvent.selectOptions(vendedorSelect(), "");
+    expect(screen.queryByRole("option", { name: "Carregando clientes..." })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Selecione um vendedor primeiro" })).toBeInTheDocument();
+
+    await act(async () => d.resolve([cliente(900)]));
+    expect(screen.queryByRole("option", { name: "#900 - Cliente 900" })).not.toBeInTheDocument();
+  });
+
+  it("admin: resposta obsoleta da cascata (3 chega depois do 9) e descartada", async () => {
+    await comoAdmin();
+    montarControlado();
+    await waitFor(() => expect(vendedorSelect()).toBeEnabled());
+    const d3 = deferred<ClienteResumo[]>();
+    const d9 = deferred<ClienteResumo[]>();
+    api.apiListClientesDoVendedor.mockReturnValueOnce(d3.promise).mockReturnValueOnce(d9.promise);
+
+    await userEvent.selectOptions(vendedorSelect(), "3");
+    await userEvent.selectOptions(vendedorSelect(), "9");
+    await act(async () => d9.resolve([cliente(900)]));
+    await screen.findByRole("option", { name: "#900 - Cliente 900" });
+    await act(async () => d3.resolve([cliente(300)]));
+    expect(screen.queryByRole("option", { name: "#300 - Cliente 300" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Cliente")).toBeEnabled();
+  });
+
+  it("normal sem vendedor: nao busca clientes e o select nao fica em loading", async () => {
+    api.apiMe.mockResolvedValue(me({ id_vendedor: null, vendedor_nome: null }));
+    await refreshSessionUser();
+    montarControlado();
+    await screen.findByText(/Seu usuario nao esta vinculado a um vendedor/);
+    expect(screen.getByRole("option", { name: "Selecione um vendedor primeiro" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Carregando clientes..." })).not.toBeInTheDocument();
+    expect(api.apiListClientesDoVendedor).not.toHaveBeenCalled();
+  });
+
+  it("fechar com vendedores/produtos em voo e reabrir: o loading termina", async () => {
+    await comoAdmin();
+    const d = deferred<Vendedor[]>();
+    api.apiListVendedores.mockReturnValueOnce(d.promise);
+    const m = montarControlado();
+    m.set({ open: false });
+    await act(async () => d.resolve([]));
+    m.set({ open: true });
+    await waitFor(() => expect(vendedorSelect()).toBeEnabled());
+    expect(screen.getByRole("option", { name: "#9 - Vend 9" })).toBeInTheDocument();
+  });
+});

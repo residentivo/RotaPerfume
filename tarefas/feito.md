@@ -4,6 +4,77 @@
 
 ---
 
+## Lote 3 de 2026-09-24: 4 cards concluídos (de 6)
+
+> Lote executado pelo 🤍 MegaBrain, a pedido do usuário, com os 6 follow-ups do Lote 2. BUG-04, RISCO-01, FE-01 e FE-02 foram concluídos. SEC-01 e FE-03 foram implementados e cobertos por testes, mas continuam em `fazendo.md` até o usuário validar no navegador. Os follow-ups deste lote estão em `afazer.md`: SEC-02, SEC-03, NEG-01, BUG-06, FE-04 e FE-05. O card BUG-05 (em `fazendo.md`) é tratado em outra sessão.
+>
+> **Documentação (🔵 SubBrain) do lote:** `postman/collection.json` e `postman/README.md`:
+> - Contrato do SEC-01 em `POST`/`PUT`/`PATCH` de clientes.
+> - `PUT`/`PATCH` sem alteração passa a responder `200` (BUG-04).
+> - `DELETE` de vendedor já desligado responde `200` e preserva a `data_desligamento`.
+> - Nota do fuso fixo `-03:00` (RISCO-01).
+> - Os rótulos "admin only" de Clientes e Pedidos foram corrigidos para "acesso comum, escopo por carteira", e as notas de "revisão pendente" foram removidas.
+> - A validação do JSON da collection fica com o 🤍 MegaBrain (o SubBrain não tem shell).
+
+## BUG-04: salvar registro sem alterações retorna 404 "não encontrado" — 2026-09-24
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** 🔴 TestBrain (2026-09-24). O DSN não tinha `clientFoundRows=true`, e o MySQL devolvia `RowsAffected=0` em `UPDATE` sem mudança. Os repositórios tratavam isso como `ErrNotFound`, então salvar sem alterações respondia `404`.
+
+**O que foi feito:**
+- **🟣 SecBrain:** avaliou o impacto de `clientFoundRows=true` nas checagens que dependem de `RowsAffected` (revogação de token e lockout).
+- **🟡 BackBrain:**
+  - `clientFoundRows=true` no DSN (`apis/shared/config/config.go` e `apis/shared/cmd/resetpassword/main.go`).
+  - `VendedorRepository.MarcarDesligamento` com `COALESCE`: o DELETE de um vendedor já desligado responde `200` e preserva a `data_desligamento` original.
+  - Nos importadores, o rótulo do contador passou a ser `inseridos_ou_inalterados`.
+- **🔴 TestBrain:** integração HTTP em `apis/rotaperfumes-api/handlers/sec01_bug04_risco01_http_integration_test.go`:
+  - `PUT` sem alteração em 9 recursos → `200`.
+  - `PATCH` com o mesmo valor → `200`.
+  - 18 casos de id inexistente → `404`.
+  - `DELETE` de vendedor duas vezes.
+  - **Teste de mutação:** retirar a flag do DSN derruba a suíte.
+
+**Documentação (🔵 SubBrain):** nota transversal na descrição da collection e no `postman/README.md`, e notas nas pastas Clientes e Pedidos.
+
+## RISCO-01: datas de início de horário de verão com `TZ=America/Sao_Paulo` (Linux/Docker) — 2026-09-24
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → documentação e fechamento por 🔵 SubBrain
+
+**Origem:** lote 2 de 2026-09-24, durante o BUG-01. Em datas de início de horário de verão, a meia-noite não existe (ex.: `2018-11-04`), e `time.ParseInLocation` devolvia 23:00 do dia anterior.
+
+**O que foi feito:**
+- **🟡 BackBrain:** novo pacote `apis/shared/tz`, que fixa `time.Local` em um fuso fixo `-03:00`, sem horário de verão. Ele é ativado por import em branco em `apis/shared/config/config.go` e no `resetpassword`.
+- **🔴 TestBrain:**
+  - `apis/shared/tz/tz_test.go`.
+  - `apis/shared/config/config_test.go`: cobertura do pacote `config` de 0% para **100%**.
+  - `2018-11-04` com round-trip em 3 colunas.
+  - Refresh token expirado → `401`; válido → `200`.
+  - `TestBUG01_HorarioDeVeraoHistorico` reescrito, sem skip.
+
+**Documentação (🔵 SubBrain):** o formato das datas na resposta não mudou. A nota do fuso fixo está na collection (descrição geral e pasta Pedidos) e no `postman/README.md`.
+
+## FE-01: corrida em `refreshSessionUser` mantinha o bloqueio de vendedor desligado após a reativação — 2026-09-24
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → fechamento por 🔵 SubBrain
+
+**Origem:** card "Segurança: vendedor desligado" (lote 2). A revalidação de focus/mount reaproveitava a promise em voo originada pelo `403` e não limpava `bloqueado403`.
+
+**O que foi feito:**
+- **🟢 FrontBrain:** `frontend/src/lib/session.ts` ganhou um contador de sequência. O bloqueio só é liberado por um `/me` iniciado depois do último `403`.
+- **🔴 TestBrain:** 10 testes novos, mais testes de mutação.
+
+## FE-02: Dashboard dependia da API para zerar os dados de vendedor desligado / sem vendedor — 2026-09-24
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → fechamento por 🔵 SubBrain
+
+**Origem:** card UI-02 (lote 2). `frontend/src/app/dashboard/page.tsx` não forçava zeros; a tela só ficava correta porque o backend já zerava os dados.
+
+**O que foi feito:**
+- **🟢 FrontBrain:**
+  - O Dashboard força os zeros para usuário sem vendedor ou com vendedor desligado.
+  - Os estados de loading e de erro passaram a ser derivados no render.
+  - Respostas obsoletas são descartadas.
+- **🔴 TestBrain:** testes com payload cheio: mesmo que a API devolva números, a tela mostra zeros nesses dois casos.
+
+---
+
 ## Lote 2 de 2026-09-24: 2 cards concluídos (de 6)
 
 > Lote executado pelo 🤍 MegaBrain com os 6 cards que estavam em `afazer.md`. BUG-01 e Tooling do frontend foram concluídos. UI-01, UI-02, Segurança do vendedor desligado e UX do `id_vendedor` foram implementados e cobertos por testes, mas continuam em `fazendo.md` até o usuário validar no navegador. Os follow-ups deste lote estão em `afazer.md`: SEC-01, BUG-04, RISCO-01, FE-01, FE-02 e FE-03.

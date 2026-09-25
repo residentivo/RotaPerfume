@@ -447,3 +447,94 @@ func TestGetByEmail_ComUltimoLogin(t *testing.T) {
 	assert.Equal(t, ultimoLogin.Unix(), u.UltimoLoginAt.Unix())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ---------------------------------------------------------------------------
+// InativarByVendedorID
+// ---------------------------------------------------------------------------
+
+const inativarPorVendedorRegex = `UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`
+
+func TestInativarByVendedorID_ComUsuarios(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectExec(inativarPorVendedorRegex).
+		WithArgs(int64(3)).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+
+	repo := repositories.NewUsuarioRepository()
+	n, err := repo.InativarByVendedorID(context.Background(), db, 3)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), n)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestInativarByVendedorID_SemUsuarios_NaoEhErro(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectExec(inativarPorVendedorRegex).
+		WithArgs(int64(3)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	repo := repositories.NewUsuarioRepository()
+	n, err := repo.InativarByVendedorID(context.Background(), db, 3)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), n)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestInativarByVendedorID_ExecError(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectExec(inativarPorVendedorRegex).
+		WithArgs(int64(3)).
+		WillReturnError(sql.ErrConnDone)
+
+	repo := repositories.NewUsuarioRepository()
+	n, err := repo.InativarByVendedorID(context.Background(), db, 3)
+
+	assert.ErrorIs(t, err, sql.ErrConnDone)
+	assert.Equal(t, int64(0), n)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestInativarByVendedorID_RowsAffectedError(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectExec(inativarPorVendedorRegex).
+		WithArgs(int64(3)).
+		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
+
+	repo := repositories.NewUsuarioRepository()
+	_, err := repo.InativarByVendedorID(context.Background(), db, 3)
+
+	assert.ErrorIs(t, err, sql.ErrConnDone)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestInativarByVendedorID_DentroDeTransacao(t *testing.T) {
+	db, mock := newMock(t)
+	defer db.Close()
+
+	mock.ExpectBegin()
+	mock.ExpectExec(inativarPorVendedorRegex).
+		WithArgs(int64(3)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+
+	repo := repositories.NewUsuarioRepository()
+	n, err := repo.InativarByVendedorID(ctx, tx, 3)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+	require.NoError(t, tx.Commit())
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

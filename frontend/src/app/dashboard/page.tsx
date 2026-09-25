@@ -569,59 +569,88 @@ function DashboardContent() {
   const [vendasSeries, setVendasSeries] = useState<VendasSeries | null>(null);
   const [vendedores, setVendedores] = useState<VendedorRanking[]>([]);
   const [clienteMetrics, setClienteMetrics] = useState<ClienteDashboardMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [chartsDias, setChartsDias] = useState(30);
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [m, v, vd, cm] = await Promise.all([
-        apiDashboardMetrics(periodo),
-        apiDashboardVendas(chartsDias),
-        apiDashboardVendedores(1, 10),
-        apiDashboardClientes(periodo),
-      ]);
-      setMetrics(m);
-      setVendasSeries(v);
-      setVendedores((Array.isArray(vd?.data) ? vd.data : []).slice(0, 10));
-      setClienteMetrics(cm);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar dados");
-    } finally {
-      setLoading(false);
-    }
-  }, [periodo, chartsDias]);
+  // Incrementado pelo botao "Atualizar" para refazer a busca.
+  const [recarga, setRecarga] = useState(0);
+  // Resultado da ultima busca concluida (sucesso ou erro), identificado pela
+  // chave dos filtros. `loading`/`error` sao derivados no render — o efeito
+  // so faz setState dentro dos callbacks assincronos.
+  const chave = `${periodo}|${chartsDias}|${recarga}`;
+  const [resultado, setResultado] = useState<{ chave: string; error: string | null } | null>(
+    null
+  );
+  const loading = resultado?.chave !== chave;
+  const error = loading ? null : resultado?.error ?? null;
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    let cancelado = false;
+    Promise.all([
+      apiDashboardMetrics(periodo),
+      apiDashboardVendas(chartsDias),
+      apiDashboardVendedores(1, 10),
+      apiDashboardClientes(periodo),
+    ])
+      .then(([m, v, vd, cm]) => {
+        if (cancelado) return;
+        setMetrics(m);
+        setVendasSeries(v);
+        setVendedores((Array.isArray(vd?.data) ? vd.data : []).slice(0, 10));
+        setClienteMetrics(cm);
+        setResultado({ chave, error: null });
+      })
+      .catch((err) => {
+        if (cancelado) return;
+        setResultado({
+          chave,
+          error: err instanceof Error ? err.message : "Erro ao carregar dados",
+        });
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [chave, periodo, chartsDias]);
 
-  // Dados reais vindos da API. Quando ainda nao carregados, usa valores
-  // zerados — nunca dados inventados.
-  const displayMetrics: DashboardMetrics = metrics ?? {
-    total_vendas: 0,
-    total_pedidos: 0,
-    ticket_medio: 0,
-    total_clientes: 0,
-    meta_mes: undefined,
-    atingimento_meta: 0,
-    periodo,
-  };
+  const recarregar = useCallback(() => setRecarga((r) => r + 1), []);
 
-  const displayVendas: VendasSeries = {
-    dias: vendasSeries?.dias ?? chartsDias,
-    pontos: Array.isArray(vendasSeries?.pontos) ? vendasSeries.pontos : [],
-  };
-
-  // Usuario normal: o ranking vem com no maximo 1 linha (a dele).
-  const meuDesempenho = isAdmin ? undefined : vendedores[0];
   // Vendedor desligado: flag vem da API (/api/dashboard/metrics ou
   // /api/auth/me via sessao em memoria), nunca do cache local — o vinculo
   // pode continuar existindo no usuario, mas o vendedor ter data_desligamento.
   const vendedorDesligado =
     !isAdmin && (metrics?.vendedor_desligado === true || desligadoNaSessao);
+
+  // FE-02 (defesa em profundidade): sem vendedor vinculado ou vendedor
+  // desligado, a tela exibe tudo zerado IGNORANDO o payload da API — mesmo
+  // que o backend, por regressao, devolva dados da carteira.
+  const forcarZeros = !isAdmin && (semVendedor || vendedorDesligado);
+
+  // Dados reais vindos da API. Quando ainda nao carregados (ou forcados a
+  // zero), usa valores zerados — nunca dados inventados.
+  const displayMetrics: DashboardMetrics =
+    !forcarZeros && metrics
+      ? metrics
+      : {
+          total_vendas: 0,
+          total_pedidos: 0,
+          ticket_medio: 0,
+          total_clientes: 0,
+          meta_mes: undefined,
+          atingimento_meta: 0,
+          periodo,
+        };
+
+  const displayVendas: VendasSeries = {
+    dias: vendasSeries?.dias ?? chartsDias,
+    pontos:
+      !forcarZeros && Array.isArray(vendasSeries?.pontos) ? vendasSeries.pontos : [],
+  };
+
+  const displayVendedores = forcarZeros ? [] : vendedores;
+  const displayClientes: ClienteDashboardMetrics | null = forcarZeros
+    ? null
+    : clienteMetrics;
+
+  // Usuario normal: o ranking vem com no maximo 1 linha (a dele).
+  const meuDesempenho = isAdmin ? undefined : displayVendedores[0];
   const temMeta = displayMetrics.meta_mes != null && displayMetrics.meta_mes > 0;
 
   return (
@@ -708,8 +737,8 @@ function DashboardContent() {
           {isAdmin ? (
             <KpiCard
               label="Ranking Vendedores"
-              value={vendedores.length > 0 ? fmtCurrency(vendedores[0]?.total_vendas ?? 0) : "-"}
-              sub={vendedores[0] ? `Lider: ${vendedores[0].vendedor_nome}` : "Carregando..."}
+              value={displayVendedores.length > 0 ? fmtCurrency(displayVendedores[0]?.total_vendas ?? 0) : "-"}
+              sub={displayVendedores[0] ? `Lider: ${displayVendedores[0].vendedor_nome}` : "Carregando..."}
               icon={<IconRanking />}
             />
           ) : (
@@ -752,7 +781,7 @@ function DashboardContent() {
                 </select>
               }
             />
-            {loading && vendasSeries === null ? (
+            {loading && !forcarZeros && vendasSeries === null ? (
               <div className="flex h-48 items-center justify-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
               </div>
@@ -795,19 +824,19 @@ function DashboardContent() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={loadData}
+                onClick={recarregar}
                 loading={loading}
               >
                 Atualizar
               </Button>
             }
           />
-          {loading && vendedores.length === 0 ? (
+          {loading && !forcarZeros && displayVendedores.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
             </div>
           ) : isAdmin ? (
-            <RankingTable vendedores={vendedores} />
+            <RankingTable vendedores={displayVendedores} />
           ) : (
             <MeuDesempenho vendedor={meuDesempenho} />
           )}
@@ -830,26 +859,26 @@ function DashboardContent() {
           <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
               label={isAdmin ? "Total de Clientes" : "Meus Clientes"}
-              value={fmtNumber(clienteMetrics?.total_clientes ?? 0)}
+              value={fmtNumber(displayClientes?.total_clientes ?? 0)}
               sub={`Periodo: ${PERIOD_LABELS[periodo]}`}
               icon={<IconUsers />}
             />
             <KpiCard
               label={isAdmin ? "Clientes Ativos" : "Meus Clientes Ativos"}
-              value={fmtNumber(clienteMetrics?.total_ativos ?? 0)}
+              value={fmtNumber(displayClientes?.total_ativos ?? 0)}
               sub="Situacao ativa"
               accent
               icon={<IconUsers />}
             />
             <KpiCard
               label={isAdmin ? "Clientes Inativos" : "Meus Clientes Inativos"}
-              value={fmtNumber(clienteMetrics?.total_inativos ?? 0)}
+              value={fmtNumber(displayClientes?.total_inativos ?? 0)}
               sub="Situacao inativa"
               icon={<IconUsers />}
             />
             <KpiCard
               label={isAdmin ? "Novos no Periodo" : "Meus Novos no Periodo"}
-              value={fmtNumber(clienteMetrics?.novos_no_periodo ?? 0)}
+              value={fmtNumber(displayClientes?.novos_no_periodo ?? 0)}
               sub={`Cadastrados em: ${PERIOD_LABELS[periodo]}`}
               icon={<IconUsers />}
             />
@@ -865,13 +894,13 @@ function DashboardContent() {
                     : "Distribuicao da sua carteira por segmento de mercado"
                 }
               />
-              {loading && clienteMetrics === null ? (
+              {loading && !forcarZeros && displayClientes === null ? (
                 <div className="flex h-32 items-center justify-center">
                   <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
                 </div>
               ) : (
                 <HorizontalBarList
-                  items={(clienteMetrics?.por_segmento ?? []).map((s) => ({
+                  items={(displayClientes?.por_segmento ?? []).map((s) => ({
                     label: s.segmento || "Nao informado",
                     total: s.total,
                   }))}
@@ -889,13 +918,13 @@ function DashboardContent() {
                     : "Distribuicao da sua carteira por estado"
                 }
               />
-              {loading && clienteMetrics === null ? (
+              {loading && !forcarZeros && displayClientes === null ? (
                 <div className="flex h-32 items-center justify-center">
                   <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
                 </div>
               ) : (
                 <HorizontalBarList
-                  items={(clienteMetrics?.por_uf ?? []).map((u) => ({
+                  items={(displayClientes?.por_uf ?? []).map((u) => ({
                     label: u.uf || "Nao informado",
                     total: u.total,
                   }))}

@@ -142,7 +142,7 @@ func main() {
 	log.Printf("importpedidos: %d clientes carregados para lookup", len(clienteIDs))
 
 	pInserted, pUpdated, pFailed := upsertPedidos(db, pedidoRows, clienteIDs)
-	log.Printf("importpedidos: [fase 1/2] OK — lidos=%d inseridos=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
+	log.Printf("importpedidos: [fase 1/2] OK — lidos=%d inseridos_ou_inalterados=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
 		len(pedidoRows), pInserted, pUpdated, pFailed, pedidoParseErrs)
 
 	// -----------------------------------------------------------
@@ -168,10 +168,10 @@ func main() {
 	log.Printf("importpedidos: %d produtos carregados para lookup", len(produtoIDs))
 
 	iInserted, iUpdated, iFailed := upsertItensPedido(db, itemRows, pedidoIDs, produtoIDs)
-	log.Printf("importpedidos: [fase 2/2] OK — lidos=%d inseridos=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
+	log.Printf("importpedidos: [fase 2/2] OK — lidos=%d inseridos_ou_inalterados=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
 		len(itemRows), iInserted, iUpdated, iFailed, itemParseErrs)
 
-	log.Printf("importpedidos: concluído — pedidos(inseridos=%d atualizados=%d erros=%d) itens(inseridos=%d atualizados=%d erros=%d)",
+	log.Printf("importpedidos: concluído — pedidos(inseridos_ou_inalterados=%d atualizados=%d erros=%d) itens(inseridos_ou_inalterados=%d atualizados=%d erros=%d)",
 		pInserted, pUpdated, pFailed, iInserted, iUpdated, iFailed)
 }
 
@@ -526,6 +526,10 @@ func upsertPedidos(db *sql.DB, rows []pedidoRow, clienteIDs map[int64]int64) (in
 			failed++
 			continue
 		}
+		// Com clientFoundRows=true no DSN (BUG-04), o MySQL devolve, via ON
+		// DUPLICATE KEY UPDATE: 1 = INSERT novo OU linha já existente sem
+		// alteração; 2 = UPDATE com alteração real. Por isso o contador
+		// "inseridos" é rotulado como inseridos_ou_inalterados.
 		affected, _ := result.RowsAffected()
 		switch affected {
 		case 1:
@@ -590,6 +594,10 @@ func upsertItensPedido(db *sql.DB, rows []itemPedidoRow, pedidoIDs map[int64]int
 			failed++
 			continue
 		}
+		// Com clientFoundRows=true no DSN (BUG-04), o MySQL devolve, via ON
+		// DUPLICATE KEY UPDATE: 1 = INSERT novo OU linha já existente sem
+		// alteração; 2 = UPDATE com alteração real. Por isso o contador
+		// "inseridos" é rotulado como inseridos_ou_inalterados.
 		affected, _ := result.RowsAffected()
 		switch affected {
 		case 1:

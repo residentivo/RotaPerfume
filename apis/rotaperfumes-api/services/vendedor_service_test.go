@@ -479,45 +479,71 @@ func TestVendedorService_UpdateVendedor_ErroNoGetByIDApósUpdate(t *testing.T) {
 // DeleteVendedor
 // ---------------------------------------------------------------------------
 
+const vendedorSetDesligamentoRegex = `UPDATE vendedores SET data_desligamento = COALESCE\(data_desligamento, \?\) WHERE id = \?`
+const usuariosInativarPorVendedorRegex = `UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`
+
 func TestVendedorService_DeleteVendedor_Sucesso(t *testing.T) {
-	db, mock := newVendedorTestDB(t)
+	cases := []struct {
+		name               string
+		usuariosVinculados int64
+	}{
+		{"com usuário vinculado inativa o usuário", 1},
+		{"sem usuário vinculado conclui com sucesso", 0},
+	}
 
-	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
-		WithArgs(sqlmock.AnyArg(), int64(1)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(vendedorGetColunasRegex).
-		WithArgs(int64(1)).
-		WillReturnRows(vendedorGetRows(1, "João Vendedor", time.Now()))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db, mock := newVendedorTestDB(t)
 
-	svc := services.NewVendedorService(db, vendedorTestCfg(true))
-	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+			mock.ExpectBegin()
+			mock.ExpectExec(vendedorSetDesligamentoRegex).
+				WithArgs(sqlmock.AnyArg(), int64(1)).
+				WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec(usuariosInativarPorVendedorRegex).
+				WithArgs(int64(1)).
+				WillReturnResult(sqlmock.NewResult(0, tc.usuariosVinculados))
+			mock.ExpectCommit()
+			mock.ExpectQuery(vendedorGetColunasRegex).
+				WithArgs(int64(1)).
+				WillReturnRows(vendedorGetRows(1, "João Vendedor", time.Now()))
 
-	require.NoError(t, err)
-	require.NotNil(t, v)
-	assert.Equal(t, int64(1), v.ID)
-	assert.NoError(t, mock.ExpectationsWereMet())
+			svc := services.NewVendedorService(db, vendedorTestCfg(true))
+			v, err := svc.DeleteVendedor(context.Background(), db, 1)
+
+			require.NoError(t, err)
+			require.NotNil(t, v)
+			assert.Equal(t, int64(1), v.ID)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
-func TestVendedorService_DeleteVendedor_NaoEncontrado(t *testing.T) {
+func TestVendedorService_DeleteVendedor_NaoEncontrado_NaoInativaUsuarios(t *testing.T) {
 	db, mock := newVendedorTestDB(t)
 
-	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+	mock.ExpectBegin()
+	mock.ExpectExec(vendedorSetDesligamentoRegex).
 		WithArgs(sqlmock.AnyArg(), int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
 
 	svc := services.NewVendedorService(db, vendedorTestCfg(false))
 	v, err := svc.DeleteVendedor(context.Background(), db, 999)
 
 	assert.Nil(t, v)
 	assert.ErrorIs(t, err, services.ErrVendedorNaoEncontrado)
+	// Nenhum UPDATE em usuarios esperado: ExpectationsWereMet + ausência de
+	// ExpectExec para usuarios garantem que a query não foi executada.
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestVendedorService_DeleteVendedor_ErroGenericoDoRepo(t *testing.T) {
 	db, mock := newVendedorTestDB(t)
 
-	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+	mock.ExpectBegin()
+	mock.ExpectExec(vendedorSetDesligamentoRegex).
 		WillReturnError(sql.ErrConnDone)
+	mock.ExpectRollback()
 
 	svc := services.NewVendedorService(db, vendedorTestCfg(false))
 	v, err := svc.DeleteVendedor(context.Background(), db, 1)
@@ -525,6 +551,60 @@ func TestVendedorService_DeleteVendedor_ErroGenericoDoRepo(t *testing.T) {
 	assert.Nil(t, v)
 	assert.Error(t, err)
 	assert.NotErrorIs(t, err, services.ErrVendedorNaoEncontrado)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestVendedorService_DeleteVendedor_ErroAoInativarUsuarios_FazRollback(t *testing.T) {
+	db, mock := newVendedorTestDB(t)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(vendedorSetDesligamentoRegex).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(usuariosInativarPorVendedorRegex).
+		WithArgs(int64(1)).
+		WillReturnError(sql.ErrConnDone)
+	mock.ExpectRollback()
+
+	svc := services.NewVendedorService(db, vendedorTestCfg(false))
+	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+
+	assert.Nil(t, v)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sql.ErrConnDone)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestVendedorService_DeleteVendedor_ErroNoBegin(t *testing.T) {
+	db, mock := newVendedorTestDB(t)
+
+	mock.ExpectBegin().WillReturnError(sql.ErrConnDone)
+
+	svc := services.NewVendedorService(db, vendedorTestCfg(false))
+	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+
+	assert.Nil(t, v)
+	assert.ErrorIs(t, err, sql.ErrConnDone)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestVendedorService_DeleteVendedor_ErroNoCommit(t *testing.T) {
+	db, mock := newVendedorTestDB(t)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(vendedorSetDesligamentoRegex).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(usuariosInativarPorVendedorRegex).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit().WillReturnError(sql.ErrConnDone)
+
+	svc := services.NewVendedorService(db, vendedorTestCfg(false))
+	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+
+	assert.Nil(t, v)
+	assert.ErrorIs(t, err, sql.ErrConnDone)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -954,9 +1034,14 @@ func TestVendedorService_DesvincularCliente(t *testing.T) {
 func TestVendedorService_DeleteVendedor_ErroNoGetByIDApósUpdate(t *testing.T) {
 	db, mock := newVendedorTestDB(t)
 
-	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = COALESCE\(data_desligamento, \?\) WHERE id = \?`).
 		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 	mock.ExpectQuery(vendedorGetColunasRegex).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)

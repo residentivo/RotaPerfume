@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Cliente, ClienteInput } from "@/lib/types";
+import { useResetOnOpen } from "@/lib/useResetOnOpen";
 
 interface ClienteModalProps {
   open: boolean;
@@ -36,31 +37,31 @@ export function ClienteModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setSubmitting(false);
-      if (mode === "edit" && cliente) {
-        setRazaoSocial(cliente.razao_social);
-        setCnpj(cliente.cnpj);
-        setSegmento(cliente.segmento);
-        setCidade(cliente.cidade);
-        setUf(cliente.uf);
-        setBairro(cliente.bairro);
-        setDataCadastro(
-          cliente.data_cadastro ? cliente.data_cadastro.slice(0, 10) : todayISO()
-        );
-      } else {
-        setRazaoSocial("");
-        setCnpj("");
-        setSegmento("");
-        setCidade("");
-        setUf("");
-        setBairro("");
-        setDataCadastro(todayISO());
-      }
+  // Reseta o formulario ao abrir (ou quando as props mudam com o modal
+  // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  useResetOnOpen(open, [mode, cliente], () => {
+    setError(null);
+    setSubmitting(false);
+    if (mode === "edit" && cliente) {
+      setRazaoSocial(cliente.razao_social);
+      setCnpj(cliente.cnpj);
+      setSegmento(cliente.segmento);
+      setCidade(cliente.cidade);
+      setUf(cliente.uf);
+      setBairro(cliente.bairro);
+      setDataCadastro(
+        cliente.data_cadastro ? cliente.data_cadastro.slice(0, 10) : todayISO()
+      );
+    } else {
+      setRazaoSocial("");
+      setCnpj("");
+      setSegmento("");
+      setCidade("");
+      setUf("");
+      setBairro("");
+      setDataCadastro(todayISO());
     }
-  }, [open, mode, cliente]);
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -179,53 +179,74 @@ function VisitasContent() {
     [clientes]
   );
 
-  const loadVisitas = async () => {
-    // Vendedor sem carteira vinculada (id_vendedor null): não há dados a
-    // buscar, mantém a lista vazia sem chamar a API.
-    if (semCarteira) {
-      setLoading(false);
-      setError(null);
-      setVisitas([]);
-      setTotal(0);
-      setPages(0);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiListVisitas(
-        page,
-        limit,
-        {
-          vendedor_id: filtroVendedor ? Number(filtroVendedor) : undefined,
-          cliente_id: clienteFilter ? Number(clienteFilter) : undefined,
-          resultado: resultadoFilter || undefined,
-          data_visita_de: dataVisitaDe || undefined,
-          data_visita_ate: dataVisitaAte || undefined,
-          q: search.trim() || undefined,
-        },
-        ORDER_BY_MAP[sortKey],
-        sortDir
-      );
-      setVisitas(res.data);
-      setTotal(res.total);
-      setPages(res.pages);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar visitas. O endpoint /api/visitas pode nao existir no backend.";
-      setError(message);
-      setVisitas([]);
-      setTotal(0);
-      setPages(0);
-    } finally {
-      setLoading(false);
-    }
+  // Busca separada em requisicao pura + aplicacao do resultado no callback
+  // assincrono (.then): o efeito nunca chama setState de forma sincrona.
+  // Vendedor sem carteira vinculada (id_vendedor null): não há dados a
+  // buscar, resolve uma lista vazia sem chamar a API.
+  const buscarVisitas = (): Promise<{
+    data: Visita[];
+    total: number;
+    pages: number;
+  }> => {
+    if (semCarteira) return Promise.resolve({ data: [], total: 0, pages: 0 });
+    return apiListVisitas(
+      page,
+      limit,
+      {
+        vendedor_id: filtroVendedor ? Number(filtroVendedor) : undefined,
+        cliente_id: clienteFilter ? Number(clienteFilter) : undefined,
+        resultado: resultadoFilter || undefined,
+        data_visita_de: dataVisitaDe || undefined,
+        data_visita_ate: dataVisitaAte || undefined,
+        q: search.trim() || undefined,
+      },
+      ORDER_BY_MAP[sortKey],
+      sortDir
+    );
   };
 
+  const aplicarVisitas = (res: {
+    data: Visita[];
+    total: number;
+    pages: number;
+  }) => {
+    setVisitas(res.data);
+    setTotal(res.total);
+    setPages(res.pages);
+    setLoading(false);
+  };
+
+  const aplicarErroVisitas = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar visitas. O endpoint /api/visitas pode nao existir no backend.";
+    setError(message);
+    setVisitas([]);
+    setTotal(0);
+    setPages(0);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (handlers e timers).
+  const loadVisitas = async () => {
+    setLoading(true);
+    setError(null);
+    await buscarVisitas().then(aplicarVisitas, aplicarErroVisitas);
+  };
+
+  // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
+  // "ajustar estado quando a entrada muda") e o efeito so faz a busca.
+  const chaveLista = `${page}|${limit}|${sortKey}|${sortDir}`;
+  const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  if (chaveAnterior !== chaveLista) {
+    setChaveAnterior(chaveLista);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    loadVisitas();
+    buscarVisitas().then(aplicarVisitas, aplicarErroVisitas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 

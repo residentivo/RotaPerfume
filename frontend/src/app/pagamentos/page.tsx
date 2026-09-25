@@ -117,48 +117,68 @@ function PagamentosContent() {
   );
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // Busca separada em requisicao pura + aplicacao do resultado no callback
+  // assincrono (.then): o efeito nunca chama setState de forma sincrona.
+  const buscarPagamentos = () => {
+    const pedidoIdNum = pedidoIdFilter.trim()
+      ? Number(pedidoIdFilter.trim())
+      : undefined;
+    return apiListPagamentos(
+      page,
+      limit,
+      {
+        status_pagamento: statusFilter || undefined,
+        forma_pagamento: formaFilter || undefined,
+        pedido_id:
+          pedidoIdNum !== undefined && !Number.isNaN(pedidoIdNum)
+            ? pedidoIdNum
+            : undefined,
+        vencimento_de: vencimentoDe || undefined,
+        vencimento_ate: vencimentoAte || undefined,
+      },
+      sortKey,
+      sortDir
+    );
+  };
+
+  const aplicarPagamentos = (res: Awaited<ReturnType<typeof apiListPagamentos>>) => {
+    setPagamentos(res.data);
+    setTotal(res.total);
+    setPages(res.pages);
+    setLoading(false);
+  };
+
+  const aplicarErroPagamentos = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar pagamentos. O endpoint /api/pagamentos pode nao existir no backend.";
+    setError(message);
+    setPagamentos([]);
+    setTotal(0);
+    setPages(0);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (handlers e timers).
   const loadPagamentos = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const pedidoIdNum = pedidoIdFilter.trim()
-        ? Number(pedidoIdFilter.trim())
-        : undefined;
-      const res = await apiListPagamentos(
-        page,
-        limit,
-        {
-          status_pagamento: statusFilter || undefined,
-          forma_pagamento: formaFilter || undefined,
-          pedido_id:
-            pedidoIdNum !== undefined && !Number.isNaN(pedidoIdNum)
-              ? pedidoIdNum
-              : undefined,
-          vencimento_de: vencimentoDe || undefined,
-          vencimento_ate: vencimentoAte || undefined,
-        },
-        sortKey,
-        sortDir
-      );
-      setPagamentos(res.data);
-      setTotal(res.total);
-      setPages(res.pages);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar pagamentos. O endpoint /api/pagamentos pode nao existir no backend.";
-      setError(message);
-      setPagamentos([]);
-      setTotal(0);
-      setPages(0);
-    } finally {
-      setLoading(false);
-    }
+    await buscarPagamentos().then(aplicarPagamentos, aplicarErroPagamentos);
   };
 
+  // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
+  // "ajustar estado quando a entrada muda") e o efeito so faz a busca.
+  const chaveLista = `${page}|${limit}|${sortKey}|${sortDir}`;
+  const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  if (chaveAnterior !== chaveLista) {
+    setChaveAnterior(chaveLista);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    loadPagamentos();
+    buscarPagamentos().then(aplicarPagamentos, aplicarErroPagamentos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 

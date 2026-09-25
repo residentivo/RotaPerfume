@@ -101,10 +101,32 @@ Marque cada checkbox depois de conferir no navegador. Os números de referência
 - [ ] 5.3 Normal (vendedor 4): Minhas Vendas R$ 75.148,43, e "Meu Desempenho" e "Minha Meta" mostram o mesmo valor com centavos (136,63%).
 - [ ] 5.4 Sem dados (usuário sem vendedor / desligado / período sem vendas), nenhuma tela quebra nem mostra "null"/"NaN". A API devolve `[]` nas listas.
 
+## 5b. FE-02: zeros forçados pelo frontend (defesa em profundidade)
+
+Desde o FE-02, para o usuário `normal` **sem vendedor** ou com **vendedor desligado**, a tela mostra tudo zerado **mesmo que a API devolva números**. Hoje a API já devolve zeros nesses casos, então o teste manual força uma resposta preenchida com o recurso **Local Overrides** do Chrome/Edge:
+
+1. DevTools → aba **Network** → recarregue o Dashboard → clique com o botão direito em `metrics?periodo=month` → **Override content** (na primeira vez, escolha uma pasta local para os overrides e aceite a permissão).
+2. Troque o corpo por uma resposta **preenchida**, mantendo o envelope da API, por exemplo:
+   ```json
+   {"success":true,"data":{"total_vendas":99999.99,"total_pedidos":42,"ticket_medio":2380.95,"total_clientes":7,"meta_mes":50000,"atingimento_meta":199.99,"periodo":"month","vendedor_desligado":false,"top_vendedores":[],"metas_vendedores":[]}}
+   ```
+   Faça o mesmo em `clientes?periodo=month` (ex.: `"total_clientes":7,"total_ativos":6,"total_inativos":1,"novos_no_periodo":2,"por_segmento":[{"segmento":"Varejo","total":7}],"por_uf":[{"uf":"SP","total":7}]`), em `vendas?dias=30` (pontos com `total_vendas` > 0) e em `vendedores?page=1&limit=10` (uma linha com `vendedor_id`, `vendedor_nome` e `total_vendas`).
+3. Recarregue a página com os overrides ativos.
+
+- [ ] 5b.1 **Normal sem vendedor:** o aviso de "sem vendedor" aparece e **todos** os números ficam zerados: Minhas Vendas R$ 0,00, Meus Pedidos 0, Meu Ticket Medio R$ 0,00, Minha Meta "-", gráfico com "Total: R$ 0,00", Meus Clientes/Ativos/Inativos/Novos = 0, "por Segmento"/"por UF" vazios e "Meu Desempenho" com "Nenhum dado de desempenho encontrado". **Nenhum** número do override aparece (99.999,99 / 42 / 7 / Varejo / SP).
+- [ ] 5b.2 **Normal com vendedor desligado (id 2):** mesmo resultado do 5b.1, com o aviso de **desligado**.
+- [ ] 5b.3 **Desligado só pelo payload:** como normal **com** vendedor ativo (id 5), use o override de `metrics` com `"vendedor_desligado":true`. O aviso de desligado aparece e a tela zera tudo, inclusive os clientes do override.
+- [ ] 5b.4 **Controle (normal ativo, id 5):** com o override de `metrics` preenchido e `"vendedor_desligado":false`, os números do override **aparecem** (R$ 99.999,99, 42 pedidos). Isso prova que o zero dos itens anteriores vem da regra, e não de uma falha do override.
+- [ ] 5b.5 **Admin:** com o override preenchido e `"vendedor_desligado":true`, o admin continua vendo os números (admin nunca é zerado).
+- [ ] 5b.6 **Troca rápida de filtro:** clique em Hoje → Semana → Mês em sequência rápida (com a rede em "Slow 3G" no DevTools). Ao final, os números e o botão ativo correspondem ao **último** filtro clicado. Uma resposta atrasada de um filtro anterior não sobrescreve a tela, e o indicador "Atualizando dados..." some ao terminar.
+- [ ] 5b.7 **Atualizar após erro:** bloqueie `metrics` (DevTools → Network → botão direito → **Block request URL**) e recarregue: aparece o alerta vermelho. Desbloqueie e clique em "Atualizar": o alerta some e os números voltam.
+- [ ] 5b.8 Desative os overrides no fim (DevTools → Sources → Overrides → desmarque "Enable Local Overrides").
+
 ## 6. Limpeza
 
 - [ ] 6.1 Usuário temporário removido.
 - [ ] 6.2 `data_desligamento` restaurada se o item 3.8 foi executado.
+- [ ] 6.3 Local Overrides e bloqueios de URL do DevTools desativados (seção 5b).
 
 ---
 
@@ -165,3 +187,9 @@ Os itens abaixo também são cobertos por testes automatizados, que rodam com `m
 
 - `frontend/src/app/dashboard/page.test.tsx`: título do gráfico em 7/14/30/60 dias (admin e normal). Aviso + KPIs/gráfico zerados para normal sem vendedor, desligado pela sessão (`/me` ou 403) e desligado por `metrics.vendedor_desligado`. Sem aviso para admin e para normal ativo.
 - `frontend/src/components/layout/Navbar.test.tsx`: itens da carteira ocultos para o desligado.
+- `frontend/src/app/dashboard/page.test.tsx` (FE-02, 2026-09-24):
+  - Payload **preenchido** da API é ignorado e a tela fica zerada para normal sem vendedor, desligado pela sessão e desligado pelo `metrics`.
+  - Admin nunca é zerado, mesmo com flag de desligado. Normal ativo com payload cheio mostra os números.
+  - Desligamento detectado depois (403 na sessão) zera a tela já carregada.
+  - Resposta obsoleta de um período anterior é descartada.
+  - "Atualizando dados..." aparece e some. "Atualizar" limpa o erro anterior.

@@ -452,6 +452,7 @@ func TestToggleAtivoCliente_PermitidoParaNaoAdmin(t *testing.T) {
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
 	expectVendedorDesligado(mock, 10, false)
+	expectCarteiraAtivaH(mock, 10, 1)
 	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(clienteRowsForHandler())
@@ -531,9 +532,14 @@ func TestCreateCliente_PermitidoParaNaoAdmin(t *testing.T) {
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
 	expectVendedorDesligado(mock, 10, false)
+	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO clientes \(cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo\)`).
 		WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), true).
 		WillReturnResult(sqlmock.NewResult(101, 1))
+	mock.ExpectExec(reInsertCarteira).
+		WithArgs(int64(101), int64(10), sqlmock.AnyArg(), nil).
+		WillReturnResult(sqlmock.NewResult(900, 1))
+	mock.ExpectCommit()
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/clientes", makeJSON(validClientePayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -701,6 +707,7 @@ func TestUpdateCliente_PermitidoParaNaoAdmin(t *testing.T) {
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
 	expectVendedorDesligado(mock, 10, false)
+	expectCarteiraAtivaH(mock, 10, 1)
 	mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE cliente_id_origem = \?`).
 		WithArgs("12345678000199", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))

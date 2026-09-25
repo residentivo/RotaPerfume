@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "RotaPerfumes API — Autenticação",
-    "description": "Coleção de endpoints da API de autenticação do SistemaCompleto.\n\n## Credenciais padrão\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedores (seed): senha inicial ainda usa hash `@HASH_MUDAR_123` no seed de banco (`Mudar@123`) — apenas para dados de teste já existentes no `make db-reset`. **A partir de agora, usuários criados via `POST /api/usuarios` ou resetados via `POST /api/admin/reset-password` NÃO usam mais senha fixa**: a senha é gerada aleatoriamente (crypto/rand, mín. 12 caracteres) e enviada por email (SMTP) ao endereço cadastrado — nunca é retornada pela API.\n\n## Configuração\n1. Importe esta coleção no Postman.\n2. Defina a variável `{{base_url}}` como `http://localhost:8080`.\n3. Para endpoints protegidos, primeiro faça login (POST /api/auth/login) e copie o `access_token` da resposta para a variável `{{token}}` — ou use o botão **Authorize** com o tipo Bearer Token.\n4. Para reset-password e listar usuarios, o token deve ser de um usuário com role=`admin`.\n5. Configure as variáveis `SMTP_*` (ver `.env.example` na raiz) para que a API realmente envie os emails de senha inicial/reset — sem elas, a API usa um serviço \"noop\" que apenas loga o envio (útil em dev).\n\n## Inicialização\n```bash\nmake db-reset && make gen-hash && make dev-api\n```",
+    "description": "Coleção de endpoints da API de autenticação do SistemaCompleto.\n\n## Credenciais padrão\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedores (seed): senha inicial ainda usa hash `@HASH_MUDAR_123` no seed de banco (`Mudar@123`) — apenas para dados de teste já existentes no `make db-reset`. **A partir de agora, usuários criados via `POST /api/usuarios` ou resetados via `POST /api/admin/reset-password` NÃO usam mais senha fixa**: a senha é gerada aleatoriamente (crypto/rand, mín. 12 caracteres) e enviada por email (SMTP) ao endereço cadastrado — nunca é retornada pela API.\n\n## Configuração\n1. Importe esta coleção no Postman.\n2. Defina a variável `{{base_url}}` como `http://localhost:8080`.\n3. Para endpoints protegidos, primeiro faça login (POST /api/auth/login) e copie o `access_token` da resposta para a variável `{{token}}` — ou use o botão **Authorize** com o tipo Bearer Token.\n4. Para reset-password e listar usuarios, o token deve ser de um usuário com role=`admin`.\n5. Configure as variáveis `SMTP_*` (ver `.env.example` na raiz) para que a API realmente envie os emails de senha inicial/reset — sem elas, a API usa um serviço \"noop\" que apenas loga o envio (útil em dev).\n\n## Inicialização\n```bash\nmake db-reset && make gen-hash && make dev-api\n```\n\n## Mudanças de contrato transversais (2026-09-24)\n- **BUG-04 — salvar sem alterações:** qualquer `PUT`/`PATCH` que envie os mesmos valores já gravados responde `200` com o registro. Antes respondia `404` \"não encontrado\" (o DSN agora usa `clientFoundRows=true`). `404` continua valendo para id inexistente.\n- **BUG-04 — vendedor já desligado:** `DELETE /api/vendedores/{id}` em um vendedor já desligado responde `200` e preserva a `data_desligamento` original.\n- **RISCO-01 — datas:** o formato das datas nas respostas não mudou. O processo da API passou a usar fuso fixo `-03:00` (sem horário de verão), então datas históricas de início de horário de verão (ex.: `2018-11-04`) não recuam mais um dia.\n- **SEC-01 — clientes:** ver a descrição da pasta \"Clientes\" (escopo por carteira em `POST`/`PUT`/`PATCH`).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -2327,10 +2327,10 @@
     },
     {
       "name": "Clientes",
-      "description": "**Bloqueio de vendedor desligado (2026-09-24, decisão do usuário):** `GET /api/clientes`, `GET /api/clientes/{id}`, `POST /api/clientes`, `PUT /api/clientes/{id}` e `PATCH /api/clientes/{id}/inativar` respondem `403` quando o usuário `normal` está vinculado a um vendedor com `data_desligamento` preenchida (leitura e escrita):\n```json\n{\"success\":false,\"error\":\"acesso bloqueado: vendedor desligado\"}\n```\n- A checagem é feita a cada requisição (sem cache e sem depender de novo JWT): o desligamento bloqueia imediatamente.\n- Admin não é afetado. Usuário `normal` sem vendedor vinculado mantém o comportamento anterior. Vínculo órfão (vendedor inexistente) é tratado como \"sem vendedor\".\n- Falha ao checar o vendedor no banco: `500` `\"erro interno\"` (fail-closed).\n- `GET /api/dashboard/clientes` **não** é bloqueado: responde `200` zerado.\n- Login, `GET /api/auth/me` e o Dashboard continuam acessíveis.\n\n**Atenção (revisão pendente):** os nomes e parte das descrições dos itens desta pasta ainda dizem \"admin only\" / `403` \"não é admin\". Em `apis/rotaperfumes-api/routes/routes.go` essas rotas são de **acesso comum**, com escopo por carteira aplicado no handler. Ver também o card SEC-01 (IDOR em Create/Update/Toggle de clientes) em `tarefas/afazer.md`.",
+      "description": "**Bloqueio de vendedor desligado (2026-09-24, decisão do usuário):** `GET /api/clientes`, `GET /api/clientes/{id}`, `POST /api/clientes`, `PUT /api/clientes/{id}` e `PATCH /api/clientes/{id}/inativar` respondem `403` quando o usuário `normal` está vinculado a um vendedor com `data_desligamento` preenchida (leitura e escrita):\n```json\n{\"success\":false,\"error\":\"acesso bloqueado: vendedor desligado\"}\n```\n- A checagem é feita a cada requisição (sem cache e sem depender de novo JWT): o desligamento bloqueia imediatamente.\n- Admin não é afetado. Usuário `normal` sem vendedor vinculado mantém o comportamento anterior. Vínculo órfão (vendedor inexistente) é tratado como \"sem vendedor\".\n- Falha ao checar o vendedor no banco: `500` `\"erro interno\"` (fail-closed).\n- `GET /api/dashboard/clientes` **não** é bloqueado: responde `200` zerado.\n- Login, `GET /api/auth/me` e o Dashboard continuam acessíveis.\n\n**Acesso comum com escopo por carteira:** todas as rotas `/api/clientes*` usam `JWTMiddleware(cfg, true, false)` (qualquer usuário autenticado). O escopo é aplicado no handler (`apis/rotaperfumes-api/handlers/cliente_handler.go`). O admin não sofre restrições.\n\n| Rota | Usuário `normal` com vendedor | Usuário `normal` sem vendedor |\n|------|-------------------------------|-------------------------------|\n| `GET /api/clientes` | só clientes da carteira ativa | `200` com lista vazia |\n| `GET /api/clientes/{id}` | `404` fora da carteira | `404` |\n| `POST /api/clientes` | `201`; o cliente é vinculado automaticamente à carteira do vendedor (mesma transação) | `403` `\"usuário sem vendedor vinculado\"` |\n| `PUT /api/clientes/{id}` | `404` `\"cliente não encontrado\"` fora da carteira ativa | `404` `\"cliente não encontrado\"` |\n| `PATCH /api/clientes/{id}/inativar` | `404` `\"cliente não encontrado\"` fora da carteira ativa | `404` `\"cliente não encontrado\"` |\n\n- **SEC-01 (2026-09-24):** o `404` fora da carteira usa a mesma mensagem do cliente inexistente, para não revelar clientes de outras carteiras. Falha ao checar a carteira no banco: `500` `\"erro interno\"`.\n- **BUG-04 (2026-09-24):** `PUT`/`PATCH` sem nenhuma alteração (mesmos valores) responde `200`. Antes respondia `404` \"não encontrado\".",
       "item": [
         {
-          "name": "Listar Clientes (admin only)",
+          "name": "Listar Clientes (acesso comum, escopo por carteira)",
           "event": [
             {
               "listen": "test",
@@ -2417,7 +2417,7 @@
                 }
               ]
             },
-            "description": "Lista clientes com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `uf` (string) — filtro exato\n- `segmento` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `razao_social` OU `cnpj`\n- `order_by`: id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at. Default: id (alias de coluna aceito pela API; o campo retornado no JSON é `cliente_id_origem` — não existe mais `id`).\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Lista clientes com paginação e filtros.\n\n**Acesso comum, com escopo por carteira:** qualquer usuário autenticado. O admin vê todos os clientes. O usuário `normal` vê só os clientes da carteira ativa do próprio vendedor (`carteiras.data_fim IS NULL`); sem vendedor vinculado, recebe `200` com lista vazia.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` para um usuário `normal`, escopado à própria carteira)\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `uf` (string) — filtro exato\n- `segmento` (string) — filtro exato\n- `ativo` (`true`|`false`) — qualquer outro valor/ausente = sem filtro\n- `q` (string) — busca em `razao_social` OU `cnpj`\n- `order_by`: id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at. Default: id (alias de coluna aceito pela API; o campo retornado no JSON é `cliente_id_origem` — não existe mais `id`).\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `500` — erro interno (inclui falha ao resolver o escopo do vendedor)"
           },
           "response": [
             {
@@ -2477,7 +2477,7 @@
               "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"cliente_id_origem\": 10023,\n      \"cnpj\": \"12345678000199\",\n      \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"bairro\": \"Bela Vista\",\n      \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n      \"ativo\": true,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 3040,\n    \"pages\": 152\n  }\n}"
             },
             {
-              "name": "403 Forbidden — Não é admin",
+              "name": "200 OK — Normal sem vendedor vinculado (lista vazia)",
               "originalRequest": {
                 "method": "GET",
                 "header": [],
@@ -2487,8 +2487,8 @@
                   "path": ["api", "clientes"]
                 }
               },
-              "status": "Forbidden",
-              "code": 403,
+              "status": "OK",
+              "code": 200,
               "_postman_previewlanguage": "json",
               "header": [
                 {
@@ -2497,12 +2497,12 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": [],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 0,\n    \"pages\": 0\n  }\n}"
             }
           ]
         },
         {
-          "name": "Criar Cliente (admin only)",
+          "name": "Criar Cliente (acesso comum, escopo por carteira)",
           "event": [
             {
               "listen": "test",
@@ -2549,7 +2549,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "clientes"]
             },
-            "description": "Cria um novo cliente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cnpj\": \"98765432000188\",\n  \"razao_social\": \"Perfumaria Nova Ltda\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"Campinas\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Centro\",\n  \"data_cadastro\": \"2026-09-13\"\n}\n```\n- `data_cadastro` é opcional (formato `AAAA-MM-DD`); se omitido, usa a data de hoje.\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras).\n- `cliente_id_origem` é a PK gerada automaticamente pelo MySQL (AUTO_INCREMENT) e `ativo` é sempre `true` na criação — não são aceitos no body. Não existe mais campo `id`.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 13041,\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, ou campo obrigatório ausente (`razao_social`, `cnpj`, `segmento`, `cidade`) ou `uf` com formato inválido (deve ter 2 letras), ou `data_cadastro` em formato inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado, 2026-09-24)"
+            "description": "Cria um novo cliente.\n\n**Acesso comum, com escopo por carteira (SEC-01, 2026-09-24):**\n- **Admin:** sem mudança. Cria só o cliente, sem vínculo de carteira.\n- **Usuário `normal` com vendedor vinculado:** `201`. O cliente é criado **já vinculado à carteira** do próprio vendedor (`data_inicio` = hoje), na mesma transação (`ClienteService.CreateClienteNaCarteira`).\n- **Usuário `normal` sem vendedor vinculado:** `403` `\"usuário sem vendedor vinculado\"`.\n- **Usuário `normal` com vendedor desligado:** `403` `\"acesso bloqueado: vendedor desligado\"`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Body:**\n```json\n{\n  \"cnpj\": \"98765432000188\",\n  \"razao_social\": \"Perfumaria Nova Ltda\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"Campinas\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Centro\",\n  \"data_cadastro\": \"2026-09-13\"\n}\n```\n- `data_cadastro` é opcional (formato `AAAA-MM-DD`); se omitido, usa a data de hoje.\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras).\n- `cliente_id_origem` é a PK gerada automaticamente pelo MySQL (AUTO_INCREMENT) e `ativo` é sempre `true` na criação — não são aceitos no body. Não existe mais campo `id`.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 13041,\n    \"cnpj\": \"98765432000188\",\n    \"razao_social\": \"Perfumaria Nova Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Campinas\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Centro\",\n    \"data_cadastro\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, ou campo obrigatório ausente (`razao_social`, `cnpj`, `segmento`, `cidade`) ou `uf` com formato inválido (deve ter 2 letras), ou `data_cadastro` em formato inválido\n- `401` — não autenticado\n- `403` — `\"usuário sem vendedor vinculado\"` (usuário `normal` sem vendedor)\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado, 2026-09-24)\n- `500` — erro interno (inclui falha ao resolver o escopo do vendedor)"
           },
           "response": [
             {
@@ -2645,7 +2645,7 @@
               "body": "{\n  \"success\": false,\n  \"error\": \"razão social é obrigatória\"\n}"
             },
             {
-              "name": "403 Forbidden — Não é admin",
+              "name": "403 Forbidden — Usuário normal sem vendedor vinculado",
               "originalRequest": {
                 "method": "POST",
                 "header": [
@@ -2674,12 +2674,12 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+              "body": "{\n  \"success\": false,\n  \"error\": \"usuário sem vendedor vinculado\"\n}"
             }
           ]
         },
         {
-          "name": "Detalhe do Cliente (admin only)",
+          "name": "Detalhe do Cliente (acesso comum, escopo por carteira)",
           "event": [
             {
               "listen": "test",
@@ -2690,7 +2690,7 @@
                   "});",
                   "var jsonData = pm.response.json();",
                   "pm.test('Dados do cliente presentes', function() {",
-                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data).to.have.property('cliente_id_origem');",
                   "    pm.expect(jsonData.data).to.have.property('razao_social');",
                   "    pm.expect(jsonData.data).to.have.property('cnpj');",
                   "});"
@@ -2717,7 +2717,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "clientes", "1"]
             },
-            "description": "Retorna o detalhe de um cliente pelo `cliente_id_origem` (PK). Não existe mais campo `id`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
+            "description": "Retorna o detalhe de um cliente pelo `cliente_id_origem` (PK). Não existe mais campo `id`.\n\n**Acesso comum, com escopo por carteira:** o admin vê qualquer cliente. O usuário `normal` só vê clientes da carteira ativa do próprio vendedor; fora dela, ou sem vendedor vinculado, recebe `404` `\"cliente não encontrado\"` (mesma mensagem do inexistente).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — cliente não encontrado, ou fora da carteira (usuário `normal`)\n- `500` — erro interno"
           },
           "response": [
             {
@@ -2767,7 +2767,7 @@
               "body": "{\n  \"success\": false,\n  \"error\": \"cliente não encontrado\"\n}"
             },
             {
-              "name": "403 Forbidden — Não é admin",
+              "name": "404 Not Found — Cliente fora da carteira (usuário normal)",
               "originalRequest": {
                 "method": "GET",
                 "header": [],
@@ -2777,8 +2777,8 @@
                   "path": ["api", "clientes", "1"]
                 }
               },
-              "status": "Forbidden",
-              "code": 403,
+              "status": "Not Found",
+              "code": 404,
               "_postman_previewlanguage": "json",
               "header": [
                 {
@@ -2787,12 +2787,12 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+              "body": "{\n  \"success\": false,\n  \"error\": \"cliente não encontrado\"\n}"
             }
           ]
         },
         {
-          "name": "Editar Cliente (admin only)",
+          "name": "Editar Cliente (acesso comum, escopo por carteira)",
           "event": [
             {
               "listen": "test",
@@ -2803,7 +2803,7 @@
                   "});",
                   "var jsonData = pm.response.json();",
                   "pm.test('Cliente atualizado com dados corretos', function() {",
-                  "    pm.expect(jsonData.data).to.have.property('id');",
+                  "    pm.expect(jsonData.data).to.have.property('cliente_id_origem');",
                   "    pm.expect(jsonData.data.razao_social).to.eql('Perfumaria Bela Vista Ltda — Atualizada');",
                   "});"
                 ],
@@ -2838,7 +2838,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "clientes", "1"]
             },
-            "description": "Atualiza os dados de um cliente existente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Body:**\n```json\n{\n  \"cnpj\": \"12345678000199\",\n  \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"São Paulo\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Bela Vista\",\n  \"data_cadastro\": \"2023-05-10\"\n}\n```\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras), `data_cadastro` (formato `AAAA-MM-DD`).\n- `cliente_id_origem` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/clientes/{id}/inativar` para alterar `ativo`).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, ou campo obrigatório ausente/inválido (mesmas regras do `POST /api/clientes`)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
+            "description": "Atualiza os dados de um cliente existente.\n\n**Acesso comum, com escopo por carteira (SEC-01, 2026-09-24):** o admin edita qualquer cliente. O usuário `normal` só edita clientes da carteira ativa do próprio vendedor. Fora dela, ou sem vendedor vinculado, recebe `404` `\"cliente não encontrado\"` (mesma mensagem do inexistente, para não revelar clientes de outras carteiras). A checagem acontece antes de ler o body. Falha ao checar a carteira no banco: `500` `\"erro interno\"`. Vendedor desligado: `403`.\n\n**Salvar sem alterações (BUG-04, 2026-09-24):** enviar os mesmos valores já gravados responde `200` com o cliente. Antes respondia `404`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Body:**\n```json\n{\n  \"cnpj\": \"12345678000199\",\n  \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n  \"segmento\": \"Varejo\",\n  \"cidade\": \"São Paulo\",\n  \"uf\": \"SP\",\n  \"bairro\": \"Bela Vista\",\n  \"data_cadastro\": \"2023-05-10\"\n}\n```\n- Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras), `data_cadastro` (formato `AAAA-MM-DD`).\n- `cliente_id_origem` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/clientes/{id}/inativar` para alterar `ativo`).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"12345678000199\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda — Atualizada\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, ou campo obrigatório ausente/inválido (mesmas regras do `POST /api/clientes`)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — `\"cliente não encontrado\"`: inexistente, fora da carteira ativa ou usuário `normal` sem vendedor\n- `500` — erro interno (inclui falha ao checar a carteira)"
           },
           "response": [
             {
@@ -2938,7 +2938,7 @@
               "body": "{\n  \"success\": false,\n  \"error\": \"cliente não encontrado\"\n}"
             },
             {
-              "name": "403 Forbidden — Não é admin",
+              "name": "404 Not Found — Cliente fora da carteira ou usuário sem vendedor (usuário normal)",
               "originalRequest": {
                 "method": "PUT",
                 "header": [
@@ -2957,6 +2957,34 @@
                   "path": ["api", "clientes", "1"]
                 }
               },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"cliente não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Vendedor desligado (usuário normal)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1"]
+                }
+              },
               "status": "Forbidden",
               "code": 403,
               "_postman_previewlanguage": "json",
@@ -2967,12 +2995,12 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso bloqueado: vendedor desligado\"\n}"
             }
           ]
         },
         {
-          "name": "Ativar/Inativar Cliente (admin only)",
+          "name": "Ativar/Inativar Cliente (acesso comum, escopo por carteira)",
           "event": [
             {
               "listen": "test",
@@ -3018,7 +3046,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "clientes", "1", "inativar"]
             },
-            "description": "Ativa ou inativa um cliente (apenas admin).\n\n- **Body omitido:** faz toggle (inverte o estado atual)\n- **Body `{ \"ativo\": true }`:** ativa o cliente\n- **Body `{ \"ativo\": false }`:** inativa o cliente\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Body (opcional):**\n- `ativo` (bool) — estado desejado. Se omitido, faz toggle.\n\n**Resposta de sucesso (200):** cliente atualizado (mesmo formato de `GET /api/clientes/{cliente_id_origem}`, sem campo `id`).\n\n**Códigos de erro:**\n- `400` — `id` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — cliente não encontrado"
+            "description": "Ativa ou inativa um cliente.\n\n- **Body omitido:** faz toggle (inverte o estado atual)\n- **Body `{ \"ativo\": true }`:** ativa o cliente\n- **Body `{ \"ativo\": false }`:** inativa o cliente\n\n**Acesso comum, com escopo por carteira (SEC-01, 2026-09-24):** o admin altera qualquer cliente. O usuário `normal` só altera clientes da carteira ativa do próprio vendedor. Fora dela, ou sem vendedor vinculado, recebe `404` `\"cliente não encontrado\"`. Falha ao checar a carteira no banco: `500` `\"erro interno\"`. Vendedor desligado: `403`.\n\n**Mesmo valor (BUG-04, 2026-09-24):** enviar `ativo` igual ao estado atual responde `200`. Antes respondia `404`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Body (opcional):**\n- `ativo` (bool) — estado desejado. Se omitido, faz toggle.\n\n**Resposta de sucesso (200):** cliente atualizado (mesmo formato de `GET /api/clientes/{cliente_id_origem}`, sem campo `id`).\n\n**Códigos de erro:**\n- `400` — `id` inválido\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — `\"cliente não encontrado\"`: inexistente, fora da carteira ativa ou usuário `normal` sem vendedor\n- `500` — erro interno (inclui falha ao checar a carteira)"
           },
           "response": [
             {
@@ -3118,7 +3146,7 @@
               "body": "{\n  \"success\": false,\n  \"error\": \"cliente não encontrado\"\n}"
             },
             {
-              "name": "403 Forbidden — Não é admin",
+              "name": "404 Not Found — Cliente fora da carteira ou usuário sem vendedor (usuário normal)",
               "originalRequest": {
                 "method": "PATCH",
                 "header": [
@@ -3137,6 +3165,34 @@
                   "path": ["api", "clientes", "1", "inativar"]
                 }
               },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"cliente não encontrado\"\n}"
+            },
+            {
+              "name": "403 Forbidden — Vendedor desligado (usuário normal)",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/1/inativar",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "1", "inativar"]
+                }
+              },
               "status": "Forbidden",
               "code": 403,
               "_postman_previewlanguage": "json",
@@ -3147,7 +3203,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+              "body": "{\n  \"success\": false,\n  \"error\": \"acesso bloqueado: vendedor desligado\"\n}"
             }
           ]
         },
@@ -4074,10 +4130,10 @@
     },
     {
       "name": "Pedidos",
-      "description": "**Bloqueio de vendedor desligado (2026-09-24, decisão do usuário):** `GET /api/pedidos`, `GET /api/pedidos/{id}`, `POST /api/pedidos`, `PUT /api/pedidos/{id}` e `DELETE /api/pedidos/{id}` respondem `403` quando o usuário `normal` está vinculado a um vendedor com `data_desligamento` preenchida (leitura e escrita):\n```json\n{\"success\":false,\"error\":\"acesso bloqueado: vendedor desligado\"}\n```\n- A checagem é feita a cada requisição (sem cache e sem depender de novo JWT).\n- Admin não é afetado. Usuário `normal` sem vendedor vinculado mantém o comportamento anterior (`403` \"usuário sem vendedor vinculado\" nas escritas). Vínculo órfão é tratado como \"sem vendedor\".\n- Falha ao checar o vendedor no banco: `500` `\"erro interno\"` (fail-closed).\n\n**Datas (BUG-01, 2026-09-24):** o formato de `data_pedido` na resposta **não mudou**. A correção só eliminou o deslocamento de um dia: a data enviada (`AAAA-MM-DD`) agora é gravada e lida no mesmo dia, inclusive em re-salvamentos.\n\n**Atenção (revisão pendente):** os itens \"Listar\", \"Detalhe\" e \"Excluir\" ainda dizem \"admin only\"; em `routes.go` essas rotas são de acesso comum, com escopo por carteira.",
+      "description": "**Bloqueio de vendedor desligado (2026-09-24, decisão do usuário):** `GET /api/pedidos`, `GET /api/pedidos/{id}`, `POST /api/pedidos`, `PUT /api/pedidos/{id}` e `DELETE /api/pedidos/{id}` respondem `403` quando o usuário `normal` está vinculado a um vendedor com `data_desligamento` preenchida (leitura e escrita):\n```json\n{\"success\":false,\"error\":\"acesso bloqueado: vendedor desligado\"}\n```\n- A checagem é feita a cada requisição (sem cache e sem depender de novo JWT).\n- Admin não é afetado. Usuário `normal` sem vendedor vinculado mantém o comportamento anterior (`403` \"usuário sem vendedor vinculado\" nas escritas). Vínculo órfão é tratado como \"sem vendedor\".\n- Falha ao checar o vendedor no banco: `500` `\"erro interno\"` (fail-closed).\n\n**Datas (BUG-01, 2026-09-24):** o formato de `data_pedido` na resposta **não mudou**. A correção só eliminou o deslocamento de um dia: a data enviada (`AAAA-MM-DD`) agora é gravada e lida no mesmo dia, inclusive em re-salvamentos. **RISCO-01 (2026-09-24):** o processo da API passou a usar fuso fixo `-03:00` (sem horário de verão). O formato das datas na resposta continua o mesmo.\n\n**Acesso comum com escopo por carteira:** todas as rotas `/api/pedidos*` usam `JWTMiddleware(cfg, true, false)`. O admin vê e altera tudo. O usuário `normal` só lista, vê, edita e exclui pedidos do próprio vendedor; pedido de outro vendedor (ou usuário sem vendedor) → `404` \"pedido não encontrado\" em `GET`/`PUT`/`DELETE` por id, e lista vazia na listagem.\n\n**BUG-04 (2026-09-24):** `PUT` sem nenhuma alteração responde `200`. Antes respondia `404` \"não encontrado\".",
       "item": [
         {
-          "name": "Listar Pedidos (admin only)",
+          "name": "Listar Pedidos (acesso comum, escopo por carteira)",
           "event": [
             {
               "listen": "test",
@@ -4179,7 +4235,7 @@
                 }
               ]
             },
-            "description": "Lista pedidos com paginação e filtros (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status` (string) — filtro exato: `Cancelado`, `Em separação`, `Entregue` ou `Faturado`\n- `canal` (string) — filtro exato: `App`, `Telefone`, `Visita` ou `WhatsApp`\n- `cliente_id` (int64) — filtro exato pelo id interno do cliente\n- `vendedor_id` (int64) — filtro exato pelo id interno do vendedor\n- `data_inicio` / `data_fim` (`AAAA-MM-DD`) — intervalo de `data_pedido`\n- `q` (string) — busca livre pela razão social do cliente\n- `order_by`: id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: desc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):** cada item traz o cabeçalho do pedido + `cliente_nome`/`vendedor_nome` (via JOIN), sem os itens (para a lista de itens use `GET /api/pedidos/{pedido_id_origem}`). `pedido_id_origem` é a PK (não existe mais campo `id`).\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Lista pedidos com paginação e filtros.\n\n**Acesso comum, com escopo por carteira:** o admin vê todos os pedidos. O usuário `normal` só vê os pedidos do próprio vendedor (`vendedor_id` da query é ignorado); sem vendedor vinculado, recebe `200` com lista vazia.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status` (string) — filtro exato: `Cancelado`, `Em separação`, `Entregue` ou `Faturado`\n- `canal` (string) — filtro exato: `App`, `Telefone`, `Visita` ou `WhatsApp`\n- `cliente_id` (int64) — filtro exato pelo id interno do cliente\n- `vendedor_id` (int64) — filtro exato pelo id interno do vendedor\n- `data_inicio` / `data_fim` (`AAAA-MM-DD`) — intervalo de `data_pedido`\n- `q` (string) — busca livre pela razão social do cliente\n- `order_by`: id, data_pedido, canal, status, valor_total, created_at, updated_at, cliente_nome, vendedor_nome. Default: id.\n- `order_dir`: asc|desc, case-insensitive. Default: desc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):** cada item traz o cabeçalho do pedido + `cliente_nome`/`vendedor_nome` (via JOIN), sem os itens (para a lista de itens use `GET /api/pedidos/{pedido_id_origem}`). `pedido_id_origem` é a PK (não existe mais campo `id`).\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `500` — erro interno"
           },
           "response": [
             {
@@ -4239,7 +4295,7 @@
               "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pedido_id_origem\": 100001,\n      \"cliente_id\": 1,\n      \"vendedor_id\": 1,\n      \"data_pedido\": \"2026-03-10T00:00:00Z\",\n      \"canal\": \"App\",\n      \"status\": \"Faturado\",\n      \"valor_total\": 459.7,\n      \"created_at\": \"2026-09-13T00:00:00Z\",\n      \"updated_at\": \"2026-09-13T00:00:00Z\",\n      \"cliente_nome\": \"Perfumaria Central Ltda\",\n      \"vendedor_nome\": \"Henrique Rodrigues\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 28729,\n    \"pages\": 1437\n  }\n}"
             },
             {
-              "name": "403 Forbidden — Não é admin",
+              "name": "200 OK — Normal sem vendedor vinculado (lista vazia)",
               "originalRequest": {
                 "method": "GET",
                 "header": [],
@@ -4249,8 +4305,8 @@
                   "path": ["api", "pedidos"]
                 }
               },
-              "status": "Forbidden",
-              "code": 403,
+              "status": "OK",
+              "code": 200,
               "_postman_previewlanguage": "json",
               "header": [
                 {
@@ -4259,7 +4315,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": [],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 0,\n    \"pages\": 0\n  }\n}"
             }
           ]
         },
@@ -4476,7 +4532,7 @@
           ]
         },
         {
-          "name": "Detalhe do Pedido (admin only)",
+          "name": "Detalhe do Pedido (acesso comum, escopo por carteira)",
           "event": [
             {
               "listen": "test",
@@ -4516,7 +4572,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pedidos", "1"]
             },
-            "description": "Retorna o detalhe de um pedido pelo `pedido_id_origem` (PK), incluindo a lista de itens (master-detail). Não existe mais campo `id` na resposta.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — corresponde a `pedido_id_origem` do pedido\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — pedido não encontrado"
+            "description": "Retorna o detalhe de um pedido pelo `pedido_id_origem` (PK), incluindo a lista de itens (master-detail). Não existe mais campo `id` na resposta.\n\n**Acesso comum, com escopo por carteira:** o admin vê qualquer pedido. O usuário `normal` só vê pedidos do próprio vendedor; pedido de outro vendedor, ou usuário sem vendedor, recebe `404` `\"pedido não encontrado\"` (mesma mensagem do inexistente).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Path param:**\n- `id` (int64) — corresponde a `pedido_id_origem` do pedido\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — pedido não encontrado, ou de outro vendedor (usuário `normal`)\n- `500` — erro interno"
           },
           "response": [
             {
@@ -4566,7 +4622,7 @@
               "body": "{\n  \"success\": false,\n  \"error\": \"pedido não encontrado\"\n}"
             },
             {
-              "name": "403 Forbidden — Não é admin",
+              "name": "404 Not Found — Pedido de outro vendedor (usuário normal)",
               "originalRequest": {
                 "method": "GET",
                 "header": [],
@@ -4576,8 +4632,8 @@
                   "path": ["api", "pedidos", "1"]
                 }
               },
-              "status": "Forbidden",
-              "code": 403,
+              "status": "Not Found",
+              "code": 404,
               "_postman_previewlanguage": "json",
               "header": [
                 {
@@ -4586,7 +4642,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido não encontrado\"\n}"
             }
           ]
         },
@@ -4740,7 +4796,7 @@
           ]
         },
         {
-          "name": "Excluir Pedido (admin only)",
+          "name": "Excluir Pedido (acesso comum, escopo por carteira)",
           "event": [
             {
               "listen": "test",
@@ -4772,7 +4828,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pedidos", "1"]
             },
-            "description": "Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete — 2026-09-22).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pedido_id_origem`\n\n**Regras de negócio:**\n- Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (é preciso excluir/remover os pagamentos antes).\n- Bloqueado com `409` se o pedido já estiver com `status = \"Faturado\"` (nesse caso a única alteração permitida é a de status, via `PUT`).\n- Escopo idêntico ao `GET`/`PUT`: usuário `normal` só exclui pedido da própria carteira — `404` (não `403`) se pertencer a outro vendedor.\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — pedido não encontrado, ou pertence a outro vendedor (usuário `normal`)\n- `409` — pedido possui pagamentos vinculados, ou está com status `Faturado`"
+            "description": "Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete — 2026-09-22).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pedido_id_origem`\n\n**Regras de negócio:**\n- Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (é preciso excluir/remover os pagamentos antes).\n- Bloqueado com `409` se o pedido já estiver com `status = \"Faturado\"` (nesse caso a única alteração permitida é a de status, via `PUT`).\n- Escopo idêntico ao `GET`/`PUT`: usuário `normal` só exclui pedido da própria carteira — `404` (não `403`) se pertencer a outro vendedor.\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — pedido não encontrado, ou pertence a outro vendedor (usuário `normal`)\n- `409` — pedido possui pagamentos vinculados, ou está com status `Faturado`"
           },
           "response": [
             {
@@ -4957,7 +5013,7 @@
                 }
               ]
             },
-            "description": "Lista pagamentos com paginação e filtros.\n\n**Acesso comum: diferente de Clientes/Produtos/Pedidos (admin only), este endpoint aceita qualquer usuário autenticado (`admin` ou `normal`).** Por isso o exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`) em vez de `{{admin_token}}`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status_pagamento` (string) — filtro exato: `Em aberto`, `Inadimplente`, `Pago` ou `Pago com atraso`\n- `forma_pagamento` (string) — filtro exato: `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro` ou `PIX`\n- `pedido_id` (int64) — filtro exato pelo id interno do pedido\n- `vencimento_de` / `vencimento_ate` (`AAAA-MM-DD`) — intervalo de `data_vencimento`\n- `order_by`: pagamento_id, pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento, created_at, updated_at. Default: pagamento_id.\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pagamento_id\": 1,\n      \"pedido_id\": 1,\n      \"forma_pagamento\": \"PIX\",\n      \"parcelas\": 1,\n      \"valor\": 459.7,\n      \"taxa_pct\": 0.99,\n      \"valor_liquido\": 455.15,\n      \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n      \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n      \"status_pagamento\": \"Pago\",\n      \"created_at\": \"2026-09-14T00:00:00Z\",\n      \"updated_at\": \"2026-09-14T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 27700,\n    \"pages\": 1385\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `pedido_id` inválido (não numérico)\n- `401` — não autenticado"
+            "description": "Lista pagamentos com paginação e filtros.\n\n**Acesso comum: este endpoint aceita qualquer usuário autenticado (`admin` ou `normal`), com escopo por carteira para o `normal`.** Por isso o exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`) em vez de `{{admin_token}}`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Query params (todos opcionais):**\n- `page` (int, padrão: 1)\n- `limit` (int, padrão: 20, máx: 100)\n- `status_pagamento` (string) — filtro exato: `Em aberto`, `Inadimplente`, `Pago` ou `Pago com atraso`\n- `forma_pagamento` (string) — filtro exato: `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro` ou `PIX`\n- `pedido_id` (int64) — filtro exato pelo id interno do pedido\n- `vencimento_de` / `vencimento_ate` (`AAAA-MM-DD`) — intervalo de `data_vencimento`\n- `order_by`: pagamento_id, pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento, created_at, updated_at. Default: pagamento_id.\n- `order_dir`: asc|desc, case-insensitive. Default: asc. Valor inválido cai silenciosamente no default (sem erro 400).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"pagamento_id\": 1,\n      \"pedido_id\": 1,\n      \"forma_pagamento\": \"PIX\",\n      \"parcelas\": 1,\n      \"valor\": 459.7,\n      \"taxa_pct\": 0.99,\n      \"valor_liquido\": 455.15,\n      \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n      \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n      \"status_pagamento\": \"Pago\",\n      \"created_at\": \"2026-09-14T00:00:00Z\",\n      \"updated_at\": \"2026-09-14T00:00:00Z\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 27700,\n    \"pages\": 1385\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `pedido_id` inválido (não numérico)\n- `401` — não autenticado"
           },
           "response": [
             {
@@ -5078,7 +5134,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pagamentos"]
             },
-            "description": "Cria um novo pagamento.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`) pode criar — não é admin only.** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Escopo por carteira para usuário `normal` (2026-09-23):**\n- `403` `\"usuário sem vendedor vinculado\"` se o usuário não tiver vendedor vinculado.\n- `404` `\"pedido não encontrado\"` se `pedido_id` pertencer a pedido de outro vendedor **ou** não existir (o `pedido_id` do exemplo precisa ser de um pedido da carteira do vendedor logado).\n\n**Status padronizado (2026-09-24):** `pedido_id` inexistente retorna `404` `\"pedido não encontrado\"` para **admin e normal** (antes o admin recebia `400`). O corpo é idêntico ao de pedido de outro vendedor, então não permite enumeração (parecer 🟣 SecBrain). `pedido_id` ausente ou `<= 0` continua `400` `\"pedido_id é obrigatório\"`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"pedido_id\": 1,\n  \"forma_pagamento\": \"PIX\",\n  \"parcelas\": 1,\n  \"valor\": 459.7,\n  \"taxa_pct\": 0.99,\n  \"valor_liquido\": 455.15,\n  \"data_vencimento\": \"2026-09-20\",\n  \"data_pagamento\": \"\",\n  \"status_pagamento\": \"Em aberto\"\n}\n```\n- `pedido_id` obrigatório — deve existir em `pedidos`.\n- `forma_pagamento` — um de `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro`, `PIX`.\n- `status_pagamento` — um de `Em aberto`, `Inadimplente`, `Pago`, `Pago com atraso`.\n- `parcelas` >= 1; `valor`/`taxa_pct`/`valor_liquido` >= 0.\n- `data_vencimento` obrigatória (`AAAA-MM-DD`); `data_pagamento` opcional (vazio = NULL).\n- **`valor_liquido` é sempre exigido explicitamente no payload** — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento).\n- `pagamento_id` é gerado automaticamente (AUTO_INCREMENT).\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 27701,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-09-20T00:00:00Z\",\n    \"data_pagamento\": null,\n    \"status_pagamento\": \"Em aberto\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `pedido_id` ausente ou `<= 0`, `forma_pagamento`/`status_pagamento` inválidos, `parcelas`/`valor`/`taxa_pct`/`valor_liquido` inválidos, `data_vencimento`/`data_pagamento` ausente ou em formato inválido\n- `401` — não autenticado\n- `403` — usuário `normal` sem vendedor vinculado\n- `404` — `pedido_id` inexistente (admin e normal) ou, para usuário `normal`, pedido de outro vendedor\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado, 2026-09-24)"
+            "description": "Cria um novo pagamento.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`) pode criar.** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Escopo por carteira para usuário `normal` (2026-09-23):**\n- `403` `\"usuário sem vendedor vinculado\"` se o usuário não tiver vendedor vinculado.\n- `404` `\"pedido não encontrado\"` se `pedido_id` pertencer a pedido de outro vendedor **ou** não existir (o `pedido_id` do exemplo precisa ser de um pedido da carteira do vendedor logado).\n\n**Status padronizado (2026-09-24):** `pedido_id` inexistente retorna `404` `\"pedido não encontrado\"` para **admin e normal** (antes o admin recebia `400`). O corpo é idêntico ao de pedido de outro vendedor, então não permite enumeração (parecer 🟣 SecBrain). `pedido_id` ausente ou `<= 0` continua `400` `\"pedido_id é obrigatório\"`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"pedido_id\": 1,\n  \"forma_pagamento\": \"PIX\",\n  \"parcelas\": 1,\n  \"valor\": 459.7,\n  \"taxa_pct\": 0.99,\n  \"valor_liquido\": 455.15,\n  \"data_vencimento\": \"2026-09-20\",\n  \"data_pagamento\": \"\",\n  \"status_pagamento\": \"Em aberto\"\n}\n```\n- `pedido_id` obrigatório — deve existir em `pedidos`.\n- `forma_pagamento` — um de `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro`, `PIX`.\n- `status_pagamento` — um de `Em aberto`, `Inadimplente`, `Pago`, `Pago com atraso`.\n- `parcelas` >= 1; `valor`/`taxa_pct`/`valor_liquido` >= 0.\n- `data_vencimento` obrigatória (`AAAA-MM-DD`); `data_pagamento` opcional (vazio = NULL).\n- **`valor_liquido` é sempre exigido explicitamente no payload** — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento).\n- `pagamento_id` é gerado automaticamente (AUTO_INCREMENT).\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 27701,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-09-20T00:00:00Z\",\n    \"data_pagamento\": null,\n    \"status_pagamento\": \"Em aberto\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `pedido_id` ausente ou `<= 0`, `forma_pagamento`/`status_pagamento` inválidos, `parcelas`/`valor`/`taxa_pct`/`valor_liquido` inválidos, `data_vencimento`/`data_pagamento` ausente ou em formato inválido\n- `401` — não autenticado\n- `403` — usuário `normal` sem vendedor vinculado\n- `404` — `pedido_id` inexistente (admin e normal) ou, para usuário `normal`, pedido de outro vendedor\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado, 2026-09-24)"
           },
           "response": [
             {

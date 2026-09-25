@@ -14,12 +14,13 @@ import {
   Vendedor,
   Produto,
 } from "@/lib/types";
+import { useAjustarAoMudar, useResetOnOpen } from "@/lib/useResetOnOpen";
 import {
   apiListVendedores,
   apiListProdutos,
   apiListClientesDoVendedor,
 } from "@/lib/api";
-import { getSessionUser, refreshSessionUser, useSessionUser } from "@/lib/session";
+import { refreshSessionUser, useSessionUser } from "@/lib/session";
 
 // Traduz mensagens de erro do backend para textos mais amigaveis. Hoje trata
 // o 400 "cliente nao pertence a carteira deste vendedor" (escopo por carteira
@@ -144,47 +145,49 @@ export function PedidoModal({
   }, [open]);
 
   // Mantem o vendedor travado sincronizado com a sessao (usuario normal).
-  useEffect(() => {
+  // Ajustado durante o render quando open/isAdmin/ownVendedorId mudam.
+  useAjustarAoMudar([open, isAdmin, ownVendedorId], () => {
     if (open && !isAdmin) {
       setVendedorId(ownVendedorId ? String(ownVendedorId) : "");
     }
-  }, [open, isAdmin, ownVendedorId]);
+  });
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setSubmitting(false);
-      const user = getSessionUser();
-      const admin = user?.role === "admin";
-      const ownId = !admin && user?.id_vendedor ? user.id_vendedor : null;
-      const lockedVendedor = !admin ? (ownId ? String(ownId) : "") : null;
-      if (mode === "edit" && pedido) {
-        setClienteId(String(pedido.cliente_id));
-        setVendedorId(lockedVendedor ?? String(pedido.vendedor_id));
-        setDataPedido(pedido.data_pedido ? pedido.data_pedido.slice(0, 10) : "");
-        setCanal(pedido.canal);
-        setStatus(pedido.status);
-        setItens(
-          pedido.itens.length > 0
-            ? pedido.itens.map((it) => ({
-                localId: String(it.item_id_origem),
-                produto_id: String(it.produto_id),
-                quantidade: String(it.quantidade),
-                preco_praticado: String(it.preco_praticado),
-                desconto_pct: String(it.desconto_pct),
-              }))
-            : [emptyItemRow()]
-        );
-      } else {
-        setClienteId("");
-        setVendedorId(lockedVendedor ?? "");
-        setDataPedido(todayISO());
-        setCanal("App");
-        setStatus("Em separação");
-        setItens([emptyItemRow()]);
-      }
+  // Reseta o formulario ao abrir (ou quando as props mudam com o modal
+  // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  useResetOnOpen(open, [mode, pedido], () => {
+    setError(null);
+    setSubmitting(false);
+    // Sessao em memoria (/me) lida de forma reativa: o reset roda no render.
+    const user = sessionUser;
+    const admin = user?.role === "admin";
+    const ownId = !admin && user?.id_vendedor ? user.id_vendedor : null;
+    const lockedVendedor = !admin ? (ownId ? String(ownId) : "") : null;
+    if (mode === "edit" && pedido) {
+      setClienteId(String(pedido.cliente_id));
+      setVendedorId(lockedVendedor ?? String(pedido.vendedor_id));
+      setDataPedido(pedido.data_pedido ? pedido.data_pedido.slice(0, 10) : "");
+      setCanal(pedido.canal);
+      setStatus(pedido.status);
+      setItens(
+        pedido.itens.length > 0
+          ? pedido.itens.map((it) => ({
+              localId: String(it.item_id_origem),
+              produto_id: String(it.produto_id),
+              quantidade: String(it.quantidade),
+              preco_praticado: String(it.preco_praticado),
+              desconto_pct: String(it.desconto_pct),
+            }))
+          : [emptyItemRow()]
+      );
+    } else {
+      setClienteId("");
+      setVendedorId(lockedVendedor ?? "");
+      setDataPedido(todayISO());
+      setCanal("App");
+      setStatus("Em separação");
+      setItens([emptyItemRow()]);
     }
-  }, [open, mode, pedido]);
+  });
 
   // Carrega clientes/vendedores/produtos para popular os selects. Reutiliza
   // os endpoints ja existentes GET /api/clientes, /api/vendedores e
@@ -194,11 +197,16 @@ export function PedidoModal({
   // services.ParsePagination), entao para o catalogo de produtos (que pode
   // ter varias centenas de itens) e preciso paginar ate esgotar todas as
   // paginas, em vez de confiar em um unico limit alto.
+  // Parte sincrona (liga o loading / limpa o erro) roda durante o render ao
+  // abrir; o efeito so busca e aplica o resultado nos callbacks.
+  useResetOnOpen(open, [], () => {
+    setLoadingAux(true);
+    setAuxError(null);
+  });
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLoadingAux(true);
-    setAuxError(null);
 
     const loadAllProdutos = async (): Promise<Produto[]> => {
       const PAGE_SIZE = 100;
@@ -243,20 +251,27 @@ export function PedidoModal({
       ? { id: String(pedido.cliente_id), nome: pedido.cliente_nome }
       : null;
   const clienteOriginalId = clienteOriginal?.id ?? "";
+  const clienteOriginalNome = clienteOriginal?.nome ?? "";
 
   // Dropdown em cascata: sempre que o Vendedor selecionado mudar, recarrega
   // a lista de Clientes via GET /api/vendedores/{id}/clientes (mesmo padrao
   // de VisitaModal/OportunidadeModal, para admin e usuario comum).
-  useEffect(() => {
-    if (!open) return;
+  // Parte sincrona roda durante o render quando o modal abre ou o
+  // vendedor muda (useResetOnOpen); o efeito so busca e aplica o
+  // resultado nos callbacks assincronos.
+  useResetOnOpen(open, [vendedorId], () => {
+    setClientesError(null);
     if (!vendedorId) {
       setClientes([]);
-      setClientesError(null);
+      setLoadingClientes(false);
       return;
     }
-    let cancelled = false;
     setLoadingClientes(true);
-    setClientesError(null);
+  });
+
+  useEffect(() => {
+    if (!open || !vendedorId) return;
+    let cancelled = false;
     apiListClientesDoVendedor(Number(vendedorId))
       .then((res) => {
         if (cancelled) return;
@@ -305,18 +320,18 @@ export function PedidoModal({
       })),
     ];
     if (
-      clienteOriginal &&
-      !clientes.some((c) => String(c.id) === clienteOriginal.id)
+      clienteOriginalId &&
+      !clientes.some((c) => String(c.id) === clienteOriginalId)
     ) {
       opts.push({
-        value: clienteOriginal.id,
-        label: `#${clienteOriginal.id} - ${clienteOriginal.nome}${
+        value: clienteOriginalId,
+        label: `#${clienteOriginalId} - ${clienteOriginalNome}${
           loadingClientes ? "" : " (fora da carteira)"
         }`,
       });
     }
     return opts;
-  }, [clientes, vendedorId, loadingClientes, clienteOriginal?.id, clienteOriginal?.nome]);
+  }, [clientes, vendedorId, loadingClientes, clienteOriginalId, clienteOriginalNome]);
 
   const vendedorOptions = useMemo(() => {
     const opts = [

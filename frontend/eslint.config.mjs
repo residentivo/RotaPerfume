@@ -8,11 +8,10 @@ export default defineConfig([
   ...nextTs,
   {
     rules: {
-      // Regra nova do React Compiler (eslint-plugin-react-hooks 7). O projeto
-      // usa em massa o padrao "resetar/carregar estado em useEffect ao abrir
-      // modal ou mudar filtro" (~30 ocorrencias). Fica como warn ate uma
-      // refatoracao dedicada; nao e bug funcional.
-      "react-hooks/set-state-in-effect": "warn",
+      // Regra do React Compiler (eslint-plugin-react-hooks 7). Refatorado em
+      // FE-03: estado derivado no render, "ajustar estado quando a prop muda"
+      // (src/lib/useResetOnOpen.ts) e setState so em callbacks assincronos.
+      "react-hooks/set-state-in-effect": "error",
     },
   },
   globalIgnores([

@@ -112,7 +112,7 @@ func main() {
 	log.Printf("importpagamentos: %d pedidos carregados para lookup", len(pedidoIDs))
 
 	inserted, updated, failed := upsertPagamentos(db, rows, pedidoIDs)
-	log.Printf("importpagamentos: concluído — lidos=%d inseridos=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
+	log.Printf("importpagamentos: concluído — lidos=%d inseridos_ou_inalterados=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
 		len(rows), inserted, updated, failed, parseErrs)
 }
 
@@ -362,6 +362,10 @@ func upsertPagamentos(db *sql.DB, rows []pagamentoRow, pedidoIDs map[int64]int64
 			failed++
 			continue
 		}
+		// Com clientFoundRows=true no DSN (BUG-04), o MySQL devolve, via ON
+		// DUPLICATE KEY UPDATE: 1 = INSERT novo OU linha já existente sem
+		// alteração; 2 = UPDATE com alteração real. Por isso o contador
+		// "inseridos" é rotulado como inseridos_ou_inalterados.
 		affected, _ := result.RowsAffected()
 		switch affected {
 		case 1:

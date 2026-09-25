@@ -107,7 +107,7 @@ func main() {
 
 	inserted, updated, failed := upsertAll(db, rows, clienteIDs)
 
-	log.Printf("importcarteiras: OK — lidos=%d inseridos=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
+	log.Printf("importcarteiras: OK — lidos=%d inseridos_ou_inalterados=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
 		len(rows), inserted, updated, failed, parseErrs)
 }
 
@@ -294,8 +294,10 @@ func upsertAll(db *sql.DB, rows []carteiraRow, clienteIDs map[int64]int64) (inse
 			failed++
 			continue
 		}
-		// MySQL retorna affected rows = 1 para INSERT novo, 2 para UPDATE
-		// (quando houve alteração real) via ON DUPLICATE KEY UPDATE.
+		// Com clientFoundRows=true no DSN (BUG-04), o MySQL devolve, via ON
+		// DUPLICATE KEY UPDATE: 1 = INSERT novo OU linha já existente sem
+		// alteração; 2 = UPDATE com alteração real. Por isso o contador
+		// "inseridos" é rotulado como inseridos_ou_inalterados.
 		affected, _ := result.RowsAffected()
 		switch affected {
 		case 1:
@@ -303,7 +305,7 @@ func upsertAll(db *sql.DB, rows []carteiraRow, clienteIDs map[int64]int64) (inse
 		case 2:
 			updated++
 		default:
-			// affected == 0: linha já existia e nenhum valor mudou.
+			// affected == 0: não ocorre com clientFoundRows=true (mantido por robustez).
 			updated++
 		}
 	}

@@ -214,6 +214,23 @@ func (r *UsuarioRepository) SetAtivo(ctx context.Context, db *sql.DB, id int64, 
 	return nil
 }
 
+// InativarByVendedorID inativa (ativo = 0) todos os usuários ativos
+// vinculados ao vendedor informado e retorna quantos foram afetados.
+// Zero linhas afetadas NÃO é erro: o vendedor pode não ter usuário.
+// Aceita *sql.DB ou *sql.Tx (ver Execer).
+func (r *UsuarioRepository) InativarByVendedorID(ctx context.Context, db Execer, vendedorID int64) (int64, error) {
+	const q = `UPDATE usuarios SET ativo = 0 WHERE id_vendedor = ? AND ativo = 1`
+	res, err := db.ExecContext(ctx, q, vendedorID)
+	if err != nil {
+		return 0, fmt.Errorf("repositories: inativar usuarios do vendedor: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("repositories: inativar usuarios do vendedor rowsAffected: %w", err)
+	}
+	return n, nil
+}
+
 // SetDeveTrocarSenha marca/desmarca a flag de primeiro acesso (troca de
 // senha obrigatória). Retorna ErrNotFound se não existir.
 func (r *UsuarioRepository) SetDeveTrocarSenha(ctx context.Context, db *sql.DB, id int64, valor bool) error {

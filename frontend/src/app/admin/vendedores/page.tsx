@@ -67,32 +67,42 @@ function VendedoresPageContent() {
     null
   );
 
+  const aplicarVendedores = (res: Vendedor[]) => {
+    setVendedores(res);
+    setLoading(false);
+  };
+
+  const aplicarErroVendedores = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar vendedores. O endpoint /api/vendedores pode nao existir no backend.";
+    setError(message);
+    setVendedores([]);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (apos criar/editar/ativar).
   const loadVendedores = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await apiListVendedores();
-      setVendedores(res);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar vendedores. O endpoint /api/vendedores pode nao existir no backend.";
-      setError(message);
-      setVendedores([]);
-    } finally {
-      setLoading(false);
-    }
+    await apiListVendedores().then(aplicarVendedores, aplicarErroVendedores);
   };
 
+  // Carga inicial: o loading ja comeca true; o efeito so faz a busca e
+  // aplica o resultado no callback assincrono.
   useEffect(() => {
-    loadVendedores();
+    apiListVendedores().then(aplicarVendedores, aplicarErroVendedores);
   }, []);
 
-  // Reseta para pagina 1 quando busca/filtros/ordenacao mudam.
-  useEffect(() => {
+  // Reseta para pagina 1 quando busca/filtros/ordenacao mudam — ajustado
+  // durante o render (padrao "ajustar estado quando a entrada muda").
+  const chaveFiltros = `${search}|${regiaoFilter}|${ufFilter}|${statusFilter}|${sortKey}|${sortDir}`;
+  const [filtrosAnteriores, setFiltrosAnteriores] = useState(chaveFiltros);
+  if (filtrosAnteriores !== chaveFiltros) {
+    setFiltrosAnteriores(chaveFiltros);
     setPage(1);
-  }, [search, regiaoFilter, ufFilter, statusFilter, sortKey, sortDir]);
+  }
 
   const regiaoOptions = useMemo(() => {
     const values = Array.from(new Set(vendedores.map((v) => v.regiao))).sort(

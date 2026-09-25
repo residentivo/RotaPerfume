@@ -316,7 +316,9 @@ func (r *ClienteRepository) CountPorUF(ctx context.Context, db *sql.DB, vendedor
 
 // Create insere um novo cliente e preenche c.ClienteIDOrigem com o id
 // gerado nativamente pelo AUTO_INCREMENT do MySQL.
-func (r *ClienteRepository) Create(ctx context.Context, db *sql.DB, c *models.Cliente) error {
+// Aceita *sql.DB ou *sql.Tx (ver Execer): o cadastro de cliente por usuário
+// normal grava cliente + carteira na mesma transação (SEC-01).
+func (r *ClienteRepository) Create(ctx context.Context, db Execer, c *models.Cliente) error {
 	const q = `
 		INSERT INTO clientes (cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`

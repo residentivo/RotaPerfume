@@ -31,6 +31,10 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
+
+	// Este binário não usa config.DSN(); importa tz diretamente para fixar
+	// time.Local em -03:00 antes do sql.Open (RISCO-01).
+	_ "github.com/rotaperfumes/shared/tz"
 )
 
 const (
@@ -50,8 +54,12 @@ func main() {
 
 	loadEnvFromCwd()
 
+	// Mesmo DSN de config.DSN() (ver lá a regra de clientFoundRows=true:
+	// condições "só se ainda não ..." vão no WHERE, nunca deduzidas de
+	// RowsAffected=0). Os upserts abaixo (UPDATE e, se 0 linhas, INSERT)
+	// continuam corretos: com a flag, 0 significa "e-mail não existe".
 	dsn := fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local",
+		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true",
 		getEnv("DB_USUARIO", "golang"),
 		getEnv("DB_SENHA", "golang"),
 		getEnv("DB_HOST", "localhost"),

@@ -160,6 +160,10 @@ Exemplos:
 > - Na collection, cada pasta (Clientes, Pedidos, Pagamentos, Oportunidades, Visitas) tem uma nota na descrição e o exemplo `403 Forbidden — Vendedor desligado (usuário normal)` na listagem e na criação, e também em "Listar Clientes do Vendedor".
 >
 > **Datas (BUG-01, 2026-09-24):** o formato das datas nas respostas **não mudou**. A correção (`time.ParseInLocation(..., time.Local)`) só eliminou o deslocamento de um dia na gravação: a data enviada como `AAAA-MM-DD` é gravada e lida no mesmo dia, inclusive em re-salvamentos.
+>
+> **Fuso fixo (RISCO-01, 2026-09-24):** o processo da API (e o `resetpassword`) passou a usar `time.Local` = fuso fixo `-03:00`, sem horário de verão (pacote `apis/shared/tz`). O formato das datas nas respostas **não mudou**. Datas históricas de início de horário de verão (ex.: `2018-11-04`) não recuam mais um dia em Linux/Docker com `TZ=America/Sao_Paulo`.
+>
+> **Salvar sem alterações (BUG-04, 2026-09-24):** qualquer `PUT`/`PATCH` que envie os mesmos valores já gravados responde `200` com o registro. Antes respondia `404` "não encontrado", porque o MySQL devolvia `RowsAffected=0`. O DSN agora usa `clientFoundRows=true`. Id inexistente continua `404`. `DELETE /api/vendedores/{id}` em vendedor já desligado responde `200` e preserva a `data_desligamento` original.
 
 ### Dashboard (`/api/dashboard/*`) — acesso comum com escopo por vendedor
 
@@ -215,39 +219,59 @@ Exemplos:
 - **Descrição:** Histórico de senhas de um usuário específico
 - **Ordenação:** mesmas regras de `GET /api/senha-historico` acima (`order_by`/`order_dir`).
 
-### Clientes (`/api/clientes/*` admin only; `/api/dashboard/clientes` acesso comum com escopo da carteira)
+### Clientes (`/api/clientes/*` e `/api/dashboard/clientes`) — **acesso comum, com escopo por carteira**
 
 > Base de clientes importada de `dados/crm/clientes.csv` para a tabela `clientes` (ver seção "Importação de clientes (CRM)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Clientes"** da collection.
 >
 > **Vendedor desligado (2026-09-24):** as 5 rotas `/api/clientes*` respondem `403` `"acesso bloqueado: vendedor desligado"` para o usuário `normal` com vendedor desligado. Ver a seção "Bloqueio de vendedor desligado nas rotas da carteira".
 >
-> **Atenção (revisão pendente, 2026-09-24):** esta seção e a pasta da collection ainda descrevem `/api/clientes*` como "admin only". Em `apis/rotaperfumes-api/routes/routes.go` essas rotas usam `JWTMiddleware(cfg, true, false)` (**acesso comum**), com escopo por carteira aplicado no handler. Ver também o card **SEC-01** (IDOR em Create/Update/Toggle de clientes) em `tarefas/afazer.md`.
+> **Acesso comum com escopo por carteira:** todas as rotas `/api/clientes*` usam `JWTMiddleware(cfg, true, false)` (qualquer usuário autenticado). O escopo é aplicado no handler (`apis/rotaperfumes-api/handlers/cliente_handler.go`). O admin não sofre restrições.
+>
+> **Escopo nas escritas (SEC-01, 2026-09-24):** antes, qualquer usuário `normal` conseguia editar ou inativar qualquer cliente pelo id. Agora (helper `autorizarEscritaCliente`, checado antes de ler o body):
+>
+> | Rota | `normal` com vendedor | `normal` sem vendedor | Admin |
+> |------|-----------------------|-----------------------|-------|
+> | `POST /api/clientes` | `201`; o cliente é vinculado automaticamente à carteira do vendedor (`data_inicio` = hoje), na mesma transação (`ClienteService.CreateClienteNaCarteira`) | `403` `"usuário sem vendedor vinculado"` | `201`, sem vínculo de carteira (sem mudança) |
+> | `PUT /api/clientes/{id}` | `404` `{"success":false,"error":"cliente não encontrado"}` fora da carteira ativa | `404` `"cliente não encontrado"` | sem restrição |
+> | `PATCH /api/clientes/{id}/inativar` | `404` `"cliente não encontrado"` fora da carteira ativa | `404` `"cliente não encontrado"` | sem restrição |
+>
+> - O `404` fora da carteira usa a mesma mensagem do cliente inexistente, para não revelar clientes de outras carteiras.
+> - Falha ao checar a carteira no banco: `500` `"erro interno"`.
+> - Vendedor desligado: `403` `"acesso bloqueado: vendedor desligado"`, como antes.
+> - **Leitura:** `GET /api/clientes` devolve só a carteira ativa do vendedor (lista vazia para usuário sem vendedor). `GET /api/clientes/{id}` fora da carteira devolve `404`.
+>
+> **Salvar sem alterações (BUG-04, 2026-09-24):** `PUT`/`PATCH` com os mesmos valores já gravados responde `200`. Antes respondia `404` "não encontrado".
 
 #### GET /api/clientes
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira para o `normal`)
 - **Query (todos opcionais):** `?page=1&limit=20&uf=SP&segmento=Varejo&ativo=true&q=perfumaria&order_by=razao_social&order_dir=asc`
 - **Descrição:** Lista clientes paginada (total + pages), com filtros exatos por `uf`/`segmento`, filtro por status (`ativo=true|false`) e busca livre (`q`) em `razao_social` OU `cnpj`
 - **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at` (default: `id`; `id` é um alias de coluna aceito pela API, mapeado para `cliente_id_origem` — não existe mais campo `id` na resposta); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/clientes
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado; `normal` precisa ter vendedor vinculado)
+- **Escopo (SEC-01):** usuário `normal` sem vendedor → `403` `"usuário sem vendedor vinculado"`. Com vendedor → `201`, e o cliente é vinculado automaticamente à carteira do vendedor. Admin: sem mudança.
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" (opcional, "AAAA-MM-DD", default hoje) }`
 - **Descrição:** Cria um novo cliente. `cliente_id_origem` é a PK `BIGINT AUTO_INCREMENT` da tabela, gerada nativamente pelo MySQL (não é aceita no body), e `ativo` é sempre `true` na criação. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação. Não existe mais campo `id` — `cliente_id_origem` é o único identificador.
 - **Nota histórica (resolvida):** versões anteriores geravam `cliente_id_origem` via `MAX(cliente_id_origem) + 1` sem transação/lock explícito, com risco teórico de colisão em criações concorrentes. Esse débito técnico foi eliminado na tarefa "Promover colunas \*_id_origem a PK autoincremento" (2026-09-15) — a geração agora é feita nativamente pelo MySQL via `AUTO_INCREMENT`.
 
 #### GET /api/clientes/{id}
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado; `404` fora da carteira para o `normal`)
 - **Descrição:** Retorna o detalhe de um cliente pelo `cliente_id_origem` (PK da tabela; o path param continua se chamando `id` na rota, mas não existe mais campo `id` separado na resposta)
 
 #### PUT /api/clientes/{id}
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira ativa para o `normal`)
+- **Escopo (SEC-01):** usuário `normal` fora da carteira ativa, ou sem vendedor → `404` `"cliente não encontrado"`. Falha ao checar a carteira → `500`. Vendedor desligado → `403`.
+- **Sem alterações (BUG-04):** `200`.
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" ("AAAA-MM-DD") }`
 - **Descrição:** Atualiza os dados de um cliente existente. `cliente_id_origem` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/clientes/{id}/inativar` para alterar `ativo`). Retorna `200` com o cliente atualizado, `404` se não existir, `400` se o payload for inválido.
 
 #### PATCH /api/clientes/{id}/inativar
-- **Auth:** Bearer Token (admin)
+- **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira ativa para o `normal`)
 - **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
 - **Descrição:** Ativa ou inativa o cliente
+- **Escopo (SEC-01):** usuário `normal` fora da carteira ativa, ou sem vendedor → `404` `"cliente não encontrado"`. Falha ao checar a carteira → `500`. Vendedor desligado → `403`.
+- **Mesmo valor (BUG-04):** enviar `ativo` igual ao estado atual responde `200`.
 
 #### GET /api/dashboard/clientes
 - **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira do vendedor para o normal). A rota usa `JWTMiddleware(cfg, true, false)`, então não há `403`.
@@ -329,9 +353,9 @@ Exemplos:
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Descrição:** Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete). Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (`"pedido possui pagamentos vinculados: remova-os antes de excluir o pedido"`) ou se já estiver com `status = "Faturado"` (`"pedido faturado não pode ser excluído, apenas ter o status alterado"` — nesse caso a única alteração permitida é a de status, via `PUT`). Escopo idêntico ao `GET`/`PUT`: `404` (não `403`) se o pedido pertencer a outro vendedor. Retorna `204` sem corpo em caso de sucesso.
 
-### Pagamentos (`/api/pagamentos/*`) — **acesso comum (não é admin only)**
+### Pagamentos (`/api/pagamentos/*`) — **acesso comum, com escopo por carteira**
 
-> **Diferente de Clientes/Produtos/Pedidos (todos admin only), Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`.** A cadeia de middleware usada é `middleware.JWTMiddleware(cfg, true, false)` (`requireAuth=true`, `requireAdmin=false`), enquanto as demais telas usam `(cfg, true, true)`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum.
+> **Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`**, como Clientes, Pedidos, Oportunidades e Visitas. A cadeia de middleware usada é `middleware.JWTMiddleware(cfg, true, false)` (`requireAuth=true`, `requireAdmin=false`); as rotas admin only (Usuários, Estoque, escrita de Produtos, gestão de Vendedores) usam `(cfg, true, true)`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum.
 >
 > **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/pagamentos/{id}` — hard delete (sem exclusão lógica). Ver detalhes abaixo.
 >
@@ -380,7 +404,7 @@ Exemplos:
 | POST | `/api/vendedores` | admin only | `403` |
 | GET | `/api/vendedores/{id}` | admin only | `403` |
 | PUT | `/api/vendedores/{id}` | admin only | `403` |
-| DELETE | `/api/vendedores/{id}` | admin only (inativa via `data_desligamento`) | `403` |
+| DELETE | `/api/vendedores/{id}` | admin only (inativa via `data_desligamento`; em vendedor já desligado responde `200` e preserva a `data_desligamento` original — BUG-04, 2026-09-24) | `403` |
 | POST | `/api/vendedores/{id}/reativar` | admin only | `403` |
 | POST | `/api/vendedores/{id}/clientes` | admin only (vincula/transfere cliente) | `403` |
 | DELETE | `/api/vendedores/{id}/clientes/{clienteId}` | admin only (encerra vínculo) | `403` |
@@ -602,11 +626,11 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 ### Detalhe do Cliente
 - `Status 200`
-- `Dados do cliente presentes`
+- `Dados do cliente presentes` (`cliente_id_origem`, `razao_social`, `cnpj`; antes verificava `id`, campo que não existe mais)
 
 ### Editar Cliente
 - `Status 200 OK`
-- `Cliente atualizado com dados corretos`
+- `Cliente atualizado com dados corretos` (`cliente_id_origem` e `razao_social`; antes verificava `id`, campo que não existe mais)
 
 ### Ativar/Inativar Cliente
 - `Status 200 OK`

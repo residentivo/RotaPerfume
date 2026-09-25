@@ -15,7 +15,14 @@ import {
   apiCreateCliente,
   apiUpdateCliente,
 } from "@/lib/api";
+import { ApiError } from "@/lib/apiError";
+import { useSessionUser, useVendedorDesligado } from "@/lib/session";
 import { Cliente, ClienteInput } from "@/lib/types";
+
+// Mensagens do backend (SEC-01), usadas so como fallback se a API nao
+// devolver texto.
+const MSG_SEM_VENDEDOR = "usuário sem vendedor vinculado";
+const MSG_CLIENTE_NAO_ENCONTRADO = "cliente não encontrado";
 
 type SortKey =
   | "cliente_id_origem"
@@ -77,6 +84,21 @@ function fmtCnpj(cnpj: string): string {
 }
 
 function ClientesContent() {
+  // SEC-01: permissao de criacao vem da sessao em memoria validada por
+  // GET /api/auth/me (mesmo padrao de admin/visitas), nunca do localStorage.
+  // Usuario normal sem vendedor vinculado, ou com vendedor desligado, nao
+  // pode cadastrar cliente (o backend tambem rejeita com 403).
+  const currentUser = useSessionUser();
+  const vendedorDesligado = useVendedorDesligado();
+  const isAdmin = currentUser?.role === "admin";
+  const semCarteira = !isAdmin && !currentUser?.id_vendedor;
+  const podeCriar = isAdmin || (!semCarteira && !vendedorDesligado);
+  const motivoSemCriar = semCarteira
+    ? "Usuario sem vendedor vinculado: solicite o vinculo a um administrador."
+    : vendedorDesligado
+    ? "Vendedor desligado: cadastro de clientes bloqueado."
+    : undefined;
+
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,44 +121,64 @@ function ClientesContent() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
 
+  // Busca da pagina atual separada em: requisicao pura (sem setState) +
+  // aplicacao do resultado, que roda no callback assincrono (.then) — o
+  // efeito nunca chama setState de forma sincrona.
+  const buscarClientes = () =>
+    apiListClientes(
+      page,
+      limit,
+      {
+        uf: ufFilter || undefined,
+        segmento: segmentoFilter || undefined,
+        ativo:
+          statusFilter === ""
+            ? undefined
+            : statusFilter === "ativo",
+        q: search.trim() || undefined,
+      },
+      ORDER_BY_MAP[sortKey],
+      sortDir
+    );
+
+  const aplicarClientes = (res: Awaited<ReturnType<typeof apiListClientes>>) => {
+    setClientes(res.data);
+    setTotal(res.total);
+    setPages(res.pages);
+    setLoading(false);
+  };
+
+  const aplicarErroClientes = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar clientes. O endpoint /api/clientes pode nao existir no backend.";
+    setError(message);
+    setClientes([]);
+    setTotal(0);
+    setPages(0);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (handlers, timers e apos criar/404).
   const loadClientes = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await apiListClientes(
-        page,
-        limit,
-        {
-          uf: ufFilter || undefined,
-          segmento: segmentoFilter || undefined,
-          ativo:
-            statusFilter === ""
-              ? undefined
-              : statusFilter === "ativo",
-          q: search.trim() || undefined,
-        },
-        ORDER_BY_MAP[sortKey],
-        sortDir
-      );
-      setClientes(res.data);
-      setTotal(res.total);
-      setPages(res.pages);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar clientes. O endpoint /api/clientes pode nao existir no backend.";
-      setError(message);
-      setClientes([]);
-      setTotal(0);
-      setPages(0);
-    } finally {
-      setLoading(false);
-    }
+    await buscarClientes().then(aplicarClientes, aplicarErroClientes);
   };
 
+  // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
+  // "ajustar estado quando a entrada muda") e o efeito so faz a busca.
+  const chaveLista = `${page}|${limit}|${sortKey}|${sortDir}`;
+  const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  if (chaveAnterior !== chaveLista) {
+    setChaveAnterior(chaveLista);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    loadClientes();
+    buscarClientes().then(aplicarClientes, aplicarErroClientes);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 
@@ -160,6 +202,14 @@ function ClientesContent() {
       setSortKey(key);
       setSortDir("asc");
     }
+  };
+
+  // SEC-01: 404 = cliente fora da carteira (ou removido) — exibe a mensagem
+  // da API e recarrega a lista, que pode estar desatualizada.
+  const tratarClienteNaoEncontrado = async (err: ApiError) => {
+    setModalOpen(false);
+    await loadClientes();
+    setError(err.message || MSG_CLIENTE_NAO_ENCONTRADO);
   };
 
   const handleToggleStatus = async (cliente: Cliente) => {
@@ -188,15 +238,22 @@ function ClientesContent() {
       );
       setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Erro ao alterar status.";
-      setError(message);
+      if (err instanceof ApiError && err.status === 404) {
+        await tratarClienteNaoEncontrado(err);
+      } else if (err instanceof ApiError && err.status === 403) {
+        setError(err.message || MSG_SEM_VENDEDOR);
+      } else {
+        const message =
+          err instanceof Error ? err.message : "Erro ao alterar status.";
+        setError(message);
+      }
     } finally {
       setAction({ type: null, clienteId: null });
     }
   };
 
   const openCreate = () => {
+    if (!podeCriar) return;
     setModalMode("create");
     setEditingCliente(null);
     setModalOpen(true);
@@ -210,21 +267,35 @@ function ClientesContent() {
 
   const handleModalSubmit = async (data: ClienteInput) => {
     setError(null);
-    if (modalMode === "create") {
-      const created = await apiCreateCliente(data);
-      await loadClientes();
-      setSuccess(`Cliente "${created.razao_social}" criado com sucesso.`);
-    } else if (editingCliente) {
-      const updated = await apiUpdateCliente(
-        editingCliente.cliente_id_origem,
-        data
-      );
-      setClientes((prev) =>
-        prev.map((c) =>
-          c.cliente_id_origem === updated.cliente_id_origem ? updated : c
-        )
-      );
-      setSuccess(`Cliente "${updated.razao_social}" atualizado com sucesso.`);
+    try {
+      if (modalMode === "create") {
+        const created = await apiCreateCliente(data);
+        // O backend vincula o cliente novo a carteira do vendedor: recarregar
+        // faz ele aparecer tambem para o usuario normal.
+        await loadClientes();
+        setSuccess(`Cliente "${created.razao_social}" criado com sucesso.`);
+      } else if (editingCliente) {
+        const updated = await apiUpdateCliente(
+          editingCliente.cliente_id_origem,
+          data
+        );
+        setClientes((prev) =>
+          prev.map((c) =>
+            c.cliente_id_origem === updated.cliente_id_origem ? updated : c
+          )
+        );
+        setSuccess(`Cliente "${updated.razao_social}" atualizado com sucesso.`);
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        await tratarClienteNaoEncontrado(err);
+        return;
+      }
+      if (err instanceof ApiError && err.status === 403) {
+        // Exibido no proprio modal (ClienteModal mostra err.message).
+        throw new ApiError(403, err.message || MSG_SEM_VENDEDOR);
+      }
+      throw err;
     }
     setModalOpen(false);
     setTimeout(() => setSuccess(null), 4000);
@@ -351,7 +422,18 @@ function ClientesContent() {
             Consulte e gerencie os clientes cadastrados no CRM.
           </p>
         </div>
-        <Button onClick={openCreate}>+ Novo Cliente</Button>
+        <div className="flex flex-col items-start gap-1 sm:items-end">
+          <Button
+            onClick={openCreate}
+            disabled={!podeCriar}
+            title={motivoSemCriar}
+          >
+            + Novo Cliente
+          </Button>
+          {!podeCriar && motivoSemCriar && (
+            <p className="max-w-xs text-xs text-slate-500">{motivoSemCriar}</p>
+          )}
+        </div>
       </div>
 
       {error && (

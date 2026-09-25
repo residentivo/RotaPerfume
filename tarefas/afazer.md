@@ -2,93 +2,115 @@
 
 ---
 
-## SEC-01: IDOR em Create/Update/Toggle de clientes — prioridade ALTA
+## SEC-02: corrida no refresh token gera dois pares de tokens — prioridade MÉDIA
 
 **Status:** não iniciado. Aguarda a priorização do usuário.
-**Camada:** Backend
-**Origem:** 🟣 SecBrain, 2026-09-24, durante a definição do contrato de bloqueio do vendedor desligado.
+**Camada:** Backend (+ Frontend)
+**Origem:** Lote 3 de 2026-09-24.
 
-**Descrição:** Em `apis/rotaperfumes-api/handlers/cliente_handler.go`, três handlers não chamam `resolverVendedorScope`:
-- `CreateCliente` (~l.251)
-- `UpdateCliente` (~l.291)
-- `ToggleAtivoCliente` (~l.169)
-
-Com isso, qualquer usuário `normal` consegue editar ou inativar **qualquer** cliente pelo id. O lote atual só adiciona nesses handlers o bloqueio do vendedor desligado.
+**Descrição:** `apis/rotaperfumes-api/handlers/auth_handler.go` (~l.311-357) valida e revoga o refresh token em passos separados e ignora o erro da revogação. Duas chamadas de refresh simultâneas com o mesmo token geram dois pares de tokens válidos.
 
 **Ação esperada:**
-- 🟡 BackBrain restringir Update e Toggle à carteira ativa via `clienteNaCarteiraDoVendedor`, respondendo `404` "cliente não encontrado" para clientes fora da carteira. Definir também a regra do Create para o usuário `normal`.
-- 🔴 TestBrain cobrir com testes.
+- 🟡 BackBrain:
+  - `Revoke` com `WHERE id = ? AND revoked_at IS NULL`.
+  - Se `n == 0`, devolver `ErrRefreshTokenRevoked` e responder `401` antes de gerar os novos tokens.
+  - Registrar a falha no `refreshLimiter`.
+- 🟢 FrontBrain (multi-aba): repetir a requisição original uma vez antes de deslogar.
+- 🔴 TestBrain: dois refresh em paralelo com o mesmo token → um `200` e um `401`.
 - 🔵 SubBrain atualizar o Postman.
 
 ---
 
-## BUG-04: salvar registro sem alterações retorna 404 "não encontrado" — prioridade MÉDIA/ALTA
+## SEC-03: `GET /api/vendedores` sem escopo — prioridade BAIXA
 
 **Status:** não iniciado. Aguarda a priorização do usuário.
 **Camada:** Backend
-**Origem:** 🔴 TestBrain, 2026-09-24.
+**Origem:** Lote 3 de 2026-09-24.
 
-**Descrição:** Salvar um registro sem nenhuma alteração retorna `404` "não encontrado".
-- **Causa:** o DSN não tem `clientFoundRows=true` (`apis/shared/config/config.go:138` e `apis/shared/cmd/resetpassword/main.go:54`). O MySQL devolve `RowsAffected=0` em um `UPDATE` que não muda nada, e os repositórios tratam `n == 0` como `ErrNotFound`.
-- **Confirmado em:** `vendedor_repository.go:152-157` e `produto_repository.go:242-247`.
-- **Mesmo padrão em:**
-  - `cliente:188`, `estoque:247`, `oportunidade:205`, `pagamento:201`, `pedido:329` e `visita:187`
-  - `usuario:142/196/210/225`
-  - carteira
-- **Agravante:** ficou mais provável depois do BUG-01, porque re-salvar a mesma data não altera mais a linha.
-- **Teste já existente (pulado):** `TestIntegracao_UpdateSemAlteracao`.
+**Descrição:** Em `apis/rotaperfumes-api/handlers/vendedor_handler.go` (~l.41), o usuário `normal` recebe todos os vendedores, e o bloqueio de vendedor desligado não é aplicado.
 
 **Ação esperada:**
-- 🟣 SecBrain avaliar o impacto de `clientFoundRows=true`, por exemplo nas checagens de revogação de token e de lockout que dependem de `RowsAffected`.
-- 🟡 BackBrain corrigir.
-- 🔴 TestBrain reativar o teste `TestIntegracao_UpdateSemAlteracao`.
+- 🟣 SecBrain / 🟡 BackBrain:
+  - Devolver ao usuário `normal` só o próprio vendedor e aplicar o bloqueio de vendedor desligado.
+  - Avaliar também o bloqueio de desligado em `GET /api/produtos` e `GET /api/produtos/{id}`.
+- 🟢 FrontBrain: conferir os selects que usam a listagem.
+- 🔴 TestBrain cobrir.
+- 🔵 SubBrain atualizar o Postman.
 
 ---
 
-## RISCO-01: datas antigas de início de horário de verão com `TZ=America/Sao_Paulo` (Linux/Docker) — prioridade BAIXA
+## NEG-01: validação e duplicidade de CNPJ (DECISÃO DE NEGÓCIO) — prioridade BAIXA
+
+**Status:** não iniciado. Aguarda a priorização e a decisão do usuário.
+**Camada:** Backend / Database
+**Origem:** Lote 3 de 2026-09-24.
+
+**Descrição:** O índice `idx_clientes_cnpj` não é `UNIQUE`, e não há validação de 14 dígitos no CNPJ.
+
+**Ação esperada:**
+- 🤍 MegaBrain / 🔵 SubBrain levar a decisão ao usuário.
+- Proposta:
+  - `400` "cnpj inválido" para CNPJ fora do formato.
+  - Política de duplicidade com `409` genérico, sem revelar a qual vendedor o cliente pertence.
+- Depois da decisão: 🌸 DataBrain (índice), 🟡 BackBrain, 🔴 TestBrain e 🔵 SubBrain (Postman).
+
+---
+
+## BUG-06: `PATCH /inativar` com body inválido inverte o estado — prioridade MÉDIA
 
 **Status:** não iniciado. Aguarda a priorização do usuário.
 **Camada:** Backend
-**Origem:** lote de 2026-09-24, durante o BUG-01 (card em `feito.md`).
+**Origem:** Lote 3 de 2026-09-24.
 
-**Descrição:** Em datas de início de horário de verão, a meia-noite não existe (ex.: `2018-11-04`). Nesse caso, `time.ParseInLocation` devolve 23:00 do dia anterior. Não ocorre no Windows. O caso está documentado em `TestBUG01_HorarioDeVeraoHistorico` (skip).
+**Descrição:** Três handlers ignoram o erro de decode do body:
+- `cliente_handler.go` (~l.222)
+- `produto_handler.go` (~l.113)
+- `usuario_handler.go` (~l.303)
 
-**Ação esperada:** decidir entre duas opções:
-- tratar as datas puras em UTC de ponta a ponta;
-- fixar `loc`/`TZ` do container em um fuso sem horário de verão.
+Um body inválido, como `{"ativo":"false"}` (string), é tratado como omitido e **alterna** o estado.
 
----
-
-## FE-01: corrida em `refreshSessionUser` mantém o bloqueio de vendedor desligado após a reativação — prioridade BAIXA
-
-**Status:** não iniciado. Aguarda a priorização do usuário.
-**Camada:** Frontend
-**Origem:** 2026-09-24, card "Segurança: vendedor desligado" (em `fazendo.md`).
-
-**Descrição:** Em `frontend/src/lib/session.ts:68-75`, a revalidação de focus/mount reutiliza a promise em voo originada pelo `403` (`origem403: true`) e não limpa `bloqueado403`. Com isso, o bloqueio pode continuar na tela depois que o vendedor é reativado. Corrige sozinho no próximo focus.
-
-**Ação esperada:** 🟢 FrontBrain corrigir a corrida. 🔴 TestBrain cobrir o cenário em `session.test.ts`.
+**Ação esperada:**
+- 🟡 BackBrain responder `400` quando o body vier preenchido e inválido. O body vazio continua fazendo toggle.
+- 🔴 TestBrain cobrir.
+- 🔵 SubBrain atualizar o Postman.
 
 ---
 
-## FE-02 (nota de design): Dashboard depende da API para zerar os dados de vendedor desligado / sem vendedor — prioridade BAIXA
+## FE-04: resposta obsoleta sobrescreve a mais nova nas listagens — prioridade MÉDIA
 
 **Status:** não iniciado. Aguarda a priorização do usuário.
 **Camada:** Frontend
-**Origem:** 2026-09-24, card UI-02 (em `fazendo.md`).
+**Origem:** Lote 3 de 2026-09-24 (documentado pelo 🔴 TestBrain durante o FE-03). O problema já existia antes do FE-03.
 
-**Descrição:** `frontend/src/app/dashboard/page.tsx:603-616` não força zeros para o usuário `normal` sem vendedor ou com vendedor desligado. Hoje o backend já devolve os dados zerados, então a tela fica correta. Se a API mudar, a tela pode exibir números.
+**Descrição:** O problema aparece de três formas:
+1. **Paginação rápida:** a resposta de uma página antiga sobrescreve a da página atual. Efeitos afetados:
+   - `admin/pedidos:181`, `pagamentos:181`, `admin/clientes:181`
+   - `oportunidades:281`, `visitas:249`
+   - `estoque:125`, `produtos:136`
+   - provavelmente também `usuarios:131` e `senha-historico:165`
+2. **Debounce dos filtros disparado na montagem** (`setTimeout` em `pedidos:187` etc.) com `page=1`:
+   - A listagem faz duas buscas ao abrir.
+   - A tabela pode voltar à página 1 enquanto o paginador mostra a página 2.
+3. **Linha excluída reaparece** em pedidos, pagamentos, oportunidades e visitas.
 
-**Ação esperada:** 🟢 FrontBrain avaliar se o frontend deve forçar os zeros nesses dois casos.
+**Ação esperada:**
+- 🟢 FrontBrain:
+  - Aplicar o padrão `cancelado`/chave (como no Dashboard e nos modais).
+  - Não disparar o debounce na montagem.
+- 🔴 TestBrain: os 18 testes `it.fails` já existem. Ao corrigir, trocar `it.fails` por `it`.
 
 ---
 
-## FE-03: 34 warnings `react-hooks/set-state-in-effect` — prioridade BAIXA
+## FE-05: listagens chamam `fetch` direto, sem refresh automático no 401 — prioridade BAIXA
 
 **Status:** não iniciado. Aguarda a priorização do usuário.
 **Camada:** Frontend
-**Origem:** 2026-09-24, card "Tooling frontend" (em `feito.md`).
+**Origem:** Lote 3 de 2026-09-24.
 
-**Descrição:** O ESLint configurado neste lote aponta 34 warnings `react-hooks/set-state-in-effect`. Por enquanto, a regra está como `warn`.
+**Descrição:**
+- As funções `apiList*`, `apiDashboardVendedores` e `apiListSenhaHistorico` (`frontend/src/lib/api.ts`) chamam `fetch` direto. Por isso, um `401` não dispara o refresh automático do `fetchWithAuth`.
+- Incluir na mesma correção: em `frontend/src/app/admin/clientes/page.tsx` (~l.96), enquanto o `/me` carrega, o motivo do botão desabilitado diz "Usuario sem vendedor vinculado". O problema é só de texto.
 
-**Ação esperada:** 🟢 FrontBrain fazer um refactor dedicado para eliminar o `setState` dentro de `useEffect` e voltar a regra para `error`. 🔴 TestBrain garantir que os testes continuam verdes.
+**Ação esperada:**
+- 🟢 FrontBrain migrar essas funções para `fetchWithAuth` e ajustar o texto durante o carregamento.
+- 🔴 TestBrain cobrir.

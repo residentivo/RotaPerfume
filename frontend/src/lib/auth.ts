@@ -90,6 +90,9 @@ export async function logout(): Promise<void> {
     } catch {
       // Falha de rede ao notificar o backend: ignora e segue com o logout local.
     } finally {
+      // Intencional: modulo fora de componente (sem useRouter) e o logout precisa de
+      // recarga completa para descartar sessao em memoria, caches e estado do React.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = "/login";
     }
   }

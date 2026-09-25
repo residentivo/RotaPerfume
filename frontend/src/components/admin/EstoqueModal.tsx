@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Estoque, EstoqueInput } from "@/lib/types";
+import { useResetOnOpen } from "@/lib/useResetOnOpen";
 
 interface EstoqueModalProps {
   open: boolean;
@@ -32,21 +33,21 @@ export function EstoqueModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setSubmitting(false);
-      if (mode === "edit" && estoque) {
-        setSku(estoque.sku);
-        setDataSnapshot(estoque.data_snapshot.slice(0, 10));
-        setSaldo(String(estoque.saldo));
-      } else {
-        setSku("");
-        setDataSnapshot("");
-        setSaldo("");
-      }
+  // Reseta o formulario ao abrir (ou quando as props mudam com o modal
+  // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  useResetOnOpen(open, [mode, estoque], () => {
+    setError(null);
+    setSubmitting(false);
+    if (mode === "edit" && estoque) {
+      setSku(estoque.sku);
+      setDataSnapshot(estoque.data_snapshot.slice(0, 10));
+      setSaldo(String(estoque.saldo));
+    } else {
+      setSku("");
+      setDataSnapshot("");
+      setSaldo("");
     }
-  }, [open, mode, estoque]);
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

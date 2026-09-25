@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -214,6 +214,49 @@ describe("Dashboard - aviso + zerados (UI-02 opcao b)", () => {
     expect(screen.getByText("Nenhum dado de desempenho encontrado")).toBeInTheDocument();
   });
 
+  it.each<[string, Partial<MeResponse>, boolean, boolean, RegExp]>([
+    ["sem vendedor", { id_vendedor: null }, false, false, AVISO_SEM_VENDEDOR],
+    ["desligado via sessao", { id_vendedor: 7 }, true, false, AVISO_DESLIGADO],
+    ["desligado via metrics", { id_vendedor: 7 }, false, true, AVISO_DESLIGADO],
+  ])(
+    "FE-02 %s: ignora payload preenchido da API e forca tudo zerado",
+    async (_n, u, desligadoSessao, desligadoMetrics, aviso) => {
+      useSessionUserMock.mockReturnValue(user(u));
+      useVendedorDesligadoMock.mockReturnValue(desligadoSessao);
+      mockApiCheia();
+      api.apiDashboardMetrics.mockResolvedValue({
+        ...cheioMetrics,
+        vendedor_desligado: desligadoMetrics,
+      });
+      api.apiDashboardClientes.mockResolvedValue({
+        ...zeroClientes,
+        total_clientes: 5,
+        total_ativos: 4,
+        total_inativos: 1,
+        novos_no_periodo: 2,
+        por_segmento: [{ segmento: "Varejo", total: 5 }],
+        por_uf: [{ uf: "SP", total: 5 }],
+      });
+      await renderLoaded();
+
+      expect(screen.getByText(aviso)).toBeInTheDocument();
+      expect(kpiValue("Minhas Vendas")).toMatch(ZERO_BRL);
+      expect(kpiValue("Meus Pedidos")).toBe("0");
+      expect(kpiValue("Meu Ticket Medio")).toMatch(ZERO_BRL);
+      expect(kpiValue("Minha Meta")).toBe("-");
+      expect(kpiValue("Meus Clientes")).toBe("0");
+      expect(kpiValue("Meus Clientes Ativos")).toBe("0");
+      expect(kpiValue("Meus Clientes Inativos")).toBe("0");
+      expect(kpiValue("Meus Novos no Periodo")).toBe("0");
+      expect(screen.getByText(/^Total: R\$\s0,00$/)).toBeInTheDocument();
+      expect(screen.getByText("Nenhum dado de vendas no periodo")).toBeInTheDocument();
+      expect(screen.getByText("Nenhum dado de desempenho encontrado")).toBeInTheDocument();
+      expect(screen.queryByText("7 - Vend 7")).not.toBeInTheDocument();
+      expect(screen.queryByText("Varejo")).not.toBeInTheDocument();
+      expect(screen.queryByText("SP")).not.toBeInTheDocument();
+    }
+  );
+
   it("aviso de sem vendedor tem prioridade sobre desligado", async () => {
     useSessionUserMock.mockReturnValue(user({ id_vendedor: null }));
     useVendedorDesligadoMock.mockReturnValue(true);
@@ -283,5 +326,94 @@ describe("Dashboard - dados", () => {
     await renderLoaded();
     expect(screen.getByText("falha ao carregar")).toBeInTheDocument();
     expect(kpiValue("Total de Vendas")).toMatch(ZERO_BRL);
+  });
+});
+
+// ─── FE-02: zeros forcados so para normal; loading/erro derivados da chave ────
+
+describe("Dashboard - FE-02 (zeros forcados e respostas obsoletas)", () => {
+  it.each<[string, boolean, boolean]>([
+    ["admin com vendedor_desligado no metrics", false, true],
+    ["admin com flag de desligado na sessao", true, false],
+  ])("%s: nunca forca zeros", async (_n, desligadoSessao, desligadoMetrics) => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin", id_vendedor: null }));
+    useVendedorDesligadoMock.mockReturnValue(desligadoSessao);
+    mockApiCheia();
+    api.apiDashboardMetrics.mockResolvedValue({
+      ...cheioMetrics,
+      vendedor_desligado: desligadoMetrics,
+    });
+    await renderLoaded();
+    expect(kpiValue("Total de Vendas")).toMatch(/^R\$\s1\.500,50$/);
+    expect(screen.getByText("Lider: Vend 7")).toBeInTheDocument();
+    expect(screen.queryByText(AVISO_DESLIGADO)).not.toBeInTheDocument();
+    expect(screen.queryByText(AVISO_SEM_VENDEDOR)).not.toBeInTheDocument();
+  });
+
+  it("normal com vendedor e payload cheio: nao forca zeros (controle)", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    mockApiCheia();
+    await renderLoaded();
+    expect(kpiValue("Minhas Vendas")).toMatch(/^R\$\s1\.500,50$/);
+    expect(kpiValue("Meus Clientes")).toBe("5");
+  });
+
+  it("vendedor desligado detectado depois (403 na sessao) zera a tela ja carregada", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    mockApiCheia();
+    const { rerender } = render(<DashboardPage />);
+    await waitFor(() => expect(kpiValue("Minhas Vendas")).toMatch(/^R\$\s1\.500,50$/));
+
+    useVendedorDesligadoMock.mockReturnValue(true);
+    rerender(<DashboardPage />);
+    expect(kpiValue("Minhas Vendas")).toMatch(ZERO_BRL);
+    expect(kpiValue("Meus Clientes")).toBe("0");
+    expect(screen.getByText(AVISO_DESLIGADO)).toBeInTheDocument();
+  });
+
+  it("resposta obsoleta (periodo anterior chega depois) e descartada", async () => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin" }));
+    mockApiCheia();
+    let resolveMes: (m: DashboardMetrics) => void = () => {};
+    api.apiDashboardMetrics
+      .mockReturnValueOnce(new Promise((r) => (resolveMes = r)))
+      .mockResolvedValueOnce(zeroMetrics({ total_vendas: 42, periodo: "today" }));
+
+    render(<DashboardPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Hoje" }));
+    await waitFor(() => expect(kpiValue("Total de Vendas")).toMatch(/^R\$\s42,00$/));
+    await waitFor(() =>
+      expect(screen.queryByText("Atualizando dados...")).not.toBeInTheDocument()
+    );
+
+    await act(async () => resolveMes(cheioMetrics));
+    expect(kpiValue("Total de Vendas")).toMatch(/^R\$\s42,00$/);
+    expect(screen.queryByText("Atualizando dados...")).not.toBeInTheDocument();
+  });
+
+  it("loading aparece durante a busca e some ao terminar", async () => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin" }));
+    mockApiCheia();
+    let resolver: (m: DashboardMetrics) => void = () => {};
+    api.apiDashboardMetrics.mockReturnValueOnce(new Promise((r) => (resolver = r)));
+    render(<DashboardPage />);
+    expect(screen.getByText("Atualizando dados...")).toBeInTheDocument();
+    await act(async () => resolver(cheioMetrics));
+    await waitFor(() =>
+      expect(screen.queryByText("Atualizando dados...")).not.toBeInTheDocument()
+    );
+  });
+
+  it("'Atualizar' refaz a busca e um erro anterior some apos sucesso", async () => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin" }));
+    mockApiCheia();
+    api.apiDashboardMetrics.mockRejectedValueOnce(new Error("falha temporaria"));
+    await renderLoaded();
+    expect(screen.getByText("falha temporaria")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Atualizar" }));
+    await waitFor(() => expect(kpiValue("Total de Vendas")).toMatch(/^R\$\s1\.500,50$/));
+    expect(screen.queryByText("falha temporaria")).not.toBeInTheDocument();
+    expect(api.apiDashboardMetrics).toHaveBeenCalledTimes(2);
   });
 });

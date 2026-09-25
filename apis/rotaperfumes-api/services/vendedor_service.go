@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -44,6 +45,7 @@ type VendedorService struct {
 	repo         *repositories.VendedorRepository
 	carteiraRepo *repositories.CarteiraRepository
 	clienteRepo  *repositories.ClienteRepository
+	usuarioRepo  *repositories.UsuarioRepository
 	Cfg          *config.Config
 }
 
@@ -53,6 +55,7 @@ func NewVendedorService(db *sql.DB, cfg *config.Config) *VendedorService {
 		repo:         repositories.NewVendedorRepository(),
 		carteiraRepo: repositories.NewCarteiraRepository(),
 		clienteRepo:  repositories.NewClienteRepository(),
+		usuarioRepo:  repositories.NewUsuarioRepository(),
 		Cfg:          cfg,
 	}
 }
@@ -233,38 +236,64 @@ func (s *VendedorService) UpdateVendedor(ctx context.Context, db *sql.DB, id int
 }
 
 // DeleteVendedor inativa um vendedor (soft-delete via data_desligamento =
-// hoje), preservando o histórico de carteiras/pedidos. Retorna
-// ErrVendedorNaoEncontrado se não existir.
+// hoje), preservando o histórico de carteiras/pedidos, e inativa na MESMA
+// transação todos os usuários vinculados a ele (usuarios.id_vendedor), para
+// que não continuem acessando o sistema. Retorna ErrVendedorNaoEncontrado se
+// o vendedor não existir (nesse caso nenhum usuário é alterado).
 func (s *VendedorService) DeleteVendedor(ctx context.Context, db *sql.DB, id int64) (*models.Vendedor, error) {
-	dataDesligamento := sql.NullTime{Time: time.Now(), Valid: true}
-	v, err := s.setDataDesligamento(ctx, db, id, &dataDesligamento)
+	usuariosInativados, err := s.inativarVendedorEUsuarios(ctx, db, id)
+	if err != nil {
+		return nil, err
+	}
+
+	v, err := s.repo.GetByID(ctx, db, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.Cfg.Verbose {
-		log.Printf("[vendedores] inativado (soft-delete): id=%d", id)
+		log.Printf("[vendedores] inativado (soft-delete): id=%d usuarios_inativados=%d", id, usuariosInativados)
 	}
 	return v, nil
+}
+
+// inativarVendedorEUsuarios grava data_desligamento e inativa os usuários
+// vinculados ao vendedor de forma atômica. Retorna quantos usuários foram
+// inativados.
+func (s *VendedorService) inativarVendedorEUsuarios(ctx context.Context, db *sql.DB, id int64) (int64, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("services: begin tx inativar vendedor: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
+
+	// COALESCE (BUG-04): desligar de novo um vendedor já desligado preserva a
+	// data original e responde sucesso; InativarByVendedorID é idempotente.
+	if err := s.repo.MarcarDesligamento(ctx, tx, id, time.Now()); err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return 0, ErrVendedorNaoEncontrado
+		}
+		return 0, err
+	}
+
+	usuariosInativados, err := s.usuarioRepo.InativarByVendedorID(ctx, tx, id)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("services: commit inativar vendedor: %w", err)
+	}
+	return usuariosInativados, nil
 }
 
 // ReativarVendedor reverte o soft-delete de um vendedor, limpando
 // data_desligamento. Retorna ErrVendedorNaoEncontrado se não existir.
+//
+// Os usuários vinculados NÃO são reativados automaticamente: o admin pode
+// tê-los inativado por outro motivo. A reativação do usuário continua manual
+// (tela de usuários).
 func (s *VendedorService) ReativarVendedor(ctx context.Context, db *sql.DB, id int64) (*models.Vendedor, error) {
-	v, err := s.setDataDesligamento(ctx, db, id, &sql.NullTime{Valid: false})
-	if err != nil {
-		return nil, err
-	}
-	if s.Cfg.Verbose {
-		log.Printf("[vendedores] reativado: id=%d", id)
-	}
-	return v, nil
-}
-
-// setDataDesligamento aplica SetDataDesligamento e retorna o vendedor
-// atualizado, traduzindo ErrNotFound para ErrVendedorNaoEncontrado. Usado por
-// DeleteVendedor e ReativarVendedor para evitar duplicação.
-func (s *VendedorService) setDataDesligamento(ctx context.Context, db *sql.DB, id int64, dataDesligamento *sql.NullTime) (*models.Vendedor, error) {
-	if err := s.repo.SetDataDesligamento(ctx, db, id, dataDesligamento); err != nil {
+	if err := s.repo.SetDataDesligamento(ctx, db, id, &sql.NullTime{Valid: false}); err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrVendedorNaoEncontrado
 		}
@@ -274,6 +303,9 @@ func (s *VendedorService) setDataDesligamento(ctx context.Context, db *sql.DB, i
 	v, err := s.repo.GetByID(ctx, db, id)
 	if err != nil {
 		return nil, err
+	}
+	if s.Cfg.Verbose {
+		log.Printf("[vendedores] reativado: id=%d", id)
 	}
 	return v, nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -42,15 +43,17 @@ type ClienteFiltro struct {
 
 // ClienteService agrega regras de negócio sobre clientes.
 type ClienteService struct {
-	repo *repositories.ClienteRepository
-	Cfg  *config.Config
+	repo         *repositories.ClienteRepository
+	carteiraRepo *repositories.CarteiraRepository
+	Cfg          *config.Config
 }
 
 // NewClienteService cria um ClienteService com pool de conexão injetado.
 func NewClienteService(db *sql.DB, cfg *config.Config) *ClienteService {
 	return &ClienteService{
-		repo: repositories.NewClienteRepository(),
-		Cfg:  cfg,
+		repo:         repositories.NewClienteRepository(),
+		carteiraRepo: repositories.NewCarteiraRepository(),
+		Cfg:          cfg,
 	}
 }
 
@@ -174,15 +177,15 @@ func validarClienteInput(input ClienteInput, defaultHoje bool) (razaoSocial, cnp
 	return
 }
 
-// CreateCliente cria um novo cliente, validando os campos obrigatórios.
-// cliente_id_origem é gerado nativamente pelo AUTO_INCREMENT do MySQL.
-func (s *ClienteService) CreateCliente(ctx context.Context, db *sql.DB, input ClienteInput) (*models.Cliente, error) {
+// novoClienteValidado valida o input de criação e monta o models.Cliente
+// (ativo, data_cadastro default hoje). Compartilhado por CreateCliente e
+// CreateClienteNaCarteira.
+func novoClienteValidado(input ClienteInput) (*models.Cliente, error) {
 	razaoSocial, cnpj, segmento, cidade, uf, bairro, dataCadastro, err := validarClienteInput(input, true)
 	if err != nil {
 		return nil, err
 	}
-
-	c := &models.Cliente{
+	return &models.Cliente{
 		CNPJ:         cnpj,
 		RazaoSocial:  razaoSocial,
 		Segmento:     segmento,
@@ -191,6 +194,16 @@ func (s *ClienteService) CreateCliente(ctx context.Context, db *sql.DB, input Cl
 		Bairro:       bairro,
 		DataCadastro: dataCadastro,
 		Ativo:        true,
+	}, nil
+}
+
+// CreateCliente cria um novo cliente, validando os campos obrigatórios.
+// cliente_id_origem é gerado nativamente pelo AUTO_INCREMENT do MySQL.
+// Usado pelo admin: NÃO cria vínculo de carteira.
+func (s *ClienteService) CreateCliente(ctx context.Context, db *sql.DB, input ClienteInput) (*models.Cliente, error) {
+	c, err := novoClienteValidado(input)
+	if err != nil {
+		return nil, err
 	}
 	if err := s.repo.Create(ctx, db, c); err != nil {
 		return nil, err
@@ -200,6 +213,56 @@ func (s *ClienteService) CreateCliente(ctx context.Context, db *sql.DB, input Cl
 		log.Printf("[clientes] criado: cliente_id_origem=%d razao_social=%s", c.ClienteIDOrigem, c.RazaoSocial)
 	}
 	return c, nil
+}
+
+// CreateClienteNaCarteira cria um novo cliente e, na MESMA transação, o
+// vínculo de carteira ativo (data_inicio = hoje, data_fim = NULL) com o
+// vendedor informado. Usado pelo usuário role=normal (SEC-01), para que o
+// cliente recém-criado já fique na carteira de quem o cadastrou — sem isso
+// ele não conseguiria ver/editar o próprio cadastro.
+//
+// Erros de validação são devolvidos antes de abrir a transação. Qualquer
+// falha de banco faz rollback (nem cliente nem carteira ficam gravados).
+func (s *ClienteService) CreateClienteNaCarteira(ctx context.Context, db *sql.DB, input ClienteInput, vendedorID int64) (*models.Cliente, error) {
+	c, err := novoClienteValidado(input)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("services: begin tx criar cliente na carteira: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
+
+	if err := s.repo.Create(ctx, tx, c); err != nil {
+		return nil, err
+	}
+	vinculo := &models.Carteira{
+		ClienteID:  c.ClienteIDOrigem,
+		VendedorID: vendedorID,
+		DataInicio: inicioDoDia(time.Now()),
+		DataFim:    nil,
+	}
+	if err := s.carteiraRepo.Create(ctx, tx, vinculo); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("services: commit criar cliente na carteira: %w", err)
+	}
+
+	if s.Cfg.Verbose {
+		log.Printf("[clientes] criado na carteira: cliente_id_origem=%d vendedor_id=%d carteira_id=%d",
+			c.ClienteIDOrigem, vendedorID, vinculo.CarteiraIDOrigem)
+	}
+	return c, nil
+}
+
+// inicioDoDia devolve a meia-noite (time.Local) do dia de t — usada para
+// colunas DATE, evitando carregar hora/minuto no valor gravado.
+func inicioDoDia(t time.Time) time.Time {
+	y, m, d := t.In(time.Local).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.Local)
 }
 
 // UpdateCliente atualiza os campos editáveis de um cliente existente

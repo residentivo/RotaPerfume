@@ -11,7 +11,7 @@ import { Table, Column } from "@/components/ui/Table";
 import { EstoqueModal } from "@/components/admin/EstoqueModal";
 import { apiListEstoque, apiCreateEstoque, apiUpdateEstoque } from "@/lib/api";
 import { Estoque, EstoqueInput } from "@/lib/types";
-import { isAdmin } from "@/lib/auth";
+import { useSessionUser } from "@/lib/session";
 
 type SortKey =
   | "id"
@@ -44,7 +44,9 @@ function fmtDate(dateStr: string | null): string {
 }
 
 function EstoquePageContent() {
-  const [admin, setAdmin] = useState(false);
+  // Papel vem da sessao em memoria validada por /api/auth/me (nao do cache
+  // do localStorage); derivado no render, sem efeito.
+  const admin = useSessionUser()?.role === "admin";
   const [registros, setRegistros] = useState<Estoque[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,45 +69,60 @@ function EstoquePageContent() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingEstoque, setEditingEstoque] = useState<Estoque | null>(null);
 
-  useEffect(() => {
-    setAdmin(isAdmin());
-  }, []);
+  // Busca separada em requisicao pura + aplicacao do resultado no callback
+  // assincrono (.then): o efeito nunca chama setState de forma sincrona.
+  const buscarEstoque = () =>
+    apiListEstoque(
+      page,
+      limit,
+      {
+        sku: search.trim() || undefined,
+        data_ate: dataFiltro || undefined,
+        ruptura:
+          rupturaFilter === "" ? undefined : rupturaFilter === "sim",
+      },
+      sortKey,
+      sortDir
+    );
 
+  const aplicarEstoque = (res: Awaited<ReturnType<typeof apiListEstoque>>) => {
+    setRegistros(res.data);
+    setTotal(res.total);
+    setPages(res.pages);
+    setLoading(false);
+  };
+
+  const aplicarErroEstoque = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar estoque. O endpoint /api/estoque pode nao existir no backend.";
+    setError(message);
+    setRegistros([]);
+    setTotal(0);
+    setPages(0);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (handlers e timers).
   const loadEstoque = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await apiListEstoque(
-        page,
-        limit,
-        {
-          sku: search.trim() || undefined,
-          data_ate: dataFiltro || undefined,
-          ruptura:
-            rupturaFilter === "" ? undefined : rupturaFilter === "sim",
-        },
-        sortKey,
-        sortDir
-      );
-      setRegistros(res.data);
-      setTotal(res.total);
-      setPages(res.pages);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar estoque. O endpoint /api/estoque pode nao existir no backend.";
-      setError(message);
-      setRegistros([]);
-      setTotal(0);
-      setPages(0);
-    } finally {
-      setLoading(false);
-    }
+    await buscarEstoque().then(aplicarEstoque, aplicarErroEstoque);
   };
 
+  // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
+  // "ajustar estado quando a entrada muda") e o efeito so faz a busca.
+  const chaveLista = `${page}|${limit}|${sortKey}|${sortDir}`;
+  const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  if (chaveAnterior !== chaveLista) {
+    setChaveAnterior(chaveLista);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    loadEstoque();
+    buscarEstoque().then(aplicarEstoque, aplicarErroEstoque);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 

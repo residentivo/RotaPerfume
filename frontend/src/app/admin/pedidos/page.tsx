@@ -124,42 +124,61 @@ function PedidosContent() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // Busca separada em requisicao pura + aplicacao do resultado no callback
+  // assincrono (.then): o efeito nunca chama setState de forma sincrona.
+  const buscarPedidos = () =>
+    apiListPedidos(
+      page,
+      limit,
+      {
+        status: statusFilter || undefined,
+        canal: canalFilter || undefined,
+        data_inicio: dataInicio || undefined,
+        data_fim: dataFim || undefined,
+        q: search.trim() || undefined,
+      },
+      ORDER_BY_MAP[sortKey],
+      sortDir
+    );
+
+  const aplicarPedidos = (res: Awaited<ReturnType<typeof apiListPedidos>>) => {
+    setPedidos(res.data);
+    setTotal(res.total);
+    setPages(res.pages);
+    setLoading(false);
+  };
+
+  const aplicarErroPedidos = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar pedidos. O endpoint /api/pedidos pode nao existir no backend.";
+    setError(message);
+    setPedidos([]);
+    setTotal(0);
+    setPages(0);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (handlers e timers).
   const loadPedidos = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await apiListPedidos(
-        page,
-        limit,
-        {
-          status: statusFilter || undefined,
-          canal: canalFilter || undefined,
-          data_inicio: dataInicio || undefined,
-          data_fim: dataFim || undefined,
-          q: search.trim() || undefined,
-        },
-        ORDER_BY_MAP[sortKey],
-        sortDir
-      );
-      setPedidos(res.data);
-      setTotal(res.total);
-      setPages(res.pages);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar pedidos. O endpoint /api/pedidos pode nao existir no backend.";
-      setError(message);
-      setPedidos([]);
-      setTotal(0);
-      setPages(0);
-    } finally {
-      setLoading(false);
-    }
+    await buscarPedidos().then(aplicarPedidos, aplicarErroPedidos);
   };
 
+  // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
+  // "ajustar estado quando a entrada muda") e o efeito so faz a busca.
+  const chaveLista = `${page}|${limit}|${sortKey}|${sortDir}`;
+  const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  if (chaveAnterior !== chaveLista) {
+    setChaveAnterior(chaveLista);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    loadPedidos();
+    buscarPedidos().then(aplicarPedidos, aplicarErroPedidos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
 

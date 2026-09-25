@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Visita, VisitaInput, Vendedor, ClienteResumo } from "@/lib/types";
+import { useResetOnOpen } from "@/lib/useResetOnOpen";
 import { apiListVendedores, apiListClientesDoVendedor } from "@/lib/api";
 
 interface VisitaModalProps {
@@ -53,35 +54,40 @@ export function VisitaModal({
   const [loadingClientes, setLoadingClientes] = useState(false);
   const [clientesError, setClientesError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setSubmitting(false);
-      if (mode === "edit" && visita) {
-        setVendedorId(String(visita.vendedor_id));
-        setClienteId(String(visita.cliente_id));
-        setDataVisita(
-          visita.data_visita ? visita.data_visita.slice(0, 10) : todayISO()
-        );
-        setResultado(visita.resultado);
-        setDuracaoMin(String(visita.duracao_min));
-      } else {
-        setVendedorId("");
-        setClienteId("");
-        setDataVisita(todayISO());
-        setResultado(RESULTADO_OPTIONS[0].value);
-        setDuracaoMin("");
-      }
+  // Reseta o formulario ao abrir (ou quando as props mudam com o modal
+  // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  useResetOnOpen(open, [mode, visita], () => {
+    setError(null);
+    setSubmitting(false);
+    if (mode === "edit" && visita) {
+      setVendedorId(String(visita.vendedor_id));
+      setClienteId(String(visita.cliente_id));
+      setDataVisita(
+        visita.data_visita ? visita.data_visita.slice(0, 10) : todayISO()
+      );
+      setResultado(visita.resultado);
+      setDuracaoMin(String(visita.duracao_min));
+    } else {
+      setVendedorId("");
+      setClienteId("");
+      setDataVisita(todayISO());
+      setResultado(RESULTADO_OPTIONS[0].value);
+      setDuracaoMin("");
     }
-  }, [open, mode, visita]);
+  });
 
   // Carrega a lista de vendedores ao abrir o modal (mesmo padrao de
   // OportunidadeModal).
+  // Parte sincrona (liga o loading / limpa o erro) roda durante o render
+  // ao abrir; o efeito so busca e aplica o resultado nos callbacks.
+  useResetOnOpen(open, [], () => {
+    setLoadingVendedores(true);
+    setVendedoresError(null);
+  });
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLoadingVendedores(true);
-    setVendedoresError(null);
     apiListVendedores()
       .then((res) => {
         if (!cancelled) setVendedores(res);
@@ -106,16 +112,22 @@ export function VisitaModal({
   // ativa daquele vendedor). Enquanto nao houver vendedor escolhido, ou
   // enquanto a busca estiver em andamento, o select de Cliente fica vazio
   // e desabilitado.
-  useEffect(() => {
-    if (!open) return;
+  // Parte sincrona roda durante o render quando o modal abre ou o
+  // vendedor muda (useResetOnOpen); o efeito so busca e aplica o
+  // resultado nos callbacks assincronos.
+  useResetOnOpen(open, [vendedorId], () => {
+    setClientesError(null);
     if (!vendedorId) {
       setClientes([]);
-      setClientesError(null);
+      setLoadingClientes(false);
       return;
     }
-    let cancelled = false;
     setLoadingClientes(true);
-    setClientesError(null);
+  });
+
+  useEffect(() => {
+    if (!open || !vendedorId) return;
+    let cancelled = false;
     apiListClientesDoVendedor(Number(vendedorId))
       .then((res) => {
         if (cancelled) return;

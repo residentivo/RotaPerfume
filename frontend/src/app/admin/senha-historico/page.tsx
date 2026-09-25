@@ -104,37 +104,65 @@ export default function SenhaHistoricoPage() {
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // Busca separada em requisicao pura + aplicacao do resultado no callback
+  // assincrono (.then): o efeito nunca chama setState de forma sincrona.
+  const buscar = () =>
+    apiListSenhaHistorico(
+      page,
+      limit,
+      undefined,
+      tipo || undefined,
+      ORDER_BY_MAP[sortKey],
+      sortDir
+    );
+
+  const aplicar = (res: Awaited<ReturnType<typeof apiListSenhaHistorico>>) => {
+    setItems(res.data);
+    setTotal(res.total);
+    setPages(res.pages);
+    setLoading(false);
+  };
+
+  const aplicarErro = (err: unknown) => {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Erro ao carregar historico de senhas. O endpoint /api/senha-historico pode nao existir no backend.";
+    setError(message);
+    setItems([]);
+    setTotal(0);
+    setPages(0);
+    setLoading(false);
+  };
+
+  // Recarga imperativa (botao "Atualizar").
   const load = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await apiListSenhaHistorico(
-        page,
-        limit,
-        undefined,
-        tipo || undefined,
-        ORDER_BY_MAP[sortKey],
-        sortDir
-      );
-      setItems(res.data);
-      setTotal(res.total);
-      setPages(res.pages);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar historico de senhas. O endpoint /api/senha-historico pode nao existir no backend.";
-      setError(message);
-      setItems([]);
-      setTotal(0);
-      setPages(0);
-    } finally {
-      setLoading(false);
-    }
+    await buscar().then(aplicar, aplicarErro);
   };
 
+  // Reset para pagina 1 quando filtros mudam — ajustado durante o render
+  // (padrao "ajustar estado quando a entrada muda"), sem efeito.
+  const chaveFiltros = `${search}|${tipo}`;
+  const [filtrosAnteriores, setFiltrosAnteriores] = useState(chaveFiltros);
+  if (filtrosAnteriores !== chaveFiltros) {
+    setFiltrosAnteriores(chaveFiltros);
+    setPage(1);
+  }
+
+  // Paginacao/ordenacao/tipo mudou: liga o loading durante o render e o
+  // efeito so faz a busca.
+  const chaveLista = `${page}|${limit}|${tipo}|${sortKey}|${sortDir}`;
+  const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  if (chaveAnterior !== chaveLista) {
+    setChaveAnterior(chaveLista);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
-    load();
+    buscar().then(aplicar, aplicarErro);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, tipo, sortKey, sortDir]);
 
@@ -150,11 +178,6 @@ export default function SenhaHistoricoPage() {
   const handleRefresh = () => {
     load();
   };
-
-  // Reset para pagina 1 quando filtros mudam
-  useEffect(() => {
-    setPage(1);
-  }, [search, tipo]);
 
   // Busca continua client-side (aplicada sobre os itens da pagina atual);
   // a ordenacao agora e feita pela API quando o campo esta na whitelist do
@@ -177,36 +200,6 @@ export default function SenhaHistoricoPage() {
     }
     return list;
   }, [items, search]);
-
-  const SortableHeader = ({
-    label,
-    sortKeyName,
-    align,
-  }: {
-    label: string;
-    sortKeyName: SortKey;
-    align?: "left" | "center" | "right";
-  }) => (
-    <button
-      type="button"
-      onClick={() => handleSort(sortKeyName)}
-      className={[
-        "inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-slate-600 hover:text-slate-900",
-        align === "center"
-          ? "justify-center"
-          : align === "right"
-          ? "justify-end"
-          : "",
-      ].join(" ")}
-    >
-      {label}
-      {sortKey === sortKeyName && (
-        <span className="text-primary-600">
-          {sortDir === "asc" ? "↑" : "↓"}
-        </span>
-      )}
-    </button>
-  );
 
   const columns: Column<SenhaHistoricoItem>[] = [
     {

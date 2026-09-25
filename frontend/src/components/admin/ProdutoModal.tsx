@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Produto, ProdutoInput } from "@/lib/types";
+import { useResetOnOpen } from "@/lib/useResetOnOpen";
 
 interface ProdutoModalProps {
   open: boolean;
@@ -34,35 +35,35 @@ export function ProdutoModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setSubmitting(false);
-      if (mode === "edit" && produto) {
-        setSku(produto.sku);
-        setDescricao(produto.descricao);
-        setCategoria(produto.categoria);
-        setMarca(produto.marca);
-        setNotaOlfativa(produto.nota_olfativa || "");
-        setPrecoTabela(String(produto.preco_tabela));
-        setCustoUnitario(String(produto.custo_unitario));
-        setUnidade(produto.unidade);
-        setDataLancamento(
-          produto.data_lancamento ? produto.data_lancamento.slice(0, 10) : ""
-        );
-      } else {
-        setSku("");
-        setDescricao("");
-        setCategoria("");
-        setMarca("");
-        setNotaOlfativa("");
-        setPrecoTabela("");
-        setCustoUnitario("");
-        setUnidade("");
-        setDataLancamento("");
-      }
+  // Reseta o formulario ao abrir (ou quando as props mudam com o modal
+  // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  useResetOnOpen(open, [mode, produto], () => {
+    setError(null);
+    setSubmitting(false);
+    if (mode === "edit" && produto) {
+      setSku(produto.sku);
+      setDescricao(produto.descricao);
+      setCategoria(produto.categoria);
+      setMarca(produto.marca);
+      setNotaOlfativa(produto.nota_olfativa || "");
+      setPrecoTabela(String(produto.preco_tabela));
+      setCustoUnitario(String(produto.custo_unitario));
+      setUnidade(produto.unidade);
+      setDataLancamento(
+        produto.data_lancamento ? produto.data_lancamento.slice(0, 10) : ""
+      );
+    } else {
+      setSku("");
+      setDescricao("");
+      setCategoria("");
+      setMarca("");
+      setNotaOlfativa("");
+      setPrecoTabela("");
+      setCustoUnitario("");
+      setUnidade("");
+      setDataLancamento("");
     }
-  }, [open, mode, produto]);
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
