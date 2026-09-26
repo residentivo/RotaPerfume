@@ -14,6 +14,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/models"
+	"github.com/rotaperfumes/shared/repositories"
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
@@ -316,6 +317,15 @@ func (h *UsuarioHandler) ToggleAtivoUsuario(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// SEC-06: usuário inativado perde as sessões de refresh na hora (ativar
+	// não revoga). Falha na revogação não desfaz a inativação — o middleware
+	// já bloqueia o usuário inativo em todo request protegido —, mas é logada.
+	if !u.Ativo {
+		if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, id, repositories.RevokeReasonInativacao); err != nil {
+			log.Printf("[usuarios] ToggleAtivoUsuario: falha ao revogar refresh tokens do usuario_id=%d: %v", id, err)
+		}
+	}
+
 	log.Printf("[usuarios] ativo=%t: id=%d por admin=%s", u.Ativo, id, role)
 	writeJSON(w, http.StatusOK, usuarioToMap(u), "")
 }
@@ -374,10 +384,14 @@ func (h *UsuarioHandler) AdminResetPassword(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Registra no histórico de senhas (tipo "admin").
-	_ = h.senhaSvc.Registrar(ctx, h.db, req.UsuarioID, &adminID, targetUser.PasswordHash, ipOrigem, userAgent, "admin")
+	if err := h.senhaSvc.Registrar(ctx, h.db, req.UsuarioID, &adminID, targetUser.PasswordHash, ipOrigem, userAgent, "admin"); err != nil {
+		log.Printf("[usuarios] AdminResetPassword: falha ao registrar histórico de senha do usuario_id=%d: %v", req.UsuarioID, err)
+	}
 
 	// Revoga todos os refresh tokens do usuário após reset (security best practice).
-	_ = h.refreshSvc.RevokeAllUserTokens(ctx, h.db, req.UsuarioID)
+	if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, req.UsuarioID, repositories.RevokeReasonSenha); err != nil {
+		log.Printf("[usuarios] AdminResetPassword: falha ao revogar refresh tokens do usuario_id=%d: %v", req.UsuarioID, err)
+	}
 
 	if !emailEnviado {
 		log.Printf("[usuarios] ATENÇÃO: senha de usuario_id=%d resetada, mas email NÃO foi enviado", req.UsuarioID)

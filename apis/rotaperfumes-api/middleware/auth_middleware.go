@@ -4,6 +4,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -28,7 +29,34 @@ const (
 // Se a rota é protegida e o token falta/inválido, retorna 401.
 // Se a rota requer role "admin" e o usuário não é admin, retorna 403.
 // Valida expiração do access token (campo ExpiresAt do JWT) — retorna 401 com mensagem específica se expirado.
+//
+// Esta variante confia apenas no JWT (não consulta o banco). O router da API
+// usa JWTMiddlewareWithUserCheck (SEC-06); esta assinatura é mantida para
+// rotas públicas e testes unitários que exercitam só a validação do token.
 func JWTMiddleware(cfg *config.Config, protected bool, requireAdmin bool) func(http.Handler) http.Handler {
+	return newJWTMiddleware(cfg, nil, protected, requireAdmin)
+}
+
+// JWTMiddlewareWithUserCheck é o JWTMiddleware com checagem do usuário no
+// banco a cada request protegido (SEC-06). Depois de validar o JWT, consulta
+// ativo/role via checker (sem cache) e aplica regras fail-closed:
+//   - JWT ausente/inválido/expirado → 401, SEM consultar o banco;
+//   - usuário inexistente ou inativo → 401 "usuário inativo";
+//   - erro ao consultar → 500, sem chamar o handler;
+//   - o role do BANCO (não o do token) vai para o contexto e para o
+//     requireAdmin — rebaixar admin→normal vale imediatamente.
+//
+// Em rotas não protegidas o checker não é chamado. checker nil é erro de
+// programação (panic na montagem das rotas, nunca em runtime).
+func JWTMiddlewareWithUserCheck(cfg *config.Config, checker UserStatusChecker, protected bool, requireAdmin bool) func(http.Handler) http.Handler {
+	if checker == nil {
+		panic("middleware: JWTMiddlewareWithUserCheck exige um UserStatusChecker não nulo")
+	}
+	return newJWTMiddleware(cfg, checker, protected, requireAdmin)
+}
+
+// newJWTMiddleware monta o middleware; checker nil = confia no role do JWT.
+func newJWTMiddleware(cfg *config.Config, checker UserStatusChecker, protected bool, requireAdmin bool) func(http.Handler) http.Handler {
 	auth := services.NewAuthService()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -83,17 +111,52 @@ func JWTMiddleware(cfg *config.Config, protected bool, requireAdmin bool) func(h
 				}
 			}
 
-			if requireAdmin && claims.Role != "admin" {
+			role := claims.Role
+			if checker != nil && protected {
+				dbRole, ok := checkUserStatus(w, r, checker, claims.UserID, claims.Role)
+				if !ok {
+					return
+				}
+				role = dbRole
+			}
+
+			if requireAdmin && role != "admin" {
 				writeError(w, http.StatusForbidden, "acesso restrito a administradores")
 				return
 			}
 
 			// Injeta claims no contexto para os handlers downstream.
 			ctx := context.WithValue(r.Context(), keyUserID, claims.UserID)
-			ctx = context.WithValue(ctx, keyRole, claims.Role)
+			ctx = context.WithValue(ctx, keyRole, role)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// checkUserStatus consulta o usuário via checker e, se ele puder seguir,
+// devolve o role vigente no banco. Em qualquer outro caso já escreve a
+// resposta de erro (401/500) e devolve ok=false — o handler não é chamado.
+func checkUserStatus(w http.ResponseWriter, r *http.Request, checker UserStatusChecker, userID int64, tokenRole string) (string, bool) {
+	st, err := checker.CheckUserStatus(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			log.Printf("[auth] acesso negado: user_id=%d inexistente (token válido) %s %s", userID, r.Method, r.URL.Path)
+			writeError(w, http.StatusUnauthorized, msgUsuarioInativo)
+			return "", false
+		}
+		log.Printf("[auth] erro ao verificar usuário user_id=%d: %v", userID, err)
+		writeError(w, http.StatusInternalServerError, "erro interno")
+		return "", false
+	}
+	if !st.Ativo {
+		log.Printf("[auth] acesso negado: user_id=%d inativo %s %s", userID, r.Method, r.URL.Path)
+		writeError(w, http.StatusUnauthorized, msgUsuarioInativo)
+		return "", false
+	}
+	if st.Role != tokenRole {
+		log.Printf("[auth] role do token divergente do banco: user_id=%d token=%s banco=%s (usando banco)", userID, tokenRole, st.Role)
+	}
+	return st.Role, true
 }
 
 // timeNow é uma var para facilitar testes (sobrescrevível).

@@ -393,3 +393,98 @@ describe("UI-03 coluna ID - telas administrativas", () => {
     );
   });
 });
+
+// ─── FE-09: erro de carga nao zera a lista nem mostra o estado vazio ─────────
+
+describe("FE-09 - erro de carga nas telas administrativas", () => {
+  const ERRO_REDE = "Failed to fetch";
+  const paginaUsuarios = (page: number) => ({
+    data: [usuario(page * 100)],
+    page,
+    limit: 20,
+    total: 60,
+    pages: 3,
+  });
+  const paginaHistorico = (page: number) => ({
+    data: [item(page * 100)],
+    page,
+    limit: 20,
+    total: 60,
+    pages: 3,
+  });
+  const vazioPaginado = { data: [], page: 1, limit: 20, total: 0, pages: 0 };
+
+  it.each<[string, () => void, () => ReactElement, string]>([
+    ["usuarios", () => api.apiListUsers.mockRejectedValue(new TypeError(ERRO_REDE)), () => <UsuariosPage />, "Nenhum usuario cadastrado."],
+    [
+      "senha-historico",
+      () => api.apiListSenhaHistorico.mockRejectedValue(new TypeError(ERRO_REDE)),
+      () => <SenhaHistoricoPage />,
+      "Nenhuma alteracao de senha registrada.",
+    ],
+    ["vendedores", () => api.apiListVendedores.mockRejectedValue(new TypeError(ERRO_REDE)), () => <VendedoresPage />, "Nenhum vendedor cadastrado."],
+  ])("%s: erro de rede na primeira carga mostra so o alerta", async (_n, falhar, Page, vazio) => {
+    falhar();
+    render(Page());
+    expect(await screen.findByText(ERRO_REDE)).toBeInTheDocument();
+    expect(screen.queryByText(vazio)).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(spinner()).toBeNull();
+  });
+
+  it.each<[string, () => void, () => ReactElement, string]>([
+    ["usuarios", () => api.apiListUsers.mockResolvedValue(vazioPaginado), () => <UsuariosPage />, "Nenhum usuario cadastrado."],
+    [
+      "senha-historico",
+      () => api.apiListSenhaHistorico.mockResolvedValue(vazioPaginado),
+      () => <SenhaHistoricoPage />,
+      "Nenhuma alteracao de senha registrada.",
+    ],
+    ["vendedores", () => api.apiListVendedores.mockResolvedValue([]), () => <VendedoresPage />, "Nenhum vendedor cadastrado."],
+  ])("%s: sucesso com lista vazia mostra o estado vazio normal", async (_n, vazioOk, Page, vazio) => {
+    vazioOk();
+    render(Page());
+    expect(await screen.findByText(vazio)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("usuarios: erro ao trocar de pagina mantem a lista anterior + alerta", async () => {
+    api.apiListUsers.mockImplementation(async (page: number) => paginaUsuarios(page));
+    render(<UsuariosPage />);
+    await screen.findByText("Usuario 100");
+    api.apiListUsers.mockRejectedValueOnce(new TypeError(ERRO_REDE));
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+    expect(await screen.findByText(ERRO_REDE)).toBeInTheDocument();
+    expect(screen.getByText("Usuario 100")).toBeInTheDocument();
+    expect(screen.queryByText("Nenhum usuario cadastrado.")).not.toBeInTheDocument();
+  });
+
+  it("senha-historico: erro no 'Atualizar' mantem a lista anterior + alerta", async () => {
+    api.apiListSenhaHistorico.mockImplementation(async (page: number) => paginaHistorico(page));
+    render(<SenhaHistoricoPage />);
+    await screen.findByText("#100 - Pessoa 100");
+    api.apiListSenhaHistorico.mockRejectedValueOnce(new TypeError(ERRO_REDE));
+    await userEvent.click(screen.getByRole("button", { name: /Atualizar/ }));
+    expect(await screen.findByText(ERRO_REDE)).toBeInTheDocument();
+    expect(screen.getByText("#100 - Pessoa 100")).toBeInTheDocument();
+    expect(screen.queryByText("Nenhuma alteracao de senha registrada.")).not.toBeInTheDocument();
+  });
+
+  it("vendedores: erro na recarga apos inativar mantem a lista anterior + alerta", async () => {
+    const confirmar = vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiListVendedores.mockResolvedValueOnce([vend(1), vend(2)]);
+    api.apiListVendedores.mockRejectedValueOnce(new TypeError(ERRO_REDE));
+    api.apiDeleteVendedor.mockResolvedValue(undefined);
+    render(<VendedoresPage />);
+    await screen.findByText("Vend 01");
+
+    const linha = screen.getByText("Vend 01").closest("tr")!;
+    await userEvent.click(within(linha).getByTitle("Clique para inativar"));
+
+    expect(await screen.findByText(ERRO_REDE)).toBeInTheDocument();
+    expect(screen.getByText("Vend 01")).toBeInTheDocument();
+    expect(screen.getByText("Vend 02")).toBeInTheDocument();
+    expect(screen.queryByText("Nenhum vendedor cadastrado.")).not.toBeInTheDocument();
+    confirmar.mockRestore();
+  });
+});

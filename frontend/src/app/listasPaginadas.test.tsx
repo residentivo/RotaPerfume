@@ -87,6 +87,8 @@ interface Tela {
   /** Texto da linha renderizada na tabela. */
   texto: (id: number) => string;
   ordemPadrao: [string | undefined, "asc" | "desc"];
+  /** Estado vazio sem filtros (FE-09). */
+  vazio: string;
   /** Cabecalho clicavel e o order_by esperado. */
   ordenar: { header: string; orderBy: string };
   filtro: {
@@ -101,6 +103,7 @@ interface Tela {
 const TELAS: Tela[] = [
   {
     nome: "pedidos",
+    vazio: "Nenhum pedido cadastrado.",
     Page: PedidosPage,
     listFn: "apiListPedidos",
     linha: (id) => ({
@@ -121,6 +124,7 @@ const TELAS: Tela[] = [
   },
   {
     nome: "pagamentos",
+    vazio: "Nenhum pagamento cadastrado.",
     Page: PagamentosPage,
     listFn: "apiListPagamentos",
     linha: (id) => ({
@@ -148,6 +152,7 @@ const TELAS: Tela[] = [
   },
   {
     nome: "clientes",
+    vazio: "Nenhum cliente cadastrado.",
     Page: ClientesPage,
     listFn: "apiListClientes",
     linha: (id) => ({
@@ -168,6 +173,7 @@ const TELAS: Tela[] = [
   },
   {
     nome: "oportunidades",
+    vazio: "Nenhuma oportunidade cadastrada.",
     Page: OportunidadesPage,
     listFn: "apiListOportunidades",
     linha: (id) => ({
@@ -190,6 +196,7 @@ const TELAS: Tela[] = [
   },
   {
     nome: "visitas",
+    vazio: "Nenhuma visita cadastrada.",
     Page: VisitasPage,
     listFn: "apiListVisitas",
     linha: (id) => ({
@@ -213,6 +220,7 @@ const TELAS: Tela[] = [
   },
   {
     nome: "estoque",
+    vazio: "Nenhum registro de estoque cadastrado.",
     Page: EstoquePage,
     listFn: "apiListEstoque",
     linha: (id) => ({
@@ -230,6 +238,7 @@ const TELAS: Tela[] = [
   },
   {
     nome: "produtos",
+    vazio: "Nenhum produto cadastrado.",
     Page: ProdutosPage,
     listFn: "apiListProdutos",
     linha: (id) => ({
@@ -488,6 +497,46 @@ describe.each(TELAS)("Listagem $nome (FE-03)", (t) => {
 
     expect(screen.getByText(t.texto(300))).toBeInTheDocument();
     expect(screen.queryByText("falha da pagina 2")).not.toBeInTheDocument();
+  });
+
+  // FE-09: erro de carga nao zera a lista nem mostra o estado vazio.
+  it("FE-09: erro de rede na primeira carga mostra so o alerta (sem estado vazio)", async () => {
+    api[t.listFn].mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<t.Page />);
+    expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+    expect(screen.queryByText(t.vazio)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Nenhum(a)? .*(cadastrad|encontrad)/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("FE-09: erro apos carga bem-sucedida mantem a lista anterior + alerta", async () => {
+    await montarCarregada(t);
+    api[t.listFn].mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+    expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+    expect(screen.getByText(t.texto(100))).toBeInTheDocument();
+    expect(screen.queryByText(t.vazio)).not.toBeInTheDocument();
+    expect(spinner()).toBeNull();
+  });
+
+  it("FE-09: sucesso com lista vazia mostra o estado vazio normal, sem alerta", async () => {
+    api[t.listFn].mockResolvedValue({ data: [], page: 1, limit: 20, total: 0, pages: 0 });
+    render(<t.Page />);
+    expect(await screen.findByText(t.vazio)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(spinner()).toBeNull();
+  });
+
+  it("FE-09: sucesso depois de um erro volta a exibir o estado vazio", async () => {
+    api[t.listFn]
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValue({ data: [], page: 1, limit: 20, total: 0, pages: 0 });
+    render(<t.Page />);
+    await screen.findByText("Failed to fetch");
+    expect(screen.queryByText(t.vazio)).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Itens por pagina"), "50");
+    expect(await screen.findByText(t.vazio)).toBeInTheDocument();
+    expect(screen.queryByText("Failed to fetch")).not.toBeInTheDocument();
   });
 });
 

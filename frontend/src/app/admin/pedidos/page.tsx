@@ -99,6 +99,7 @@ function PedidosContent() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [erroCarga, setErroCarga] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
@@ -159,18 +160,19 @@ function PedidosContent() {
     setPedidos(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    setErroCarga(false);
     setLoading(false);
   };
 
+  // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
+  // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
   const aplicarErroPedidos = (err: unknown) => {
     const message =
       err instanceof Error
         ? err.message
         : "Erro ao carregar pedidos. O endpoint /api/pedidos pode nao existir no backend.";
     setError(message);
-    setPedidos([]);
-    setTotal(0);
-    setPages(0);
+    setErroCarga(true);
     setLoading(false);
   };
 
@@ -560,6 +562,7 @@ function PedidosContent() {
             data={pedidos}
             keyExtractor={(p) => p.pedido_id_origem}
             loading={loading}
+            erroCarga={erroCarga}
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={(key) => handleSort(key as SortKey)}

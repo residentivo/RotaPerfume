@@ -39,6 +39,38 @@ var (
 	ErrRefreshTokenRevokedRecently = fmt.Errorf("%w recentemente (rotação concorrente)", ErrRefreshTokenRevoked)
 )
 
+// RevokedTokenError é devolvido por ValidateRefreshToken para token já
+// revogado (SEC-07), com os dados do registro para o handler decidir entre
+// corrida legítima, reuso de token rotacionado (possível roubo) e token
+// revogado por outro motivo. Envolve ErrRefreshTokenRevokedRecently (Recent)
+// ou ErrRefreshTokenRevoked, preservando errors.Is com os sentinelas.
+type RevokedTokenError struct {
+	TokenID   int64
+	UsuarioID int64
+	// Reason é o motivo gravado; RevokeReasonDesconhecido quando NULL (legado).
+	Reason    repositories.RevokeReason
+	RevokedAt time.Time
+	// Recent indica revogação dentro da RefreshRevokeGraceWindow.
+	Recent bool
+}
+
+func (e *RevokedTokenError) Error() string { return e.Unwrap().Error() }
+
+// Unwrap devolve o sentinela correspondente (Recently ou Revoked).
+func (e *RevokedTokenError) Unwrap() error {
+	if e.Recent {
+		return ErrRefreshTokenRevokedRecently
+	}
+	return ErrRefreshTokenRevoked
+}
+
+// IsRotationReuse informa se é reuso, fora da janela de graça, de um token que
+// já foi rotacionado — o sinal de possível roubo de refresh token (SEC-07).
+// Motivo NULL (legado) não conta: tratado de forma conservadora.
+func (e *RevokedTokenError) IsRotationReuse() bool {
+	return !e.Recent && e.Reason == repositories.RevokeReasonRotacao
+}
+
 // RefreshTokenService gerencia lifecycle dos refresh tokens.
 type RefreshTokenService struct {
 	repo *repositories.RefreshTokenRepository
@@ -119,10 +151,13 @@ func (s *RefreshTokenService) ValidateRefreshToken(ctx context.Context, db *sql.
 
 	// Verifica se foi revogado.
 	if rt.RevokedAt.Valid {
-		if s.revokedRecently(rt.RevokedAt.Time) {
-			return nil, ErrRefreshTokenRevokedRecently
+		return nil, &RevokedTokenError{
+			TokenID:   rt.ID,
+			UsuarioID: rt.UsuarioID,
+			Reason:    rt.RevokedReason,
+			RevokedAt: rt.RevokedAt.Time,
+			Recent:    s.revokedRecently(rt.RevokedAt.Time),
 		}
-		return nil, ErrRefreshTokenRevoked
 	}
 
 	return rt, nil
@@ -136,8 +171,8 @@ func (s *RefreshTokenService) revokedRecently(revokedAt time.Time) bool {
 	return age >= -RefreshRevokeGraceWindow && age <= RefreshRevokeGraceWindow
 }
 
-// RevokeToken revoga um refresh token específico.
-func (s *RefreshTokenService) RevokeToken(ctx context.Context, db *sql.DB, token string) error {
+// RevokeToken revoga um refresh token específico, gravando o motivo (SEC-07).
+func (s *RefreshTokenService) RevokeToken(ctx context.Context, db *sql.DB, token string, reason repositories.RevokeReason) error {
 	tokenHash := hashToken(token)
 
 	rt, err := s.repo.FindByTokenHash(ctx, db, tokenHash)
@@ -148,14 +183,14 @@ func (s *RefreshTokenService) RevokeToken(ctx context.Context, db *sql.DB, token
 		return err
 	}
 
-	if err := s.repo.Revoke(ctx, db, rt.ID); err != nil {
+	if err := s.repo.Revoke(ctx, db, rt.ID, reason); err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrRefreshTokenRevoked
 		}
 		return err
 	}
 
-	log.Printf("[refresh] token revogado: id=%d usuario_id=%d", rt.ID, rt.UsuarioID)
+	log.Printf("[refresh] token revogado: id=%d usuario_id=%d motivo=%s", rt.ID, rt.UsuarioID, reason)
 	return nil
 }
 
@@ -180,7 +215,7 @@ func (s *RefreshTokenService) BeginRotation(ctx context.Context, db *sql.DB, old
 	if err != nil {
 		return nil, fmt.Errorf("begin refresh rotation: %w", err)
 	}
-	if err := s.repo.Revoke(ctx, tx, oldID); err != nil {
+	if err := s.repo.Revoke(ctx, tx, oldID, repositories.RevokeReasonRotacao); err != nil {
 		_ = tx.Rollback()
 		if errors.Is(err, repositories.ErrNotFound) {
 			log.Printf("[refresh] rotação recusada: token já revogado id=%d", oldID)
@@ -220,12 +255,13 @@ func (r *RefreshRotation) Rollback() {
 	_ = r.tx.Rollback()
 }
 
-// RevokeAllUserTokens revoga todos os refresh tokens de um usuário.
-func (s *RefreshTokenService) RevokeAllUserTokens(ctx context.Context, db *sql.DB, usuarioID int64) error {
-	if err := s.repo.RevokeAllByUser(ctx, db, usuarioID); err != nil {
+// RevokeAllUserTokens revoga todos os refresh tokens ativos de um usuário,
+// gravando o motivo informado (SEC-07).
+func (s *RefreshTokenService) RevokeAllUserTokens(ctx context.Context, db *sql.DB, usuarioID int64, reason repositories.RevokeReason) error {
+	if err := s.repo.RevokeAllByUser(ctx, db, usuarioID, reason); err != nil {
 		return err
 	}
-	log.Printf("[refresh] todos tokens revogados: usuario_id=%d", usuarioID)
+	log.Printf("[refresh] todos tokens revogados: usuario_id=%d motivo=%s", usuarioID, reason)
 	return nil
 }
 

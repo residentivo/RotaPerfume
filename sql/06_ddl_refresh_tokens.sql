@@ -15,6 +15,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- ao sistema de renovação de JWT (access token).
 -- Cada refresh token é armazenado como hash SHA-256.
 -- Revogação: revoked_at = NULL (ativo) | DATETIME (revogado)
+-- Motivo: revoked_reason (SEC-07, 2026-09-26). Bancos criados antes
+-- recebem a coluna pela migração 21 (make db-fix-revoked-reason).
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `refresh_tokens` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID interno do refresh token',
@@ -22,6 +24,7 @@ CREATE TABLE IF NOT EXISTS `refresh_tokens` (
     `token_hash` VARCHAR(255) NOT NULL COMMENT 'SHA-256 do refresh token (único)',
     `expires_at` DATETIME NOT NULL COMMENT 'Data/hora de expiração do token',
     `revoked_at` DATETIME NULL COMMENT 'Data/hora de revogação (NULL = ativo)',
+    `revoked_reason` ENUM('rotacao','logout','revogacao_massa','senha','inativacao') NULL DEFAULT NULL COMMENT 'Motivo da revogação (NULL = ativo ou revogado antes do SEC-07/legado)',
     `ip_origem` VARCHAR(45) NULL COMMENT 'IP de origem que solicitou o token (IPv4/IPv6)',
     `user_agent` TEXT NULL COMMENT 'User-Agent do navegador/cliente no momento da criação',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Data de criação do registro',

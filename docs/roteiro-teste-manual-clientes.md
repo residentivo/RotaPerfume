@@ -27,8 +27,10 @@ Marque cada checkbox depois de conferir no navegador, com o DevTools aberto na a
    | --- | --- | --- | --- |
    | admin | `admin@rotaperfumes.com.br` | 1 | - |
    | normal com vendedor | `rafael.carvalho@rotaperfumes.com.br` | 5 | 4 - Rafael Carvalho |
-   | normal com vendedor desligado | `henrique.rodrigues@rotaperfumes.com.br` | 2 | 1 - Henrique Rodrigues |
+   | normal com vendedor desligado | `thiago.silva@rotaperfumes.com.br` | 4 | 3 - Thiago Silva (`data_desligamento` = 2025-07-26) |
    | normal sem vendedor | criar temporário (SQL abaixo) | - | nenhum |
+
+   O usuário desligado passou a ser o `thiago.silva` (id 4) em 2026-09-26 (DOC-03). O `henrique.rodrigues` (id 2), usado antes, está com `ativo = 0` e não faz login. Antes de começar, confira que o usuário 4 continua ativo (`SELECT id, ativo, id_vendedor FROM usuarios WHERE id = 4;`, esperado `ativo` = 1 e `id_vendedor` = 3). Se estiver inativo, reative-o na tela de Usuários e anote para desfazer no fim.
 
 3. Usuário temporário sem vendedor (defina a senha pela tela de Usuários como admin):
    ```sql
@@ -107,7 +109,7 @@ await fetch(`${API}/api/clientes/ID_FORA/inativar`, { method: "PATCH", credentia
 ## 5. Outros perfis
 
 - [ ] 5.1 **Normal sem vendedor:** a lista vem vazia ("Nenhum cliente cadastrado."). No Console, `PUT`/`PATCH` em qualquer id respondem **404** e `POST /api/clientes` responde **403** `usuário sem vendedor vinculado`.
-- [ ] 5.2 **Normal com vendedor desligado (id 2):** `/admin/clientes` mostra só o aviso de desligado. No Console, `POST`, `PUT` e `PATCH` respondem **403** `acesso bloqueado: vendedor desligado`.
+- [ ] 5.2 **Normal com vendedor desligado (id 4):** `/admin/clientes` mostra só o aviso de desligado. No Console, `POST`, `PUT` e `PATCH` respondem **403** `acesso bloqueado: vendedor desligado`.
 - [ ] 5.3 **Admin:** edita e inativa ID_FORA normalmente (200). Criar como admin **não** cria vínculo de carteira.
 
 ## 6. Limpeza

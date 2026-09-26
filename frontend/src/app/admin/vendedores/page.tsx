@@ -48,6 +48,7 @@ function VendedoresPageContent() {
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [erroCarga, setErroCarga] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [regiaoFilter, setRegiaoFilter] = useState("");
@@ -69,16 +70,19 @@ function VendedoresPageContent() {
 
   const aplicarVendedores = (res: Vendedor[]) => {
     setVendedores(res);
+    setErroCarga(false);
     setLoading(false);
   };
 
+  // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
+  // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
   const aplicarErroVendedores = (err: unknown) => {
     const message =
       err instanceof Error
         ? err.message
         : "Erro ao carregar vendedores. O endpoint /api/vendedores pode nao existir no backend.";
     setError(message);
-    setVendedores([]);
+    setErroCarga(true);
     setLoading(false);
   };
 
@@ -490,6 +494,7 @@ function VendedoresPageContent() {
             data={paginated}
             keyExtractor={(v) => v.id}
             loading={loading}
+            erroCarga={erroCarga}
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={(key) => handleSort(key as SortKey)}

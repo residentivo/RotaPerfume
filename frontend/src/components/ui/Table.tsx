@@ -30,6 +30,13 @@ interface TableProps<T> {
    * linha, ocupando todas as colunas.
    */
   renderExpanded?: (row: T) => ReactNode;
+  /**
+   * FE-09: a ultima carga da listagem falhou. Com dados (lista anterior
+   * mantida pela tela) a tabela e exibida normalmente; sem dados, o estado
+   * vazio NAO e exibido — a tela mostra so o alerta de erro, pois "nenhum
+   * registro" seria uma afirmacao falsa.
+   */
+  erroCarga?: boolean;
 }
 
 export function Table<T>({
@@ -42,6 +49,7 @@ export function Table<T>({
   sortDir,
   onSort,
   renderExpanded,
+  erroCarga = false,
 }: TableProps<T>) {
   if (loading) {
     return (
@@ -52,6 +60,7 @@ export function Table<T>({
   }
 
   if (data.length === 0) {
+    if (erroCarga) return null;
     return (
       <div className="py-12 text-center text-sm text-slate-500">
         {emptyMessage}

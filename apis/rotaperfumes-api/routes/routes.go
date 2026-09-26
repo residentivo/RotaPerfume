@@ -11,6 +11,9 @@ import (
 
 // NewMux monta o *http.ServeMux com todas as rotas e middlewares aplicados.
 //
+// userChecker (obrigatório, não nulo) verifica ativo/role do usuário no banco
+// a cada request protegido — em produção middleware.NewDBUserStatusChecker(db).
+//
 // Rotas:
 //
 //	POST /api/auth/login                — público (requer captchaToken no body — Cloudflare Turnstile)
@@ -73,253 +76,261 @@ import (
 //	GET  /api/estoque/{id}               — admin only — detalhe de um registro de estoque
 //	PUT  /api/estoque/{id}               — admin only — atualiza (ajuste manual) saldo de um registro de estoque
 //	GET  /health                        — público
-func NewMux(cfg *config.Config, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler, oportunidadeH *handlers.OportunidadeHandler, visitaH *handlers.VisitaHandler, estoqueH *handlers.EstoqueHandler) http.Handler {
+func NewMux(cfg *config.Config, userChecker middleware.UserStatusChecker, authH *handlers.AuthHandler, userH *handlers.UsuarioHandler, dashboardH *handlers.DashboardHandler, senhaH *handlers.SenhaHistoricoHandler, vendedorH *handlers.VendedorHandler, clienteH *handlers.ClienteHandler, produtoH *handlers.ProdutoHandler, pedidoH *handlers.PedidoHandler, pagamentoH *handlers.PagamentoHandler, oportunidadeH *handlers.OportunidadeHandler, visitaH *handlers.VisitaHandler, estoqueH *handlers.EstoqueHandler) http.Handler {
 	mux := http.NewServeMux()
+
+	// jwt monta o middleware de autenticação de cada rota. Rotas protegidas
+	// consultam o usuário no banco a cada request (SEC-06): inativo/inexistente
+	// → 401 e o role do banco prevalece sobre o do token. Rotas públicas
+	// (protected=false) não consultam o banco.
+	jwt := func(protected, requireAdmin bool) func(http.Handler) http.Handler {
+		return middleware.JWTMiddlewareWithUserCheck(cfg, userChecker, protected, requireAdmin)
+	}
 
 	// Login: middleware "não-protegido" (não exige token). Mas usamos um middleware
 	// neutro para manter a cadeia única.
-	loginChain := middleware.JWTMiddleware(cfg, false, false)(http.HandlerFunc(authH.Login))
+	loginChain := jwt(false, false)(http.HandlerFunc(authH.Login))
 	mux.Handle("/api/auth/login", loginChain)
 
 	// Refresh token: público (envia refresh_token no body).
-	refreshChain := middleware.JWTMiddleware(cfg, false, false)(http.HandlerFunc(authH.Refresh))
+	refreshChain := jwt(false, false)(http.HandlerFunc(authH.Refresh))
 	mux.Handle("/api/auth/refresh", refreshChain)
 
 	// Logout: público (envia refresh_token no body).
-	logoutChain := middleware.JWTMiddleware(cfg, false, false)(http.HandlerFunc(authH.Logout))
+	logoutChain := jwt(false, false)(http.HandlerFunc(authH.Logout))
 	mux.Handle("/api/auth/logout", logoutChain)
 
 	// Reset password: exige JWT, qualquer role (usuário troca a própria senha).
-	resetChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(authH.ResetPassword))
+	resetChain := jwt(true, false)(http.HandlerFunc(authH.ResetPassword))
 	mux.Handle("/api/auth/reset-password", resetChain)
 
 	// Me: exige JWT.
-	meChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(authH.Me))
+	meChain := jwt(true, false)(http.HandlerFunc(authH.Me))
 	mux.Handle("/api/auth/me", meChain)
 
 	// Lista de usuários: admin only.
-	listUsuariosChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(userH.ListUsuarios))
+	listUsuariosChain := jwt(true, true)(http.HandlerFunc(userH.ListUsuarios))
 	mux.Handle("GET /api/usuarios", listUsuariosChain)
 
 	// Cria usuário: admin only.
-	createUsuarioChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(userH.CreateUsuario))
+	createUsuarioChain := jwt(true, true)(http.HandlerFunc(userH.CreateUsuario))
 	mux.Handle("POST /api/usuarios", createUsuarioChain)
 
 	// Atualiza usuário: admin only.
-	updateUsuarioChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(userH.UpdateUsuario))
+	updateUsuarioChain := jwt(true, true)(http.HandlerFunc(userH.UpdateUsuario))
 	mux.Handle("PUT /api/usuarios/{id}", updateUsuarioChain)
 
 	// Toggle ativo/inativo: admin only.
-	toggleAtivoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(userH.ToggleAtivoUsuario))
+	toggleAtivoChain := jwt(true, true)(http.HandlerFunc(userH.ToggleAtivoUsuario))
 	mux.Handle("PATCH /api/usuarios/{id}/inativar", toggleAtivoChain)
 
 	// Admin reset password: admin only.
-	adminResetChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(userH.AdminResetPassword))
+	adminResetChain := jwt(true, true)(http.HandlerFunc(userH.AdminResetPassword))
 	mux.Handle("POST /api/admin/reset-password", adminResetChain)
 
 	// Senha histórico: admin only.
 	// Importante: a rota /api/senha-historico/{user_id} deve ser registrada
 	// ANTES da rota sem path param para que o matching funcione corretamente.
-	senhaPorUsuarioChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(senhaH.ListarPorUsuario))
+	senhaPorUsuarioChain := jwt(true, true)(http.HandlerFunc(senhaH.ListarPorUsuario))
 	mux.Handle("/api/senha-historico/", senhaPorUsuarioChain)
 
-	senhaTodosChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(senhaH.ListarTodos))
+	senhaTodosChain := jwt(true, true)(http.HandlerFunc(senhaH.ListarTodos))
 	mux.Handle("/api/senha-historico", senhaTodosChain)
 
 	// Dashboard metrics: acesso comum (qualquer usuário autenticado)
 	// (escopo por vendedor: normal vê só os próprios números).
-	metricsChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetMetrics))
+	metricsChain := jwt(true, false)(http.HandlerFunc(dashboardH.GetMetrics))
 	mux.Handle("/api/dashboard/metrics", metricsChain)
 
 	// Dashboard vendas (serie temporal): acesso comum
 	// (escopo por vendedor: normal vê só os próprios números).
-	vendasChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetVendas))
+	vendasChain := jwt(true, false)(http.HandlerFunc(dashboardH.GetVendas))
 	mux.Handle("/api/dashboard/vendas", vendasChain)
 
 	// Dashboard vendedores (ranking): acesso comum
 	// (escopo por vendedor: normal vê só os próprios números).
-	vendedoresChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetVendedores))
+	vendedoresChain := jwt(true, false)(http.HandlerFunc(dashboardH.GetVendedores))
 	mux.Handle("/api/dashboard/vendedores", vendedoresChain)
 
 	// Lista de vendedores (para popular selects): acesso comum.
-	listVendedoresChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.ListVendedores))
+	listVendedoresChain := jwt(true, false)(http.HandlerFunc(vendedorH.ListVendedores))
 	mux.Handle("GET /api/vendedores", listVendedoresChain)
 
 	// Cria vendedor: admin only (gestão de vendedores/carteiras é restrita a
 	// administradores — parecer SecBrain).
-	createVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.CreateVendedor))
+	createVendedorChain := jwt(true, true)(http.HandlerFunc(vendedorH.CreateVendedor))
 	mux.Handle("POST /api/vendedores", createVendedorChain)
 
 	// Detalhe de vendedor (com clientes vinculados): admin only.
-	getVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.GetVendedor))
+	getVendedorChain := jwt(true, true)(http.HandlerFunc(vendedorH.GetVendedor))
 	mux.Handle("GET /api/vendedores/{id}", getVendedorChain)
 
 	// Atualiza vendedor: admin only.
-	updateVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.UpdateVendedor))
+	updateVendedorChain := jwt(true, true)(http.HandlerFunc(vendedorH.UpdateVendedor))
 	mux.Handle("PUT /api/vendedores/{id}", updateVendedorChain)
 
 	// Inativa vendedor (soft-delete via data_desligamento): admin only.
-	deleteVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.DeleteVendedor))
+	deleteVendedorChain := jwt(true, true)(http.HandlerFunc(vendedorH.DeleteVendedor))
 	mux.Handle("DELETE /api/vendedores/{id}", deleteVendedorChain)
 
 	// Reativa vendedor (limpa data_desligamento): admin only.
-	reativarVendedorChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.ReativarVendedor))
+	reativarVendedorChain := jwt(true, true)(http.HandlerFunc(vendedorH.ReativarVendedor))
 	mux.Handle("POST /api/vendedores/{id}/reativar", reativarVendedorChain)
 
 	// Vincula cliente à carteira do vendedor (transfere automaticamente se já
 	// vinculado a outro vendedor): admin only.
-	vincularClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.VincularCliente))
+	vincularClienteChain := jwt(true, true)(http.HandlerFunc(vendedorH.VincularCliente))
 	mux.Handle("POST /api/vendedores/{id}/clientes", vincularClienteChain)
 
 	// Desvincula cliente da carteira do vendedor (encerra vínculo ativo): admin only.
-	desvincularClienteChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(vendedorH.DesvincularCliente))
+	desvincularClienteChain := jwt(true, true)(http.HandlerFunc(vendedorH.DesvincularCliente))
 	mux.Handle("DELETE /api/vendedores/{id}/clientes/{clienteId}", desvincularClienteChain)
 
 	// Lista clientes vinculados (carteira ativa) a um vendedor: acesso comum
 	// (usado pelo dropdown em cascata do frontend em Oportunidades).
-	listClientesDoVendedorChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(vendedorH.ListClientesDoVendedor))
+	listClientesDoVendedorChain := jwt(true, false)(http.HandlerFunc(vendedorH.ListClientesDoVendedor))
 	mux.Handle("GET /api/vendedores/{id}/clientes", listClientesDoVendedorChain)
 
 	// Dashboard clientes (métricas da base de clientes): acesso comum.
-	dashboardClientesChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(dashboardH.GetClientes))
+	dashboardClientesChain := jwt(true, false)(http.HandlerFunc(dashboardH.GetClientes))
 	mux.Handle("/api/dashboard/clientes", dashboardClientesChain)
 
 	// Lista de clientes: acesso comum.
-	listClientesChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.ListClientes))
+	listClientesChain := jwt(true, false)(http.HandlerFunc(clienteH.ListClientes))
 	mux.Handle("GET /api/clientes", listClientesChain)
 
 	// Cria cliente: acesso comum.
-	createClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.CreateCliente))
+	createClienteChain := jwt(true, false)(http.HandlerFunc(clienteH.CreateCliente))
 	mux.Handle("POST /api/clientes", createClienteChain)
 
 	// Detalhe de cliente: acesso comum.
-	getClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.GetCliente))
+	getClienteChain := jwt(true, false)(http.HandlerFunc(clienteH.GetCliente))
 	mux.Handle("GET /api/clientes/{id}", getClienteChain)
 
 	// Atualiza cliente: acesso comum.
-	updateClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.UpdateCliente))
+	updateClienteChain := jwt(true, false)(http.HandlerFunc(clienteH.UpdateCliente))
 	mux.Handle("PUT /api/clientes/{id}", updateClienteChain)
 
 	// Toggle ativo/inativo de cliente: acesso comum.
-	toggleAtivoClienteChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(clienteH.ToggleAtivoCliente))
+	toggleAtivoClienteChain := jwt(true, false)(http.HandlerFunc(clienteH.ToggleAtivoCliente))
 	mux.Handle("PATCH /api/clientes/{id}/inativar", toggleAtivoClienteChain)
 
 	// Lista de produtos: acesso comum.
-	listProdutosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.ListProdutos))
+	listProdutosChain := jwt(true, false)(http.HandlerFunc(produtoH.ListProdutos))
 	mux.Handle("GET /api/produtos", listProdutosChain)
 
 	// Cria produto: admin only (gestão de catálogo movida para Administração;
 	// leitura continua liberada para o vendedor montar pedidos).
-	createProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.CreateProduto))
+	createProdutoChain := jwt(true, true)(http.HandlerFunc(produtoH.CreateProduto))
 	mux.Handle("POST /api/produtos", createProdutoChain)
 
 	// Detalhe de produto: acesso comum.
-	getProdutoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(produtoH.GetProduto))
+	getProdutoChain := jwt(true, false)(http.HandlerFunc(produtoH.GetProduto))
 	mux.Handle("GET /api/produtos/{id}", getProdutoChain)
 
 	// Atualiza produto: admin only.
-	updateProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.UpdateProduto))
+	updateProdutoChain := jwt(true, true)(http.HandlerFunc(produtoH.UpdateProduto))
 	mux.Handle("PUT /api/produtos/{id}", updateProdutoChain)
 
 	// Toggle ativo/inativo de produto: admin only.
-	toggleAtivoProdutoChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(produtoH.ToggleAtivoProduto))
+	toggleAtivoProdutoChain := jwt(true, true)(http.HandlerFunc(produtoH.ToggleAtivoProduto))
 	mux.Handle("PATCH /api/produtos/{id}/inativar", toggleAtivoProdutoChain)
 
 	// Lista de pedidos: acesso comum.
-	listPedidosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.ListPedidos))
+	listPedidosChain := jwt(true, false)(http.HandlerFunc(pedidoH.ListPedidos))
 	mux.Handle("GET /api/pedidos", listPedidosChain)
 
 	// Cria pedido (com itens): acesso comum (escopo por carteira aplicado no handler).
-	createPedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.CreatePedido))
+	createPedidoChain := jwt(true, false)(http.HandlerFunc(pedidoH.CreatePedido))
 	mux.Handle("POST /api/pedidos", createPedidoChain)
 
 	// Detalhe de pedido (com itens): acesso comum.
-	getPedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.GetPedido))
+	getPedidoChain := jwt(true, false)(http.HandlerFunc(pedidoH.GetPedido))
 	mux.Handle("GET /api/pedidos/{id}", getPedidoChain)
 
 	// Atualiza pedido (substitui itens): acesso comum (escopo por carteira aplicado no handler).
-	updatePedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.UpdatePedido))
+	updatePedidoChain := jwt(true, false)(http.HandlerFunc(pedidoH.UpdatePedido))
 	mux.Handle("PUT /api/pedidos/{id}", updatePedidoChain)
 
 	// Exclui pedido (hard delete, com itens): acesso comum.
-	deletePedidoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pedidoH.DeletePedido))
+	deletePedidoChain := jwt(true, false)(http.HandlerFunc(pedidoH.DeletePedido))
 	mux.Handle("DELETE /api/pedidos/{id}", deletePedidoChain)
 
 	// Lista de pagamentos: acesso comum (qualquer usuário autenticado, sem
 	// exigir admin) — requireAuth=true, requireAdmin=false.
-	listPagamentosChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.ListPagamentos))
+	listPagamentosChain := jwt(true, false)(http.HandlerFunc(pagamentoH.ListPagamentos))
 	mux.Handle("GET /api/pagamentos", listPagamentosChain)
 
 	// Cria pagamento: acesso comum (escopo por carteira aplicado no handler).
-	createPagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.CreatePagamento))
+	createPagamentoChain := jwt(true, false)(http.HandlerFunc(pagamentoH.CreatePagamento))
 	mux.Handle("POST /api/pagamentos", createPagamentoChain)
 
 	// Detalhe de pagamento: acesso comum.
-	getPagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.GetPagamento))
+	getPagamentoChain := jwt(true, false)(http.HandlerFunc(pagamentoH.GetPagamento))
 	mux.Handle("GET /api/pagamentos/{id}", getPagamentoChain)
 
 	// Atualiza pagamento: acesso comum (escopo por carteira aplicado no handler).
-	updatePagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.UpdatePagamento))
+	updatePagamentoChain := jwt(true, false)(http.HandlerFunc(pagamentoH.UpdatePagamento))
 	mux.Handle("PUT /api/pagamentos/{id}", updatePagamentoChain)
 
 	// Exclui pagamento (hard delete): acesso comum.
-	deletePagamentoChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(pagamentoH.DeletePagamento))
+	deletePagamentoChain := jwt(true, false)(http.HandlerFunc(pagamentoH.DeletePagamento))
 	mux.Handle("DELETE /api/pagamentos/{id}", deletePagamentoChain)
 
 	// Lista de oportunidades: acesso comum (escopo por carteira aplicado no handler).
-	listOportunidadesChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.ListOportunidades))
+	listOportunidadesChain := jwt(true, false)(http.HandlerFunc(oportunidadeH.ListOportunidades))
 	mux.Handle("GET /api/oportunidades", listOportunidadesChain)
 
 	// Cria oportunidade: acesso comum (escopo por carteira aplicado no handler).
-	createOportunidadeChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.CreateOportunidade))
+	createOportunidadeChain := jwt(true, false)(http.HandlerFunc(oportunidadeH.CreateOportunidade))
 	mux.Handle("POST /api/oportunidades", createOportunidadeChain)
 
 	// Detalhe de oportunidade: acesso comum (escopo por carteira aplicado no handler).
-	getOportunidadeChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.GetOportunidade))
+	getOportunidadeChain := jwt(true, false)(http.HandlerFunc(oportunidadeH.GetOportunidade))
 	mux.Handle("GET /api/oportunidades/{id}", getOportunidadeChain)
 
 	// Atualiza oportunidade: acesso comum (escopo por carteira aplicado no handler).
-	updateOportunidadeChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.UpdateOportunidade))
+	updateOportunidadeChain := jwt(true, false)(http.HandlerFunc(oportunidadeH.UpdateOportunidade))
 	mux.Handle("PUT /api/oportunidades/{id}", updateOportunidadeChain)
 
 	// Exclui oportunidade (hard delete): acesso comum (escopo por carteira aplicado no handler).
-	deleteOportunidadeChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(oportunidadeH.DeleteOportunidade))
+	deleteOportunidadeChain := jwt(true, false)(http.HandlerFunc(oportunidadeH.DeleteOportunidade))
 	mux.Handle("DELETE /api/oportunidades/{id}", deleteOportunidadeChain)
 
 	// Lista de visitas: acesso comum (escopo por carteira aplicado no handler).
-	listVisitasChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.ListVisitas))
+	listVisitasChain := jwt(true, false)(http.HandlerFunc(visitaH.ListVisitas))
 	mux.Handle("GET /api/visitas", listVisitasChain)
 
 	// Cria visita: acesso comum (escopo por carteira aplicado no handler).
-	createVisitaChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.CreateVisita))
+	createVisitaChain := jwt(true, false)(http.HandlerFunc(visitaH.CreateVisita))
 	mux.Handle("POST /api/visitas", createVisitaChain)
 
 	// Detalhe de visita: acesso comum (escopo por carteira aplicado no handler).
-	getVisitaChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.GetVisita))
+	getVisitaChain := jwt(true, false)(http.HandlerFunc(visitaH.GetVisita))
 	mux.Handle("GET /api/visitas/{id}", getVisitaChain)
 
 	// Atualiza visita: acesso comum (escopo por carteira aplicado no handler).
-	updateVisitaChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.UpdateVisita))
+	updateVisitaChain := jwt(true, false)(http.HandlerFunc(visitaH.UpdateVisita))
 	mux.Handle("PUT /api/visitas/{id}", updateVisitaChain)
 
 	// Exclui visita (hard delete): acesso comum (escopo por carteira aplicado no handler).
-	deleteVisitaChain := middleware.JWTMiddleware(cfg, true, false)(http.HandlerFunc(visitaH.DeleteVisita))
+	deleteVisitaChain := jwt(true, false)(http.HandlerFunc(visitaH.DeleteVisita))
 	mux.Handle("DELETE /api/visitas/{id}", deleteVisitaChain)
 
 	// Lista de estoque: admin only (página de Estoque é restrita a administradores).
-	listEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.ListEstoque))
+	listEstoqueChain := jwt(true, true)(http.HandlerFunc(estoqueH.ListEstoque))
 	mux.Handle("GET /api/estoque", listEstoqueChain)
 
 	// Cria ajuste manual de estoque: admin only.
-	createEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.CreateEstoque))
+	createEstoqueChain := jwt(true, true)(http.HandlerFunc(estoqueH.CreateEstoque))
 	mux.Handle("POST /api/estoque", createEstoqueChain)
 
 	// Detalhe de um registro de estoque: admin only.
-	getEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.GetEstoque))
+	getEstoqueChain := jwt(true, true)(http.HandlerFunc(estoqueH.GetEstoque))
 	mux.Handle("GET /api/estoque/{id}", getEstoqueChain)
 
 	// Atualiza (ajuste manual) saldo de um registro de estoque: admin only.
-	updateEstoqueChain := middleware.JWTMiddleware(cfg, true, true)(http.HandlerFunc(estoqueH.UpdateEstoque))
+	updateEstoqueChain := jwt(true, true)(http.HandlerFunc(estoqueH.UpdateEstoque))
 	mux.Handle("PUT /api/estoque/{id}", updateEstoqueChain)
 
 	// Healthcheck.

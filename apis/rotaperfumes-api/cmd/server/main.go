@@ -17,6 +17,7 @@ import (
 	sharedsvc "github.com/rotaperfumes/shared/services"
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
+	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/routes"
 )
 
@@ -63,7 +64,9 @@ func main() {
 	oportunidadeHandler := handlers.NewOportunidadeHandler(conn, cfg)
 	visitaHandler := handlers.NewVisitaHandler(conn, cfg)
 	estoqueHandler := handlers.NewEstoqueHandler(conn, cfg)
-	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler, visitaHandler, estoqueHandler)
+	// SEC-06: rotas protegidas conferem ativo/role do usuário no banco a cada request.
+	userChecker := middleware.NewDBUserStatusChecker(conn)
+	mux := routes.NewMux(cfg, userChecker, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler, visitaHandler, estoqueHandler)
 
 	srv := &http.Server{
 		Addr:         ":8080",

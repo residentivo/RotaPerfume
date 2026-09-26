@@ -26,18 +26,18 @@ func hashRefresh(tok string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-var refreshTokenCols = []string{"id", "usuario_id", "token_hash", "expires_at", "revoked_at", "ip_origem", "user_agent"}
+var refreshTokenCols = []string{"id", "usuario_id", "token_hash", "expires_at", "revoked_at", "ip_origem", "user_agent", "revoked_reason"}
 
 var usuarioCols = []string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}
 
-const findRefreshSQL = `SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?`
+const findRefreshSQL = `SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?`
 const usuarioByIDSQL = `FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.id\s+=\s+\?\s+LIMIT\s+1`
 
 func expectRefreshValido(mock sqlmock.Sqlmock, uid int64) {
 	mock.ExpectQuery(findRefreshSQL).
 		WithArgs(hashRefresh(refreshTokenTexto)).
 		WillReturnRows(sqlmock.NewRows(refreshTokenCols).
-			AddRow(int64(10), uid, hashRefresh(refreshTokenTexto), time.Now().Add(time.Hour), nil, "127.0.0.1", "go-test"))
+			AddRow(int64(10), uid, hashRefresh(refreshTokenTexto), time.Now().Add(time.Hour), nil, "127.0.0.1", "go-test", nil))
 }
 
 func postRefresh(t *testing.T, url string, body any, cookie string) *http.Response {
@@ -87,7 +87,7 @@ func TestRefresh_Cenarios(t *testing.T) {
 			setup: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(findRefreshSQL).WithArgs(hashRefresh(refreshTokenTexto)).
 					WillReturnRows(sqlmock.NewRows(refreshTokenCols).
-						AddRow(int64(1), int64(3), "h", agora.Add(-time.Hour), nil, "ip", "ua"))
+						AddRow(int64(1), int64(3), "h", agora.Add(-time.Hour), nil, "ip", "ua", nil))
 			},
 			wantStatus: http.StatusUnauthorized,
 			wantErr:    "refresh token expirado",
@@ -98,7 +98,7 @@ func TestRefresh_Cenarios(t *testing.T) {
 			setup: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(findRefreshSQL).
 					WillReturnRows(sqlmock.NewRows(refreshTokenCols).
-						AddRow(int64(1), int64(3), "h", agora.Add(time.Hour), agora.Add(-time.Minute), "ip", "ua"))
+						AddRow(int64(1), int64(3), "h", agora.Add(time.Hour), agora.Add(-time.Minute), "ip", "ua", nil))
 			},
 			wantStatus: http.StatusUnauthorized,
 			wantErr:    "refresh token revogado",
@@ -156,7 +156,7 @@ func TestRefresh_Cenarios(t *testing.T) {
 	}
 }
 
-const revokeCondSQL = `UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`
+const revokeCondSQL = `UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`
 
 func expectUsuarioAtivo(mock sqlmock.Sqlmock, uid int64) {
 	agora := time.Now()
@@ -188,7 +188,7 @@ func TestRefresh_Sucesso(t *testing.T) {
 	expectRefreshValido(mock, 5)
 	expectUsuarioAtivo(mock, 5)
 	mock.ExpectBegin()
-	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), "rotacao", int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnResult(sqlmock.NewResult(11, 1))
 	mock.ExpectCommit()
 
@@ -227,7 +227,7 @@ func TestRefresh_FalhasNaRotacao(t *testing.T) {
 			name: "revogação concorrente (0 linhas) retorna 401",
 			setup: func(mock sqlmock.Sqlmock) {
 				mock.ExpectBegin()
-				mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), "rotacao", int64(10)).WillReturnResult(sqlmock.NewResult(0, 0))
 				mock.ExpectRollback()
 			},
 			wantStatus: http.StatusUnauthorized,
@@ -314,8 +314,8 @@ func TestRefresh_CorridaParalela(t *testing.T) {
 		expectUsuarioAtivo(mock, 5)
 		mock.ExpectBegin()
 	}
-	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), "rotacao", int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), "rotacao", int64(10)).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnResult(sqlmock.NewResult(11, 1))
 	mock.ExpectCommit()
 	mock.ExpectRollback()
@@ -361,7 +361,7 @@ func expectRefreshRevogado(mock sqlmock.Sqlmock, revokedAt time.Time) {
 	mock.ExpectQuery(findRefreshSQL).
 		WithArgs(hashRefresh(refreshTokenTexto)).
 		WillReturnRows(sqlmock.NewRows(refreshTokenCols).
-			AddRow(int64(10), int64(5), hashRefresh(refreshTokenTexto), time.Now().Add(time.Hour), revokedAt, "127.0.0.1", "go-test"))
+			AddRow(int64(10), int64(5), hashRefresh(refreshTokenTexto), time.Now().Add(time.Hour), revokedAt, "127.0.0.1", "go-test", nil))
 }
 
 // expectRefreshSucesso programa o fluxo completo de um refresh válido.
@@ -369,7 +369,7 @@ func expectRefreshSucesso(mock sqlmock.Sqlmock) {
 	expectRefreshValido(mock, 5)
 	expectUsuarioAtivo(mock, 5)
 	mock.ExpectBegin()
-	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), "rotacao", int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnResult(sqlmock.NewResult(11, 1))
 	mock.ExpectCommit()
 }
@@ -553,7 +553,8 @@ func TestLogout_Cenarios(t *testing.T) {
 			body: map[string]string{"refresh_token": refreshTokenTexto},
 			setup: func(mock sqlmock.Sqlmock) {
 				expectRefreshValido(mock, 1)
-				mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
+				mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`).
+					WithArgs(sqlmock.AnyArg(), "logout", int64(10)). // SEC-07: motivo gravado
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			},
 		},

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/services"
+	"github.com/rotaperfumes/shared/repositories"
 )
 
 func newRefreshTokenTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
@@ -23,7 +24,7 @@ func newRefreshTokenTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 }
 
 func refreshTokenColunas() []string {
-	return []string{"id", "usuario_id", "token_hash", "expires_at", "revoked_at", "ip_origem", "user_agent"}
+	return []string{"id", "usuario_id", "token_hash", "expires_at", "revoked_at", "ip_origem", "user_agent", "revoked_reason"}
 }
 
 func hashOf(token string) string {
@@ -79,8 +80,8 @@ func TestRefreshTokenService_ValidateRefreshToken(t *testing.T) {
 			nome: "sucesso - token válido não expirado nem revogado",
 			mock: func(mock sqlmock.Sqlmock) {
 				rows := sqlmock.NewRows(refreshTokenColunas()).
-					AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(1*time.Hour), nil, "127.0.0.1", "curl/8.0")
-				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
+					AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(1*time.Hour), nil, "127.0.0.1", "curl/8.0", nil)
+				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 					WithArgs(hashOf(token)).
 					WillReturnRows(rows)
 			},
@@ -88,7 +89,7 @@ func TestRefreshTokenService_ValidateRefreshToken(t *testing.T) {
 		{
 			nome: "não encontrado retorna ErrRefreshTokenNotFound",
 			mock: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
+				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 					WithArgs(hashOf(token)).
 					WillReturnError(sql.ErrNoRows)
 			},
@@ -98,8 +99,8 @@ func TestRefreshTokenService_ValidateRefreshToken(t *testing.T) {
 			nome: "expirado retorna ErrRefreshTokenExpired",
 			mock: func(mock sqlmock.Sqlmock) {
 				rows := sqlmock.NewRows(refreshTokenColunas()).
-					AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(-1*time.Hour), nil, "127.0.0.1", "curl/8.0")
-				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
+					AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(-1*time.Hour), nil, "127.0.0.1", "curl/8.0", nil)
+				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 					WithArgs(hashOf(token)).
 					WillReturnRows(rows)
 			},
@@ -109,8 +110,8 @@ func TestRefreshTokenService_ValidateRefreshToken(t *testing.T) {
 			nome: "revogado retorna ErrRefreshTokenRevoked",
 			mock: func(mock sqlmock.Sqlmock) {
 				rows := sqlmock.NewRows(refreshTokenColunas()).
-					AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(1*time.Hour), time.Now(), "127.0.0.1", "curl/8.0")
-				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
+					AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(1*time.Hour), time.Now(), "127.0.0.1", "curl/8.0", nil)
+				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 					WithArgs(hashOf(token)).
 					WillReturnRows(rows)
 			},
@@ -119,7 +120,7 @@ func TestRefreshTokenService_ValidateRefreshToken(t *testing.T) {
 		{
 			nome: "erro genérico do repo é propagado",
 			mock: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
+				mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 					WithArgs(hashOf(token)).
 					WillReturnError(sql.ErrConnDone)
 			},
@@ -159,7 +160,7 @@ func TestRefreshTokenService_ValidateRefreshToken(t *testing.T) {
 func TestRefreshTokenService_ValidateRefreshToken_JanelaDeGraca(t *testing.T) {
 	const token = "token-janela-graca"
 	agora := time.Date(2026, 9, 25, 12, 0, 0, 0, time.Local)
-	const findSQL = `SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`
+	const findSQL = `SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`
 
 	cases := []struct {
 		nome         string
@@ -182,7 +183,7 @@ func TestRefreshTokenService_ValidateRefreshToken_JanelaDeGraca(t *testing.T) {
 			db, mock := newRefreshTokenTestDB(t)
 			mock.ExpectQuery(findSQL).WithArgs(hashOf(token)).
 				WillReturnRows(sqlmock.NewRows(refreshTokenColunas()).
-					AddRow(int64(1), int64(10), hashOf(token), tc.expiresAt, tc.revokedAt, "127.0.0.1", "curl/8.0"))
+					AddRow(int64(1), int64(10), hashOf(token), tc.expiresAt, tc.revokedAt, "127.0.0.1", "curl/8.0", nil))
 
 			svc := services.NewRefreshTokenService()
 			services.SetRefreshClockForTest(svc, func() time.Time { return agora })
@@ -213,40 +214,40 @@ func TestRefreshTokenService_RevokeToken(t *testing.T) {
 	t.Run("sucesso", func(t *testing.T) {
 		db, mock := newRefreshTokenTestDB(t)
 		rows := sqlmock.NewRows(refreshTokenColunas()).
-			AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(1*time.Hour), nil, "127.0.0.1", "curl/8.0")
-		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
+			AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(1*time.Hour), nil, "127.0.0.1", "curl/8.0", nil)
+		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 			WithArgs(hashOf(token)).
 			WillReturnRows(rows)
-		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
-			WithArgs(sqlmock.AnyArg(), int64(1)).
+		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`).
+			WithArgs(sqlmock.AnyArg(), "logout", int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
 		svc := services.NewRefreshTokenService()
-		err := svc.RevokeToken(context.Background(), db, token)
+		err := svc.RevokeToken(context.Background(), db, token, repositories.RevokeReasonLogout)
 		require.NoError(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("token não encontrado retorna ErrRefreshTokenNotFound", func(t *testing.T) {
 		db, mock := newRefreshTokenTestDB(t)
-		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
+		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 			WithArgs(hashOf(token)).
 			WillReturnError(sql.ErrNoRows)
 
 		svc := services.NewRefreshTokenService()
-		err := svc.RevokeToken(context.Background(), db, token)
+		err := svc.RevokeToken(context.Background(), db, token, repositories.RevokeReasonLogout)
 		assert.ErrorIs(t, err, services.ErrRefreshTokenNotFound)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("erro no find é propagado", func(t *testing.T) {
 		db, mock := newRefreshTokenTestDB(t)
-		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
+		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 			WithArgs(hashOf(token)).
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewRefreshTokenService()
-		err := svc.RevokeToken(context.Background(), db, token)
+		err := svc.RevokeToken(context.Background(), db, token, repositories.RevokeReasonLogout)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -254,16 +255,16 @@ func TestRefreshTokenService_RevokeToken(t *testing.T) {
 	t.Run("token revogado entre find e revoke (corrida) retorna ErrRefreshTokenRevoked", func(t *testing.T) {
 		db, mock := newRefreshTokenTestDB(t)
 		rows := sqlmock.NewRows(refreshTokenColunas()).
-			AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(1*time.Hour), nil, "127.0.0.1", "curl/8.0")
-		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
+			AddRow(int64(1), int64(10), hashOf(token), time.Now().Add(1*time.Hour), nil, "127.0.0.1", "curl/8.0", nil)
+		mock.ExpectQuery(`SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`).
 			WithArgs(hashOf(token)).
 			WillReturnRows(rows)
-		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
-			WithArgs(sqlmock.AnyArg(), int64(1)).
+		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`).
+			WithArgs(sqlmock.AnyArg(), "logout", int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		svc := services.NewRefreshTokenService()
-		err := svc.RevokeToken(context.Background(), db, token)
+		err := svc.RevokeToken(context.Background(), db, token, repositories.RevokeReasonLogout)
 		assert.ErrorIs(t, err, services.ErrRefreshTokenRevoked)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -276,23 +277,23 @@ func TestRefreshTokenService_RevokeToken(t *testing.T) {
 func TestRefreshTokenService_RevokeAllUserTokens(t *testing.T) {
 	t.Run("sucesso", func(t *testing.T) {
 		db, mock := newRefreshTokenTestDB(t)
-		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
-			WithArgs(sqlmock.AnyArg(), int64(10)).
+		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
+			WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(10)).
 			WillReturnResult(sqlmock.NewResult(0, 3))
 
 		svc := services.NewRefreshTokenService()
-		err := svc.RevokeAllUserTokens(context.Background(), db, 10)
+		err := svc.RevokeAllUserTokens(context.Background(), db, 10, repositories.RevokeReasonRevogacaoMassa)
 		require.NoError(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("erro do repo é propagado", func(t *testing.T) {
 		db, mock := newRefreshTokenTestDB(t)
-		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
+		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewRefreshTokenService()
-		err := svc.RevokeAllUserTokens(context.Background(), db, 10)
+		err := svc.RevokeAllUserTokens(context.Background(), db, 10, repositories.RevokeReasonRevogacaoMassa)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})

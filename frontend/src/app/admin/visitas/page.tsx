@@ -80,6 +80,7 @@ function VisitasContent() {
   const [visitas, setVisitas] = useState<Visita[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [erroCarga, setErroCarga] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Listas auxiliares para exibir nome do cliente/vendedor nas linhas e
@@ -225,18 +226,19 @@ function VisitasContent() {
     setVisitas(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    setErroCarga(false);
     setLoading(false);
   };
 
+  // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
+  // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
   const aplicarErroVisitas = (err: unknown) => {
     const message =
       err instanceof Error
         ? err.message
         : "Erro ao carregar visitas. O endpoint /api/visitas pode nao existir no backend.";
     setError(message);
-    setVisitas([]);
-    setTotal(0);
-    setPages(0);
+    setErroCarga(true);
     setLoading(false);
   };
 
@@ -577,6 +579,7 @@ function VisitasContent() {
             data={visitas}
             keyExtractor={(v) => v.visita_id}
             loading={loading}
+            erroCarga={erroCarga}
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={(key) => handleSort(key as SortKey)}

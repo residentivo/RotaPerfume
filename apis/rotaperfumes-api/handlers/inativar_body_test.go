@@ -56,6 +56,10 @@ func inativarEndpoints() []inativarEndpoint {
 					WithArgs(int64(1)).WillReturnRows(usuarioRowsForHandler(1, true))
 				mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
 					WithArgs(valorFinal, int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+				if !valorFinal { // SEC-06: inativação revoga os refresh tokens
+					mock.ExpectExec(revokeAllByUserRegex).
+						WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).WillReturnResult(sqlmock.NewResult(0, 0))
+				}
 			},
 		},
 	}

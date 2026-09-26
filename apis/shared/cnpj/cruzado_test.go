@@ -74,7 +74,9 @@ func TestCruzado_MassaComum(t *testing.T) {
 
 // TestCruzado_Divergencias: o backend recusa espaços não ASCII/tabulação/
 // quebra de linha NO MEIO do valor e letras fora de [A-Za-z] (ex.: "ı"). O
-// front hoje aceita esses casos (ver cnpj.cruzado.test.ts, it.fails).
+// front divergia nesses casos até a correção NEG-02-A/B (Lote 5); hoje segue
+// o mesmo contrato e a massa fica como regressão nos dois lados (ver
+// cnpj.cruzado.test.ts, "ex-divergencias").
 func TestCruzado_Divergencias(t *testing.T) {
 	m := carregarMassaCruzada(t)
 	require.NotEmpty(t, m.Divergencias)

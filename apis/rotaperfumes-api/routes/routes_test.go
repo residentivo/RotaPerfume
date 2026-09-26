@@ -36,7 +36,7 @@ func newRouter(t *testing.T) (http.Handler, sqlmock.Sqlmock) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	mux := routes.NewMux(cfg,
+	mux := routes.NewMux(cfg, fakeUserStatusChecker{},
 		handlers.NewAuthHandler(db, cfg),
 		handlers.NewUsuarioHandler(db, cfg, sharedsvc.NewNoopEmailService()),
 		handlers.NewDashboardHandler(db, cfg),

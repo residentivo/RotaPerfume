@@ -481,6 +481,7 @@ func TestVendedorService_UpdateVendedor_ErroNoGetByIDApósUpdate(t *testing.T) {
 
 const vendedorSetDesligamentoRegex = `UPDATE vendedores SET data_desligamento = COALESCE\(data_desligamento, \?\) WHERE id = \?`
 const usuariosInativarPorVendedorRegex = `UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`
+const refreshRevogarPorVendedorRegex = `UPDATE refresh_tokens rt\s+JOIN usuarios u ON u\.id = rt\.usuario_id\s+SET rt\.revoked_at = \?, rt\.revoked_reason = \?\s+WHERE u\.id_vendedor = \? AND rt\.revoked_at IS NULL`
 
 func TestVendedorService_DeleteVendedor_Sucesso(t *testing.T) {
 	cases := []struct {
@@ -502,6 +503,9 @@ func TestVendedorService_DeleteVendedor_Sucesso(t *testing.T) {
 			mock.ExpectExec(usuariosInativarPorVendedorRegex).
 				WithArgs(int64(1)).
 				WillReturnResult(sqlmock.NewResult(0, tc.usuariosVinculados))
+			mock.ExpectExec(refreshRevogarPorVendedorRegex).
+				WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
+				WillReturnResult(sqlmock.NewResult(0, 0))
 			mock.ExpectCommit()
 			mock.ExpectQuery(vendedorGetColunasRegex).
 				WithArgs(int64(1)).
@@ -575,6 +579,59 @@ func TestVendedorService_DeleteVendedor_ErroAoInativarUsuarios_FazRollback(t *te
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// SEC-06: falha ao revogar os refresh tokens desfaz o desligamento inteiro
+// (vendedor + usuários) — nada é commitado.
+func TestVendedorService_DeleteVendedor_ErroAoRevogarTokens_FazRollback(t *testing.T) {
+	db, mock := newVendedorTestDB(t)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(vendedorSetDesligamentoRegex).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(usuariosInativarPorVendedorRegex).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(refreshRevogarPorVendedorRegex).
+		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
+		WillReturnError(sql.ErrConnDone)
+	mock.ExpectRollback()
+
+	svc := services.NewVendedorService(db, vendedorTestCfg(false))
+	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+
+	assert.Nil(t, v)
+	assert.ErrorIs(t, err, sql.ErrConnDone)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// SEC-06 + BUG-04: desligar vendedor já desligado (sem usuários ativos nem
+// tokens pendentes) continua sucesso — a revogação afeta 0 linhas sem erro.
+func TestVendedorService_DeleteVendedor_JaDesligado_RevogacaoIdempotente(t *testing.T) {
+	db, mock := newVendedorTestDB(t)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(vendedorSetDesligamentoRegex).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(usuariosInativarPorVendedorRegex).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(refreshRevogarPorVendedorRegex).
+		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+	mock.ExpectQuery(vendedorGetColunasRegex).
+		WithArgs(int64(1)).
+		WillReturnRows(vendedorGetRows(1, "João Vendedor", time.Now()))
+
+	svc := services.NewVendedorService(db, vendedorTestCfg(true))
+	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+
+	require.NoError(t, err)
+	require.NotNil(t, v)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestVendedorService_DeleteVendedor_ErroNoBegin(t *testing.T) {
 	db, mock := newVendedorTestDB(t)
 
@@ -598,6 +655,9 @@ func TestVendedorService_DeleteVendedor_ErroNoCommit(t *testing.T) {
 	mock.ExpectExec(usuariosInativarPorVendedorRegex).
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(refreshRevogarPorVendedorRegex).
+		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit().WillReturnError(sql.ErrConnDone)
 
 	svc := services.NewVendedorService(db, vendedorTestCfg(false))
@@ -1040,6 +1100,9 @@ func TestVendedorService_DeleteVendedor_ErroNoGetByIDApósUpdate(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`).
 		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(refreshRevogarPorVendedorRegex).
+		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 	mock.ExpectQuery(vendedorGetColunasRegex).

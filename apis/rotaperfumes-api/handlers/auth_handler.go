@@ -333,7 +333,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, services.ErrRefreshTokenRevoked) {
-			log.Printf("[auth][seguranca] refresh: reuso de refresh token revogado fora da janela de graça (possível roubo de token): ip=%s ua=%s", ipOrigem, userAgent)
+			h.tratarTokenRevogadoForaDaJanela(ctx, err, ipOrigem, userAgent)
 			h.refreshLimiter.RegisterFailure(refreshIPKey)
 			writeJSON(w, http.StatusUnauthorized, nil, "refresh token revogado")
 			return
@@ -408,6 +408,45 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// tratarTokenRevogadoForaDaJanela decide, pelo motivo gravado (SEC-07), o que
+// fazer com um refresh token revogado apresentado fora da janela de graça. A
+// resposta HTTP (401) e a contagem no rate limit ficam a cargo do chamador e
+// são iguais em todos os casos.
+//
+//   - motivo "rotacao": reuso de token já rotacionado — sinal de possível
+//     roubo. Alerta [auth][seguranca] e revogação de TODAS as sessões do
+//     usuário (motivo revogacao_massa).
+//   - demais motivos (logout, revogacao_massa, senha, inativacao) ou NULL
+//     (legado, tratado de forma conservadora): só log informativo, sem alerta
+//     e sem revogação em massa.
+func (h *AuthHandler) tratarTokenRevogadoForaDaJanela(ctx context.Context, err error, ipOrigem, userAgent string) {
+	var revogado *services.RevokedTokenError
+	if !errors.As(err, &revogado) {
+		log.Printf("[auth] refresh: token revogado fora da janela de graça (sem detalhes): ip=%s", ipOrigem)
+		return
+	}
+
+	if !revogado.IsRotationReuse() {
+		log.Printf("[auth] refresh: token revogado apresentado fora da janela de graça: user_id=%d token_id=%d motivo=%s ip=%s",
+			revogado.UsuarioID, revogado.TokenID, motivoRevogacaoLog(revogado.Reason), ipOrigem)
+		return
+	}
+
+	log.Printf("[auth][seguranca] refresh: reuso de refresh token já rotacionado fora da janela de graça (possível roubo de token) — revogando todas as sessões: user_id=%d token_id=%d revoked_at=%s ip=%s ua=%s",
+		revogado.UsuarioID, revogado.TokenID, revogado.RevokedAt.Format(time.RFC3339), ipOrigem, userAgent)
+	if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, revogado.UsuarioID, repositories.RevokeReasonRevogacaoMassa); err != nil {
+		log.Printf("[auth][seguranca] refresh: falha na revogação em massa após reuso: user_id=%d: %v", revogado.UsuarioID, err)
+	}
+}
+
+// motivoRevogacaoLog formata o motivo para log; NULL vira "desconhecido(legado)".
+func motivoRevogacaoLog(m repositories.RevokeReason) string {
+	if m == repositories.RevokeReasonDesconhecido {
+		return "desconhecido(legado)"
+	}
+	return string(m)
 }
 
 // ResetPassword POST /api/auth/reset-password
@@ -532,7 +571,9 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	// Registrar no histórico de senhas (tipo "usuario" = auto-troca).
 	ipOrigem := getClientIP(r, h.cfg.TrustProxyHeaders)
 	userAgent := r.UserAgent()
-	_ = h.senhaSvc.Registrar(ctx, h.db, uid, nil, u.PasswordHash, ipOrigem, userAgent, "usuario")
+	if err := h.senhaSvc.Registrar(ctx, h.db, uid, nil, u.PasswordHash, ipOrigem, userAgent, "usuario"); err != nil {
+		log.Printf("[auth] reset-password: falha ao registrar histórico de senha do user_id=%d: %v", uid, err)
+	}
 
 	// Troca voluntária pelo próprio usuário — não é mais primeiro acesso.
 	if err := h.repo.UpdatePasswordHash(ctx, h.db, uid, newHash, false); err != nil {
@@ -542,7 +583,9 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Revoga todos os refresh tokens após troca de senha (security best practice).
-	_ = h.refreshSvc.RevokeAllUserTokens(ctx, h.db, uid)
+	if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, uid, repositories.RevokeReasonSenha); err != nil {
+		log.Printf("[auth] reset-password: falha ao revogar refresh tokens do user_id=%d: %v", uid, err)
+	}
 
 	// Limpa cookies (forçar novo login).
 	clearTokenCookies(w)
@@ -618,7 +661,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	refreshInput := extractRefreshToken(r, req.RefreshToken)
 	if refreshInput != "" {
-		if err := h.refreshSvc.RevokeToken(ctx, h.db, refreshInput); err != nil {
+		if err := h.refreshSvc.RevokeToken(ctx, h.db, refreshInput, repositories.RevokeReasonLogout); err != nil {
 			if !errors.Is(err, services.ErrRefreshTokenNotFound) && !errors.Is(err, services.ErrRefreshTokenRevoked) {
 				log.Printf("[auth] logout: RevokeToken: %v", err)
 			}

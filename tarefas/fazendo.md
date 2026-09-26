@@ -1,5 +1,5 @@
 # Fazendo
 
-> Nenhum card em execução. Os próximos cards entram aqui quando o 🤍 MegaBrain abrir um novo lote a partir de `afazer.md`.
+> Nenhum card em execução.
 >
-> Último lote fechado: Lote 5 (2026-09-25), em `feito.md`.
+> Último lote fechado: Lote 6 (2026-09-26), em `feito.md`.

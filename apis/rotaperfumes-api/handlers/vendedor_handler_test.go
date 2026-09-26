@@ -899,6 +899,10 @@ func TestDeleteVendedor_Success(t *testing.T) {
 	mock.ExpectExec(`UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`).
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	// SEC-06: revoga os refresh tokens dos usuários do vendedor na mesma transação.
+	mock.ExpectExec(`UPDATE refresh_tokens rt\s+JOIN usuarios u ON u\.id = rt\.usuario_id`).
+		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectCommit()
 	mock.ExpectQuery(vendedorGetColunasRegexH).
 		WithArgs(int64(1)).

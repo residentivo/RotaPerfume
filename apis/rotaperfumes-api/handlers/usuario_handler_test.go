@@ -610,6 +610,10 @@ func TestToggleAtivoUsuario_Toggle_SemBody(t *testing.T) {
 	mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
 		WithArgs(false, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	// SEC-06: inativação revoga os refresh tokens do usuário.
+	mock.ExpectExec(revokeAllByUserRegex).
+		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/usuarios/1/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -773,7 +777,7 @@ func TestAdminResetPassword_Success_ViaUsuarioHandler(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at`).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/admin/reset-password", makeJSON(map[string]any{"usuario_id": 5}))

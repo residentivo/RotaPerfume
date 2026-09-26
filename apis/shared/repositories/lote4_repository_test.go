@@ -121,13 +121,13 @@ func TestRefreshTokenRevoke_Condicional_EmTx(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 			mock.ExpectBegin()
-			mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
-				WithArgs(sqlmock.AnyArg(), int64(3)).WillReturnResult(sqlmock.NewResult(0, tc.rows))
+			mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`).
+				WithArgs(sqlmock.AnyArg(), "rotacao", int64(3)).WillReturnResult(sqlmock.NewResult(0, tc.rows))
 			mock.ExpectRollback()
 
 			tx, err := db.Begin()
 			require.NoError(t, err)
-			err = repositories.NewRefreshTokenRepository().Revoke(context.Background(), tx, 3)
+			err = repositories.NewRefreshTokenRepository().Revoke(context.Background(), tx, 3, repositories.RevokeReasonRotacao)
 			_ = tx.Rollback()
 			if tc.wantErr != nil {
 				assert.ErrorIs(t, err, tc.wantErr)
@@ -144,7 +144,7 @@ func TestRefreshTokenRevoke_RowsAffectedErro(t *testing.T) {
 	defer db.Close()
 	mock.ExpectExec(`UPDATE refresh_tokens`).WillReturnResult(sqlmock.NewErrorResult(errors.New("sem rows affected")))
 
-	err := repositories.NewRefreshTokenRepository().Revoke(context.Background(), db, 3)
+	err := repositories.NewRefreshTokenRepository().Revoke(context.Background(), db, 3, repositories.RevokeReasonRotacao)
 	assert.Error(t, err)
 	assert.NotErrorIs(t, err, repositories.ErrNotFound)
 	assert.NoError(t, mock.ExpectationsWereMet())

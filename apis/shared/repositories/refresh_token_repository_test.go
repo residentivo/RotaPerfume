@@ -15,7 +15,7 @@ import (
 )
 
 var refreshTokenColumns = []string{
-	"id", "usuario_id", "token_hash", "expires_at", "revoked_at", "ip_origem", "user_agent",
+	"id", "usuario_id", "token_hash", "expires_at", "revoked_at", "ip_origem", "user_agent", "revoked_reason",
 }
 
 func refreshTokenRow(id, usuarioID int64, tokenHash string, expiresAt time.Time, revokedAt *time.Time, ip, userAgent string) []driver.Value {
@@ -23,7 +23,7 @@ func refreshTokenRow(id, usuarioID int64, tokenHash string, expiresAt time.Time,
 	if revokedAt != nil {
 		ra = *revokedAt
 	}
-	return []driver.Value{id, usuarioID, tokenHash, expiresAt, ra, ip, userAgent}
+	return []driver.Value{id, usuarioID, tokenHash, expiresAt, ra, ip, userAgent, nil}
 }
 
 func TestRefreshTokenCreate_Success(t *testing.T) {
@@ -150,13 +150,13 @@ func TestRefreshTokenRevoke_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
-		WithArgs(sqlmock.AnyArg(), int64(1)).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), "rotacao", int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	repo := repositories.NewRefreshTokenRepository()
 	ctx := context.Background()
-	err := repo.Revoke(ctx, db, 1)
+	err := repo.Revoke(ctx, db, 1, repositories.RevokeReasonRotacao)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -166,13 +166,13 @@ func TestRefreshTokenRevoke_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
-		WithArgs(sqlmock.AnyArg(), int64(999)).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), "rotacao", int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	repo := repositories.NewRefreshTokenRepository()
 	ctx := context.Background()
-	err := repo.Revoke(ctx, db, 999)
+	err := repo.Revoke(ctx, db, 999, repositories.RevokeReasonRotacao)
 
 	assert.ErrorIs(t, err, repositories.ErrNotFound)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -182,13 +182,13 @@ func TestRefreshTokenRevoke_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`).
-		WithArgs(sqlmock.AnyArg(), int64(1)).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), "rotacao", int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewRefreshTokenRepository()
 	ctx := context.Background()
-	err := repo.Revoke(ctx, db, 1)
+	err := repo.Revoke(ctx, db, 1, repositories.RevokeReasonRotacao)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -198,13 +198,13 @@ func TestRefreshTokenRevokeAllByUser_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
-		WithArgs(sqlmock.AnyArg(), int64(1)).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 3))
 
 	repo := repositories.NewRefreshTokenRepository()
 	ctx := context.Background()
-	err := repo.RevokeAllByUser(ctx, db, 1)
+	err := repo.RevokeAllByUser(ctx, db, 1, repositories.RevokeReasonRevogacaoMassa)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -214,13 +214,13 @@ func TestRefreshTokenRevokeAllByUser_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
-		WithArgs(sqlmock.AnyArg(), int64(1)).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewRefreshTokenRepository()
 	ctx := context.Background()
-	err := repo.RevokeAllByUser(ctx, db, 1)
+	err := repo.RevokeAllByUser(ctx, db, 1, repositories.RevokeReasonRevogacaoMassa)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

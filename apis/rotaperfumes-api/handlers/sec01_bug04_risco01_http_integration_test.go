@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
+	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/routes"
 	apisvc "github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
@@ -77,7 +78,7 @@ func novoItCtx(t *testing.T) *itCtx {
 	cfg := testCfg()
 	authH := handlers.NewAuthHandler(db, cfg)
 	authH.SetCaptchaVerifier(&fakeCaptchaVerifier{})
-	mux := routes.NewMux(cfg, authH,
+	mux := routes.NewMux(cfg, middleware.NewDBUserStatusChecker(db), authH,
 		handlers.NewUsuarioHandler(db, cfg, &fakeEmailService{}),
 		handlers.NewDashboardHandler(db, cfg),
 		handlers.NewSenhaHistoricoHandler(db),

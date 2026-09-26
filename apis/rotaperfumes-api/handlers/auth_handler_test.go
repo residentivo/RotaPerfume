@@ -138,7 +138,7 @@ func setupTestServerWithAuthHandler(t *testing.T) (*httptest.Server, *sql.DB, sq
 	estoqueHandler := handlers.NewEstoqueHandler(db, cfg)
 
 	// Router real com middlewares corretos
-	mux := routes.NewMux(cfg, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler, visitaHandler, estoqueHandler)
+	mux := routes.NewMux(cfg, fakeUserStatusChecker{}, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler, visitaHandler, estoqueHandler)
 
 	server := httptest.NewServer(mux)
 	return server, db, mock, authHandler
@@ -522,7 +522,7 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// Mock: revoga todos os refresh tokens
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at`).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	// O endpoint /api/auth/reset-password usa senha_atual (não é admin-only).
@@ -577,7 +577,7 @@ func TestAdminResetPassword_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Mock: revoga todos os refresh tokens
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at`).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	// Admin reset: POST /api/admin/reset-password
@@ -888,7 +888,7 @@ func TestResetPassword_NovaSenhaForte_NaoReutilizada_Sucesso(t *testing.T) {
 	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
 		WithArgs(sqlmock.AnyArg(), false, int64(2)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at`).
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",

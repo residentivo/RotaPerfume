@@ -95,6 +95,7 @@ export default function SenhaHistoricoPage() {
   const [items, setItems] = useState<SenhaHistoricoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [erroCarga, setErroCarga] = useState(false);
   const [search, setSearch] = useState("");
   const [tipo, setTipo] = useState<"" | TipoReset>("");
 
@@ -126,18 +127,19 @@ export default function SenhaHistoricoPage() {
     setItems(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    setErroCarga(false);
     setLoading(false);
   };
 
+  // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
+  // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
   const aplicarErro = (err: unknown) => {
     const message =
       err instanceof Error
         ? err.message
         : "Erro ao carregar historico de senhas. O endpoint /api/senha-historico pode nao existir no backend.";
     setError(message);
-    setItems([]);
-    setTotal(0);
-    setPages(0);
+    setErroCarga(true);
     setLoading(false);
   };
 
@@ -394,6 +396,7 @@ export default function SenhaHistoricoPage() {
             data={filtered}
             keyExtractor={(it) => it.id}
             loading={loading}
+            erroCarga={erroCarga}
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={(key) => handleSort(key as SortKey)}

@@ -12,7 +12,9 @@
  * 4. Se refresh falhar -> redireciona para /login. Exceção (SEC-02,
  *    multi-aba): se o refresh voltar 401, outra aba pode já ter renovado os
  *    cookies; a requisição original é repetida UMA vez e só um novo 401
- *    leva ao logout. 429, timeout e erro de rede não repetem.
+ *    leva ao logout. 429 não repete e desloga. FE-07: timeout/erro de rede
+ *    do próprio refresh (ou falha do Web Lock) NÃO desloga: rejeita com
+ *    NetworkError (fila inclusa) e a próxima chamada refaz o refresh.
  * 5. Lock/fila garante que apenas uma chamada de refresh aconteça por vez
  *    na aba; entre abas, o refresh é serializado por Web Locks
  *    (`navigator.locks`, "rp-auth-refresh") quando o navegador suporta
@@ -125,21 +127,22 @@ function onRefreshComplete(success: boolean, erro?: Error): void {
 // ============================================
 
 /**
- * Resultado do POST /api/auth/refresh (SEC-02): o status HTTP, ou
- * "timeout"/"erro" quando nao houve resposta. Quem chama decide o que fazer
- * com cada caso (ex.: 401 pode significar que outra aba ja renovou).
+ * Resultado do POST /api/auth/refresh (SEC-02): o status HTTP, ou um
+ * NetworkError quando nao houve resposta (FE-07: falha de rede, timeout do
+ * proprio refresh ou falha do Web Lock). Quem chama decide o que fazer com
+ * cada caso (ex.: 401 pode significar que outra aba ja renovou; NetworkError
+ * e transitorio e nao desloga).
  */
-export type RefreshStatus = number | "timeout" | "erro";
+export type RefreshStatus = number | NetworkError;
 
 function refreshOk(status: RefreshStatus): boolean {
   return typeof status === "number" && status >= 200 && status < 300;
 }
 
 async function callRefreshToken(): Promise<RefreshStatus> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REFRESH_TIMEOUT);
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REFRESH_TIMEOUT);
-
     // refresh_token vai via cookie HttpOnly (credentials: "include");
     // backend responde com novos Set-Cookie para access_token/refresh_token.
     const res = await fetch(`${API_BASE}/api/auth/refresh`, {
@@ -151,20 +154,23 @@ async function callRefreshToken(): Promise<RefreshStatus> {
       signal: controller.signal,
     });
 
-    clearTimeout(timeoutId);
-
     if (!res.ok) {
       console.warn("[apiClient] Refresh falhou com status:", res.status);
     }
 
     return res.status;
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    // FE-07: sem resposta HTTP nao ha como saber se a sessao expirou; o
+    // abort aqui so vem do timeout do proprio refresh.
+    const name = errorName(error);
+    if (name === "AbortError" || name === "TimeoutError") {
       console.warn("[apiClient] Refresh timeout");
-      return "timeout";
+      return new NetworkError("timeout", error);
     }
     console.error("[apiClient] Erro no refresh:", error);
-    return "erro";
+    return new NetworkError("conexao", error);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -188,8 +194,11 @@ async function refreshSerializado(): Promise<RefreshStatus> {
   if (locks && typeof locks.request === "function") {
     try {
       return await locks.request(REFRESH_LOCK, () => callRefreshToken());
-    } catch {
-      return "erro";
+    } catch (err) {
+      // FE-07: falha do proprio Web Lock e transitoria (nao diz nada sobre a
+      // sessao): nao desloga, a proxima chamada tenta de novo.
+      console.error("[apiClient] Falha no Web Lock do refresh:", err);
+      return new NetworkError("conexao", err);
     }
   }
   return callRefreshToken();
@@ -377,6 +386,17 @@ export async function fetchWithAuth<T = unknown>(
         return parseResponse<T>(retryResponse);
       }
 
+      // FE-07 (opcao A): falha de rede/timeout do proprio refresh (ou do Web
+      // Lock) nao desloga — mesmo padrao do retry (FE-06/FE-08). A fila recebe
+      // o mesmo NetworkError, o estado e liberado e a proxima chamada refaz o
+      // refresh. Sem clearTokens, redirect ou /api/auth/logout.
+      if (status instanceof NetworkError) {
+        onRefreshComplete(false, status);
+        isRefreshing = false;
+        hideRefreshIndicator();
+        throw status;
+      }
+
       // SEC-02 (multi-aba): refresh com 401 pode significar que outra aba ja
       // renovou (o refresh_token do cookie foi rotacionado e o antigo, que
       // esta aba enviou, foi revogado). Os cookies novos valem para esta aba
@@ -412,7 +432,8 @@ export async function fetchWithAuth<T = unknown>(
         return parseResponse<T>(retryAposOutraAba);
       }
 
-      // Refresh falhou (e, se foi 401, o retry tambem deu 401): logout.
+      // Refresh respondeu com erro HTTP (e, se foi 401, o retry tambem deu
+      // 401): logout.
       onRefreshComplete(false);
       isRefreshing = false;
       hideRefreshIndicator();

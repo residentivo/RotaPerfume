@@ -251,7 +251,7 @@ func TestIntegracaoHTTP_NEG01_CNPJ(t *testing.T) {
 	// NEG-04: o PUT abaixo reenvia o mesmo CNPJ, que tem DV VÁLIDO (c.cnpj());
 	// por isso continua 200. O caso do CNPJ legado com DV inválido está em
 	// TestIntegracaoHTTP_NEG04_CNPJLegadoDVInvalido.
-	t.Run("CNPJ mascarado é gravado só com dígitos; Update com o mesmo CNPJ (DV válido) -> 200", func(t *testing.T) {
+	t.Run("CNPJ mascarado é normalizado (sem máscara, 14 posições em maiúsculas); Update com o mesmo CNPJ (DV válido) -> 200", func(t *testing.T) {
 		digitos := c.cnpj()
 		razao := c.nome("N01MASC")
 		st, body := c.req("POST", "/api/clientes", tokA, payload(mascararCNPJ(digitos), razao))

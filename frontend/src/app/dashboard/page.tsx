@@ -123,8 +123,15 @@ function KpiCard({
 
 // ─── Bar Chart (CSS only) ────────────────────────────────────────────────────
 
-function BarChart({ series }: { series: VendasSeries }) {
+function BarChart({
+  series,
+  ocultarVazio = false,
+}: {
+  series: VendasSeries;
+  ocultarVazio?: boolean;
+}) {
   if (!series.pontos.length) {
+    if (ocultarVazio) return null;
     return (
       <div className="flex h-48 w-full items-center justify-center text-sm text-slate-400">
         Nenhum dado de vendas no periodo
@@ -189,8 +196,15 @@ function BarChart({ series }: { series: VendasSeries }) {
 
 // ─── Sellers Table ───────────────────────────────────────────────────────────
 
-function RankingTable({ vendedores }: { vendedores: VendedorRanking[] }) {
+function RankingTable({
+  vendedores,
+  ocultarVazio = false,
+}: {
+  vendedores: VendedorRanking[];
+  ocultarVazio?: boolean;
+}) {
   if (!vendedores.length) {
+    if (ocultarVazio) return null;
     return (
       <div className="py-8 text-center text-sm text-slate-400">
         Nenhum vendedor encontrado
@@ -308,11 +322,14 @@ function RankingTable({ vendedores }: { vendedores: VendedorRanking[] }) {
 function HorizontalBarList({
   items,
   colorClass = "bg-primary-500",
+  ocultarVazio = false,
 }: {
   items: { label: string; total: number }[];
   colorClass?: string;
+  ocultarVazio?: boolean;
 }) {
   if (!items.length) {
+    if (ocultarVazio) return null;
     return (
       <div className="py-6 text-center text-sm text-slate-400">
         Sem dados disponiveis
@@ -494,8 +511,15 @@ function IconUsers() {
 
 // ─── Meu Desempenho (usuario normal) ─────────────────────────────────────────
 
-function MeuDesempenho({ vendedor }: { vendedor: VendedorRanking | undefined }) {
+function MeuDesempenho({
+  vendedor,
+  ocultarVazio = false,
+}: {
+  vendedor: VendedorRanking | undefined;
+  ocultarVazio?: boolean;
+}) {
   if (!vendedor) {
+    if (ocultarVazio) return null;
     return (
       <div className="py-8 text-center text-sm text-slate-400">
         Nenhum dado de desempenho encontrado
@@ -653,6 +677,13 @@ function DashboardContent() {
   const meuDesempenho = isAdmin ? undefined : displayVendedores[0];
   const temMeta = displayMetrics.meta_mes != null && displayMetrics.meta_mes > 0;
 
+  // FE-09: com erro e nenhuma carga bem-sucedida ainda (metrics null — o
+  // Promise.all aplica tudo ou nada), os estados vazios ("Nenhum ...") seriam
+  // falsos: a tela mostra so o alerta. Apos uma carga, um erro seguinte mantem
+  // os dados anteriores (nada e zerado no catch). Com zeros forcados (FE-02)
+  // o vazio e legitimo e continua aparecendo.
+  const ocultarVazios = error !== null && metrics === null && !forcarZeros;
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />
@@ -738,7 +769,13 @@ function DashboardContent() {
             <KpiCard
               label="Ranking Vendedores"
               value={displayVendedores.length > 0 ? fmtCurrency(displayVendedores[0]?.total_vendas ?? 0) : "-"}
-              sub={displayVendedores[0] ? `Lider: ${displayVendedores[0].vendedor_nome}` : "Carregando..."}
+              sub={
+                displayVendedores[0]
+                  ? `Lider: ${displayVendedores[0].vendedor_nome}`
+                  : ocultarVazios
+                  ? undefined
+                  : "Carregando..."
+              }
               icon={<IconRanking />}
             />
           ) : (
@@ -786,7 +823,7 @@ function DashboardContent() {
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
               </div>
             ) : (
-              <BarChart series={displayVendas} />
+              <BarChart series={displayVendas} ocultarVazio={ocultarVazios} />
             )}
           </Card>
 
@@ -800,7 +837,7 @@ function DashboardContent() {
                   current={displayMetrics.total_vendas}
                   target={displayMetrics.meta_mes ?? 0}
                 />
-              ) : (
+              ) : ocultarVazios ? null : (
                 <div className="py-8 text-center text-sm text-slate-400">
                   {isAdmin
                     ? "Nenhuma meta de vendas cadastrada"
@@ -836,9 +873,9 @@ function DashboardContent() {
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
             </div>
           ) : isAdmin ? (
-            <RankingTable vendedores={displayVendedores} />
+            <RankingTable vendedores={displayVendedores} ocultarVazio={ocultarVazios} />
           ) : (
-            <MeuDesempenho vendedor={meuDesempenho} />
+            <MeuDesempenho vendedor={meuDesempenho} ocultarVazio={ocultarVazios} />
           )}
         </Card>
 
@@ -905,6 +942,7 @@ function DashboardContent() {
                     total: s.total,
                   }))}
                   colorClass="bg-primary-500"
+                  ocultarVazio={ocultarVazios}
                 />
               )}
             </Card>
@@ -929,6 +967,7 @@ function DashboardContent() {
                     total: u.total,
                   }))}
                   colorClass="bg-emerald-500"
+                  ocultarVazio={ocultarVazios}
                 />
               )}
             </Card>

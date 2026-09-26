@@ -12,7 +12,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
-const revokeCondicionalSQL = `UPDATE refresh_tokens SET revoked_at = \? WHERE id = \? AND revoked_at IS NULL`
+const revokeCondicionalSQL = `UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`
 
 // TestRefreshTokenService_BeginRotation cobre a abertura da rotação (SEC-02):
 // begin + UPDATE condicional. 0 linhas → ErrRefreshTokenRevoked (rollback).
@@ -27,7 +27,7 @@ func TestRefreshTokenService_BeginRotation(t *testing.T) {
 			nome: "revoga e mantém a tx aberta",
 			setup: func(mock sqlmock.Sqlmock) {
 				mock.ExpectBegin()
-				mock.ExpectExec(revokeCondicionalSQL).WithArgs(sqlmock.AnyArg(), int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectExec(revokeCondicionalSQL).WithArgs(sqlmock.AnyArg(), "rotacao", int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
 				mock.ExpectRollback() // Rollback explícito do teste
 			},
 		},

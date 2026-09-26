@@ -1,86 +1,75 @@
 # A Fazer
 
-> Cards registrados durante o Lote 5 (2026-09-25). Aguardam a priorização do usuário.
+> Os cards registrados no Lote 5 (2026-09-25) foram para `fazendo.md` no Lote 6 (2026-09-26), exceto o DOC-04, que só entra em execução se o usuário pedir o manual completo. Os cards BUG-09, SEC-08, FE-10 e SEC-09 foram registrados no fechamento do Lote 6 (2026-09-26).
 
 ---
 
-## BUG-08: `POST /api/clientes` devolve `created_at` e `updated_at` zerados — prioridade BAIXA
+## SEC-08: access token emitido antes da inativação volta a valer se o usuário for reativado — prioridade BAIXA
 
-**Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Backend
-**Origem:** 🔴 TestBrain, execução do roteiro do Lote 5 (2026-09-25). É anterior ao lote.
+**Status:** não iniciado; aguarda avaliação do 🟣 SecBrain
+**Camada:** Backend (+ Segurança)
+**Origem:** 🔴 TestBrain, regressão do Lote 6 (2026-09-26), no SEC-06.
 
-**Descrição:** A resposta 201 traz `0001-01-01T00:00:00Z` nesses campos. O motivo: `apis/rotaperfumes-api/services/cliente_service.go:216-228` e `:238-271` devolvem o objeto em memória sem reler do banco.
+**Descrição:**
+- O SEC-06 revoga só os refresh tokens ao inativar o usuário (ou desligar o vendedor dele). O access token não é revogado: ele só deixa de valer porque o middleware confere `usuarios.ativo` a cada requisição.
+- Se o usuário for reativado dentro do TTL do access token (24h), um token emitido antes da inativação volta a ser aceito. Confirmado na integração: `200` no `/api/auth/me` depois de reativar.
 
 **Ação esperada:**
-- 🟡 BackBrain: reler o registro depois do INSERT e do UPDATE.
+- 🟣 SecBrain: avaliar o risco e a correção. Possível correção: coluna `tokens_validos_desde` em `usuarios`, gravada na inativação (e, se fizer sentido, na troca de senha e na revogação em massa), comparada com o `iat` do JWT no middleware.
+- 🌸 DataBrain: migração, se aprovada. 🟡 BackBrain: aplicar. 🔴 TestBrain: cobrir.
+
+---
+
+## BUG-09: creates devolvem o objeto em memória, com timestamps zerados — prioridade BAIXA
+
+**Status:** não iniciado
+**Camada:** Backend
+**Origem:** 🟡 BackBrain, Lote 6 (2026-09-26), ao corrigir o BUG-08.
+
+**Descrição:** Mesmo padrão do BUG-08 (corrigido só em clientes). Os creates abaixo devolvem o struct em memória sem reler do banco, então a resposta `201` pode trazer `created_at`/`updated_at` = `0001-01-01T00:00:00Z` (e outros campos preenchidos pelo banco):
+- `apis/rotaperfumes-api/services/vendedor_service.go:198`
+- `apis/rotaperfumes-api/services/usuario_service.go:220`
+- `apis/rotaperfumes-api/services/produto_service.go:189`
+- `apis/rotaperfumes-api/services/pagamento_service.go:215`
+- `apis/rotaperfumes-api/services/oportunidade_service.go:209`
+- `apis/rotaperfumes-api/services/visita_service.go:157`
+- `apis/rotaperfumes-api/services/estoque_service.go:182`
+
+**Ação esperada:**
+- 🟡 BackBrain: reler o registro depois do INSERT, como o `relerClienteCriado` do BUG-08.
+- 🔴 TestBrain: cobrir os 7 creates.
+- 🔵 SubBrain: atualizar os exemplos do Postman.
+
+---
+
+## FE-10: estados inconsistentes nas listagens quando a carga falha — prioridade BAIXA
+
+**Status:** não iniciado
+**Camada:** Frontend
+**Origem:** 🟢 FrontBrain, observações no FE-09 (Lote 6, 2026-09-26). São comportamentos que já existiam antes do lote.
+
+**Descrição:**
+- **Troca de página que falha:** a tabela mantém as linhas da página anterior, mas o indicador de paginação mostra a página nova.
+- **Contador do cabeçalho:** mostra "0 clientes" (e equivalentes nas outras listagens) quando a primeira carga falha.
+- **Vendedores:** quando a recarga depois de inativar falha, o alerta de erro aparece junto com a mensagem de sucesso da inativação.
+
+**Ação esperada:**
+- 🟢 FrontBrain: manter a página e o contador coerentes com as linhas exibidas (ou ocultá-los) quando a carga falhar, e separar o sucesso da ação do erro da recarga em Vendedores.
 - 🔴 TestBrain: cobrir.
 
 ---
 
-## FE-09: listagem de clientes mostra "Nenhum cliente cadastrado." quando há erro de rede — prioridade BAIXA
+## SEC-09: integrar o alerta `[auth][seguranca]` a monitoramento ou notificação — prioridade BAIXA (opcional)
 
-**Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Frontend
-**Origem:** 🔴 TestBrain, execução do roteiro do Lote 5 (2026-09-25). É anterior ao lote.
+**Status:** não iniciado; opcional, aguarda a priorização do usuário
+**Camada:** Segurança (+ Backend)
+**Origem:** 🟡 BackBrain, SEC-07 (Lote 6, 2026-09-26).
 
-**Descrição:** Com erro de rede, `frontend/src/app/admin/clientes/page.tsx:152-162` zera a lista. A tela passa a mostrar "Nenhum cliente cadastrado." ao lado do alerta de conexão.
-
-**Ação esperada:**
-- 🟢 FrontBrain: manter a última lista ou ocultar o estado vazio quando houver erro, e conferir se outras listagens repetem o padrão.
-
----
-
-## DOC-03: outros documentos e o Postman ainda usam `henrique.rodrigues` (inativo) — prioridade BAIXA
-
-**Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Documentação
-**Origem:** 🔵 SubBrain, DOC-01 (2026-09-25).
-
-**Descrição:** O usuário id 2 (`henrique.rodrigues`) está com `ativo=0` e não faz login, mas ainda aparece em:
-- `docs/roteiro-teste-manual-clientes.md`, linha 30;
-- `docs/roteiro-teste-manual-dashboard.md`, linha 21;
-- `postman/README.md`, linhas 37 e 60;
-- `postman/collection.json`: requisição "Login — Vendedor" e o exemplo de resposta.
+**Descrição:** Com o SEC-07, o reuso de refresh token já rotacionado gera o alerta `[auth][seguranca]` (user_id, token_id, IP e UA) e revoga todas as sessões do usuário. Hoje o alerta só vai para o log da API: ninguém é avisado.
 
 **Ação esperada:**
-- 🔵 SubBrain: trocar por um usuário ativo, seguindo o mesmo critério do DOC-01.
-
----
-
-## SEC-06: sessão de usuário inativado continua válida até o access token expirar — prioridade BAIXA
-
-**Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Backend (+ Segurança)
-**Origem:** 🔵 SubBrain, DOC-01 (2026-09-25). Análise pelo código, ainda não validada no navegador.
-
-**Descrição:**
-- O middleware de autenticação não confere `usuarios.ativo`.
-- Quando um vendedor é desligado pela tela, os usuários dele são inativados, mas a sessão aberta continua até o access token expirar.
-- Só no refresh a API responde `401 "usuário inativo"` e o front faz logout.
-
-**Ação esperada:**
-- 🟣 SecBrain: avaliar se a janela é aceitável ou se é preciso revogar os refresh tokens ao inativar e/ou checar `ativo` no middleware.
-- 🟡 BackBrain aplicar.
-- 🔴 TestBrain cobrir.
-
----
-
-## SEC-07: revogar a família de refresh tokens em caso de reuso fora da janela — prioridade BAIXA
-
-**Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Backend (+ Segurança)
-**Origem:** 🟣 SecBrain, SEC-04 (2026-09-25).
-
-**Descrição:** Com o SEC-04, o reuso de um refresh token revogado fora da janela de graça só gera log `[seguranca]`. Revogar todos os tokens do usuário (`RevokeAllUserTokens`) protege melhor contra roubo de token. Por outro lado, pode deslogar usuários legítimos cujo cookie novo se perdeu.
-
-**Complemento (🔴 TestBrain, regressão do Lote 5):**
-- Um token revogado por logout ou por `RevokeAllByUser` e reusado por uma aba antiga depois de 30s dispara o alerta `[auth][seguranca]` de "possível roubo". É um falso positivo.
-- O log não traz o `user_id`.
-
-**Ação esperada:**
-- 🟣 SecBrain: detalhar o trade-off.
-- Usuário: decidir.
+- 🟣 SecBrain: definir o destino (monitoramento de logs, e-mail ao admin e/ou ao usuário) e o volume aceitável.
+- 🟡 BackBrain: aplicar.
 
 ---
 
@@ -94,32 +83,3 @@
 
 **Ação esperada:**
 - 🔵 SubBrain: detalhar as demais tabelas, se o usuário quiser o manual completo.
-
----
-
-## FE-07: assimetria de logout entre falha de rede no refresh e falha de rede no retry — prioridade BAIXA
-
-**Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Frontend (+ Segurança)
-**Origem:** 🔴 TestBrain, regressão do Lote 5 (2026-09-25).
-
-**Descrição:**
-- Quando o próprio `POST /api/auth/refresh` falha por rede ou timeout, o front faz logout.
-- Quando é o retry após o refresh que falha por rede (FE-06), o front não faz logout.
-- Esse comportamento vem de antes do lote e agora está coberto por teste.
-
-**Ação esperada:**
-- 🟣 SecBrain e 🟢 FrontBrain: avaliar se uma falha de rede no refresh deveria preservar a sessão.
-
----
-
-## TEST-01: nome de subteste e comentário de CNPJ desatualizados — prioridade BAIXA
-
-**Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Testes
-**Origem:** 🔴 TestBrain, regressão do Lote 5 (2026-09-25).
-
-**Descrição:** Em `apis/rotaperfumes-api/handlers/lote4_http_integration_test.go`, o subteste ainda se chama "CNPJ mascarado é gravado só com dígitos". Com o NEG-02, o nome não descreve mais a regra. Do mesmo jeito, o comentário de `TestCruzado_Divergencias` em `apis/shared/cnpj/cruzado_test.go` ainda cita `it.fails` no front, que foi removido na correção NEG-02-A/B.
-
-**Ação esperada:**
-- 🔴 TestBrain: renomear o subteste e ajustar o comentário.

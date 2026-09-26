@@ -615,7 +615,13 @@ func TestCreatePagamento_Admin_PedidoInexistente_404IgualNormal(t *testing.T) {
 		defer server.Close()
 		defer db.Close()
 		setup(mock)
-		status, body := doReq(t, "POST", server.URL+"/api/pagamentos", generateToken(t, testCfg(), 2, role), validPagamentoPayload())
+		// SEC-06: o role vem do banco (fakeUserStatusChecker: uid 1 = admin,
+		// demais = normal), então o admin usa o uid 1.
+		uid := int64(2)
+		if role == "admin" {
+			uid = 1
+		}
+		status, body := doReq(t, "POST", server.URL+"/api/pagamentos", generateToken(t, testCfg(), uid, role), validPagamentoPayload())
 		assert.NoError(t, mock.ExpectationsWereMet())
 		return status, body
 	}

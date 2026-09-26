@@ -60,6 +60,7 @@ function UsuariosPageContent() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [erroCarga, setErroCarga] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<"" | UserRole>("");
@@ -91,18 +92,19 @@ function UsuariosPageContent() {
     setUsers(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    setErroCarga(false);
     setLoading(false);
   };
 
+  // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
+  // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
   const aplicarErroUsers = (err: unknown) => {
     const message =
       err instanceof Error
         ? err.message
         : "Erro ao carregar usuarios. O endpoint /api/usuarios pode nao existir no backend.";
     setError(message);
-    setUsers([]);
-    setTotal(0);
-    setPages(0);
+    setErroCarga(true);
     setLoading(false);
   };
 
@@ -512,6 +514,7 @@ function UsuariosPageContent() {
             data={filtered}
             keyExtractor={(u) => u.id}
             loading={loading}
+            erroCarga={erroCarga}
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={(key) => handleSort(key as SortKey)}

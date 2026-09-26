@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
+.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api gen-hash fix-hash \
 	frontend-deps \
@@ -84,6 +84,12 @@ db-fix-cnpj-comment: ## Atualiza o COMMENT de clientes.cnpj para o formato alfan
 
 db-revert-cnpj-comment: ## Reverte db-fix-cnpj-comment (volta o COMMENT antigo "somente digitos")
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/20_revert_clientes_cnpj_comment.sql
+
+db-fix-revoked-reason: ## Adiciona refresh_tokens.revoked_reason (SEC-07) em bancos existentes (nao destrutivo, legado fica NULL)
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/21_alter_refresh_tokens_revoked_reason.sql
+
+db-revert-revoked-reason: ## Reverte db-fix-revoked-reason (remove a coluna; perde os motivos gravados)
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/21_revert_refresh_tokens_revoked_reason.sql
 
 db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
 	cd apis/shared && go run ./cmd/importclientes

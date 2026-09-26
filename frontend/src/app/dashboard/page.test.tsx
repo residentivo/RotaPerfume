@@ -417,3 +417,73 @@ describe("Dashboard - FE-02 (zeros forcados e respostas obsoletas)", () => {
     expect(api.apiDashboardMetrics).toHaveBeenCalledTimes(2);
   });
 });
+
+// ─── FE-09: erro de carga nao mostra estados vazios falsos ────────────────────
+
+describe("Dashboard - FE-09 (erro de carga)", () => {
+  const VAZIOS_ADMIN = [
+    "Nenhum dado de vendas no periodo",
+    "Nenhum vendedor encontrado",
+    "Nenhuma meta de vendas cadastrada",
+    "Sem dados disponiveis",
+  ];
+
+  it("admin: erro de rede na primeira carga mostra so o alerta, sem estados vazios", async () => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin" }));
+    mockApiCheia();
+    api.apiDashboardMetrics.mockRejectedValue(new TypeError("Failed to fetch"));
+    await renderLoaded();
+    expect(screen.getByRole("alert")).toHaveTextContent("Failed to fetch");
+    for (const vazio of VAZIOS_ADMIN) {
+      expect(screen.queryByText(vazio)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText("Carregando...")).not.toBeInTheDocument();
+  });
+
+  it("normal com vendedor: erro na primeira carga nao mostra 'Nenhum dado de desempenho'", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    mockApiCheia();
+    api.apiDashboardMetrics.mockRejectedValue(new TypeError("Failed to fetch"));
+    await renderLoaded();
+    expect(screen.getByText("Failed to fetch")).toBeInTheDocument();
+    expect(screen.queryByText("Nenhum dado de desempenho encontrado")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nenhum dado de vendas no periodo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nenhuma meta cadastrada para voce")).not.toBeInTheDocument();
+  });
+
+  it("admin: erro apos carga bem-sucedida mantem os dados anteriores + alerta", async () => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin" }));
+    mockApiCheia();
+    await renderLoaded();
+    expect(screen.getByText("Lider: Vend 7")).toBeInTheDocument();
+
+    api.apiDashboardMetrics.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await userEvent.click(screen.getByRole("button", { name: "Atualizar" }));
+    expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+    expect(kpiValue("Total de Vendas")).toMatch(/^R\$\s1\.500,50$/);
+    expect(screen.getByText("Lider: Vend 7")).toBeInTheDocument();
+    expect(screen.getByText(/^Total: R\$\s1\.500,50$/)).toBeInTheDocument();
+    expect(screen.queryByText("Nenhum vendedor encontrado")).not.toBeInTheDocument();
+  });
+
+  it("admin: sucesso com dados vazios mostra os estados vazios normais, sem alerta", async () => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin" }));
+    mockApiZerada();
+    await renderLoaded();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Nenhum dado de vendas no periodo")).toBeInTheDocument();
+    expect(screen.getByText("Nenhum vendedor encontrado")).toBeInTheDocument();
+    expect(screen.getByText("Nenhuma meta de vendas cadastrada")).toBeInTheDocument();
+    expect(screen.getAllByText("Sem dados disponiveis")).toHaveLength(2);
+  });
+
+  it("normal sem vendedor (zeros forcados): erro nao esconde os estados vazios", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: null }));
+    mockApiZerada();
+    api.apiDashboardMetrics.mockRejectedValue(new TypeError("Failed to fetch"));
+    await renderLoaded();
+    expect(screen.getByText("Failed to fetch")).toBeInTheDocument();
+    expect(screen.getByText("Nenhum dado de vendas no periodo")).toBeInTheDocument();
+    expect(screen.getByText("Nenhum dado de desempenho encontrado")).toBeInTheDocument();
+  });
+});

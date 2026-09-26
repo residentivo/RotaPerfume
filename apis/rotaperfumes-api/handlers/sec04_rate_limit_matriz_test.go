@@ -22,7 +22,7 @@ func TestRefresh_SEC04_MatrizRateLimit(t *testing.T) {
 			mock.ExpectQuery(findRefreshSQL).
 				WithArgs(hashRefresh(refreshTokenTexto)).
 				WillReturnRows(sqlmock.NewRows(refreshTokenCols).
-					AddRow(int64(10), int64(5), hashRefresh(refreshTokenTexto), expiresAt, revokedAt, "127.0.0.1", "go-test"))
+					AddRow(int64(10), int64(5), hashRefresh(refreshTokenTexto), expiresAt, revokedAt, "127.0.0.1", "go-test", nil))
 		}
 	}
 	futuro := func() time.Time { return time.Now().Add(time.Hour) }

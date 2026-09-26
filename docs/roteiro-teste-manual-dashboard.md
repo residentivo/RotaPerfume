@@ -18,10 +18,21 @@ Marque cada checkbox depois de conferir no navegador. Os números de referência
    | --- | --- | --- | --- |
    | admin | `admin@rotaperfumes.com.br` | 1 | - |
    | normal com vendedor | `rafael.carvalho@rotaperfumes.com.br` | 5 | 4 - Rafael Carvalho (ativo, meta 55.000,00) |
-   | normal com vendedor **desligado** | `henrique.rodrigues@rotaperfumes.com.br` | 2 | 1 - Henrique Rodrigues (`data_desligamento` = 2025-09-07; ainda tem 82 clientes em carteira ativa) |
+   | normal com vendedor **desligado** | `thiago.silva@rotaperfumes.com.br` | 4 | 3 - Thiago Silva (`data_desligamento` = 2025-07-26) |
    | normal sem vendedor | criar temporário (SQL abaixo) | - | nenhum |
 
-   Outros usuários com vendedor desligado na base: ids 3, 4, 10, 38 e 39.
+   O usuário desligado passou a ser o `thiago.silva` (id 4) em 2026-09-26 (DOC-03). O `henrique.rodrigues` (id 2, vendedor 1), usado antes, está com `ativo = 0` e não faz login. Confira antes de começar:
+   ```sql
+   SELECT u.id, u.ativo, u.id_vendedor, v.data_desligamento
+     FROM usuarios u JOIN vendedores v ON v.id = u.id_vendedor
+    WHERE u.id = 4;
+   -- esperado: ativo = 1, id_vendedor = 3, data_desligamento = 2025-07-26
+
+   -- Clientes ainda na carteira ativa do vendedor 3 (usado no item 3.5)
+   SELECT COUNT(*) FROM carteiras WHERE vendedor_id = 3 AND data_fim IS NULL;
+   ```
+
+   Outros usuários com vendedor desligado na base (levantamento de 2026-09-24, corrigido em 2026-09-26): ids 10, 38 e 39, além do id 2, hoje inativo.
 
 3. Usuário temporário sem vendedor (defina a senha pela tela de Usuários como admin):
    ```sql
@@ -71,13 +82,13 @@ Marque cada checkbox depois de conferir no navegador. Os números de referência
 - [ ] 2.5 Não aparece nenhuma mensagem de erro vermelha. Todas as chamadas voltam 200 com valores zerados.
 - [ ] 2.6 Trocar o select do gráfico para 7 dias muda o título para "Minhas Vendas nos Últimos 7 Dias", e o aviso continua visível.
 
-## 3. Normal com vendedor desligado (Henrique Rodrigues, vendedor 1)
+## 3. Normal com vendedor desligado (Thiago Silva, vendedor 3)
 
 - [ ] 3.1 Aparece o aviso amarelo: "Vendedor desligado. O vendedor vinculado ao seu usuario possui data de desligamento, por isso nao ha metricas de vendas nem clientes na sua carteira; procure um administrador."
 - [ ] 3.2 O aviso de "sem vendedor" **não** aparece. É o aviso específico de desligado.
-- [ ] 3.3 **UI-02 opção (b):** os KPIs continuam **visíveis e zerados** (R$ 0,00 / 0 / R$ 0,00 / "-"). Mesmo que o vendedor 1 tenha vendas históricas, nenhum valor dele aparece.
+- [ ] 3.3 **UI-02 opção (b):** os KPIs continuam **visíveis e zerados** (R$ 0,00 / 0 / R$ 0,00 / "-"). Mesmo que o vendedor 3 tenha vendas históricas, nenhum valor dele aparece.
 - [ ] 3.4 O gráfico continua **visível e zerado** ("Total: R$ 0,00") e o título acompanha o select ("Minhas Vendas nos Últimos N Dias").
-- [ ] 3.5 Os clientes aparecem zerados (0 e listas vazias), embora o vendedor 1 ainda tenha 82 clientes em carteira ativa.
+- [ ] 3.5 Os clientes aparecem zerados (0 e listas vazias), mesmo que o vendedor 3 ainda tenha clientes em carteira ativa: 66 clientes, 62 deles ativos (conferido em 2026-09-26; confira com a query da seção 0).
 - [ ] 3.6 "Meu Desempenho" mostra "Nenhum dado de desempenho encontrado".
 - [ ] 3.7 O menu não mostra os itens da carteira: os dropdowns **ERP** (Clientes, Oportunidades, Visitas) e **CRM** (Pagamentos, Pedidos) não aparecem. "Dashboard" e "Trocar Senha" continuam no menu. O roteiro completo do desligado está em `docs/roteiro-teste-manual-vendedor-desligado.md`.
 - [ ] 3.8 Bloqueio sem novo login (opcional): como admin, preencha `data_desligamento` de um vendedor ativo. Na aba do usuário dele, **troque de aba e volte** (ou recarregue). O aviso de desligado aparece e os KPIs zeram, sem novo login. **Desfaça** depois (`UPDATE vendedores SET data_desligamento = NULL WHERE id = <id>;`).
@@ -114,7 +125,7 @@ Desde o FE-02, para o usuário `normal` **sem vendedor** ou com **vendedor desli
 3. Recarregue a página com os overrides ativos.
 
 - [ ] 5b.1 **Normal sem vendedor:** o aviso de "sem vendedor" aparece e **todos** os números ficam zerados: Minhas Vendas R$ 0,00, Meus Pedidos 0, Meu Ticket Medio R$ 0,00, Minha Meta "-", gráfico com "Total: R$ 0,00", Meus Clientes/Ativos/Inativos/Novos = 0, "por Segmento"/"por UF" vazios e "Meu Desempenho" com "Nenhum dado de desempenho encontrado". **Nenhum** número do override aparece (99.999,99 / 42 / 7 / Varejo / SP).
-- [ ] 5b.2 **Normal com vendedor desligado (id 2):** mesmo resultado do 5b.1, com o aviso de **desligado**.
+- [ ] 5b.2 **Normal com vendedor desligado (id 4):** mesmo resultado do 5b.1, com o aviso de **desligado**.
 - [ ] 5b.3 **Desligado só pelo payload:** como normal **com** vendedor ativo (id 5), use o override de `metrics` com `"vendedor_desligado":true`. O aviso de desligado aparece e a tela zera tudo, inclusive os clientes do override.
 - [ ] 5b.4 **Controle (normal ativo, id 5):** com o override de `metrics` preenchido e `"vendedor_desligado":false`, os números do override **aparecem** (R$ 99.999,99, 42 pedidos). Isso prova que o zero dos itens anteriores vem da regra, e não de uma falha do override.
 - [ ] 5b.5 **Admin:** com o override preenchido e `"vendedor_desligado":true`, o admin continua vendo os números (admin nunca é zerado).
@@ -131,6 +142,8 @@ Desde o FE-02, para o usuário `normal` **sem vendedor** ou com **vendedor desli
 ---
 
 ## Evidências via API (2026-09-24)
+
+> Registro histórico. Na época, o usuário desligado de teste era o id 2 (`henrique.rodrigues`, vendedor 1), hoje inativo. Nas próximas execuções, use o id 4 (`thiago.silva`, vendedor 3), conforme a seção 0.
 
 Validação feita pelo TestBrain com a API local (porta 8080) e o banco local `rotaperfumes`. Como o login real exige captcha (Turnstile), os testes usaram tokens JWT gerados localmente com o `JWT_SECRET`/`JWT_ISSUER` do `.env`, para os usuários reais: admin id 1; normal id 5 (vendedor 4); normal desligado id 2 (vendedor 1); normal sem vendedor = usuário temporário id 86, criado por SQL e removido no fim. O servidor foi parado no fim.
 

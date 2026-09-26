@@ -4,6 +4,168 @@
 
 ---
 
+## Lote 6 de 2026-09-26: 7 cards concluídos (de 7)
+
+> Lote aberto pelo 🤍 MegaBrain a partir de `afazer.md` e executado na ordem 🟣 SecBrain → 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain, com os cards SEC-06, SEC-07 (opção B, decisão do usuário), FE-07 (opção A, decisão do usuário), BUG-08, FE-09, TEST-01 e DOC-03. **Aceite do usuário em 2026-09-26.**
+>
+> **Regressão 🔴 TestBrain (2026-09-26):**
+> - Go: unit e `INTEGRATION=1` ok, com 1202 PASS em `apis/shared` e 2354 em `rotaperfumes-api`, 0 FAIL.
+> - Frontend: `tsc`, `eslint` e `vitest` com 1188/1188.
+> - Cobertura: `rotaperfumes-api` 88,6%, `apiClient.ts` 94,81% e `Table.tsx` 100% das linhas.
+> - Banco restaurado e idêntico ao snapshot.
+>
+> **Documentação (🔵 SubBrain) do lote:** `postman/README.md` e `postman/collection.json` (seção "Mudanças de contrato do Lote 6": SEC-06, SEC-07, BUG-08, FE-07 e DOC-03), `docs/manual-base-de-dados.md` (seção 7: `refresh_tokens` e migração 21) e o roteiro `docs/roteiro-teste-manual-lote6.md`. O `postman/collection.json` foi validado com Node pelo 🤍 MegaBrain em 2026-09-26.
+>
+> **Cards derivados que ficaram em `afazer.md`:** SEC-08, BUG-09, FE-10, SEC-09 e DOC-04.
+
+## SEC-06: sessão de usuário inativado continua válida até o access token expirar — 2026-09-26
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → roteiro do Lote 6 (seção 1) → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-26.
+
+**Camada:** Backend (+ Segurança)
+**Origem:** 🔵 SubBrain, DOC-01 (2026-09-25). Prioridade subiu de BAIXA para MÉDIA.
+
+**Descrição:**
+- O middleware de autenticação não conferia `usuarios.ativo`.
+- Quando um vendedor era desligado pela tela, os usuários dele eram inativados, mas a sessão aberta continuava até o access token (24h) expirar. O rebaixamento de role também só valia no próximo token.
+
+**Decisão 🟣 SecBrain (2026-09-26):** checar `ativo, role` no banco a cada requisição protegida, sem cache e fail-closed, e revogar os refresh tokens ao inativar o usuário e ao desligar o vendedor.
+
+**🟡 BackBrain (2026-09-26) — implementado:**
+- `apis/rotaperfumes-api/middleware/user_status.go`: `UserStatusChecker` e `DBUserStatusChecker`.
+- `apis/rotaperfumes-api/middleware/auth_middleware.go`: `JWTMiddlewareWithUserCheck`. Inativo ou inexistente → `401 "usuário inativo"`; erro de banco → `500`; a role vem do banco.
+- `apis/rotaperfumes-api/routes/routes.go`: `NewMux` recebe o checker (helper `jwt`). `cmd/server/main.go` passa `NewDBUserStatusChecker(conn)`.
+- `apis/shared/repositories/usuario_repository.go`: `GetStatusByID`.
+- Revogação dos refresh tokens (`inativacao`) ao inativar o usuário (`handlers/usuario_handler.go`) e ao desligar o vendedor (`services/vendedor_service.go`, `RevokeAllByVendedorID` na mesma transação).
+
+**🔴 TestBrain (2026-09-26) — testado:** `handlers/lote6_http_integration_test.go` (inativar usuário, desligar vendedor, rebaixamento de role, usuário inexistente) e `middleware/user_status_cookie_test.go`. Achado: o access token volta a valer se o usuário for reativado dentro do TTL (card SEC-08 em `afazer.md`).
+
+---
+
+## SEC-07: revogar a família de refresh tokens em caso de reuso fora da janela — 2026-09-26
+**Agentes:** 🟣 SecBrain → decisão do usuário (opção B) → 🌸 DataBrain → 🟡 BackBrain → 🔴 TestBrain → roteiro do Lote 6 (seção 5) → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-26.
+
+**Camada:** Backend (+ Segurança) + Database
+**Origem:** 🟣 SecBrain, SEC-04 (2026-09-25).
+
+**Descrição:** O reuso de refresh token revogado fora da janela de graça só gerava log `[seguranca]`, sem `user_id`, e dava falso positivo para tokens revogados por logout.
+
+**Decisão do usuário (2026-09-26):** opção B do 🟣 SecBrain (coluna `revoked_reason`; só o reuso de token com motivo `rotacao` alerta e revoga todas as sessões).
+
+**🌸 DataBrain (2026-09-26) — implementado:**
+- Migração 21: `sql/21_alter_refresh_tokens_revoked_reason.sql` e `sql/21_revert_refresh_tokens_revoked_reason.sql`. Cria `refresh_tokens.revoked_reason` ENUM('rotacao','logout','revogacao_massa','senha','inativacao') NULL. Idempotente.
+- DDL base `sql/06_ddl_refresh_tokens.sql` atualizado. `Makefile`: `db-fix-revoked-reason` e `db-revert-revoked-reason`.
+- Aplicada no banco local (107 tokens; os legados ficaram com NULL).
+
+**🟡 BackBrain (2026-09-26) — implementado:**
+- `RevokeReason` gravado em todas as revogações (`apis/shared/repositories/refresh_token_repository.go`).
+- `RevokedTokenError` tipado (`services/refresh_token_service.go`).
+- `handlers/auth_handler.go`: reuso de token `rotacao` fora da janela de 30 s → alerta `[auth][seguranca]` com user_id, token_id, IP e UA, mais `RevokeAllUserTokens(revogacao_massa)`. Outros motivos e NULL → só log informativo. A resposta 401 continua idêntica.
+- Os `_ =` que engoliam erro (revogação e `senhaSvc.Registrar`) viraram log.
+
+**🔴 TestBrain (2026-09-26) — testado:** reuso em `handlers/lote6_http_integration_test.go`, mais os testes de service, rotação e repositório.
+
+---
+
+## FE-07: assimetria de logout entre falha de rede no refresh e falha de rede no retry — 2026-09-26
+**Agentes:** 🟣 SecBrain → decisão do usuário (opção A) → 🟢 FrontBrain → 🔴 TestBrain → roteiro do Lote 6 (seção 3) → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-26.
+
+**Camada:** Frontend (+ Segurança)
+**Origem:** 🔴 TestBrain, regressão do Lote 5 (2026-09-25).
+
+**Descrição:** A falha de rede ou timeout no próprio `POST /api/auth/refresh` (e a falha do Web Lock) fazia logout e chamava `/api/auth/logout`. A falha de rede no retry (FE-06) não fazia.
+
+**Decisão do usuário (2026-09-26):** opção A do 🟣 SecBrain.
+
+**🟢 FrontBrain (2026-09-26) — implementado:** `frontend/src/lib/apiClient.ts`. Falha de rede, timeout ou falha do Web Lock no refresh → `NetworkError`, sem logout e sem chamar `/api/auth/logout`; a fila recebe o mesmo erro. `401`, `429` e `500` continuam deslogando.
+
+**🔴 TestBrain (2026-09-26) — testado:** `frontend/src/lib/apiClient.lote6.test.ts`. Cobertura do `apiClient.ts`: 94,81%.
+
+---
+
+## BUG-08: `POST /api/clientes` devolve `created_at` e `updated_at` zerados — 2026-09-26
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → roteiro do Lote 6 (seção 4) → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-26.
+
+**Camada:** Backend
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 5 (2026-09-25). É anterior ao lote.
+
+**Descrição:** A resposta 201 trazia `0001-01-01T00:00:00Z` nesses campos, porque o service devolvia o objeto em memória.
+
+**🟡 BackBrain (2026-09-26) — implementado:** `apis/rotaperfumes-api/services/cliente_service.go`, `relerClienteCriado` depois de `CreateCliente` e de `CreateClienteNaCarteira`. O PUT já relia. O mesmo padrão nos outros creates virou o card BUG-09 (`afazer.md`).
+
+**🔴 TestBrain (2026-09-26) — testado:** `handlers/lote6_http_integration_test.go` (com e sem carteira).
+
+---
+
+## FE-09: listagem de clientes mostra "Nenhum cliente cadastrado." quando há erro de rede — 2026-09-26
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → roteiro do Lote 6 (seção 2) → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-26.
+
+**Camada:** Frontend
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 5 (2026-09-25). É anterior ao lote.
+
+**Descrição:** Com erro de rede, a listagem zerava a lista e mostrava "Nenhum cliente cadastrado." ao lado do alerta de conexão. Outras listagens repetiam o padrão.
+
+**🟢 FrontBrain (2026-09-26) — implementado:**
+- `frontend/src/components/ui/Table.tsx`: prop `erroCarga`, que oculta o estado vazio.
+- Aplicada em 10 listagens: clientes, vendedores, usuários, produtos, senha-historico, estoque, pedidos, oportunidades, visitas e pagamentos.
+- Dashboard: oculta os estados vazios quando a primeira carga dá erro.
+- Comportamentos antigos observados e registrados no card FE-10 (`afazer.md`).
+
+**🔴 TestBrain (2026-09-26) — testado:** `Table.test.tsx` e `app/admin/listasAdmin.test.tsx`. `Table.tsx` com 100% das linhas.
+
+---
+
+## TEST-01: nome de subteste e comentário de CNPJ desatualizados — 2026-09-26
+**Agentes:** 🔴 TestBrain → regressão do Lote 6 (tabela "Testes automatizados" do roteiro) → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-26.
+
+**Camada:** Testes
+**Origem:** 🔴 TestBrain, regressão do Lote 5 (2026-09-25).
+
+**Descrição:** O subteste "CNPJ mascarado é gravado só com dígitos" não descrevia mais a regra do NEG-02, e o comentário de `TestCruzado_Divergencias` ainda citava `it.fails` no front.
+
+**🔴 TestBrain (2026-09-26) — feito:** subteste renomeado em `apis/rotaperfumes-api/handlers/lote4_http_integration_test.go:254` e comentário ajustado em `apis/shared/cnpj/cruzado_test.go:75-79`.
+
+---
+
+## DOC-03: outros documentos e o Postman ainda usam `henrique.rodrigues` (inativo) — 2026-09-26
+**Agentes:** 🔵 SubBrain → conferência do 🔴 TestBrain → correção do 🔵 SubBrain → validação do JSON pelo 🤍 MegaBrain → roteiro do Lote 6 (item 4.3) → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-26.
+
+**Camada:** Documentação
+**Origem:** 🔵 SubBrain, DOC-01 (2026-09-25).
+
+**Descrição:** O usuário id 2 (`henrique.rodrigues`) está com `ativo=0` e não faz login, mas ainda aparecia nos roteiros de clientes e do Dashboard e no Postman.
+
+**🔵 SubBrain (2026-09-26) — primeira parte:**
+- Roteiros de clientes e do Dashboard: perfil "normal com vendedor desligado" trocado para `thiago.silva` (id 4, vendedor 3).
+- Postman ("Login — Vendedor"): trocado para `rafael.carvalho` (id 5, vendedor 4 ativo), com `captchaToken` no body.
+
+**🔴 TestBrain (2026-09-26) — conferência:** encontrou três defeitos de documentação:
+- a senha `Mudar@123` não confere com o banco para os ids 4 e 5;
+- o id 5 tem `deve_trocar_senha=0`, e o teste da collection esperava `trocar_senha: true`;
+- a lista de desligados do roteiro do Dashboard citava o id 3 (vendedor 2, ativo).
+
+**🔵 SubBrain (2026-09-26) — correção:**
+- **Senha:** `postman/README.md` (passo 4, exemplos e nota) e `postman/collection.json` (descrição da coleção, descrição do Login, body, descrição e exemplo do "Login — Vendedor") remetem a `SEED_USER_PASSWORD` ou à senha impressa pelo `make db-seed`. Nova variável `{{senha_vendedor}}` na collection. Os roteiros em `docs/` não citam `Mudar@123`. O admin `Admin@123` ficou.
+- **`trocar_senha`:** o teste do "Login — Vendedor" confere só que o campo é booleano. A descrição e o README documentam os dois casos, e o exemplo 200 passou a `false`, o estado atual do id 5.
+- **Desligados:** `docs/roteiro-teste-manual-dashboard.md` cita os ids 10, 38 e 39, e o item 3.5 cita 66 clientes em carteira ativa do vendedor 3, 62 ativos (conferido em 2026-09-26).
+
+**🤍 MegaBrain (2026-09-26) — validação do JSON:** `postman/collection.json` validado com Node: JSON válido, com a variável `senha_vendedor` presente.
+
+---
+
 ## BUG-07: modal "Editar Vendedor" sobrescreve a data de admissão e a meta mensal — prioridade ALTA — 2026-09-26
 **Agentes:** 🟢 FrontBrain → 🔴 TestBrain (2026-09-26) → aceite do usuário (2026-09-26) → fechamento por 🔵 SubBrain. 🟣 SecBrain dispensado: é um bug de UI sem superfície nova.
 

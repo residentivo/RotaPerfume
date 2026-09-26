@@ -53,6 +53,29 @@ func (r *UsuarioRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (
 	return scanUsuario(row)
 }
 
+// UsuarioStatus é o recorte mínimo de um usuário usado na autorização de
+// cada requisição autenticada (SEC-06): se ainda está ativo e qual o role
+// vigente no banco (que prevalece sobre o role gravado no JWT).
+type UsuarioStatus struct {
+	Ativo bool
+	Role  string
+}
+
+// GetStatusByID retorna ativo e role do usuário. Retorna ErrNotFound se o
+// usuário não existir. Consulta enxuta (sem JOIN) executada a cada request
+// protegido — sem cache, para que inativação/rebaixamento valham na hora.
+func (r *UsuarioRepository) GetStatusByID(ctx context.Context, db *sql.DB, id int64) (*UsuarioStatus, error) {
+	const q = `SELECT ativo, role FROM usuarios WHERE id = ? LIMIT 1`
+	var st UsuarioStatus
+	if err := db.QueryRowContext(ctx, q, id).Scan(&st.Ativo, &st.Role); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("repositories: get status usuario: %w", err)
+	}
+	return &st, nil
+}
+
 // GetIDVendedorByUsuarioID retorna o id_vendedor vinculado ao usuário
 // informado (nil quando o usuário não tem vendedor vinculado). Retorna
 // ErrNotFound se o usuário não existir. Consulta enxuta (sem JOIN), usada

@@ -28,13 +28,14 @@ A coleção inclui variáveis pré-definidas. Ajuste `{{base_url}}` se sua API e
 | `admin_token` | (vazio) | JWT do admin (preenchido automaticamente após login como admin) |
 | `vendedor_token` | (vazio) | JWT de um vendedor (preenchido pelo teste "Login Vendedor") |
 | `refresh_token` | (vazio) | Refresh token (preenchido automaticamente após login) |
+| `senha_vendedor` | (vazio) | Senha dos usuários de seed, usada no "Login — Vendedor". **Preencha à mão** com o `SEED_USER_PASSWORD` do `.env` ou a senha impressa pelo `make db-seed` (DOC-03, 2026-09-26) |
 
 ### 3. Autenticar
 
 1. Abra a requisição **Login** (`POST /api/auth/login`) — usa `admin@rotaperfumes.com.br` por padrão.
 2. Clique em **Send**.
 3. Os tokens serão salvos automaticamente nas variáveis `token`, `admin_token` e `refresh_token` via script de testes.
-4. Para logar como vendedor, use a requisição **Login — Vendedor** (`POST /api/auth/login` com `henrique.rodrigues@rotaperfumes.com.br` / `Mudar@123`, credenciais de seed). Isso salva em `vendedor_token` e verifica a flag `trocar_senha: true`.
+4. Para logar como vendedor, use a requisição **Login — Vendedor** (`POST /api/auth/login` com `rafael.carvalho@rotaperfumes.com.br`, usuário id 5, vinculado ao vendedor 4 ativo). Antes, preencha a variável `senha_vendedor` com a senha de seed (ver a nota abaixo). A requisição salva o token em `vendedor_token` e confere só que `trocar_senha` é booleano: o valor depende de `usuarios.deve_trocar_senha` (`true` se o usuário ainda não trocou a senha; `false` depois da troca, que é o estado do id 5 no banco local em 2026-09-26). O `henrique.rodrigues@...` (id 2), usado antes, está com `ativo = 0` e recebe `401 "usuário inativo"` (DOC-03, 2026-09-26).
 
 ### 4. Acessar endpoints protegidos
 
@@ -56,12 +57,14 @@ Para testar endpoints que exigem **role admin**, alterne a variável `token` par
 
 Formato de e-mail: `<slug-nome>@rotaperfumes.com.br`
 
-Exemplos:
-- `henrique.rodrigues@rotaperfumes.com.br` / `Mudar@123`
-- `carla.carvalho@rotaperfumes.com.br` / `Mudar@123`
-- `thiago.silva@rotaperfumes.com.br` / `Mudar@123`
+Exemplos (todos com a senha de seed, ver a nota abaixo):
+- `rafael.carvalho@rotaperfumes.com.br` (id 5, vendedor 4 ativo; usado na requisição "Login — Vendedor")
+- `carla.carvalho@rotaperfumes.com.br`
+- `thiago.silva@rotaperfumes.com.br` (id 4, vendedor 3 **desligado**: faz login, mas as rotas da carteira respondem `403`)
 
-> **Importante:** essas senhas fixas (`Mudar@123`) existem **apenas nos dados de seed** carregados por `make db-reset` (para permitir login de teste sem precisar ler email). Ao logar com um vendedor de seed, a API retorna `trocar_senha: true` — vindo da coluna `usuarios.deve_trocar_senha` — indicando que o frontend deve redirecionar para a tela de troca de senha.
+> **Senha de seed (DOC-03, 2026-09-26):** não existe senha fixa de vendedor. O `make db-seed` grava nos usuários de seed o valor de `SEED_USER_PASSWORD` do `.env` ou, se ela não estiver definida, uma senha aleatória de 16 caracteres impressa no console (`USER_PASSWORD=...`), a mesma para todos (ver o cabeçalho de `sql/03_seed_vendedores.sql`). Na collection, informe essa senha na variável `senha_vendedor`. O nome `@HASH_MUDAR_123` no SQL é legado, e `Mudar@123` **não** confere com o banco local.
+>
+> **`trocar_senha`:** vem da coluna `usuarios.deve_trocar_senha`. É `true` enquanto o usuário não troca a senha (depois do seed, da criação ou do reset pelo admin), e o frontend redireciona para a tela de troca de senha. É `false` depois da troca (`POST /api/auth/reset-password`). Os dois casos são válidos: no banco local de 2026-09-26, o id 5 está com `deve_trocar_senha = 0`.
 >
 > **Fluxo real de senha (produção/novos usuários):** a partir da criação de usuário (`POST /api/usuarios`) ou reset de senha pelo admin (`POST /api/admin/reset-password`), a API **não usa mais senha fixa**. Ela gera uma senha aleatória segura (`crypto/rand`, mínimo 12 caracteres, com maiúscula/minúscula/dígito/símbolo garantidos) e a envia por email (SMTP) ao endereço cadastrado do usuário. A senha gerada nunca é exposta pela API — nem em logs, nem na resposta HTTP. Ambas as respostas (criação e reset) incluem um campo `email_enviado: boolean` informando se o envio de fato ocorreu (será `false` se o SMTP não estiver configurado, caso em que a API usa um serviço "noop" que apenas loga o envio, sem quebrar a operação de criação/reset).
 
@@ -88,6 +91,21 @@ Exemplos:
 | NEG-02 | `POST`/`PUT /api/clientes`, `GET /api/clientes?q=` | Aceita o **CNPJ alfanumérico** da Receita (vigente desde julho de 2026). As 12 primeiras posições são `[0-9A-Z]` e os 2 DVs são numéricos. Envio com ou sem máscara, em maiúsculas ou minúsculas. Retorno sempre com 14 caracteres, sem máscara e em maiúsculas. A busca `?q=` aceita máscara e não diferencia maiúsculas de minúsculas. Os erros `400`/`409` não mudam. Exemplo oficial: `12ABC34501DE35` (`12.ABC.345/01DE-35`). CNPJs numéricos continuam válidos. |
 | SEC-04 | `POST /api/auth/refresh` | Um token revogado há no máximo 30 s (janela de graça) e a corrida no `BeginRotation` **não contam mais** no rate limit por IP. O reuso fora da janela continua contando e gera log `[auth][seguranca]`. A resposta HTTP não muda. |
 | FE-06 | (frontend, `apiClient.ts`) | Falha de rede no retry após o refresh não faz logout: a fila recebe o mesmo erro de rede, e não mais "Sessão expirada. Faça login novamente.". Sem mudança de contrato na API. |
+
+## Mudanças de contrato do Lote 6 (2026-09-26)
+
+> Resumo das mudanças. O detalhe está nos endpoints abaixo e nas descrições marcadas com `(SEC-06 | SEC-07 | BUG-08, Lote 6, 2026-09-26)` na collection. Roteiro manual: `docs/roteiro-teste-manual-lote6.md`. Os cards continuam em `tarefas/fazendo.md` até a validação do usuário.
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| SEC-06 | **Todas as rotas protegidas** (Bearer) | O middleware JWT (`JWTMiddlewareWithUserCheck` + `DBUserStatusChecker`) consulta `usuarios.ativo` e `usuarios.role` a cada requisição, sem cache. Usuário inativo ou inexistente → `401` `{"success":false,"error":"usuário inativo"}`, mesmo com o access token dentro da validade. Erro de banco na checagem → `500` `"erro interno"` (fail-closed). A role usada é a do banco: rebaixar `admin` → `normal` vale na próxima requisição, sem novo login (rota admin → `403`). |
+| SEC-06 | `PATCH /api/usuarios/{id}/inativar`, `DELETE /api/vendedores/{id}` | Inativar o usuário revoga os refresh tokens dele. Desligar o vendedor revoga os refresh tokens dos usuários vinculados, na mesma transação que grava o desligamento (`RevokeAllByVendedorID`). Motivo gravado: `inativacao`. |
+| SEC-07 | `POST /api/auth/refresh` | Toda revogação grava `refresh_tokens.revoked_reason` (migração 21). Reuso, fora da janela de 30 s, de token revogado por `rotacao` → alerta `[auth][seguranca]` com `user_id`, `token_id`, IP e UA, e revogação de **todos** os refresh tokens do usuário (`revogacao_massa`). Outros motivos e `NULL` (legado) → só log informativo. Resposta HTTP sem mudança (`401` `"refresh token revogado"`). |
+| BUG-08 | `POST /api/clientes` | O `201` traz `created_at` e `updated_at` preenchidos (o cliente é relido do banco depois do INSERT, com ou sem carteira). Antes: `0001-01-01T00:00:00Z`. O `PUT` já relia. |
+| FE-07 | (frontend, `apiClient.ts`) | Falha de rede, timeout ou falha do Web Lock no **próprio** refresh → `NetworkError`, sem logout e sem chamar `/api/auth/logout`; a fila recebe o mesmo erro. `401`, `429` e `500` no refresh continuam deslogando. Sem mudança de contrato na API. |
+| FE-09 | (frontend, listagens) | Com erro na carga, as 10 listagens mostram só o alerta, sem "Nenhum ... cadastrado". Sem mudança de contrato na API. |
+
+> **Limitação conhecida (card SEC-08, `tarefas/afazer.md`):** o SEC-06 revoga só os refresh tokens. Se o usuário for reativado antes de o access token antigo expirar (TTL de 24h), esse token volta a valer.
 
 ## Endpoints
 
@@ -121,7 +139,13 @@ Exemplos:
 - **Falha de banco (SEC-02):** erro ao revogar o token antigo ou ao gravar o novo refresh token → `500` `"erro interno"`, **sem cookie e sem novo refresh token**. Antes, a falha ao gravar o novo refresh token respondia `200` só com o access token.
 - **Erros:** `400` `"refresh_token é obrigatório"`; `401` inválido/expirado/revogado; `429` rate limit; `500` erro interno.
 - **Frontend (SEC-02):** `apiClient.ts` serializa o refresh entre abas com `navigator.locks` (lock `"rp-auth-refresh"`) e, se o refresh responder `401`, repete a requisição original uma única vez.
-- **Frontend (FE-06, 2026-09-25):** se essa repetição (retry após o refresh) falhar por **erro de rede**, o `apiClient.ts` **não** faz logout e propaga o mesmo erro de rede (o erro original do `fetch`, ex.: `Failed to fetch`) para todas as requisições que estavam na fila do refresh (`onRefreshComplete(false, erro)`). Antes, a fila recebia "Sessão expirada. Faça login novamente." sem que o usuário fosse deslogado. "Sessão expirada" só aparece quando há logout (refresh `401`/`429`/`500`/timeout/erro de rede no próprio refresh, ou retry `401`). Depois da falha de rede, o estado do refresh é liberado e um novo `401` dispara um novo refresh.
+- **Frontend (FE-06, 2026-09-25):** se essa repetição (retry após o refresh) falhar por **erro de rede**, o `apiClient.ts` **não** faz logout e propaga o mesmo erro de rede (o erro original do `fetch`, ex.: `Failed to fetch`) para todas as requisições que estavam na fila do refresh (`onRefreshComplete(false, erro)`). Antes, a fila recebia "Sessão expirada. Faça login novamente." sem que o usuário fosse deslogado. "Sessão expirada" só aparece quando há logout (refresh `401`/`429`/`500`, ou retry `401`). Depois da falha de rede, o estado do refresh é liberado e um novo `401` dispara um novo refresh.
+- **Frontend (FE-07, Lote 6, 2026-09-26):** falha de rede, timeout ou falha do Web Lock no **próprio** `POST /api/auth/refresh` também deixou de fazer logout: o `apiClient.ts` propaga `NetworkError` para a requisição e para a fila, sem chamar `/api/auth/logout` (o refresh token continua válido no cookie). Antes, esses casos deslogavam.
+- **Motivo da revogação e reuso (SEC-07, Lote 6, 2026-09-26):** toda revogação grava `refresh_tokens.revoked_reason` (migração 21): `rotacao` (refresh), `logout`, `revogacao_massa`, `senha` (troca ou reset de senha) e `inativacao` (SEC-06). No reuso fora da janela de 30 s:
+  - token revogado por `rotacao` → log `[auth][seguranca] refresh: reuso de refresh token já rotacionado fora da janela de graça (possível roubo de token) — revogando todas as sessões: user_id=... token_id=... revoked_at=... ip=... ua=...` e `RevokeAllUserTokens` com motivo `revogacao_massa` (todas as sessões do usuário perdem o refresh);
+  - outro motivo ou `NULL` (tokens de antes da migração) → só log informativo `token revogado apresentado fora da janela de graça: user_id=... token_id=... motivo=...`, sem revogação em massa. Isso elimina o falso positivo de "possível roubo" para abas antigas depois de um logout.
+  - A resposta HTTP continua idêntica (`401` `"refresh token revogado"`) e o reuso fora da janela continua contando no rate limit.
+- **Usuário inativado (SEC-06):** como os refresh tokens são revogados na inativação, o refresh desse usuário responde `401` `"refresh token revogado"`. `401` `"usuário inativo"` continua valendo para um token ainda válido de usuário inativo.
 
 #### POST /api/auth/logout
 - **Auth:** nenhuma (usa `refresh_token` no body)
@@ -132,7 +156,8 @@ Exemplos:
 - **Auth:** Bearer Token
 - **Resposta:** `{ id, nome, email, role, ativo, id_vendedor, created_at, ultimo_login_at, vendedor_desligado }`
 - **`vendedor_desligado` (bool, 2026-09-24):** `true` só para usuário `normal` vinculado a vendedor com `data_desligamento` preenchida. É `false` para admin, para usuário sem vínculo e para vínculo órfão (vendedor inexistente). O `/me` continua acessível para o vendedor desligado (não retorna `403`). O frontend usa este campo e o `id_vendedor` atualizado para revalidar a sessão (em vez de confiar só no `localStorage`) e exibir o aviso.
-- **Erros:** `401` não autenticado; `404` usuário não encontrado; `500` erro interno (inclui falha ao checar se o vendedor está desligado).
+- **Erros:** `401` não autenticado; `401` `"usuário inativo"` (SEC-06); `404` usuário não encontrado; `500` erro interno (inclui falha ao checar se o vendedor está desligado ou o status do usuário).
+- **Usuário inativo em rotas protegidas (SEC-06, Lote 6, 2026-09-26):** vale para o `/me` e para todas as rotas com Bearer. O middleware lê `ativo` e `role` do usuário no banco a cada requisição, sem cache. Inativo ou inexistente → `401` `"usuário inativo"`; o front faz logout. Erro de banco → `500`. A role do banco substitui a do token, então um rebaixamento vale sem novo login.
 
 #### POST /api/auth/reset-password
 - **Auth:** Bearer Token (qualquer role autenticado)
@@ -163,6 +188,7 @@ Exemplos:
 - **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
 - **Descrição:** Ativa ou inativa o usuário
 - **Body inválido (BUG-06, 2026-09-25):** vazio, `null`, `{}` ou `{"ativo":null}` → toggle; `{"ativo":true|false}` → define o valor; body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`, sem alterar o usuário. Antes esses bodies caíam no toggle.
+- **Efeito na sessão (SEC-06, Lote 6, 2026-09-26):** inativar revoga os refresh tokens do usuário (`revoked_reason = 'inativacao'`), e a próxima requisição dele em qualquer rota protegida recebe `401` `"usuário inativo"`. Limitação (card SEC-08): reativado antes de o access token antigo expirar (24h), esse token volta a valer.
 
 ### Admin (`/api/admin/*`) — admin only
 
@@ -295,6 +321,7 @@ Exemplos:
 - **Escopo (SEC-01):** usuário `normal` sem vendedor → `403` `"usuário sem vendedor vinculado"`. Com vendedor → `201`, e o cliente é vinculado automaticamente à carteira do vendedor. Admin: sem mudança.
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" (opcional, "AAAA-MM-DD", default hoje) }`
 - **Descrição:** Cria um novo cliente. `cliente_id_origem` é a PK `BIGINT AUTO_INCREMENT` da tabela, gerada nativamente pelo MySQL (não é aceita no body), e `ativo` é sempre `true` na criação. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação. Não existe mais campo `id` — `cliente_id_origem` é o único identificador.
+- **Timestamps (BUG-08, Lote 6, 2026-09-26):** o `201` traz `created_at` e `updated_at` preenchidos, porque o cliente é relido do banco depois do INSERT (`relerClienteCriado`, com ou sem vínculo de carteira). Antes vinham `0001-01-01T00:00:00Z`. Os demais creates (vendedores, usuários, produtos, pagamentos, oportunidades, visitas e estoque) ainda devolvem o objeto em memória (card BUG-09).
 - **CNPJ (NEG-01 + NEG-02, 2026-09-25):** aceita o CNPJ numérico e o **alfanumérico** da Receita (vigente desde julho de 2026).
   - **Envio:** com ou sem máscara (`.`, `/`, `-` e espaço), em maiúsculas ou minúsculas. Ex.: `12ABC34501DE35`, `12.ABC.345/01DE-35`, `12.abc.345/01de-35`, `11222333000181` ou `11.222.333/0001-81`.
   - **Formato:** 14 caracteres; as 12 primeiras posições são `[0-9A-Z]` e as 2 últimas (DVs) são numéricas.

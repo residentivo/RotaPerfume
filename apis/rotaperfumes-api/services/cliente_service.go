@@ -225,7 +225,21 @@ func (s *ClienteService) CreateCliente(ctx context.Context, db *sql.DB, input Cl
 	if s.Cfg.Verbose {
 		log.Printf("[clientes] criado: cliente_id_origem=%d razao_social=%s", c.ClienteIDOrigem, c.RazaoSocial)
 	}
-	return c, nil
+	return s.relerClienteCriado(ctx, db, c), nil
+}
+
+// relerClienteCriado relê do banco o cliente recém-gravado (BUG-08), para
+// devolver created_at/updated_at preenchidos pelo MySQL. O INSERT já foi
+// confirmado: se a releitura falhar, loga e devolve o objeto em memória
+// (timestamps zerados) em vez de responder erro para uma gravação que deu
+// certo — um retry do cliente esbarraria no CNPJ duplicado.
+func (s *ClienteService) relerClienteCriado(ctx context.Context, db *sql.DB, c *models.Cliente) *models.Cliente {
+	gravado, err := s.repo.GetByID(ctx, db, c.ClienteIDOrigem)
+	if err != nil {
+		log.Printf("[clientes] criado, mas falhou a releitura: cliente_id_origem=%d: %v", c.ClienteIDOrigem, err)
+		return c
+	}
+	return gravado
 }
 
 // CreateClienteNaCarteira cria um novo cliente e, na MESMA transação, o
@@ -268,7 +282,7 @@ func (s *ClienteService) CreateClienteNaCarteira(ctx context.Context, db *sql.DB
 		log.Printf("[clientes] criado na carteira: cliente_id_origem=%d vendedor_id=%d carteira_id=%d",
 			c.ClienteIDOrigem, vendedorID, vinculo.CarteiraIDOrigem)
 	}
-	return c, nil
+	return s.relerClienteCriado(ctx, db, c), nil
 }
 
 // mapearErroCNPJDuplicado traduz a violação do índice UNIQUE de CNPJ

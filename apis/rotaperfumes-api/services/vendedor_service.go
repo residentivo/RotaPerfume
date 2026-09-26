@@ -46,6 +46,7 @@ type VendedorService struct {
 	carteiraRepo *repositories.CarteiraRepository
 	clienteRepo  *repositories.ClienteRepository
 	usuarioRepo  *repositories.UsuarioRepository
+	refreshRepo  *repositories.RefreshTokenRepository
 	Cfg          *config.Config
 }
 
@@ -56,6 +57,7 @@ func NewVendedorService(db *sql.DB, cfg *config.Config) *VendedorService {
 		carteiraRepo: repositories.NewCarteiraRepository(),
 		clienteRepo:  repositories.NewClienteRepository(),
 		usuarioRepo:  repositories.NewUsuarioRepository(),
+		refreshRepo:  repositories.NewRefreshTokenRepository(),
 		Cfg:          cfg,
 	}
 }
@@ -294,8 +296,19 @@ func (s *VendedorService) inativarVendedorEUsuarios(ctx context.Context, db *sql
 		return 0, err
 	}
 
+	// SEC-06: na mesma transação, derruba as sessões de refresh de todos os
+	// usuários do vendedor. Idempotente (0 tokens pendentes não é erro);
+	// falha aqui faz rollback do desligamento inteiro.
+	tokensRevogados, err := s.refreshRepo.RevokeAllByVendedorID(ctx, tx, id, repositories.RevokeReasonInativacao)
+	if err != nil {
+		return 0, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("services: commit inativar vendedor: %w", err)
+	}
+	if s.Cfg.Verbose {
+		log.Printf("[vendedores] desligamento id=%d: refresh_tokens_revogados=%d", id, tokensRevogados)
 	}
 	return usuariosInativados, nil
 }

@@ -2,9 +2,9 @@
 
 **Banco:** MySQL, schema `rotaperfumes` (padrão do `Makefile`: `DB_NAME?=rotaperfumes`), charset `utf8mb4`, collation `utf8mb4_unicode_ci`.
 **Fonte da verdade:** os scripts em `sql/`. Em caso de divergência entre este manual e um script, vale o script.
-**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no fechamento do Lote 5 com o NEG-02, CNPJ alfanumérico).
+**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no fechamento do Lote 5 com o NEG-02, CNPJ alfanumérico, e no Lote 6, 2026-09-26, com a migração 21 e a coluna `refresh_tokens.revoked_reason`).
 
-> **Escopo desta versão:** o card DOC-02 cobre a tabela `clientes`, o índice único `uq_clientes_cnpj` e a migração 19 (unificação dos CNPJs duplicados). As outras tabelas aparecem só no índice da seção 1, com o script de origem e os relacionamentos com `clientes`. O detalhamento campo a campo delas ainda não foi feito.
+> **Escopo desta versão:** o card DOC-02 cobre a tabela `clientes`, o índice único `uq_clientes_cnpj` e a migração 19 (unificação dos CNPJs duplicados). O Lote 6 acrescentou a tabela `refresh_tokens` e a migração 21 (seção 7). As outras tabelas aparecem só no índice da seção 1, com o script de origem e os relacionamentos com `clientes`. O detalhamento campo a campo delas ainda não foi feito.
 
 ---
 
@@ -15,7 +15,7 @@ A ordem abaixo é a do `make db-up`, que cria o schema vazio. O `make db-seed` r
 | Tabela | Script | Relação com `clientes` |
 | --- | --- | --- |
 | `vendedores`, `usuarios` | `sql/01_ddl_usuarios.sql` (+ `08_alter_usuarios_deve_trocar_senha.sql`) | - |
-| `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` | - |
+| `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` (+ `21_alter_refresh_tokens_revoked_reason.sql` em bancos existentes; seção 7) | - (ligada a `usuarios`) |
 | `senha_historico` | `sql/07_ddl_senha_historico.sql` (+ `13_alter_senha_historico_tipo_reset.sql`) | - |
 | `clientes` | `sql/09_ddl_clientes.sql` (+ `19_alter_clientes_cnpj_unique.sql` e `20_alter_clientes_cnpj_comment.sql` em bancos existentes) | tabela principal |
 | `produtos` | `sql/10_ddl_produtos.sql` | - |
@@ -201,3 +201,65 @@ SELECT tabela, acao, COUNT(*) FROM clientes_merge_backup_20260925_vinculos
 ```
 
 Referências: cards NEG-01, NEG-03, NEG-04 e DB-01 em `tarefas/feito.md`; roteiro `docs/roteiro-teste-manual-lote4.md`, seção 1.
+
+---
+
+## 7. Tabela `refresh_tokens` e migração 21 (SEC-07, Lote 6, 2026-09-26)
+
+Guarda os refresh tokens (hash SHA-256) emitidos no login e no refresh. Cada refresh é de uso único: o token antigo é revogado e um novo é gravado na mesma transação.
+
+| Campo | Tipo | Nulo | Descrição |
+| --- | --- | --- | --- |
+| `id` | BIGINT AUTO_INCREMENT | não | PK. É o `token_id` dos logs de `[auth]`. |
+| `usuario_id` | BIGINT | não | FK `fk_refresh_token_usuario` → `usuarios.id` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`). |
+| `token_hash` | VARCHAR(255) | não | SHA-256 do refresh token. **Único** (`uk_refresh_token_hash`). O token em texto puro nunca é gravado. |
+| `expires_at` | DATETIME | não | Expiração. |
+| `revoked_at` | DATETIME | sim | Data/hora da revogação. `NULL` = ativo. |
+| `revoked_reason` | ENUM('rotacao','logout','revogacao_massa','senha','inativacao') | sim | **Novo (migração 21).** Motivo da revogação, gravado junto com `revoked_at`. `NULL` = token ativo ou revogado antes da migração (legado). |
+| `ip_origem` | VARCHAR(45) | sim | IP que pediu o token (IPv4/IPv6). |
+| `user_agent` | TEXT | sim | User-Agent no momento da criação. |
+| `created_at`, `updated_at` | TIMESTAMP | não | Controle. |
+
+**Índices:** `PRIMARY` (`id`), `uk_refresh_token_hash` (UNIQUE, `token_hash`), `idx_refresh_usuario_id`, `idx_refresh_expires_at` e `idx_refresh_revoked_at`. A migração 21 **não** cria índice para `revoked_reason`: as buscas são por `token_hash` e `usuario_id`, e o motivo só é lido depois de achar a linha.
+
+### Valores de `revoked_reason`
+
+| Valor | Quando é gravado | Onde no código |
+| --- | --- | --- |
+| `rotacao` | `POST /api/auth/refresh`: o token antigo é trocado por um novo. | `RefreshTokenService.BeginRotation` |
+| `logout` | `POST /api/auth/logout`. | `auth_handler.go` (Logout) |
+| `revogacao_massa` | Reuso, fora da janela de 30 s, de um token com motivo `rotacao` (possível roubo): todos os tokens ativos do usuário são revogados. | `auth_handler.go` (`tratarTokenRevogadoForaDaJanela`) |
+| `senha` | Troca de senha pelo usuário (`POST /api/auth/reset-password`) ou reset pelo admin (`POST /api/admin/reset-password`). | `auth_handler.go`, `usuario_handler.go` |
+| `inativacao` | Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) ou desligamento do vendedor dele (`DELETE /api/vendedores/{id}`, na mesma transação, via `RevokeAllByVendedorID`). SEC-06. | `usuario_handler.go`, `vendedor_service.go` |
+
+**Regra de uso (SEC-07, opção B):** só o reuso de um token com motivo `rotacao` fora da janela de graça gera o alerta `[auth][seguranca]` e a revogação em massa. Os demais motivos e o `NULL` legado geram só log informativo. A resposta HTTP é sempre `401` `"refresh token revogado"`.
+
+### Migração 21
+
+**Script:** `sql/21_alter_refresh_tokens_revoked_reason.sql`
+**Comando:** `make db-fix-revoked-reason`
+**Reversão:** `make db-revert-revoked-reason` (`sql/21_revert_refresh_tokens_revoked_reason.sql`; remove a coluna e perde os motivos gravados)
+**Situação:** aplicada no banco local em 2026-09-26 (107 tokens na tabela; os já revogados antes da migração ficaram com `NULL`).
+
+- Adiciona `revoked_reason` logo depois de `revoked_at`, com `DEFAULT NULL` e COMMENT "Motivo da revogação (NULL = ativo ou revogado antes do SEC-07/legado)".
+- Não altera nenhuma linha: os tokens legados ficam `NULL` de propósito, porque não há como saber o motivo real.
+- **Idempotente:** consulta `information_schema.COLUMNS` e só roda o `ALTER TABLE` se a coluna ainda não existir.
+- Como a 19 e a 20, não faz parte do `db-up`/`db-seed`/`db-reset`. Bancos novos já recebem a coluna pelo `sql/06_ddl_refresh_tokens.sql` (atualizado no mesmo card).
+
+### Consultas de verificação
+
+```sql
+SHOW FULL COLUMNS FROM refresh_tokens LIKE 'revoked_reason';
+-- Type = enum('rotacao','logout','revogacao_massa','senha','inativacao'), Null = YES, Default = NULL
+
+SELECT revoked_reason, COUNT(*) AS tokens,
+       SUM(revoked_at IS NULL) AS ativos
+  FROM refresh_tokens
+ GROUP BY revoked_reason;
+-- ativos só aparecem na linha revoked_reason = NULL
+
+SELECT COUNT(*) FROM refresh_tokens
+ WHERE revoked_at IS NULL AND revoked_reason IS NOT NULL;   -- 0 (ativo nunca tem motivo)
+```
+
+Referências: cards SEC-06 e SEC-07 em `tarefas/fazendo.md`; roteiro `docs/roteiro-teste-manual-lote6.md`, seção 5.
