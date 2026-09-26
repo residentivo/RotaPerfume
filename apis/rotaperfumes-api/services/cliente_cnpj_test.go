@@ -53,9 +53,21 @@ func TestClienteService_CreateCliente_CNPJ(t *testing.T) {
 			},
 			wantCNPJ: "11222333000181",
 		},
+		{
+			nome: "NEG-02: alfanumérico minúsculo com máscara grava sem máscara e em maiúsculas",
+			cnpj: "12.abc.345/01de-35",
+			expect: func(m sqlmock.Sqlmock) {
+				m.ExpectExec(reInsertClienteCNPJ).
+					WithArgs("12ABC34501DE35", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), true).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+			wantCNPJ: "12ABC34501DE35",
+		},
 		{nome: "13 dígitos", cnpj: "1122233300018", wantErr: services.ErrCNPJInvalido},
 		{nome: "15 dígitos", cnpj: "112223330001810", wantErr: services.ErrCNPJInvalido},
-		{nome: "com letras", cnpj: "11A22333000181", wantErr: services.ErrCNPJInvalido},
+		{nome: "alfanumérico com DV errado", cnpj: "12ABC34501DE36", wantErr: services.ErrCNPJInvalido},
+		{nome: "letra na posição do DV", cnpj: "12ABC34501DEA5", wantErr: services.ErrCNPJInvalido},
+		{nome: "símbolo fora da máscara", cnpj: "12ABC34501DE3#", wantErr: services.ErrCNPJInvalido},
 		{nome: "todos iguais", cnpj: "11.111.111/1111-11", wantErr: services.ErrCNPJInvalido},
 		{nome: "DV inválido", cnpj: "12345678000199", wantErr: services.ErrCNPJInvalido},
 		{nome: "só máscara vira vazio de dígitos", cnpj: "../-", wantErr: services.ErrCNPJInvalido},
@@ -156,6 +168,14 @@ func TestClienteService_UpdateCliente_CNPJ(t *testing.T) {
 		{
 			nome: "CNPJ com DV válido (com máscara) grava só dígitos", cnpj: "11.444.777/0001-61",
 			wantArgUp: "11444777000161",
+		},
+		{
+			nome: "NEG-02: alfanumérico minúsculo grava em maiúsculas", cnpj: "12abc34501de35",
+			wantArgUp: "12ABC34501DE35",
+		},
+		{
+			nome: "NEG-02: alfanumérico com DV errado é recusado sem query", cnpj: "12.ABC.345/01DE-36",
+			wantErr: services.ErrCNPJInvalido,
 		},
 		{
 			nome: "formato inválido é recusado antes de consultar o banco", cnpj: "123",

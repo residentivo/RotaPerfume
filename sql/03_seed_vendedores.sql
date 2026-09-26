@@ -6,17 +6,23 @@
 --
 -- Cada vendedor (ativo ou não) recebe um usuário com:
 --   role = 'normal'
---   email = v<ID>.<slug-nome>@rotaperfumes.com.br
---   senha placeholder (todos usam "Mudar@123" hashed)
+--   email = <nome>.<sobrenome>@rotaperfumes.com.br (minúsculas, sem acento;
+--           homônimos recebem o sufixo da UF, ex.: henrique.oliveira.pr@)
+--   password_hash = placeholder (não é um bcrypt válido; ninguém loga com ele)
 --
--- ATENÇÃO: hash bcrypt placeholders — substituir via:
---   cd apis/shared && go run ./cmd/seedusers
+-- ATENÇÃO: a senha real NÃO é definida neste arquivo. O `make db-seed`, logo
+-- depois deste script, roda `go run ./cmd/resetpassword -all-users`
+-- (apis/shared), que troca todos os placeholders pelo bcrypt de:
+--   1) SEED_USER_PASSWORD do .env, se estiver definida; ou
+--   2) uma senha aleatória de 16 caracteres, impressa no console
+--      (USER_PASSWORD=...), a mesma para todos os usuários com placeholder.
 -- ============================================================
 
 SET NAMES utf8mb4;
 
--- Placeholder genérico para "Mudar@123" (bcrypt cost 12)
--- O hash real será gerado pelo Go quando BackBrain executar make gen-hash
+-- Placeholder de hash. O nome da variável é legado: no `make db-seed` a senha
+-- NÃO é "Mudar@123" (ver cabeçalho). O hash real é gravado depois pelo
+-- resetpassword -all-users.
 SET @HASH_MUDAR_123 = '$2a$12$XXXXPLACEHOLDER_MUDAR123_SERA_SUBSTITUIDO_PELO_GOXXXX';
 
 -- ------------------------------------------------------------
@@ -68,8 +74,9 @@ INSERT IGNORE INTO `vendedores` (`id`, `nome`, `regiao`, `uf`, `data_admissao`, 
 
 -- ------------------------------------------------------------
 -- Usuários dos vendedores (INSERT IGNORE para idempotência)
--- Formato de email: v<ID>.<slug-nome>@rotaperfumes.com.br
--- Slug: nome lowercase, espaços → underscores, acentos → normalizados
+-- Formato de email: <nome>.<sobrenome>@rotaperfumes.com.br
+-- Minúsculas, acentos removidos, nome e sobrenome separados por ponto.
+-- Homônimos: sufixo .<uf> (ex.: vinicius.lopes.mg@ e vinicius.lopes.rs@)
 -- ------------------------------------------------------------
 
 REPLACE INTO `usuarios` (`nome`, `email`, `password_hash`, `role`, `id_vendedor`, `ativo`, `deve_trocar_senha`) VALUES

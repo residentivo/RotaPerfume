@@ -34,9 +34,13 @@ func TestIntegracaoHTTP_SEC02_RefreshConcorrente(t *testing.T) {
 	svc := apisvc.NewRefreshTokenService()
 	ctx := context.Background()
 
-	// Várias rodadas para dar chance à corrida real. Cada rodada tem 1 falha
-	// no máximo, então o refreshLimiter (10 falhas por IP) não é atingido.
-	const rodadas = 8
+	// SEC-04: 15 refreshes paralelos com o mesmo token (abas concorrentes)
+	// resultam em exatamente 1×200 e o resto 401, sem nenhum 429 — a corrida
+	// no BeginRotation e o token revogado dentro da janela de graça não contam
+	// no refreshLimiter. Várias rodadas somam bem mais de 10 falhas do mesmo
+	// IP; se contassem, as rodadas seguintes receberiam 429.
+	const rodadas = 3
+	const paralelos = 15
 	for i := 0; i < rodadas; i++ {
 		t.Run(fmt.Sprintf("rodada %d", i+1), func(t *testing.T) {
 			tok, err := svc.GenerateRefreshToken(ctx, c.db, usu, "127.0.0.1", "go-test")
@@ -45,25 +49,34 @@ func TestIntegracaoHTTP_SEC02_RefreshConcorrente(t *testing.T) {
 
 			var wg sync.WaitGroup
 			start := make(chan struct{})
-			status := make([]int, 2)
-			erros := make([]any, 2)
-			for g := 0; g < 2; g++ {
+			status := make([]int, paralelos)
+			novos := make([]string, paralelos)
+			for g := 0; g < paralelos; g++ {
 				wg.Add(1)
 				go func(g int) {
 					defer wg.Done()
 					<-start
-					st, body := c.req("POST", "/api/auth/refresh", "", map[string]any{"refresh_token": tok})
-					status[g], erros[g] = st, body["error"]
+					resp := postRefresh(t, c.srv.URL+"/api/auth/refresh", map[string]any{"refresh_token": tok}, "")
+					defer resp.Body.Close()
+					_, novos[g] = refreshCookies(resp)
+					status[g] = resp.StatusCode
 				}(g)
 			}
 			close(start)
 			wg.Wait()
 
 			got := map[int]int{}
-			for _, s := range status {
+			novoTok := ""
+			for g, s := range status {
 				got[s]++
+				if s == http.StatusOK {
+					novoTok = novos[g]
+				} else {
+					assert.Empty(t, novos[g], "401 não pode emitir refresh token")
+				}
 			}
-			assert.Equal(t, map[int]int{http.StatusOK: 1, http.StatusUnauthorized: 1}, got, "erros: %v", erros)
+			assert.Equal(t, map[int]int{http.StatusOK: 1, http.StatusUnauthorized: paralelos - 1}, got)
+			assert.Zero(t, got[http.StatusTooManyRequests], "corrida entre abas não pode gerar 429")
 
 			// O token antigo foi revogado e só UM novo foi emitido.
 			var revogado bool
@@ -72,6 +85,11 @@ func TestIntegracaoHTTP_SEC02_RefreshConcorrente(t *testing.T) {
 			assert.True(t, revogado)
 			ativosDepois := c.contar("SELECT COUNT(*) FROM refresh_tokens WHERE usuario_id = ? AND revoked_at IS NULL", usu)
 			assert.Equal(t, ativosAntes, ativosDepois, "revoga 1 e emite 1: o total de ativos não muda")
+
+			// A aba vencedora segue funcionando com o token novo.
+			require.NotEmpty(t, novoTok, "o 200 deve trazer o novo refresh token em Set-Cookie")
+			st, body := c.req("POST", "/api/auth/refresh", "", map[string]any{"refresh_token": novoTok})
+			assert.Equal(t, http.StatusOK, st, "refresh com o token novo: %v", body)
 		})
 	}
 

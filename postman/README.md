@@ -73,11 +73,21 @@ Exemplos:
 
 | Card | Endpoint | Mudança |
 |------|----------|---------|
-| SEC-02 | `POST /api/auth/refresh` | Novo `401` `"refresh token revogado"` quando uma requisição concorrente já usou o token (conta no rate limit). Falha ao gravar o novo refresh token → `500` `"erro interno"`, sem cookie (antes: `200` sem refresh). Erro de banco na revogação → `500`. |
+| SEC-02 | `POST /api/auth/refresh` | Novo `401` `"refresh token revogado"` quando uma requisição concorrente já usou o token (contava no rate limit; deixou de contar no SEC-04, Lote 5). Falha ao gravar o novo refresh token → `500` `"erro interno"`, sem cookie (antes: `200` sem refresh). Erro de banco na revogação → `500`. |
 | SEC-03 | `GET /api/vendedores` | Admin: todos (sem mudança). `normal` com vínculo: `data` só com o próprio vendedor (`id, nome, regiao, uf, data_desligamento`). Sem vínculo: `data: []`. Vendedor desligado: `403` `"acesso bloqueado: vendedor desligado"`. |
 | BUG-06 | `PATCH /api/clientes\|produtos\|usuarios/{id}/inativar` | Body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`. Vazio, `null`, `{}` ou `{"ativo":null}` → toggle. `{"ativo":true\|false}` → define o valor. Em clientes, sem acesso ao registro continua `404` antes do `400`. |
-| NEG-01 | `POST`/`PUT /api/clientes` | Novo `400` `"cnpj inválido"` (formato, 14 dígitos ou dígito verificador). Novo `409` `"cnpj já cadastrado"` (genérico). Aceita máscara; grava e devolve só dígitos. CNPJ válido usado nos exemplos: `11222333000181`. |
+| NEG-01 | `POST`/`PUT /api/clientes` | Novo `400` `"cnpj inválido"` (formato, 14 dígitos ou dígito verificador). Novo `409` `"cnpj já cadastrado"` (genérico). Aceita máscara; grava e devolve só dígitos (no Lote 5, o NEG-02 passou a aceitar o CNPJ alfanumérico). CNPJ válido usado nos exemplos: `11222333000181`. |
 | NEG-04 | `PUT /api/clientes/{id}` | O dígito verificador é exigido em **toda** gravação, mesmo quando o CNPJ enviado é igual ao atual (antes só era exigido se o CNPJ mudasse). DV inválido → `400` `"cnpj inválido"` sem consultar o banco, inclusive para id inexistente (antes: `404`). Clientes legados com DV inválido só podem ser editados depois de corrigir o CNPJ. `PATCH /inativar` não valida o CNPJ. |
+
+## Mudanças de contrato do Lote 5 (2026-09-25)
+
+> Resumo das mudanças. O detalhe está em cada endpoint abaixo e nos exemplos marcados com `(NEG-02, 2026-09-25)` na collection. Roteiro manual: `docs/roteiro-teste-manual-lote5.md`. Os cards continuam em `tarefas/fazendo.md` até a validação do usuário.
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| NEG-02 | `POST`/`PUT /api/clientes`, `GET /api/clientes?q=` | Aceita o **CNPJ alfanumérico** da Receita (vigente desde julho de 2026). As 12 primeiras posições são `[0-9A-Z]` e os 2 DVs são numéricos. Envio com ou sem máscara, em maiúsculas ou minúsculas. Retorno sempre com 14 caracteres, sem máscara e em maiúsculas. A busca `?q=` aceita máscara e não diferencia maiúsculas de minúsculas. Os erros `400`/`409` não mudam. Exemplo oficial: `12ABC34501DE35` (`12.ABC.345/01DE-35`). CNPJs numéricos continuam válidos. |
+| SEC-04 | `POST /api/auth/refresh` | Um token revogado há no máximo 30 s (janela de graça) e a corrida no `BeginRotation` **não contam mais** no rate limit por IP. O reuso fora da janela continua contando e gera log `[auth][seguranca]`. A resposta HTTP não muda. |
+| FE-06 | (frontend, `apiClient.ts`) | Falha de rede no retry após o refresh não faz logout: a fila recebe o mesmo erro de rede, e não mais "Sessão expirada. Faça login novamente.". Sem mudança de contrato na API. |
 
 ## Endpoints
 
@@ -101,10 +111,17 @@ Exemplos:
 - **Body:** `{ "refresh_token": "..." }`
 - **Resposta:** Novo par `{ "access_token", "refresh_token", "token_type", "expires_in" }`
 - **Nota:** O refresh token antigo é revogado (single-use)
-- **Corrida entre requisições (SEC-02, 2026-09-25):** a revogação agora é condicional e a rotação é transacional (`BeginRotation`/`Issue`). Se duas requisições usam o mesmo refresh token ao mesmo tempo, só uma recebe o novo par; a outra recebe `401` `{"success":false,"error":"refresh token revogado"}`. Essa falha **conta no rate limit** de refresh.
+- **Corrida entre requisições (SEC-02, 2026-09-25):** a revogação agora é condicional e a rotação é transacional (`BeginRotation`/`Issue`). Se duas requisições usam o mesmo refresh token ao mesmo tempo, só uma recebe o novo par; a outra recebe `401` `{"success":false,"error":"refresh token revogado"}`. Na versão do SEC-02, essa falha contava no rate limit de refresh; o SEC-04 mudou isso (ver abaixo).
+- **Rate limit e reuso de token revogado (SEC-04, 2026-09-25):** o `refreshLimiter` por IP (10 falhas em 1 minuto, bloqueio de 5 minutos → `429` com `Retry-After`) passou a distinguir a corrida legítima do reuso suspeito:
+  - **Janela de graça de 30 s** (`RefreshRevokeGraceWindow`): um token revogado há no máximo 30 s (outra aba ou outro usuário atrás do mesmo IP/NAT acabou de rotacioná-lo) responde `401` e **não conta** no rate limit. Log: `token revogado recentemente (corrida entre abas), não conta no rate limit`.
+  - **Corrida na rotação:** quando a requisição perde a corrida no `BeginRotation` (outra requisição concorrente revogou o token), responde `401` e **não conta**. Log: `token já revogado por requisição concorrente (corrida no BeginRotation), não conta no rate limit`.
+  - **Reuso fora da janela** (token revogado há mais de 30 s): **continua contando** e gera o log `[auth][seguranca] refresh: reuso de refresh token revogado fora da janela de graça (possível roubo de token): ip=... ua=...`.
+  - **Continuam contando:** token não encontrado e token expirado.
+  - **Resposta HTTP sem mudança:** dentro e fora da janela o corpo é idêntico (`401` `{"success":false,"error":"refresh token revogado"}`), sem `Set-Cookie` e sem emitir token. O cliente não consegue distinguir os dois casos. A rotação continua de uso único e o frontend não mudou.
 - **Falha de banco (SEC-02):** erro ao revogar o token antigo ou ao gravar o novo refresh token → `500` `"erro interno"`, **sem cookie e sem novo refresh token**. Antes, a falha ao gravar o novo refresh token respondia `200` só com o access token.
 - **Erros:** `400` `"refresh_token é obrigatório"`; `401` inválido/expirado/revogado; `429` rate limit; `500` erro interno.
 - **Frontend (SEC-02):** `apiClient.ts` serializa o refresh entre abas com `navigator.locks` (lock `"rp-auth-refresh"`) e, se o refresh responder `401`, repete a requisição original uma única vez.
+- **Frontend (FE-06, 2026-09-25):** se essa repetição (retry após o refresh) falhar por **erro de rede**, o `apiClient.ts` **não** faz logout e propaga o mesmo erro de rede (o erro original do `fetch`, ex.: `Failed to fetch`) para todas as requisições que estavam na fila do refresh (`onRefreshComplete(false, erro)`). Antes, a fila recebia "Sessão expirada. Faça login novamente." sem que o usuário fosse deslogado. "Sessão expirada" só aparece quando há logout (refresh `401`/`429`/`500`/timeout/erro de rede no próprio refresh, ou retry `401`). Depois da falha de rede, o estado do refresh é liberado e um novo `401` dispara um novo refresh.
 
 #### POST /api/auth/logout
 - **Auth:** nenhuma (usa `refresh_token` no body)
@@ -270,6 +287,7 @@ Exemplos:
 - **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira para o `normal`)
 - **Query (todos opcionais):** `?page=1&limit=20&uf=SP&segmento=Varejo&ativo=true&q=perfumaria&order_by=razao_social&order_dir=asc`
 - **Descrição:** Lista clientes paginada (total + pages), com filtros exatos por `uf`/`segmento`, filtro por status (`ativo=true|false`) e busca livre (`q`) em `razao_social` OU `cnpj`
+- **Busca por CNPJ (NEG-02, 2026-09-25):** o `q` pode vir com máscara e em maiúsculas ou minúsculas. Quando o `q` tem caracteres de máscara (`.`, `/`, `-`) e só caracteres de CNPJ, a API tira a máscara e converte para maiúsculas antes de buscar em `cnpj` (`ClienteFiltro.QCNPJ`); a busca em `razao_social` continua usando o `q` como veio (um nome com hífen continua sendo encontrado). Sem máscara, o `q` é usado direto, e a collation `utf8mb4_unicode_ci` ignora a caixa. A busca é por trecho (`LIKE`), então um prefixo como `12.abc.345` também encontra. Ex.: `?q=12ABC34501DE35`, `?q=12abc34501de35`, `?q=12.ABC.345/01DE-35` e `?q=12.abc.345` encontram o mesmo cliente.
 - **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, razao_social, cnpj, segmento, cidade, uf, data_cadastro, ativo, created_at, updated_at` (default: `id`; `id` é um alias de coluna aceito pela API, mapeado para `cliente_id_origem` — não existe mais campo `id` na resposta); `order_dir` aceita `asc`|`desc` case-insensitive (default: `asc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
 
 #### POST /api/clientes
@@ -277,7 +295,13 @@ Exemplos:
 - **Escopo (SEC-01):** usuário `normal` sem vendedor → `403` `"usuário sem vendedor vinculado"`. Com vendedor → `201`, e o cliente é vinculado automaticamente à carteira do vendedor. Admin: sem mudança.
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" (opcional, "AAAA-MM-DD", default hoje) }`
 - **Descrição:** Cria um novo cliente. `cliente_id_origem` é a PK `BIGINT AUTO_INCREMENT` da tabela, gerada nativamente pelo MySQL (não é aceita no body), e `ativo` é sempre `true` na criação. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação. Não existe mais campo `id` — `cliente_id_origem` é o único identificador.
-- **CNPJ (NEG-01, 2026-09-25):** aceita com ou sem máscara (`11.222.333/0001-81` ou `11222333000181`); grava e devolve só os 14 dígitos. `400` `"cnpj inválido"` para caractere fora de dígitos/máscara (inclui letras: o CNPJ alfanumérico da Receita ainda não é aceito), quantidade diferente de 14 dígitos, todos os dígitos iguais ou dígito verificador (módulo 11) errado. `409` `"cnpj já cadastrado"` se outro cliente já usa o CNPJ; a mensagem é genérica e não revela qual cliente.
+- **CNPJ (NEG-01 + NEG-02, 2026-09-25):** aceita o CNPJ numérico e o **alfanumérico** da Receita (vigente desde julho de 2026).
+  - **Envio:** com ou sem máscara (`.`, `/`, `-` e espaço), em maiúsculas ou minúsculas. Ex.: `12ABC34501DE35`, `12.ABC.345/01DE-35`, `12.abc.345/01de-35`, `11222333000181` ou `11.222.333/0001-81`.
+  - **Formato:** 14 caracteres; as 12 primeiras posições são `[0-9A-Z]` e as 2 últimas (DVs) são numéricas.
+  - **DV:** módulo 11 com os pesos do CNPJ numérico (5,4,3,2,9,8,7,6,5,4,3,2 para o 1º DV e 6,5,4,3,2,9,8,7,6,5,4,3,2 para o 2º). Cada caractere vale o código ASCII − 48 (`0`–`9` → 0–9, `A` → 17, …, `Z` → 42). Resto < 2 → DV 0; senão DV = 11 − resto. Para CNPJ só com dígitos, o cálculo é o mesmo de antes.
+  - **Retorno e gravação:** sempre 14 caracteres, sem máscara e em **maiúsculas** (ex.: enviar `12.abc.345/01de-35` grava e devolve `12ABC34501DE35`).
+  - **Erros (sem mudança):** `400` `"cnpj inválido"` para caractere fora de `[0-9A-Za-z]` e da máscara (ex.: `#`, `_`, acentos), letra nas posições do DV, tamanho diferente de 14, todos os caracteres iguais ou DV errado. `409` `"cnpj já cadastrado"` se outro cliente já usa o CNPJ (a comparação ignora máscara e caixa, porque o valor é normalizado antes); a mensagem é genérica e não revela qual cliente.
+  - **Exemplos:** `12ABC34501DE35` → `201`; `12ABC34501DE36` (DV errado) → `400`; `12ABC34501DEA5` (letra no DV) → `400`; `12ABC34501DE3#` → `400`.
 - **Nota histórica (resolvida):** versões anteriores geravam `cliente_id_origem` via `MAX(cliente_id_origem) + 1` sem transação/lock explícito, com risco teórico de colisão em criações concorrentes. Esse débito técnico foi eliminado na tarefa "Promover colunas \*_id_origem a PK autoincremento" (2026-09-15) — a geração agora é feita nativamente pelo MySQL via `AUTO_INCREMENT`.
 
 #### GET /api/clientes/{id}
@@ -290,7 +314,7 @@ Exemplos:
 - **Sem alterações (BUG-04):** `200`.
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" ("AAAA-MM-DD") }`
 - **Descrição:** Atualiza os dados de um cliente existente. `cliente_id_origem` e `ativo` **não** são editáveis por esta rota (use `PATCH /api/clientes/{id}/inativar` para alterar `ativo`). Retorna `200` com o cliente atualizado, `404` se não existir, `400` se o payload for inválido.
-- **CNPJ (NEG-01, 2026-09-25):** mesma normalização do `POST` (máscara aceita, grava só dígitos). **Toda gravação exige CNPJ válido (NEG-04, 2026-09-25):** formato (14 dígitos) e dígito verificador, mesmo quando o CNPJ enviado é igual ao atual. DV inválido → `400` `"cnpj inválido"`, sem consultar o banco e sem gravar; por isso, id inexistente com DV inválido responde `400`, e não `404` (o `404` vem do UPDATE com 0 linhas, sem SELECT prévio). Clientes legados com DV inválido só podem ser editados depois de corrigir o CNPJ (antes do NEG-04, o DV só era exigido se o CNPJ mudasse). `PATCH /api/clientes/{id}/inativar` não valida o CNPJ. `409` `"cnpj já cadastrado"` se o novo CNPJ pertence a outro cliente. O escopo é checado antes: sem acesso, `404` mesmo com CNPJ inválido.
+- **CNPJ (NEG-01 + NEG-02, 2026-09-25):** mesma regra e normalização do `POST`: numérico ou alfanumérico, máscara e minúsculas aceitas, grava e devolve 14 caracteres sem máscara e em maiúsculas. **Toda gravação exige CNPJ válido (NEG-04, 2026-09-25):** formato (14 caracteres, 12 primeiras `[0-9A-Z]` e 2 DVs numéricos) e dígito verificador, mesmo quando o CNPJ enviado é igual ao atual. DV inválido → `400` `"cnpj inválido"`, sem consultar o banco e sem gravar; por isso, id inexistente com DV inválido responde `400`, e não `404` (o `404` vem do UPDATE com 0 linhas, sem SELECT prévio). Clientes legados com DV inválido só podem ser editados depois de corrigir o CNPJ (antes do NEG-04, o DV só era exigido se o CNPJ mudasse). `PATCH /api/clientes/{id}/inativar` não valida o CNPJ. `409` `"cnpj já cadastrado"` se o novo CNPJ pertence a outro cliente. O escopo é checado antes: sem acesso, `404` mesmo com CNPJ inválido.
 
 #### PATCH /api/clientes/{id}/inativar
 - **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira ativa para o `normal`)

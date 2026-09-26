@@ -23,14 +23,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/rotaperfumes/shared/cnpj"
 )
 
 // EnvCSVPath é a variável de ambiente que sobrescreve o caminho do CSV de
 // clientes (a mesma usada pelo importclientes).
 const EnvCSVPath = "CLIENTES_CSV_PATH"
-
-// cnpjTamanho é o número de dígitos de um CNPJ normalizado.
-const cnpjTamanho = 14
 
 // Registro é o mínimo necessário para unificar: id do CSV e CNPJ.
 type Registro struct {
@@ -43,31 +42,35 @@ type Registro struct {
 // aparecem no mapa.
 type Unificacao map[int64]int64
 
-// NormalizarCNPJ remove tudo que não for dígito (o CSV mistura CNPJ puro,
-// mascarado e com espaços em volta).
-func NormalizarCNPJ(raw string) string {
-	var b strings.Builder
-	for _, r := range raw {
-		if r >= '0' && r <= '9' {
-			b.WriteRune(r)
-		}
+// NormalizarCNPJ aplica a normalização central de CNPJ (shared/cnpj, NEG-02):
+// remove a máscara (".", "/", "-" e espaços — o CSV mistura CNPJ puro,
+// mascarado e com espaços em volta), converte para MAIÚSCULAS e exige o
+// formato de 14 caracteres (12 em [0-9A-Z] + 2 DVs numéricos). ok=false se o
+// valor tiver outro caractere ou formato errado. O DV NÃO é validado aqui.
+// É a mesma regra usada pelo importclientes, para que a unificação e a
+// gravação enxerguem o mesmo CNPJ.
+func NormalizarCNPJ(raw string) (normalizado string, ok bool) {
+	normalizado, ok = cnpj.Normalizar(raw)
+	if !ok || !cnpj.FormatoValido(normalizado) {
+		return "", false
 	}
-	return b.String()
+	return normalizado, true
 }
 
 // Calcular percorre os registros na ordem recebida e devolve o mapa de
-// cópias → sobrevivente. CNPJ vazio (após normalizar) é ignorado.
+// cópias → sobrevivente. CNPJ vazio ou fora do formato (após normalizar) é
+// ignorado.
 func Calcular(regs []Registro) Unificacao {
 	primeiro := make(map[string]int64, len(regs))
 	u := Unificacao{}
 	for _, r := range regs {
-		cnpj := NormalizarCNPJ(r.CNPJ)
-		if cnpj == "" {
+		doc, ok := NormalizarCNPJ(r.CNPJ)
+		if !ok {
 			continue
 		}
-		sobrevivente, visto := primeiro[cnpj]
+		sobrevivente, visto := primeiro[doc]
 		if !visto {
-			primeiro[cnpj] = r.ClienteID
+			primeiro[doc] = r.ClienteID
 			continue
 		}
 		if r.ClienteID != sobrevivente {
@@ -128,8 +131,9 @@ func CaminhoCSV(projectRoot string) string {
 }
 
 // CarregarDoCSV lê só as colunas cliente_id e cnpj do CSV de clientes e
-// calcula a unificação. Linhas com cliente_id inválido ou CNPJ fora de 14
-// dígitos são ignoradas (o importclientes também as descarta).
+// calcula a unificação. Linhas com cliente_id inválido ou CNPJ fora do
+// formato (ver NormalizarCNPJ) são ignoradas (o importclientes também as
+// descarta).
 func CarregarDoCSV(path string) (Unificacao, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -158,11 +162,11 @@ func lerRegistros(rd io.Reader) (Unificacao, error) {
 		if err != nil {
 			continue
 		}
-		cnpj := NormalizarCNPJ(rec[1])
-		if len(cnpj) != cnpjTamanho {
+		doc, ok := NormalizarCNPJ(rec[1])
+		if !ok {
 			continue
 		}
-		regs = append(regs, Registro{ClienteID: id, CNPJ: cnpj})
+		regs = append(regs, Registro{ClienteID: id, CNPJ: doc})
 	}
 	return Calcular(regs), nil
 }

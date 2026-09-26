@@ -1,78 +1,144 @@
 # A Fazer
 
-> **Lote 4 concluído em 2026-09-25.** SEC-02, SEC-03, NEG-01, BUG-06, FE-04 e FE-05, mais os derivados SEC-05, NEG-03, NEG-04 e DB-01, estão todos em `feito.md` (aceite do usuário em 2026-09-25). Nenhuma divergência do roteiro do Lote 4 ficou pendente.
->
-> **Follow-ups do Lote 4 (2026-09-25):** os cards abaixo foram registrados pelo 🔴 TestBrain durante a regressão do Lote 4. Eles continuam no backlog e aguardam a priorização do usuário.
+> Cards registrados durante o Lote 5 (2026-09-25). Aguardam a priorização do usuário.
 
 ---
 
-## FE-06: mensagem enganosa quando o retry após o refresh falha por rede — prioridade BAIXA
+## BUG-07: modal "Editar Vendedor" sobrescreve a data de admissão e a meta mensal — prioridade ALTA
 
 **Status:** não iniciado; aguarda a priorização do usuário
 **Camada:** Frontend
-**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 5 via Playwright (2026-09-25). É anterior ao lote.
 
-**Descrição:** Em `frontend/src/lib/apiClient.ts`, quando o retry após o refresh com `401` falha por erro de rede, as requisições da fila são rejeitadas com "Sessão expirada. Faça login novamente.", mas o usuário não é deslogado. A mensagem é enganosa.
+**Descrição:** O modal abre com a data de admissão de hoje e meta mensal 0, e não com os valores do banco (vendedor 4: 2023-06-22 e 55000). Salvar sem mudar nada envia `{"data_admissao":"2026-09-25","meta_mensal":0,...}`, e esses valores sobrescrevem os dados reais.
+- `frontend/src/app/admin/vendedores/page.tsx:196-211` passa `data_admissao: ""` e `meta_mensal: 0` como valor provisório, porque `GET /api/vendedores` não traz esses campos (projeção do SEC-03).
+- `frontend/src/components/admin/VendedorModal.tsx:143-152` preenche o formulário só com esse valor provisório. O efeito de `:174-183` busca o detalhe, mas usa apenas `detalhe.clientes`.
+
+**Como reproduzir:** como admin, abra Vendedores e clique em "Editar" em qualquer vendedor.
 
 **Ação esperada:**
-- 🟢 FrontBrain: usar uma mensagem de erro de rede nesse caso.
-- 🔴 TestBrain cobrir.
+- 🟢 FrontBrain: preencher o formulário com o detalhe (`GET /api/vendedores/{id}`) e bloquear o salvar até o detalhe carregar.
+- 🔴 TestBrain: cobrir.
+- Verificar no banco se algum vendedor já foi sobrescrito.
 
 ---
 
-## SEC-04: corrida legítima no refresh conta no rate limit por IP — prioridade BAIXA
+## BUG-08: `POST /api/clientes` devolve `created_at` e `updated_at` zerados — prioridade BAIXA
+
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Backend
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 5 (2026-09-25). É anterior ao lote.
+
+**Descrição:** A resposta 201 traz `0001-01-01T00:00:00Z` nesses campos. O motivo: `apis/rotaperfumes-api/services/cliente_service.go:216-228` e `:238-271` devolvem o objeto em memória sem reler do banco.
+
+**Ação esperada:**
+- 🟡 BackBrain: reler o registro depois do INSERT e do UPDATE.
+- 🔴 TestBrain: cobrir.
+
+---
+
+## FE-09: listagem de clientes mostra "Nenhum cliente cadastrado." quando há erro de rede — prioridade BAIXA
+
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Frontend
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 5 (2026-09-25). É anterior ao lote.
+
+**Descrição:** Com erro de rede, `frontend/src/app/admin/clientes/page.tsx:152-162` zera a lista. A tela passa a mostrar "Nenhum cliente cadastrado." ao lado do alerta de conexão.
+
+**Ação esperada:**
+- 🟢 FrontBrain: manter a última lista ou ocultar o estado vazio quando houver erro, e conferir se outras listagens repetem o padrão.
+
+---
+
+## DOC-03: outros documentos e o Postman ainda usam `henrique.rodrigues` (inativo) — prioridade BAIXA
+
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Documentação
+**Origem:** 🔵 SubBrain, DOC-01 (2026-09-25).
+
+**Descrição:** O usuário id 2 (`henrique.rodrigues`) está com `ativo=0` e não faz login, mas ainda aparece em:
+- `docs/roteiro-teste-manual-clientes.md`, linha 30;
+- `docs/roteiro-teste-manual-dashboard.md`, linha 21;
+- `postman/README.md`, linhas 37 e 60;
+- `postman/collection.json`: requisição "Login — Vendedor" e o exemplo de resposta.
+
+**Ação esperada:**
+- 🔵 SubBrain: trocar por um usuário ativo, seguindo o mesmo critério do DOC-01.
+
+---
+
+## SEC-06: sessão de usuário inativado continua válida até o access token expirar — prioridade BAIXA
 
 **Status:** não iniciado; aguarda a priorização do usuário
 **Camada:** Backend (+ Segurança)
-**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
+**Origem:** 🔵 SubBrain, DOC-01 (2026-09-25). Análise pelo código, ainda não validada no navegador.
 
 **Descrição:**
-- Cada `401` de revogação concorrente no refresh conta no `refreshLimiter` por IP. Com 10 falhas, a API responde `429`.
-- No front, um `429` no refresh leva ao logout.
-- Várias abas, ou vários usuários atrás do mesmo IP (NAT), podem cair nisso.
+- O middleware de autenticação não confere `usuarios.ativo`.
+- Quando um vendedor é desligado pela tela, os usuários dele são inativados, mas a sessão aberta continua até o access token expirar.
+- Só no refresh a API responde `401 "usuário inativo"` e o front faz logout.
 
 **Ação esperada:**
-- 🟣 SecBrain: avaliar a solução (por exemplo, não contar a corrida legítima ou usar uma chave por token/usuário).
+- 🟣 SecBrain: avaliar se a janela é aceitável ou se é preciso revogar os refresh tokens ao inativar e/ou checar `ativo` no middleware.
 - 🟡 BackBrain aplicar.
 - 🔴 TestBrain cobrir.
 
 ---
 
-## DOC-01: roteiro de vendedor desligado usa um usuário que não faz mais login — prioridade BAIXA
+## SEC-07: revogar a família de refresh tokens em caso de reuso fora da janela — prioridade BAIXA
 
 **Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Documentação
-**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
+**Camada:** Backend (+ Segurança)
+**Origem:** 🟣 SecBrain, SEC-04 (2026-09-25).
 
-**Descrição:** `docs/roteiro-teste-manual-vendedor-desligado.md` usa `henrique.rodrigues` (usuário id 2), que está com `ativo=0` (efeito do BUG-05) e não faz mais login.
+**Descrição:** Com o SEC-04, o reuso de um refresh token revogado fora da janela de graça só gera log `[seguranca]`. Revogar todos os tokens do usuário (`RevokeAllUserTokens`) protege melhor contra roubo de token. Por outro lado, pode deslogar usuários legítimos cujo cookie novo se perdeu.
+
+**Complemento (🔴 TestBrain, regressão do Lote 5):**
+- Um token revogado por logout ou por `RevokeAllByUser` e reusado por uma aba antiga depois de 30s dispara o alerta `[auth][seguranca]` de "possível roubo". É um falso positivo.
+- O log não traz o `user_id`.
 
 **Ação esperada:**
-- 🔴 TestBrain / 🔵 SubBrain: trocar para `thiago.silva` (usuário id 4, vendedor 3 desligado) ou descrever o novo comportamento.
+- 🟣 SecBrain: detalhar o trade-off.
+- Usuário: decidir.
 
 ---
 
-## NEG-02: aceitar o CNPJ alfanumérico da Receita (DECISÃO DE NEGÓCIO) — prioridade BAIXA
-
-**Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Backend / Database / Frontend
-**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
-
-**Descrição:** O CNPJ alfanumérico da Receita está vigente desde julho de 2026. Hoje a API aceita só dígitos, e o schema usa `CHAR(14)` com dígito verificador módulo 11 numérico.
-
-**Ação esperada:**
-- 🤍 MegaBrain: levar a decisão ao usuário.
-
----
-
-## DOC-02: manual da base de dados com o índice `uq_clientes_cnpj` — prioridade BAIXA
+## DOC-04: manual completo da base de dados — prioridade BAIXA
 
 **Status:** não iniciado; aguarda a priorização do usuário
 **Camada:** Documentação
-**Origem:** 🔴 TestBrain, Lote 4 (2026-09-25).
+**Origem:** 🔵 SubBrain, DOC-02 (2026-09-25).
 
-**Descrição:** Atualizar o manual da base de dados com o índice `uq_clientes_cnpj` e a unificação dos CNPJs duplicados. Depende da aplicação da migração 19 (`make db-fix-cnpj-unique`).
-
-**Atualização (2026-09-25):** a migração 19 está aplicada no banco local (confirmado na execução do roteiro do Lote 4). O card está desbloqueado. O DB-01 foi fechado (log de vínculos vazio é o esperado; ver `feito.md`).
+**Descrição:** O `docs/manual-base-de-dados.md` foi criado no DOC-02 com o detalhe da tabela `clientes`, do `uq_clientes_cnpj` e da migração 19. As demais tabelas aparecem só no índice.
 
 **Ação esperada:**
-- 🔵 SubBrain: atualizar o manual depois que a migração 19 for aplicada.
+- 🔵 SubBrain: detalhar as demais tabelas, se o usuário quiser o manual completo.
+
+---
+
+## FE-07: assimetria de logout entre falha de rede no refresh e falha de rede no retry — prioridade BAIXA
+
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Frontend (+ Segurança)
+**Origem:** 🔴 TestBrain, regressão do Lote 5 (2026-09-25).
+
+**Descrição:**
+- Quando o próprio `POST /api/auth/refresh` falha por rede ou timeout, o front faz logout.
+- Quando é o retry após o refresh que falha por rede (FE-06), o front não faz logout.
+- Esse comportamento vem de antes do lote e agora está coberto por teste.
+
+**Ação esperada:**
+- 🟣 SecBrain e 🟢 FrontBrain: avaliar se uma falha de rede no refresh deveria preservar a sessão.
+
+---
+
+## TEST-01: nome de subteste e comentário de CNPJ desatualizados — prioridade BAIXA
+
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Testes
+**Origem:** 🔴 TestBrain, regressão do Lote 5 (2026-09-25).
+
+**Descrição:** Em `apis/rotaperfumes-api/handlers/lote4_http_integration_test.go`, o subteste ainda se chama "CNPJ mascarado é gravado só com dígitos". Com o NEG-02, o nome não descreve mais a regra. Do mesmo jeito, o comentário de `TestCruzado_Divergencias` em `apis/shared/cnpj/cruzado_test.go` ainda cita `it.fails` no front, que foi removido na correção NEG-02-A/B.
+
+**Ação esperada:**
+- 🔴 TestBrain: renomear o subteste e ajustar o comentário.

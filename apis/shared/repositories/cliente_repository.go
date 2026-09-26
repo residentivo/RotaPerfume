@@ -52,6 +52,7 @@ type ClienteFiltro struct {
 	Segmento   string
 	Ativo      *bool
 	Q          string // busca textual em razao_social OU cnpj (LIKE)
+	QCNPJ      string // termo da busca em cnpj quando difere de Q (ex.: Q com máscara normalizado); vazio = usa Q. Só vale com Q preenchido
 	VendedorID int64  // > 0 restringe aos clientes na carteira ativa desse vendedor (ver tabela carteiras)
 	OrderBy    string // campo de ordenação (whitelist: ver clienteOrderWhitelist); default "cliente_id_origem"
 	OrderDir   string // "asc" ou "desc" (case-insensitive); default "asc"
@@ -98,8 +99,11 @@ func (f ClienteFiltro) where() (string, []any) {
 	}
 	if f.Q != "" {
 		conds = append(conds, "(razao_social LIKE ? OR cnpj LIKE ?)")
-		like := "%" + f.Q + "%"
-		args = append(args, like, like)
+		termoCNPJ := f.QCNPJ
+		if termoCNPJ == "" {
+			termoCNPJ = f.Q
+		}
+		args = append(args, "%"+f.Q+"%", "%"+termoCNPJ+"%")
 	}
 	if f.VendedorID > 0 {
 		conds = append(conds, clienteNaCarteiraCond)

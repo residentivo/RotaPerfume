@@ -69,6 +69,7 @@ func (s *ClienteService) ListClientes(ctx context.Context, db *sql.DB, page, lim
 		Segmento:   filtro.Segmento,
 		Ativo:      filtro.Ativo,
 		Q:          filtro.Q,
+		QCNPJ:      termoBuscaCNPJ(filtro.Q),
 		VendedorID: filtro.VendedorID,
 		OrderBy:    filtro.OrderBy,
 		OrderDir:   filtro.OrderDir,
@@ -148,14 +149,15 @@ func validarClienteInput(input ClienteInput, defaultHoje bool) (razaoSocial, cnp
 		err = ErrCNPJObrigatorio
 		return
 	}
-	// NEG-01: aceita máscara e grava só os dígitos. O dígito verificador é
-	// checado à parte, em toda gravação (Create e Update — NEG-04).
-	cnpjDigitos, cnpjOK := normalizarCNPJ(cnpj)
-	if !cnpjOK || !cnpjFormatoValido(cnpjDigitos) {
+	// NEG-01/NEG-02: aceita máscara e minúsculas; grava sem máscara e em
+	// MAIÚSCULAS (numérico ou alfanumérico). O dígito verificador é checado
+	// à parte, em toda gravação (Create e Update — NEG-04).
+	cnpjNormalizado, cnpjOK := normalizarCNPJ(cnpj)
+	if !cnpjOK {
 		err = ErrCNPJInvalido
 		return
 	}
-	cnpj = cnpjDigitos
+	cnpj = cnpjNormalizado
 	if segmento == "" {
 		err = ErrSegmentoObrigatorio
 		return

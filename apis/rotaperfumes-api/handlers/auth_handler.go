@@ -299,7 +299,11 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	userAgent := r.UserAgent()
 
 	// Rate limiting anti-bruteforce por IP: bloqueia tentativas repetidas de
-	// forjar/adivinhar refresh tokens.
+	// forjar/adivinhar refresh tokens. Contam como falha: token não encontrado,
+	// expirado e revogado fora da janela de graça (possível roubo). NÃO contam
+	// (SEC-04): token revogado dentro de services.RefreshRevokeGraceWindow e a
+	// corrida no BeginRotation — ambos são rotação concorrente legítima (abas,
+	// usuários atrás de NAT) e continuam recebendo 401 sem emitir tokens.
 	refreshIPKey := "refresh-ip:" + ipOrigem
 	if blocked, retryAfter := h.refreshLimiter.Blocked(refreshIPKey); blocked {
 		log.Printf("[auth] refresh: IP bloqueado por rate limit: ip=%s retry_after=%s", ipOrigem, retryAfter)
@@ -322,8 +326,14 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnauthorized, nil, "refresh token expirado")
 			return
 		}
+		// Deve vir antes de ErrRefreshTokenRevoked, que ele envolve.
+		if errors.Is(err, services.ErrRefreshTokenRevokedRecently) {
+			log.Printf("[auth] refresh: token revogado recentemente (corrida entre abas), não conta no rate limit: ip=%s", ipOrigem)
+			writeJSON(w, http.StatusUnauthorized, nil, "refresh token revogado")
+			return
+		}
 		if errors.Is(err, services.ErrRefreshTokenRevoked) {
-			log.Printf("[auth] refresh: token revogado")
+			log.Printf("[auth][seguranca] refresh: reuso de refresh token revogado fora da janela de graça (possível roubo de token): ip=%s ua=%s", ipOrigem, userAgent)
 			h.refreshLimiter.RegisterFailure(refreshIPKey)
 			writeJSON(w, http.StatusUnauthorized, nil, "refresh token revogado")
 			return
@@ -349,12 +359,12 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	// Revoga o refresh token antigo (single-use) de forma atômica, reutilizando
 	// o ID obtido na validação. Em uma corrida entre duas requisições com o
-	// mesmo token, só uma revoga; a outra recebe 401 sem emitir tokens.
+	// mesmo token, só uma revoga; a outra recebe 401 sem emitir tokens. Essa
+	// corrida é rotação concorrente legítima e não conta no rate limit (SEC-04).
 	rotation, err := h.refreshSvc.BeginRotation(ctx, h.db, rt.ID)
 	if err != nil {
 		if errors.Is(err, services.ErrRefreshTokenRevoked) {
-			log.Printf("[auth] refresh: token já revogado por requisição concorrente: user_id=%d", u.ID)
-			h.refreshLimiter.RegisterFailure(refreshIPKey)
+			log.Printf("[auth] refresh: token já revogado por requisição concorrente (corrida no BeginRotation), não conta no rate limit: user_id=%d ip=%s", u.ID, ipOrigem)
 			writeJSON(w, http.StatusUnauthorized, nil, "refresh token revogado")
 			return
 		}

@@ -14,7 +14,9 @@ import (
 
 // NEG-01: contrato HTTP de CNPJ em POST/PUT /api/clientes.
 //   - vazio → 400 "cnpj é obrigatório";
-//   - ≠ 14 dígitos, todos iguais ou DV inválido → 400 "cnpj inválido";
+//   - fora do formato (14 caracteres: 12 em [0-9A-Z] + 2 DVs numéricos, após
+//     remover a máscara e passar para maiúsculas — NEG-02), todos iguais ou
+//     DV inválido → 400 "cnpj inválido";
 //   - duplicado (MySQL 1062 em uq_clientes_cnpj) → 409 "cnpj já cadastrado",
 //     sem revelar id, vendedor ou razão social do cliente existente.
 
@@ -43,6 +45,7 @@ func TestCreateCliente_CNPJ(t *testing.T) {
 		setup      func(mock sqlmock.Sqlmock)
 		wantStatus int
 		wantErr    string
+		wantCNPJ   string
 	}{
 		{name: "vazio", cnpj: "", wantStatus: http.StatusBadRequest, wantErr: "cnpj é obrigatório"},
 		{name: "13 dígitos", cnpj: "1122233300018", wantStatus: http.StatusBadRequest, wantErr: "cnpj inválido"},
@@ -58,7 +61,21 @@ func TestCreateCliente_CNPJ(t *testing.T) {
 					WillReturnResult(sqlmock.NewResult(101, 1))
 			},
 			wantStatus: http.StatusCreated,
+			wantCNPJ:   "11222333000181",
 		},
+		{
+			name: "NEG-02: alfanumérico minúsculo com máscara é gravado e devolvido sem máscara e em maiúsculas",
+			cnpj: "12.abc.345/01de-35",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(reInsertClienteH).
+					WithArgs("12ABC34501DE35", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), true).
+					WillReturnResult(sqlmock.NewResult(102, 1))
+			},
+			wantStatus: http.StatusCreated,
+			wantCNPJ:   "12ABC34501DE35",
+		},
+		{name: "NEG-02: alfanumérico com DV errado", cnpj: "12ABC34501DE36", wantStatus: http.StatusBadRequest, wantErr: "cnpj inválido"},
+		{name: "NEG-02: letra na posição do DV", cnpj: "12ABC34501DEA5", wantStatus: http.StatusBadRequest, wantErr: "cnpj inválido"},
 		{
 			name: "duplicado retorna 409 genérico",
 			cnpj: "11222333000181",
@@ -89,7 +106,7 @@ func TestCreateCliente_CNPJ(t *testing.T) {
 				assert.Equal(t, tc.wantErr, body["error"])
 				assert.False(t, strings.Contains(raw, "uq_clientes_cnpj"), "não pode vazar detalhes do banco")
 			} else {
-				assert.Equal(t, "11222333000181", body["data"].(map[string]any)["cnpj"])
+				assert.Equal(t, tc.wantCNPJ, body["data"].(map[string]any)["cnpj"])
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})

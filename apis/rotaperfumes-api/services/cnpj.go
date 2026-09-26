@@ -3,13 +3,14 @@ package services
 import (
 	"errors"
 	"strings"
+
+	"github.com/rotaperfumes/shared/cnpj"
 )
 
-// cnpjTamanho é a quantidade de dígitos de um CNPJ (sem máscara).
-const cnpjTamanho = 14
-
-// ErrCNPJInvalido indica CNPJ fora do formato (≠ 14 dígitos, caracteres
-// inválidos, todos os dígitos iguais) ou com dígito verificador inválido.
+// ErrCNPJInvalido indica CNPJ fora do formato (≠ 14 caracteres, caracteres
+// fora de [0-9A-Z] nas 12 primeiras posições, DV não numérico, todos os
+// caracteres iguais) ou com dígito verificador inválido. Aceita CNPJ numérico
+// e alfanumérico (NEG-02); a regra fica em github.com/rotaperfumes/shared/cnpj.
 var ErrCNPJInvalido = errors.New("cnpj inválido")
 
 // ErrCNPJDuplicado indica que já existe outro cliente com o mesmo CNPJ
@@ -17,66 +18,38 @@ var ErrCNPJInvalido = errors.New("cnpj inválido")
 // revela id, vendedor nem razão social do cliente existente.
 var ErrCNPJDuplicado = errors.New("cnpj já cadastrado")
 
-// normalizarCNPJ remove a máscara (".", "/", "-" e espaços) e devolve só os
-// dígitos. Qualquer outro caractere torna o CNPJ inválido (ok=false).
-// Não valida tamanho nem dígito verificador.
-func normalizarCNPJ(cnpj string) (digitos string, ok bool) {
-	var b strings.Builder
-	b.Grow(cnpjTamanho)
-	for _, r := range cnpj {
-		switch {
-		case r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '.' || r == '/' || r == '-' || r == ' ':
-			// máscara: ignora
-		default:
-			return "", false
-		}
+// cnpjMascara são os caracteres de máscara aceitos na entrada.
+const cnpjMascara = "./-"
+
+// normalizarCNPJ remove a máscara, converte para maiúsculas e checa o
+// formato (14 caracteres, 12 em [0-9A-Z] + 2 DVs numéricos). ok=false se o
+// valor tiver caractere inválido ou formato errado. Não valida o DV.
+func normalizarCNPJ(raw string) (normalizado string, ok bool) {
+	normalizado, ok = cnpj.Normalizar(raw)
+	if !ok || !cnpj.FormatoValido(normalizado) {
+		return "", false
 	}
-	return b.String(), true
+	return normalizado, true
 }
 
-// cnpjFormatoValido reporta se digitos tem exatamente 14 dígitos.
-func cnpjFormatoValido(digitos string) bool {
-	return len(digitos) == cnpjTamanho
+// cnpjDigitosValidos reporta se o CNPJ normalizado tem formato válido, não é
+// uma sequência de caracteres iguais e tem os dois DVs corretos (módulo 11).
+func cnpjDigitosValidos(normalizado string) bool {
+	return cnpj.Valido(normalizado)
 }
 
-// cnpjDigitosValidos reporta se o CNPJ (14 dígitos, sem máscara) não é uma
-// sequência de dígitos iguais e tem os dois dígitos verificadores corretos
-// (módulo 11).
-func cnpjDigitosValidos(digitos string) bool {
-	if !cnpjFormatoValido(digitos) || todosIguais(digitos) {
-		return false
+// termoBuscaCNPJ devolve o termo a usar na busca por cnpj quando q parece um
+// CNPJ digitado com máscara (ex.: "12.ABC.345/01DE-35" ou "12.abc"): sem a
+// máscara e em maiúsculas, pois o banco grava o CNPJ assim. Devolve "" quando
+// q não tem máscara ou tem caracteres que não pertencem a um CNPJ — nesse caso
+// a busca por cnpj usa o próprio q (a collation do banco ignora caixa).
+func termoBuscaCNPJ(q string) string {
+	if !strings.ContainsAny(q, cnpjMascara) {
+		return ""
 	}
-	dv1 := cnpjDigitoVerificador(digitos[:12])
-	dv2 := cnpjDigitoVerificador(digitos[:12] + string(rune('0'+dv1)))
-	return int(digitos[12]-'0') == dv1 && int(digitos[13]-'0') == dv2
-}
-
-// cnpjDigitoVerificador calcula um dígito verificador do CNPJ pelo módulo 11
-// sobre base (12 dígitos para o 1º DV, 13 para o 2º). Os pesos vão de 2 a 9,
-// da direita para a esquerda, reiniciando em 2.
-func cnpjDigitoVerificador(base string) int {
-	soma, peso := 0, 2
-	for i := len(base) - 1; i >= 0; i-- {
-		soma += int(base[i]-'0') * peso
-		peso++
-		if peso > 9 {
-			peso = 2
-		}
+	normalizado, ok := cnpj.Normalizar(q)
+	if !ok {
+		return ""
 	}
-	resto := soma % 11
-	if resto < 2 {
-		return 0
-	}
-	return 11 - resto
-}
-
-func todosIguais(s string) bool {
-	for i := 1; i < len(s); i++ {
-		if s[i] != s[0] {
-			return false
-		}
-	}
-	return true
+	return normalizado
 }

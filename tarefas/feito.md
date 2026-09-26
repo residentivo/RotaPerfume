@@ -4,6 +4,188 @@
 
 ---
 
+## Lote 5 de 2026-09-25: 7 cards concluídos (de 7)
+
+> Lote executado pelo 🤍 MegaBrain na ordem 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain, com os cards SEC-04, FE-06, DOC-01, DOC-02, NEG-02, DB-02 e FE-08. **Aceite do usuário em 2026-09-25.**
+>
+> **Regressão 🔴 TestBrain (2026-09-25):**
+> - Go: `apis/shared` e `rotaperfumes-api` ok; integração com `INTEGRATION=1` ok.
+> - Frontend: `tsc`, lint e `vitest` ok.
+>
+> **Roteiro executado via Playwright pelo 🔴 TestBrain (2026-09-25):**
+> - Roteiro: `docs/roteiro-teste-manual-lote5.md`, seção "Execução 2026-09-25 (TestBrain, Playwright)".
+> - Resultado: SEC-04, FE-06, FE-08, NEG-02, DOC-01, DOC-02 e DB-02 OK, sem defeitos nos cards do lote. O banco foi restaurado (3000 clientes, 0 resíduos).
+> - Não executados: 1.2 e 1.8. Os logs `[auth]` e `[auth][seguranca]` só aparecem no Debug Console do VS Code.
+>
+> **Documentação (🔵 SubBrain) do lote:** `postman/README.md`, `postman/collection.json` (JSON validado com Node) e `docs/manual-base-de-dados.md` foram atualizados com NEG-02, SEC-04 e FE-06.
+>
+> **Cards derivados que ficaram em `afazer.md`:** BUG-07 (ALTA), BUG-08, FE-09, DOC-03, SEC-06, SEC-07, DOC-04, FE-07 e TEST-01.
+
+## SEC-04: corrida legítima no refresh conta no rate limit por IP — 2026-09-25
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → roteiro do Lote 5 → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-25.
+
+**Camada:** Backend (+ Segurança)
+**Origem:** 🔴 TestBrain (2026-09-25), follow-up do SEC-02.
+
+**Descrição:**
+- Cada `401` de revogação concorrente no refresh contava no `refreshLimiter` por IP. Com 10 falhas, a API respondia `429`.
+- No front, um `429` no refresh levava ao logout.
+- Várias abas, ou vários usuários atrás do mesmo IP (NAT), podiam cair nisso.
+
+**Decisão 🟣 SecBrain (2026-09-25):**
+- **Janela de graça:** `RefreshRevokeGraceWindow = 30s`. Um token revogado há ≤ 30s devolve `ErrRefreshTokenRevokedRecently` e **não** conta no `refreshLimiter`.
+- **Fora da janela:** continua contando e gera log `[seguranca]` de possível reuso.
+- **Corrida no `BeginRotation`:** deixa de contar.
+- **Continua contando:** `NotFound` e `Expired`.
+- **Sem mudança:** a resposta HTTP é idêntica, a rotação continua de uso único e o front não muda.
+- **Recomendação futura** (fora do card): revogar a família de tokens no reuso (card SEC-07 em `afazer.md`).
+
+**🟡 BackBrain (2026-09-25) — implementado:**
+- **Código:** `refresh_token_service.go` (janela de graça, relógio injetável) e `auth_handler.go` (`Recently` não conta; a corrida no `BeginRotation` não conta; log `[seguranca]` fora da janela).
+- **Testes:** 7 casos de service, 5 testes de handler novos e a integração SEC-02 com 3 rodadas de 15 refreshes paralelos. Resultado: `go build`, `go vet` e `go test ./services/... ./handlers/...` ok; integração com `INTEGRATION=1` ok.
+
+---
+
+## FE-06: mensagem enganosa quando o retry após o refresh falha por rede — 2026-09-25
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → roteiro do Lote 5 → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-25.
+
+**Camada:** Frontend
+**Origem:** 🔴 TestBrain (2026-09-25), follow-up do SEC-02.
+
+**Descrição:** Em `frontend/src/lib/apiClient.ts`, quando o retry após o refresh com `401` falhava por erro de rede, as requisições da fila eram rejeitadas com "Sessão expirada. Faça login novamente.", mas o usuário não era deslogado. A mensagem era enganosa.
+
+**🟢 FrontBrain (2026-09-25) — implementado:**
+- **Comportamento:** quando o retry falha por rede, as requisições da fila recebem o mesmo erro de rede da requisição original (`onRefreshComplete(false, erro)`), sem logout. "Sessão expirada" só aparece quando há logout.
+- **Testes:** 3 testes novos ou ajustados em `apiClient.test.ts`. Resultado: `tsc` e `eslint` sem erros e `vitest` com 703/703 testes passando.
+- **Observação:** o projeto não tinha uma mensagem amigável própria para erro de rede; isso virou o card FE-08 (abaixo).
+
+---
+
+## DOC-01: roteiro de vendedor desligado usa um usuário que não faz mais login — 2026-09-25
+**Agentes:** 🔴 TestBrain → 🔵 SubBrain → conferência do 🔴 TestBrain → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-25.
+
+**Camada:** Documentação
+**Origem:** 🔴 TestBrain (2026-09-25).
+
+**Descrição:** `docs/roteiro-teste-manual-vendedor-desligado.md` usava `henrique.rodrigues` (usuário id 2), que está com `ativo=0` (efeito do BUG-05) e não faz mais login.
+
+**O que foi feito:**
+- **🔵 SubBrain (2026-09-25):** roteiro atualizado para `thiago.silva` (usuário id 4, vendedor 3 desligado).
+- **🔴 TestBrain (2026-09-25):** dados conferidos contra o seed e o banco local.
+- Os demais documentos e o Postman que ainda citam `henrique.rodrigues` ficaram no card DOC-03 (`afazer.md`).
+
+---
+
+## DOC-02: manual da base de dados com o índice `uq_clientes_cnpj` — 2026-09-25
+**Agentes:** 🔵 SubBrain → conferência do 🔴 TestBrain → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-25.
+
+**Camada:** Documentação
+**Origem:** 🔴 TestBrain (2026-09-25), a partir do NEG-01.
+
+**Descrição:** Atualizar o manual da base de dados com o índice `uq_clientes_cnpj` e a unificação dos CNPJs duplicados. A migração 19 (`make db-fix-cnpj-unique`) já estava aplicada no banco local, e o DB-01 já tinha sido fechado (log de vínculos vazio é o esperado).
+
+**O que foi feito:**
+- **🔵 SubBrain (2026-09-25):** `docs/manual-base-de-dados.md` atualizado.
+- **🔴 TestBrain (2026-09-25):** dados conferidos contra o seed e o banco local.
+- O manual completo (todas as tabelas) ficou no card DOC-04 (`afazer.md`).
+
+---
+
+## NEG-02: aceitar o CNPJ alfanumérico da Receita — 2026-09-25
+**Agentes:** 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain → roteiro do Lote 5 → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-25.
+
+**Camada:** Database / Backend / Frontend
+**Origem:** 🔴 TestBrain (2026-09-25). **Decisão do usuário (2026-09-25): implementar agora.**
+
+**Descrição:** O CNPJ alfanumérico da Receita está vigente desde julho de 2026. A API aceitava só dígitos, e o schema usa `CHAR(14)` com dígito verificador módulo 11 numérico.
+
+**Regra (Receita):**
+- 14 posições. As 12 primeiras são `[0-9A-Z]` e os 2 DVs são numéricos.
+- DV por módulo 11 com os pesos atuais; cada caractere vale `ASCII − 48` (`0`–`9` → 0–9, `A` → 17, …, `Z` → 42).
+- A entrada é normalizada para maiúsculas e a máscara (`.`, `/`, `-`) é removida.
+- CNPJs numéricos existentes continuam válidos.
+
+**🌸 DataBrain (2026-09-25) — sem migração:**
+- **Schema:** `cnpj CHAR(14)` utf8mb4_unicode_ci. Não há CHECK, trigger nem view, e os 3000 clientes atuais são numéricos.
+- **Collation:** case-insensitive, então o back grava em maiúsculas. Nota adicionada no cabeçalho de `sql/09_ddl_clientes.sql`.
+- **Comentário da coluna:** corrigido pela migração 20 (DB-02, 2026-09-25).
+- **Importador:** o `apis/shared/cmd/importclientes/main.go` também precisava aceitar letras (repassado ao BackBrain).
+
+**🟡 BackBrain (2026-09-25) — implementado:**
+- **Pacote central:** `apis/shared/cnpj` com `Normalizar`, `FormatoValido`, `Valido` e `DigitosVerificadores`, com 97,4% de cobertura. O exemplo oficial `12ABC34501DE35` confere.
+- **API:** `services/cnpj.go` e `cliente_service.go` delegam ao pacote. A busca `?q=` com máscara usa o novo `ClienteFiltro.QCNPJ`.
+- **Importadores:** `clientesdedup` e `importclientes` usam a mesma regra. Mudança de comportamento: uma linha com caractere inválido passa a ser recusada, em vez de ter o caractere removido.
+- **Contrato:**
+  - Envio: com ou sem máscara, em maiúsculas ou minúsculas.
+  - Retorno: sempre 14 caracteres, sem máscara e em maiúsculas.
+  - Erros: sem mudança (400/409).
+- **Testes:** `go build`, `go vet` e `go test ./...` ok nos dois módulos. A integração com MySQL não rodou nessa etapa; rodou depois, na regressão do lote.
+
+**🟢 FrontBrain (2026-09-25) — implementado:**
+- **Util central:** `frontend/src/lib/cnpj.ts`, com normalização, validação com DV espelhando o back, máscara progressiva no input (letras só nas 12 primeiras posições) e máscara de exibição.
+- **Telas:** `ClienteModal` valida e envia o CNPJ normalizado. A tabela de clientes e o `VendedorModal` usam o `formatCnpj` compartilhado.
+- **Testes:** `tsc` e `eslint` sem erros e `vitest` com 774/774 testes passando.
+- **Impacto:** um cliente legado com DV inválido não salva na edição até o CNPJ ser corrigido, igual ao back.
+- **Correção NEG-02-A/B (2026-09-25):** o `cnpj.ts` agora espelha o back: `TrimSpace` com os espaços Unicode do Go nas bordas, remove só `[./- ]` e converte para maiúsculas só `a-z`. A massa cruzada passa nos dois lados e não sobrou nenhum `it.fails`. Resultado: `vitest` com 1090/1090 testes e `go test ./cnpj/...` ok.
+
+**🔵 SubBrain (2026-09-25):** Postman (README e collection) e `docs/manual-base-de-dados.md` atualizados com a regra alfanumérica.
+
+---
+
+## DB-02: comentários imprecisos em SQL e no Makefile — 2026-09-25
+**Agentes:** 🔵 SubBrain / 🌸 DataBrain (origem) → decisão do usuário → 🌸 DataBrain → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-25.
+
+**Camada:** Database
+**Origem:** 🔵 SubBrain e 🌸 DataBrain, DOC-02 e NEG-02 (2026-09-25). **Decisão do usuário:** corrigir a coluna (item 4, migração 20) e os demais comentários.
+
+**Descrição:**
+1. `sql/19_alter_clientes_cnpj_unique.sql:42`: o comentário dizia que o backup guarda "cópias + sobrevivente", mas o SQL grava só as cópias.
+2. Makefile: a descrição do `db-fix-cnpj-unique` dizia "não destrutivo", mas a migração apaga as cópias (com backup).
+3. `sql/03_seed_vendedores.sql`:
+   - o comentário descrevia e-mails no formato `v<ID>.<slug>`, mas os reais são `nome.sobrenome@`;
+   - o comentário dizia que a senha é `Mudar@123`, mas o `make db-seed` usa `SEED_USER_PASSWORD` ou uma senha aleatória.
+4. O comentário da coluna `clientes.cnpj` dizia "somente dígitos", desatualizado com o NEG-02.
+
+**🌸 DataBrain (2026-09-25):**
+- **Migração 20:** `sql/20_alter_clientes_cnpj_comment.sql` + revert, com targets `make db-fix-cnpj-comment` e `db-revert-cnpj-comment`. Aplicada no banco local. Só o COMMENT mudou; tipo, collation, `uq_clientes_cnpj` e os 3000 clientes estão intactos. O DDL `09` também foi atualizado.
+- **Comentários corrigidos:** cabeçalho da `19`, descrição do `db-fix-cnpj-unique` no Makefile e comentários de e-mail e senha em `03_seed_vendedores.sql`.
+- **Tabela de backup:** mantida com o texto antigo, que é verdadeiro para os dados numéricos que ela guarda.
+
+---
+
+## FE-08: mensagem amigável para erro de rede — 2026-09-25
+**Agentes:** decisão do usuário → 🟢 FrontBrain → 🔴 TestBrain → roteiro do Lote 5 → aceite do usuário → fechamento por 🔵 SubBrain
+
+**Status:** concluído — aceite do usuário em 2026-09-25.
+
+**Camada:** Frontend
+**Origem:** decisão do usuário (2026-09-25), a partir do FE-06.
+
+**Descrição:** O projeto não tinha mensagem própria para erro de rede. A tela mostrava o texto cru do navegador (ex.: "Failed to fetch").
+
+**🟢 FrontBrain (2026-09-25):**
+- **Erro novo:** `NetworkError` (com `kind` "conexao" ou "timeout" e `cause` = erro original), aplicado no `makeRequest` do `apiClient.ts`. Vale para a requisição original, os reenvios e a fila.
+- **Mensagens:**
+  - "Não foi possível conectar ao servidor. Verifique sua conexão com a internet e tente novamente."
+  - "O servidor demorou para responder. Tente novamente."
+- **Sem mudança:** abort do chamador, regras de logout e erros HTTP (`ApiError`).
+- **Testes:** `tsc` e `eslint` sem erros e `vitest` com 1101/1101 testes passando.
+- **Em aberto:** as requisições comuns não têm timeout padrão, só o refresh (10s). Criar um timeout global exige decisão.
+
+---
+
 ## NEG-04: troca errada de CNPJ legado não pode ser desfeita pela tela/API (DECISÃO DE NEGÓCIO) — 2026-09-25
 **Agentes:** 🔴 TestBrain → decisão do usuário → 🟡 BackBrain → 🔴 TestBrain → revalidação do roteiro → aceite do usuário → fechamento por 🔵 SubBrain
 

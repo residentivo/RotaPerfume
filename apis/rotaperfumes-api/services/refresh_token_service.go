@@ -20,24 +20,43 @@ const (
 	RefreshTokenBytes = 32
 	// RefreshTokenTTL é a validade do refresh token (7 dias).
 	RefreshTokenTTL = 7 * 24 * time.Hour
+	// RefreshRevokeGraceWindow é a janela de graça (SEC-04) em que um refresh
+	// token recém-revogado é tratado como corrida legítima de rotação, e não
+	// como reuso suspeito. Cobre abas e requisições em andamento que enviaram
+	// o mesmo token antes de receber o novo, com folga sobre o timeout de 10s
+	// do front. Dentro da janela o 401 não conta no rate limit; nenhum token é
+	// emitido, dentro ou fora da janela.
+	RefreshRevokeGraceWindow = 30 * time.Second
 )
 
 var (
 	ErrRefreshTokenNotFound = errors.New("refresh token não encontrado")
 	ErrRefreshTokenExpired  = errors.New("refresh token expirado")
 	ErrRefreshTokenRevoked  = errors.New("refresh token revogado")
+	// ErrRefreshTokenRevokedRecently indica token revogado dentro da
+	// RefreshRevokeGraceWindow (rotação concorrente). Envolve
+	// ErrRefreshTokenRevoked: errors.Is(err, ErrRefreshTokenRevoked) é true.
+	ErrRefreshTokenRevokedRecently = fmt.Errorf("%w recentemente (rotação concorrente)", ErrRefreshTokenRevoked)
 )
 
 // RefreshTokenService gerencia lifecycle dos refresh tokens.
 type RefreshTokenService struct {
 	repo *repositories.RefreshTokenRepository
+	now  func() time.Time // relógio injetável (testes); padrão time.Now
 }
 
 // NewRefreshTokenService cria um RefreshTokenService.
 func NewRefreshTokenService() *RefreshTokenService {
 	return &RefreshTokenService{
 		repo: repositories.NewRefreshTokenRepository(),
+		now:  time.Now,
 	}
+}
+
+// setClock substitui o relógio do serviço. Uso exclusivo de testes (exposto
+// via export_test.go).
+func (s *RefreshTokenService) setClock(now func() time.Time) {
+	s.now = now
 }
 
 // generateRandomToken gera um token hexadecimal aleatório.
@@ -78,7 +97,10 @@ func (s *RefreshTokenService) GenerateRefreshToken(ctx context.Context, db repos
 }
 
 // ValidateRefreshToken valida um refresh token e retorna os dados do token.
-// Retorna erro se expirado, revogado ou não encontrado.
+// Retorna erro se expirado, revogado ou não encontrado. A expiração é checada
+// antes da revogação. Token revogado dentro da RefreshRevokeGraceWindow
+// devolve ErrRefreshTokenRevokedRecently (corrida entre abas); fora dela,
+// ErrRefreshTokenRevoked (possível reuso de token roubado).
 func (s *RefreshTokenService) ValidateRefreshToken(ctx context.Context, db *sql.DB, token string) (*repositories.RefreshToken, error) {
 	tokenHash := hashToken(token)
 
@@ -91,16 +113,27 @@ func (s *RefreshTokenService) ValidateRefreshToken(ctx context.Context, db *sql.
 	}
 
 	// Verifica se está expirado.
-	if time.Now().After(rt.ExpiresAt) {
+	if s.now().After(rt.ExpiresAt) {
 		return nil, ErrRefreshTokenExpired
 	}
 
 	// Verifica se foi revogado.
 	if rt.RevokedAt.Valid {
+		if s.revokedRecently(rt.RevokedAt.Time) {
+			return nil, ErrRefreshTokenRevokedRecently
+		}
 		return nil, ErrRefreshTokenRevoked
 	}
 
 	return rt, nil
+}
+
+// revokedRecently informa se revokedAt está a no máximo
+// RefreshRevokeGraceWindow do relógio atual, em qualquer direção (tolera
+// pequena diferença de relógio entre a API e o banco).
+func (s *RefreshTokenService) revokedRecently(revokedAt time.Time) bool {
+	age := s.now().Sub(revokedAt)
+	return age >= -RefreshRevokeGraceWindow && age <= RefreshRevokeGraceWindow
 }
 
 // RevokeToken revoga um refresh token específico.

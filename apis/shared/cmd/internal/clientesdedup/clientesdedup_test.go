@@ -23,6 +23,12 @@ func TestCalcular(t *testing.T) {
 			Unificacao{3: 5, 9: 5},
 		},
 		{"CNPJ vazio é ignorado", []Registro{{1, ""}, {2, "--"}}, Unificacao{}},
+		{
+			"NEG-02: alfanumérico unifica ignorando máscara e caixa",
+			[]Registro{{1, "12ABC34501DE35"}, {2, "12.abc.345/01de-35"}},
+			Unificacao{2: 1},
+		},
+		{"CNPJ fora do formato é ignorado", []Registro{{1, "12ABC34501DEA5"}, {2, "12ABC34501DEA5"}}, Unificacao{}},
 		{"mesmo id repetido não vira cópia de si mesmo", []Registro{{1, "11222333000181"}, {1, "11222333000181"}}, Unificacao{}},
 	}
 	for _, tc := range cases {
@@ -55,10 +61,13 @@ func TestLerRegistros(t *testing.T) {
 		"4,123,cnpj curto",
 		"3001,11.222.333/0001-81,CÓPIA DE A",
 		"3002",
+		"5,12.ABC.345/01DE-35,alfanumérico",
+		"3005,12abc34501de35,CÓPIA DE 5 (minúsculas)",
+		"6,12ABC34501DE3#,símbolo inválido",
 	}, "\n")
 	u, err := lerRegistros(strings.NewReader(csv))
 	require.NoError(t, err)
-	assert.Equal(t, Unificacao{3001: 1}, u)
+	assert.Equal(t, Unificacao{3001: 1, 3005: 5}, u)
 
 	_, err = lerRegistros(strings.NewReader(""))
 	assert.Error(t, err, "sem cabeçalho")

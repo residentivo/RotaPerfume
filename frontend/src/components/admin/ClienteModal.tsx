@@ -7,6 +7,13 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Cliente, ClienteInput } from "@/lib/types";
 import { useResetOnOpen } from "@/lib/useResetOnOpen";
+import {
+  CNPJ_HELPER,
+  CNPJ_PLACEHOLDER,
+  maskCnpjInput,
+  normalizeCnpj,
+  validateCnpj,
+} from "@/lib/cnpj";
 
 interface ClienteModalProps {
   open: boolean;
@@ -44,7 +51,7 @@ export function ClienteModal({
     setSubmitting(false);
     if (mode === "edit" && cliente) {
       setRazaoSocial(cliente.razao_social);
-      setCnpj(cliente.cnpj);
+      setCnpj(maskCnpjInput(cliente.cnpj));
       setSegmento(cliente.segmento);
       setCidade(cliente.cidade);
       setUf(cliente.uf);
@@ -71,8 +78,10 @@ export function ClienteModal({
       setError("Razao social e obrigatoria.");
       return;
     }
-    if (!cnpj.trim()) {
-      setError("CNPJ e obrigatorio.");
+    // NEG-02: mesma regra do backend (CNPJ numerico ou alfanumerico + DV).
+    const erroCnpj = validateCnpj(cnpj);
+    if (erroCnpj) {
+      setError(erroCnpj);
       return;
     }
     if (!segmento.trim()) {
@@ -96,7 +105,7 @@ export function ClienteModal({
     try {
       await onSubmit({
         razao_social: razaoSocial.trim(),
-        cnpj: cnpj.trim(),
+        cnpj: normalizeCnpj(cnpj),
         segmento: segmento.trim(),
         cidade: cidade.trim(),
         uf: uf.trim().toUpperCase(),
@@ -134,8 +143,13 @@ export function ClienteModal({
         <Input
           label="CNPJ"
           value={cnpj}
-          onChange={(e) => setCnpj(e.target.value)}
-          placeholder="00.000.000/0000-00"
+          onChange={(e) => setCnpj(maskCnpjInput(e.target.value))}
+          placeholder={CNPJ_PLACEHOLDER}
+          helperText={CNPJ_HELPER}
+          inputMode="text"
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
           required
         />
 

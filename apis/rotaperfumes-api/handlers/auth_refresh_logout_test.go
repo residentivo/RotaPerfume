@@ -355,12 +355,63 @@ func TestRefresh_CorridaParalela(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// TestRefresh_RevogacaoConcorrenteContaNoRateLimit: o 401 por revogação
-// concorrente registra falha no refreshLimiter; após 10 falhas, 429.
-func TestRefresh_RevogacaoConcorrenteContaNoRateLimit(t *testing.T) {
+// expectRefreshRevogado programa a busca do refresh token devolvendo um token
+// válido (não expirado) revogado em revokedAt.
+func expectRefreshRevogado(mock sqlmock.Sqlmock, revokedAt time.Time) {
+	mock.ExpectQuery(findRefreshSQL).
+		WithArgs(hashRefresh(refreshTokenTexto)).
+		WillReturnRows(sqlmock.NewRows(refreshTokenCols).
+			AddRow(int64(10), int64(5), hashRefresh(refreshTokenTexto), time.Now().Add(time.Hour), revokedAt, "127.0.0.1", "go-test"))
+}
+
+// expectRefreshSucesso programa o fluxo completo de um refresh válido.
+func expectRefreshSucesso(mock sqlmock.Sqlmock) {
+	expectRefreshValido(mock, 5)
+	expectUsuarioAtivo(mock, 5)
+	mock.ExpectBegin()
+	mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO refresh_tokens`).WillReturnResult(sqlmock.NewResult(11, 1))
+	mock.ExpectCommit()
+}
+
+// refreshSemEmissao faz um refresh e garante que nenhum token foi emitido
+// (sem Set-Cookie de access/refresh). Devolve status e corpo cru.
+func refreshSemEmissao(t *testing.T, url string) (int, string) {
+	t.Helper()
+	resp := postRefresh(t, url, map[string]string{"refresh_token": refreshTokenTexto}, "")
+	defer resp.Body.Close()
+	access, refresh := refreshCookies(resp)
+	assert.Empty(t, access, "nenhum access_token pode ser emitido")
+	assert.Empty(t, refresh, "nenhum refresh_token pode ser emitido")
+	return resp.StatusCode, string(readBody(t, resp))
+}
+
+func assertRefreshRevogado401(t *testing.T, url string) string {
+	t.Helper()
+	status, raw := refreshSemEmissao(t, url)
+	assert.Equal(t, http.StatusUnauthorized, status)
+	assert.Equal(t, "refresh token revogado", decodeResponse(t, []byte(raw))["error"])
+	return raw
+}
+
+func assertRefreshOK(t *testing.T, url string) {
+	t.Helper()
+	resp := postRefresh(t, url, map[string]string{"refresh_token": refreshTokenTexto}, "")
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	_, refresh := refreshCookies(resp)
+	assert.NotEmpty(t, refresh)
+}
+
+// TestRefresh_RevogacaoConcorrenteNaoContaNoRateLimit (SEC-04): o 401 da
+// corrida no BeginRotation (UPDATE condicional afeta 0 linhas) NÃO registra
+// falha no refreshLimiter; após 10 corridas, um refresh válido recebe 200.
+// Nenhum INSERT nem Set-Cookie nas corridas.
+func TestRefresh_RevogacaoConcorrenteNaoContaNoRateLimit(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
+	url := server.URL + "/api/auth/refresh"
 
 	for i := 0; i < 10; i++ {
 		expectRefreshValido(mock, 5)
@@ -368,14 +419,101 @@ func TestRefresh_RevogacaoConcorrenteContaNoRateLimit(t *testing.T) {
 		mock.ExpectBegin()
 		mock.ExpectExec(revokeCondSQL).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectRollback()
-		resp := postRefresh(t, server.URL+"/api/auth/refresh", map[string]string{"refresh_token": refreshTokenTexto}, "")
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-		resp.Body.Close()
+		assertRefreshRevogado401(t, url)
+	}
+	require.NoError(t, mock.ExpectationsWereMet(), "nenhum INSERT pode ocorrer nas corridas")
+
+	expectRefreshSucesso(mock)
+	assertRefreshOK(t, url)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestRefresh_RevogadoNaJanelaDeGracaNaoContaNoRateLimit (SEC-04): 15
+// pedidos com token revogado há 5s recebem 401 sem contar no rate limit;
+// em seguida, um refresh válido recebe 200.
+func TestRefresh_RevogadoNaJanelaDeGracaNaoContaNoRateLimit(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+	url := server.URL + "/api/auth/refresh"
+
+	for i := 0; i < 15; i++ {
+		expectRefreshRevogado(mock, time.Now().Add(-5*time.Second))
+		assertRefreshRevogado401(t, url)
+	}
+	require.NoError(t, mock.ExpectationsWereMet(), "nenhum INSERT pode ocorrer")
+
+	expectRefreshSucesso(mock)
+	assertRefreshOK(t, url)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestRefresh_RevogadoForaDaJanelaContaNoRateLimit (SEC-04): token revogado
+// há 1min é reuso suspeito e conta no rate limit; o 11º pedido recebe 429.
+func TestRefresh_RevogadoForaDaJanelaContaNoRateLimit(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+	url := server.URL + "/api/auth/refresh"
+
+	for i := 0; i < 10; i++ {
+		expectRefreshRevogado(mock, time.Now().Add(-time.Minute))
+		assertRefreshRevogado401(t, url)
 	}
 
-	resp := postRefresh(t, server.URL+"/api/auth/refresh", map[string]string{"refresh_token": refreshTokenTexto}, "")
+	resp := postRefresh(t, url, map[string]string{"refresh_token": refreshTokenTexto}, "")
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	assert.NotEmpty(t, resp.Header.Get("Retry-After"))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestRefresh_RevogadoDentroEForaDaJanelaMesmaResposta (SEC-04): o cliente
+// não consegue distinguir as duas situações — status e corpo idênticos.
+func TestRefresh_RevogadoDentroEForaDaJanelaMesmaResposta(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+	url := server.URL + "/api/auth/refresh"
+
+	expectRefreshRevogado(mock, time.Now().Add(-5*time.Second))
+	statusDentro, corpoDentro := refreshSemEmissao(t, url)
+	expectRefreshRevogado(mock, time.Now().Add(-time.Minute))
+	statusFora, corpoFora := refreshSemEmissao(t, url)
+
+	assert.Equal(t, http.StatusUnauthorized, statusDentro)
+	assert.Equal(t, statusDentro, statusFora)
+	assert.Equal(t, corpoDentro, corpoFora)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestRefresh_ForjadosIntercaladosComRevogadosRecentes (SEC-04): revogados
+// na janela de graça não "diluem" nem zeram o contador — 10 tokens forjados
+// intercalados com 20 revogados recentes ainda levam ao 429.
+func TestRefresh_ForjadosIntercaladosComRevogadosRecentes(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+	url := server.URL + "/api/auth/refresh"
+
+	for i := 0; i < 10; i++ {
+		mock.ExpectQuery(findRefreshSQL).WillReturnRows(sqlmock.NewRows(refreshTokenCols))
+		resp := postRefresh(t, url, map[string]string{"refresh_token": "forjado"}, "")
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		resp.Body.Close()
+		if i == 9 {
+			break // o 10º forjado já bloqueia o IP
+		}
+		for j := 0; j < 2; j++ {
+			expectRefreshRevogado(mock, time.Now().Add(-5*time.Second))
+			assertRefreshRevogado401(t, url)
+		}
+	}
+
+	resp := postRefresh(t, url, map[string]string{"refresh_token": refreshTokenTexto}, "")
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	assert.NotEmpty(t, resp.Header.Get("Retry-After"))
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

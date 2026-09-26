@@ -355,12 +355,87 @@ describe("fetchWithAuth - refresh multi-aba (SEC-02)", () => {
     });
     releaseRefresh(jsonResponse(401, { error: "refresh token revogado" }));
 
-    await expect(pa).rejects.toThrow("Failed to fetch");
-    // A requisicao pendente na fila e rejeitada (nao fica pendurada).
-    await expect(pb).rejects.toThrow("Sessão expirada");
+    const errA = await pa.catch((e: unknown) => e);
+    const errB = await pb.catch((e: unknown) => e);
+    // FE-08: o erro de rede vira NetworkError amigavel, com o original em cause.
+    expect(errA).toBeInstanceOf(client.NetworkError);
+    expect(errA).toMatchObject({ name: "NetworkError", kind: "conexao", message: client.MSG_ERRO_REDE });
+    expect((errA as Error).cause).toBeInstanceOf(TypeError);
+    expect(((errA as Error).cause as Error).message).toBe("Failed to fetch");
+    // FE-06: a requisicao pendente na fila e rejeitada (nao fica pendurada)
+    // com o MESMO erro de rede, e nao com "Sessão expirada" (nao houve logout).
+    expect(errB).toBe(errA);
+    expect((errB as Error).message).not.toMatch(/Sessão expirada/);
+    // A fila nao reenvia /api/b: so a primeira tentativa.
+    expect(calledUrls().filter((u) => u.endsWith("/api/b"))).toHaveLength(1);
     expect(calledUrls().filter((u) => u.endsWith("/api/a"))).toHaveLength(2);
     expect(calledUrls().some((u) => u.includes("/api/auth/logout"))).toBe(false);
     expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+  });
+
+  it("FE-06/FE-08: retry com falha de rede nao-Error: original e fila recebem o mesmo NetworkError, sem logout", async () => {
+    let releaseRefresh: (r: Response) => void = () => {};
+    let chamadasA = 0;
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith("/api/auth/refresh")) {
+        return new Promise<Response>((res) => {
+          releaseRefresh = res;
+        });
+      }
+      if (url.endsWith("/api/a")) {
+        chamadasA++;
+        return chamadasA === 1
+          ? Promise.resolve(jsonResponse(401, { error: "expirado" }))
+          : Promise.reject("offline");
+      }
+      return Promise.resolve(jsonResponse(401, { error: "expirado" }));
+    });
+
+    const pa = client.fetchWithAuth("/api/a");
+    const pb = client.fetchWithAuth("/api/b");
+    await vi.waitFor(() => {
+      expect(calledUrls().filter((u) => u.endsWith("/api/auth/refresh"))).toHaveLength(1);
+      expect(calledUrls().filter((u) => u.endsWith("/api/b"))).toHaveLength(1);
+    });
+    releaseRefresh(jsonResponse(401, {}));
+
+    const errA = await pa.catch((e: unknown) => e);
+    const errB = await pb.catch((e: unknown) => e);
+    expect(errA).toBeInstanceOf(client.NetworkError);
+    expect((errA as Error).message).toBe(client.MSG_ERRO_REDE);
+    expect((errA as Error).cause).toBe("offline");
+    expect(errB).toBe(errA);
+    expect(calledUrls().some((u) => u.includes("/api/auth/logout"))).toBe(false);
+    expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+  });
+
+  it("FE-06 (regressao): refresh 401 -> retry 401 desloga e a fila recebe 'Sessão expirada'", async () => {
+    let releaseRefresh: (r: Response) => void = () => {};
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith("/api/auth/refresh")) {
+        return new Promise<Response>((res) => {
+          releaseRefresh = res;
+        });
+      }
+      // logout: nunca resolve, para nao disparar navegacao no jsdom
+      if (url.endsWith("/api/auth/logout")) return new Promise<Response>(() => {});
+      return Promise.resolve(jsonResponse(401, { error: "expirado" }));
+    });
+
+    const pa = client.fetchWithAuth("/api/a");
+    const pb = client.fetchWithAuth("/api/b");
+    await vi.waitFor(() => {
+      expect(calledUrls().filter((u) => u.endsWith("/api/auth/refresh"))).toHaveLength(1);
+      expect(calledUrls().filter((u) => u.endsWith("/api/b"))).toHaveLength(1);
+    });
+    releaseRefresh(jsonResponse(401, { error: "refresh token revogado" }));
+
+    await expect(pa).rejects.toThrow("Sessão expirada. Faça login novamente.");
+    await expect(pb).rejects.toThrow("Sessão expirada. Faça login novamente.");
+    expect(calledUrls().filter((u) => u.endsWith("/api/a"))).toHaveLength(2);
+    expect(calledUrls().filter((u) => u.endsWith("/api/b"))).toHaveLength(1);
+    expect(calledUrls()).toContain("http://api.test/api/auth/logout");
+    expect(localStorage.getItem("auth_user")).toBeNull();
   });
 
   it.each<[string, () => Promise<Response>]>([
@@ -426,5 +501,241 @@ describe("fetchWithAuth - sucesso", () => {
       credentials: "include",
       headers: { "Content-Type": "application/json", "X-Teste": "1" },
     });
+  });
+});
+
+// 🔴 TestBrain (Lote 5, FE-06): a fila so recebe "Sessão expirada" quando ha
+// logout; falha de rede no retry nao desloga e nao trava o estado do modulo.
+describe("fetchWithAuth - fila de refresh (FE-06, regressao do Lote 5)", () => {
+  type RespostaRefresh = () => Promise<Response>;
+
+  // Sobe N requisicoes com 401; a primeira dispara o refresh (segurado) e as
+  // outras entram na fila. Devolve as promessas e a funcao que libera o refresh.
+  async function filaComRefreshSegurado(
+    n: number,
+    retryPrimeira: () => Promise<Response>
+  ) {
+    let liberar: (r: RespostaRefresh) => void = () => {};
+    let chamadasPrimeira = 0;
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith("/api/auth/refresh")) {
+        return new Promise<Response>((res, rej) => {
+          liberar = (r) => r().then(res, rej);
+        });
+      }
+      if (url.endsWith("/api/auth/logout")) return new Promise<Response>(() => {});
+      if (url.endsWith("/api/r0")) {
+        chamadasPrimeira++;
+        return chamadasPrimeira === 1
+          ? Promise.resolve(jsonResponse(401, { error: "expirado" }))
+          : retryPrimeira();
+      }
+      return Promise.resolve(jsonResponse(401, { error: "expirado" }));
+    });
+    const ps = Array.from({ length: n }, (_, i) =>
+      client.fetchWithAuth(`/api/r${i}`).catch((e: unknown) => e)
+    );
+    await vi.waitFor(() => {
+      expect(calledUrls().filter((u) => u.endsWith("/api/auth/refresh"))).toHaveLength(1);
+      expect(calledUrls().filter((u) => /\/api\/r\d$/.test(u))).toHaveLength(n);
+    });
+    return { ps, liberar: (r: RespostaRefresh) => liberar(r) };
+  }
+
+  it("falha de rede no retry: TODAS as pendentes (3) recebem o mesmo NetworkError, sem logout", async () => {
+    const erroRede = new TypeError("Failed to fetch");
+    const { ps, liberar } = await filaComRefreshSegurado(4, () => Promise.reject(erroRede));
+    liberar(() => Promise.resolve(jsonResponse(401, { error: "refresh token revogado" })));
+
+    const erros = await Promise.all(ps);
+    // FE-08: mensagem amigavel, erro original do navegador preservado em cause.
+    expect(erros[0]).toBeInstanceOf(client.NetworkError);
+    expect((erros[0] as Error).message).toBe(client.MSG_ERRO_REDE);
+    expect((erros[0] as Error).cause).toBe(erroRede);
+    for (const e of erros) expect(e).toBe(erros[0]);
+    expect(calledUrls().some((u) => u.includes("/api/auth/logout"))).toBe(false);
+    expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+  });
+
+  it.each<[string, RespostaRefresh]>([
+    ["refresh 401 e retry 401", () => Promise.resolve(jsonResponse(401, { error: "refresh token revogado" }))],
+    ["refresh 429 (rate limit)", () => Promise.resolve(jsonResponse(429, { error: "muitas tentativas" }))],
+    ["refresh 500", () => Promise.resolve(jsonResponse(500, { error: "erro interno" }))],
+    ["refresh com timeout", () => Promise.reject(Object.assign(new Error("aborted"), { name: "AbortError" }))],
+    ["refresh com erro de rede", () => Promise.reject(new TypeError("Failed to fetch"))],
+  ])("%s: ha logout e toda a fila recebe 'Sessão expirada'", async (_n, respostaRefresh) => {
+    const { ps, liberar } = await filaComRefreshSegurado(3, () =>
+      Promise.resolve(jsonResponse(401, { error: "expirado" }))
+    );
+    liberar(respostaRefresh);
+
+    const erros = await Promise.all(ps);
+    for (const e of erros) {
+      expect(e).toBeInstanceOf(Error);
+      expect((e as Error).message).toBe("Sessão expirada. Faça login novamente.");
+    }
+    expect(calledUrls()).toContain("http://api.test/api/auth/logout");
+    expect(localStorage.getItem("auth_user")).toBeNull();
+  });
+
+  it("depois da falha de rede no retry, o estado e liberado: um novo 401 dispara um novo refresh", async () => {
+    const erroRede = new TypeError("Failed to fetch");
+    const { ps, liberar } = await filaComRefreshSegurado(2, () => Promise.reject(erroRede));
+    liberar(() => Promise.resolve(jsonResponse(401, {})));
+    await Promise.all(ps);
+
+    // Rede voltou: novo 401 -> novo refresh OK -> retry OK.
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "expirado" }))
+      .mockResolvedValueOnce(jsonResponse(200, {}))
+      .mockResolvedValueOnce(jsonResponse(200, { data: "ok" }));
+    await expect(client.fetchWithAuth("/api/depois")).resolves.toBe("ok");
+    expect(calledUrls()).toEqual([
+      "http://api.test/api/depois",
+      "http://api.test/api/auth/refresh",
+      "http://api.test/api/depois",
+    ]);
+    expect(document.getElementById("api-refresh-indicator")?.style.display ?? "none").toBe("none");
+  });
+});
+
+// 🟢 FrontBrain (Lote 5, FE-08): falha de rede/timeout vira NetworkError com
+// mensagem amigavel; erro original preservado em `cause`.
+describe("fetchWithAuth - erro de rede (FE-08)", () => {
+  it("mensagens em portugues com acentos", () => {
+    expect(client.MSG_ERRO_REDE).toBe(
+      "Não foi possível conectar ao servidor. Verifique sua conexão com a internet e tente novamente."
+    );
+    expect(client.MSG_ERRO_TIMEOUT).toBe("O servidor demorou para responder. Tente novamente.");
+  });
+
+  it.each([
+    ["Chrome", new TypeError("Failed to fetch")],
+    ["Firefox", new TypeError("NetworkError when attempting to fetch resource.")],
+    ["Safari", new TypeError("Load failed")],
+  ])("falha de rede na requisicao original (%s): NetworkError, sem refresh nem logout", async (_n, original) => {
+    fetchMock.mockRejectedValueOnce(original);
+
+    const err = await client.fetchWithAuth("/api/clientes").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(client.NetworkError);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toMatchObject({ name: "NetworkError", kind: "conexao", message: client.MSG_ERRO_REDE });
+    expect((err as Error).cause).toBe(original);
+    expect(calledUrls()).toEqual(["http://api.test/api/clientes"]);
+    expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+  });
+
+  it("timeout (TimeoutError, ex.: AbortSignal.timeout): NetworkError com mensagem de timeout", async () => {
+    const original = new DOMException("The operation timed out.", "TimeoutError");
+    fetchMock.mockRejectedValueOnce(original);
+
+    const err = await client
+      .fetchWithAuth("/api/x", { signal: AbortSignal.timeout(60000) })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(client.NetworkError);
+    expect(err).toMatchObject({ kind: "timeout", message: client.MSG_ERRO_TIMEOUT });
+    expect((err as Error).cause).toBe(original);
+  });
+
+  it("timeout real do signal do chamador vira NetworkError de timeout", async () => {
+    fetchMock.mockImplementationOnce(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_res, rej) => {
+          init.signal?.addEventListener("abort", () => rej(init.signal?.reason));
+        })
+    );
+
+    const err = await client
+      .fetchWithAuth("/api/x", { signal: AbortSignal.timeout(5) })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(client.NetworkError);
+    expect((err as Error).message).toBe(client.MSG_ERRO_TIMEOUT);
+  });
+
+  it("abort intencional do chamador (AbortError) NAO vira erro de rede", async () => {
+    const controller = new AbortController();
+    const abortErr = new DOMException("The user aborted a request.", "AbortError");
+    fetchMock.mockRejectedValueOnce(abortErr);
+    controller.abort();
+
+    const err = await client
+      .fetchWithAuth("/api/x", { signal: controller.signal })
+      .catch((e: unknown) => e);
+
+    expect(err).toBe(abortErr);
+    expect(err).not.toBeInstanceOf(client.NetworkError);
+  });
+
+  it("abort do chamador com motivo proprio repassa o motivo sem conversao", async () => {
+    const controller = new AbortController();
+    controller.abort("cancelado pela tela");
+    fetchMock.mockRejectedValueOnce("cancelado pela tela");
+
+    const err = await client
+      .fetchWithAuth("/api/x", { signal: controller.signal })
+      .catch((e: unknown) => e);
+
+    expect(err).toBe("cancelado pela tela");
+  });
+
+  it("401 -> refresh OK -> retry com falha de rede: NetworkError, sem logout", async () => {
+    const original = new TypeError("Failed to fetch");
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: "token expirado" }))
+      .mockResolvedValueOnce(jsonResponse(200, {}))
+      .mockRejectedValueOnce(original);
+
+    const err = await client.fetchWithAuth("/api/pedidos").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(client.NetworkError);
+    expect((err as Error).message).toBe(client.MSG_ERRO_REDE);
+    expect((err as Error).cause).toBe(original);
+    expect(calledUrls().some((u) => u.includes("/api/auth/logout"))).toBe(false);
+    expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+  });
+
+  it("refresh OK -> reenvio de requisicao da fila com falha de rede: NetworkError", async () => {
+    let releaseRefresh: (r: Response) => void = () => {};
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith("/api/auth/refresh")) {
+        return new Promise<Response>((res) => {
+          releaseRefresh = res;
+        });
+      }
+      const n = fetchMock.mock.calls.filter((c) => c[0] === url).length;
+      if (n === 1) return Promise.resolve(jsonResponse(401, { error: "expirado" }));
+      return url.endsWith("/api/b")
+        ? Promise.reject(new TypeError("Load failed"))
+        : Promise.resolve(jsonResponse(200, { data: "a" }));
+    });
+
+    const pa = client.fetchWithAuth("/api/a");
+    const pb = client.fetchWithAuth("/api/b").catch((e: unknown) => e);
+    await vi.waitFor(() => {
+      expect(calledUrls().filter((u) => u.endsWith("/api/auth/refresh"))).toHaveLength(1);
+      expect(calledUrls().filter((u) => u.endsWith("/api/b"))).toHaveLength(1);
+    });
+    releaseRefresh(jsonResponse(200, {}));
+
+    await expect(pa).resolves.toBe("a");
+    const errB = await pb;
+    expect(errB).toBeInstanceOf(client.NetworkError);
+    expect((errB as Error).message).toBe(client.MSG_ERRO_REDE);
+    expect(((errB as Error).cause as Error).message).toBe("Load failed");
+    expect(calledUrls().some((u) => u.includes("/api/auth/logout"))).toBe(false);
+  });
+
+  it("erro HTTP da API continua com a mensagem do backend (nao e NetworkError)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(409, { error: "CNPJ já cadastrado" }));
+
+    const err = await client.fetchWithAuth("/api/clientes").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(client.ApiError);
+    expect(err).not.toBeInstanceOf(client.NetworkError);
+    expect(err).toMatchObject({ status: 409, message: "CNPJ já cadastrado" });
   });
 });

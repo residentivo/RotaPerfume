@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { Cliente, ClienteResumo, VendedorCompleto, VendedorDetalhe, VendedorInput } from "@/lib/types";
 import { useAjustarAoMudar, useResetOnOpen } from "@/lib/useResetOnOpen";
+import { formatCnpj } from "@/lib/cnpj";
 
 interface VendedorModalProps {
   open: boolean;
@@ -33,15 +34,6 @@ function fmtDate(dateStr: string | null): string {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString("pt-BR");
-}
-
-function fmtCnpj(cnpj: string): string {
-  const digits = (cnpj || "").replace(/\D/g, "");
-  if (digits.length !== 14) return cnpj;
-  return digits.replace(
-    /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
-    "$1.$2.$3/$4-$5"
-  );
 }
 
 function buildClienteColumns(
@@ -63,7 +55,7 @@ function buildClienteColumns(
       header: "CNPJ",
       width: "160px",
       render: (c) => (
-        <span className="font-mono text-xs text-slate-600">{fmtCnpj(c.cnpj)}</span>
+        <span className="font-mono text-xs text-slate-600">{formatCnpj(c.cnpj)}</span>
       ),
     },
     {

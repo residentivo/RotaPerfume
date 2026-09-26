@@ -13,8 +13,9 @@
 --     interna `id` foi removida — não há mais desacoplamento nem
 --     necessidade de UNIQUE separada (a PK já garante unicidade). Coluna
 --     padronizada para BIGINT (era INT).
---   - `cnpj` é normalizado (somente dígitos, 14 chars) na importação, pois
---     o CSV traz formatos mistos (com/sem máscara, com espaços).
+--   - `cnpj` é normalizado (14 chars, sem máscara) na importação, pois
+--     o CSV traz formatos mistos (com/sem máscara, com espaços). Até o
+--     NEG-02 eram somente dígitos; ver a atualização NEG-02 abaixo.
 --   - ATUALIZAÇÃO (2026-09-25, NEG-01): `cnpj` passou a ser UNIQUE
 --     (`uq_clientes_cnpj`, substitui o antigo índice simples
 --     `idx_clientes_cnpj`) por decisão do usuário de bloquear CNPJ
@@ -25,6 +26,24 @@
 --     O importador (apis/shared/cmd/importclientes) precisa descartar ou
 --     unificar os duplicados do CSV, senão falha com erro 1062
 --     (ER_DUP_ENTRY) no `uq_clientes_cnpj`.
+--   - ATUALIZAÇÃO (2026-09-25, NEG-02): CNPJ alfanumérico da Receita.
+--     Regra: 14 posições, as 12 primeiras em [0-9A-Z] e os 2 DVs numéricos,
+--     gravado SEM máscara e em MAIÚSCULAS. Nenhuma mudança de DDL foi
+--     necessária: `cnpj` é CHAR(14) utf8mb4 (texto, não numérico) e não há
+--     CHECK/REGEXP/trigger/procedure/view no schema que exija só dígitos.
+--     A validação do formato (e dos DVs) é responsabilidade do Backend.
+--   - ATUALIZAÇÃO (2026-09-25, DB-02): o COMMENT da coluna `cnpj` deixou de
+--     dizer "somente dígitos" e passou a descrever o formato alfanumérico
+--     acima. Bancos novos já nascem com o texto novo por este DDL. Bancos
+--     existentes recebem o mesmo texto por
+--     sql/20_alter_clientes_cnpj_comment.sql (make db-fix-cnpj-comment),
+--     que só troca o COMMENT (tipo, collation e `uq_clientes_cnpj` intactos).
+--     COLLATION: `cnpj` herda utf8mb4_unicode_ci (case- e accent-insensitive).
+--     Logo, no `uq_clientes_cnpj`, 'ab12cd34ef5601' e 'AB12CD34EF5601'
+--     colidem (ER_DUP_ENTRY 1062), assim como buscas por igualdade ignoram
+--     caixa. Isso é aceitável e intencional: o Backend normaliza para
+--     MAIÚSCULAS antes de gravar/consultar, então o banco nunca deve conter
+--     minúsculas. Não trocar para utf8mb4_bin sem rever essa premissa.
 --   - `ativo` vira TINYINT(1) (0/1), convertido de 'S'/'N' do CSV.
 --   - `data_cadastro` vira DATE. O CSV mistura formatos YYYY-MM-DD e
 --     DD/MM/YYYY — o importador Go normaliza ambos antes do INSERT.
@@ -41,7 +60,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `clientes` (
     `cliente_id_origem` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'PK — corresponde 1:1 ao cliente_id do CSV de origem (dados/crm/clientes.csv), sem desacoplamento',
-    `cnpj` CHAR(14) NOT NULL COMMENT 'CNPJ normalizado (somente dígitos, sem máscara)',
+    `cnpj` CHAR(14) NOT NULL COMMENT 'CNPJ normalizado: 14 caracteres, sem máscara, em maiúsculas; 12 primeiras posições em [0-9A-Z] e 2 DVs numéricos (NEG-02)',
     `razao_social` VARCHAR(255) NOT NULL COMMENT 'Razão social do cliente',
     `segmento` VARCHAR(80) NOT NULL COMMENT 'Segmento de atuação (ex: Perfumaria, E-commerce)',
     `cidade` VARCHAR(120) NOT NULL COMMENT 'Cidade do cliente',

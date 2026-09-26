@@ -39,7 +39,9 @@
 -- Se sobrar alguma cópia, o ADD UNIQUE falha com 1062 e nada é perdido.
 --
 -- Backup para reversão (criado por este script, não apagar):
---   - clientes_merge_backup_20260925          -> linhas das cópias + sobrevivente
+--   - clientes_merge_backup_20260925          -> só as linhas das cópias removidas
+--     (o sobrevivente não é gravado; ele fica em `clientes`, e o id dele
+--     está na coluna merged_into_cliente_id de cada cópia)
 --   - clientes_merge_backup_20260925_vinculos -> log de cada filho transferido
 --     (cliente_id antigo/novo) e de cada carteira descartada (linha em JSON)
 -- Reversão: sql/19_revert_clientes_cnpj_unique.sql (make db-revert-cnpj-unique)

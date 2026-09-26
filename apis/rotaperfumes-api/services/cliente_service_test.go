@@ -83,6 +83,22 @@ func TestClienteService_ListClientes(t *testing.T) {
 			wantTot: 5,
 		},
 		{
+			nome:   "NEG-02: q com máscara busca o cnpj sem máscara e em maiúsculas",
+			filtro: services.ClienteFiltro{Q: "12.abc.345/01de-35"},
+			page:   1,
+			limit:  20,
+			mock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE \(razao_social LIKE \? OR cnpj LIKE \?\)`).
+					WithArgs("%12.abc.345/01de-35%", "%12ABC34501DE35%").
+					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+				mock.ExpectQuery(`SELECT `+clienteColunasRegex+` FROM clientes WHERE \(razao_social LIKE \? OR cnpj LIKE \?\) ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+					WithArgs("%12.abc.345/01de-35%", "%12ABC34501DE35%", 20, 0).
+					WillReturnRows(clienteRows())
+			},
+			wantLen: 1,
+			wantTot: 1,
+		},
+		{
 			nome:   "erro no count do repo é propagado",
 			filtro: services.ClienteFiltro{},
 			page:   1,

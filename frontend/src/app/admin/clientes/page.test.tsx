@@ -36,7 +36,7 @@ function cliente(id: number, razao: string, extra: Partial<Cliente> = {}): Clien
   return {
     cliente_id_origem: id,
     razao_social: razao,
-    cnpj: "12345678000199",
+    cnpj: "11222333000181",
     segmento: "Varejo",
     cidade: "Sao Paulo",
     uf: "SP",
@@ -115,7 +115,7 @@ async function preencherNovoCliente() {
   const dialog = await screen.findByRole("dialog");
   const w = within(dialog);
   await userEvent.type(w.getByLabelText("Razao social"), "Loja Nova");
-  await userEvent.type(w.getByLabelText("CNPJ"), "11222333000144");
+  await userEvent.type(w.getByLabelText("CNPJ"), "11222333000181");
   await userEvent.type(w.getByLabelText("Segmento"), "Varejo");
   await userEvent.type(w.getByLabelText("Cidade"), "Campinas");
   await userEvent.type(w.getByLabelText("UF"), "SP");
@@ -286,5 +286,56 @@ describe("Clientes - motivo do bloqueio e fallbacks (SEC-01)", () => {
     await screen.findByText("Loja A");
     await userEvent.click(screen.getByRole("button", { name: /Ativo/ }));
     expect(api.apiToggleClienteStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("Clientes - CNPJ alfanumerico (NEG-02)", () => {
+  it("tabela exibe CNPJ numerico e alfanumerico com mascara", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    api.apiListClientes.mockResolvedValue(
+      page([
+        cliente(10, "Loja A", { cnpj: "11222333000181" }),
+        cliente(11, "Loja B", { cnpj: "12ABC34501DE35" }),
+      ])
+    );
+    render(<ClientesPage />);
+    expect(await screen.findByText("11.222.333/0001-81")).toBeInTheDocument();
+    expect(screen.getByText("12.ABC.345/01DE-35")).toBeInTheDocument();
+  });
+
+  it("busca envia o termo como digitado (backend aceita mascara e minusculas)", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    await userEvent.type(screen.getByLabelText("Buscar"), "12.abc.345");
+    await waitFor(() =>
+      expect(api.apiListClientes).toHaveBeenLastCalledWith(
+        1,
+        20,
+        expect.objectContaining({ q: "12.abc.345" }),
+        expect.anything(),
+        expect.anything()
+      )
+    );
+  });
+
+  it("criar com CNPJ alfanumerico em minusculas envia normalizado", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    api.apiCreateCliente.mockResolvedValue(cliente(12, "Loja Alfa", { cnpj: "12ABC34501DE35" }));
+    await userEvent.click(await screen.findByRole("button", { name: "+ Novo Cliente" }));
+    const w = within(await screen.findByRole("dialog"));
+    await userEvent.type(w.getByLabelText("Razao social"), "Loja Alfa");
+    await userEvent.type(w.getByLabelText("CNPJ"), "12abc34501de35");
+    expect(w.getByLabelText("CNPJ")).toHaveValue("12.ABC.345/01DE-35");
+    await userEvent.type(w.getByLabelText("Segmento"), "Varejo");
+    await userEvent.type(w.getByLabelText("Cidade"), "Santos");
+    await userEvent.type(w.getByLabelText("UF"), "SP");
+    await userEvent.click(w.getByRole("button", { name: "Criar cliente" }));
+    await waitFor(() => expect(api.apiCreateCliente).toHaveBeenCalledTimes(1));
+    expect(api.apiCreateCliente).toHaveBeenCalledWith(
+      expect.objectContaining({ cnpj: "12ABC34501DE35" })
+    );
   });
 });

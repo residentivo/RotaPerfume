@@ -17,7 +17,11 @@
 //     a partir da raiz do repositório) ou via env CLIENTES_CSV_PATH.
 //  3. Faz parsing linha a linha com TRIM em todos os campos:
 //     cliente_id,cnpj,razao_social,segmento,cidade,uf,bairro,data_cadastro,ativo
-//     - cnpj: remove tudo que não for dígito (o CSV mistura formatos com e sem máscara).
+//     - cnpj: normalização central (clientesdedup.NormalizarCNPJ → shared/cnpj,
+//     NEG-02): remove a máscara (". / -" e espaços — o CSV mistura formatos
+//     com e sem máscara), converte para MAIÚSCULAS e exige 14 caracteres
+//     (12 em [0-9A-Z] + 2 DVs numéricos). Aceita CNPJ numérico e
+//     alfanumérico; outro caractere invalida a linha.
 //     - data_cadastro: aceita "2006-01-02" e "02/01/2006" (ambos aparecem no CSV real).
 //     - ativo: 'S' -> true, 'N' -> false (case-insensitive).
 //     3.1 NEG-01: clientes.cnpj é UNIQUE (uq_clientes_cnpj). Linhas com CNPJ já
@@ -219,9 +223,9 @@ func parseRow(record []string) (clienteRow, error) {
 		return clienteRow{}, fmt.Errorf("cliente_id inválido (%q): %w", record[0], err)
 	}
 
-	cnpj := normalizeCNPJ(record[1])
-	if len(cnpj) != 14 {
-		return clienteRow{}, fmt.Errorf("cnpj inválido (%q, normalizado=%q, esperado 14 dígitos)", record[1], cnpj)
+	cnpj, ok := clientesdedup.NormalizarCNPJ(record[1])
+	if !ok {
+		return clienteRow{}, fmt.Errorf("cnpj inválido (%q, esperado 14 caracteres: 12 em [0-9A-Z] + 2 DVs numéricos, máscara opcional)", record[1])
 	}
 
 	razaoSocial := record[2]
@@ -255,18 +259,6 @@ func parseRow(record []string) (clienteRow, error) {
 		DataCadastro:    dataCadastro,
 		Ativo:           ativo,
 	}, nil
-}
-
-// normalizeCNPJ remove tudo que não for dígito (o CSV mistura CNPJ puro e
-// mascarado, e alguns valores vêm com espaços em volta).
-func normalizeCNPJ(raw string) string {
-	var b strings.Builder
-	for _, r := range raw {
-		if r >= '0' && r <= '9' {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
 
 // parseData tenta os layouts conhecidos de data_cadastro observados no CSV real.

@@ -19,6 +19,7 @@ import {
 import { ApiError } from "@/lib/apiError";
 import { useSessionUser, useVendedorDesligado } from "@/lib/session";
 import { Cliente, ClienteInput } from "@/lib/types";
+import { formatCnpj } from "@/lib/cnpj";
 
 // Mensagens do backend (SEC-01), usadas so como fallback se a API nao
 // devolver texto.
@@ -73,15 +74,6 @@ function fmtDate(dateStr: string): string {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString("pt-BR");
-}
-
-function fmtCnpj(cnpj: string): string {
-  const digits = (cnpj || "").replace(/\D/g, "");
-  if (digits.length !== 14) return cnpj;
-  return digits.replace(
-    /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
-    "$1.$2.$3/$4-$5"
-  );
 }
 
 function ClientesContent() {
@@ -343,7 +335,7 @@ function ClientesContent() {
       sortable: true,
       render: (c) => (
         <span className="font-mono text-xs text-slate-600">
-          {fmtCnpj(c.cnpj)}
+          {formatCnpj(c.cnpj)}
         </span>
       ),
     },

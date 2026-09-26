@@ -129,6 +129,39 @@ func TestClienteList_SemFiltroVendedorID(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestClienteList_BuscaQCNPJ: NEG-02 — QCNPJ substitui Q apenas no LIKE de
+// cnpj; vazio, o LIKE de cnpj usa o próprio Q.
+func TestClienteList_BuscaQCNPJ(t *testing.T) {
+	cases := []struct {
+		nome        string
+		filtro      repositories.ClienteFiltro
+		wantLikeRS  string
+		wantLikeDoc string
+	}{
+		{"sem QCNPJ usa Q", repositories.ClienteFiltro{Q: "Teste"}, "%Teste%", "%Teste%"},
+		{"com QCNPJ", repositories.ClienteFiltro{Q: "12.abc.345", QCNPJ: "12ABC345"}, "%12.abc.345%", "%12ABC345%"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+
+			where := `WHERE \(razao_social LIKE \? OR cnpj LIKE \?\)`
+			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes `+where).
+				WithArgs(tc.wantLikeRS, tc.wantLikeDoc).
+				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
+			mock.ExpectQuery(`SELECT `+clienteColunasRegexp+` FROM clientes `+where+` ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+				WithArgs(tc.wantLikeRS, tc.wantLikeDoc, 10, 0).
+				WillReturnRows(sqlmock.NewRows(clienteRepoColumns))
+
+			_, _, err := repositories.NewClienteRepository().List(context.Background(), db, 1, 10, tc.filtro)
+
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 const carteiraAtivaWhereRegexp = `cliente_id_origem IN \(SELECT cliente_id FROM carteiras WHERE vendedor_id = \? AND data_fim IS NULL\)`
 
 // TestClienteContagens_EscopoCarteira garante que vendedorID > 0 aplica o

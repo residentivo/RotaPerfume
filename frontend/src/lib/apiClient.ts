@@ -18,6 +18,10 @@
  *    (`navigator.locks`, "rp-auth-refresh") quando o navegador suporta
  * 6. Erros HTTP viram ApiError (com status). O 403 de vendedor desligado
  *    NÃO dispara refresh nem logout: só notifica a sessão em memória.
+ * 7. FE-08: falha de rede (fetch rejeitado: "Failed to fetch", "Load failed",
+ *    "NetworkError when attempting to fetch resource"...) ou timeout vira
+ *    NetworkError com mensagem amigável em português (o erro original fica
+ *    em `cause`). Abort intencional do chamador passa sem conversão.
  */
 
 import { clearTokens } from "./auth";
@@ -43,14 +47,76 @@ const REFRESH_TIMEOUT = 10000;
 // ============================================
 
 let isRefreshing = false;
-let refreshSubscribers: Array<(success: boolean) => void> = [];
 
-function subscribeTokenRefresh(callback: (success: boolean) => void): void {
+/**
+ * Callback da fila de requisições que aguardam o refresh. Em falha, `erro`
+ * diz o motivo; sem ele, a falha é de sessão (houve logout).
+ */
+type RefreshSubscriber = (success: boolean, erro?: Error) => void;
+
+let refreshSubscribers: RefreshSubscriber[] = [];
+
+// Mensagem usada apenas quando a sessão de fato é encerrada (logout).
+const MSG_SESSAO_EXPIRADA = "Sessão expirada. Faça login novamente.";
+
+// Fallback para rejeições que não são instâncias de Error.
+const MSG_ERRO_REQUISICAO = "Erro ao processar requisição";
+
+// ============================================
+// Erro de rede (FE-08)
+// ============================================
+
+/** Mensagem exibida quando a requisição não chega ao servidor. */
+export const MSG_ERRO_REDE =
+  "Não foi possível conectar ao servidor. Verifique sua conexão com a internet e tente novamente.";
+
+/** Mensagem exibida quando a requisição expira (timeout). */
+export const MSG_ERRO_TIMEOUT = "O servidor demorou para responder. Tente novamente.";
+
+export type NetworkErrorKind = "conexao" | "timeout";
+
+/**
+ * Falha de rede/timeout de uma requisição do apiClient: não houve resposta
+ * HTTP. A mensagem é amigável; o erro original do navegador fica em `cause`.
+ */
+export class NetworkError extends Error {
+  readonly kind: NetworkErrorKind;
+
+  constructor(kind: NetworkErrorKind, cause?: unknown) {
+    super(kind === "timeout" ? MSG_ERRO_TIMEOUT : MSG_ERRO_REDE);
+    this.name = "NetworkError";
+    this.kind = kind;
+    // Atribuição explícita: navegadores antigos ignoram o 2º argumento de Error.
+    this.cause = cause;
+  }
+}
+
+// Nome do erro (Error ou DOMException) sem depender de `instanceof DOMException`.
+function errorName(err: unknown): string | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const name = (err as { name?: unknown }).name;
+  return typeof name === "string" ? name : undefined;
+}
+
+/**
+ * Converte a rejeição de `fetch` no erro que a tela deve ver:
+ * - TimeoutError (ex.: AbortSignal.timeout do chamador) -> NetworkError "timeout";
+ * - abort intencional (signal do chamador abortado ou AbortError) -> original;
+ * - qualquer outra rejeição (fetch só rejeita por falha de rede) -> NetworkError.
+ */
+function toFetchError(err: unknown, signal?: AbortSignal | null): unknown {
+  const name = errorName(err);
+  if (name === "TimeoutError") return new NetworkError("timeout", err);
+  if (name === "AbortError" || signal?.aborted) return err;
+  return new NetworkError("conexao", err);
+}
+
+function subscribeTokenRefresh(callback: RefreshSubscriber): void {
   refreshSubscribers.push(callback);
 }
 
-function onRefreshComplete(success: boolean): void {
-  refreshSubscribers.forEach((callback) => callback(success));
+function onRefreshComplete(success: boolean, erro?: Error): void {
+  refreshSubscribers.forEach((callback) => callback(success, erro));
   refreshSubscribers = [];
 }
 
@@ -239,11 +305,18 @@ export async function fetchWithAuth<T = unknown>(
     const mergedHeaders = { ...defaultHeaders, ...customHeaders };
 
     // access_token vai via cookie HttpOnly — o navegador o anexa sozinho.
-    const res = await fetch(url, {
-      ...fetchOptions,
-      headers: mergedHeaders,
-      credentials: "include",
-    });
+    // FE-08: falha de rede/timeout vira NetworkError (vale para a requisição
+    // original, para o reenvio após o refresh e para as da fila).
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...fetchOptions,
+        headers: mergedHeaders,
+        credentials: "include",
+      });
+    } catch (err) {
+      throw toFetchError(err, fetchOptions.signal);
+    }
     // FE-05: marca a resposta para o parseResponse devolver o corpo inteiro
     // (envelope paginado). Vale tambem para o reenvio apos o refresh.
     if (keepEnvelope) respostasComEnvelope.add(res);
@@ -258,9 +331,12 @@ export async function fetchWithAuth<T = unknown>(
     // Se já está fazendo refresh, aguarda resultado
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
-        subscribeTokenRefresh(async (success) => {
+        subscribeTokenRefresh(async (success, erro) => {
           if (!success) {
-            reject(new Error("Sessão expirada. Faça login novamente."));
+            // FE-06: sem `erro` houve logout (sessão expirada); com `erro`
+            // (ex.: falha de rede no retry) a sessão continua e a fila
+            // recebe o mesmo erro da requisição que falhou.
+            reject(erro ?? new Error(MSG_SESSAO_EXPIRADA));
             return;
           }
           try {
@@ -311,11 +387,16 @@ export async function fetchWithAuth<T = unknown>(
         try {
           retryAposOutraAba = await makeRequest();
         } catch (err) {
-          // Falha de rede no retry: nao desloga, mas libera a fila.
-          onRefreshComplete(false);
+          // Falha de rede no retry: nao desloga, mas libera a fila. FE-06: as
+          // pendentes recebem o mesmo erro de rede (nao "Sessão expirada",
+          // pois nao houve logout). FE-08: esse erro ja e o NetworkError
+          // gerado em makeRequest.
+          const erroRede =
+            err instanceof Error ? err : new Error(MSG_ERRO_REQUISICAO);
+          onRefreshComplete(false, erroRede);
           isRefreshing = false;
           hideRefreshIndicator();
-          throw err;
+          throw erroRede;
         }
       }
 
@@ -337,7 +418,7 @@ export async function fetchWithAuth<T = unknown>(
       hideRefreshIndicator();
       clearTokens();
       redirectToLogin();
-      throw new Error("Sessão expirada. Faça login novamente.");
+      throw new Error(MSG_SESSAO_EXPIRADA);
     } catch (error) {
       isRefreshing = false;
       hideRefreshIndicator();
@@ -345,7 +426,7 @@ export async function fetchWithAuth<T = unknown>(
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error("Erro ao processar requisição");
+      throw new Error(MSG_ERRO_REQUISICAO);
     }
   }
 

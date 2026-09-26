@@ -151,6 +151,58 @@ func TestRefreshTokenService_ValidateRefreshToken(t *testing.T) {
 	}
 }
 
+// TestRefreshTokenService_ValidateRefreshToken_JanelaDeGraca (SEC-04): com
+// relógio injetado, um token revogado dentro de RefreshRevokeGraceWindow
+// (em qualquer direção) devolve ErrRefreshTokenRevokedRecently, que também
+// satisfaz errors.Is(err, ErrRefreshTokenRevoked); fora dela, só Revoked. A
+// expiração tem precedência sobre a revogação.
+func TestRefreshTokenService_ValidateRefreshToken_JanelaDeGraca(t *testing.T) {
+	const token = "token-janela-graca"
+	agora := time.Date(2026, 9, 25, 12, 0, 0, 0, time.Local)
+	const findSQL = `SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`
+
+	cases := []struct {
+		nome         string
+		expiresAt    time.Time
+		revokedAt    time.Time
+		wantErr      error
+		wantRecently bool
+	}{
+		{"revogado há 5s -> Recently", agora.Add(time.Hour), agora.Add(-5 * time.Second), services.ErrRefreshTokenRevokedRecently, true},
+		{"revogado há exatamente 30s -> Recently", agora.Add(time.Hour), agora.Add(-services.RefreshRevokeGraceWindow), services.ErrRefreshTokenRevokedRecently, true},
+		{"revogado há 31s -> Revoked", agora.Add(time.Hour), agora.Add(-31 * time.Second), services.ErrRefreshTokenRevoked, false},
+		{"revogado há 1min -> Revoked", agora.Add(time.Hour), agora.Add(-time.Minute), services.ErrRefreshTokenRevoked, false},
+		{"revoked_at 1s no futuro -> Recently", agora.Add(time.Hour), agora.Add(time.Second), services.ErrRefreshTokenRevokedRecently, true},
+		{"revoked_at 31s no futuro -> Revoked", agora.Add(time.Hour), agora.Add(31 * time.Second), services.ErrRefreshTokenRevoked, false},
+		{"expirado e revogado recentemente -> Expired", agora.Add(-time.Second), agora.Add(-5 * time.Second), services.ErrRefreshTokenExpired, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.nome, func(t *testing.T) {
+			db, mock := newRefreshTokenTestDB(t)
+			mock.ExpectQuery(findSQL).WithArgs(hashOf(token)).
+				WillReturnRows(sqlmock.NewRows(refreshTokenColunas()).
+					AddRow(int64(1), int64(10), hashOf(token), tc.expiresAt, tc.revokedAt, "127.0.0.1", "curl/8.0"))
+
+			svc := services.NewRefreshTokenService()
+			services.SetRefreshClockForTest(svc, func() time.Time { return agora })
+			rt, err := svc.ValidateRefreshToken(context.Background(), db, token)
+
+			assert.Nil(t, rt)
+			require.ErrorIs(t, err, tc.wantErr)
+			if tc.wantRecently {
+				assert.ErrorIs(t, err, services.ErrRefreshTokenRevoked, "Recently deve envolver Revoked")
+			} else {
+				assert.NotErrorIs(t, err, services.ErrRefreshTokenRevokedRecently)
+			}
+			if tc.wantErr == services.ErrRefreshTokenExpired {
+				assert.NotErrorIs(t, err, services.ErrRefreshTokenRevoked, "expiração tem precedência")
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // RevokeToken
 // ---------------------------------------------------------------------------

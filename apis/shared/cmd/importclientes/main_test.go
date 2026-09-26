@@ -6,28 +6,45 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// normalizeCNPJ
+// CNPJ no parseRow (normalização central: clientesdedup.NormalizarCNPJ →
+// shared/cnpj, NEG-02). O DV não é validado no importador.
 // ---------------------------------------------------------------------------
 
-func TestNormalizeCNPJ(t *testing.T) {
+func TestParseRowCNPJ(t *testing.T) {
 	testCases := []struct {
-		nome string
-		in   string
-		want string
+		nome    string
+		in      string
+		want    string
+		wantErr bool
 	}{
-		{"já normalizado", "12345678000199", "12345678000199"},
-		{"com máscara padrão", "12.345.678/0001-99", "12345678000199"},
-		{"com espaços em volta", "  12345678000199  ", "12345678000199"},
-		{"vazio", "", ""},
-		{"apenas letras", "abc", ""},
-		{"letras misturadas com dígitos", "12a34b56c78d000199", "12345678000199"},
+		{nome: "já normalizado", in: "12345678000199", want: "12345678000199"},
+		{nome: "com máscara padrão", in: "12.345.678/0001-99", want: "12345678000199"},
+		{nome: "com espaços em volta", in: "  12345678000199  ", want: "12345678000199"},
+		{nome: "alfanumérico", in: "12ABC34501DE35", want: "12ABC34501DE35"},
+		{nome: "alfanumérico minúsculo com máscara", in: "12.abc.345/01de-35", want: "12ABC34501DE35"},
+		{nome: "DV inválido é aceito (dados fictícios)", in: "12ABC34501DE99", want: "12ABC34501DE99"},
+		{nome: "vazio", in: "", wantErr: true},
+		{nome: "apenas letras", in: "abc", wantErr: true},
+		{nome: "letra na posição do DV", in: "12ABC34501DEA5", wantErr: true},
+		{nome: "letras excedentes não são descartadas", in: "12a34b56c78d000199", wantErr: true},
+		{nome: "símbolo fora da máscara", in: "12345678000199#", wantErr: true},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.nome, func(t *testing.T) {
-			got := normalizeCNPJ(tc.in)
-			if got != tc.want {
-				t.Errorf("normalizeCNPJ(%q) = %q, want %q", tc.in, got, tc.want)
+			record := []string{"1", tc.in, "Empresa", "varejo", "SP", "SP", "Centro", "2023-05-10", "S"}
+			row, err := parseRow(record)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseRow com cnpj %q esperava erro, obteve CNPJ=%q", tc.in, row.CNPJ)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseRow com cnpj %q erro inesperado: %v", tc.in, err)
+			}
+			if row.CNPJ != tc.want {
+				t.Errorf("CNPJ = %q, want %q", row.CNPJ, tc.want)
 			}
 		})
 	}
@@ -109,7 +126,7 @@ func TestParseAtivo(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// parseRow (integra normalizeCNPJ + parseData + parseAtivo + validações)
+// parseRow (integra NormalizarCNPJ + parseData + parseAtivo + validações)
 // ---------------------------------------------------------------------------
 
 func TestParseRow(t *testing.T) {

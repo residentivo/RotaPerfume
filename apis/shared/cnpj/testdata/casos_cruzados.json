@@ -1,0 +1,811 @@
+{
+  "_comentario": "NEG-02: massa comum da verificação cruzada Go (apis/shared/cnpj) x TS (frontend/src/lib/cnpj.ts). Gerada por uma 3ª implementação de referência (TestBrain, 2026-09-25). 'casos': os dois lados devem concordar. 'divergencias': casos em que o TS divergia do backend (NEG-02-A/B, Lote 5); corrigidos em 2026-09-25 (FrontBrain), mantidos como regressão — o esperado é o contrato do backend e os dois lados devem concordar.",
+  "casos": [
+    {
+      "descricao": "exemplo oficial da Receita",
+      "entrada": "12ABC34501DE35",
+      "valido": true,
+      "normalizado": "12ABC34501DE35"
+    },
+    {
+      "descricao": "exemplo oficial com máscara",
+      "entrada": "12.ABC.345/01DE-35",
+      "valido": true,
+      "normalizado": "12ABC34501DE35"
+    },
+    {
+      "descricao": "exemplo oficial minúsculo com máscara",
+      "entrada": "12.abc.345/01de-35",
+      "valido": true,
+      "normalizado": "12ABC34501DE35"
+    },
+    {
+      "descricao": "exemplo oficial com espaços nas bordas",
+      "entrada": "  12ABC34501DE35  ",
+      "valido": true,
+      "normalizado": "12ABC34501DE35"
+    },
+    {
+      "descricao": "numérico clássico",
+      "entrada": "11222333000181",
+      "valido": true,
+      "normalizado": "11222333000181"
+    },
+    {
+      "descricao": "numérico clássico com máscara",
+      "entrada": "11.222.333/0001-81",
+      "valido": true,
+      "normalizado": "11222333000181"
+    },
+    {
+      "descricao": "numérico com zeros à esquerda",
+      "entrada": "00000000000191",
+      "valido": true,
+      "normalizado": "00000000000191"
+    },
+    {
+      "descricao": "numérico 1º DV errado",
+      "entrada": "11222333000191",
+      "valido": false
+    },
+    {
+      "descricao": "numérico 2º DV errado",
+      "entrada": "11222333000182",
+      "valido": false
+    },
+    {
+      "descricao": "alfanumérico 1º DV errado",
+      "entrada": "12ABC34501DE45",
+      "valido": false
+    },
+    {
+      "descricao": "alfanumérico 2º DV errado",
+      "entrada": "12ABC34501DE36",
+      "valido": false
+    },
+    {
+      "descricao": "letra no 1º DV",
+      "entrada": "12ABC34501DEA5",
+      "valido": false
+    },
+    {
+      "descricao": "letra no 2º DV",
+      "entrada": "12ABC34501DE3A",
+      "valido": false
+    },
+    {
+      "descricao": "13 caracteres",
+      "entrada": "12ABC34501DE3",
+      "valido": false
+    },
+    {
+      "descricao": "15 caracteres",
+      "entrada": "12ABC34501DE350",
+      "valido": false
+    },
+    {
+      "descricao": "vazio",
+      "entrada": "",
+      "valido": false
+    },
+    {
+      "descricao": "só máscara",
+      "entrada": "../-",
+      "valido": false
+    },
+    {
+      "descricao": "todos zeros",
+      "entrada": "00000000000000",
+      "valido": false
+    },
+    {
+      "descricao": "todos iguais com máscara",
+      "entrada": "11.111.111/1111-11",
+      "valido": false
+    },
+    {
+      "descricao": "todos iguais letras",
+      "entrada": "AAAAAAAAAAAAAA",
+      "valido": false
+    },
+    {
+      "descricao": "símbolo fora da máscara",
+      "entrada": "12ABC34501DE3#",
+      "valido": false
+    },
+    {
+      "descricao": "letra acentuada",
+      "entrada": "12ÁBC34501DE35",
+      "valido": false
+    },
+    {
+      "descricao": "underscore",
+      "entrada": "12_ABC34501DE35",
+      "valido": false
+    },
+    {
+      "descricao": "seed fictício com DV inválido",
+      "entrada": "12345678000199",
+      "valido": false
+    },
+    {
+      "descricao": "minúsculo no DV não vira dígito",
+      "entrada": "12abc34501de3a",
+      "valido": false
+    },
+    {
+      "descricao": "base toda Z",
+      "entrada": "ZZZZZZZZZZZZ62",
+      "valido": true,
+      "normalizado": "ZZZZZZZZZZZZ62"
+    },
+    {
+      "descricao": "base alternada A/Z/0/9",
+      "entrada": "az09az09az0945",
+      "valido": true,
+      "normalizado": "AZ09AZ09AZ0945"
+    },
+    {
+      "descricao": "aleatório alfanumérico 0 válido",
+      "entrada": "NYHLUKXEU06Z06",
+      "valido": true,
+      "normalizado": "NYHLUKXEU06Z06"
+    },
+    {
+      "descricao": "aleatório 0 com 2º DV trocado",
+      "entrada": "NYHLUKXEU06Z04",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 0 com 1º DV trocado",
+      "entrada": "NYHLUKXEU06Z36",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 1 válido",
+      "entrada": "57332947314804",
+      "valido": true,
+      "normalizado": "57332947314804"
+    },
+    {
+      "descricao": "aleatório 1 com 2º DV trocado",
+      "entrada": "57332947314808",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 1 com 1º DV trocado",
+      "entrada": "57332947314874",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 2 válido",
+      "entrada": "K2.AMT.R3W/G0MM-18",
+      "valido": true,
+      "normalizado": "K2AMTR3WG0MM18"
+    },
+    {
+      "descricao": "aleatório 2 com 2º DV trocado",
+      "entrada": "K2AMTR3WG0MM16",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 2 com 1º DV trocado",
+      "entrada": "K2AMTR3WG0MM38",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 3 válido",
+      "entrada": "11.350.224/2672-27",
+      "valido": true,
+      "normalizado": "11350224267227"
+    },
+    {
+      "descricao": "aleatório 3 com 2º DV trocado",
+      "entrada": "11350224267221",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 3 com 1º DV trocado",
+      "entrada": "11350224267287",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 4 válido",
+      "entrada": "R3X8NBPM59XF95",
+      "valido": true,
+      "normalizado": "R3X8NBPM59XF95"
+    },
+    {
+      "descricao": "aleatório 4 com 2º DV trocado",
+      "entrada": "R3X8NBPM59XF90",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 4 com 1º DV trocado",
+      "entrada": "R3X8NBPM59XF05",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 5 válido",
+      "entrada": "66276871033405",
+      "valido": true,
+      "normalizado": "66276871033405"
+    },
+    {
+      "descricao": "aleatório 5 com 2º DV trocado",
+      "entrada": "66276871033406",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 5 com 1º DV trocado",
+      "entrada": "66276871033415",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 6 válido",
+      "entrada": "2Q.JIN.2WQ/LFR1-54",
+      "valido": true,
+      "normalizado": "2QJIN2WQLFR154"
+    },
+    {
+      "descricao": "aleatório 6 com 2º DV trocado",
+      "entrada": "2QJIN2WQLFR156",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 6 com 1º DV trocado",
+      "entrada": "2QJIN2WQLFR184",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 7 válido",
+      "entrada": "25.786.452/1717-31",
+      "valido": true,
+      "normalizado": "25786452171731"
+    },
+    {
+      "descricao": "aleatório 7 com 2º DV trocado",
+      "entrada": "25786452171735",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 7 com 1º DV trocado",
+      "entrada": "25786452171701",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 8 válido",
+      "entrada": "O544NWAQM1D302",
+      "valido": true,
+      "normalizado": "O544NWAQM1D302"
+    },
+    {
+      "descricao": "aleatório 8 com 2º DV trocado",
+      "entrada": "O544NWAQM1D307",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 8 com 1º DV trocado",
+      "entrada": "O544NWAQM1D372",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 9 válido",
+      "entrada": "86631160820542",
+      "valido": true,
+      "normalizado": "86631160820542"
+    },
+    {
+      "descricao": "aleatório 9 com 2º DV trocado",
+      "entrada": "86631160820540",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 9 com 1º DV trocado",
+      "entrada": "86631160820592",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 10 válido",
+      "entrada": "59.TP2.KLF/IAQJ-52",
+      "valido": true,
+      "normalizado": "59TP2KLFIAQJ52"
+    },
+    {
+      "descricao": "aleatório 10 com 2º DV trocado",
+      "entrada": "59TP2KLFIAQJ58",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 10 com 1º DV trocado",
+      "entrada": "59TP2KLFIAQJ62",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 11 válido",
+      "entrada": "01.849.970/5773-10",
+      "valido": true,
+      "normalizado": "01849970577310"
+    },
+    {
+      "descricao": "aleatório 11 com 2º DV trocado",
+      "entrada": "01849970577319",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 11 com 1º DV trocado",
+      "entrada": "01849970577350",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 12 válido",
+      "entrada": "0XNM18LQGB1U67",
+      "valido": true,
+      "normalizado": "0XNM18LQGB1U67"
+    },
+    {
+      "descricao": "aleatório 12 com 2º DV trocado",
+      "entrada": "0XNM18LQGB1U60",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 12 com 1º DV trocado",
+      "entrada": "0XNM18LQGB1U17",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 13 válido",
+      "entrada": "00233548844088",
+      "valido": true,
+      "normalizado": "00233548844088"
+    },
+    {
+      "descricao": "aleatório 13 com 2º DV trocado",
+      "entrada": "00233548844084",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 13 com 1º DV trocado",
+      "entrada": "00233548844038",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 14 válido",
+      "entrada": "Q8.M11.G1M/LUSU-64",
+      "valido": true,
+      "normalizado": "Q8M11G1MLUSU64"
+    },
+    {
+      "descricao": "aleatório 14 com 2º DV trocado",
+      "entrada": "Q8M11G1MLUSU68",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 14 com 1º DV trocado",
+      "entrada": "Q8M11G1MLUSU24",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 15 válido",
+      "entrada": "44.382.839/2332-09",
+      "valido": true,
+      "normalizado": "44382839233209"
+    },
+    {
+      "descricao": "aleatório 15 com 2º DV trocado",
+      "entrada": "44382839233202",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 15 com 1º DV trocado",
+      "entrada": "44382839233289",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 16 válido",
+      "entrada": "8U4OTK8U9PY774",
+      "valido": true,
+      "normalizado": "8U4OTK8U9PY774"
+    },
+    {
+      "descricao": "aleatório 16 com 2º DV trocado",
+      "entrada": "8U4OTK8U9PY776",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 16 com 1º DV trocado",
+      "entrada": "8U4OTK8U9PY784",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 17 válido",
+      "entrada": "96763143032085",
+      "valido": true,
+      "normalizado": "96763143032085"
+    },
+    {
+      "descricao": "aleatório 17 com 2º DV trocado",
+      "entrada": "96763143032088",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 17 com 1º DV trocado",
+      "entrada": "96763143032075",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 18 válido",
+      "entrada": "7W.45Z.6VD/HJ2M-70",
+      "valido": true,
+      "normalizado": "7W45Z6VDHJ2M70"
+    },
+    {
+      "descricao": "aleatório 18 com 2º DV trocado",
+      "entrada": "7W45Z6VDHJ2M76",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 18 com 1º DV trocado",
+      "entrada": "7W45Z6VDHJ2M20",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 19 válido",
+      "entrada": "35.753.462/5784-09",
+      "valido": true,
+      "normalizado": "35753462578409"
+    },
+    {
+      "descricao": "aleatório 19 com 2º DV trocado",
+      "entrada": "35753462578404",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 19 com 1º DV trocado",
+      "entrada": "35753462578459",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 20 válido",
+      "entrada": "V8MI31X737MS80",
+      "valido": true,
+      "normalizado": "V8MI31X737MS80"
+    },
+    {
+      "descricao": "aleatório 20 com 2º DV trocado",
+      "entrada": "V8MI31X737MS87",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 20 com 1º DV trocado",
+      "entrada": "V8MI31X737MS70",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 21 válido",
+      "entrada": "80281803188060",
+      "valido": true,
+      "normalizado": "80281803188060"
+    },
+    {
+      "descricao": "aleatório 21 com 2º DV trocado",
+      "entrada": "80281803188061",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 21 com 1º DV trocado",
+      "entrada": "80281803188050",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 22 válido",
+      "entrada": "M3.8LL.WX2/D3ZZ-42",
+      "valido": true,
+      "normalizado": "M38LLWX2D3ZZ42"
+    },
+    {
+      "descricao": "aleatório 22 com 2º DV trocado",
+      "entrada": "M38LLWX2D3ZZ47",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 22 com 1º DV trocado",
+      "entrada": "M38LLWX2D3ZZ52",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 23 válido",
+      "entrada": "39.349.320/1977-13",
+      "valido": true,
+      "normalizado": "39349320197713"
+    },
+    {
+      "descricao": "aleatório 23 com 2º DV trocado",
+      "entrada": "39349320197717",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 23 com 1º DV trocado",
+      "entrada": "39349320197753",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 24 válido",
+      "entrada": "4BUSFIUHHRKX59",
+      "valido": true,
+      "normalizado": "4BUSFIUHHRKX59"
+    },
+    {
+      "descricao": "aleatório 24 com 2º DV trocado",
+      "entrada": "4BUSFIUHHRKX50",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 24 com 1º DV trocado",
+      "entrada": "4BUSFIUHHRKX19",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 25 válido",
+      "entrada": "60467244223401",
+      "valido": true,
+      "normalizado": "60467244223401"
+    },
+    {
+      "descricao": "aleatório 25 com 2º DV trocado",
+      "entrada": "60467244223400",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 25 com 1º DV trocado",
+      "entrada": "60467244223421",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 26 válido",
+      "entrada": "4A.LK7.17H/LP5Y-38",
+      "valido": true,
+      "normalizado": "4ALK717HLP5Y38"
+    },
+    {
+      "descricao": "aleatório 26 com 2º DV trocado",
+      "entrada": "4ALK717HLP5Y32",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 26 com 1º DV trocado",
+      "entrada": "4ALK717HLP5Y58",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 27 válido",
+      "entrada": "53.177.514/7665-00",
+      "valido": true,
+      "normalizado": "53177514766500"
+    },
+    {
+      "descricao": "aleatório 27 com 2º DV trocado",
+      "entrada": "53177514766509",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 27 com 1º DV trocado",
+      "entrada": "53177514766520",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 28 válido",
+      "entrada": "1BIV5SOHZOBW62",
+      "valido": true,
+      "normalizado": "1BIV5SOHZOBW62"
+    },
+    {
+      "descricao": "aleatório 28 com 2º DV trocado",
+      "entrada": "1BIV5SOHZOBW60",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 28 com 1º DV trocado",
+      "entrada": "1BIV5SOHZOBW72",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 29 válido",
+      "entrada": "02737759149300",
+      "valido": true,
+      "normalizado": "02737759149300"
+    },
+    {
+      "descricao": "aleatório 29 com 2º DV trocado",
+      "entrada": "02737759149301",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 29 com 1º DV trocado",
+      "entrada": "02737759149340",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 30 válido",
+      "entrada": "41.F0R.IKY/2V9D-50",
+      "valido": true,
+      "normalizado": "41F0RIKY2V9D50"
+    },
+    {
+      "descricao": "aleatório 30 com 2º DV trocado",
+      "entrada": "41F0RIKY2V9D59",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 30 com 1º DV trocado",
+      "entrada": "41F0RIKY2V9D60",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 31 válido",
+      "entrada": "77.066.359/0101-59",
+      "valido": true,
+      "normalizado": "77066359010159"
+    },
+    {
+      "descricao": "aleatório 31 com 2º DV trocado",
+      "entrada": "77066359010155",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 31 com 1º DV trocado",
+      "entrada": "77066359010119",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 32 válido",
+      "entrada": "BUYMGQTBHHMC43",
+      "valido": true,
+      "normalizado": "BUYMGQTBHHMC43"
+    },
+    {
+      "descricao": "aleatório 32 com 2º DV trocado",
+      "entrada": "BUYMGQTBHHMC42",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 32 com 1º DV trocado",
+      "entrada": "BUYMGQTBHHMC83",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 33 válido",
+      "entrada": "96963361403908",
+      "valido": true,
+      "normalizado": "96963361403908"
+    },
+    {
+      "descricao": "aleatório 33 com 2º DV trocado",
+      "entrada": "96963361403903",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 33 com 1º DV trocado",
+      "entrada": "96963361403958",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 34 válido",
+      "entrada": "79.AS4.5QY/M2T8-13",
+      "valido": true,
+      "normalizado": "79AS45QYM2T813"
+    },
+    {
+      "descricao": "aleatório 34 com 2º DV trocado",
+      "entrada": "79AS45QYM2T815",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 34 com 1º DV trocado",
+      "entrada": "79AS45QYM2T883",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 35 válido",
+      "entrada": "96.337.407/8024-03",
+      "valido": true,
+      "normalizado": "96337407802403"
+    },
+    {
+      "descricao": "aleatório 35 com 2º DV trocado",
+      "entrada": "96337407802409",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 35 com 1º DV trocado",
+      "entrada": "96337407802413",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 36 válido",
+      "entrada": "FNTAIL0B7AY194",
+      "valido": true,
+      "normalizado": "FNTAIL0B7AY194"
+    },
+    {
+      "descricao": "aleatório 36 com 2º DV trocado",
+      "entrada": "FNTAIL0B7AY195",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 36 com 1º DV trocado",
+      "entrada": "FNTAIL0B7AY134",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 37 válido",
+      "entrada": "63429164789607",
+      "valido": true,
+      "normalizado": "63429164789607"
+    },
+    {
+      "descricao": "aleatório 37 com 2º DV trocado",
+      "entrada": "63429164789606",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 37 com 1º DV trocado",
+      "entrada": "63429164789677",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório alfanumérico 38 válido",
+      "entrada": "WC.HBQ.IGM/T1PB-29",
+      "valido": true,
+      "normalizado": "WCHBQIGMT1PB29"
+    },
+    {
+      "descricao": "aleatório 38 com 2º DV trocado",
+      "entrada": "WCHBQIGMT1PB23",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 38 com 1º DV trocado",
+      "entrada": "WCHBQIGMT1PB09",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório numérico 39 válido",
+      "entrada": "32.018.920/8511-58",
+      "valido": true,
+      "normalizado": "32018920851158"
+    },
+    {
+      "descricao": "aleatório 39 com 2º DV trocado",
+      "entrada": "32018920851152",
+      "valido": false
+    },
+    {
+      "descricao": "aleatório 39 com 1º DV trocado",
+      "entrada": "32018920851178",
+      "valido": false
+    }
+  ],
+  "divergencias": [
+    {
+      "descricao": "tab no meio (máscara com tabulação)",
+      "entrada": "11.222.333\t0001-81",
+      "valido": false
+    },
+    {
+      "descricao": "NBSP no meio (colado de página web)",
+      "entrada": "11.222.333/0001 -81",
+      "valido": false
+    },
+    {
+      "descricao": "quebra de linha no meio",
+      "entrada": "12ABC345\n01DE35",
+      "valido": false
+    },
+    {
+      "descricao": "i sem ponto (U+0131) no lugar de I",
+      "entrada": "12ABı34501DE42",
+      "valido": false
+    }
+  ]
+}

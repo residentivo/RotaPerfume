@@ -63,7 +63,7 @@ interface Caso {
 
 const cliente: Cliente = {
   cliente_id_origem: 10,
-  cnpj: "11222333000144",
+  cnpj: "11222333000181",
   razao_social: "Loja A",
   segmento: "Varejo",
   cidade: "Campinas",
@@ -147,7 +147,7 @@ const CASOS: Caso[] = [
     },
     camposEditar: {
       "Razao social": "Loja A",
-      CNPJ: "11222333000144",
+      CNPJ: "11.222.333/0001-81",
       Segmento: "Varejo",
       Cidade: "Campinas",
       UF: "SP",
@@ -156,13 +156,13 @@ const CASOS: Caso[] = [
     },
     preencherValido: async (u) => {
       await type(u, "Razao social", " Loja Nova ");
-      await type(u, "CNPJ", "11222333000155");
+      await type(u, "CNPJ", "12abc34501de35");
       await type(u, "Segmento", "Varejo");
       await type(u, "Cidade", "Santos");
       await type(u, "UF", "sp");
     },
-    payloadNovo: { razao_social: "Loja Nova", uf: "SP", data_cadastro: hoje },
-    payloadEditar: { razao_social: "Loja A", data_cadastro: "2025-05-20" },
+    payloadNovo: { razao_social: "Loja Nova", cnpj: "12ABC34501DE35", uf: "SP", data_cadastro: hoje },
+    payloadEditar: { razao_social: "Loja A", cnpj: "11222333000181", data_cadastro: "2025-05-20" },
   },
   {
     nome: "EstoqueModal",
@@ -475,6 +475,19 @@ describe("VendedorModal - clientes vinculados (useAjustarAoMudar)", () => {
     m.set({ open: true, mode: "create", registro: null });
     expect(screen.queryByText("#44 - Cliente 44")).not.toBeInTheDocument();
     expect(screen.queryByText("Clientes vinculados")).not.toBeInTheDocument();
+  });
+
+  it("vinculados exibem CNPJ numerico e alfanumerico com mascara (NEG-02)", async () => {
+    api.apiGetVendedor.mockResolvedValue({
+      ...vendedor,
+      clientes: [
+        { ...vinculado, cnpj: "11222333000181" },
+        { ...vinculado, id: 45, razao_social: "Cliente 45", cnpj: "12ABC34501DE35" },
+      ],
+    });
+    montar(c, { mode: "edit", registro: vendedor });
+    expect(await screen.findByText("11.222.333/0001-81")).toBeInTheDocument();
+    expect(screen.getByText("12.ABC.345/01DE-35")).toBeInTheDocument();
   });
 
   it("detalhe obsoleto (fechou antes de responder) nao aparece no proximo vendedor", async () => {
