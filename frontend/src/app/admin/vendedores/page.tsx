@@ -196,9 +196,10 @@ function VendedoresPageContent() {
 
   const openEdit = (vendedor: Vendedor) => {
     setModalMode("edit");
-    // O modal busca o detalhe completo (GET /api/vendedores/{id}) para
-    // preencher meta_mensal/data_admissao e a lista de clientes vinculados;
-    // aqui passamos os campos ja conhecidos como fallback imediato.
+    // O modal busca o detalhe completo (GET /api/vendedores/{id}) e preenche
+    // o formulario inteiro com ele (BUG-07). data_admissao/meta_mensal abaixo
+    // sao apenas provisorios (a listagem nao traz esses campos, SEC-03) e o
+    // modal os ignora; o salvar fica bloqueado ate o detalhe carregar.
     setEditingVendedor({
       id: vendedor.id,
       nome: vendedor.nome,

@@ -29,6 +29,17 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Normaliza a data vinda da API (AAAA-MM-DD ou ISO datetime) para o formato
+// AAAA-MM-DD exigido pelo <input type="date">. Retorna "" se nao reconhecer.
+function toDateInput(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(dateStr);
+  if (m) return m[1];
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
 function fmtDate(dateStr: string | null): string {
   if (!dateStr) return "-";
   const d = new Date(dateStr);
@@ -142,13 +153,16 @@ export function VendedorModal({
     setError(null);
     setSubmitting(false);
     if (mode === "edit" && vendedor) {
+      // BUG-07: a listagem (GET /api/vendedores) nao traz data_admissao nem
+      // meta_mensal (projecao do SEC-03); o `vendedor` recebido tem valores
+      // provisorios nesses campos. Eles NAO sao usados: o formulario fica
+      // vazio/bloqueado ate o detalhe (GET /api/vendedores/{id}) chegar e
+      // preencher todos os campos (ver efeito do detalhe abaixo).
       setNome(vendedor.nome);
       setRegiao(vendedor.regiao);
       setUf(vendedor.uf);
-      setDataAdmissao(
-        vendedor.data_admissao ? vendedor.data_admissao.slice(0, 10) : todayISO()
-      );
-      setMetaMensal(String(vendedor.meta_mensal ?? 0));
+      setDataAdmissao("");
+      setMetaMensal("");
     } else {
       setNome("");
       setRegiao("");
@@ -163,8 +177,10 @@ export function VendedorModal({
   // e aplica o resultado nos callbacks assincronos.
   useAjustarAoMudar([open, mode, vendedor], () => {
     setDetalheError(null);
+    // Sempre descarta o detalhe anterior: com outro vendedor (ou reabertura)
+    // o salvar volta a ficar bloqueado ate o novo detalhe chegar (BUG-07).
+    setDetalhe(null);
     if (!open || mode !== "edit" || !vendedor) {
-      setDetalhe(null);
       setLoadingDetalhe(false);
       return;
     }
@@ -180,14 +196,22 @@ export function VendedorModal({
         // ainda nao tem nenhum cliente vinculado (slice Go nil/vazio serializa
         // como null). Normalizamos aqui para `[]` para que todo o restante do
         // componente possa assumir que `detalhe.clientes` e sempre um array.
-        if (!cancelled) setDetalhe({ ...res, clientes: res.clientes ?? [] });
+        if (cancelled) return;
+        setDetalhe({ ...res, clientes: res.clientes ?? [] });
+        // BUG-07: o formulario de edicao e preenchido com os dados reais do
+        // banco (detalhe), nunca com os valores provisorios da listagem.
+        setNome(res.nome ?? "");
+        setRegiao(res.regiao ?? "");
+        setUf(res.uf ?? "");
+        setDataAdmissao(toDateInput(res.data_admissao));
+        setMetaMensal(String(res.meta_mensal ?? 0));
       })
       .catch((err) => {
         if (!cancelled) {
           const message =
             err instanceof Error
               ? err.message
-              : "Erro ao carregar clientes vinculados ao vendedor.";
+              : "Erro ao carregar os dados do vendedor.";
           setDetalheError(message);
         }
       })
@@ -326,6 +350,17 @@ export function VendedorModal({
     e.preventDefault();
     setError(null);
 
+    // BUG-07: no modo edicao so salva depois que o detalhe carregou; antes
+    // disso o formulario nao tem data_admissao/meta_mensal reais.
+    if (mode === "edit" && !detalhe) {
+      setError(
+        detalheError
+          ? "Nao e possivel salvar: os dados do vendedor nao foram carregados."
+          : "Aguarde o carregamento dos dados do vendedor."
+      );
+      return;
+    }
+
     if (!nome.trim()) {
       setError("Nome e obrigatorio.");
       return;
@@ -366,6 +401,9 @@ export function VendedorModal({
     }
   };
 
+  // Edicao bloqueada enquanto o detalhe nao carregou (ou se falhou).
+  const aguardandoDetalhe = mode === "edit" && !detalhe;
+
   return (
     <Modal
       open={open}
@@ -376,69 +414,75 @@ export function VendedorModal({
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert variant="error">{error}</Alert>}
 
-        <Input
-          label="Nome"
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-          placeholder="Ex: Joao da Silva"
-          required
-          autoFocus
-        />
+        {mode === "edit" && loadingDetalhe && (
+          <Alert variant="info">Carregando dados do vendedor...</Alert>
+        )}
+        {mode === "edit" && detalheError && (
+          <Alert variant="error">
+            Nao foi possivel carregar os dados do vendedor: {detalheError}
+          </Alert>
+        )}
 
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2">
+        <fieldset disabled={aguardandoDetalhe} className="space-y-4">
+          <Input
+            label="Nome"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            placeholder="Ex: Joao da Silva"
+            required
+            autoFocus
+          />
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <Input
+                label="Regiao"
+                value={regiao}
+                onChange={(e) => setRegiao(e.target.value)}
+                placeholder="Ex: Sudeste"
+                required
+              />
+            </div>
             <Input
-              label="Regiao"
-              value={regiao}
-              onChange={(e) => setRegiao(e.target.value)}
-              placeholder="Ex: Sudeste"
+              label="UF"
+              value={uf}
+              onChange={(e) => setUf(e.target.value.toUpperCase())}
+              placeholder="SP"
+              maxLength={2}
               required
             />
           </div>
-          <Input
-            label="UF"
-            value={uf}
-            onChange={(e) => setUf(e.target.value.toUpperCase())}
-            placeholder="SP"
-            maxLength={2}
-            required
-          />
-        </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            label="Data de admissao"
-            type="date"
-            value={dataAdmissao}
-            onChange={(e) => setDataAdmissao(e.target.value)}
-            required={mode === "edit"}
-            helperText={
-              mode === "create"
-                ? "Se nao informada, sera usada a data de hoje."
-                : undefined
-            }
-          />
-          <Input
-            label="Meta mensal"
-            type="number"
-            min="0"
-            step="0.01"
-            value={metaMensal}
-            onChange={(e) => setMetaMensal(e.target.value)}
-            required
-          />
-        </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Data de admissao"
+              type="date"
+              value={dataAdmissao}
+              onChange={(e) => setDataAdmissao(e.target.value)}
+              required={mode === "edit"}
+              helperText={
+                mode === "create"
+                  ? "Se nao informada, sera usada a data de hoje."
+                  : undefined
+              }
+            />
+            <Input
+              label="Meta mensal"
+              type="number"
+              min="0"
+              step="0.01"
+              value={metaMensal}
+              onChange={(e) => setMetaMensal(e.target.value)}
+              required
+            />
+          </div>
+        </fieldset>
 
         {mode === "edit" && (
           <div>
             <h3 className="mb-2 text-sm font-semibold text-slate-700">
               Clientes vinculados
             </h3>
-            {detalheError && (
-              <Alert variant="error">
-                Nao foi possivel carregar os clientes vinculados: {detalheError}
-              </Alert>
-            )}
             {clientesError && (
               <Alert variant="error">
                 Nao foi possivel carregar os clientes disponiveis: {clientesError}
@@ -484,7 +528,14 @@ export function VendedorModal({
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="submit" loading={submitting}>
+          <Button
+            type="submit"
+            loading={submitting}
+            disabled={aguardandoDetalhe}
+            title={
+              aguardandoDetalhe ? "Aguarde o carregamento dos dados do vendedor" : undefined
+            }
+          >
             {mode === "create" ? "Criar vendedor" : "Salvar alteracoes"}
           </Button>
         </div>

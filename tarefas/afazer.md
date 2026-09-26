@@ -4,25 +4,6 @@
 
 ---
 
-## BUG-07: modal "Editar Vendedor" sobrescreve a data de admissão e a meta mensal — prioridade ALTA
-
-**Status:** não iniciado; aguarda a priorização do usuário
-**Camada:** Frontend
-**Origem:** 🔴 TestBrain, execução do roteiro do Lote 5 via Playwright (2026-09-25). É anterior ao lote.
-
-**Descrição:** O modal abre com a data de admissão de hoje e meta mensal 0, e não com os valores do banco (vendedor 4: 2023-06-22 e 55000). Salvar sem mudar nada envia `{"data_admissao":"2026-09-25","meta_mensal":0,...}`, e esses valores sobrescrevem os dados reais.
-- `frontend/src/app/admin/vendedores/page.tsx:196-211` passa `data_admissao: ""` e `meta_mensal: 0` como valor provisório, porque `GET /api/vendedores` não traz esses campos (projeção do SEC-03).
-- `frontend/src/components/admin/VendedorModal.tsx:143-152` preenche o formulário só com esse valor provisório. O efeito de `:174-183` busca o detalhe, mas usa apenas `detalhe.clientes`.
-
-**Como reproduzir:** como admin, abra Vendedores e clique em "Editar" em qualquer vendedor.
-
-**Ação esperada:**
-- 🟢 FrontBrain: preencher o formulário com o detalhe (`GET /api/vendedores/{id}`) e bloquear o salvar até o detalhe carregar.
-- 🔴 TestBrain: cobrir.
-- Verificar no banco se algum vendedor já foi sobrescrito.
-
----
-
 ## BUG-08: `POST /api/clientes` devolve `created_at` e `updated_at` zerados — prioridade BAIXA
 
 **Status:** não iniciado; aguarda a priorização do usuário

@@ -4,6 +4,41 @@
 
 ---
 
+## BUG-07: modal "Editar Vendedor" sobrescreve a data de admissão e a meta mensal — prioridade ALTA — 2026-09-26
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain (2026-09-26) → aceite do usuário (2026-09-26) → fechamento por 🔵 SubBrain. 🟣 SecBrain dispensado: é um bug de UI sem superfície nova.
+
+**Status:** concluído — aceite do usuário em 2026-09-26.
+
+**Camada:** Frontend
+**Origem:** 🔴 TestBrain, execução do roteiro do Lote 5 via Playwright (2026-09-25). É anterior ao lote.
+
+**Descrição:** O modal abria com a data de admissão de hoje e meta mensal 0, e não com os valores do banco (vendedor 4: 2023-06-22 e 55000). Salvar sem mudar nada enviava `{"data_admissao":"2026-09-25","meta_mensal":0,...}`, e esses valores sobrescreviam os dados reais.
+- `frontend/src/app/admin/vendedores/page.tsx:196-211` passava `data_admissao: ""` e `meta_mensal: 0` como valor provisório, porque `GET /api/vendedores` não traz esses campos (projeção do SEC-03).
+- `frontend/src/components/admin/VendedorModal.tsx:143-152` preenchia o formulário só com esse valor provisório. O efeito de `:174-183` buscava o detalhe, mas usava apenas `detalhe.clientes`.
+
+**🟢 FrontBrain (2026-09-26) — implementado:**
+- `frontend/src/components/admin/VendedorModal.tsx`:
+  - Novo helper `toDateInput()`, que normaliza a data para `YYYY-MM-DD`.
+  - No modo edição, o modal ignora `data_admissao`/`meta_mensal` da listagem e preenche nome, regiao, uf, data_admissao e meta_mensal pelo `GET /api/vendedores/{id}`.
+  - O salvar fica bloqueado enquanto o detalhe carrega ou se ele falhar: `fieldset disabled`, botão disabled com tooltip e guarda no `handleSubmit`.
+  - Mostra um alerta "Carregando dados do vendedor..." e um alerta de erro.
+  - O detalhe é descartado quando o modal troca de vendedor.
+- `frontend/src/app/admin/vendedores/page.tsx`: só um comentário.
+
+**🔴 TestBrain (2026-09-26) — testado:**
+- `frontend/src/components/admin/FormModais.test.tsx`: 5 testes do FrontBrain e mais 28 do TestBrain.
+- `vitest`: 1134/1134. `tsc` e `eslint` ok.
+- Cobertura do `VendedorModal.tsx`: 99,4% das linhas e 88,73% dos branches.
+- E2E no navegador não executado: o Turnstile exige Chrome + CDP, e o teste gravaria no banco.
+
+**Verificação do banco (somente leitura, 2026-09-26):**
+- 42 vendedores. Nenhum com `meta_mensal = 0`, nenhum com `data_admissao` em 2026-09 ou igual à data do `updated_at`. Nenhum vendedor foi sobrescrito.
+- Vendedora id 30 (Carla Lopes): o usuário confirmou que a divergência de data_desligamento veio de um teste feito com ela. Não tem relação com o BUG-07. Dados não alterados.
+
+**Para o aceite:** como admin, abra Vendedores, clique em "Editar" no vendedor 4 e confira 2023-06-22 e 55000.
+
+---
+
 ## Lote 5 de 2026-09-25: 7 cards concluídos (de 7)
 
 > Lote executado pelo 🤍 MegaBrain na ordem 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain, com os cards SEC-04, FE-06, DOC-01, DOC-02, NEG-02, DB-02 e FE-08. **Aceite do usuário em 2026-09-25.**
@@ -19,7 +54,7 @@
 >
 > **Documentação (🔵 SubBrain) do lote:** `postman/README.md`, `postman/collection.json` (JSON validado com Node) e `docs/manual-base-de-dados.md` foram atualizados com NEG-02, SEC-04 e FE-06.
 >
-> **Cards derivados que ficaram em `afazer.md`:** BUG-07 (ALTA), BUG-08, FE-09, DOC-03, SEC-06, SEC-07, DOC-04, FE-07 e TEST-01.
+> **Cards derivados que ficaram em `afazer.md`:** BUG-08, FE-09, DOC-03, SEC-06, SEC-07, DOC-04, FE-07 e TEST-01. O BUG-07 (ALTA) foi concluído em 2026-09-26.
 
 ## SEC-04: corrida legítima no refresh conta no rate limit por IP — 2026-09-25
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → roteiro do Lote 5 → aceite do usuário → fechamento por 🔵 SubBrain

@@ -280,6 +280,13 @@ const CASOS: Caso[] = [
     },
     payloadNovo: { nome: "Novo", regiao: "Sul", uf: "PR", meta_mensal: 0 },
     payloadEditar: { nome: "Vend 3", meta_mensal: 5000 },
+    // BUG-07: em "editar" o formulario so e preenchido quando o detalhe
+    // (GET /api/vendedores/{id}) chega; em "novo" nao ha carregamento.
+    pronto: async () => {
+      await waitFor(() =>
+        expect(screen.queryByText("Carregando dados do vendedor...")).not.toBeInTheDocument()
+      );
+    },
   },
 ];
 
@@ -361,6 +368,7 @@ describe.each(CASOS)("$nome (FE-03)", (c) => {
     await c.pronto?.();
     await userEvent.type(screen.getByLabelText(c.campoLivre), "X");
     m.set({ registro: { ...(c.registro as object) } });
+    await c.pronto?.();
     for (const [label, v] of Object.entries(c.camposEditar)) expect(valor(label)).toBe(v);
   });
 
@@ -509,8 +517,314 @@ describe("VendedorModal - clientes vinculados (useAjustarAoMudar)", () => {
     api.apiGetVendedor.mockRejectedValueOnce(new Error("sem detalhe"));
     montar(c, { mode: "edit", registro: vendedor });
     expect(
-      await screen.findByText("Nao foi possivel carregar os clientes vinculados: sem detalhe")
+      await screen.findByText("Nao foi possivel carregar os dados do vendedor: sem detalhe")
     ).toBeInTheDocument();
     expect(document.querySelector(".animate-spin")).toBeNull();
+  });
+});
+
+// ─── VendedorModal: BUG-07 (formulario preenchido pelo detalhe) ──────────────
+
+describe("VendedorModal - edicao usa o detalhe da API (BUG-07)", () => {
+  const c = CASOS[4];
+  // Como a pagina /admin/vendedores monta o registro a partir da listagem:
+  // data_admissao e meta_mensal sao provisorios.
+  const provisorio: VendedorCompleto = {
+    ...vendedor,
+    id: 4,
+    data_admissao: "",
+    meta_mensal: 0,
+  };
+  const detalhe4 = {
+    ...vendedor,
+    id: 4,
+    nome: "Vend 4",
+    regiao: "Sul",
+    uf: "PR",
+    data_admissao: "2023-06-22T00:00:00Z",
+    meta_mensal: 55000,
+    clientes: [],
+  };
+
+  it("preenche o formulario com o detalhe e normaliza a data para AAAA-MM-DD", async () => {
+    api.apiGetVendedor.mockResolvedValue(detalhe4);
+    montar(c, { mode: "edit", registro: provisorio });
+    await c.pronto!();
+    expect(api.apiGetVendedor).toHaveBeenCalledWith(4);
+    expect(valor("Nome")).toBe("Vend 4");
+    expect(valor("Regiao")).toBe("Sul");
+    expect(valor("UF")).toBe("PR");
+    expect(valor("Data de admissao")).toBe("2023-06-22");
+    expect(valor("Meta mensal")).toBe("55000");
+  });
+
+  it("salvar sem alterar envia os valores do banco, nao os provisorios", async () => {
+    api.apiGetVendedor.mockResolvedValue(detalhe4);
+    const m = montar(c, { mode: "edit", registro: provisorio });
+    await c.pronto!();
+    await userEvent.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
+    await waitFor(() => expect(m.props.onSubmit).toHaveBeenCalledTimes(1));
+    expect(m.props.onSubmit).toHaveBeenCalledWith({
+      nome: "Vend 4",
+      regiao: "Sul",
+      uf: "PR",
+      data_admissao: "2023-06-22",
+      meta_mensal: 55000,
+    });
+  });
+
+  it("enquanto o detalhe carrega mostra o loading e bloqueia o salvar", async () => {
+    let resolver: (v: unknown) => void = () => {};
+    api.apiGetVendedor.mockReturnValueOnce(new Promise((r) => (resolver = r)));
+    const m = montar(c, { mode: "edit", registro: provisorio });
+    expect(screen.getByText("Carregando dados do vendedor...")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Salvar alteracoes" })).toBeDisabled();
+    expect(screen.getByLabelText("Data de admissao")).toBeDisabled();
+    expect(valor("Data de admissao")).toBe("");
+    expect(valor("Meta mensal")).toBe("");
+
+    // Submit forcado (ex.: Enter) tambem nao envia nada.
+    const form = screen.getByRole("button", { name: "Salvar alteracoes" }).closest("form")!;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(m.props.onSubmit).not.toHaveBeenCalled();
+
+    await act(async () => resolver(detalhe4));
+    await c.pronto!();
+    expect(screen.getByRole("button", { name: "Salvar alteracoes" })).toBeEnabled();
+    expect(valor("Meta mensal")).toBe("55000");
+  });
+
+  it("falha no detalhe mostra o erro e mantem o salvar bloqueado", async () => {
+    api.apiGetVendedor.mockRejectedValueOnce(new Error("falhou detalhe"));
+    const m = montar(c, { mode: "edit", registro: provisorio });
+    expect(
+      await screen.findByText("Nao foi possivel carregar os dados do vendedor: falhou detalhe")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Salvar alteracoes" })).toBeDisabled();
+    const form = screen.getByRole("button", { name: "Salvar alteracoes" }).closest("form")!;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(m.props.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("trocar de vendedor com o modal aberto volta a bloquear ate o novo detalhe", async () => {
+    let resolver: (v: unknown) => void = () => {};
+    api.apiGetVendedor
+      .mockResolvedValueOnce({ ...vendedor, clientes: [] })
+      .mockReturnValueOnce(new Promise((r) => (resolver = r)));
+    const m = montar(c, { mode: "edit", registro: vendedor });
+    await c.pronto!();
+    expect(screen.getByRole("button", { name: "Salvar alteracoes" })).toBeEnabled();
+
+    m.set({ registro: provisorio });
+    expect(screen.getByRole("button", { name: "Salvar alteracoes" })).toBeDisabled();
+    expect(valor("Meta mensal")).toBe("");
+
+    await act(async () => resolver(detalhe4));
+    await c.pronto!();
+    expect(valor("Data de admissao")).toBe("2023-06-22");
+    expect(valor("Meta mensal")).toBe("55000");
+  });
+
+  // TestBrain: normalizacao de data (toDateInput) e meta nula vindas da API.
+  it.each([
+    { caso: "AAAA-MM-DD puro", data: "2021-03-15", esperado: "2021-03-15" },
+    { caso: "ISO com hora e fuso", data: "2021-03-15T10:20:30-03:00", esperado: "2021-03-15" },
+    { caso: "RFC (Date.parse)", data: "Mon, 15 Mar 2021 12:00:00 GMT", esperado: "2021-03-15" },
+    { caso: "invalida", data: "nao-e-data", esperado: "" },
+    { caso: "vazia", data: "", esperado: "" },
+    { caso: "null", data: null, esperado: "" },
+  ])("data_admissao $caso -> '$esperado'", async ({ data, esperado }) => {
+    api.apiGetVendedor.mockResolvedValue({ ...detalhe4, data_admissao: data });
+    montar(c, { mode: "edit", registro: provisorio });
+    await c.pronto!();
+    expect(valor("Data de admissao")).toBe(esperado);
+  });
+
+  it.each([
+    { caso: "null", meta: null, esperado: "0" },
+    { caso: "undefined", meta: undefined, esperado: "0" },
+    { caso: "decimal", meta: 1234.5, esperado: "1234.5" },
+  ])("meta_mensal $caso -> '$esperado'", async ({ meta, esperado }) => {
+    api.apiGetVendedor.mockResolvedValue({ ...detalhe4, meta_mensal: meta });
+    montar(c, { mode: "edit", registro: provisorio });
+    await c.pronto!();
+    expect(valor("Meta mensal")).toBe(esperado);
+  });
+
+  it("detalhe sem data_admissao nao e enviado (campo obrigatorio no modo edicao)", async () => {
+    api.apiGetVendedor.mockResolvedValue({ ...detalhe4, data_admissao: null });
+    const m = montar(c, { mode: "edit", registro: provisorio });
+    await c.pronto!();
+    await userEvent.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
+    expect(m.props.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("detalhe antigo que chega depois da troca de vendedor e descartado", async () => {
+    let resolverA: (v: unknown) => void = () => {};
+    let resolverB: (v: unknown) => void = () => {};
+    api.apiGetVendedor
+      .mockReturnValueOnce(new Promise((r) => (resolverA = r)))
+      .mockReturnValueOnce(new Promise((r) => (resolverB = r)));
+    const m = montar(c, { mode: "edit", registro: vendedor });
+    m.set({ registro: provisorio });
+
+    // Resposta atrasada do vendedor 3 nao pode preencher o form do vendedor 4.
+    await act(async () => resolverA({ ...vendedor, clientes: [] }));
+    expect(screen.getByRole("button", { name: "Salvar alteracoes" })).toBeDisabled();
+    expect(valor("Meta mensal")).toBe("");
+    expect(valor("Data de admissao")).toBe("");
+
+    await act(async () => resolverB(detalhe4));
+    await c.pronto!();
+    expect(valor("Nome")).toBe("Vend 4");
+    expect(valor("Meta mensal")).toBe("55000");
+    expect(screen.getByRole("button", { name: "Salvar alteracoes" })).toBeEnabled();
+  });
+
+  it("fechar e reabrir o mesmo vendedor busca o detalhe de novo e rebloqueia", async () => {
+    api.apiGetVendedor.mockResolvedValue(detalhe4);
+    const m = montar(c, { mode: "edit", registro: provisorio });
+    await c.pronto!();
+    m.set({ open: false });
+    let resolver: (v: unknown) => void = () => {};
+    api.apiGetVendedor.mockReturnValueOnce(new Promise((r) => (resolver = r)));
+    m.set({ open: true });
+    expect(screen.getByRole("button", { name: "Salvar alteracoes" })).toBeDisabled();
+    expect(valor("Meta mensal")).toBe("");
+    await act(async () => resolver({ ...detalhe4, meta_mensal: 77000 }));
+    await c.pronto!();
+    expect(valor("Meta mensal")).toBe("77000");
+    expect(api.apiGetVendedor).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── VendedorModal: validacao do submit e vinculo de clientes (TestBrain) ────
+
+describe("VendedorModal - validacao e vinculos (edicao)", () => {
+  const c = CASOS[4];
+  const resumo: ClienteResumo = {
+    id: 10,
+    cnpj: "11222333000181",
+    razao_social: "Loja A",
+    segmento: "",
+    cidade: "Campinas",
+    uf: "",
+    carteira_id: 9,
+    data_inicio: "2026-02-03T00:00:00Z",
+    data_fim: null,
+  };
+
+  async function abrirEdicao(clientes: ClienteResumo[] = []) {
+    api.apiGetVendedor.mockResolvedValue({ ...vendedor, clientes });
+    const m = montar(c, { mode: "edit", registro: vendedor });
+    await c.pronto!();
+    return m;
+  }
+
+  function submeter() {
+    const form = screen.getByRole("button", { name: "Salvar alteracoes" }).closest("form")!;
+    return act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+  }
+
+  it.each([
+    { campo: "Nome", v: "   ", erro: "Nome e obrigatorio." },
+    { campo: "Regiao", v: "   ", erro: "Regiao e obrigatoria." },
+    { campo: "UF", v: "S", erro: "UF deve ter 2 letras." },
+    { campo: "Data de admissao", v: "", erro: "Data de admissao e obrigatoria." },
+    { campo: "Meta mensal", v: "-1", erro: "Meta mensal deve ser um numero maior ou igual a zero." },
+  ])("submit com $campo invalido mostra '$erro'", async ({ campo, v, erro }) => {
+    const m = await abrirEdicao();
+    const input = screen.getByLabelText(campo);
+    await userEvent.clear(input);
+    if (v) await userEvent.type(input, v);
+    await submeter();
+    expect(await screen.findByText(erro)).toBeInTheDocument();
+    expect(m.props.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { caso: "Error", rej: new Error("conflito"), msg: "conflito" },
+    { caso: "nao-Error", rej: "x", msg: "Erro ao salvar vendedor." },
+  ])("falha no onSubmit ($caso) mostra a mensagem", async ({ rej, msg }) => {
+    const m = await abrirEdicao();
+    (m.props.onSubmit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(rej);
+    await userEvent.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
+    expect(await screen.findByText(msg)).toBeInTheDocument();
+  });
+
+  it.each([
+    { caso: "Error", rej: new Error("lista off"), msg: "Nao foi possivel carregar os clientes disponiveis: lista off" },
+    { caso: "nao-Error", rej: "x", msg: "Nao foi possivel carregar os clientes disponiveis: Erro ao carregar clientes disponiveis." },
+  ])("falha ao listar clientes ($caso) mostra alerta", async ({ rej, msg }) => {
+    api.apiListClientes.mockRejectedValueOnce(rej);
+    await abrirEdicao();
+    expect(await screen.findByText(msg)).toBeInTheDocument();
+  });
+
+  it("vincula cliente: some do combo e entra na tabela", async () => {
+    api.apiListClientes.mockResolvedValue({ data: [cliente], page: 1, limit: 100, total: 1, pages: 1 });
+    api.apiVincularCliente.mockResolvedValueOnce(resumo);
+    await abrirEdicao();
+    const select = await screen.findByLabelText("Vincular cliente");
+    await waitFor(() => expect(screen.getByRole("option", { name: "#10 - Loja A" })).toBeInTheDocument());
+    await userEvent.selectOptions(select, "10");
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    expect(api.apiVincularCliente).toHaveBeenCalledWith(3, 10);
+    expect(await screen.findByText("#10 - Loja A")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "#10 - Loja A" })).not.toBeInTheDocument();
+    // Vincular nao mexe nos campos do formulario (BUG-07).
+    expect(valor("Meta mensal")).toBe("5000");
+    expect(valor("Data de admissao")).toBe("2020-02-02");
+  });
+
+  it.each([
+    { caso: "Error", rej: new Error("ja vinculado"), msg: "ja vinculado" },
+    { caso: "nao-Error", rej: "x", msg: "Erro ao vincular cliente ao vendedor." },
+  ])("falha ao vincular ($caso) mostra erro", async ({ rej, msg }) => {
+    api.apiListClientes.mockResolvedValue({ data: [cliente], page: 1, limit: 100, total: 1, pages: 1 });
+    api.apiVincularCliente.mockRejectedValueOnce(rej);
+    await abrirEdicao();
+    await waitFor(() => expect(screen.getByRole("option", { name: "#10 - Loja A" })).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText("Vincular cliente"), "10");
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    expect(await screen.findByText(msg)).toBeInTheDocument();
+  });
+
+  it("remover vinculo: cancelar no confirm nao chama a API", async () => {
+    const conf = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await abrirEdicao([resumo]);
+    await userEvent.click(await screen.findByRole("button", { name: "Remover" }));
+    expect(api.apiDesvincularCliente).not.toHaveBeenCalled();
+    conf.mockRestore();
+  });
+
+  it("remover vinculo confirmado tira da tabela sem mexer no formulario", async () => {
+    const conf = vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiDesvincularCliente.mockResolvedValueOnce(undefined);
+    await abrirEdicao([resumo]);
+    await userEvent.click(await screen.findByRole("button", { name: "Remover" }));
+    expect(api.apiDesvincularCliente).toHaveBeenCalledWith(3, 10);
+    expect(await screen.findByText("Nenhum cliente vinculado a este vendedor.")).toBeInTheDocument();
+    expect(valor("Meta mensal")).toBe("5000");
+    conf.mockRestore();
+  });
+
+  it.each([
+    { caso: "Error", rej: new Error("bloqueado"), msg: "bloqueado" },
+    { caso: "nao-Error", rej: "x", msg: "Erro ao encerrar o vinculo com o cliente." },
+  ])("falha ao remover vinculo ($caso) mostra erro", async ({ rej, msg }) => {
+    const conf = vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiDesvincularCliente.mockRejectedValueOnce(rej);
+    await abrirEdicao([resumo]);
+    await userEvent.click(await screen.findByRole("button", { name: "Remover" }));
+    expect(await screen.findByText(msg)).toBeInTheDocument();
+    expect(screen.getByText("#10 - Loja A")).toBeInTheDocument();
+    conf.mockRestore();
   });
 });
