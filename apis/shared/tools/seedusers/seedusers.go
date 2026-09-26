@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rotaperfumes/shared/cmdutil"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/services"
 )
@@ -110,7 +111,7 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 		return nil
 	}
 
-	// Localiza a raiz do projeto (sobe 2 níveis: cmd/seedusers → shared → apis → raiz).
+	// Localiza a raiz do projeto (pasta que contém apis/shared/go.mod).
 	projectRoot, err := deps.ProjectRoot()
 	if err != nil {
 		return err
@@ -189,34 +190,13 @@ func ShortHash(h string) string {
 	return h
 }
 
-// FindProjectRoot sobe a árvore a partir do executável até achar go.mod de shared
-// e retorna o diretório-pai (raiz do projeto SistemaCompleto).
+// FindProjectRoot localiza a raiz do repositório (a pasta que contém
+// apis/shared/go.mod) subindo a partir do cwd. Delega para
+// cmdutil.FindProjectRoot: a raiz do SistemaCompleto não tem go.mod próprio,
+// e a busca antiga (go.mod na raiz + fallback cwd/../../..) apontava para a
+// pasta errada ao rodar de apis/shared (BUG-10). Sem raiz, devolve erro.
 func FindProjectRoot() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Dir(exe)
-	// Quando executado via `go run`, o exe vive em /tmp; nesse caso usamos cwd.
-	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
-		dir, _ = os.Getwd()
-	}
-	for i := 0; i < 6; i++ {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			// se houver "apis/shared/go.mod" → estamos na raiz.
-			if _, err2 := os.Stat(filepath.Join(dir, "apis", "shared", "go.mod")); err2 == nil {
-				return dir, nil
-			}
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	// Fallback: assume 2 níveis acima do cwd (apis/shared/cmd/seedusers).
-	cwd, _ := os.Getwd()
-	return filepath.Clean(filepath.Join(cwd, "..", "..", "..")), nil
+	return cmdutil.FindProjectRoot()
 }
 
 // ReplaceInFile substitui todas as ocorrências (mapa) e grava o arquivo in-place.

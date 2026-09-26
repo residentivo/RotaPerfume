@@ -116,8 +116,8 @@ func TestAuthService_ResetPassword(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
 			defer db.Close()
-			c.resultado(mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-				WithArgs("novo-hash", c.deveTrocar, int64(9)))
+			c.resultado(mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+				WithArgs("novo-hash", c.deveTrocar, sqlmock.AnyArg(), int64(9)))
 
 			err = services.NewAuthService().ResetPassword(context.Background(), db, 9, "novo-hash", c.deveTrocar)
 			if c.wantErrIs != nil {

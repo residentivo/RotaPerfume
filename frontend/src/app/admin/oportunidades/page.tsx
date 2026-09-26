@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  faixaExibida,
+  mensagemRecargaFalhou,
   useDebounceFiltros,
   useExcluidos,
+  usePaginaCarregada,
   useUltimaResposta,
 } from "@/lib/useListaSegura";
 import { Card } from "@/components/ui/Card";
@@ -13,6 +16,8 @@ import { Alert } from "@/components/ui/Alert";
 import { CarteiraGuard } from "@/components/layout/CarteiraGuard";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
+import { Paginador } from "@/components/ui/Paginador";
+import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
 import { OportunidadeModal } from "@/components/admin/OportunidadeModal";
 import {
   apiListOportunidades,
@@ -109,7 +114,11 @@ function OportunidadesContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [erroCarga, setErroCarga] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
+  const {
+    mensagem: success,
+    mostrar: mostrarSucesso,
+    limpar: limparSucesso,
+  } = useMensagemTemporaria();
 
   // Listas auxiliares para exibir nome do cliente/vendedor nas linhas e
   // popular os filtros de coluna.
@@ -147,6 +156,13 @@ function OportunidadesContent() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(0);
+  // FE-10: pagina/limite exibidos (a pedida, ou a ultima carregada se a
+  // ultima carga falhou).
+  const { exibida, registrar: registrarCarregada } = usePaginaCarregada(
+    page,
+    limit,
+    erroCarga
+  );
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -258,13 +274,14 @@ function OportunidadesContent() {
     setOportunidades(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    registrarCarregada(page, limit);
     setErroCarga(false);
     setLoading(false);
   };
 
   // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
   // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
-  const aplicarErroOportunidades = (err: unknown) => {
+  const aplicarErroOportunidades = (err: unknown): string => {
     const message =
       err instanceof Error
         ? err.message
@@ -272,13 +289,26 @@ function OportunidadesContent() {
     setError(message);
     setErroCarga(true);
     setLoading(false);
+    return message;
   };
 
-  // Recarga imperativa (handlers e timers).
-  const loadOportunidades = async () => {
+  // Recarga imperativa (handlers e timers). FE-10: devolve a mensagem de erro se a
+  // recarga falhar (null se deu certo ou foi superada por outra busca).
+  const loadOportunidades = async (): Promise<string | null> => {
     setLoading(true);
     setError(null);
-    await executarBusca(buscarOportunidades().then(excluidos.filtrar), aplicarOportunidades, aplicarErroOportunidades);
+    let falha: string | null = null;
+    await executarBusca(buscarOportunidades().then(excluidos.filtrar), aplicarOportunidades, (err) => {
+      falha = aplicarErroOportunidades(err);
+    });
+    return falha;
+  };
+
+  // FE-10: navegacao a partir da pagina exibida. Se o destino ja e a pagina
+  // pedida (a troca anterior falhou), repete a busca em vez de nao fazer nada.
+  const irParaPagina = (n: number) => {
+    if (n === page) loadOportunidades();
+    else setPage(n);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -344,8 +374,10 @@ function OportunidadesContent() {
     setError(null);
     if (modalMode === "create") {
       const created = await apiCreateOportunidade(data);
-      await loadOportunidades();
-      setSuccess(`Oportunidade #${created.oportunidade_id} criada com sucesso.`);
+      const msg = `Oportunidade #${created.oportunidade_id} criada com sucesso.`;
+      const erroRecarga = await loadOportunidades();
+      if (erroRecarga) setError(mensagemRecargaFalhou(msg, erroRecarga));
+      else mostrarSucesso(msg);
     } else if (editingOportunidade) {
       const updated = await apiUpdateOportunidade(
         editingOportunidade.oportunidade_id,
@@ -356,10 +388,9 @@ function OportunidadesContent() {
           o.oportunidade_id === updated.oportunidade_id ? updated : o
         )
       );
-      setSuccess(`Oportunidade #${updated.oportunidade_id} atualizada com sucesso.`);
+      mostrarSucesso(`Oportunidade #${updated.oportunidade_id} atualizada com sucesso.`);
     }
     setModalOpen(false);
-    setTimeout(() => setSuccess(null), 4000);
   };
 
   const handleDelete = async (oportunidade: Oportunidade) => {
@@ -377,10 +408,9 @@ function OportunidadesContent() {
         prev.filter((o) => o.oportunidade_id !== oportunidade.oportunidade_id)
       );
       setTotal((t) => Math.max(0, t - 1));
-      setSuccess(
+      mostrarSucesso(
         `Oportunidade #${oportunidade.oportunidade_id} excluida com sucesso.`
       );
-      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro ao excluir oportunidade.";
@@ -397,7 +427,6 @@ function OportunidadesContent() {
       width: "80px",
       align: "left",
       sortable: true,
-      sortValue: (o) => o.oportunidade_id,
       render: (o) => (
         <span className="font-mono text-xs">#{o.oportunidade_id}</span>
       ),
@@ -519,8 +548,14 @@ function OportunidadesContent() {
     },
   ];
 
-  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
-  const endItem = Math.min(page * limit, total);
+  // FE-10: contador baseado na pagina exibida; oculto se nada foi carregado
+  // (a primeira carga falhou), para nao afirmar "0 oportunidades".
+  const { inicio: startItem, fim: endItem } = faixaExibida(
+    exibida.pagina,
+    exibida.limite,
+    total
+  );
+  const ocultarContador = erroCarga && oportunidades.length === 0;
 
   const hasFilters =
     search ||
@@ -553,7 +588,7 @@ function OportunidadesContent() {
 
       {success && (
         <div className="mb-4">
-          <Alert variant="success" onClose={() => setSuccess(null)}>
+          <Alert variant="success" onClose={() => limparSucesso()}>
             {success}
           </Alert>
         </div>
@@ -645,13 +680,15 @@ function OportunidadesContent() {
                 />
               </div>
             </div>
-            <div className="text-sm text-slate-500">
-              {total === 0
-                ? "0 oportunidades"
-                : `${startItem}-${endItem} de ${total} ${
-                    total === 1 ? "oportunidade" : "oportunidades"
-                  }`}
-            </div>
+            {!ocultarContador && (
+              <div className="text-sm text-slate-500">
+                {total === 0
+                  ? "0 oportunidades"
+                  : `${startItem}-${endItem} de ${total} ${
+                      total === 1 ? "oportunidade" : "oportunidades"
+                    }`}
+              </div>
+            )}
           </div>
         </div>
 
@@ -673,51 +710,7 @@ function OportunidadesContent() {
           />
         </div>
 
-        {pages > 1 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
-            <div className="text-sm text-slate-500">
-              Pagina <strong>{page}</strong> de <strong>{pages}</strong>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage(1)}
-                title="Primeira pagina"
-              >
-                {"<<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                title="Pagina anterior"
-              >
-                {"<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                title="Proxima pagina"
-              >
-                {">"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage(pages)}
-                title="Ultima pagina"
-              >
-                {">>"}
-              </Button>
-            </div>
-          </div>
-        )}
+        <Paginador pagina={exibida.pagina} paginas={pages} onIrPara={irParaPagina} />
       </Card>
 
       <div className="mt-4 text-xs text-slate-400">

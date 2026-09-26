@@ -300,15 +300,43 @@ func TestFindProjectRoot(t *testing.T) {
 		require.NoError(t, err)
 		assertMesmoDir(t, root, got)
 	})
-	t.Run("sem go.mod na raiz cai no fallback cwd/../../..", func(t *testing.T) {
+	// BUG-10: sem apis/shared/go.mod acima do cwd não há mais fallback
+	// cwd/../../..; o comando precisa falhar em vez de gravar na pasta errada.
+	t.Run("sem apis/shared/go.mod devolve erro (sem fallback cwd/../../..)", func(t *testing.T) {
 		base := t.TempDir()
 		fundo := filepath.Join(base, "a", "b", "c")
 		require.NoError(t, os.MkdirAll(fundo, 0o755))
 		chdir(t, fundo)
 		got, err := seedusers.FindProjectRoot()
-		require.NoError(t, err)
-		assertMesmoDir(t, base, got)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "apis/shared/go.mod")
+		assert.Empty(t, got)
 	})
+
+	// BUG-10: a raiz do SistemaCompleto não tem go.mod próprio. Rodando de
+	// <raiz>/apis/shared (caso real do `go run ./cmd/seedusers`), a raiz
+	// correta deve ser achada; o fallback antigo apontava 3 níveis acima.
+	casosSemGoModNaRaiz := []struct {
+		nome   string
+		partes []string
+	}{
+		{"cwd = <raiz>", nil},
+		{"cwd = <raiz>/apis/shared", []string{"apis", "shared"}},
+		{"cwd = <raiz>/apis/shared/cmd/seedusers", []string{"apis", "shared", "cmd", "seedusers"}},
+		{"cwd = <raiz>/sql", []string{"sql"}},
+	}
+	for _, c := range casosSemGoModNaRaiz {
+		t.Run("sem go.mod na raiz: "+c.nome, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "apis", "shared", "cmd", "seedusers"), 0o755))
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "sql"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "apis", "shared", "go.mod"), []byte("module y\n"), 0o600))
+			chdir(t, filepath.Join(append([]string{root}, c.partes...)...))
+			got, err := seedusers.FindProjectRoot()
+			require.NoError(t, err)
+			assertMesmoDir(t, root, got)
+		})
+	}
 }
 
 // assertMesmoDir compara diretórios resolvendo links (o TEMP do Windows pode

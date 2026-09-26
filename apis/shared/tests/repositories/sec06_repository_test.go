@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	reGetStatusUsuario  = `SELECT ativo, role FROM usuarios WHERE id = \? LIMIT 1`
+	reGetStatusUsuario  = `SELECT ativo, role, tokens_validos_desde FROM usuarios WHERE id = \? LIMIT 1`
 	reRevokePorVendedor = `UPDATE refresh_tokens rt\s+JOIN usuarios u ON u\.id = rt\.usuario_id\s+SET rt\.revoked_at = \?, rt\.revoked_reason = \?\s+WHERE u\.id_vendedor = \? AND rt\.revoked_at IS NULL`
 )
 
@@ -34,7 +34,7 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 			nome: "ativo admin",
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
-					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role"}).AddRow(true, "admin"))
+					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(true, "admin", nil))
 			},
 			want: &repositories.UsuarioStatus{Ativo: true, Role: "admin"},
 		},
@@ -42,7 +42,7 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 			nome: "inativo normal",
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
-					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role"}).AddRow(false, "normal"))
+					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(false, "normal", nil))
 			},
 			want: &repositories.UsuarioStatus{Ativo: false, Role: "normal"},
 		},
@@ -50,7 +50,7 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 			nome: "inexistente → ErrNotFound",
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
-					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role"}))
+					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}))
 			},
 			wantErr: repositories.ErrNotFound,
 		},

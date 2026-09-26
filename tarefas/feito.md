@@ -4,6 +4,157 @@
 
 ---
 
+## Lote 8 de 2026-09-26: 6 cards concluídos (de 6)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "continuar fazendo as tarefas a fazer". Entraram os cards que não dependiam de priorização do usuário: BUG-10, BUG-09, SEC-08, FE-11, FE-12 e FE-10. SEC-10, SEC-09 e DOC-04 ficaram em `afazer.md` aguardando o usuário; INFO-01 é informativo. Resultados finais **conferidos pelo 🤍 MegaBrain em 2026-09-26**.
+>
+> **Fluxo:** 🟣 SecBrain (SEC-08) ∥ 🟡 BackBrain (BUG-10, BUG-09) ∥ 🟢 FrontBrain (FE-11, FE-12, FE-10) → 🌸 DataBrain e 🟡 BackBrain (SEC-08) → 🔴 TestBrain → 🔵 SubBrain.
+>
+> **Decisões:**
+> - 🟣 SecBrain aprovou o SEC-08 e elevou a prioridade de BAIXA para MÉDIA (o access token também seguia válido depois de troca de senha, reset pelo admin e revogação em massa).
+> - 🤍 MegaBrain aceitou que, pela regra `iat <= corte`, um login no mesmo segundo de um corte gere token recusado (a troca de senha já leva ao login; os demais casos exigem ação humana posterior).
+> - 🟢 FrontBrain (FE-12): `sortValue` removido, porque a ordenação é server-side.
+>
+> **Cobertura:** `rotaperfumes-api` 89.7% (Lote 7: 89.6%), `shared` 92.8% (92.7%); frontend 95.27/90.16/92.00/95.70 (Lote 7: 94.17/89.62/88.85/94.59). Suítes Go 3× verdes com e sem `INTEGRATION=1`; `tsc` e `eslint` limpos. O "42.6%" medido no meio do lote foi erro de medição (`tests/handlers` falhando naquele momento).
+>
+> **Documentação (🔵 SubBrain) do lote:** `postman/collection.json` (seção "Mudanças de contrato do Lote 8" na descrição da collection; notas SEC-08 em Me, Reset Password, Ativar/Inativar Usuário, Reset Password Admin e pasta Vendedores; exemplo novo `401 — Sessão encerrada` no Me; nota BUG-09 e exemplos `201` com timestamps reais em Criar Produto, Pagamento, Oportunidade, Visita e Estoque), `postman/README.md` (seção do Lote 8 e notas nos endpoints), `docs/manual-base-de-dados.md` (seção 8: `usuarios.tokens_validos_desde` e migração 22) e o roteiro `docs/roteiro-teste-manual-lote8.md`. A collection não tem requisição de `POST /api/vendedores`; o BUG-09 dele ficou registrado na descrição da pasta Vendedores.
+>
+> **Cards derivados que ficaram em `afazer.md`:** BUG-11, FE-13 e CHORE-01; item 6 e nota acrescentados ao SEC-10.
+
+## BUG-10: `seedusers.FindProjectRoot` não achava a raiz do projeto ao rodar de `apis/shared` — 2026-09-26
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Backend shared
+**Origem:** 🔴 TestBrain, TST-03 (Lote 7).
+
+**Descrição:** O `FindProjectRoot` exigia um `go.mod` na raiz do repositório (que não existe) e, rodando de `apis/shared`, caía no fallback `cwd/../../..`, fora do SistemaCompleto.
+
+**🟡 BackBrain (2026-09-26) — implementado:**
+- `apis/shared/tools/seedusers/seedusers.go`: `FindProjectRoot` delega a `cmdutil.FindProjectRoot` (pasta com `apis/shared/go.mod`, subindo até 6 níveis) e devolve erro se não achar, sem fallback.
+- `apis/shared/cmd/seedusers/main.go` usa `cmdutil.FindProjectRoot`. O alvo `gen-hash` do `Makefile` já estava correto.
+
+**🔴 TestBrain (2026-09-26) — testado:** `apis/shared/tests/tools/seedusers/seedusers_test.go`: o subteste do fallback agora espera o erro, e há 4 casos novos (raiz sem `go.mod` partindo de `<raiz>`, `<raiz>/apis/shared`, `<raiz>/apis/shared/cmd/seedusers` e `<raiz>/sql`).
+
+**Resultado final:** `tools/seedusers` 94.3% → **95.6%**. Roteiro: `docs/roteiro-teste-manual-lote8.md`, seção 5.
+
+---
+
+## BUG-09: creates devolviam o objeto em memória, com timestamps zerados — 2026-09-26
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain (Postman) → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Backend
+**Origem:** 🟡 BackBrain, BUG-08 (Lote 6).
+
+**Descrição:** Os creates de vendedor, produto, pagamento, oportunidade, visita e estoque devolviam o struct em memória, e o `201` podia trazer `created_at`/`updated_at` = `0001-01-01T00:00:00Z`.
+
+**🟡 BackBrain (2026-09-26) — implementado:**
+- Releitura via `GetByID` depois do INSERT: `relerVendedorCriado`, `relerProdutoCriado`, `relerPagamentoCriado`, `relerOportunidadeCriada`, `relerVisitaCriada` e `relerEstoqueCriado`. Se só a releitura falhar, registra log e devolve o objeto em memória.
+- `usuario_service` **não** mudou: o `UsuarioRepository.Create` já relia (o item do card estava errado). O efeito colateral dessa releitura no repositório virou o card BUG-11.
+- Contrato: mesmo envelope, com timestamps reais e campos preenchidos pelo banco (ex.: `produto_descricao` do estoque, via JOIN).
+
+**🔴 TestBrain (2026-09-26) — testado:** `apis/rotaperfumes-api/tests/services/bug09_creates_timestamps_test.go` (2 testes, 24 subtestes).
+
+**🔵 SubBrain (2026-09-26):** exemplos `201` e notas atualizados no Postman (ver o cabeçalho do lote).
+
+**Resultado final:** `services` **92.8%**. Roteiro: `docs/roteiro-teste-manual-lote8.md`, seção 2.
+
+---
+
+## SEC-08: access token seguia válido depois de inativação, troca/reset de senha e revogação em massa — 2026-09-26
+**Agentes:** 🟣 SecBrain → 🌸 DataBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain (Postman e manual da base) → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Segurança + Database + Backend
+**Origem:** 🔴 TestBrain, regressão do Lote 6 (SEC-06). Prioridade elevada de BAIXA para MÉDIA pelo 🟣 SecBrain.
+
+**Descrição:** O access token (24h) voltava a valer depois de reativar o usuário e continuava valendo depois de troca de senha, reset pelo admin e revogação em massa do SEC-07.
+
+**🟣 SecBrain (2026-09-26) — aprovado:** corte de sessão por usuário (`tokens_validos_desde`) gravado pelo Go e comparado com o `iat` no middleware; reativação e logout não gravam corte.
+
+**🌸 DataBrain (2026-09-26) — implementado:**
+- Migração 22: `sql/22_alter_usuarios_tokens_validos_desde.sql` e `sql/22_revert_usuarios_tokens_validos_desde.sql` (idempotentes). Coluna `usuarios.tokens_validos_desde DATETIME NULL` depois de `deve_trocar_senha` (`NULL` = sem corte).
+- `sql/01_ddl_usuarios.sql` atualizado. `Makefile`: `db-fix-tokens-validos-desde` e `db-revert-tokens-validos-desde`.
+- Aplicada no banco local.
+
+**🟡 BackBrain (2026-09-26) — implementado:**
+- Corte gravado com `time.Now().Truncate(time.Second)` em `SetAtivo(false)`, `InativarByVendedorID`, `UpdatePasswordHash` (troca de senha, reset do admin, `ResetSenha`), no novo `InvalidarSessoes` (chamado em `tratarTokenRevogadoForaDaJanela` depois do `RevokeAllUserTokens`) e na CLI `resetpassword` (`UpsertAdmin`, `UpsertByEmail`).
+- Middleware: `401` `{"success":false,"error":"sessão encerrada — faça login novamente"}` quando `iat <= corte`, ou `iat` ausente com corte. Log `[auth] acesso negado: user_id=... token anterior ao corte de sessão iat=... corte=...`.
+- Frontend sem mudança: no `401`, o `apiClient` tenta o refresh e cai no login.
+
+**🔴 TestBrain (2026-09-26) — testado:**
+- Novos: `sec08_corte_sessao_test.go` (`rotaperfumes-api/tests/middleware`, `shared/tests/repositories`, `shared/tests/tools/resetpassword`), `sec08_invalidar_sessoes_test.go` e `sec08_http_integration_test.go` (`rotaperfumes-api/tests/handlers`, `INTEGRATION=1`).
+- Ajustados: `lote6_http_integration_test.go` agora exige `401` depois de reativar; `sec07_reuso_refresh_test.go` ganhou o `ExpectExec` do `InvalidarSessoes`.
+- Teste instável `TestValidateJWT/token manipulado` corrigido: mexia nos bits de padding do último caractere base64url; agora faz XOR de um byte do meio, 50 tokens × assinatura/payload/header.
+
+**Resultado final:** suítes 3× verdes com e sem `INTEGRATION=1`. Cobertura: `rotaperfumes-api` **89.7%**, `shared` **92.8%**; middleware 87.7%, handlers 88.5%, repositories 93.8%. Roteiro: `docs/roteiro-teste-manual-lote8.md`, seção 1. Endurecimento restante (truncar dentro do `InvalidarSessoes`) foi para o item 6 do SEC-10.
+
+---
+
+## FE-11: timers não eram limpos no unmount — 2026-09-26
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Frontend
+**Origem:** 🔴 TestBrain, TST-01 (Lote 7).
+
+**Descrição:** O redirecionamento da `trocar-senha` e as mensagens de 4 s de 9 telas usavam `setTimeout` sem `clearTimeout`, causando `setState` depois do unmount (e redirecionamento mesmo com o usuário fora da tela).
+
+**🟢 FrontBrain (2026-09-26) — implementado:**
+- Novo `frontend/src/lib/useMensagemTemporaria.ts` (`useTimeoutSeguro`, `useMensagemTemporaria`), usado na `trocar-senha` (redirecionamento de 1,5 s cancelado no unmount) e nas 9 telas com mensagem de 4 s.
+- Novo `frontend/src/components/ui/Paginador.tsx`, extraído de 10 telas.
+
+**🔴 TestBrain (2026-09-26) — testado:** `frontend/tests/lib/useMensagemTemporaria.test.ts`, `frontend/tests/components/ui/Paginador.test.tsx`, e ajustes em `trocar-senha/page` e nas listas.
+
+**Resultado final:** ver o FE-10 (mesma regressão do front). Roteiro: `docs/roteiro-teste-manual-lote8.md`, seção 4.
+
+---
+
+## FE-12: `sortValue` das colunas nunca era usado pelo `Table` — 2026-09-26
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Frontend
+**Origem:** 🔴 TestBrain, TST-01 (Lote 7).
+
+**Descrição:** As colunas de várias telas definiam `sortValue`, mas o `Table` nunca o chamava.
+
+**🟢 FrontBrain (2026-09-26) — implementado:** `sortValue` removido do tipo `Column` e de todas as colunas, porque a ordenação é server-side. Vendedores ordena no cliente com comparador próprio. Achado: em `admin/senha-historico`, três colunas parecem ordenáveis, mas não estão na whitelist da API (card FE-13).
+
+**🔴 TestBrain (2026-09-26) — testado:** testes das listas ajustados (`listasAdmin`, `listasPaginadas`, `crudPaginas`, `crudAdmin`).
+
+**Resultado final:** ver o FE-10.
+
+---
+
+## FE-10: estados inconsistentes nas listagens quando a carga falhava — 2026-09-26
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Frontend
+**Origem:** 🟢 FrontBrain, FE-09 (Lote 6).
+
+**Descrição:** Troca de página que falhava mostrava a página nova com as linhas da anterior; o contador mostrava "0 ..." quando a primeira carga falhava; em Vendedores, o erro da recarga aparecia junto com o sucesso da ação.
+
+**🟢 FrontBrain (2026-09-26) — implementado:**
+- `useListaSegura` ganhou `usePaginaCarregada`, `faixaExibida` e `mensagemRecargaFalhou`.
+- (a) Página que falha mantém paginador e contador da última página carregada; o próximo clique repete a busca.
+- (b) Contador oculto quando a primeira carga falha.
+- (c) Sucesso + falha na recarga → um único alerta de erro: "<sucesso> Porem, nao foi possivel recarregar a lista (<erro>). Os dados exibidos podem estar desatualizados.", que não some sozinho. Vale em Vendedores e nos creates das demais telas.
+
+**🔴 TestBrain (2026-09-26) — testado:** alterados `listasAdmin`, `listasPaginadas`, `crudPaginas`, `crudAdmin`, `clientes/page`, `trocar-senha/page` e `useListaSegura`.
+
+**Resultado final (FE-10, FE-11 e FE-12):** 35 arquivos, **1465 testes** verdes. Cobertura **95.27% stmts / 90.16% branches / 92.00% funcs / 95.70% lines**. `tsc` e `eslint` limpos. Roteiro: `docs/roteiro-teste-manual-lote8.md`, seção 3.
+
+---
+
 ## Lote 7 de 2026-09-26: 3 cards concluídos (de 3)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "mover os testes para uma pasta separada de testes no front e no back e revisar as coberturas para atingir +/- 80%". Cards TST-01, TST-02 e TST-03, executados em paralelo. Resultados finais **conferidos pelo 🤍 MegaBrain em 2026-09-26**.

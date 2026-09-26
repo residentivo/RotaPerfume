@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useUltimaResposta } from "@/lib/useListaSegura";
+import {
+  faixaExibida,
+  usePaginaCarregada,
+  useUltimaResposta,
+} from "@/lib/useListaSegura";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Table, Badge, Column } from "@/components/ui/Table";
+import { Paginador } from "@/components/ui/Paginador";
 import { Select } from "@/components/ui/Select";
 import { apiListSenhaHistorico } from "@/lib/api";
 import { SenhaHistoricoItem, TipoReset } from "@/lib/types";
@@ -103,6 +108,13 @@ export default function SenhaHistoricoPage() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(0);
+  // FE-10: pagina/limite exibidos (a pedida, ou a ultima carregada se a
+  // ultima carga falhou).
+  const { exibida, registrar: registrarCarregada } = usePaginaCarregada(
+    page,
+    limit,
+    erroCarga
+  );
 
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -127,6 +139,7 @@ export default function SenhaHistoricoPage() {
     setItems(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    registrarCarregada(page, limit);
     setErroCarga(false);
     setLoading(false);
   };
@@ -183,6 +196,13 @@ export default function SenhaHistoricoPage() {
     }
   };
 
+  // FE-10: navegacao a partir da pagina exibida. Se o destino ja e a pagina
+  // pedida (a troca anterior falhou), repete a busca em vez de nao fazer nada.
+  const irParaPagina = (n: number) => {
+    if (n === page) load();
+    else setPage(n);
+  };
+
   const handleRefresh = () => {
     load();
   };
@@ -216,14 +236,12 @@ export default function SenhaHistoricoPage() {
       width: "80px",
       align: "left",
       sortable: true,
-      sortValue: (it) => it.id,
       render: (it) => <span className="font-mono text-xs">#{it.id}</span>,
     },
     {
       key: "created_at",
       header: "Data/Hora",
       sortable: true,
-      sortValue: (it) => new Date(it.created_at).getTime(),
       render: (it) => (
         <span className="font-mono text-xs text-slate-700">
           {formatDateTime(it.created_at)}
@@ -234,7 +252,6 @@ export default function SenhaHistoricoPage() {
       key: "usuario_nome",
       header: "Usuario",
       sortable: true,
-      sortValue: (it) => it.usuario_nome,
       render: (it) => (
         <div className="flex flex-col">
           <span className="font-medium text-slate-900">
@@ -249,7 +266,6 @@ export default function SenhaHistoricoPage() {
       width: "160px",
       align: "center",
       sortable: true,
-      sortValue: (it) => it.tipo_reset,
       render: (it) => (
         <Badge color={tipoBadgeColor(it.tipo_reset)}>
           {tipoLabel(it.tipo_reset)}
@@ -260,7 +276,6 @@ export default function SenhaHistoricoPage() {
       key: "resetado_por_nome",
       header: "Resetado Por",
       sortable: true,
-      sortValue: (it) => it.resetado_por_nome || "",
       render: (it) =>
         it.resetado_por_nome ? (
           <span className="text-slate-700">
@@ -275,7 +290,6 @@ export default function SenhaHistoricoPage() {
       header: "IP Origem",
       width: "160px",
       sortable: true,
-      sortValue: (it) => it.ip_origem || "",
       render: (it) =>
         it.ip_origem ? (
           <span className="font-mono text-xs text-slate-600">
@@ -287,8 +301,14 @@ export default function SenhaHistoricoPage() {
     },
   ];
 
-  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
-  const endItem = Math.min(page * limit, total);
+  // FE-10: contador baseado na pagina exibida; oculto se nada foi carregado
+  // (a primeira carga falhou), para nao afirmar "0 registros".
+  const { inicio: startItem, fim: endItem } = faixaExibida(
+    exibida.pagina,
+    exibida.limite,
+    total
+  );
+  const ocultarContador = erroCarga && items.length === 0;
 
   return (
     <div>
@@ -380,13 +400,15 @@ export default function SenhaHistoricoPage() {
                 />
               </div>
             </div>
-            <div className="text-sm text-slate-500">
-              {total === 0
-                ? "0 registros"
-                : `${startItem}-${endItem} de ${total} ${
-                    total === 1 ? "registro" : "registros"
-                  }`}
-            </div>
+            {!ocultarContador && (
+              <div className="text-sm text-slate-500">
+                {total === 0
+                  ? "0 registros"
+                  : `${startItem}-${endItem} de ${total} ${
+                      total === 1 ? "registro" : "registros"
+                    }`}
+              </div>
+            )}
           </div>
         </div>
 
@@ -408,51 +430,7 @@ export default function SenhaHistoricoPage() {
           />
         </div>
 
-        {pages > 1 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
-            <div className="text-sm text-slate-500">
-              Pagina <strong>{page}</strong> de <strong>{pages}</strong>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage(1)}
-                title="Primeira pagina"
-              >
-                {"<<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                title="Pagina anterior"
-              >
-                {"<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                title="Proxima pagina"
-              >
-                {">"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage(pages)}
-                title="Ultima pagina"
-              >
-                {">>"}
-              </Button>
-            </div>
-          </div>
-        )}
+        <Paginador pagina={exibida.pagina} paginas={pages} onIrPara={irParaPagina} />
       </Card>
 
       <div className="mt-4 text-xs text-slate-400">

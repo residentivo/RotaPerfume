@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import {
+  faixaExibida,
+  mensagemRecargaFalhou,
   useDebounceFiltros,
   useExcluidos,
+  usePaginaCarregada,
   useUltimaResposta,
 } from "@/lib/useListaSegura";
 import { Navbar } from "@/components/layout/Navbar";
@@ -15,6 +18,8 @@ import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Select } from "@/components/ui/Select";
 import { Table, Column, Badge } from "@/components/ui/Table";
+import { Paginador } from "@/components/ui/Paginador";
+import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
 import { PagamentoModal } from "@/components/PagamentoModal";
 import {
   apiListPagamentos,
@@ -100,7 +105,11 @@ function PagamentosContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [erroCarga, setErroCarga] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
+  const {
+    mensagem: success,
+    mostrar: mostrarSucesso,
+    limpar: limparSucesso,
+  } = useMensagemTemporaria();
 
   const [statusFilter, setStatusFilter] = useState("");
   const [formaFilter, setFormaFilter] = useState("");
@@ -115,6 +124,13 @@ function PagamentosContent() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(0);
+  // FE-10: pagina/limite exibidos (a pedida, ou a ultima carregada se a
+  // ultima carga falhou).
+  const { exibida, registrar: registrarCarregada } = usePaginaCarregada(
+    page,
+    limit,
+    erroCarga
+  );
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
@@ -158,13 +174,14 @@ function PagamentosContent() {
     setPagamentos(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    registrarCarregada(page, limit);
     setErroCarga(false);
     setLoading(false);
   };
 
   // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
   // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
-  const aplicarErroPagamentos = (err: unknown) => {
+  const aplicarErroPagamentos = (err: unknown): string => {
     const message =
       err instanceof Error
         ? err.message
@@ -172,13 +189,26 @@ function PagamentosContent() {
     setError(message);
     setErroCarga(true);
     setLoading(false);
+    return message;
   };
 
-  // Recarga imperativa (handlers e timers).
-  const loadPagamentos = async () => {
+  // Recarga imperativa (handlers e timers). FE-10: devolve a mensagem de erro se a
+  // recarga falhar (null se deu certo ou foi superada por outra busca).
+  const loadPagamentos = async (): Promise<string | null> => {
     setLoading(true);
     setError(null);
-    await executarBusca(buscarPagamentos().then(excluidos.filtrar), aplicarPagamentos, aplicarErroPagamentos);
+    let falha: string | null = null;
+    await executarBusca(buscarPagamentos().then(excluidos.filtrar), aplicarPagamentos, (err) => {
+      falha = aplicarErroPagamentos(err);
+    });
+    return falha;
+  };
+
+  // FE-10: navegacao a partir da pagina exibida. Se o destino ja e a pagina
+  // pedida (a troca anterior falhou), repete a busca em vez de nao fazer nada.
+  const irParaPagina = (n: number) => {
+    if (n === page) loadPagamentos();
+    else setPage(n);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -235,10 +265,10 @@ function PagamentosContent() {
     setError(null);
     if (modalMode === "create") {
       const created = await apiCreatePagamento(data as PagamentoCreateInput);
-      await loadPagamentos();
-      setSuccess(
-        `Pagamento #${created.pagamento_id} criado com sucesso.`
-      );
+      const msg = `Pagamento #${created.pagamento_id} criado com sucesso.`;
+      const erroRecarga = await loadPagamentos();
+      if (erroRecarga) setError(mensagemRecargaFalhou(msg, erroRecarga));
+      else mostrarSucesso(msg);
     } else if (editingPagamento) {
       const updated = await apiUpdatePagamento(
         editingPagamento.pagamento_id,
@@ -249,10 +279,9 @@ function PagamentosContent() {
           p.pagamento_id === updated.pagamento_id ? updated : p
         )
       );
-      setSuccess(`Pagamento #${updated.pagamento_id} atualizado com sucesso.`);
+      mostrarSucesso(`Pagamento #${updated.pagamento_id} atualizado com sucesso.`);
     }
     setModalOpen(false);
-    setTimeout(() => setSuccess(null), 4000);
   };
 
   const handleDelete = async (pagamento: Pagamento) => {
@@ -270,8 +299,7 @@ function PagamentosContent() {
         prev.filter((p) => p.pagamento_id !== pagamento.pagamento_id)
       );
       setTotal((t) => Math.max(0, t - 1));
-      setSuccess(`Pagamento #${pagamento.pagamento_id} excluido com sucesso.`);
-      setTimeout(() => setSuccess(null), 4000);
+      mostrarSucesso(`Pagamento #${pagamento.pagamento_id} excluido com sucesso.`);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro ao excluir pagamento.";
@@ -288,7 +316,6 @@ function PagamentosContent() {
       width: "80px",
       align: "left",
       sortable: true,
-      sortValue: (p) => p.pagamento_id,
       render: (p) => (
         <span className="font-mono text-xs">#{p.pagamento_id}</span>
       ),
@@ -395,8 +422,14 @@ function PagamentosContent() {
     },
   ];
 
-  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
-  const endItem = Math.min(page * limit, total);
+  // FE-10: contador baseado na pagina exibida; oculto se nada foi carregado
+  // (a primeira carga falhou), para nao afirmar "0 pagamentos".
+  const { inicio: startItem, fim: endItem } = faixaExibida(
+    exibida.pagina,
+    exibida.limite,
+    total
+  );
+  const ocultarContador = erroCarga && pagamentos.length === 0;
   const hasFilters = Boolean(
     statusFilter || formaFilter || pedidoIdFilter || vencimentoDe || vencimentoAte
   );
@@ -424,7 +457,7 @@ function PagamentosContent() {
 
         {success && (
           <div className="mb-4">
-            <Alert variant="success" onClose={() => setSuccess(null)}>
+            <Alert variant="success" onClose={() => limparSucesso()}>
               {success}
             </Alert>
           </div>
@@ -485,13 +518,15 @@ function PagamentosContent() {
                   />
                 </div>
               </div>
-              <div className="text-sm text-slate-500">
-                {total === 0
-                  ? "0 pagamentos"
-                  : `${startItem}-${endItem} de ${total} ${
-                      total === 1 ? "pagamento" : "pagamentos"
-                    }`}
-              </div>
+              {!ocultarContador && (
+                <div className="text-sm text-slate-500">
+                  {total === 0
+                    ? "0 pagamentos"
+                    : `${startItem}-${endItem} de ${total} ${
+                        total === 1 ? "pagamento" : "pagamentos"
+                      }`}
+                </div>
+              )}
             </div>
           </div>
 
@@ -513,51 +548,7 @@ function PagamentosContent() {
             />
           </div>
 
-          {pages > 1 && (
-            <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
-              <div className="text-sm text-slate-500">
-                Pagina <strong>{page}</strong> de <strong>{pages}</strong>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={page <= 1}
-                  onClick={() => setPage(1)}
-                  title="Primeira pagina"
-                >
-                  {"<<"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  title="Pagina anterior"
-                >
-                  {"<"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={page >= pages}
-                  onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                  title="Proxima pagina"
-                >
-                  {">"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={page >= pages}
-                  onClick={() => setPage(pages)}
-                  title="Ultima pagina"
-                >
-                  {">>"}
-                </Button>
-              </div>
-            </div>
-          )}
+          <Paginador pagina={exibida.pagina} paginas={pages} onIrPara={irParaPagina} />
         </Card>
 
         <div className="mt-4 text-xs text-slate-400">

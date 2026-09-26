@@ -497,3 +497,106 @@ describe("Pedidos - itens do pedido (master-detail)", () => {
     expect(screen.queryByText("Itens do pedido #5")).not.toBeInTheDocument();
   });
 });
+
+// ─── FE-10 (c): criar deu certo, mas a recarga falhou -> um unico alerta ─────
+
+const ERRO_REDE = "Failed to fetch";
+const recargaFalhou = (sucesso: string, erro: string) =>
+  `${sucesso} Porem, nao foi possivel recarregar a lista (${erro}). Os dados exibidos podem estar desatualizados.`;
+
+describe.each(TELAS)("FE-10 - criar com recarga que falha em $nome", (t) => {
+  beforeEach(() => {
+    api[t.list].mockResolvedValue(pagina([t.linha(5)]));
+  });
+
+  it("mostra um unico alerta de erro com o sucesso e a falha; a lista anterior fica", async () => {
+    api[t.create].mockResolvedValue(
+      t.linha(9, { pedido_id_origem: 9, pagamento_id: 9, oportunidade_id: 9, visita_id: 9 })
+    );
+    render(<t.Page />);
+    await aposMontagem(t.texto);
+
+    await userEvent.click(screen.getByRole("button", { name: t.botaoNovo }));
+    const dialog = await screen.findByRole("dialog");
+    await t.preencherNovo(dialog);
+    const criar = within(dialog).getByRole("button", { name: t.botaoCriar });
+    await waitFor(() => expect(criar).toBeEnabled());
+    const antes = api[t.list].mock.calls.length;
+    api[t.list].mockRejectedValueOnce(new TypeError(ERRO_REDE));
+    await userEvent.click(criar);
+
+    const msg = recargaFalhou(t.msgCriado, ERRO_REDE);
+    expect(await screen.findByText(msg)).toBeInTheDocument();
+    expect(api[t.list].mock.calls.length).toBe(antes + 1);
+    const alertas = screen.getAllByRole("alert");
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]).toHaveClass("bg-red-50");
+    // Nada de alerta de sucesso separado.
+    expect(screen.queryByText(t.msgCriado)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t.texto })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    // O alerta nao some sozinho (a lista esta desatualizada).
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(screen.getByText(msg)).toBeInTheDocument();
+  });
+});
+
+// ─── FE-11: mensagem de sucesso temporaria nas telas ─────────────────────────
+
+describe.each(TELAS)("FE-11 - mensagem temporaria em $nome", (t) => {
+  beforeEach(() => {
+    api[t.list].mockResolvedValue(pagina([t.linha(5)]));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api[t.del].mockResolvedValue(undefined);
+  });
+
+  async function excluirComFakeTimers() {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const r = render(<t.Page />);
+    await screen.findByRole("button", { name: t.texto });
+    await act(async () => {
+      vi.advanceTimersByTime(420);
+    });
+    await u.click(screen.getByTitle(t.tituloExcluir));
+    await screen.findByText(t.msgExcluido);
+    return r;
+  }
+
+  it("o sucesso some sozinho apos 4 s", async () => {
+    try {
+      await excluirComFakeTimers();
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(screen.getByText(t.msgExcluido)).toBeInTheDocument();
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+      });
+      expect(screen.queryByText(t.msgExcluido)).not.toBeInTheDocument();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("unmount antes dos 4 s: nenhum timer fica pendente", async () => {
+    const erro = vi.spyOn(console, "error");
+    try {
+      const { unmount } = await excluirComFakeTimers();
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(erro).not.toHaveBeenCalled();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+});

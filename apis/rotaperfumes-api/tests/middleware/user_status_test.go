@@ -179,7 +179,7 @@ func TestUserCheck_CheckerNil_Panica(t *testing.T) {
 // DBUserStatusChecker (sqlmock)
 // ------------------------------------------------------------------
 
-const statusQueryRegex = `SELECT ativo, role FROM usuarios WHERE id = \? LIMIT 1`
+const statusQueryRegex = `SELECT ativo, role, tokens_validos_desde FROM usuarios WHERE id = \? LIMIT 1`
 
 func newCheckerDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	t.Helper()
@@ -192,7 +192,7 @@ func newCheckerDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 func TestDBUserStatusChecker_Encontrado(t *testing.T) {
 	db, mock := newCheckerDB(t)
 	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
-		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role"}).AddRow(false, "normal"))
+		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(false, "normal", nil))
 
 	st, err := middleware.NewDBUserStatusChecker(db).CheckUserStatus(context.Background(), 3)
 
@@ -204,7 +204,7 @@ func TestDBUserStatusChecker_Encontrado(t *testing.T) {
 func TestDBUserStatusChecker_Inexistente_ErrUserNotFound(t *testing.T) {
 	db, mock := newCheckerDB(t)
 	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
-		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role"}))
+		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}))
 
 	_, err := middleware.NewDBUserStatusChecker(db).CheckUserStatus(context.Background(), 3)
 

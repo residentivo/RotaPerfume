@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
+import { Paginador } from "@/components/ui/Paginador";
+import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
 import { VendedorModal } from "@/components/admin/VendedorModal";
 import {
   apiListVendedores,
@@ -17,6 +19,7 @@ import {
   apiReativarVendedor,
 } from "@/lib/api";
 import { Vendedor, VendedorCompleto, VendedorInput } from "@/lib/types";
+import { faixaExibida, mensagemRecargaFalhou } from "@/lib/useListaSegura";
 
 // GET /api/vendedores nao aceita paginacao/filtros/ordenacao no backend
 // (endpoint simples, historicamente usado so para popular combobox) — ver
@@ -49,7 +52,11 @@ function VendedoresPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [erroCarga, setErroCarga] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
+  const {
+    mensagem: success,
+    mostrar: mostrarSucesso,
+    limpar: limparSucesso,
+  } = useMensagemTemporaria();
   const [search, setSearch] = useState("");
   const [regiaoFilter, setRegiaoFilter] = useState("");
   const [ufFilter, setUfFilter] = useState("");
@@ -76,7 +83,7 @@ function VendedoresPageContent() {
 
   // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
   // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
-  const aplicarErroVendedores = (err: unknown) => {
+  const aplicarErroVendedores = (err: unknown): string => {
     const message =
       err instanceof Error
         ? err.message
@@ -84,13 +91,30 @@ function VendedoresPageContent() {
     setError(message);
     setErroCarga(true);
     setLoading(false);
+    return message;
   };
 
-  // Recarga imperativa (apos criar/editar/ativar).
-  const loadVendedores = async () => {
+  // Recarga imperativa (apos criar/editar/ativar). FE-10: devolve a
+  // mensagem de erro se a recarga falhar (null se deu certo).
+  const loadVendedores = async (): Promise<string | null> => {
     setLoading(true);
     setError(null);
-    await apiListVendedores().then(aplicarVendedores, aplicarErroVendedores);
+    return apiListVendedores().then(
+      (res) => {
+        aplicarVendedores(res);
+        return null;
+      },
+      (err: unknown) => aplicarErroVendedores(err)
+    );
+  };
+
+  // FE-10: a acao deu certo; se a recarga que vem depois falhar, mostra um
+  // unico alerta de erro dizendo as duas coisas (em vez de sucesso + erro
+  // juntos, contraditorios com a linha desatualizada na tabela).
+  const concluirAcao = async (msgSucesso: string) => {
+    const erroRecarga = await loadVendedores();
+    if (erroRecarga) setError(mensagemRecargaFalhou(msgSucesso, erroRecarga));
+    else mostrarSucesso(msgSucesso);
   };
 
   // Carga inicial: o loading ja comeca true; o efeito so faz a busca e
@@ -222,15 +246,12 @@ function VendedoresPageContent() {
     setError(null);
     if (modalMode === "create") {
       const created = await apiCreateVendedor(data);
-      await loadVendedores();
-      setSuccess(`Vendedor "${created.nome}" criado com sucesso.`);
+      await concluirAcao(`Vendedor "${created.nome}" criado com sucesso.`);
     } else if (editingVendedor) {
       await apiUpdateVendedor(editingVendedor.id, data);
-      await loadVendedores();
-      setSuccess(`Vendedor "${data.nome}" atualizado com sucesso.`);
+      await concluirAcao(`Vendedor "${data.nome}" atualizado com sucesso.`);
     }
     setModalOpen(false);
-    setTimeout(() => setSuccess(null), 4000);
   };
 
   const handleDelete = async (vendedor: Vendedor) => {
@@ -241,12 +262,10 @@ function VendedoresPageContent() {
 
     setTogglingId(vendedor.id);
     setError(null);
-    setSuccess(null);
+    limparSucesso();
     try {
       await apiDeleteVendedor(vendedor.id);
-      await loadVendedores();
-      setSuccess(`Vendedor "${vendedor.nome}" inativado com sucesso.`);
-      setTimeout(() => setSuccess(null), 4000);
+      await concluirAcao(`Vendedor "${vendedor.nome}" inativado com sucesso.`);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro ao inativar vendedor.";
@@ -264,12 +283,10 @@ function VendedoresPageContent() {
 
     setTogglingId(vendedor.id);
     setError(null);
-    setSuccess(null);
+    limparSucesso();
     try {
       await apiReativarVendedor(vendedor.id);
-      await loadVendedores();
-      setSuccess(`Vendedor "${vendedor.nome}" reativado com sucesso.`);
-      setTimeout(() => setSuccess(null), 4000);
+      await concluirAcao(`Vendedor "${vendedor.nome}" reativado com sucesso.`);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro ao reativar vendedor.";
@@ -294,7 +311,6 @@ function VendedoresPageContent() {
       width: "80px",
       align: "left",
       sortable: true,
-      sortValue: (v) => v.id,
       render: (v) => <span className="font-mono text-xs">#{v.id}</span>,
     },
     {
@@ -333,7 +349,6 @@ function VendedoresPageContent() {
       width: "140px",
       align: "center",
       sortable: true,
-      sortValue: (v) => (v.data_desligamento ? 0 : 1),
       render: (v) => (
         <button
           type="button"
@@ -382,8 +397,11 @@ function VendedoresPageContent() {
     },
   ];
 
-  const startItem = total === 0 ? 0 : (pageSafe - 1) * limit + 1;
-  const endItem = Math.min(pageSafe * limit, total);
+  // Paginacao local: a pagina exibida (pageSafe) sempre corresponde as
+  // linhas. FE-10: contador oculto se nada foi carregado (a primeira carga
+  // falhou), para nao afirmar "0 vendedores".
+  const { inicio: startItem, fim: endItem } = faixaExibida(pageSafe, limit, total);
+  const ocultarContador = erroCarga && vendedores.length === 0;
 
   return (
     <div>
@@ -407,7 +425,7 @@ function VendedoresPageContent() {
 
       {success && (
         <div className="mb-4">
-          <Alert variant="success" onClose={() => setSuccess(null)}>
+          <Alert variant="success" onClose={() => limparSucesso()}>
             {success}
           </Alert>
         </div>
@@ -478,13 +496,15 @@ function VendedoresPageContent() {
                 />
               </div>
             </div>
-            <div className="text-sm text-slate-500">
-              {total === 0
-                ? "0 vendedores"
-                : `${startItem}-${endItem} de ${total} ${
-                    total === 1 ? "vendedor" : "vendedores"
-                  }`}
-            </div>
+            {!ocultarContador && (
+              <div className="text-sm text-slate-500">
+                {total === 0
+                  ? "0 vendedores"
+                  : `${startItem}-${endItem} de ${total} ${
+                      total === 1 ? "vendedor" : "vendedores"
+                    }`}
+              </div>
+            )}
           </div>
         </div>
 
@@ -506,51 +526,7 @@ function VendedoresPageContent() {
           />
         </div>
 
-        {pages > 1 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
-            <div className="text-sm text-slate-500">
-              Pagina <strong>{pageSafe}</strong> de <strong>{pages}</strong>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={pageSafe <= 1}
-                onClick={() => setPage(1)}
-                title="Primeira pagina"
-              >
-                {"<<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={pageSafe <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                title="Pagina anterior"
-              >
-                {"<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={pageSafe >= pages}
-                onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                title="Proxima pagina"
-              >
-                {">"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={pageSafe >= pages}
-                onClick={() => setPage(pages)}
-                title="Ultima pagina"
-              >
-                {">>"}
-              </Button>
-            </div>
-          </div>
-        )}
+        <Paginador pagina={pageSafe} paginas={pages} onIrPara={setPage} />
       </Card>
 
       <div className="mt-4 text-xs text-slate-400">

@@ -167,7 +167,21 @@ func (s *VisitaService) CreateVisita(ctx context.Context, db *sql.DB, input Visi
 	if s.Cfg.Verbose {
 		log.Printf("[visitas] criada: id=%d cliente_id=%d vendedor_id=%d resultado=%s", v.VisitaID, v.ClienteID, v.VendedorID, v.Resultado)
 	}
-	return v, nil
+	return s.relerVisitaCriada(ctx, db, v), nil
+}
+
+// relerVisitaCriada relê do banco a visita recém-gravada (BUG-09), para
+// devolver created_at/updated_at preenchidos pelo MySQL. O INSERT já foi
+// confirmado: se a releitura falhar, loga e devolve o objeto em memória
+// (timestamps zerados) em vez de responder erro para uma gravação que deu
+// certo — um retry duplicaria a visita.
+func (s *VisitaService) relerVisitaCriada(ctx context.Context, db *sql.DB, v *models.Visita) *models.Visita {
+	gravada, err := s.repo.GetByID(ctx, db, v.VisitaID)
+	if err != nil {
+		log.Printf("[visitas] criada, mas falhou a releitura: id=%d: %v", v.VisitaID, err)
+		return v
+	}
+	return gravada
 }
 
 // UpdateVisita atualiza os campos editáveis de uma visita existente.

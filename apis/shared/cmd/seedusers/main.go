@@ -32,7 +32,7 @@ func main() {
 		log.Fatalf("%s: falha ao carregar config: %v", seedusers.Tag, err)
 	}
 
-	deps := seedusers.Deps{Out: os.Stdout, ProjectRoot: seedusers.FindProjectRoot, RunSQL: seedusers.RunMySQL}
+	deps := seedusers.Deps{Out: os.Stdout, ProjectRoot: cmdutil.FindProjectRoot, RunSQL: seedusers.RunMySQL}
 	if err := seedusers.Run(cfg, opts, deps); err != nil {
 		log.Fatalf("%s: %v", seedusers.Tag, err)
 	}

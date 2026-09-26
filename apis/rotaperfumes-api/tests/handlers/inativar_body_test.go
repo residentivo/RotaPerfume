@@ -54,8 +54,13 @@ func inativarEndpoints() []inativarEndpoint {
 			expectToggle: func(mock sqlmock.Sqlmock, valorFinal bool) {
 				mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 					WithArgs(int64(1)).WillReturnRows(usuarioRowsForHandler(1, true))
-				mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-					WithArgs(valorFinal, int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+				if valorFinal {
+					mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
+						WithArgs(valorFinal, int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+				} else { // SEC-08: inativar grava também o corte de sessão
+					mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
+						WithArgs(valorFinal, sqlmock.AnyArg(), int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+				}
 				if !valorFinal { // SEC-06: inativação revoga os refresh tokens
 					mock.ExpectExec(revokeAllByUserRegex).
 						WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).WillReturnResult(sqlmock.NewResult(0, 0))

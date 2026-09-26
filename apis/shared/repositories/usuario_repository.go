@@ -56,24 +56,58 @@ func (r *UsuarioRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (
 // UsuarioStatus é o recorte mínimo de um usuário usado na autorização de
 // cada requisição autenticada (SEC-06): se ainda está ativo e qual o role
 // vigente no banco (que prevalece sobre o role gravado no JWT).
+//
+// TokensValidosDesde (SEC-08) é o corte de sessão: access tokens emitidos
+// (iat) até esse instante, inclusive, não valem mais. nil = sem corte.
 type UsuarioStatus struct {
-	Ativo bool
-	Role  string
+	Ativo              bool
+	Role               string
+	TokensValidosDesde *time.Time
 }
 
-// GetStatusByID retorna ativo e role do usuário. Retorna ErrNotFound se o
-// usuário não existir. Consulta enxuta (sem JOIN) executada a cada request
-// protegido — sem cache, para que inativação/rebaixamento valham na hora.
+// GetStatusByID retorna ativo, role e o corte de sessão do usuário. Retorna
+// ErrNotFound se o usuário não existir. Consulta enxuta (sem JOIN) executada
+// a cada request protegido — sem cache, para que inativação/rebaixamento/
+// corte de sessão valham na hora.
 func (r *UsuarioRepository) GetStatusByID(ctx context.Context, db *sql.DB, id int64) (*UsuarioStatus, error) {
-	const q = `SELECT ativo, role FROM usuarios WHERE id = ? LIMIT 1`
+	const q = `SELECT ativo, role, tokens_validos_desde FROM usuarios WHERE id = ? LIMIT 1`
 	var st UsuarioStatus
-	if err := db.QueryRowContext(ctx, q, id).Scan(&st.Ativo, &st.Role); err != nil {
+	var corte sql.NullTime
+	if err := db.QueryRowContext(ctx, q, id).Scan(&st.Ativo, &st.Role, &corte); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("repositories: get status usuario: %w", err)
 	}
+	if corte.Valid {
+		t := corte.Time
+		st.TokensValidosDesde = &t
+	}
 	return &st, nil
+}
+
+// corteDeSessaoAgora é o instante gravado em tokens_validos_desde (SEC-08).
+// Sempre gerado pelo Go (nunca NOW() do MySQL; DSN usa loc=Local) e truncado
+// em segundos, mesma precisão do iat do JWT.
+func corteDeSessaoAgora() time.Time {
+	return time.Now().Truncate(time.Second)
+}
+
+// InvalidarSessoes grava o corte de sessão do usuário (SEC-08): todo access
+// token com iat <= t passa a ser recusado pelo middleware. Usado na
+// revogação em massa por reuso de refresh token (SEC-07). Retorna
+// ErrNotFound se o usuário não existir. Aceita *sql.DB ou *sql.Tx.
+func (r *UsuarioRepository) InvalidarSessoes(ctx context.Context, db Execer, id int64, t time.Time) error {
+	const q = `UPDATE usuarios SET tokens_validos_desde = ? WHERE id = ?`
+	res, err := db.ExecContext(ctx, q, t, id)
+	if err != nil {
+		return fmt.Errorf("repositories: invalidar sessoes: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // GetIDVendedorByUsuarioID retorna o id_vendedor vinculado ao usuário
@@ -156,9 +190,12 @@ func (r *UsuarioRepository) List(ctx context.Context, db *sql.DB, page, limit in
 // UpdatePasswordHash atualiza o password_hash e a flag deve_trocar_senha de
 // um usuário na mesma query, evitando estado inconsistente entre as duas
 // colunas caso uma segunda escrita separada falhe.
+//
+// SEC-08: grava também o corte de sessão (tokens_validos_desde), derrubando
+// os access tokens emitidos antes da troca/reset de senha.
 func (r *UsuarioRepository) UpdatePasswordHash(ctx context.Context, db *sql.DB, id int64, newHash string, deveTrocarSenha bool) error {
-	const q = `UPDATE usuarios SET password_hash = ?, deve_trocar_senha = ? WHERE id = ?`
-	res, err := db.ExecContext(ctx, q, newHash, deveTrocarSenha, id)
+	const q = `UPDATE usuarios SET password_hash = ?, deve_trocar_senha = ?, tokens_validos_desde = ? WHERE id = ?`
+	res, err := db.ExecContext(ctx, q, newHash, deveTrocarSenha, corteDeSessaoAgora(), id)
 	if err != nil {
 		return fmt.Errorf("repositories: update password: %w", err)
 	}
@@ -224,9 +261,22 @@ func (r *UsuarioRepository) Update(ctx context.Context, db *sql.DB, id int64, no
 }
 
 // SetAtivo ativa/inativa um usuário (toggle). Retorna ErrNotFound se não existir.
+//
+// SEC-08: ao inativar grava também o corte de sessão (tokens_validos_desde),
+// para que uma reativação posterior não ressuscite access tokens antigos.
+// Ao ativar a coluna não é alterada.
 func (r *UsuarioRepository) SetAtivo(ctx context.Context, db *sql.DB, id int64, ativo bool) error {
-	const q = `UPDATE usuarios SET ativo = ? WHERE id = ?`
-	res, err := db.ExecContext(ctx, q, ativo, id)
+	var (
+		res sql.Result
+		err error
+	)
+	if ativo {
+		const q = `UPDATE usuarios SET ativo = ? WHERE id = ?`
+		res, err = db.ExecContext(ctx, q, ativo, id)
+	} else {
+		const q = `UPDATE usuarios SET ativo = ?, tokens_validos_desde = ? WHERE id = ?`
+		res, err = db.ExecContext(ctx, q, ativo, corteDeSessaoAgora(), id)
+	}
 	if err != nil {
 		return fmt.Errorf("repositories: set ativo: %w", err)
 	}
@@ -240,10 +290,11 @@ func (r *UsuarioRepository) SetAtivo(ctx context.Context, db *sql.DB, id int64, 
 // InativarByVendedorID inativa (ativo = 0) todos os usuários ativos
 // vinculados ao vendedor informado e retorna quantos foram afetados.
 // Zero linhas afetadas NÃO é erro: o vendedor pode não ter usuário.
-// Aceita *sql.DB ou *sql.Tx (ver Execer).
+// Aceita *sql.DB ou *sql.Tx (ver Execer). SEC-08: grava também o corte de
+// sessão (tokens_validos_desde) dos usuários inativados.
 func (r *UsuarioRepository) InativarByVendedorID(ctx context.Context, db Execer, vendedorID int64) (int64, error) {
-	const q = `UPDATE usuarios SET ativo = 0 WHERE id_vendedor = ? AND ativo = 1`
-	res, err := db.ExecContext(ctx, q, vendedorID)
+	const q = `UPDATE usuarios SET ativo = 0, tokens_validos_desde = ? WHERE id_vendedor = ? AND ativo = 1`
+	res, err := db.ExecContext(ctx, q, corteDeSessaoAgora(), vendedorID)
 	if err != nil {
 		return 0, fmt.Errorf("repositories: inativar usuarios do vendedor: %w", err)
 	}

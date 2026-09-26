@@ -105,7 +105,19 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | FE-07 | (frontend, `apiClient.ts`) | Falha de rede, timeout ou falha do Web Lock no **próprio** refresh → `NetworkError`, sem logout e sem chamar `/api/auth/logout`; a fila recebe o mesmo erro. `401`, `429` e `500` no refresh continuam deslogando. Sem mudança de contrato na API. |
 | FE-09 | (frontend, listagens) | Com erro na carga, as 10 listagens mostram só o alerta, sem "Nenhum ... cadastrado". Sem mudança de contrato na API. |
 
-> **Limitação conhecida (card SEC-08, `tarefas/afazer.md`):** o SEC-06 revoga só os refresh tokens. Se o usuário for reativado antes de o access token antigo expirar (TTL de 24h), esse token volta a valer.
+> **Limitação conhecida (card SEC-08):** o SEC-06 revoga só os refresh tokens. Se o usuário for reativado antes de o access token antigo expirar (TTL de 24h), esse token volta a valer. **Resolvida no Lote 8 (SEC-08, ver abaixo).**
+
+## Mudanças de contrato do Lote 8 (2026-09-26)
+
+> Resumo das mudanças. O detalhe está nas descrições marcadas com `(SEC-08 | BUG-09, Lote 8, 2026-09-26)` na collection. Roteiro manual: `docs/roteiro-teste-manual-lote8.md`.
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| SEC-08 | **Todas as rotas protegidas** (Bearer) | Corte de sessão por usuário (`usuarios.tokens_validos_desde`, migração 22). Access token com `iat <= tokens_validos_desde`, ou sem `iat` quando há corte → `401` `{"success":false,"error":"sessão encerrada — faça login novamente"}`, mesmo dentro das 24h. Log: `[auth] acesso negado: user_id=... token anterior ao corte de sessão iat=... corte=...`. Sem corte (`NULL`), nada muda. |
+| SEC-08 | `PATCH /api/usuarios/{id}/inativar` (inativar), `DELETE /api/vendedores/{id}`, `POST /api/auth/reset-password`, `POST /api/admin/reset-password`, reuso de refresh token do SEC-07, CLI `resetpassword` | Gravam o corte (hora do Go truncada no segundo). Efeito: token antigo não volta a valer depois de reativar; troca ou reset de senha derruba todas as sessões abertas do usuário (inclusive a que trocou a senha). Reativação e logout **não** gravam corte. Um login no mesmo segundo de um corte gera token recusado (aceito pelo 🤍 MegaBrain). |
+| BUG-09 | `POST /api/vendedores`, `/api/produtos`, `/api/pagamentos`, `/api/oportunidades`, `/api/visitas`, `/api/estoque` | O `201` traz `created_at`/`updated_at` reais e os campos preenchidos pelo banco (ex.: `produto_descricao` do estoque, via JOIN), porque o registro é relido depois do INSERT. Antes podiam vir `0001-01-01T00:00:00Z`. Mesmo envelope. Se só a releitura falhar: log e objeto em memória. `POST /api/usuarios` já relia. |
+| BUG-10 | (CLI `seedusers`) | `FindProjectRoot` acha a raiz pela pasta com `apis/shared/go.mod` (até 6 níveis acima) e devolve erro se não achar. Sem mudança na API. |
+| FE-10, FE-11, FE-12 | (frontend) | Paginador e contador coerentes quando a carga falha; mensagens temporárias sem timer pendente no unmount; `sortValue` removido das colunas (ordenação é server-side). Sem mudança na API. |
 
 ## Endpoints
 
@@ -158,12 +170,14 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **`vendedor_desligado` (bool, 2026-09-24):** `true` só para usuário `normal` vinculado a vendedor com `data_desligamento` preenchida. É `false` para admin, para usuário sem vínculo e para vínculo órfão (vendedor inexistente). O `/me` continua acessível para o vendedor desligado (não retorna `403`). O frontend usa este campo e o `id_vendedor` atualizado para revalidar a sessão (em vez de confiar só no `localStorage`) e exibir o aviso.
 - **Erros:** `401` não autenticado; `401` `"usuário inativo"` (SEC-06); `404` usuário não encontrado; `500` erro interno (inclui falha ao checar se o vendedor está desligado ou o status do usuário).
 - **Usuário inativo em rotas protegidas (SEC-06, Lote 6, 2026-09-26):** vale para o `/me` e para todas as rotas com Bearer. O middleware lê `ativo` e `role` do usuário no banco a cada requisição, sem cache. Inativo ou inexistente → `401` `"usuário inativo"`; o front faz logout. Erro de banco → `500`. A role do banco substitui a do token, então um rebaixamento vale sem novo login.
+- **Sessão encerrada (SEC-08, Lote 8, 2026-09-26):** vale para o `/me` e para todas as rotas com Bearer. Token com `iat` até o segundo de `usuarios.tokens_validos_desde` (ou sem `iat` quando há corte) → `401` `"sessão encerrada — faça login novamente"`. O corte é gravado na inativação, no desligamento do vendedor, na troca e no reset de senha, na revogação em massa do SEC-07 e na CLI `resetpassword`.
 
 #### POST /api/auth/reset-password
 - **Auth:** Bearer Token (qualquer role autenticado)
 - **Body:** `{ "senha_atual": "...", "nova_senha": "...", "captchaToken": "..." }`
 - **Descrição:** Usuário troca a própria senha (precisa da senha atual)
 - **CAPTCHA:** `captchaToken` (string, **obrigatório**) — mesma validação Turnstile do login (fail-closed). Endpoint também ganhou rate limiting dedicado: 10 falhas em 5 minutos bloqueiam por 10 minutos (lacuna identificada pelo SecBrain — antes não existia rate limiting aqui).
+- **Efeito nas sessões (SEC-08, Lote 8, 2026-09-26):** a troca grava `usuarios.tokens_validos_desde`. Todos os access tokens emitidos até esse segundo, inclusive o usado na troca, passam a receber `401` `"sessão encerrada — faça login novamente"`. O frontend leva ao login depois da troca.
 
 ### Usuários (`/api/usuarios`) — admin only
 
@@ -188,7 +202,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
 - **Descrição:** Ativa ou inativa o usuário
 - **Body inválido (BUG-06, 2026-09-25):** vazio, `null`, `{}` ou `{"ativo":null}` → toggle; `{"ativo":true|false}` → define o valor; body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`, sem alterar o usuário. Antes esses bodies caíam no toggle.
-- **Efeito na sessão (SEC-06, Lote 6, 2026-09-26):** inativar revoga os refresh tokens do usuário (`revoked_reason = 'inativacao'`), e a próxima requisição dele em qualquer rota protegida recebe `401` `"usuário inativo"`. Limitação (card SEC-08): reativado antes de o access token antigo expirar (24h), esse token volta a valer.
+- **Efeito na sessão (SEC-06, Lote 6, 2026-09-26):** inativar revoga os refresh tokens do usuário (`revoked_reason = 'inativacao'`), e a próxima requisição dele em qualquer rota protegida recebe `401` `"usuário inativo"`. ~~Limitação (card SEC-08): reativado antes de o access token antigo expirar (24h), esse token volta a valer.~~ Resolvida no Lote 8: inativar grava o corte `usuarios.tokens_validos_desde`, e o token antigo recebe `401` `"sessão encerrada — faça login novamente"` mesmo depois de reativar.
 
 ### Admin (`/api/admin/*`) — admin only
 
@@ -196,6 +210,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "usuario_id": <int64> }`
 - **Descrição:** Reseta a senha de um usuário para uma senha aleatória gerada pela API, enviada por email ao endereço cadastrado (revoga refresh tokens; `deve_trocar_senha` volta a `true`). Resposta inclui `email_enviado: boolean`.
+- **Efeito nas sessões (SEC-08, Lote 8, 2026-09-26):** grava o corte `usuarios.tokens_validos_desde` do usuário resetado. Os access tokens dele emitidos até esse segundo recebem `401` `"sessão encerrada — faça login novamente"` (antes seguiam válidos por até 24h). O token do admin não é afetado.
 
 ### Bloqueio de vendedor desligado nas rotas da carteira (2026-09-24)
 
@@ -321,7 +336,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Escopo (SEC-01):** usuário `normal` sem vendedor → `403` `"usuário sem vendedor vinculado"`. Com vendedor → `201`, e o cliente é vinculado automaticamente à carteira do vendedor. Admin: sem mudança.
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" (opcional, "AAAA-MM-DD", default hoje) }`
 - **Descrição:** Cria um novo cliente. `cliente_id_origem` é a PK `BIGINT AUTO_INCREMENT` da tabela, gerada nativamente pelo MySQL (não é aceita no body), e `ativo` é sempre `true` na criação. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação. Não existe mais campo `id` — `cliente_id_origem` é o único identificador.
-- **Timestamps (BUG-08, Lote 6, 2026-09-26):** o `201` traz `created_at` e `updated_at` preenchidos, porque o cliente é relido do banco depois do INSERT (`relerClienteCriado`, com ou sem vínculo de carteira). Antes vinham `0001-01-01T00:00:00Z`. Os demais creates (vendedores, usuários, produtos, pagamentos, oportunidades, visitas e estoque) ainda devolvem o objeto em memória (card BUG-09).
+- **Timestamps (BUG-08, Lote 6, 2026-09-26):** o `201` traz `created_at` e `updated_at` preenchidos, porque o cliente é relido do banco depois do INSERT (`relerClienteCriado`, com ou sem vínculo de carteira). Antes vinham `0001-01-01T00:00:00Z`. Os demais creates (vendedores, produtos, pagamentos, oportunidades, visitas e estoque) passaram a reler no Lote 8 (BUG-09); o de usuários já relia no repositório.
 - **CNPJ (NEG-01 + NEG-02, 2026-09-25):** aceita o CNPJ numérico e o **alfanumérico** da Receita (vigente desde julho de 2026).
   - **Envio:** com ou sem máscara (`.`, `/`, `-` e espaço), em maiúsculas ou minúsculas. Ex.: `12ABC34501DE35`, `12.ABC.345/01DE-35`, `12.abc.345/01de-35`, `11222333000181` ou `11.222.333/0001-81`.
   - **Formato:** 14 caracteres; as 12 primeiras posições são `[0-9A-Z]` e as 2 últimas (DVs) são numéricas.

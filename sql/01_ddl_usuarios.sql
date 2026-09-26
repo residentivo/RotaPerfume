@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS `usuarios` (
     `id_vendedor` BIGINT NULL COMMENT 'FK opcional para vendedor vinculado',
     `ativo` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '0 = inativo, 1 = ativo',
     `deve_trocar_senha` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = usuário deve trocar a senha no próximo login (senha gerada pelo sistema)',
+    `tokens_validos_desde` DATETIME NULL DEFAULT NULL COMMENT 'Access tokens com iat <= este instante são rejeitados (SEC-08); NULL = sem corte',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Data de criação do registro',
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Data de última atualização',
     `ultimo_login_at` TIMESTAMP NULL COMMENT 'Data do último login (nullable)',

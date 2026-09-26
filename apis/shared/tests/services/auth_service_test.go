@@ -2,7 +2,8 @@
 package services_test
 
 import (
-	"errors"
+	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,17 +160,39 @@ func TestValidateJWT(t *testing.T) {
 	})
 
 	t.Run("token manipulado é rejeitado", func(t *testing.T) {
-		tok, err := auth.GenerateJWT(cfg, 7, "normal")
-		require.NoError(t, err)
-		// Altera o último caractere (parte do signature).
-		manipulado := tok[:len(tok)-1] + "x"
-		if manipulado == tok {
-			manipulado = tok[:len(tok)-2] + "xx"
+		// Determinístico (SEC-08/Lote 8): antes trocava o último caractere
+		// base64url da assinatura, que carrega 2 bits de padding ignorados
+		// pelo decoder — em ~1/16 das execuções a assinatura decodificada não
+		// mudava e o token passava. Agora cada parte é decodificada, tem um
+		// byte do meio invertido (XOR 0xFF) e é recodificada: os bytes mudam
+		// sempre, independentemente do token gerado.
+		manipular := func(t *testing.T, tok string, parte int) string {
+			t.Helper()
+			partes := strings.Split(tok, ".")
+			require.Len(t, partes, 3)
+			raw, err := base64.RawURLEncoding.DecodeString(partes[parte])
+			require.NoError(t, err)
+			require.NotEmpty(t, raw)
+			raw[len(raw)/2] ^= 0xFF
+			partes[parte] = base64.RawURLEncoding.EncodeToString(raw)
+			out := strings.Join(partes, ".")
+			require.NotEqual(t, tok, out)
+			return out
 		}
-		_, err = auth.ValidateJWT(manipulado, cfg.JWTSecret)
-		assert.Error(t, err)
-		assert.True(t, errors.Is(err, services.ErrInvalidToken) || err != nil,
-			"deve conter ErrInvalidToken ou erro de parse")
+		for _, c := range []struct {
+			nome  string
+			parte int
+		}{{"assinatura", 2}, {"payload", 1}, {"header", 0}} {
+			t.Run(c.nome, func(t *testing.T) {
+				for i := 0; i < 50; i++ { // vários tokens (iat/jti variam) para provar estabilidade
+					tok, err := auth.GenerateJWT(cfg, int64(7+i), "normal")
+					require.NoError(t, err)
+					_, err = auth.ValidateJWT(manipular(t, tok, c.parte), cfg.JWTSecret)
+					require.Error(t, err, "token com %s manipulado deve ser rejeitado", c.nome)
+					assert.ErrorIs(t, err, services.ErrInvalidToken)
+				}
+			})
+		}
 	})
 
 	t.Run("token expirado é rejeitado", func(t *testing.T) {

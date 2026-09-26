@@ -215,7 +215,20 @@ func (s *VendedorService) CreateVendedor(ctx context.Context, db *sql.DB, input 
 	if s.Cfg.Verbose {
 		log.Printf("[vendedores] criado: id=%d nome=%s", v.ID, v.Nome)
 	}
-	return v, nil
+	return s.relerVendedorCriado(ctx, db, v), nil
+}
+
+// relerVendedorCriado relê do banco o vendedor recém-gravado (BUG-09), para
+// devolver created_at/updated_at preenchidos pelo MySQL. O INSERT já foi
+// confirmado: se a releitura falhar, loga e devolve o objeto em memória
+// (timestamps zerados) em vez de responder erro para uma gravação que deu certo.
+func (s *VendedorService) relerVendedorCriado(ctx context.Context, db *sql.DB, v *models.Vendedor) *models.Vendedor {
+	gravado, err := s.repo.GetByID(ctx, db, v.ID)
+	if err != nil {
+		log.Printf("[vendedores] criado, mas falhou a releitura: id=%d: %v", v.ID, err)
+		return v
+	}
+	return gravado
 }
 
 // UpdateVendedor atualiza os campos editáveis de um vendedor existente

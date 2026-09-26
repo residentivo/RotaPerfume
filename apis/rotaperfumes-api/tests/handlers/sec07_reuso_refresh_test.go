@@ -42,6 +42,7 @@ func TestSEC07_ReusoDeTokenRotacionado_ForaDaJanela_RevogaTudoEAlerta(t *testing
 	mock.ExpectExec(revokeAllUsuarioSQL).
 		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(5)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec(invalidarSessoesSQL).WithArgs(sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1)) // SEC-08
 
 	assertRefreshRevogado401(t, server.URL+"/api/auth/refresh")
 
@@ -64,6 +65,7 @@ func TestSEC07_ReusoDeTokenRotacionado_FalhaNaRevogacaoEmMassa_Loga401(t *testin
 	mock.ExpectExec(revokeAllUsuarioSQL).
 		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(5)).
 		WillReturnError(sqlmock.ErrCancelled)
+	mock.ExpectExec(invalidarSessoesSQL).WithArgs(sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1)) // SEC-08
 
 	assertRefreshRevogado401(t, server.URL+"/api/auth/refresh")
 
@@ -83,6 +85,7 @@ func TestSEC07_ReusoDeTokenRotacionado_ContaNoRateLimit(t *testing.T) {
 		mock.ExpectExec(revokeAllUsuarioSQL).
 			WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(5)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec(invalidarSessoesSQL).WithArgs(sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1)) // SEC-08
 		assertRefreshRevogado401(t, url)
 	}
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -175,6 +178,7 @@ func TestSEC07_RespostaHTTPIgualEntreReusoEOutrosMotivos(t *testing.T) {
 
 	expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "rotacao")
 	mock.ExpectExec(revokeAllUsuarioSQL).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(invalidarSessoesSQL).WithArgs(sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1)) // SEC-08
 	statusReuso, corpoReuso := refreshSemEmissao(t, url)
 
 	expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "logout")

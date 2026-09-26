@@ -74,8 +74,8 @@ async function enviarValido() {
 let user: ReturnType<typeof userEvent.setup>;
 
 beforeEach(() => {
-  // O redirect pos-sucesso usa setTimeout(1500) que a tela nao cancela no
-  // unmount; com fake timers + clearAllTimers ele nao vaza para o proximo teste.
+  // O redirect pos-sucesso usa setTimeout(1500), cancelado no unmount desde o
+  // FE-11; fake timers + clearAllTimers garantem que nada vaza entre testes.
   vi.useFakeTimers({ shouldAdvanceTime: true });
   user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
   replaceMock.mockReset();
@@ -169,6 +169,28 @@ describe("TrocarSenhaPage - envio", () => {
       vi.advanceTimersByTime(400);
     });
     expect(replaceMock).toHaveBeenCalledWith("/dashboard");
+  });
+
+  // FE-11: o redirecionamento atrasado e cancelado se a tela desmontar antes.
+  it.each<[string, number]>([
+    ["logo apos o sucesso", 0],
+    ["no meio do prazo", 800],
+    // Margem: este arquivo usa shouldAdvanceTime (o relogio tambem anda em tempo real).
+    ["perto de vencer (1300ms)", 1300],
+  ])("unmount %s: nao redireciona para o dashboard", async (_n, decorrido) => {
+    apiChangePasswordMock.mockResolvedValue({ message: "ok" });
+    const { unmount } = render(<TrocarSenhaPage />);
+    await enviarValido();
+    await screen.findByText("Senha alterada com sucesso!");
+    await act(async () => {
+      vi.advanceTimersByTime(decorrido);
+    });
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(replaceMock).not.toHaveBeenCalledWith("/dashboard");
   });
 
   it("o alerta de sucesso pode ser fechado", async () => {

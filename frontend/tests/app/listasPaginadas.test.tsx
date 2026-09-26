@@ -710,3 +710,102 @@ describe("UI-03 - especificos", () => {
     expect(botao).toHaveAttribute("title", "Editar pagamento");
   });
 });
+
+// ─── FE-10: paginador e contador coerentes com as linhas exibidas ────────────
+
+/** Texto "Pagina N de M" do Paginador (null se nao houver paginador). */
+function textoPaginador(): string | null {
+  const el = screen.queryByText(
+    (_c, e) => e?.tagName === "DIV" && /^Pagina \d+ de \d+$/.test(e.textContent ?? "") && e.children.length === 2
+  );
+  return el?.textContent ?? null;
+}
+
+/** Contador do cabecalho ("1-20 de 60 clientes", "0 visitas"...). */
+const CONTADOR = /^(0 [a-z]+|\d+-\d+ de \d+ [a-z]+)$/;
+function contador(): string | null {
+  return screen.queryByText(CONTADOR)?.textContent ?? null;
+}
+
+describe.each(TELAS)("FE-10 - $nome", (t) => {
+  beforeEach(() => mockPorPagina(t));
+
+  it("troca de pagina que falha mantem 'Pagina 1' e o contador; o proximo clique repete a busca", async () => {
+    await montarCarregada(t);
+    expect(textoPaginador()).toBe("Pagina 1 de 3");
+    expect(contador()).toMatch(/^1-20 de 60 /);
+
+    api[t.listFn].mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+    expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+    expect(ultima(t)).toMatchObject({ page: 2 });
+
+    // Linhas, paginador e contador falam da mesma pagina (a 1).
+    expect(screen.getByText(t.texto(100))).toBeInTheDocument();
+    expect(textoPaginador()).toBe("Pagina 1 de 3");
+    expect(contador()).toMatch(/^1-20 de 60 /);
+    expect(screen.getByTitle("Pagina anterior")).toBeDisabled();
+
+    // "Proxima" de novo: destino = 2 (a partir da exibida), que e a pedida
+    // que falhou -> repete a busca da pagina 2.
+    const n = chamadas(t).length;
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+    expect(await screen.findByText(t.texto(200))).toBeInTheDocument();
+    expect(chamadas(t)).toHaveLength(n + 1);
+    expect(ultima(t)).toMatchObject({ page: 2 });
+    expect(textoPaginador()).toBe("Pagina 2 de 3");
+    expect(contador()).toMatch(/^21-40 de 60 /);
+    expect(screen.queryByText("Failed to fetch")).not.toBeInTheDocument();
+  });
+
+  it("apos a falha, navegar para outra pagina conta a partir da exibida", async () => {
+    await montarCarregada(t);
+    api[t.listFn].mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await userEvent.click(screen.getByTitle("Ultima pagina"));
+    await screen.findByText("Failed to fetch");
+    expect(textoPaginador()).toBe("Pagina 1 de 3");
+
+    // Da pagina exibida (1), "Proxima" vai para a 2 (e nao para a 4).
+    await userEvent.click(screen.getByTitle("Proxima pagina"));
+    expect(await screen.findByText(t.texto(200))).toBeInTheDocument();
+    expect(ultima(t)).toMatchObject({ page: 2 });
+    expect(textoPaginador()).toBe("Pagina 2 de 3");
+  });
+
+  it("'Itens por pagina' que falha mantem o contador com o limite anterior", async () => {
+    await montarCarregada(t);
+    api[t.listFn].mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await userEvent.selectOptions(screen.getByLabelText("Itens por pagina"), "50");
+    await screen.findByText("Failed to fetch");
+    expect(ultima(t)).toMatchObject({ limit: 50 });
+    expect(contador()).toMatch(/^1-20 de 60 /);
+  });
+
+  it("primeira carga que falha: contador e paginador ocultos", async () => {
+    api[t.listFn].mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<t.Page />);
+    await screen.findByText("Failed to fetch");
+    expect(contador()).toBeNull();
+    expect(screen.queryByText(/^0 [a-z]+$/)).not.toBeInTheDocument();
+    expect(textoPaginador()).toBeNull();
+  });
+
+  it("primeira carga falha e a seguinte da certo: o contador volta", async () => {
+    api[t.listFn]
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockImplementation(async (page: number) => resposta(t, [page * 100]));
+    render(<t.Page />);
+    await screen.findByText("Failed to fetch");
+    expect(contador()).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText("Itens por pagina"), "50");
+    await screen.findByText(t.texto(100));
+    expect(contador()).toMatch(/^1-50 de 60 /);
+  });
+
+  it("sucesso com lista vazia mostra '0 ...' (o contador so some no erro)", async () => {
+    api[t.listFn].mockResolvedValue({ data: [], page: 1, limit: 20, total: 0, pages: 0 });
+    render(<t.Page />);
+    await screen.findByText(t.vazio);
+    expect(contador()).toMatch(/^0 [a-z]+$/);
+  });
+});

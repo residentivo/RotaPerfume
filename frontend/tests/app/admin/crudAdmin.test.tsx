@@ -321,3 +321,256 @@ describe("Estoque - CRUD (admin)", () => {
     expect(await within(d).findByText(new RegExp(msg))).toBeInTheDocument();
   });
 });
+
+// ─── FE-10 (c): acao deu certo, mas a recarga falhou -> um unico alerta ──────
+
+const ERRO_REDE = "Failed to fetch";
+const recargaFalhou = (sucesso: string, erro: string) =>
+  `${sucesso} Porem, nao foi possivel recarregar a lista (${erro}). Os dados exibidos podem estar desatualizados.`;
+
+/** Exatamente um alerta, vermelho, com o texto esperado; nenhum de sucesso. */
+async function unicoAlertaDeErro(msg: string, sucesso: string) {
+  expect(await screen.findByText(msg)).toBeInTheDocument();
+  const alertas = screen.getAllByRole("alert");
+  expect(alertas).toHaveLength(1);
+  expect(alertas[0]).toHaveClass("bg-red-50");
+  expect(screen.queryByText(sucesso)).not.toBeInTheDocument();
+}
+
+describe("FE-10 - recarga que falha depois da acao", () => {
+  it.each<[string, boolean, string]>([
+    ["email enviado", true, 'Usuario "Caio" criado com sucesso.'],
+    [
+      "email NAO enviado",
+      false,
+      'Usuario "Caio" foi criado, mas o email com a senha inicial NAO pode ser enviado — verifique a configuracao de SMTP.',
+    ],
+  ])("usuarios: criar (%s)", async (_n, enviado, sucesso) => {
+    api.apiListUsers.mockResolvedValueOnce(pagina([bia])).mockRejectedValueOnce(new TypeError(ERRO_REDE));
+    api.apiCreateUser.mockResolvedValue({ ...bia, id: 3, nome: "Caio", email_enviado: enviado });
+    render(<UsuariosPage />);
+    await screen.findByText("Bia");
+    await userEvent.click(screen.getByRole("button", { name: "+ Novo Usuario" }));
+    const d = await dialogo();
+    await waitFor(() => expect(within(d).getByLabelText("Vendedor vinculado (opcional)")).toBeEnabled());
+    await userEvent.type(within(d).getByLabelText("Nome completo"), "Caio");
+    await userEvent.type(within(d).getByLabelText("Email"), "caio@x.com");
+    await userEvent.click(within(d).getByRole("button", { name: "Criar usuario" }));
+    await unicoAlertaDeErro(recargaFalhou(sucesso, ERRO_REDE), sucesso);
+    expect(screen.getByText("Bia")).toBeInTheDocument();
+  });
+
+  describe("vendedores (concluirAcao)", () => {
+    beforeEach(() => {
+      api.apiListVendedores.mockResolvedValueOnce([ativo, inativo]).mockRejectedValueOnce(new TypeError(ERRO_REDE));
+      api.apiGetVendedor.mockImplementation(async (id: number) => ({
+        ...(id === 3 ? ativo : inativo),
+        data_admissao: "2020-01-01",
+        meta_mensal: 100,
+        clientes: [],
+      }));
+    });
+
+    it.each<[string, string, "apiDeleteVendedor" | "apiReativarVendedor", string, string]>([
+      ["inativar", "Vend 3", "apiDeleteVendedor", 'Vendedor "Vend 3" inativado com sucesso.', "Ativo"],
+      ["reativar", "Vend 4", "apiReativarVendedor", 'Vendedor "Vend 4" reativado com sucesso.', "Inativo"],
+    ])("%s", async (_n, linha, fn, sucesso, statusAntigo) => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      api[fn].mockResolvedValue({});
+      render(<VendedoresPage />);
+      const row = (await screen.findByText(linha)).closest("tr")!;
+      await userEvent.click(within(row).getByRole("button", { name: /Ativo|Inativo/ }));
+      await unicoAlertaDeErro(recargaFalhou(sucesso, ERRO_REDE), sucesso);
+      expect(api.apiListVendedores).toHaveBeenCalledTimes(2);
+      // Lista anterior mantida (a linha continua com o status antigo).
+      const rowDepois = screen.getByText(linha).closest("tr")!;
+      expect(within(rowDepois).getByRole("button", { name: statusAntigo })).toBeInTheDocument();
+    });
+
+    it("criar", async () => {
+      api.apiCreateVendedor.mockResolvedValue({ ...ativo, id: 9, nome: "Novo" });
+      render(<VendedoresPage />);
+      await screen.findByText("Vend 3");
+      await userEvent.click(screen.getByRole("button", { name: "+ Novo Vendedor" }));
+      const d = await dialogo();
+      await userEvent.type(within(d).getByLabelText("Nome"), "Novo");
+      await userEvent.type(within(d).getByLabelText("Regiao"), "Sul");
+      await userEvent.type(within(d).getByLabelText("UF"), "pr");
+      await userEvent.click(within(d).getByRole("button", { name: "Criar vendedor" }));
+      const sucesso = 'Vendedor "Novo" criado com sucesso.';
+      await unicoAlertaDeErro(recargaFalhou(sucesso, ERRO_REDE), sucesso);
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("editar", async () => {
+      api.apiUpdateVendedor.mockResolvedValue({});
+      render(<VendedoresPage />);
+      await userEvent.click(await screen.findByText("Vend 3"));
+      const d = await dialogo();
+      await within(d).findByText("Nenhum cliente vinculado a este vendedor.");
+      await userEvent.click(within(d).getByRole("button", { name: "Salvar alteracoes" }));
+      const sucesso = 'Vendedor "Vend 3" atualizado com sucesso.';
+      await unicoAlertaDeErro(recargaFalhou(sucesso, ERRO_REDE), sucesso);
+    });
+
+    it("a recarga que da certo mostra so o sucesso (sem alerta de erro)", async () => {
+      api.apiListVendedores.mockReset();
+      api.apiListVendedores.mockResolvedValue([ativo, inativo]);
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      api.apiDeleteVendedor.mockResolvedValue({});
+      render(<VendedoresPage />);
+      const row = (await screen.findByText("Vend 3")).closest("tr")!;
+      await userEvent.click(within(row).getByRole("button", { name: /Ativo/ }));
+      expect(await screen.findByText('Vendedor "Vend 3" inativado com sucesso.')).toBeInTheDocument();
+      const alertas = screen.getAllByRole("alert");
+      expect(alertas).toHaveLength(1);
+      expect(alertas[0]).toHaveClass("bg-green-50");
+    });
+  });
+
+  it("produtos: criar", async () => {
+    api.apiListProdutos.mockResolvedValueOnce(pagina([perfume])).mockRejectedValueOnce(new TypeError(ERRO_REDE));
+    api.apiCreateProduto.mockResolvedValue({ ...perfume, id: 51, descricao: "Outro" });
+    render(<ProdutosPage />);
+    await screen.findByText("Perfume 50");
+    await esperarDebounce();
+    await userEvent.click(screen.getByRole("button", { name: "+ Novo Produto" }));
+    const w = within(await dialogo());
+    await userEvent.type(w.getByLabelText("SKU"), "P51");
+    await userEvent.type(w.getByLabelText("Descricao"), "Outro");
+    await userEvent.type(w.getByLabelText("Categoria"), "C");
+    await userEvent.type(w.getByLabelText("Marca"), "M");
+    await userEvent.type(w.getByLabelText("Preco de tabela"), "1");
+    await userEvent.type(w.getByLabelText("Custo unitario"), "1");
+    await userEvent.type(w.getByLabelText("Unidade"), "UN");
+    await userEvent.click(w.getByRole("button", { name: "Criar produto" }));
+    const sucesso = 'Produto "Outro" criado com sucesso.';
+    await unicoAlertaDeErro(recargaFalhou(sucesso, ERRO_REDE), sucesso);
+    expect(screen.getByText("Perfume 50")).toBeInTheDocument();
+  });
+
+  it("estoque: criar", async () => {
+    api.apiListEstoque.mockResolvedValueOnce(pagina([registro])).mockRejectedValueOnce(new TypeError(ERRO_REDE));
+    api.apiCreateEstoque.mockResolvedValue({ ...registro, id: 6, sku: "SKU-6" });
+    render(<EstoquePage />);
+    await screen.findByText("SKU-5");
+    await esperarDebounce();
+    await userEvent.click(screen.getByRole("button", { name: "+ Novo registro" }));
+    const d = await dialogo();
+    await userEvent.type(within(d).getByLabelText("SKU"), "SKU-6");
+    await userEvent.type(within(d).getByLabelText("Data do snapshot"), "2026-01-01");
+    await userEvent.type(within(d).getByLabelText("Saldo"), "1");
+    await userEvent.click(within(d).getByRole("button", { name: "Criar registro" }));
+    const sucesso = "Registro de estoque #6 (SKU-6) criado com sucesso.";
+    await unicoAlertaDeErro(recargaFalhou(sucesso, ERRO_REDE), sucesso);
+    expect(screen.getByText("SKU-5")).toBeInTheDocument();
+  });
+});
+
+// ─── FE-11: mensagem de sucesso temporaria nas telas ─────────────────────────
+
+type CasoMsg = [string, () => void, () => ReturnType<typeof render>, string, string];
+const CASOS_MSG: CasoMsg[] = [
+  [
+    "usuarios",
+    () => {
+      api.apiListUsers.mockResolvedValue(pagina([bia]));
+      api.apiToggleUserStatus.mockResolvedValue({ ...bia, ativo: false });
+    },
+    () => render(<UsuariosPage />),
+    "Bia",
+    "Usuario inativado com sucesso.",
+  ],
+  [
+    "vendedores",
+    () => {
+      api.apiListVendedores.mockResolvedValue([ativo]);
+      api.apiDeleteVendedor.mockResolvedValue({});
+    },
+    () => render(<VendedoresPage />),
+    "Vend 3",
+    'Vendedor "Vend 3" inativado com sucesso.',
+  ],
+  [
+    "produtos",
+    () => {
+      api.apiListProdutos.mockResolvedValue(pagina([perfume]));
+      api.apiToggleProdutoStatus.mockResolvedValue({ ...perfume, ativo: false });
+    },
+    () => render(<ProdutosPage />),
+    "Perfume 50",
+    "Produto inativado com sucesso.",
+  ],
+];
+
+describe("FE-11 - mensagem temporaria (usuarios, vendedores, produtos)", () => {
+  async function inativar(
+    preparar: () => void,
+    montar: () => ReturnType<typeof render>,
+    texto: string,
+    msg: string
+  ) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    preparar();
+    const r = montar();
+    await screen.findByText(texto);
+    await act(async () => {
+      vi.advanceTimersByTime(420);
+    });
+    await u.click(screen.getByTitle("Clique para inativar"));
+    await screen.findByText(msg);
+    return r;
+  }
+
+  it.each(CASOS_MSG)("%s: o sucesso some apos 4 s", async (_n, preparar, montar, texto, msg) => {
+    try {
+      await inativar(preparar, montar, texto, msg);
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(screen.getByText(msg)).toBeInTheDocument();
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+      });
+      expect(screen.queryByText(msg)).not.toBeInTheDocument();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(CASOS_MSG)("%s: fechar o alerta cancela o timer", async (_n, preparar, montar, texto, msg) => {
+    try {
+      await inativar(preparar, montar, texto, msg);
+      await act(async () => {
+        screen.getByRole("button", { name: "Fechar alerta" }).click();
+      });
+      expect(screen.queryByText(msg)).not.toBeInTheDocument();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(CASOS_MSG)("%s: unmount antes dos 4 s nao deixa timer pendente", async (_n, preparar, montar, texto, msg) => {
+    const erro = vi.spyOn(console, "error");
+    try {
+      const { unmount } = await inativar(preparar, montar, texto, msg);
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+      });
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(erro).not.toHaveBeenCalled();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+});

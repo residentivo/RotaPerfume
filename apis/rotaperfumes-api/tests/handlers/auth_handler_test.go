@@ -517,8 +517,8 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Mock: update password_hash + deve_trocar_senha (troca voluntária → false)
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-		WithArgs(sqlmock.AnyArg(), false, int64(2)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(2)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// Mock: revoga todos os refresh tokens
@@ -885,8 +885,8 @@ func TestResetPassword_NovaSenhaForte_NaoReutilizada_Sucesso(t *testing.T) {
 
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-		WithArgs(sqlmock.AnyArg(), false, int64(2)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(2)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))

@@ -113,7 +113,7 @@ func newJWTMiddleware(cfg *config.Config, checker UserStatusChecker, protected b
 
 			role := claims.Role
 			if checker != nil && protected {
-				dbRole, ok := checkUserStatus(w, r, checker, claims.UserID, claims.Role)
+				dbRole, ok := checkUserStatus(w, r, checker, claims)
 				if !ok {
 					return
 				}
@@ -136,7 +136,12 @@ func newJWTMiddleware(cfg *config.Config, checker UserStatusChecker, protected b
 // checkUserStatus consulta o usuário via checker e, se ele puder seguir,
 // devolve o role vigente no banco. Em qualquer outro caso já escreve a
 // resposta de erro (401/500) e devolve ok=false — o handler não é chamado.
-func checkUserStatus(w http.ResponseWriter, r *http.Request, checker UserStatusChecker, userID int64, tokenRole string) (string, bool) {
+//
+// SEC-08: além de ativo, recusa (401) o access token emitido até o corte de
+// sessão do usuário (tokens_validos_desde) — troca/reset de senha,
+// inativação e revogação em massa derrubam os access tokens já emitidos.
+func checkUserStatus(w http.ResponseWriter, r *http.Request, checker UserStatusChecker, claims *services.AuthClaims) (string, bool) {
+	userID, tokenRole := claims.UserID, claims.Role
 	st, err := checker.CheckUserStatus(r.Context(), userID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
@@ -153,10 +158,37 @@ func checkUserStatus(w http.ResponseWriter, r *http.Request, checker UserStatusC
 		writeError(w, http.StatusUnauthorized, msgUsuarioInativo)
 		return "", false
 	}
+	if tokenAnteriorAoCorte(claims, st.TokensValidosDesde) {
+		log.Printf("[auth] acesso negado: user_id=%d token anterior ao corte de sessão iat=%d corte=%d",
+			userID, issuedAtUnix(claims), st.TokensValidosDesde.Unix())
+		writeError(w, http.StatusUnauthorized, msgSessaoEncerrada)
+		return "", false
+	}
 	if st.Role != tokenRole {
 		log.Printf("[auth] role do token divergente do banco: user_id=%d token=%s banco=%s (usando banco)", userID, tokenRole, st.Role)
 	}
 	return st.Role, true
+}
+
+// tokenAnteriorAoCorte reporta se o token foi emitido até o corte de sessão
+// (comparação em segundos, mesma precisão do iat). Sem corte (nil) o token
+// vale; com corte, token sem iat é recusado (fail-closed).
+func tokenAnteriorAoCorte(claims *services.AuthClaims, corte *time.Time) bool {
+	if corte == nil {
+		return false
+	}
+	if claims.IssuedAt == nil {
+		return true
+	}
+	return claims.IssuedAt.Unix() <= corte.Unix()
+}
+
+// issuedAtUnix devolve o iat do token em segundos (0 se ausente), para log.
+func issuedAtUnix(claims *services.AuthClaims) int64 {
+	if claims.IssuedAt == nil {
+		return 0
+	}
+	return claims.IssuedAt.Unix()
 }
 
 // timeNow é uma var para facilitar testes (sobrescrevível).

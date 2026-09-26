@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useDebounceFiltros, useUltimaResposta } from "@/lib/useListaSegura";
+import {
+  faixaExibida,
+  mensagemRecargaFalhou,
+  useDebounceFiltros,
+  usePaginaCarregada,
+  useUltimaResposta,
+} from "@/lib/useListaSegura";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -9,6 +15,8 @@ import { Alert } from "@/components/ui/Alert";
 import { CarteiraGuard } from "@/components/layout/CarteiraGuard";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
+import { Paginador } from "@/components/ui/Paginador";
+import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
 import { ClienteModal } from "@/components/admin/ClienteModal";
 import {
   apiListClientes,
@@ -100,7 +108,11 @@ function ClientesContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [erroCarga, setErroCarga] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
+  const {
+    mensagem: success,
+    mostrar: mostrarSucesso,
+    limpar: limparSucesso,
+  } = useMensagemTemporaria();
   const [search, setSearch] = useState("");
   const [ufFilter, setUfFilter] = useState("");
   const [segmentoFilter, setSegmentoFilter] = useState("");
@@ -113,6 +125,13 @@ function ClientesContent() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(0);
+  // FE-10: pagina/limite exibidos (a pedida, ou a ultima carregada se a
+  // ultima carga falhou).
+  const { exibida, registrar: registrarCarregada } = usePaginaCarregada(
+    page,
+    limit,
+    erroCarga
+  );
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -147,13 +166,14 @@ function ClientesContent() {
     setClientes(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    registrarCarregada(page, limit);
     setErroCarga(false);
     setLoading(false);
   };
 
   // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
   // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
-  const aplicarErroClientes = (err: unknown) => {
+  const aplicarErroClientes = (err: unknown): string => {
     const message =
       err instanceof Error
         ? err.message
@@ -161,13 +181,26 @@ function ClientesContent() {
     setError(message);
     setErroCarga(true);
     setLoading(false);
+    return message;
   };
 
-  // Recarga imperativa (handlers, timers e apos criar/404).
-  const loadClientes = async () => {
+  // Recarga imperativa (handlers, timers e apos criar/404). FE-10: devolve a mensagem de erro se a
+  // recarga falhar (null se deu certo ou foi superada por outra busca).
+  const loadClientes = async (): Promise<string | null> => {
     setLoading(true);
     setError(null);
-    await executarBusca(buscarClientes(), aplicarClientes, aplicarErroClientes);
+    let falha: string | null = null;
+    await executarBusca(buscarClientes(), aplicarClientes, (err) => {
+      falha = aplicarErroClientes(err);
+    });
+    return falha;
+  };
+
+  // FE-10: navegacao a partir da pagina exibida. Se o destino ja e a pagina
+  // pedida (a troca anterior falhou), repete a busca em vez de nao fazer nada.
+  const irParaPagina = (n: number) => {
+    if (n === page) loadClientes();
+    else setPage(n);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -224,7 +257,7 @@ function ClientesContent() {
 
     setAction({ type: "toggle", clienteId: cliente.cliente_id_origem });
     setError(null);
-    setSuccess(null);
+    limparSucesso();
     try {
       const updated = await apiToggleClienteStatus(
         cliente.cliente_id_origem,
@@ -235,10 +268,9 @@ function ClientesContent() {
           c.cliente_id_origem === updated.cliente_id_origem ? updated : c
         )
       );
-      setSuccess(
+      mostrarSucesso(
         `Cliente ${novoStatus ? "reativado" : "inativado"} com sucesso.`
       );
-      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         await tratarClienteNaoEncontrado(err);
@@ -274,8 +306,10 @@ function ClientesContent() {
         const created = await apiCreateCliente(data);
         // O backend vincula o cliente novo a carteira do vendedor: recarregar
         // faz ele aparecer tambem para o usuario normal.
-        await loadClientes();
-        setSuccess(`Cliente "${created.razao_social}" criado com sucesso.`);
+        const msg = `Cliente "${created.razao_social}" criado com sucesso.`;
+        const erroRecarga = await loadClientes();
+        if (erroRecarga) setError(mensagemRecargaFalhou(msg, erroRecarga));
+        else mostrarSucesso(msg);
       } else if (editingCliente) {
         const updated = await apiUpdateCliente(
           editingCliente.cliente_id_origem,
@@ -286,7 +320,7 @@ function ClientesContent() {
             c.cliente_id_origem === updated.cliente_id_origem ? updated : c
           )
         );
-        setSuccess(`Cliente "${updated.razao_social}" atualizado com sucesso.`);
+        mostrarSucesso(`Cliente "${updated.razao_social}" atualizado com sucesso.`);
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
@@ -300,7 +334,6 @@ function ClientesContent() {
       throw err;
     }
     setModalOpen(false);
-    setTimeout(() => setSuccess(null), 4000);
   };
 
   const columns: Column<Cliente>[] = [
@@ -310,7 +343,6 @@ function ClientesContent() {
       width: "80px",
       align: "left",
       sortable: true,
-      sortValue: (c) => c.cliente_id_origem,
       render: (c) => (
         <span className="font-mono text-xs">#{c.cliente_id_origem}</span>
       ),
@@ -423,8 +455,14 @@ function ClientesContent() {
     },
   ];
 
-  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
-  const endItem = Math.min(page * limit, total);
+  // FE-10: contador baseado na pagina exibida; oculto se nada foi carregado
+  // (a primeira carga falhou), para nao afirmar "0 clientes".
+  const { inicio: startItem, fim: endItem } = faixaExibida(
+    exibida.pagina,
+    exibida.limite,
+    total
+  );
+  const ocultarContador = erroCarga && clientes.length === 0;
 
   return (
     <div>
@@ -459,7 +497,7 @@ function ClientesContent() {
 
       {success && (
         <div className="mb-4">
-          <Alert variant="success" onClose={() => setSuccess(null)}>
+          <Alert variant="success" onClose={() => limparSucesso()}>
             {success}
           </Alert>
         </div>
@@ -528,13 +566,15 @@ function ClientesContent() {
                 />
               </div>
             </div>
-            <div className="text-sm text-slate-500">
-              {total === 0
-                ? "0 clientes"
-                : `${startItem}-${endItem} de ${total} ${
-                    total === 1 ? "cliente" : "clientes"
-                  }`}
-            </div>
+            {!ocultarContador && (
+              <div className="text-sm text-slate-500">
+                {total === 0
+                  ? "0 clientes"
+                  : `${startItem}-${endItem} de ${total} ${
+                      total === 1 ? "cliente" : "clientes"
+                    }`}
+              </div>
+            )}
           </div>
         </div>
 
@@ -556,51 +596,7 @@ function ClientesContent() {
           />
         </div>
 
-        {pages > 1 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
-            <div className="text-sm text-slate-500">
-              Pagina <strong>{page}</strong> de <strong>{pages}</strong>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage(1)}
-                title="Primeira pagina"
-              >
-                {"<<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                title="Pagina anterior"
-              >
-                {"<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                title="Proxima pagina"
-              >
-                {">"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage(pages)}
-                title="Ultima pagina"
-              >
-                {">>"}
-              </Button>
-            </div>
-          </div>
-        )}
+        <Paginador pagina={exibida.pagina} paginas={pages} onIrPara={irParaPagina} />
       </Card>
 
       <div className="mt-4 text-xs text-slate-400">

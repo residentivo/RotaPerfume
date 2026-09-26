@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/rotaperfumes/shared/repositories"
 )
@@ -17,10 +18,18 @@ const msgUsuarioInativo = "usuário inativo"
 // caso; qualquer outro erro é tratado como falha de infraestrutura (500).
 var ErrUserNotFound = errors.New("middleware: usuário não encontrado")
 
+// msgSessaoEncerrada é a mensagem do 401 para access token emitido antes do
+// corte de sessão do usuário (SEC-08).
+const msgSessaoEncerrada = "sessão encerrada — faça login novamente"
+
 // UserStatus é o estado vigente do usuário no banco.
+//
+// TokensValidosDesde (SEC-08) é o corte de sessão: access tokens com
+// iat <= corte são recusados. nil = sem corte.
 type UserStatus struct {
-	Ativo bool
-	Role  string
+	Ativo              bool
+	Role               string
+	TokensValidosDesde *time.Time
 }
 
 // UserStatusChecker consulta o estado atual de um usuário a cada request
@@ -51,5 +60,5 @@ func (c *DBUserStatusChecker) CheckUserStatus(ctx context.Context, userID int64)
 		}
 		return UserStatus{}, err
 	}
-	return UserStatus{Ativo: st.Ativo, Role: st.Role}, nil
+	return UserStatus{Ativo: st.Ativo, Role: st.Role, TokensValidosDesde: st.TokensValidosDesde}, nil
 }

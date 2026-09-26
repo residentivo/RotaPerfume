@@ -199,8 +199,8 @@ func TestUsuarioService_ListUsuarios(t *testing.T) {
 func TestUsuarioService_ResetSenha(t *testing.T) {
 	t.Run("sucesso", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), false, int64(1)).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+			WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
 		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
@@ -211,8 +211,8 @@ func TestUsuarioService_ResetSenha(t *testing.T) {
 
 	t.Run("usuário não encontrado", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), false, int64(999)).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+			WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(999)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
@@ -223,7 +223,7 @@ func TestUsuarioService_ResetSenha(t *testing.T) {
 
 	t.Run("erro do repo é propagado", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
 			WillReturnError(sql.ErrConnDone)
 
 		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
@@ -245,8 +245,8 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), true, int64(1)).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
 		email := &fakeEmailService{}
@@ -264,8 +264,8 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), true, int64(1)).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
 		email := &fakeEmailService{err: assertError()}
@@ -307,8 +307,8 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), true, int64(1)).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
@@ -556,8 +556,8 @@ func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-			WithArgs(false, int64(1)).
+		mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
+			WithArgs(false, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
 		svc := services.NewUsuarioService(db, usuarioTestCfg(true), &fakeEmailService{})
@@ -602,8 +602,8 @@ func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-			WithArgs(false, int64(1)).
+		mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
+			WithArgs(false, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})

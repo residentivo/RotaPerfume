@@ -480,7 +480,7 @@ func TestVendedorService_UpdateVendedor_ErroNoGetByIDApósUpdate(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 const vendedorSetDesligamentoRegex = `UPDATE vendedores SET data_desligamento = COALESCE\(data_desligamento, \?\) WHERE id = \?`
-const usuariosInativarPorVendedorRegex = `UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`
+const usuariosInativarPorVendedorRegex = `UPDATE usuarios SET ativo = 0, tokens_validos_desde = \? WHERE id_vendedor = \? AND ativo = 1`
 const refreshRevogarPorVendedorRegex = `UPDATE refresh_tokens rt\s+JOIN usuarios u ON u\.id = rt\.usuario_id\s+SET rt\.revoked_at = \?, rt\.revoked_reason = \?\s+WHERE u\.id_vendedor = \? AND rt\.revoked_at IS NULL`
 
 func TestVendedorService_DeleteVendedor_Sucesso(t *testing.T) {
@@ -501,7 +501,7 @@ func TestVendedorService_DeleteVendedor_Sucesso(t *testing.T) {
 				WithArgs(sqlmock.AnyArg(), int64(1)).
 				WillReturnResult(sqlmock.NewResult(0, 1))
 			mock.ExpectExec(usuariosInativarPorVendedorRegex).
-				WithArgs(int64(1)).
+				WithArgs(sqlmock.AnyArg(), int64(1)).
 				WillReturnResult(sqlmock.NewResult(0, tc.usuariosVinculados))
 			mock.ExpectExec(refreshRevogarPorVendedorRegex).
 				WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
@@ -566,7 +566,7 @@ func TestVendedorService_DeleteVendedor_ErroAoInativarUsuarios_FazRollback(t *te
 		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(usuariosInativarPorVendedorRegex).
-		WithArgs(int64(1)).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
@@ -589,7 +589,7 @@ func TestVendedorService_DeleteVendedor_ErroAoRevogarTokens_FazRollback(t *testi
 		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(usuariosInativarPorVendedorRegex).
-		WithArgs(int64(1)).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(refreshRevogarPorVendedorRegex).
 		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
@@ -614,7 +614,7 @@ func TestVendedorService_DeleteVendedor_JaDesligado_RevogacaoIdempotente(t *test
 		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(usuariosInativarPorVendedorRegex).
-		WithArgs(int64(1)).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(refreshRevogarPorVendedorRegex).
 		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
@@ -653,7 +653,7 @@ func TestVendedorService_DeleteVendedor_ErroNoCommit(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(usuariosInativarPorVendedorRegex).
-		WithArgs(int64(1)).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(refreshRevogarPorVendedorRegex).
 		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
@@ -1098,8 +1098,8 @@ func TestVendedorService_DeleteVendedor_ErroNoGetByIDApósUpdate(t *testing.T) {
 	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = COALESCE\(data_desligamento, \?\) WHERE id = \?`).
 		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`).
-		WithArgs(int64(1)).
+	mock.ExpectExec(`UPDATE usuarios SET ativo = 0, tokens_validos_desde = \? WHERE id_vendedor = \? AND ativo = 1`).
+		WithArgs(sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(refreshRevogarPorVendedorRegex).
 		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).

@@ -32,8 +32,8 @@ var (
 const senhaGerada = "GeradaXYZ0123456"
 
 var (
-	reUpdateAdmin   = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, ativo = 1 WHERE email = ?")
-	reUpdateEmail   = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ? WHERE email = ?")
+	reUpdateAdmin   = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, ativo = 1, tokens_validos_desde = ? WHERE email = ?")
+	reUpdateEmail   = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, tokens_validos_desde = ? WHERE email = ?")
 	reUpdateAll     = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ? WHERE password_hash LIKE '%PLACEHOLDER%'")
 	reInsert        = "INSERT INTO usuarios"
 	reExisteAdmin   = regexp.QuoteMeta("SELECT EXISTS(SELECT 1 FROM usuarios WHERE email = 'admin@rotaperfumes.com.br')")
@@ -180,7 +180,7 @@ func TestRun_CreateAdmin(t *testing.T) {
 		silenciarLog(t)
 		t.Setenv("SEED_ADMIN_PASSWORD", "NaoUsar")
 		db, mock := novoMock(t)
-		mock.ExpectExec(reUpdateAdmin).WithArgs(hashDe("Flag@123"), resetpassword.AdminEmail).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec(reUpdateAdmin).WithArgs(hashDe("Flag@123"), sqlmock.AnyArg(), resetpassword.AdminEmail).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
 		var out bytes.Buffer
 		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{CreateAdmin: true, Password: "Flag@123"}, &out, geradorProibido(t)))
@@ -191,7 +191,7 @@ func TestRun_CreateAdmin(t *testing.T) {
 		logs := silenciarLog(t)
 		t.Setenv("SEED_ADMIN_PASSWORD", "Env@123")
 		db, mock := novoMock(t)
-		mock.ExpectExec(reUpdateAdmin).WithArgs(hashDe("Env@123"), resetpassword.AdminEmail).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec(reUpdateAdmin).WithArgs(hashDe("Env@123"), sqlmock.AnyArg(), resetpassword.AdminEmail).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec(reInsert).WithArgs("Administrador Principal", resetpassword.AdminEmail, hashDe("Env@123")).WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
 		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{CreateAdmin: true}, &bytes.Buffer{}, geradorProibido(t)))
@@ -203,7 +203,7 @@ func TestRun_CreateAdmin(t *testing.T) {
 		silenciarLog(t)
 		t.Setenv("SEED_ADMIN_PASSWORD", "")
 		db, mock := novoMock(t)
-		mock.ExpectExec(reUpdateAdmin).WithArgs(hashDe(senhaGerada), resetpassword.AdminEmail).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec(reUpdateAdmin).WithArgs(hashDe(senhaGerada), sqlmock.AnyArg(), resetpassword.AdminEmail).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(reListar).WillReturnError(errBanco) // lista final só loga
 		var out bytes.Buffer
 		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{CreateAdmin: true}, &out, gerador(t)))
@@ -280,7 +280,7 @@ func TestRun_Email(t *testing.T) {
 	t.Run("existente -> UPDATE", func(t *testing.T) {
 		silenciarLog(t)
 		db, mock := novoMock(t)
-		mock.ExpectExec(reUpdateEmail).WithArgs(hashDe("Nova@123"), email).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec(reUpdateEmail).WithArgs(hashDe("Nova@123"), sqlmock.AnyArg(), email).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
 		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{Email: email, Password: "Nova@123"}, &bytes.Buffer{}, geradorProibido(t)))
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -288,7 +288,7 @@ func TestRun_Email(t *testing.T) {
 	t.Run("novo sem nome nem vendedor -> INSERT com defaults", func(t *testing.T) {
 		silenciarLog(t)
 		db, mock := novoMock(t)
-		mock.ExpectExec(reUpdateEmail).WithArgs(hashDe(senhaGerada), email).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec(reUpdateEmail).WithArgs(hashDe(senhaGerada), sqlmock.AnyArg(), email).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec(reInsert).WithArgs("Usuário "+email, email, hashDe(senhaGerada), "normal", nil).WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
 		var out bytes.Buffer

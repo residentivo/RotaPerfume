@@ -481,10 +481,136 @@ describe("FE-09 - erro de carga nas telas administrativas", () => {
     const linha = screen.getByText("Vend 01").closest("tr")!;
     await userEvent.click(within(linha).getByTitle("Clique para inativar"));
 
-    expect(await screen.findByText(ERRO_REDE)).toBeInTheDocument();
+    // FE-10 (c): um unico alerta de erro, que diz o sucesso da acao e a falha
+    // da recarga; nenhum alerta de sucesso separado.
+    const msg =
+      'Vendedor "Vend 01" inativado com sucesso. Porem, nao foi possivel recarregar a lista ' +
+      `(${ERRO_REDE}). Os dados exibidos podem estar desatualizados.`;
+    expect(await screen.findByText(msg)).toBeInTheDocument();
+    const alertas = screen.getAllByRole("alert");
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]).toHaveClass("bg-red-50");
+    expect(alertas[0]).toHaveTextContent(msg);
+    expect(screen.queryByText(ERRO_REDE)).not.toBeInTheDocument();
     expect(screen.getByText("Vend 01")).toBeInTheDocument();
     expect(screen.getByText("Vend 02")).toBeInTheDocument();
     expect(screen.queryByText("Nenhum vendedor cadastrado.")).not.toBeInTheDocument();
     confirmar.mockRestore();
+  });
+});
+
+// ─── FE-10: paginador e contador coerentes com as linhas exibidas ────────────
+
+function textoPaginador(): string | null {
+  const el = screen.queryByText(
+    (_c, e) => e?.tagName === "DIV" && /^Pagina \d+ de \d+$/.test(e.textContent ?? "") && e.children.length === 2
+  );
+  return el?.textContent ?? null;
+}
+
+const CONTADOR = /^(0 [a-z]+|\d+-\d+ de \d+ [a-z]+)$/;
+function contador(): string | null {
+  return screen.queryByText(CONTADOR)?.textContent ?? null;
+}
+
+describe("FE-10 - telas administrativas", () => {
+  const ERRO_REDE = "Failed to fetch";
+  type Paginada = {
+    nome: string;
+    Page: () => ReactElement;
+    listFn: "apiListUsers" | "apiListSenhaHistorico";
+    mock: () => void;
+    texto: (page: number) => string;
+    ultimaPagina: () => unknown;
+  };
+  const PAGINADAS: Paginada[] = [
+    {
+      nome: "usuarios",
+      Page: () => <UsuariosPage />,
+      listFn: "apiListUsers",
+      mock: () =>
+        api.apiListUsers.mockImplementation(async (page: number) => ({
+          data: [usuario(page * 100)],
+          page,
+          limit: 20,
+          total: 60,
+          pages: 3,
+        })),
+      texto: (p) => `Usuario ${p * 100}`,
+      ultimaPagina: () => api.apiListUsers.mock.calls.at(-1)?.[0],
+    },
+    {
+      nome: "senha-historico",
+      Page: () => <SenhaHistoricoPage />,
+      listFn: "apiListSenhaHistorico",
+      mock: () =>
+        api.apiListSenhaHistorico.mockImplementation(async (page: number) => ({
+          data: [item(page * 100)],
+          page,
+          limit: 20,
+          total: 60,
+          pages: 3,
+        })),
+      texto: (p) => `#${p * 100} - Pessoa ${p * 100}`,
+      ultimaPagina: () => api.apiListSenhaHistorico.mock.calls.at(-1)?.[0],
+    },
+  ];
+
+  it.each(PAGINADAS)(
+    "$nome: troca de pagina que falha mantem 'Pagina 1' e o contador; o proximo clique repete a busca",
+    async (t) => {
+      t.mock();
+      render(t.Page());
+      await screen.findByText(t.texto(1));
+      expect(textoPaginador()).toBe("Pagina 1 de 3");
+      expect(contador()).toMatch(/^1-20 de 60 /);
+
+      api[t.listFn].mockRejectedValueOnce(new TypeError(ERRO_REDE));
+      await userEvent.click(screen.getByTitle("Proxima pagina"));
+      expect(await screen.findByText(ERRO_REDE)).toBeInTheDocument();
+      expect(t.ultimaPagina()).toBe(2);
+      expect(screen.getByText(t.texto(1))).toBeInTheDocument();
+      expect(textoPaginador()).toBe("Pagina 1 de 3");
+      expect(contador()).toMatch(/^1-20 de 60 /);
+
+      const n = api[t.listFn].mock.calls.length;
+      await userEvent.click(screen.getByTitle("Proxima pagina"));
+      expect(await screen.findByText(t.texto(2))).toBeInTheDocument();
+      expect(api[t.listFn].mock.calls.length).toBe(n + 1);
+      expect(t.ultimaPagina()).toBe(2);
+      expect(textoPaginador()).toBe("Pagina 2 de 3");
+      expect(contador()).toMatch(/^21-40 de 60 /);
+    }
+  );
+
+  it.each<[string, () => void, () => ReactElement]>([
+    ["usuarios", () => api.apiListUsers.mockRejectedValue(new TypeError(ERRO_REDE)), () => <UsuariosPage />],
+    [
+      "senha-historico",
+      () => api.apiListSenhaHistorico.mockRejectedValue(new TypeError(ERRO_REDE)),
+      () => <SenhaHistoricoPage />,
+    ],
+    ["vendedores", () => api.apiListVendedores.mockRejectedValue(new TypeError(ERRO_REDE)), () => <VendedoresPage />],
+  ])("%s: primeira carga que falha oculta o contador (nada de '0 ...')", async (_n, falhar, Page) => {
+    falhar();
+    render(Page());
+    await screen.findByText(ERRO_REDE);
+    expect(contador()).toBeNull();
+    expect(screen.queryByText(/^0 [a-z]+$/)).not.toBeInTheDocument();
+    expect(textoPaginador()).toBeNull();
+  });
+
+  it("vendedores: erro na recarga com lista ja carregada mantem o contador", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiListVendedores.mockResolvedValueOnce([vend(1), vend(2)]);
+    api.apiListVendedores.mockRejectedValueOnce(new TypeError(ERRO_REDE));
+    api.apiDeleteVendedor.mockResolvedValue(undefined);
+    render(<VendedoresPage />);
+    await screen.findByText("Vend 01");
+    expect(contador()).toBe("1-2 de 2 vendedores");
+    const linha = screen.getByText("Vend 01").closest("tr")!;
+    await userEvent.click(within(linha).getByTitle("Clique para inativar"));
+    await screen.findByText(/Porem, nao foi possivel recarregar a lista/);
+    expect(contador()).toBe("1-2 de 2 vendedores");
   });
 });

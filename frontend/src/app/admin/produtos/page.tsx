@@ -1,13 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useDebounceFiltros, useUltimaResposta } from "@/lib/useListaSegura";
+import {
+  faixaExibida,
+  mensagemRecargaFalhou,
+  useDebounceFiltros,
+  usePaginaCarregada,
+  useUltimaResposta,
+} from "@/lib/useListaSegura";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
+import { Paginador } from "@/components/ui/Paginador";
+import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { ProdutoModal } from "@/components/admin/ProdutoModal";
 import {
@@ -60,7 +68,11 @@ function ProdutosPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [erroCarga, setErroCarga] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
+  const {
+    mensagem: success,
+    mostrar: mostrarSucesso,
+    limpar: limparSucesso,
+  } = useMensagemTemporaria();
   const [search, setSearch] = useState("");
   const [categoriaFilter, setCategoriaFilter] = useState("");
   const [marcaFilter, setMarcaFilter] = useState("");
@@ -73,6 +85,13 @@ function ProdutosPageContent() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(0);
+  // FE-10: pagina/limite exibidos (a pedida, ou a ultima carregada se a
+  // ultima carga falhou).
+  const { exibida, registrar: registrarCarregada } = usePaginaCarregada(
+    page,
+    limit,
+    erroCarga
+  );
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -106,13 +125,14 @@ function ProdutosPageContent() {
     setProdutos(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    registrarCarregada(page, limit);
     setErroCarga(false);
     setLoading(false);
   };
 
   // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
   // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
-  const aplicarErroProdutos = (err: unknown) => {
+  const aplicarErroProdutos = (err: unknown): string => {
     const message =
       err instanceof Error
         ? err.message
@@ -120,13 +140,26 @@ function ProdutosPageContent() {
     setError(message);
     setErroCarga(true);
     setLoading(false);
+    return message;
   };
 
-  // Recarga imperativa (handlers e timers).
-  const loadProdutos = async () => {
+  // Recarga imperativa (handlers e timers). FE-10: devolve a mensagem de erro se a
+  // recarga falhar (null se deu certo ou foi superada por outra busca).
+  const loadProdutos = async (): Promise<string | null> => {
     setLoading(true);
     setError(null);
-    await executarBusca(buscarProdutos(), aplicarProdutos, aplicarErroProdutos);
+    let falha: string | null = null;
+    await executarBusca(buscarProdutos(), aplicarProdutos, (err) => {
+      falha = aplicarErroProdutos(err);
+    });
+    return falha;
+  };
+
+  // FE-10: navegacao a partir da pagina exibida. Se o destino ja e a pagina
+  // pedida (a troca anterior falhou), repete a busca em vez de nao fazer nada.
+  const irParaPagina = (n: number) => {
+    if (n === page) loadProdutos();
+    else setPage(n);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -175,16 +208,15 @@ function ProdutosPageContent() {
 
     setAction({ type: "toggle", produtoId: produto.id });
     setError(null);
-    setSuccess(null);
+    limparSucesso();
     try {
       const updated = await apiToggleProdutoStatus(produto.id, novoStatus);
       setProdutos((prev) =>
         prev.map((p) => (p.id === updated.id ? updated : p))
       );
-      setSuccess(
+      mostrarSucesso(
         `Produto ${novoStatus ? "reativado" : "inativado"} com sucesso.`
       );
-      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro ao alterar status.";
@@ -210,17 +242,18 @@ function ProdutosPageContent() {
     setError(null);
     if (modalMode === "create") {
       const created = await apiCreateProduto(data);
-      await loadProdutos();
-      setSuccess(`Produto "${created.descricao}" criado com sucesso.`);
+      const msg = `Produto "${created.descricao}" criado com sucesso.`;
+      const erroRecarga = await loadProdutos();
+      if (erroRecarga) setError(mensagemRecargaFalhou(msg, erroRecarga));
+      else mostrarSucesso(msg);
     } else if (editingProduto) {
       const updated = await apiUpdateProduto(editingProduto.id, data);
       setProdutos((prev) =>
         prev.map((p) => (p.id === updated.id ? updated : p))
       );
-      setSuccess(`Produto "${updated.descricao}" atualizado com sucesso.`);
+      mostrarSucesso(`Produto "${updated.descricao}" atualizado com sucesso.`);
     }
     setModalOpen(false);
-    setTimeout(() => setSuccess(null), 4000);
   };
 
   const columns: Column<Produto>[] = [
@@ -230,7 +263,6 @@ function ProdutosPageContent() {
       width: "80px",
       align: "left",
       sortable: true,
-      sortValue: (p) => p.id,
       render: (p) => <span className="font-mono text-xs">#{p.id}</span>,
     },
     {
@@ -331,8 +363,14 @@ function ProdutosPageContent() {
     },
   ];
 
-  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
-  const endItem = Math.min(page * limit, total);
+  // FE-10: contador baseado na pagina exibida; oculto se nada foi carregado
+  // (a primeira carga falhou), para nao afirmar "0 produtos".
+  const { inicio: startItem, fim: endItem } = faixaExibida(
+    exibida.pagina,
+    exibida.limite,
+    total
+  );
+  const ocultarContador = erroCarga && produtos.length === 0;
 
   return (
     <div>
@@ -356,7 +394,7 @@ function ProdutosPageContent() {
 
       {success && (
         <div className="mb-4">
-          <Alert variant="success" onClose={() => setSuccess(null)}>
+          <Alert variant="success" onClose={() => limparSucesso()}>
             {success}
           </Alert>
         </div>
@@ -424,13 +462,15 @@ function ProdutosPageContent() {
                 />
               </div>
             </div>
-            <div className="text-sm text-slate-500">
-              {total === 0
-                ? "0 produtos"
-                : `${startItem}-${endItem} de ${total} ${
-                    total === 1 ? "produto" : "produtos"
-                  }`}
-            </div>
+            {!ocultarContador && (
+              <div className="text-sm text-slate-500">
+                {total === 0
+                  ? "0 produtos"
+                  : `${startItem}-${endItem} de ${total} ${
+                      total === 1 ? "produto" : "produtos"
+                    }`}
+              </div>
+            )}
           </div>
         </div>
 
@@ -452,51 +492,7 @@ function ProdutosPageContent() {
           />
         </div>
 
-        {pages > 1 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
-            <div className="text-sm text-slate-500">
-              Pagina <strong>{page}</strong> de <strong>{pages}</strong>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage(1)}
-                title="Primeira pagina"
-              >
-                {"<<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                title="Pagina anterior"
-              >
-                {"<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                title="Proxima pagina"
-              >
-                {">"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage(pages)}
-                title="Ultima pagina"
-              >
-                {">>"}
-              </Button>
-            </div>
-          </div>
-        )}
+        <Paginador pagina={exibida.pagina} paginas={pages} onIrPara={irParaPagina} />
       </Card>
 
       <div className="mt-4 text-xs text-slate-400">

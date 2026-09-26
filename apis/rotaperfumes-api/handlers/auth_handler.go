@@ -417,7 +417,8 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 //
 //   - motivo "rotacao": reuso de token já rotacionado — sinal de possível
 //     roubo. Alerta [auth][seguranca] e revogação de TODAS as sessões do
-//     usuário (motivo revogacao_massa).
+//     usuário (motivo revogacao_massa), incluindo os access tokens já
+//     emitidos (corte de sessão, SEC-08).
 //   - demais motivos (logout, revogacao_massa, senha, inativacao) ou NULL
 //     (legado, tratado de forma conservadora): só log informativo, sem alerta
 //     e sem revogação em massa.
@@ -438,6 +439,11 @@ func (h *AuthHandler) tratarTokenRevogadoForaDaJanela(ctx context.Context, err e
 		revogado.UsuarioID, revogado.TokenID, revogado.RevokedAt.Format(time.RFC3339), ipOrigem, userAgent)
 	if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, revogado.UsuarioID, repositories.RevokeReasonRevogacaoMassa); err != nil {
 		log.Printf("[auth][seguranca] refresh: falha na revogação em massa após reuso: user_id=%d: %v", revogado.UsuarioID, err)
+	}
+	// SEC-08: derruba também os access tokens já emitidos (corte de sessão).
+	corte := time.Now().Truncate(time.Second)
+	if err := h.repo.InvalidarSessoes(ctx, h.db, revogado.UsuarioID, corte); err != nil {
+		log.Printf("[auth][seguranca] refresh: falha ao invalidar access tokens após reuso: user_id=%d: %v", revogado.UsuarioID, err)
 	}
 }
 

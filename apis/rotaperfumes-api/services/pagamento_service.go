@@ -247,7 +247,21 @@ func (s *PagamentoService) CreatePagamento(ctx context.Context, db *sql.DB, inpu
 	if s.Cfg.Verbose {
 		log.Printf("[pagamentos] criado: pagamento_id=%d pedido_id=%d valor=%.2f status=%s", p.PagamentoID, p.PedidoID, p.Valor, p.StatusPagamento)
 	}
-	return p, nil
+	return s.relerPagamentoCriado(ctx, db, p), nil
+}
+
+// relerPagamentoCriado relê do banco o pagamento recém-gravado (BUG-09), para
+// devolver created_at/updated_at preenchidos pelo MySQL. O INSERT já foi
+// confirmado: se a releitura falhar, loga e devolve o objeto em memória
+// (timestamps zerados) em vez de responder erro para uma gravação que deu
+// certo — um retry duplicaria o pagamento.
+func (s *PagamentoService) relerPagamentoCriado(ctx context.Context, db *sql.DB, p *models.Pagamento) *models.Pagamento {
+	gravado, err := s.repo.GetByID(ctx, db, p.PagamentoID)
+	if err != nil {
+		log.Printf("[pagamentos] criado, mas falhou a releitura: pagamento_id=%d: %v", p.PagamentoID, err)
+		return p
+	}
+	return gravado
 }
 
 // UpdatePagamento atualiza os campos editáveis de um pagamento existente.

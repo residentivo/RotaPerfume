@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useDebounceFiltros, useUltimaResposta } from "@/lib/useListaSegura";
+import {
+  faixaExibida,
+  mensagemRecargaFalhou,
+  useDebounceFiltros,
+  usePaginaCarregada,
+  useUltimaResposta,
+} from "@/lib/useListaSegura";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +15,8 @@ import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
+import { Paginador } from "@/components/ui/Paginador";
+import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
 import { EstoqueModal } from "@/components/admin/EstoqueModal";
 import { apiListEstoque, apiCreateEstoque, apiUpdateEstoque } from "@/lib/api";
 import { Estoque, EstoqueInput } from "@/lib/types";
@@ -52,7 +60,11 @@ function EstoquePageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [erroCarga, setErroCarga] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
+  const {
+    mensagem: success,
+    mostrar: mostrarSucesso,
+    limpar: limparSucesso,
+  } = useMensagemTemporaria();
 
   const [search, setSearch] = useState("");
   const [dataFiltro, setDataFiltro] = useState("");
@@ -65,6 +77,13 @@ function EstoquePageContent() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(0);
+  // FE-10: pagina/limite exibidos (a pedida, ou a ultima carregada se a
+  // ultima carga falhou).
+  const { exibida, registrar: registrarCarregada } = usePaginaCarregada(
+    page,
+    limit,
+    erroCarga
+  );
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -95,13 +114,14 @@ function EstoquePageContent() {
     setRegistros(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    registrarCarregada(page, limit);
     setErroCarga(false);
     setLoading(false);
   };
 
   // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
   // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
-  const aplicarErroEstoque = (err: unknown) => {
+  const aplicarErroEstoque = (err: unknown): string => {
     const message =
       err instanceof Error
         ? err.message
@@ -109,13 +129,26 @@ function EstoquePageContent() {
     setError(message);
     setErroCarga(true);
     setLoading(false);
+    return message;
   };
 
-  // Recarga imperativa (handlers e timers).
-  const loadEstoque = async () => {
+  // Recarga imperativa (handlers e timers). FE-10: devolve a mensagem de erro se a
+  // recarga falhar (null se deu certo ou foi superada por outra busca).
+  const loadEstoque = async (): Promise<string | null> => {
     setLoading(true);
     setError(null);
-    await executarBusca(buscarEstoque(), aplicarEstoque, aplicarErroEstoque);
+    let falha: string | null = null;
+    await executarBusca(buscarEstoque(), aplicarEstoque, (err) => {
+      falha = aplicarErroEstoque(err);
+    });
+    return falha;
+  };
+
+  // FE-10: navegacao a partir da pagina exibida. Se o destino ja e a pagina
+  // pedida (a troca anterior falhou), repete a busca em vez de nao fazer nada.
+  const irParaPagina = (n: number) => {
+    if (n === page) loadEstoque();
+    else setPage(n);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
@@ -172,8 +205,10 @@ function EstoquePageContent() {
     try {
       if (modalMode === "create") {
         const created = await apiCreateEstoque(data);
-        await loadEstoque();
-        setSuccess(`Registro de estoque #${created.id} (${created.sku}) criado com sucesso.`);
+        const msg = `Registro de estoque #${created.id} (${created.sku}) criado com sucesso.`;
+        const erroRecarga = await loadEstoque();
+        if (erroRecarga) setError(mensagemRecargaFalhou(msg, erroRecarga));
+        else mostrarSucesso(msg);
       } else if (editingEstoque) {
         const updated = await apiUpdateEstoque(editingEstoque.id, {
           saldo: data.saldo,
@@ -181,10 +216,9 @@ function EstoquePageContent() {
         setRegistros((prev) =>
           prev.map((r) => (r.id === updated.id ? updated : r))
         );
-        setSuccess(`Registro de estoque #${updated.id} (${updated.sku}) atualizado com sucesso.`);
+        mostrarSucesso(`Registro de estoque #${updated.id} (${updated.sku}) atualizado com sucesso.`);
       }
       setModalOpen(false);
-      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro ao salvar registro de estoque.";
@@ -204,7 +238,6 @@ function EstoquePageContent() {
       width: "80px",
       align: "left",
       sortable: true,
-      sortValue: (e) => e.id,
       render: (e) => <span className="font-mono text-xs">#{e.id}</span>,
     },
     {
@@ -308,8 +341,14 @@ function EstoquePageContent() {
       : []),
   ];
 
-  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
-  const endItem = Math.min(page * limit, total);
+  // FE-10: contador baseado na pagina exibida; oculto se nada foi carregado
+  // (a primeira carga falhou), para nao afirmar "0 registros".
+  const { inicio: startItem, fim: endItem } = faixaExibida(
+    exibida.pagina,
+    exibida.limite,
+    total
+  );
+  const ocultarContador = erroCarga && registros.length === 0;
   const hasFilters = search || dataFiltro || rupturaFilter;
 
   return (
@@ -335,7 +374,7 @@ function EstoquePageContent() {
 
       {success && (
         <div className="mb-4">
-          <Alert variant="success" onClose={() => setSuccess(null)}>
+          <Alert variant="success" onClose={() => limparSucesso()}>
             {success}
           </Alert>
         </div>
@@ -396,13 +435,15 @@ function EstoquePageContent() {
                 />
               </div>
             </div>
-            <div className="text-sm text-slate-500">
-              {total === 0
-                ? "0 registros"
-                : `${startItem}-${endItem} de ${total} ${
-                    total === 1 ? "registro" : "registros"
-                  }`}
-            </div>
+            {!ocultarContador && (
+              <div className="text-sm text-slate-500">
+                {total === 0
+                  ? "0 registros"
+                  : `${startItem}-${endItem} de ${total} ${
+                      total === 1 ? "registro" : "registros"
+                    }`}
+              </div>
+            )}
           </div>
         </div>
 
@@ -424,51 +465,7 @@ function EstoquePageContent() {
           />
         </div>
 
-        {pages > 1 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
-            <div className="text-sm text-slate-500">
-              Pagina <strong>{page}</strong> de <strong>{pages}</strong>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage(1)}
-                title="Primeira pagina"
-              >
-                {"<<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                title="Pagina anterior"
-              >
-                {"<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                title="Proxima pagina"
-              >
-                {">"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage(pages)}
-                title="Ultima pagina"
-              >
-                {">>"}
-              </Button>
-            </div>
-          </div>
-        )}
+        <Paginador pagina={exibida.pagina} paginas={pages} onIrPara={irParaPagina} />
       </Card>
 
       <div className="mt-4 text-xs text-slate-400">

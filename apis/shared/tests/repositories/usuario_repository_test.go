@@ -292,8 +292,8 @@ func TestUpdatePasswordHash_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-		WithArgs("novo-hash-bcrypt", false, int64(7)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs("novo-hash-bcrypt", false, sqlmock.AnyArg(), int64(7)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	repo := repositories.NewUsuarioRepository()
@@ -308,8 +308,8 @@ func TestUpdatePasswordHash_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-		WithArgs("hash", false, int64(99999)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs("hash", false, sqlmock.AnyArg(), int64(99999)).
 		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 linhas afetadas
 
 	repo := repositories.NewUsuarioRepository()
@@ -324,8 +324,8 @@ func TestUpdatePasswordHash_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-		WithArgs("hash", false, int64(1)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs("hash", false, sqlmock.AnyArg(), int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewUsuarioRepository()
@@ -452,14 +452,14 @@ func TestGetByEmail_ComUltimoLogin(t *testing.T) {
 // InativarByVendedorID
 // ---------------------------------------------------------------------------
 
-const inativarPorVendedorRegex = `UPDATE usuarios SET ativo = 0 WHERE id_vendedor = \? AND ativo = 1`
+const inativarPorVendedorRegex = `UPDATE usuarios SET ativo = 0, tokens_validos_desde = \? WHERE id_vendedor = \? AND ativo = 1`
 
 func TestInativarByVendedorID_ComUsuarios(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
 	mock.ExpectExec(inativarPorVendedorRegex).
-		WithArgs(int64(3)).
+		WithArgs(sqlmock.AnyArg(), int64(3)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
 
 	repo := repositories.NewUsuarioRepository()
@@ -475,7 +475,7 @@ func TestInativarByVendedorID_SemUsuarios_NaoEhErro(t *testing.T) {
 	defer db.Close()
 
 	mock.ExpectExec(inativarPorVendedorRegex).
-		WithArgs(int64(3)).
+		WithArgs(sqlmock.AnyArg(), int64(3)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	repo := repositories.NewUsuarioRepository()
@@ -491,7 +491,7 @@ func TestInativarByVendedorID_ExecError(t *testing.T) {
 	defer db.Close()
 
 	mock.ExpectExec(inativarPorVendedorRegex).
-		WithArgs(int64(3)).
+		WithArgs(sqlmock.AnyArg(), int64(3)).
 		WillReturnError(sql.ErrConnDone)
 
 	repo := repositories.NewUsuarioRepository()
@@ -507,7 +507,7 @@ func TestInativarByVendedorID_RowsAffectedError(t *testing.T) {
 	defer db.Close()
 
 	mock.ExpectExec(inativarPorVendedorRegex).
-		WithArgs(int64(3)).
+		WithArgs(sqlmock.AnyArg(), int64(3)).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
 	repo := repositories.NewUsuarioRepository()
@@ -523,7 +523,7 @@ func TestInativarByVendedorID_DentroDeTransacao(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec(inativarPorVendedorRegex).
-		WithArgs(int64(3)).
+		WithArgs(sqlmock.AnyArg(), int64(3)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 

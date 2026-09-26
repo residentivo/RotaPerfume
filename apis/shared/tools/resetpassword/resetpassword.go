@@ -27,6 +27,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -172,10 +173,12 @@ func UpsertAdmin(ctx context.Context, db DB, password string) error {
 	}
 	hashStr := string(hash)
 
-	// Tenta UPDATE primeiro; se afetou 0 linhas, faz INSERT.
+	// Tenta UPDATE primeiro; se afetou 0 linhas, faz INSERT. SEC-08: grava
+	// também o corte de sessão (tokens_validos_desde), derrubando os access
+	// tokens emitidos com a senha anterior.
 	res, err := db.ExecContext(ctx,
-		`UPDATE usuarios SET password_hash = ?, ativo = 1 WHERE email = ?`,
-		hashStr, AdminEmail,
+		`UPDATE usuarios SET password_hash = ?, ativo = 1, tokens_validos_desde = ? WHERE email = ?`,
+		hashStr, corteDeSessaoAgora(), AdminEmail,
 	)
 	if err != nil {
 		return fmt.Errorf("update admin: %w", err)
@@ -207,10 +210,10 @@ func UpsertByEmail(ctx context.Context, db DB, email, password, role, nome strin
 	}
 	hashStr := string(hash)
 
-	// UPDATE primeiro.
+	// UPDATE primeiro (SEC-08: com corte de sessão, ver corteDeSessaoAgora).
 	res, err := db.ExecContext(ctx,
-		`UPDATE usuarios SET password_hash = ? WHERE email = ?`,
-		hashStr, email,
+		`UPDATE usuarios SET password_hash = ?, tokens_validos_desde = ? WHERE email = ?`,
+		hashStr, corteDeSessaoAgora(), email,
 	)
 	if err != nil {
 		return fmt.Errorf("update: %w", err)
@@ -368,4 +371,12 @@ func GetEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// corteDeSessaoAgora é o valor gravado em tokens_validos_desde (SEC-08) ao
+// trocar a senha de um usuário existente: access tokens com iat até esse
+// instante deixam de valer. Gerado pelo Go (nunca NOW() do MySQL) e
+// truncado em segundos, mesma precisão do iat do JWT.
+func corteDeSessaoAgora() time.Time {
+	return time.Now().Truncate(time.Second)
 }

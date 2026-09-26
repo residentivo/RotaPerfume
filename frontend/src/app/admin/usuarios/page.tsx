@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useUltimaResposta } from "@/lib/useListaSegura";
+import {
+  faixaExibida,
+  mensagemRecargaFalhou,
+  usePaginaCarregada,
+  useUltimaResposta,
+} from "@/lib/useListaSegura";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +14,8 @@ import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Select } from "@/components/ui/Select";
 import { Table, Badge, Column } from "@/components/ui/Table";
+import { Paginador } from "@/components/ui/Paginador";
+import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
 import { UserModal } from "@/components/admin/UserModal";
 import {
   apiListUsers,
@@ -61,7 +68,11 @@ function UsuariosPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [erroCarga, setErroCarga] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
+  const {
+    mensagem: success,
+    mostrar: mostrarSucesso,
+    limpar: limparSucesso,
+  } = useMensagemTemporaria();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<"" | UserRole>("");
   const [statusFilter, setStatusFilter] = useState<"" | "ativo" | "inativo">("");
@@ -74,6 +85,13 @@ function UsuariosPageContent() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(0);
+  // FE-10: pagina/limite exibidos (a pedida, ou a ultima carregada se a
+  // ultima carga falhou).
+  const { exibida, registrar: registrarCarregada } = usePaginaCarregada(
+    page,
+    limit,
+    erroCarga
+  );
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -92,13 +110,14 @@ function UsuariosPageContent() {
     setUsers(res.data);
     setTotal(res.total);
     setPages(res.pages);
+    registrarCarregada(page, limit);
     setErroCarga(false);
     setLoading(false);
   };
 
   // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
   // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
-  const aplicarErroUsers = (err: unknown) => {
+  const aplicarErroUsers = (err: unknown): string => {
     const message =
       err instanceof Error
         ? err.message
@@ -106,13 +125,26 @@ function UsuariosPageContent() {
     setError(message);
     setErroCarga(true);
     setLoading(false);
+    return message;
   };
 
-  // Recarga imperativa (apos criar/editar).
-  const loadUsers = async () => {
+  // Recarga imperativa (apos criar/editar). FE-10: devolve a mensagem de
+  // erro se a recarga falhar (null se deu certo ou foi superada por outra).
+  const loadUsers = async (): Promise<string | null> => {
     setLoading(true);
     setError(null);
-    await executarBusca(buscarUsers(), aplicarUsers, aplicarErroUsers);
+    let falha: string | null = null;
+    await executarBusca(buscarUsers(), aplicarUsers, (err) => {
+      falha = aplicarErroUsers(err);
+    });
+    return falha;
+  };
+
+  // FE-10: navegacao a partir da pagina exibida. Se o destino ja e a pagina
+  // pedida (a troca anterior falhou), repete a busca em vez de nao fazer nada.
+  const irParaPagina = (n: number) => {
+    if (n === page) loadUsers();
+    else setPage(n);
   };
 
   // Reset para pagina 1 quando filtros mudam — ajustado durante o render
@@ -207,13 +239,16 @@ function UsuariosPageContent() {
         role: data.role,
         id_vendedor: data.id_vendedor,
       });
-      await loadUsers();
-      if (created.email_enviado) {
-        setSuccess(`Usuario "${created.nome}" criado com sucesso.`);
+      const erroRecarga = await loadUsers();
+      const resultado = created.email_enviado
+        ? `Usuario "${created.nome}" criado com sucesso.`
+        : `Usuario "${created.nome}" foi criado, mas o email com a senha inicial NAO pode ser enviado — verifique a configuracao de SMTP.`;
+      if (erroRecarga) {
+        setError(mensagemRecargaFalhou(resultado, erroRecarga));
+      } else if (created.email_enviado) {
+        mostrarSucesso(resultado);
       } else {
-        setError(
-          `Usuario "${created.nome}" foi criado, mas o email com a senha inicial NAO pode ser enviado — verifique a configuracao de SMTP.`
-        );
+        setError(resultado);
       }
     } else if (editingUser) {
       const updated = await apiUpdateUser(editingUser.id, {
@@ -222,10 +257,9 @@ function UsuariosPageContent() {
         id_vendedor: data.id_vendedor,
       });
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      setSuccess(`Usuario "${updated.nome}" atualizado com sucesso.`);
+      mostrarSucesso(`Usuario "${updated.nome}" atualizado com sucesso.`);
     }
     setModalOpen(false);
-    setTimeout(() => setSuccess(null), 4000);
   };
 
   const handleToggleStatus = async (user: User) => {
@@ -238,14 +272,13 @@ function UsuariosPageContent() {
 
     setAction({ type: "toggle", userId: user.id });
     setError(null);
-    setSuccess(null);
+    limparSucesso();
     try {
       const updated = await apiToggleUserStatus(user.id, novoStatus);
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      setSuccess(
+      mostrarSucesso(
         `Usuario ${novoStatus ? "reativado" : "inativado"} com sucesso.`
       );
-      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro ao alterar status.";
@@ -263,12 +296,11 @@ function UsuariosPageContent() {
 
     setAction({ type: "reset", userId: user.id });
     setError(null);
-    setSuccess(null);
+    limparSucesso();
     try {
       const result = await apiAdminResetPassword(user.id);
       if (result.email_enviado) {
-        setSuccess(`Nova senha enviada para o email de ${user.nome}.`);
-        setTimeout(() => setSuccess(null), 4000);
+        mostrarSucesso(`Nova senha enviada para o email de ${user.nome}.`);
       } else {
         setError(
           `Senha de ${user.nome} foi resetada, mas o email NAO pode ser enviado — verifique a configuracao de SMTP.`
@@ -290,14 +322,12 @@ function UsuariosPageContent() {
       width: "80px",
       align: "left",
       sortable: true,
-      sortValue: (u) => u.id,
       render: (u) => <span className="font-mono text-xs">#{u.id}</span>,
     },
     {
       key: "nome",
       header: "Nome",
       sortable: true,
-      sortValue: (u) => u.nome,
       render: (u) => (
         <button
           type="button"
@@ -313,7 +343,6 @@ function UsuariosPageContent() {
       key: "email",
       header: "Email",
       sortable: true,
-      sortValue: (u) => u.email,
       render: (u) => <span className="text-slate-600">{u.email}</span>,
     },
     {
@@ -322,7 +351,6 @@ function UsuariosPageContent() {
       width: "150px",
       align: "center",
       sortable: true,
-      sortValue: (u) => u.role,
       render: (u) => (
         <Badge color={u.role === "admin" ? "blue" : "gray"}>
           {roleLabel(u.role)}
@@ -347,7 +375,6 @@ function UsuariosPageContent() {
       width: "140px",
       align: "center",
       sortable: true,
-      sortValue: (u) => (u.ativo ? 1 : 0),
       render: (u) => (
         <button
           type="button"
@@ -403,8 +430,14 @@ function UsuariosPageContent() {
     },
   ];
 
-  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
-  const endItem = Math.min(page * limit, total);
+  // FE-10: contador baseado na pagina exibida; oculto se nada foi carregado
+  // (a primeira carga falhou), para nao afirmar "0 usuarios".
+  const { inicio: startItem, fim: endItem } = faixaExibida(
+    exibida.pagina,
+    exibida.limite,
+    total
+  );
+  const ocultarContador = erroCarga && users.length === 0;
 
   return (
     <div>
@@ -428,7 +461,7 @@ function UsuariosPageContent() {
 
       {success && (
         <div className="mb-4">
-          <Alert variant="success" onClose={() => setSuccess(null)}>
+          <Alert variant="success" onClose={() => limparSucesso()}>
             {success}
           </Alert>
         </div>
@@ -498,13 +531,15 @@ function UsuariosPageContent() {
                 />
               </div>
             </div>
-            <div className="text-sm text-slate-500">
-              {total === 0
-                ? "0 usuarios"
-                : `${startItem}-${endItem} de ${total} ${
-                    total === 1 ? "usuario" : "usuarios"
-                  }`}
-            </div>
+            {!ocultarContador && (
+              <div className="text-sm text-slate-500">
+                {total === 0
+                  ? "0 usuarios"
+                  : `${startItem}-${endItem} de ${total} ${
+                      total === 1 ? "usuario" : "usuarios"
+                    }`}
+              </div>
+            )}
           </div>
         </div>
 
@@ -526,51 +561,7 @@ function UsuariosPageContent() {
           />
         </div>
 
-        {pages > 1 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row">
-            <div className="text-sm text-slate-500">
-              Pagina <strong>{page}</strong> de <strong>{pages}</strong>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage(1)}
-                title="Primeira pagina"
-              >
-                {"<<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                title="Pagina anterior"
-              >
-                {"<"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                title="Proxima pagina"
-              >
-                {">"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= pages}
-                onClick={() => setPage(pages)}
-                title="Ultima pagina"
-              >
-                {">>"}
-              </Button>
-            </div>
-          </div>
-        )}
+        <Paginador pagina={exibida.pagina} paginas={pages} onIrPara={irParaPagina} />
       </Card>
 
       <div className="mt-4 text-xs text-slate-400">

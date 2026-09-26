@@ -385,8 +385,8 @@ func TestResetPassword_VendedorDesligado_Acessivel(t *testing.T) {
 		WithArgs(desligUserID, 2, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "usuario_id", "resetado_por_id", "senha_hash_anterior", "ip_origem", "user_agent", "tipo_reset", "created_at", "usuario_nome", "resetado_por_nome"}))
 	mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \? WHERE id = \?`).
-		WithArgs(sqlmock.AnyArg(), false, desligUserID).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), desligUserID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 0))
 

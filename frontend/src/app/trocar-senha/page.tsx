@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Turnstile, TurnstileHandle, isTurnstileEnabled } from "@/components/ui/Turnstile";
 import { apiChangePassword } from "@/lib/api";
 import { getUser } from "@/lib/auth";
+import { useTimeoutSeguro } from "@/lib/useMensagemTemporaria";
 
 export default function TrocarSenhaPage() {
   const router = useRouter();
@@ -25,6 +26,7 @@ export default function TrocarSenhaPage() {
   }>({});
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const turnstileRef = useRef<TurnstileHandle>(null);
+  const { agendar } = useTimeoutSeguro();
 
   useEffect(() => {
     // Verificar se o usuário está logado
@@ -84,10 +86,9 @@ export default function TrocarSenhaPage() {
     try {
       await apiChangePassword(senhaAtual, novaSenha, captchaToken ?? undefined);
       setSuccess("Senha alterada com sucesso!");
-      // Redirecionar para dashboard após breve delay
-      setTimeout(() => {
-        router.replace("/dashboard");
-      }, 1500);
+      // Redirecionar para dashboard após breve delay. FE-11: o timer e
+      // cancelado se a tela desmontar antes (o usuario ja saiu da tela).
+      agendar(() => router.replace("/dashboard"), 1500);
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : "";
       const isCaptchaFailure = /captcha|turnstile/i.test(rawMessage);

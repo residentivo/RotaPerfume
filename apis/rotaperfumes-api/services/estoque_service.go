@@ -199,7 +199,21 @@ func (s *EstoqueService) CreateEstoque(ctx context.Context, db *sql.DB, input Es
 		log.Printf("[estoque] criado manualmente: id=%d sku=%s data_snapshot=%s saldo=%d ruptura=%t",
 			e.ID, e.SKU, dataSnapshot.Format(estoqueDataLayout), e.Saldo, e.Ruptura)
 	}
-	return e, nil
+	return s.relerEstoqueCriado(ctx, db, e), nil
+}
+
+// relerEstoqueCriado relê do banco o registro de estoque recém-gravado
+// (BUG-09), para devolver created_at/updated_at (e demais campos com default)
+// preenchidos pelo MySQL. O INSERT já foi confirmado: se a releitura falhar,
+// loga e devolve o objeto em memória (timestamps zerados) em vez de responder
+// erro para uma gravação que deu certo.
+func (s *EstoqueService) relerEstoqueCriado(ctx context.Context, db *sql.DB, e *models.Estoque) *models.Estoque {
+	gravado, err := s.repo.GetByID(ctx, db, e.ID)
+	if err != nil {
+		log.Printf("[estoque] criado, mas falhou a releitura: id=%d: %v", e.ID, err)
+		return e
+	}
+	return gravado
 }
 
 // UpdateEstoque atualiza um registro de estoque existente via ajuste MANUAL

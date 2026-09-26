@@ -9,8 +9,13 @@
  *    a chave dos filtros muda em relacao a ultima chave aplicada.
  * 3. Linha excluida que reaparece: ids excluidos nesta tela sao removidos de
  *    qualquer resposta que chegue depois (ela pode ter saido antes do DELETE).
+ *
+ * FE-10: helpers para manter paginador/contador coerentes com as linhas
+ * exibidas quando uma carga falha (`usePaginaCarregada`, `faixaExibida`) e
+ * para a mensagem de "acao feita, mas a recarga falhou"
+ * (`mensagemRecargaFalhou`).
  */
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * Devolve `executar(requisicao, aoSucesso, aoErro)`. Cada chamada invalida as
@@ -94,4 +99,51 @@ export function useExcluidos<T, K>(idDe: (item: T) => K) {
   };
 
   return { marcar, filtrar };
+}
+
+/**
+ * FE-10: pagina/limite que o paginador e o contador devem exibir.
+ *
+ * A tela continua guardando a pagina pedida (`page`, que dispara a busca) e
+ * registra, a cada sucesso, a pagina/limite da carga que deu certo — ou seja,
+ * das linhas que estao na tela. `exibida` e:
+ * - a pedida, enquanto a ultima carga nao falhou (inclusive durante o
+ *   loading: dois cliques rapidos em "proxima" avancam duas paginas);
+ * - a ultima carregada com sucesso, se a ultima carga falhou. Assim a tabela
+ *   (linhas antigas mantidas pelo FE-09) e o paginador falam da mesma pagina.
+ *
+ * `registrar(pagina, limite)` deve ser chamado no sucesso da busca, com os
+ * valores usados na requisicao.
+ */
+export function usePaginaCarregada(page: number, limit: number, erroCarga: boolean) {
+  const [carregada, setCarregada] = useState({ pagina: page, limite: limit });
+
+  const registrar = useCallback((pagina: number, limite: number) => {
+    setCarregada((prev) =>
+      prev.pagina === pagina && prev.limite === limite ? prev : { pagina, limite }
+    );
+  }, []);
+
+  const exibida = erroCarga ? carregada : { pagina: page, limite: limit };
+  return { exibida, registrar };
+}
+
+/** Faixa "inicio-fim" exibida no contador do cabecalho. */
+export function faixaExibida(pagina: number, limite: number, total: number) {
+  if (total === 0) return { inicio: 0, fim: 0 };
+  return {
+    inicio: (pagina - 1) * limite + 1,
+    fim: Math.min(pagina * limite, total),
+  };
+}
+
+/**
+ * FE-10: a acao (criar, editar, inativar...) deu certo, mas a recarga da
+ * lista que vem logo depois falhou. Em vez de exibir o alerta de sucesso e o
+ * de erro ao mesmo tempo (contraditorios: "inativado com sucesso" com a linha
+ * ainda "Ativo" na tabela), a tela mostra um unico alerta de erro que diz as
+ * duas coisas. Ele nao some sozinho, pois a lista na tela esta desatualizada.
+ */
+export function mensagemRecargaFalhou(sucesso: string, erroRecarga: string): string {
+  return `${sucesso} Porem, nao foi possivel recarregar a lista (${erroRecarga}). Os dados exibidos podem estar desatualizados.`;
 }

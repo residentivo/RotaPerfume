@@ -219,7 +219,21 @@ func (s *OportunidadeService) CreateOportunidade(ctx context.Context, db *sql.DB
 	if s.Cfg.Verbose {
 		log.Printf("[oportunidades] criada: id=%d cliente_id=%d vendedor_id=%d etapa=%s", o.OportunidadeID, o.ClienteID, o.VendedorID, o.Etapa)
 	}
-	return o, nil
+	return s.relerOportunidadeCriada(ctx, db, o), nil
+}
+
+// relerOportunidadeCriada relê do banco a oportunidade recém-gravada (BUG-09),
+// para devolver created_at/updated_at preenchidos pelo MySQL. O INSERT já foi
+// confirmado: se a releitura falhar, loga e devolve o objeto em memória
+// (timestamps zerados) em vez de responder erro para uma gravação que deu
+// certo — um retry duplicaria a oportunidade.
+func (s *OportunidadeService) relerOportunidadeCriada(ctx context.Context, db *sql.DB, o *models.Oportunidade) *models.Oportunidade {
+	gravada, err := s.repo.GetByID(ctx, db, o.OportunidadeID)
+	if err != nil {
+		log.Printf("[oportunidades] criada, mas falhou a releitura: id=%d: %v", o.OportunidadeID, err)
+		return o
+	}
+	return gravada
 }
 
 // UpdateOportunidade atualiza os campos editáveis de uma oportunidade

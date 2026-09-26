@@ -2,12 +2,17 @@
 
 import { Fragment, ReactNode } from "react";
 
+/**
+ * FE-12: a Table nao ordena nada — so exibe o indicador e chama `onSort`.
+ * Quem ordena e a tela: via API (order_by/order_dir) nas listagens paginadas
+ * no servidor, ou localmente (comparador proprio) em Vendedores. Por isso
+ * nao existe `sortValue` aqui.
+ */
 export interface Column<T> {
   key: keyof T | string;
   header: string;
   render?: (row: T) => ReactNode;
   sortable?: boolean;
-  sortValue?: (row: T) => string | number;
   width?: string;
   align?: "left" | "center" | "right";
 }

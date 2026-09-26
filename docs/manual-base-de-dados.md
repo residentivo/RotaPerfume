@@ -2,9 +2,9 @@
 
 **Banco:** MySQL, schema `rotaperfumes` (padrão do `Makefile`: `DB_NAME?=rotaperfumes`), charset `utf8mb4`, collation `utf8mb4_unicode_ci`.
 **Fonte da verdade:** os scripts em `sql/`. Em caso de divergência entre este manual e um script, vale o script.
-**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no fechamento do Lote 5 com o NEG-02, CNPJ alfanumérico, e no Lote 6, 2026-09-26, com a migração 21 e a coluna `refresh_tokens.revoked_reason`).
+**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no fechamento do Lote 5 com o NEG-02, CNPJ alfanumérico, no Lote 6, 2026-09-26, com a migração 21 e a coluna `refresh_tokens.revoked_reason`, e no Lote 8, 2026-09-26, com a migração 22 e a coluna `usuarios.tokens_validos_desde`).
 
-> **Escopo desta versão:** o card DOC-02 cobre a tabela `clientes`, o índice único `uq_clientes_cnpj` e a migração 19 (unificação dos CNPJs duplicados). O Lote 6 acrescentou a tabela `refresh_tokens` e a migração 21 (seção 7). As outras tabelas aparecem só no índice da seção 1, com o script de origem e os relacionamentos com `clientes`. O detalhamento campo a campo delas ainda não foi feito.
+> **Escopo desta versão:** o card DOC-02 cobre a tabela `clientes`, o índice único `uq_clientes_cnpj` e a migração 19 (unificação dos CNPJs duplicados). O Lote 6 acrescentou a tabela `refresh_tokens` e a migração 21 (seção 7). O Lote 8 acrescentou a coluna `usuarios.tokens_validos_desde` e a migração 22 (seção 8). As outras tabelas aparecem só no índice da seção 1, com o script de origem e os relacionamentos com `clientes`. O detalhamento campo a campo delas ainda não foi feito.
 
 ---
 
@@ -14,7 +14,7 @@ A ordem abaixo é a do `make db-up`, que cria o schema vazio. O `make db-seed` r
 
 | Tabela | Script | Relação com `clientes` |
 | --- | --- | --- |
-| `vendedores`, `usuarios` | `sql/01_ddl_usuarios.sql` (+ `08_alter_usuarios_deve_trocar_senha.sql`) | - |
+| `vendedores`, `usuarios` | `sql/01_ddl_usuarios.sql` (+ `08_alter_usuarios_deve_trocar_senha.sql` e `22_alter_usuarios_tokens_validos_desde.sql` em bancos existentes; seção 8) | - |
 | `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` (+ `21_alter_refresh_tokens_revoked_reason.sql` em bancos existentes; seção 7) | - (ligada a `usuarios`) |
 | `senha_historico` | `sql/07_ddl_senha_historico.sql` (+ `13_alter_senha_historico_tipo_reset.sql`) | - |
 | `clientes` | `sql/09_ddl_clientes.sql` (+ `19_alter_clientes_cnpj_unique.sql` e `20_alter_clientes_cnpj_comment.sql` em bancos existentes) | tabela principal |
@@ -262,4 +262,56 @@ SELECT COUNT(*) FROM refresh_tokens
  WHERE revoked_at IS NULL AND revoked_reason IS NOT NULL;   -- 0 (ativo nunca tem motivo)
 ```
 
-Referências: cards SEC-06 e SEC-07 em `tarefas/fazendo.md`; roteiro `docs/roteiro-teste-manual-lote6.md`, seção 5.
+Referências: cards SEC-06 e SEC-07 em `tarefas/feito.md` (Lote 6); roteiro `docs/roteiro-teste-manual-lote6.md`, seção 5.
+
+---
+
+## 8. Coluna `usuarios.tokens_validos_desde` e migração 22 (SEC-08, Lote 8, 2026-09-26)
+
+Corte de sessão por usuário. Revogar refresh tokens não invalida os access tokens (JWT de 24h) já emitidos; esta coluna faz o middleware recusá-los.
+
+| Campo | Tipo | Nulo | Descrição |
+| --- | --- | --- | --- |
+| `tokens_validos_desde` | DATETIME | sim | **Novo (migração 22)**, logo depois de `deve_trocar_senha`. `NULL` = sem corte (vale só assinatura e `exp`). Com valor: access token com `iat <= tokens_validos_desde`, ou sem `iat`, recebe `401` `"sessão encerrada — faça login novamente"`. COMMENT: "Access tokens com iat <= este instante são rejeitados (SEC-08); NULL = sem corte". |
+
+**Índice:** nenhum. A coluna é lida junto com `ativo` e `role`, depois de achar o usuário pela PK (`sub` do JWT).
+
+### Quando o corte é gravado
+
+O valor vem do Go (`time.Now().Truncate(time.Second)`), nunca do `NOW()` do MySQL (o DSN usa `loc=Local`, fuso fixo `-03:00`).
+
+| Evento | Onde no código |
+| --- | --- |
+| Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) | `UsuarioRepository.SetAtivo(false)` |
+| Desligamento do vendedor (`DELETE /api/vendedores/{id}`), para os usuários vinculados | `UsuarioRepository.InativarByVendedorID` |
+| Troca de senha pelo usuário, reset pelo admin e `ResetSenha` | `UsuarioRepository.UpdatePasswordHash` |
+| Reuso de refresh token rotacionado fora da janela (SEC-07), depois do `RevokeAllUserTokens` | `UsuarioRepository.InvalidarSessoes`, chamado em `tratarTokenRevogadoForaDaJanela` (`auth_handler.go`) |
+| CLI `resetpassword` | `UpsertAdmin`, `UpsertByEmail` (`apis/shared/tools/resetpassword`) |
+
+**Não gravam corte:** reativação do usuário ou do vendedor e logout. Um login feito no mesmo segundo de um corte gera token recusado (regra `iat <= corte`; aceito pelo 🤍 MegaBrain).
+
+### Migração 22
+
+**Script:** `sql/22_alter_usuarios_tokens_validos_desde.sql`
+**Comando:** `make db-fix-tokens-validos-desde`
+**Reversão:** `make db-revert-tokens-validos-desde` (`sql/22_revert_usuarios_tokens_validos_desde.sql`; remove a coluna e perde os cortes gravados)
+**Situação:** aplicada no banco local em 2026-09-26.
+
+- Não altera nenhuma linha: os usuários existentes ficam `NULL` (sem corte).
+- **Idempotente:** consulta `information_schema.COLUMNS` e só roda o `ALTER TABLE` se a coluna ainda não existir. O revert também é idempotente.
+- Como a 19, a 20 e a 21, não faz parte do `db-up`/`db-seed`/`db-reset`. Bancos novos já recebem a coluna pelo `sql/01_ddl_usuarios.sql` (atualizado no mesmo card).
+
+### Consultas de verificação
+
+```sql
+SHOW FULL COLUMNS FROM usuarios LIKE 'tokens_validos_desde';
+-- Type = datetime, Null = YES, Default = NULL
+
+SELECT id, email, ativo, tokens_validos_desde
+  FROM usuarios
+ WHERE tokens_validos_desde IS NOT NULL
+ ORDER BY tokens_validos_desde DESC;
+-- só usuários que tiveram inativação, troca/reset de senha ou revogação em massa depois da migração
+```
+
+Referências: card SEC-08 em `tarefas/feito.md` (Lote 8); roteiro `docs/roteiro-teste-manual-lote8.md`, seção 1.

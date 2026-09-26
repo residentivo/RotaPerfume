@@ -50,8 +50,8 @@ func TestSEC06_InativarUsuario_RevogaRefreshTokens(t *testing.T) {
 
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 		WithArgs(int64(5)).WillReturnRows(usuarioRowsForHandler(5, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-		WithArgs(false, int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs(false, sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(revokeAllByUserRegex).
 		WithArgs(sqlmock.AnyArg(), "inativacao", int64(5)).WillReturnResult(sqlmock.NewResult(0, 3))
 
@@ -70,8 +70,8 @@ func TestSEC06_ToggleParaInativo_RevogaRefreshTokens(t *testing.T) {
 
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 		WithArgs(int64(5)).WillReturnRows(usuarioRowsForHandler(5, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-		WithArgs(false, int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs(false, sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(revokeAllByUserRegex).
 		WithArgs(sqlmock.AnyArg(), "inativacao", int64(5)).WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -110,8 +110,8 @@ func TestSEC06_InativarUsuario_FalhaNaRevogacao_LogaESegue200(t *testing.T) {
 
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 		WithArgs(int64(5)).WillReturnRows(usuarioRowsForHandler(5, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-		WithArgs(false, int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs(false, sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(revokeAllByUserRegex).
 		WithArgs(sqlmock.AnyArg(), "inativacao", int64(5)).WillReturnError(sqlmock.ErrCancelled)
 

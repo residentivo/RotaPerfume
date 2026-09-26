@@ -142,6 +142,28 @@ describe("Clientes - criacao (SEC-01)", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  // FE-10 (c): criou, mas a recarga falhou -> um unico alerta de erro.
+  it("recarga que falha apos criar: um unico alerta de erro com o sucesso e a falha", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+
+    api.apiCreateCliente.mockResolvedValue(cliente(11, "Loja Nova"));
+    api.apiListClientes.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await preencherNovoCliente();
+
+    const msg =
+      'Cliente "Loja Nova" criado com sucesso. Porem, nao foi possivel recarregar a lista ' +
+      "(Failed to fetch). Os dados exibidos podem estar desatualizados.";
+    expect(await screen.findByText(msg)).toBeInTheDocument();
+    const alertas = screen.getAllByRole("alert");
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]).toHaveClass("bg-red-50");
+    expect(screen.queryByText('Cliente "Loja Nova" criado com sucesso.')).not.toBeInTheDocument();
+    expect(screen.getByText("Loja A")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("403 ao criar mostra a mensagem da API no modal", async () => {
     useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
     api.apiCreateCliente.mockRejectedValue(

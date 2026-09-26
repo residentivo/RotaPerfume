@@ -211,7 +211,21 @@ func (s *ProdutoService) CreateProduto(ctx context.Context, db *sql.DB, input Pr
 	if s.Cfg.Verbose {
 		log.Printf("[produtos] criado: id=%d sku=%s descricao=%s", p.ID, p.SKU, p.Descricao)
 	}
-	return p, nil
+	return s.relerProdutoCriado(ctx, db, p), nil
+}
+
+// relerProdutoCriado relê do banco o produto recém-gravado (BUG-09), para
+// devolver created_at/updated_at preenchidos pelo MySQL. O INSERT já foi
+// confirmado: se a releitura falhar, loga e devolve o objeto em memória
+// (timestamps zerados) em vez de responder erro para uma gravação que deu
+// certo — um retry esbarraria no SKU duplicado.
+func (s *ProdutoService) relerProdutoCriado(ctx context.Context, db *sql.DB, p *models.Produto) *models.Produto {
+	gravado, err := s.repo.GetByID(ctx, db, p.ID)
+	if err != nil {
+		log.Printf("[produtos] criado, mas falhou a releitura: id=%d: %v", p.ID, err)
+		return p
+	}
+	return gravado
 }
 
 // UpdateProduto atualiza os campos editáveis de um produto existente

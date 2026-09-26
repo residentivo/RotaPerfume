@@ -144,15 +144,17 @@ func TestIntegracaoHTTP_SEC06_InativarUsuarioDerrubaSessao(t *testing.T) {
 		}
 		assert.Zero(t, c.motivos(uid)["ativo"], "reativar não ressuscita sessão")
 	})
-	t.Run("reativado: access token antigo (JWT ainda no prazo)", func(t *testing.T) {
-		// Achado do TestBrain (Lote 6): o SEC-06 revoga só os refresh tokens.
-		// O access token JWT emitido antes da inativação não tem lista de
-		// revogação; com o usuário reativado ele volta a ser aceito até expirar
-		// (JWT_TTL). Registrado aqui sem travar o comportamento.
-		st, _ := c.req("GET", "/api/auth/me", access, nil)
-		t.Logf("access token antigo após reativar: HTTP %d (200 = volta a valer até o TTL)", st)
+	t.Run("reativado: access token antigo (JWT ainda no prazo) -> 401", func(t *testing.T) {
+		// Achado do TestBrain (Lote 6), corrigido no SEC-08 (Lote 8): a
+		// inativação grava o corte de sessão, então o access token emitido
+		// antes dela não volta a valer com a reativação (antes: 200).
+		st, body := c.req("GET", "/api/auth/me", access, nil)
+		assert.Equal(t, http.StatusUnauthorized, st)
+		assert.Equal(t, "sessão encerrada — faça login novamente", body["error"])
 	})
 	t.Run("reativado: novo login restabelece a sessão", func(t *testing.T) {
+		// SEC-08: iat <= corte é recusado; espera virar o segundo do corte.
+		esperarProximoSegundo()
 		st, a, r := c.loginIT(email)
 		require.Equal(t, http.StatusOK, st)
 		require.NotEmpty(t, r)

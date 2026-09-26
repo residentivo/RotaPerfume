@@ -607,8 +607,8 @@ func TestToggleAtivoUsuario_Toggle_SemBody(t *testing.T) {
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(usuarioRowsForHandler(1, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-		WithArgs(false, int64(1)).
+	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs(false, sqlmock.AnyArg(), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	// SEC-06: inativação revoga os refresh tokens do usuário.
 	mock.ExpectExec(revokeAllByUserRegex).
@@ -735,8 +735,8 @@ func TestToggleAtivoUsuario_ErroInterno(t *testing.T) {
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(usuarioRowsForHandler(1, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-		WithArgs(false, int64(1)).
+	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs(false, sqlmock.AnyArg(), int64(1)).
 		WillReturnError(sqlmock.ErrCancelled)
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/usuarios/1/inativar", nil)
