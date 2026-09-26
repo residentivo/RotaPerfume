@@ -1,0 +1,341 @@
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/apiError";
+import type { Cliente, MeResponse } from "@/lib/types";
+
+// CarteiraGuard vira passthrough: o bloqueio de desligado e testado no
+// proprio guard; aqui interessa a defesa do botao "+ Novo Cliente".
+vi.mock("@/components/layout/CarteiraGuard", () => ({
+  CarteiraGuard: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+const useSessionUserMock = vi.fn<() => MeResponse | null>();
+const useVendedorDesligadoMock = vi.fn<() => boolean>();
+vi.mock("@/lib/session", () => ({
+  useSessionUser: () => useSessionUserMock(),
+  useVendedorDesligado: () => useVendedorDesligadoMock(),
+}));
+
+const api = vi.hoisted(() => ({
+  apiListClientes: vi.fn(),
+  apiToggleClienteStatus: vi.fn(),
+  apiCreateCliente: vi.fn(),
+  apiUpdateCliente: vi.fn(),
+}));
+vi.mock("@/lib/api", () => api);
+
+import ClientesPage from "@/app/admin/clientes/page";
+
+function user(extra: Partial<MeResponse>): MeResponse {
+  return { id: 1, nome: "Ana", email: "a@x", role: "normal", ativo: true, ...extra };
+}
+
+function cliente(id: number, razao: string, extra: Partial<Cliente> = {}): Cliente {
+  return {
+    cliente_id_origem: id,
+    razao_social: razao,
+    cnpj: "11222333000181",
+    segmento: "Varejo",
+    cidade: "Sao Paulo",
+    uf: "SP",
+    bairro: "Centro",
+    data_cadastro: "2026-01-10",
+    ativo: true,
+    ...extra,
+  } as Cliente;
+}
+
+function page(data: Cliente[]) {
+  return { data, page: 1, limit: 20, total: data.length, pages: 1 };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  useVendedorDesligadoMock.mockReturnValue(false);
+  api.apiListClientes.mockResolvedValue(page([cliente(10, "Loja A")]));
+});
+
+describe("Clientes - botao + Novo Cliente (SEC-01)", () => {
+  it.each<[string, Partial<MeResponse>, boolean, boolean]>([
+    ["admin sem vendedor", { role: "admin", id_vendedor: null }, false, true],
+    ["normal com vendedor", { id_vendedor: 7 }, false, true],
+    ["normal sem vendedor", { id_vendedor: null }, false, false],
+    ["normal sem o campo id_vendedor", {}, false, false],
+    ["normal com vendedor desligado", { id_vendedor: 7 }, true, false],
+  ])("%s -> habilitado=%s", async (_n, u, desligado, habilitado) => {
+    useSessionUserMock.mockReturnValue(user(u));
+    useVendedorDesligadoMock.mockReturnValue(desligado);
+    render(<ClientesPage />);
+    const botao = await screen.findByRole("button", { name: "+ Novo Cliente" });
+    if (habilitado) {
+      expect(botao).toBeEnabled();
+    } else {
+      expect(botao).toBeDisabled();
+      await userEvent.click(botao);
+      expect(screen.queryByText("Novo Cliente", { selector: "h2,h3" })).not.toBeInTheDocument();
+    }
+  });
+
+  it("sessao ainda sem /me (user null) mantem o botao desabilitado", async () => {
+    useSessionUserMock.mockReturnValue(null);
+    render(<ClientesPage />);
+    expect(await screen.findByRole("button", { name: "+ Novo Cliente" })).toBeDisabled();
+  });
+
+  // FE-05: enquanto o /me carrega, o motivo nao pode afirmar "sem vendedor".
+  it("sessao ainda sem /me mostra texto de carregamento, nao 'sem vendedor vinculado'", async () => {
+    useSessionUserMock.mockReturnValue(null);
+    render(<ClientesPage />);
+    const botao = await screen.findByRole("button", { name: "+ Novo Cliente" });
+    expect(botao).toHaveAttribute("title", "Carregando dados do usuario...");
+    expect(screen.getByText("Carregando dados do usuario...")).toBeInTheDocument();
+    expect(screen.queryByText(/sem vendedor vinculado/)).not.toBeInTheDocument();
+  });
+
+  it("depois que o /me chega sem vendedor, o texto de carregamento da lugar ao motivo real", async () => {
+    useSessionUserMock.mockReturnValue(null);
+    const { rerender } = render(<ClientesPage />);
+    await screen.findByText("Carregando dados do usuario...");
+
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: null }));
+    rerender(<ClientesPage />);
+    expect(
+      await screen.findByText(
+        "Usuario sem vendedor vinculado: solicite o vinculo a um administrador."
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Carregando dados do usuario...")).not.toBeInTheDocument();
+  });
+});
+
+async function preencherNovoCliente() {
+  await userEvent.click(await screen.findByRole("button", { name: "+ Novo Cliente" }));
+  const dialog = await screen.findByRole("dialog");
+  const w = within(dialog);
+  await userEvent.type(w.getByLabelText("Razao social"), "Loja Nova");
+  await userEvent.type(w.getByLabelText("CNPJ"), "11222333000181");
+  await userEvent.type(w.getByLabelText("Segmento"), "Varejo");
+  await userEvent.type(w.getByLabelText("Cidade"), "Campinas");
+  await userEvent.type(w.getByLabelText("UF"), "SP");
+  await userEvent.click(w.getByRole("button", { name: "Criar cliente" }));
+  return dialog;
+}
+
+describe("Clientes - criacao (SEC-01)", () => {
+  it("apos criar, recarrega a lista e o cliente novo aparece para o usuario normal", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+
+    api.apiCreateCliente.mockResolvedValue(cliente(11, "Loja Nova"));
+    api.apiListClientes.mockResolvedValue(
+      page([cliente(10, "Loja A"), cliente(11, "Loja Nova")])
+    );
+    const chamadasAntes = api.apiListClientes.mock.calls.length;
+    await preencherNovoCliente();
+
+    expect(await screen.findByText("Loja Nova")).toBeInTheDocument();
+    expect(api.apiListClientes.mock.calls.length).toBeGreaterThan(chamadasAntes);
+    expect(screen.getByText('Cliente "Loja Nova" criado com sucesso.')).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("403 ao criar mostra a mensagem da API no modal", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    api.apiCreateCliente.mockRejectedValue(
+      new ApiError(403, "usuário sem vendedor vinculado")
+    );
+    render(<ClientesPage />);
+    const dialog = await preencherNovoCliente();
+    expect(
+      await within(dialog).findByText("usuário sem vendedor vinculado")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});
+
+describe("Clientes - erros da API (SEC-01)", () => {
+  it("404 ao editar fecha o modal, mostra a mensagem da API e recarrega a lista", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    api.apiUpdateCliente.mockRejectedValue(new ApiError(404, "cliente não encontrado"));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    const chamadasAntes = api.apiListClientes.mock.calls.length;
+    api.apiListClientes.mockResolvedValue(page([]));
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Salvar alteracoes" }));
+
+    expect(await screen.findByText("cliente não encontrado")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.apiListClientes.mock.calls.length).toBeGreaterThan(chamadasAntes);
+    await waitFor(() => expect(screen.queryByText("Loja A")).not.toBeInTheDocument());
+  });
+
+  it("404 ao inativar mostra a mensagem da API e recarrega a lista", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiToggleClienteStatus.mockRejectedValue(new ApiError(404, "cliente não encontrado"));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    const chamadasAntes = api.apiListClientes.mock.calls.length;
+
+    api.apiListClientes.mockResolvedValue(page([]));
+    await userEvent.click(screen.getByRole("button", { name: /Ativo/ }));
+
+    expect(await screen.findByText("cliente não encontrado")).toBeInTheDocument();
+    expect(api.apiListClientes.mock.calls.length).toBeGreaterThan(chamadasAntes);
+    await waitFor(() => expect(screen.queryByText("Loja A")).not.toBeInTheDocument());
+  });
+
+  it("403 ao inativar mostra a mensagem da API", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiToggleClienteStatus.mockRejectedValue(
+      new ApiError(403, "usuário sem vendedor vinculado")
+    );
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    await userEvent.click(screen.getByRole("button", { name: /Ativo/ }));
+    expect(await screen.findByText("usuário sem vendedor vinculado")).toBeInTheDocument();
+  });
+});
+
+describe("Clientes - motivo do bloqueio e fallbacks (SEC-01)", () => {
+  it.each<[string, Partial<MeResponse>, boolean, string]>([
+    [
+      "normal sem vendedor",
+      { id_vendedor: null },
+      false,
+      "Usuario sem vendedor vinculado: solicite o vinculo a um administrador.",
+    ],
+    [
+      "normal com vendedor desligado",
+      { id_vendedor: 7 },
+      true,
+      "Vendedor desligado: cadastro de clientes bloqueado.",
+    ],
+  ])("%s: botao mostra o motivo (title e texto)", async (_n, u, desligado, motivo) => {
+    useSessionUserMock.mockReturnValue(user(u));
+    useVendedorDesligadoMock.mockReturnValue(desligado);
+    render(<ClientesPage />);
+    const botao = await screen.findByRole("button", { name: "+ Novo Cliente" });
+    expect(botao).toHaveAttribute("title", motivo);
+    expect(screen.getByText(motivo)).toBeInTheDocument();
+  });
+
+  it("habilitado nao mostra motivo", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    render(<ClientesPage />);
+    const botao = await screen.findByRole("button", { name: "+ Novo Cliente" });
+    expect(botao).not.toHaveAttribute("title");
+  });
+
+  it("403 sem mensagem ao criar usa o texto padrao", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    api.apiCreateCliente.mockRejectedValue(new ApiError(403, ""));
+    render(<ClientesPage />);
+    const dialog = await preencherNovoCliente();
+    expect(await within(dialog).findByText("usuário sem vendedor vinculado")).toBeInTheDocument();
+  });
+
+  it("404 sem mensagem ao editar usa o texto padrao", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    api.apiUpdateCliente.mockRejectedValue(new ApiError(404, ""));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Salvar alteracoes" }));
+    expect(await screen.findByText("cliente não encontrado")).toBeInTheDocument();
+  });
+
+  it("editar com sucesso atualiza a linha sem recarregar a lista", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    api.apiUpdateCliente.mockResolvedValue(cliente(10, "Loja A Editada"));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    const antes = api.apiListClientes.mock.calls.length;
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Salvar alteracoes" }));
+    expect(await screen.findByText("Loja A Editada")).toBeInTheDocument();
+    expect(screen.getByText('Cliente "Loja A Editada" atualizado com sucesso.')).toBeInTheDocument();
+    expect(api.apiListClientes.mock.calls.length).toBe(antes);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("inativar com sucesso troca o status na linha", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiToggleClienteStatus.mockResolvedValue(cliente(10, "Loja A", { ativo: false }));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    await userEvent.click(screen.getByRole("button", { name: /Ativo/ }));
+    expect(await screen.findByText("Cliente inativado com sucesso.")).toBeInTheDocument();
+    expect(api.apiToggleClienteStatus).toHaveBeenCalledWith(10, false);
+  });
+
+  it("cancelar a confirmacao nao chama a API", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    await userEvent.click(screen.getByRole("button", { name: /Ativo/ }));
+    expect(api.apiToggleClienteStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("Clientes - CNPJ alfanumerico (NEG-02)", () => {
+  it("tabela exibe CNPJ numerico e alfanumerico com mascara", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    api.apiListClientes.mockResolvedValue(
+      page([
+        cliente(10, "Loja A", { cnpj: "11222333000181" }),
+        cliente(11, "Loja B", { cnpj: "12ABC34501DE35" }),
+      ])
+    );
+    render(<ClientesPage />);
+    expect(await screen.findByText("11.222.333/0001-81")).toBeInTheDocument();
+    expect(screen.getByText("12.ABC.345/01DE-35")).toBeInTheDocument();
+  });
+
+  it("busca envia o termo como digitado (backend aceita mascara e minusculas)", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    await userEvent.type(screen.getByLabelText("Buscar"), "12.abc.345");
+    await waitFor(() =>
+      expect(api.apiListClientes).toHaveBeenLastCalledWith(
+        1,
+        20,
+        expect.objectContaining({ q: "12.abc.345" }),
+        expect.anything(),
+        expect.anything()
+      )
+    );
+  });
+
+  it("criar com CNPJ alfanumerico em minusculas envia normalizado", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    render(<ClientesPage />);
+    await screen.findByText("Loja A");
+    api.apiCreateCliente.mockResolvedValue(cliente(12, "Loja Alfa", { cnpj: "12ABC34501DE35" }));
+    await userEvent.click(await screen.findByRole("button", { name: "+ Novo Cliente" }));
+    const w = within(await screen.findByRole("dialog"));
+    await userEvent.type(w.getByLabelText("Razao social"), "Loja Alfa");
+    await userEvent.type(w.getByLabelText("CNPJ"), "12abc34501de35");
+    expect(w.getByLabelText("CNPJ")).toHaveValue("12.ABC.345/01DE-35");
+    await userEvent.type(w.getByLabelText("Segmento"), "Varejo");
+    await userEvent.type(w.getByLabelText("Cidade"), "Santos");
+    await userEvent.type(w.getByLabelText("UF"), "SP");
+    await userEvent.click(w.getByRole("button", { name: "Criar cliente" }));
+    await waitFor(() => expect(api.apiCreateCliente).toHaveBeenCalledTimes(1));
+    expect(api.apiCreateCliente).toHaveBeenCalledWith(
+      expect.objectContaining({ cnpj: "12ABC34501DE35" })
+    );
+  });
+});

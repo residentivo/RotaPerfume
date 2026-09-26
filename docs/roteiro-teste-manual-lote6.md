@@ -225,16 +225,18 @@ Use o `qa.lote6@...` (reativado no fim da seção 1). As queries usam `<QA>`.
 Rodam com `make test` (Go), `make test-frontend` (Vitest) e, com MySQL local, `INTEGRATION=1`:
 
 ```bash
-cd apis/rotaperfumes-api && INTEGRATION=1 go test ./handlers/ ./services/ -count=1
+cd apis/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/services/ -coverpkg=./... -count=1
 ```
+
+> Caminhos atualizados no Lote 7 (2026-09-26): os testes saíram de junto do código e foram para `apis/rotaperfumes-api/tests/<pacote>/`, `apis/shared/tests/<pacote>/` e `frontend/tests/` (espelhando `src/`).
 
 | Arquivo | O que cobre |
 | --- | --- |
-| `apis/rotaperfumes-api/handlers/lote6_http_integration_test.go` | Com MySQL. **SEC-06:** inativar usuário (401 "usuário inativo" nas rotas protegidas e tokens revogados com `inativacao`), desligar vendedor (revogação na mesma transação), rebaixamento de role e usuário inexistente. **SEC-07:** reuso de token com `rotacao` fora da janela (alerta e `revogacao_massa`) e de token de logout (sem revogação em massa). **BUG-08:** timestamps no 201, com e sem carteira. |
-| `apis/rotaperfumes-api/middleware/user_status_test.go` e `user_status_cookie_test.go` | SEC-06: `JWTMiddlewareWithUserCheck` com cookie e Bearer; inativo/inexistente → 401; erro de banco → 500; role do banco substitui a do token. |
-| `apis/rotaperfumes-api/services/refresh_token_service_test.go`, `refresh_rotation_test.go`, `apis/shared/repositories/refresh_token_repository_test.go` | SEC-07: `RevokedTokenError` com motivo, `IsRotationReuse`, gravação de `revoked_reason` em todas as revogações. |
-| `frontend/src/lib/apiClient.lote6.test.ts` | FE-07: falha de rede, timeout e falha do Web Lock no refresh → `NetworkError`, sem logout e sem `/api/auth/logout`; a fila recebe o mesmo erro; 401/429/500 continuam deslogando. |
-| `frontend/src/components/ui/Table.test.tsx`, `frontend/src/app/admin/listasAdmin.test.tsx` | FE-09: `erroCarga` oculta o estado vazio nas 10 listagens. |
-| `apis/rotaperfumes-api/handlers/lote4_http_integration_test.go:254`, `apis/shared/cnpj/cruzado_test.go:75-79` | TEST-01: nome do subteste e comentário atualizados. |
+| `apis/rotaperfumes-api/tests/handlers/lote6_http_integration_test.go` | Com MySQL. **SEC-06:** inativar usuário (401 "usuário inativo" nas rotas protegidas e tokens revogados com `inativacao`), desligar vendedor (revogação na mesma transação), rebaixamento de role e usuário inexistente. **SEC-07:** reuso de token com `rotacao` fora da janela (alerta e `revogacao_massa`) e de token de logout (sem revogação em massa). **BUG-08:** timestamps no 201, com e sem carteira. |
+| `apis/rotaperfumes-api/tests/middleware/user_status_test.go` e `user_status_cookie_test.go` | SEC-06: `JWTMiddlewareWithUserCheck` com cookie e Bearer; inativo/inexistente → 401; erro de banco → 500; role do banco substitui a do token. |
+| `apis/rotaperfumes-api/tests/services/refresh_token_service_test.go`, `refresh_rotation_test.go`, `apis/shared/tests/repositories/refresh_token_repository_test.go` | SEC-07: `RevokedTokenError` com motivo, `IsRotationReuse`, gravação de `revoked_reason` em todas as revogações. |
+| `frontend/tests/lib/apiClient.lote6.test.ts` | FE-07: falha de rede, timeout e falha do Web Lock no refresh → `NetworkError`, sem logout e sem `/api/auth/logout`; a fila recebe o mesmo erro; 401/429/500 continuam deslogando. |
+| `frontend/tests/components/ui/Table.test.tsx`, `frontend/tests/app/admin/listasAdmin.test.tsx` | FE-09: `erroCarga` oculta o estado vazio nas 10 listagens. |
+| `apis/rotaperfumes-api/tests/handlers/lote4_http_integration_test.go`, `apis/shared/tests/cnpj/cruzado_test.go` (as linhas citadas no Lote 6, 254 e 75-79, mudaram com a mudança de pasta) | TEST-01: nome do subteste e comentário atualizados. |
 
 **Regressão do 🔴 TestBrain (2026-09-26):** Go ok (unit e `INTEGRATION=1`: 1202 PASS em `apis/shared` e 2354 em `rotaperfumes-api`, 0 FAIL). Frontend: `tsc`, `eslint` e `vitest` 1188/1188. Cobertura: `rotaperfumes-api` 88,6%, `apiClient.ts` 94,81%, `Table.tsx` 100% das linhas. Banco restaurado e idêntico ao snapshot.

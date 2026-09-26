@@ -198,9 +198,9 @@ Conferência no banco: carteira ativa do vendedor 4 = 60 clientes, 54 ativos; pe
 
 Os itens abaixo também são cobertos por testes automatizados, que rodam com `make test-frontend` ou `cd frontend && npm test`:
 
-- `frontend/src/app/dashboard/page.test.tsx`: título do gráfico em 7/14/30/60 dias (admin e normal). Aviso + KPIs/gráfico zerados para normal sem vendedor, desligado pela sessão (`/me` ou 403) e desligado por `metrics.vendedor_desligado`. Sem aviso para admin e para normal ativo.
-- `frontend/src/components/layout/Navbar.test.tsx`: itens da carteira ocultos para o desligado.
-- `frontend/src/app/dashboard/page.test.tsx` (FE-02, 2026-09-24):
+- `frontend/tests/app/dashboard/page.test.tsx`: título do gráfico em 7/14/30/60 dias (admin e normal). Aviso + KPIs/gráfico zerados para normal sem vendedor, desligado pela sessão (`/me` ou 403) e desligado por `metrics.vendedor_desligado`. Sem aviso para admin e para normal ativo.
+- `frontend/tests/components/layout/Navbar.test.tsx`: itens da carteira ocultos para o desligado.
+- `frontend/tests/app/dashboard/page.test.tsx` (FE-02, 2026-09-24):
   - Payload **preenchido** da API é ignorado e a tela fica zerada para normal sem vendedor, desligado pela sessão e desligado pelo `metrics`.
   - Admin nunca é zerado, mesmo com flag de desligado. Normal ativo com payload cheio mostra os números.
   - Desligamento detectado depois (403 na sessão) zera a tela já carregada.

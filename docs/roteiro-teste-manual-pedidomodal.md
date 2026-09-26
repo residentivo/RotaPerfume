@@ -118,7 +118,7 @@ O vendedor travado do usuário normal vem da sessão em memória validada por `G
 - [ ] 5b.2 Se o modal já estava aberto, o select "Vendedor" é atualizado para #7 ao voltar o foco.
 - [ ] 5b.3 O `POST /api/pedidos` sai com `"vendedor_id": 7`. Exclua o pedido e restaure o vínculo para o vendedor 4.
 - [ ] 5b.4 Com o vendedor do usuário **desligado**, `/admin/pedidos` mostra só o aviso "Seu vendedor foi desligado..." + "Ir para o Dashboard". O botão "Novo Pedido" não aparece, e a API responde 403 "acesso bloqueado: vendedor desligado".
-- [ ] 5b.5 A cobertura automatizada está em `frontend/src/components/admin/PedidoModal.test.tsx`.
+- [ ] 5b.5 A cobertura automatizada está em `frontend/tests/components/admin/PedidoModal.test.tsx`.
 
 ## 6. Limpeza
 

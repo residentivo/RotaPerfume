@@ -140,12 +140,12 @@ Estes cenários também são cobertos por testes Vitest + Testing Library, que r
 
 | Arquivo | O que cobre |
 | --- | --- |
-| `frontend/src/lib/vendedorDesligado.test.ts` | `isVendedorDesligadoError`: só 403 + mensagem exata é `true`. Maiúsculas, prefixo, sufixo, outros status e `Error` comum são `false`. Também cobre subscribe/notify. |
-| `frontend/src/lib/apiClient.test.ts` | O 403 de desligado notifica a sessão, sem `/api/auth/refresh`/logout e sem limpar o `auth_user`. O 401 continua disparando o refresh (com retry, lock compartilhado e logout se o refresh falhar). |
-| `frontend/src/lib/auth.test.ts` | `saveUser` grava só a whitelist de `User`, sem `vendedor_desligado`. |
-| `frontend/src/lib/session.test.ts` | A sessão via `/me` e o flag do 403 (que não é limpo pela rebusca do próprio 403). Admin nunca é bloqueado. O vínculo alterado aparece sem novo login. |
-| `frontend/src/components/layout/CarteiraGuard.test.tsx` | Para o desligado, mostra aviso + link para o Dashboard e não mostra o conteúdo. |
-| `frontend/src/components/layout/Navbar.test.tsx` | Esconde ERP/CRM para o desligado e mantém Dashboard e Trocar Senha. |
-| `frontend/src/components/layout/ProtectedRoute.test.tsx` | Revalida `/me` no mount, no `focus` e no `visibilitychange`. Uma falha em segundo plano não derruba a sessão. |
-| `frontend/src/components/admin/PedidoModal.test.tsx` | O vendedor travado vem de `/me`, não do localStorage desatualizado, e é atualizado com o modal aberto. O submit envia o `vendedor_id` da sessão. |
-| `frontend/src/app/dashboard/page.test.tsx` | Aviso + KPIs/gráfico zerados (sem vendedor e desligado) e título dinâmico. |
+| `frontend/tests/lib/vendedorDesligado.test.ts` | `isVendedorDesligadoError`: só 403 + mensagem exata é `true`. Maiúsculas, prefixo, sufixo, outros status e `Error` comum são `false`. Também cobre subscribe/notify. |
+| `frontend/tests/lib/apiClient.test.ts` | O 403 de desligado notifica a sessão, sem `/api/auth/refresh`/logout e sem limpar o `auth_user`. O 401 continua disparando o refresh (com retry, lock compartilhado e logout se o refresh falhar). |
+| `frontend/tests/lib/auth.test.ts` | `saveUser` grava só a whitelist de `User`, sem `vendedor_desligado`. |
+| `frontend/tests/lib/session.test.ts` | A sessão via `/me` e o flag do 403 (que não é limpo pela rebusca do próprio 403). Admin nunca é bloqueado. O vínculo alterado aparece sem novo login. |
+| `frontend/tests/components/layout/CarteiraGuard.test.tsx` | Para o desligado, mostra aviso + link para o Dashboard e não mostra o conteúdo. |
+| `frontend/tests/components/layout/Navbar.test.tsx` | Esconde ERP/CRM para o desligado e mantém Dashboard e Trocar Senha. |
+| `frontend/tests/components/layout/ProtectedRoute.test.tsx` | Revalida `/me` no mount, no `focus` e no `visibilitychange`. Uma falha em segundo plano não derruba a sessão. |
+| `frontend/tests/components/admin/PedidoModal.test.tsx` | O vendedor travado vem de `/me`, não do localStorage desatualizado, e é atualizado com o modal aberto. O submit envia o `vendedor_id` da sessão. |
+| `frontend/tests/app/dashboard/page.test.tsx` | Aviso + KPIs/gráfico zerados (sem vendedor e desligado) e título dinâmico. |

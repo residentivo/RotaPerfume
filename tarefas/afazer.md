@@ -1,6 +1,84 @@
 # A Fazer
 
-> Os cards registrados no Lote 5 (2026-09-25) foram para `fazendo.md` no Lote 6 (2026-09-26), exceto o DOC-04, que só entra em execução se o usuário pedir o manual completo. Os cards BUG-09, SEC-08, FE-10 e SEC-09 foram registrados no fechamento do Lote 6 (2026-09-26).
+> Os cards registrados no Lote 5 (2026-09-25) foram para `fazendo.md` no Lote 6 (2026-09-26), exceto o DOC-04, que só entra em execução se o usuário pedir o manual completo. Os cards BUG-09, SEC-08, FE-10 e SEC-09 foram registrados no fechamento do Lote 6 (2026-09-26). Os cards BUG-10, FE-11, FE-12, SEC-10 e INFO-01 foram registrados no fechamento do Lote 7 (2026-09-26).
+
+---
+
+## BUG-10: `seedusers.FindProjectRoot` não acha a raiz do projeto ao rodar de `apis/shared` — prioridade MÉDIA
+
+**Status:** não iniciado
+**Camada:** Backend shared
+**Responsável:** 🟡 BackBrain (testes: 🔴 TestBrain)
+**Origem:** 🔴 TestBrain, TST-03 (Lote 7, 2026-09-26). O bug já existia antes do lote e não foi corrigido nele.
+
+**Descrição:**
+- O `seedusers.FindProjectRoot` (`apis/shared/tools/seedusers`) exige um `go.mod` na raiz do repositório, que não existe.
+- Rodando de `apis/shared` (como faz o `make` do seedusers), ele cai no fallback `cwd/../../..`, que é a pasta **acima** do SistemaCompleto, e aí não acha `sql/02_seed_admin.sql`.
+- O `tests/tools/seedusers/seedusers_test.go` (`TestFindProjectRoot`) registra o comportamento atual.
+
+**Ação esperada:**
+- 🟡 BackBrain: usar `cmdutil.FindProjectRoot` (correção sugerida) e conferir o alvo do seedusers no `Makefile`.
+- 🔴 TestBrain: atualizar o `TestFindProjectRoot` para o comportamento correto e manter a cobertura do `tools/seedusers` (hoje 94.3%).
+
+---
+
+## FE-11: timers não são limpos no unmount (trocar-senha, usuarios e vendedores) — prioridade BAIXA
+
+**Status:** não iniciado
+**Camada:** Frontend
+**Responsável:** 🟢 FrontBrain (testes: 🔴 TestBrain)
+**Origem:** 🔴 TestBrain, TST-01 (Lote 7, 2026-09-26).
+
+**Descrição:**
+- O `setTimeout` em `frontend/src/app/trocar-senha/page.tsx:88` não é cancelado quando a tela desmonta.
+- O `setTimeout(() => setSuccess(null), 4000)` em `frontend/src/app/admin/usuarios/page.tsx` (linhas 228, 248 e 271) e `frontend/src/app/admin/vendedores/page.tsx` (linhas 233, 249 e 272) também não é cancelado. O efeito é um `setState` depois do unmount (e, na trocar-senha, a ação atrasada roda mesmo se o usuário já saiu da tela).
+- **Nota do 🔵 SubBrain:** o mesmo padrão de 4 s aparece em `admin/clientes`, `admin/estoque`, `admin/produtos`, `admin/visitas`, `admin/oportunidades`, `admin/pedidos` e `pagamentos`. Vale tratar todos juntos (ex.: um hook comum de mensagem temporária).
+
+**Ação esperada:**
+- 🟢 FrontBrain: guardar o id do timer e fazer `clearTimeout` no cleanup do effect (ou no unmount), em todas as telas acima.
+- 🔴 TestBrain: cobrir o unmount antes do timer vencer, em `frontend/tests/`.
+
+---
+
+## FE-12: `sortValue` das colunas nunca é usado pelo `Table` — prioridade BAIXA
+
+**Status:** não iniciado
+**Camada:** Frontend
+**Responsável:** 🟢 FrontBrain (testes: 🔴 TestBrain)
+**Origem:** 🔴 TestBrain, TST-01 (Lote 7, 2026-09-26).
+
+**Descrição:** As colunas de `admin/usuarios`, `admin/senha-historico` e `admin/vendedores` definem `sortValue`, mas o componente `Table` (`frontend/src/components/ui/Table.tsx`) nunca o chama. É código morto, ou a ordenação dessas telas não está usando o valor esperado.
+- **Nota do 🔵 SubBrain:** a propriedade `sortValue` também é definida em colunas de `admin/clientes`, `admin/estoque`, `admin/produtos`, `admin/visitas`, `admin/oportunidades`, `admin/pedidos` e `pagamentos`. A decisão vale para todas.
+
+**Ação esperada:**
+- 🟢 FrontBrain: decidir entre implementar o uso do `sortValue` no `Table` (se a ordenação local dessas telas precisar dele) ou remover a propriedade das colunas.
+- 🔴 TestBrain: ajustar ou cobrir em `frontend/tests/`.
+
+---
+
+## SEC-10: endurecimentos sugeridos na revisão do Lote 7 — prioridade BAIXA
+
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Segurança (+ Backend shared)
+**Responsável:** 🟣 SecBrain (avaliação) → 🟡 BackBrain (aplicação) → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, revisão dos construtores novos do Lote 7 (2026-09-26). Os três construtores foram aprovados; os itens abaixo são melhorias, não bloqueios.
+
+**Descrição e ação esperada:**
+1. **`NewSMTPEmailServiceWithTLSConfig`:** forçar `InsecureSkipVerify = false` e `MinVersion = tls.VersionTLS12` na config clonada, para que nenhum chamador desligue a validação por engano.
+2. **`GenerateRandomPassword`:** o `alphabet[b%62]` tem viés de módulo. Trocar por `crypto/rand.Int` (ou descarte por rejeição).
+3. **CLI do `resetpassword`:** a senha passada em `-password=` fica no histórico do shell. Avaliar leitura por prompt sem eco, stdin ou variável de ambiente, e ajustar o `docs/roteiro-teste-manual-lote6.md` (que usa `-password`).
+4. **`seedusers`:** remover as constantes mortas de senha padrão e os defaults `golang/golang` do DSN.
+5. **`seedusers.ReplaceInFile`:** grava hashes reais em `sql/0*_seed*.sql`, com risco de commit acidental. Avaliar gravar em arquivo temporário ou ignorado pelo git.
+
+---
+
+## INFO-01: linhas não alcançáveis aceitas como fora da meta de cobertura — informativo
+
+**Status:** registrado; nenhuma ação pendente
+**Camada:** Testes
+**Origem:** 🔴 TestBrain, TST-02 e TST-03 (Lote 7, 2026-09-26). Aceito pelo 🤍 MegaBrain.
+
+**Descrição:** As linhas que restam sem cobertura no Go só são alcançáveis mudando o código de produção: erros de `crypto/rand` (`password_generator`), `os.Getwd`/`os.Executable`, `rows.Columns()`, a escrita no `DATA` do SMTP, a escrita do cabeçalho num `csv.Writer` com buffer e os ramos de `maskDSN` sem `@`/`:`. Também ficam fora da meta os `cmd/*/main.go` finos e o `cmd/server`. Não há ação a tomar, salvo se o usuário pedir 100%.
 
 ---
 

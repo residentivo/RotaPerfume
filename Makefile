@@ -1,6 +1,6 @@
 .PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
 	build build-api run-api dev-api stop-api \
-	test-api gen-hash fix-hash \
+	test-api cover-api test-shared cover-shared gen-hash fix-hash \
 	frontend-deps \
 	audit
 
@@ -159,11 +159,21 @@ frontend-deps: ## Instala dependências npm do frontend (roda uma vez)
 # =============================================================================
 test: test-shared test-api ## Roda todos os testes Go
 
-test-shared: ## Testes do pacote compartilhado
-	cd apis/shared && go test ./... -v
+test-shared: ## Testes do pacote compartilhado (em tests/, cobertura medida com -coverpkg=./...)
+	cd apis/shared && go test ./... -v -coverpkg=./... -coverprofile=coverage.txt
 
-test-api: build-shared ## Testes da API
-	cd apis/rotaperfumes-api && go test ./... -v
+cover-shared: ## Cobertura do shared: total + relatório HTML (apis/shared/coverage.html)
+	cd apis/shared && go test ./... -coverpkg=./... -coverprofile=coverage.txt
+	cd apis/shared && go tool cover -func=coverage.txt | tail -1
+	cd apis/shared && go tool cover -html=coverage.txt -o coverage.html
+
+test-api: build-shared ## Testes da API (em tests/, cobertura medida com -coverpkg=./...)
+	cd apis/rotaperfumes-api && go test ./... -v -coverpkg=./... -coverprofile=coverage.txt
+
+cover-api: build-shared ## Cobertura da API: total + relatório HTML (apis/rotaperfumes-api/coverage.html)
+	cd apis/rotaperfumes-api && go test ./... -coverpkg=./... -coverprofile=coverage.txt
+	cd apis/rotaperfumes-api && go tool cover -func=coverage.txt | tail -1
+	cd apis/rotaperfumes-api && go tool cover -html=coverage.txt -o coverage.html
 
 test-integration: ## Roda testes de integração (requer DB)
 	INTEGRATION=1 $(MAKE) test

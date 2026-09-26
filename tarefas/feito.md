@@ -4,6 +4,88 @@
 
 ---
 
+## Lote 7 de 2026-09-26: 3 cards concluídos (de 3)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "mover os testes para uma pasta separada de testes no front e no back e revisar as coberturas para atingir +/- 80%". Cards TST-01, TST-02 e TST-03, executados em paralelo. Resultados finais **conferidos pelo 🤍 MegaBrain em 2026-09-26**.
+>
+> **Decisões do usuário:** testes do front em `frontend/tests/`; do back em `apis/rotaperfumes-api/tests/` e `apis/shared/tests/`; os `apis/shared/cmd/import*` entram na meta de 80%.
+>
+> **Segurança:** 🟣 SecBrain dispensado na abertura (só testes e organização). Como o lote acabou criando três construtores de produção (`NewRefreshTokenServiceWithClock`, `NewTurnstileServiceWithEndpoint` e `NewSMTPEmailServiceWithTLSConfig`), o 🟣 SecBrain revisou os três: **OK**. Os endurecimentos sugeridos foram para o card SEC-10 em `afazer.md`.
+>
+> **Makefile:** `test-api`, `cover-api`, `test-shared` e `cover-shared` passam a usar `-coverpkg=./...` (sem ele, um teste em `tests/<pacote>/` não mede o pacote alvo).
+>
+> **Convenção de testes atualizada** em `.claude/agents/tester.md`: front em `frontend/tests/` espelhando `src/`; Go em `<modulo>/tests/<pacote>/` como pacote externo; cobertura com `-coverpkg=./...`.
+>
+> **Documentação (🔵 SubBrain) do lote:** caminhos de testes e pacotes corrigidos em `docs/manual-base-de-dados.md` (`cmd/internal/clientesdedup` → `importers/clientesdedup`) e nos roteiros `docs/roteiro-teste-manual-{lote4,lote5,lote6,vendedor-desligado,pedidomodal,dashboard,clientes}.md` e `docs/roteiro-smoke-pos-fe03.md`. Sem mudança de contrato de API, então o Postman não mudou.
+>
+> **Cards derivados que ficaram em `afazer.md`:** BUG-10, FE-11, FE-12, SEC-10 e INFO-01.
+
+## TST-01: testes do frontend em `frontend/tests/` e cobertura ≥80% — 2026-09-26
+**Agentes:** 🤍 MegaBrain (diagnóstico) → 🔴 TestBrain → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Frontend (🟢 FrontBrain + 🔴 TestBrain)
+**Origem:** pedido do usuário, Lote 7.
+
+**Descrição:** 27 testes ficavam junto do código em `src/**`. Cobertura inicial: 88.24% stmts / 82.86% branches / 81.72% funcs / 88.67% lines, com 6 arquivos em 0% (login, trocar-senha, Turnstile, `app/layout`, `app/page`, `admin/layout`).
+
+**🔴 TestBrain (2026-09-26) — feito:**
+- Os 27 testes foram movidos com `git mv` para `frontend/tests/`, espelhando `src/`. Imports e `vi.mock` passaram para o alias `@/`.
+- `vitest.config.mts`: `include` em `tests/**`, `coverage.thresholds` de 80% e exclusão de `*.d.ts`. `tsconfig`/ESLint não precisaram de ajuste.
+- 6 arquivos novos (login, trocar-senha, Turnstile, layouts/home, admin/layout, filtrosAdmin) e casos novos em `tests/lib/auth.test.ts` (SSR e URL default).
+- Nenhuma alteração em `src/`.
+
+**Resultado final:** **94.17% stmts / 89.62% branches / 88.85% funcs / 94.59% lines**. 33 arquivos, 1335 testes verdes; `tsc --noEmit` e `eslint .` passam.
+
+---
+
+## TST-02: testes da rotaperfumes-api em `apis/rotaperfumes-api/tests/` e cobertura ≥80% — 2026-09-26
+**Agentes:** 🤍 MegaBrain (diagnóstico) → 🔴 TestBrain → 🟣 SecBrain (revisão do construtor novo) → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Backend API (🔴 TestBrain)
+**Origem:** pedido do usuário, Lote 7.
+
+**Descrição:** Os `_test.go` ficavam dentro de cada pacote, alguns internos. Cobertura inicial: handlers 87.7%, middleware 86.8%, routes 97.7%, services 94.7%, cmd/server 0%.
+
+**🔴 TestBrain (2026-09-26) — feito:**
+- 61 `_test.go` de pacote externo movidos com `git mv` para `tests/{handlers,middleware,routes,services}/`.
+- Internos reescritos pela API pública e removidos: `handlers/scope_internal_test.go` → `tests/handlers/scope_test.go`; `services/cnpj_internal_test.go` + `cnpj_cruzado_internal_test.go` → `tests/services/cnpj_validacao_test.go`; `services/data_local_internal_test.go` → `tests/services/data_local_test.go`; `services/inicio_do_dia_internal_test.go` → `tests/services/inicio_do_dia_test.go`.
+- `services/export_test.go` removido: o hook `setClock` virou o construtor público `services.NewRefreshTokenServiceWithClock(now)` (o `NewRefreshTokenService()` delega a ele). Teste: `tests/services/refresh_clock_test.go`.
+- **Exceções mantidas no lugar: nenhuma.**
+
+**Resultado final (com `-coverpkg=./...`):** handlers **88.5%**, middleware **86.8%**, routes **97.7%**, services **96.4%**, total **89.6%**. O `cmd/server` segue em 0%, fora da meta. `go vet`, `go test ./...` e `INTEGRATION=1` passam.
+
+---
+
+## TST-03: shared com importadores extraídos, testes em `apis/shared/tests/` e cobertura de ~80% — 2026-09-26
+**Agentes:** 🤍 MegaBrain (diagnóstico) → 🟡 BackBrain (extração) → 🔴 TestBrain (frentes A e B) → 🟣 SecBrain (revisão dos construtores novos) → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Backend shared (🟡 BackBrain + 🔴 TestBrain)
+**Origem:** pedido do usuário, Lote 7. Por decisão do usuário, os `cmd/import*` entraram na meta.
+
+**Descrição:** Cobertura inicial de 51.2% no total: services 62.9%, repositories 84.6%, importadores entre 1.1% e 53.4%, e db, exportdados, resetpassword e seedusers em 0%. Os `cmd/import*` eram `package main`, sem como testar de fora.
+
+**🟡 BackBrain (2026-09-26) — extração, sem mudança de comportamento:**
+- Lógica movida para `importers/{clientes,carteiras,estoque,oportunidades,pagamentos,pedidos,produtos,visitas}`, `importers/clientesdedup` (saiu de `cmd/internal/`) e `tools/{exportdados,resetpassword,seedusers}`. Helpers comuns em `cmdutil` (`FindProjectRoot`, `LoadEnvFromCwd`, `DB`/`Conn`/`Opener`/`OpenMySQL`).
+- Os `cmd/<nome>/main.go` ficaram finos (flags, .env, config, `Run`). Os caminhos `./cmd/<nome>` do Makefile não mudaram. Os oito `-dry-run` foram conferidos com os CSVs reais.
+
+**🔴 TestBrain (2026-09-26) — feito:**
+- Todos os testes foram para `apis/shared/tests/<pacote>/` como pacote externo. **Exceções mantidas no lugar: nenhuma.** O `cnpj/testdata/casos_cruzados.json` não saiu do lugar (a API e o front também o leem).
+- Internos reescritos pela API pública: `repositories/sort_test.go`, `repositories/dashboard_repository_internal_test.go` (→ `tests/repositories/dashboard_vendedor_filter_test.go`) e `services/turnstile_service_test.go`.
+- Construtores novos em `services`, e os antigos delegam a eles: `NewTurnstileServiceWithEndpoint(cfg, verifyURL, client)` (o `turnstileVerifyURL` virou `const`) e `NewSMTPEmailServiceWithTLSConfig(cfg, tlsCfg)` (clona a config e força `ServerName` = host).
+- Testes novos: SMTP completo contra servidor falso com STARTTLS real, `auth_service_db_test.go`, `crud_mutacoes_test.go`, `tests/db/db_test.go`, parsers/leitura/lookups/upserts/`Run` de todos os importadores (sqlmock), NEG-01 de ponta a ponta, `tools/*` e `cmdutil`.
+
+**Resultado final (com `-coverpkg=./...`):** total **92.7%** (96.1% sem os `cmd/*/main.go` finos). services **96.0%**, repositories **93.7%**, importers **100%** (todos, inclusive clientesdedup), tools **94–99%** (exportdados 95.1, resetpassword 99.3, seedusers 94.3), cmdutil **92.9%**; cnpj, config, models e tz seguem em 100%. `go vet`, `go test ./...` e `INTEGRATION=1` passam no shared, e `go build`/`go vet` passam na rotaperfumes-api.
+
+**Achados registrados em `afazer.md`:** BUG-10 (`seedusers.FindProjectRoot`, anterior ao lote) e INFO-01 (linhas não alcançáveis aceitas como fora da meta).
+
+---
+
 ## Lote 6 de 2026-09-26: 7 cards concluídos (de 7)
 
 > Lote aberto pelo 🤍 MegaBrain a partir de `afazer.md` e executado na ordem 🟣 SecBrain → 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain, com os cards SEC-06, SEC-07 (opção B, decisão do usuário), FE-07 (opção A, decisão do usuário), BUG-08, FE-09, TEST-01 e DOC-03. **Aceite do usuário em 2026-09-26.**

@@ -77,18 +77,22 @@ type RefreshTokenService struct {
 	now  func() time.Time // relógio injetável (testes); padrão time.Now
 }
 
-// NewRefreshTokenService cria um RefreshTokenService.
+// NewRefreshTokenService cria um RefreshTokenService com o relógio do sistema.
 func NewRefreshTokenService() *RefreshTokenService {
-	return &RefreshTokenService{
-		repo: repositories.NewRefreshTokenRepository(),
-		now:  time.Now,
-	}
+	return NewRefreshTokenServiceWithClock(time.Now)
 }
 
-// setClock substitui o relógio do serviço. Uso exclusivo de testes (exposto
-// via export_test.go).
-func (s *RefreshTokenService) setClock(now func() time.Time) {
-	s.now = now
+// NewRefreshTokenServiceWithClock cria um RefreshTokenService com relógio
+// injetado (expiração e janela de graça são calculadas a partir de now()).
+// now == nil usa time.Now.
+func NewRefreshTokenServiceWithClock(now func() time.Time) *RefreshTokenService {
+	if now == nil {
+		now = time.Now
+	}
+	return &RefreshTokenService{
+		repo: repositories.NewRefreshTokenRepository(),
+		now:  now,
+	}
 }
 
 // generateRandomToken gera um token hexadecimal aleatório.

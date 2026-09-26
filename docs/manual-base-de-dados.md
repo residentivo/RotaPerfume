@@ -68,7 +68,7 @@ Base de clientes do CRM, importada de `dados/crm/clientes.csv` (`make db-import-
 - Decisão do usuário (NEG-01): bloquear CNPJ duplicado no banco.
 - Em bancos novos, o `sql/09_ddl_clientes.sql` já cria a tabela com o `uq_clientes_cnpj`. Em bancos que já existiam, quem cria o índice é a migração 19 (seção 3).
 - Um INSERT/UPDATE com CNPJ repetido falha com o erro MySQL **1062** (`ER_DUP_ENTRY`). A API converte esse erro em `409` genérico "cnpj já cadastrado", sem revelar o vendedor dono do cliente. Um CNPJ com formato ou DV inválido é recusado antes, com `400` "cnpj inválido" (NEG-03 e NEG-04), então a checagem de duplicidade só se aplica a CNPJ válido.
-- **Importação:** como o CSV tem CNPJs repetidos, os importadores unificam os duplicados antes de gravar (`apis/shared/cmd/internal/clientesdedup`). Fica a primeira ocorrência de cada CNPJ, que é o menor `cliente_id`, igual à regra da migração. O `importclientes` não grava as cópias, e os importadores de carteiras, pedidos, oportunidades e visitas redirecionam o `cliente_id` da cópia para o sobrevivente. Sem isso, a importação falharia com 1062.
+- **Importação:** como o CSV tem CNPJs repetidos, os importadores unificam os duplicados antes de gravar (`apis/shared/importers/clientesdedup`; até o Lote 6 ficava em `cmd/internal/clientesdedup`). Fica a primeira ocorrência de cada CNPJ, que é o menor `cliente_id`, igual à regra da migração. O `importclientes` não grava as cópias, e os importadores de carteiras, pedidos, oportunidades e visitas redirecionam o `cliente_id` da cópia para o sobrevivente. Sem isso, a importação falharia com 1062.
 - **Collation:** `cnpj` herda `utf8mb4_unicode_ci`, que ignora maiúsculas e minúsculas. No índice único, valores que só diferem na caixa colidem. O Backend grava em maiúsculas. Detalhes no cabeçalho de `sql/09_ddl_clientes.sql` (nota do NEG-02, CNPJ alfanumérico).
 
 ### CNPJ alfanumérico (NEG-02, 2026-09-25)
@@ -83,7 +83,7 @@ A coluna `cnpj` aceita o CNPJ alfanumérico da Receita Federal (vigente desde ju
 
 ### Importador `importclientes` e o CNPJ (NEG-02, 2026-09-25)
 
-O `apis/shared/cmd/importclientes` e o `cmd/internal/clientesdedup` usam a mesma normalização da API (`clientesdedup.NormalizarCNPJ` → `shared/cnpj`):
+O importador de clientes (`apis/shared/importers/clientes`, chamado pelo `cmd/importclientes`) e o `importers/clientesdedup` usam a mesma normalização da API (`clientesdedup.NormalizarCNPJ` → `shared/cnpj`):
 
 - remove a máscara (`.`, `/`, `-` e espaços) e converte letras para maiúsculas;
 - exige 14 caracteres, com as 12 primeiras posições em `[0-9A-Z]` e as 2 últimas numéricas.

@@ -14,9 +14,9 @@ import (
 )
 
 // turnstileVerifyURL é o endpoint oficial de verificação do Cloudflare Turnstile.
-// É uma var (e não const) apenas para permitir que os testes deste pacote
-// apontem para um httptest.Server local — em produção seu valor nunca muda.
-var turnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+// Os testes apontam para um httptest.Server local via
+// NewTurnstileServiceWithEndpoint, sem alterar estado global.
+const turnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
 // turnstileVerifyTimeout limita o tempo de espera pela resposta do Cloudflare
 // para não travar requisições de login/reset em caso de indisponibilidade.
@@ -45,6 +45,7 @@ type CaptchaVerifier interface {
 // Cloudflare Turnstile.
 type TurnstileService struct {
 	secretKey string
+	verifyURL string
 	client    *http.Client
 }
 
@@ -52,11 +53,21 @@ type TurnstileService struct {
 // secretKey vem de cfg.TurnstileSecretKey (env TURNSTILE_SECRET_KEY) —
 // nunca deve ser logada.
 func NewTurnstileService(cfg *config.Config) *TurnstileService {
+	return NewTurnstileServiceWithEndpoint(cfg, turnstileVerifyURL, nil)
+}
+
+// NewTurnstileServiceWithEndpoint é NewTurnstileService com o endpoint
+// siteverify e o *http.Client injetáveis (usado nos testes, apontando para um
+// httptest.Server). client nil usa um client com o timeout padrão de
+// verificação.
+func NewTurnstileServiceWithEndpoint(cfg *config.Config, verifyURL string, client *http.Client) *TurnstileService {
+	if client == nil {
+		client = &http.Client{Timeout: turnstileVerifyTimeout}
+	}
 	return &TurnstileService{
 		secretKey: cfg.TurnstileSecretKey,
-		client: &http.Client{
-			Timeout: turnstileVerifyTimeout,
-		},
+		verifyURL: verifyURL,
+		client:    client,
 	}
 }
 
@@ -89,7 +100,7 @@ func (s *TurnstileService) Verify(ctx context.Context, token, remoteIP string) e
 		form.Set("remoteip", remoteIP)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, turnstileVerifyURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.verifyURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("%w: erro ao montar requisição: %v", ErrCaptchaInvalido, err)
 	}

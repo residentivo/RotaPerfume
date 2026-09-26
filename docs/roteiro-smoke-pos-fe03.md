@@ -34,12 +34,12 @@ Em cada tela, com o DevTools aberto na aba **Network**:
 Se isso acontecer, anote a tela, mas não é regressão do FE-03: o comportamento já existia antes.
 
 Cobertura automatizada destes passos:
-- `frontend/src/app/listasPaginadas.test.tsx`
-- `frontend/src/app/crudPaginas.test.tsx`
-- `frontend/src/app/admin/listasAdmin.test.tsx`
-- `frontend/src/app/admin/crudAdmin.test.tsx`
-- `frontend/src/components/admin/CascataVendedorCliente.test.tsx`
-- `frontend/src/components/admin/FormModais.test.tsx`
-- `frontend/src/components/PagamentoModal.test.tsx`
-- `frontend/src/components/admin/PedidoModal.test.tsx`
-- `frontend/src/lib/useResetOnOpen.test.ts`
+- `frontend/tests/app/listasPaginadas.test.tsx`
+- `frontend/tests/app/crudPaginas.test.tsx`
+- `frontend/tests/app/admin/listasAdmin.test.tsx`
+- `frontend/tests/app/admin/crudAdmin.test.tsx`
+- `frontend/tests/components/admin/CascataVendedorCliente.test.tsx`
+- `frontend/tests/components/admin/FormModais.test.tsx`
+- `frontend/tests/components/PagamentoModal.test.tsx`
+- `frontend/tests/components/admin/PedidoModal.test.tsx`
+- `frontend/tests/lib/useResetOnOpen.test.ts`

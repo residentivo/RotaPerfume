@@ -130,6 +130,6 @@ await fetch(`${API}/api/clientes/ID_FORA/inativar`, { method: "PATCH", credentia
 
 `cd frontend && npm test` cobre:
 
-- `frontend/src/app/admin/clientes/page.test.tsx`: botão habilitado ou desabilitado por perfil, com o motivo; `/me` ainda não carregado; criar e recarregar a lista; 403 com a mensagem da API e o texto padrão; 404 ao editar ou inativar (fecha o modal, recarrega e mostra a mensagem); editar e inativar com sucesso; cancelar a confirmação.
-- `frontend/src/app/listasPaginadas.test.tsx`: loading, paginação, ordenação, filtro voltando para a página 1 e erro da API.
-- `frontend/src/components/admin/FormModais.test.tsx` (ClienteModal): abre resetado em "novo", preenchido em "editar", reabre resetado e limpa o erro anterior.
+- `frontend/tests/app/admin/clientes/page.test.tsx`: botão habilitado ou desabilitado por perfil, com o motivo; `/me` ainda não carregado; criar e recarregar a lista; 403 com a mensagem da API e o texto padrão; 404 ao editar ou inativar (fecha o modal, recarrega e mostra a mensagem); editar e inativar com sucesso; cancelar a confirmação.
+- `frontend/tests/app/listasPaginadas.test.tsx`: loading, paginação, ordenação, filtro voltando para a página 1 e erro da API.
+- `frontend/tests/components/admin/FormModais.test.tsx` (ClienteModal): abre resetado em "novo", preenchido em "editar", reabre resetado e limpa o erro anterior.

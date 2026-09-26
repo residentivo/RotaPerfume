@@ -40,21 +40,39 @@ type SMTPEmailService struct {
 	user string
 	pass string
 	from string
+	// tlsConfig é usado no STARTTLS. ServerName é sempre o host configurado
+	// (validação do certificado nunca é desligada por aqui).
+	tlsConfig *tls.Config
 }
 
 // NewSMTPEmailService cria um EmailService real a partir da configuração.
 // Retorna erro se host/user/password/from não estiverem preenchidos —
 // use NewNoopEmailService como fallback quando SMTP não estiver configurado.
 func NewSMTPEmailService(cfg *config.Config) (*SMTPEmailService, error) {
+	return NewSMTPEmailServiceWithTLSConfig(cfg, nil)
+}
+
+// NewSMTPEmailServiceWithTLSConfig é NewSMTPEmailService com a configuração
+// TLS do STARTTLS injetável (ex.: RootCAs de uma CA própria, ou a CA de um
+// servidor SMTP de teste). tlsCfg nil usa as raízes do sistema. A config é
+// clonada e o ServerName é sempre forçado para cfg.SMTPHost.
+func NewSMTPEmailServiceWithTLSConfig(cfg *config.Config, tlsCfg *tls.Config) (*SMTPEmailService, error) {
 	if cfg.SMTPHost == "" || cfg.SMTPUser == "" || cfg.SMTPPassword == "" || cfg.SMTPFrom == "" {
 		return nil, ErrSMTPNaoConfigurado
 	}
+	if tlsCfg == nil {
+		tlsCfg = &tls.Config{}
+	} else {
+		tlsCfg = tlsCfg.Clone()
+	}
+	tlsCfg.ServerName = cfg.SMTPHost
 	return &SMTPEmailService{
-		host: cfg.SMTPHost,
-		port: cfg.SMTPPort,
-		user: cfg.SMTPUser,
-		pass: cfg.SMTPPassword,
-		from: cfg.SMTPFrom,
+		host:      cfg.SMTPHost,
+		port:      cfg.SMTPPort,
+		user:      cfg.SMTPUser,
+		pass:      cfg.SMTPPassword,
+		from:      cfg.SMTPFrom,
+		tlsConfig: tlsCfg,
 	}, nil
 }
 
@@ -92,8 +110,7 @@ func (s *SMTPEmailService) enviar(ctx context.Context, to, subject, body string)
 	defer client.Close()
 
 	if ok, _ := client.Extension("STARTTLS"); ok {
-		tlsConfig := &tls.Config{ServerName: s.host}
-		if err := client.StartTLS(tlsConfig); err != nil {
+		if err := client.StartTLS(s.tlsConfig); err != nil {
 			return fmt.Errorf("services: smtp starttls: %w", err)
 		}
 	} else {
