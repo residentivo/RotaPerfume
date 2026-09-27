@@ -4,6 +4,48 @@
 
 ---
 
+## Lote 10 de 2026-09-26: 1 card concluído (de 1)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "seguir com o BUG-12". O Lote 9 ainda não foi commitado (o usuário não pediu). SEC-10, SEC-09 e DOC-04 ficaram em `afazer.md` aguardando o usuário; INFO-01 é informativo. Resultados finais **conferidos pelo 🤍 MegaBrain em 2026-09-26**.
+>
+> **Fluxo:** 🟡 BackBrain → 🔴 TestBrain → 🟢 FrontBrain → 🔵 SubBrain.
+>
+> **Decisões do 🤍 MegaBrain:**
+> - Corrigir no código, sem migração e sem mudar o contrato JSON. 🌸 DataBrain e 🟣 SecBrain dispensados.
+> - `created_at` NULL sai `"0001-01-01T00:00:00Z"` (mesmo formato de hoje); a tela trata a data zero.
+>
+> **Cobertura** (total do `go tool cover -func` com `-coverpkg=./...`): `rotaperfumes-api` 89.8% (= Lote 9), `shared` 92.9% / 93.3% com integração (Lote 9: 92.8% / 93.2%). `scanSenhaHistorico` 92.3% (ramo `ErrNoRows` inalcançável, registrado no INFO-01). Frontend: Vitest 35 arquivos / 1466 testes, cobertura 95.27 / 90.17 / 92.00 / 95.71, `tsc` e `eslint` limpos.
+>
+> **Documentação (🔵 SubBrain) do lote:** `postman/collection.json` (seção "Mudanças de contrato do Lote 10" na descrição da collection; nota BUG-12 em Histórico de Senhas — Todos e Por Usuário) e `postman/README.md` (seção do Lote 10 e nota em `GET /api/senha-historico`).
+>
+> **Card derivado que ficou em `afazer.md`:** FE-14.
+
+## BUG-12: `scanSenhaHistorico` quebrava com colunas NULL — 2026-09-26
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → 🟢 FrontBrain → 🔵 SubBrain (Postman) → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Backend shared + Frontend
+**Origem:** 🔴 TestBrain, Lote 9.
+
+**Descrição:** `ip_origem` e `user_agent` eram lidos como `string`, mas as colunas aceitam NULL; um registro com NULL derrubava a listagem com `500` ("converting NULL to string is unsupported").
+
+**🟡 BackBrain (2026-09-26) — implementado:** só `scanSenhaHistorico` em `apis/shared/repositories/senha_historico_repository.go`:
+- `ip_origem` e `user_agent`: `sql.NullString` → `""`.
+- Achado extra: `created_at` (`timestamp NULL DEFAULT CURRENT_TIMESTAMP`) com `sql.NullTime` → `time.Time{}`; `u1.nome AS usuario_nome` do LEFT JOIN com `sql.NullString` → `""` (proteção extra). `resetado_por_id`/`u2.nome` já eram `Null*`.
+- Reproduziu o `500` com o código antigo e confirmou a correção no MySQL local; banco restaurado (`AUTO_INCREMENT` de `senha_historico` = 37, 14 linhas).
+
+**🔴 TestBrain (2026-09-26) — testado:**
+- `apis/shared/tests/repositories/bug12_senha_historico_null_test.go`: `TestBUG12_SenhaHistorico_ColunasNull` (20 subtestes), `TestBUG12_SenhaHistorico_ScanTipoInvalido` (10) e `TestIntegracaoBUG12_NullReal` (MySQL real, com registro órfão para `u1.nome` NULL, ordenações e paginação; limpeza conferida).
+- `apis/rotaperfumes-api/tests/handlers/bug12_senha_historico_null_test.go`: 6 subtestes (`200` com `""` e data zero).
+- Os testes novos falham no código anterior (16 + 6) e passam no atual.
+
+**🟢 FrontBrain (2026-09-26) — implementado:** `formatDateTime` em `frontend/src/app/admin/senha-historico/page.tsx` exibe `-` quando `getUTCFullYear() <= 1` (antes: "31/12/1, 20:53:32"). Caso "data zero do Go" no `it.each` de `frontend/tests/app/admin/filtrosAdmin.test.tsx`.
+
+**Resultado final:** listagem robusta a NULL, contrato JSON inalterado; `scanSenhaHistorico` 92.3%.
+
+---
+
 ## Lote 9 de 2026-09-26: 3 cards concluídos (de 3)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "comite o lote 8 e siga com o próximo lote" (Lote 8 commitado em `259f889`). Entraram CHORE-01, BUG-11 e FE-13. SEC-10, SEC-09 e DOC-04 ficaram em `afazer.md` aguardando o usuário; INFO-01 é informativo. Resultados finais **conferidos pelo 🤍 MegaBrain em 2026-09-26**.

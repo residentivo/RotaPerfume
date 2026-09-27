@@ -104,6 +104,7 @@ describe("Senha historico - renderizacao das colunas", () => {
     ["data vazia", "", (t) => t === "-"],
     ["data invalida", "nao-e-data", (t) => t === "nao-e-data"],
     ["data valida", "2026-09-01T10:00:00Z", (t) => /^\d{2}\/\d{2}\/2026/.test(t)],
+    ["data zero do Go", "0001-01-01T00:00:00Z", (t) => t === "-"],
   ])("%s na coluna Data/Hora", async (_n, created_at, confere) => {
     api.apiListSenhaHistorico.mockResolvedValue(paginaHist([hist(1, { created_at })]));
     render(<SenhaHistoricoPage />);

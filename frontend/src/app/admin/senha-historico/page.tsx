@@ -86,6 +86,9 @@ function formatDateTime(iso: string): string {
   try {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
+    // BUG-12: o backend devolve o zero do Go ("0001-01-01T00:00:00Z") quando
+    // created_at e NULL; tratar como ausencia de data.
+    if (d.getUTCFullYear() <= 1) return "-";
     return d.toLocaleString("pt-BR", {
       day: "2-digit",
       month: "2-digit",

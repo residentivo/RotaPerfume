@@ -180,20 +180,31 @@ func (r *SenhaHistoricoRepository) FindAll(ctx context.Context, db *sql.DB, page
 	return out, total, rows.Err()
 }
 
+// scanSenhaHistorico lê uma linha da listagem. As colunas anuláveis no banco
+// (ip_origem, user_agent, created_at) e u1.nome (vem de LEFT JOIN) são lidas
+// em tipos sql.Null* e convertidas para o valor zero do campo do model
+// ("" / time.Time{}) quando NULL — BUG-12: sem isso um único registro com
+// NULL derrubava a listagem inteira com 500. O contrato JSON não muda.
 func scanSenhaHistorico(s rowScanner) (*SenhaHistorico, error) {
 	var h SenhaHistorico
-	var resetadoPorID sql.NullInt64
-	var resetadoPorNome sql.NullString
+	var (
+		resetadoPorID   sql.NullInt64
+		resetadoPorNome sql.NullString
+		ipOrigem        sql.NullString
+		userAgent       sql.NullString
+		createdAt       sql.NullTime
+		usuarioNome     sql.NullString
+	)
 	if err := s.Scan(
 		&h.ID,
 		&h.UsuarioID,
 		&resetadoPorID,
 		&h.SenhaHashAnterior,
-		&h.IPOrigem,
-		&h.UserAgent,
+		&ipOrigem,
+		&userAgent,
 		&h.TipoReset,
-		&h.CreatedAt,
-		&h.UsuarioNome,
+		&createdAt,
+		&usuarioNome,
 		&resetadoPorNome,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -201,9 +212,11 @@ func scanSenhaHistorico(s rowScanner) (*SenhaHistorico, error) {
 		}
 		return nil, fmt.Errorf("repositories: scan senha_historico: %w", err)
 	}
-	if resetadoPorID.Valid {
-		h.ResetadoPorID = resetadoPorID
-	}
+	h.ResetadoPorID = resetadoPorID
 	h.ResetadoPorNome = resetadoPorNome
+	h.IPOrigem = ipOrigem.String
+	h.UserAgent = userAgent.String
+	h.CreatedAt = createdAt.Time
+	h.UsuarioNome = usuarioNome.String
 	return &h, nil
 }

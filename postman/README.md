@@ -129,6 +129,14 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | BUG-11 | `POST /api/usuarios` | Ordem: INSERT → e-mail com a senha inicial → releitura. Se só a releitura falhar: `201` (antes: erro, com o usuário gravado e sem e-mail), com `email_enviado` correto, `created_at`/`updated_at` zerados e `vendedor_nome` vazio; log `[usuarios] criado, mas falhou a releitura: id=...`. Falha no INSERT continua com erro e sem e-mail. |
 | CHORE-01 | (repositório) | `*.tsbuildinfo` no `.gitignore`; `frontend/tsconfig.tsbuildinfo` deixou de ser rastreado. Sem mudança na API. |
 
+## Mudanças de contrato do Lote 10 (2026-09-26)
+
+> Não muda o formato da resposta, só a robustez. Detalhe nas descrições marcadas com `(BUG-12, Lote 10, 2026-09-26)` na collection.
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| BUG-12 | `GET /api/senha-historico`, `GET /api/senha-historico/{usuario_id}` | Registro com NULL no banco não derruba mais a listagem (antes: `500` "converting NULL to string is unsupported"). `ip_origem`/`user_agent` NULL saem `""`; `created_at` NULL sai `"0001-01-01T00:00:00Z"`; `usuario_nome` de usuário inexistente sai `""`. A tela `admin/senha-historico` exibe `-` para a data zero. |
+
 ## Endpoints
 
 ### Healthcheck
@@ -301,6 +309,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Query:** `?page=1&limit=20&order_by=created_at&order_dir=desc`
 - **Descrição:** Lista global paginada de alterações de senha (com tipo, IP, user agent)
 - **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, usuario_id, tipo_reset, created_at, usuario_nome, resetado_por_nome, ip_origem` (default: `id`; as três últimas desde o FE-13, Lote 9); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente em `id` (sem erro 400). Quando a coluna não é `id`, desempate por `id DESC`. `resetado_por_nome` nulo vem primeiro em `asc` e por último em `desc`.
+- **Campos NULL no banco (BUG-12, Lote 10):** `ip_origem`/`user_agent` podem vir `""` e `created_at` pode vir `"0001-01-01T00:00:00Z"` (antes a listagem dava `500`). Vale também para a rota por usuário.
 
 #### GET /api/senha-historico/{usuario_id}
 - **Auth:** Bearer Token (admin)

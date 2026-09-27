@@ -1,25 +1,21 @@
 # A Fazer
 
-> Os cards CHORE-01, BUG-11 e FE-13 foram concluídos no Lote 9 (2026-09-26; ver `feito.md`). SEC-10, SEC-09 e DOC-04 aguardam a priorização do usuário; INFO-01 é só informativo. O card BUG-12 foi registrado no fechamento do Lote 9.
+> O card BUG-12 foi concluído no Lote 10 (2026-09-26; ver `feito.md`). SEC-10, SEC-09, DOC-04 e FE-14 aguardam a priorização do usuário; INFO-01 é só informativo. O card FE-14 foi registrado no fechamento do Lote 10.
 
 ---
 
-## BUG-12: `scanSenhaHistorico` lê `ip_origem` e `user_agent` como string, mas as colunas aceitam NULL — prioridade BAIXA
+## FE-14: formatador de data único que trate a data zero do Go — prioridade BAIXA
 
-**Status:** não iniciado
-**Camada:** Backend shared (ou Database)
-**Responsável:** 🟡 BackBrain **ou** 🌸 DataBrain (testes: 🔴 TestBrain)
-**Origem:** 🔴 TestBrain, Lote 9 (2026-09-26).
+**Status:** não iniciado; aguarda a priorização do usuário
+**Camada:** Frontend
+**Responsável:** 🟢 FrontBrain (testes: 🔴 TestBrain)
+**Origem:** 🟢 FrontBrain, BUG-12 (Lote 10, 2026-09-26).
 
-**Descrição:**
-- Em `apis/shared/repositories/senha_historico_repository.go`, o `scanSenhaHistorico` lê `ip_origem` e `user_agent` como `string`, mas as colunas aceitam NULL no banco. Um registro com NULL derruba a listagem com `500` ("converting NULL to string is unsupported").
-- Com a ordenação por `ip_origem asc` (FE-13), esse registro cairia na primeira página.
-- Hoje há 0 linhas com NULL e o `Create` sempre grava string: risco latente.
+**Descrição:** Os formatadores de data locais só tratam string vazia; a data zero do Go (`"0001-01-01T00:00:00Z"`) aparece como "31/12/1, ...". Estão em: `src/app/pagamentos/page.tsx`, `src/components/PagamentoModal.tsx`, `src/app/admin/{estoque,clientes,pedidos,visitas,oportunidades}/page.tsx` e `src/components/admin/VendedorModal.tsx` (o de `admin/senha-historico` já trata, desde o BUG-12). Risco hoje baixo: após o BUG-09 os creates devolvem timestamps reais.
 
-**Ação esperada (escolher uma):**
-- 🟡 BackBrain: ler com `sql.NullString` ou `COALESCE`.
-- 🌸 DataBrain: tornar as colunas `NOT NULL` (com migração e revert).
-- 🔴 TestBrain: cobrir registro com NULL na listagem (e na ordenação por `ip_origem`).
+**Ação esperada:**
+- 🟢 FrontBrain: criar um formatador único em `src/lib` que devolva `-` para vazio e para a data zero do Go, e substituir os formatadores locais (incluindo o de `senha-historico`).
+- 🔴 TestBrain: cobrir em `tests/lib`.
 
 ---
 
@@ -49,6 +45,8 @@
 **Origem:** 🔴 TestBrain, TST-02 e TST-03 (Lote 7, 2026-09-26). Aceito pelo 🤍 MegaBrain.
 
 **Descrição:** As linhas que restam sem cobertura no Go só são alcançáveis mudando o código de produção: erros de `crypto/rand` (`password_generator`), `os.Getwd`/`os.Executable`, `rows.Columns()`, a escrita no `DATA` do SMTP, a escrita do cabeçalho num `csv.Writer` com buffer e os ramos de `maskDSN` sem `@`/`:`. Também ficam fora da meta os `cmd/*/main.go` finos e o `cmd/server`. Não há ação a tomar, salvo se o usuário pedir 100%.
+
+> **Nota (BUG-12, Lote 10):** em `scanSenhaHistorico` (92.3%), o ramo `sql.ErrNoRows` → `ErrNotFound` é inalcançável, porque a função só é chamada dentro de `rows.Next`.
 
 ---
 
