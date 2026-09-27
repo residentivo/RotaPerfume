@@ -28,6 +28,7 @@ import {
   apiDeletePedido,
 } from "@/lib/api";
 import { Pedido, PedidoDetalhe, PedidoInput } from "@/lib/types";
+import { formatarData } from "@/lib/formatarData";
 
 type SortKey =
   | "pedido_id_origem"
@@ -69,13 +70,6 @@ const currencyFmt = new Intl.NumberFormat("pt-BR", {
 
 function fmtValor(v: number): string {
   return currencyFmt.format(v ?? 0);
-}
-
-function fmtDate(dateStr: string): string {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr.length <= 10 ? `${dateStr}T00:00:00` : dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("pt-BR");
 }
 
 // Mapeia a sortKey interna do frontend para o campo aceito pelo backend em
@@ -400,7 +394,7 @@ function PedidosContent() {
       align: "center",
       sortable: true,
       render: (p) => (
-        <span className="text-slate-600">{fmtDate(p.data_pedido)}</span>
+        <span className="text-slate-600">{formatarData(p.data_pedido)}</span>
       ),
     },
     {

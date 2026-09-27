@@ -5,6 +5,7 @@ package services
 import (
 	"crypto/rand"
 	"fmt"
+	"math/big"
 )
 
 // Conjuntos de caracteres usados na geração de senha aleatória. Cada conjunto
@@ -62,24 +63,61 @@ func GerarSenhaAleatoria(n int) (string, error) {
 	return string(senha), nil
 }
 
-// charAleatorio escolhe um caractere aleatório de um conjunto usando crypto/rand.
-func charAleatorio(conjunto string) (byte, error) {
-	b := make([]byte, 1)
-	if _, err := rand.Read(b); err != nil {
+// alfanumerico é o alfabeto de SenhaAlfanumerica ([a-zA-Z0-9]).
+const alfanumerico = minusculas + maiusculas + digitos
+
+// SenhaAlfanumerica gera uma senha de n caracteres do alfabeto [a-zA-Z0-9]
+// com distribuição uniforme (crypto/rand, sem viés de módulo). Usada pelas
+// CLIs de seed/reset (tools/seedusers, tools/resetpassword) quando nenhuma
+// senha é informada. n <= 0 devolve string vazia.
+func SenhaAlfanumerica(n int) (string, error) {
+	if n <= 0 {
+		return "", nil
+	}
+	senha := make([]byte, n)
+	for i := range senha {
+		c, err := charAleatorio(alfanumerico)
+		if err != nil {
+			return "", fmt.Errorf("services: gerar senha alfanumérica: %w", err)
+		}
+		senha[i] = c
+	}
+	return string(senha), nil
+}
+
+// indiceAleatorio devolve um inteiro uniforme em [0, n) via crypto/rand.Int
+// (SEC-10). Substitui o antigo byte%n, que tinha viés de módulo: com 256
+// valores de byte e n que não divide 256 (ex.: 62), os primeiros 256%n
+// índices saíam com probabilidade maior. n deve ser > 0.
+func indiceAleatorio(n int) (int, error) {
+	if n <= 0 {
+		return 0, fmt.Errorf("services: indiceAleatorio: n inválido (%d)", n)
+	}
+	v, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	if err != nil {
 		return 0, err
 	}
-	return conjunto[int(b[0])%len(conjunto)], nil
+	return int(v.Int64()), nil
+}
+
+// charAleatorio escolhe um caractere uniforme de um conjunto usando crypto/rand.
+func charAleatorio(conjunto string) (byte, error) {
+	i, err := indiceAleatorio(len(conjunto))
+	if err != nil {
+		return 0, err
+	}
+	return conjunto[i], nil
 }
 
 // embaralhar aplica um Fisher-Yates shuffle usando crypto/rand como fonte
-// de aleatoriedade (evita viés previsível de math/rand).
+// de aleatoriedade (evita viés previsível de math/rand e, via
+// indiceAleatorio, o viés de módulo).
 func embaralhar(b []byte) error {
 	for i := len(b) - 1; i > 0; i-- {
-		jBytes := make([]byte, 1)
-		if _, err := rand.Read(jBytes); err != nil {
+		j, err := indiceAleatorio(i + 1)
+		if err != nil {
 			return err
 		}
-		j := int(jBytes[0]) % (i + 1)
 		b[i], b[j] = b[j], b[i]
 	}
 	return nil

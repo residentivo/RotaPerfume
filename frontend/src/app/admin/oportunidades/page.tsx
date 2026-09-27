@@ -29,6 +29,7 @@ import {
 } from "@/lib/api";
 import { useSessionUser } from "@/lib/session";
 import { Oportunidade, OportunidadeInput, Vendedor, Cliente } from "@/lib/types";
+import { formatarData } from "@/lib/formatarData";
 
 type SortKey =
   | "oportunidade_id"
@@ -100,13 +101,6 @@ const currencyFmt = new Intl.NumberFormat("pt-BR", {
 
 function fmtValor(v: number): string {
   return currencyFmt.format(v ?? 0);
-}
-
-function fmtDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr.length <= 10 ? `${dateStr}T00:00:00` : dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("pt-BR");
 }
 
 function OportunidadesContent() {
@@ -506,7 +500,7 @@ function OportunidadesContent() {
       align: "center",
       sortable: true,
       render: (o) => (
-        <span className="text-slate-600">{fmtDate(o.data_abertura)}</span>
+        <span className="text-slate-600">{formatarData(o.data_abertura)}</span>
       ),
     },
     {
@@ -516,7 +510,7 @@ function OportunidadesContent() {
       align: "center",
       sortable: true,
       render: (o) => (
-        <span className="text-slate-600">{fmtDate(o.data_fechamento)}</span>
+        <span className="text-slate-600">{formatarData(o.data_fechamento)}</span>
       ),
     },
     {

@@ -445,14 +445,21 @@ func TestGetEnvEDSN(t *testing.T) {
 	for _, k := range []string{"DB_USUARIO", "DB_SENHA", "DB_HOST", "DB_PORT", "DB_NAME"} {
 		t.Setenv(k, "")
 	}
-	assert.Equal(t, "golang:golang@tcp(localhost:3306)/rotaperfumes?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true", resetpassword.DSN())
+	// SEC-10: sem fallback golang/golang para usuário/senha.
+	_, err := resetpassword.DSN()
+	assert.ErrorIs(t, err, resetpassword.ErrCredenciaisDB)
 
 	t.Setenv("DB_USUARIO", "u")
 	t.Setenv("DB_SENHA", "s")
+	dsn, err := resetpassword.DSN()
+	require.NoError(t, err)
+	assert.Equal(t, "u:s@tcp(localhost:3306)/rotaperfumes?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true", dsn)
+
 	t.Setenv("DB_HOST", "db")
 	t.Setenv("DB_PORT", "3307")
 	t.Setenv("DB_NAME", "rp")
-	dsn := resetpassword.DSN()
+	dsn, err = resetpassword.DSN()
+	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(dsn, "u:s@tcp(db:3307)/rp?"), dsn)
 	assert.Contains(t, dsn, "clientFoundRows=true", "mesma regra de config.DSN (BUG-04)")
 	assert.Contains(t, dsn, "loc=Local")

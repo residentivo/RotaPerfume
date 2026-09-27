@@ -3,12 +3,22 @@
 // sempre existe (cria se faltar) e que todos os placeholders são
 // substituídos por hashes reais.
 //
-// Uso (via comando):
+// Uso (via comando; exige DB_USUARIO e DB_SENHA no .env):
 //
 //	cd apis/shared && go run ./cmd/resetpassword -list
-//	cd apis/shared && go run ./cmd/resetpassword -email=admin@rotaperfumes.com.br -password=Senha123 -role=admin
-//	cd apis/shared && go run ./cmd/resetpassword -all-users -password=SenhaPadrao123
-//	cd apis/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
+//	cd apis/shared && go run ./cmd/resetpassword -email=admin@rotaperfumes.com.br -password-prompt -role=admin
+//	printf '%s\n' "$NOVA_SENHA" | go run ./cmd/resetpassword -all-users -password-stdin
+//	cd apis/shared && go run ./cmd/resetpassword -create-admin   # SEED_ADMIN_PASSWORD do .env ou aleatória
+//
+// Fontes de senha (no máximo uma):
+//   - -password-prompt: lê do terminal sem eco, com confirmação. No Git Bash
+//     (mintty) o stdin não é um terminal: use `winpty go run ...` ou
+//     -password-stdin.
+//   - -password-stdin: lê a 1ª linha do stdin (sem o \r\n final).
+//   - -password=...: DEPRECIADA (fica no histórico do shell); ainda aceita,
+//     com aviso no stderr.
+//   - nenhuma: SEED_ADMIN_PASSWORD / SEED_USER_PASSWORD do .env
+//     (-create-admin / -all-users) ou senha aleatória impressa no console.
 //
 // Comportamento:
 //   - -list: lista usuários com status do hash (PLACEHOLDER / OK / MISSING_ADMIN).
@@ -18,8 +28,9 @@
 package resetpassword
 
 import (
+	"bufio"
+	"bytes"
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -30,6 +41,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/rotaperfumes/shared/services"
 )
 
 // BcryptCost é o custo bcrypt dos hashes gravados pelo comando.
@@ -49,33 +62,136 @@ type DB interface {
 // Options reúne as flags do comando.
 type Options struct {
 	Email       string // -email: usuário a criar/atualizar
-	Password    string // -password: senha em texto puro (vazio = env/aleatória)
+	Password    string // -password: senha em texto puro (DEPRECIADA; vazio = env/aleatória)
 	Role        string // -role: papel ao criar novo usuário
 	Nome        string // -nome: nome ao criar novo usuário
 	IDVendedor  int64  // -id-vendedor: vendedor vinculado ao criar
 	AllUsers    bool   // -all-users
 	CreateAdmin bool   // -create-admin
 	List        bool   // -list
+
+	PasswordStdin  bool // -password-stdin: lê a senha da 1ª linha do stdin
+	PasswordPrompt bool // -password-prompt: lê a senha do terminal, sem eco
 }
 
 // PasswordGenerator gera uma senha aleatória de n caracteres.
 type PasswordGenerator func(n int) (string, error)
 
-// DSN monta o DSN a partir das variáveis de ambiente DB_*.
+// ErrCredenciaisDB indica DB_USUARIO/DB_SENHA ausentes ou vazios no ambiente.
+var ErrCredenciaisDB = errors.New("defina DB_USUARIO/DB_SENHA no .env")
+
+// AvisoPasswordDepreciada é escrito no stderr quando -password é usada.
+const AvisoPasswordDepreciada = "resetpassword: aviso: -password fica no histórico do shell; prefira -password-prompt ou -password-stdin (flag depreciada)"
+
+// DSN monta o DSN a partir das variáveis de ambiente DB_*. DB_USUARIO e
+// DB_SENHA são obrigatórios (sem fallback; ErrCredenciaisDB se ausentes ou
+// vazios); DB_HOST, DB_PORT e DB_NAME mantêm os defaults locais.
 //
 // Mesmo DSN de config.DSN() (ver lá a regra de clientFoundRows=true:
 // condições "só se ainda não ..." vão no WHERE, nunca deduzidas de
 // RowsAffected=0). Os upserts abaixo (UPDATE e, se 0 linhas, INSERT)
 // continuam corretos: com a flag, 0 significa "e-mail não existe".
-func DSN() string {
+func DSN() (string, error) {
+	usuario, okU := os.LookupEnv("DB_USUARIO")
+	senha, okS := os.LookupEnv("DB_SENHA")
+	if !okU || !okS || usuario == "" || senha == "" {
+		return "", ErrCredenciaisDB
+	}
 	return fmt.Sprintf(
 		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true",
-		GetEnv("DB_USUARIO", "golang"),
-		GetEnv("DB_SENHA", "golang"),
+		usuario,
+		senha,
 		GetEnv("DB_HOST", "localhost"),
 		GetEnv("DB_PORT", "3306"),
 		GetEnv("DB_NAME", "rotaperfumes"),
-	)
+	), nil
+}
+
+// ResolverSenha escolhe a senha a partir das flags de opts (no máximo uma
+// fonte: -password, -password-stdin ou -password-prompt). Sem nenhuma fonte
+// devolve "" e nil: o Run segue com env SEED_* ou senha aleatória.
+//
+// As dependências são injetadas (o comando passa os.Stdin, term.IsTerminal,
+// term.ReadPassword e os.Stderr): stdin é lido só com -password-stdin;
+// isTerminal/readNoEcho só com -password-prompt; stderr recebe o aviso de
+// depreciação de -password e os rótulos do prompt.
+func ResolverSenha(opts Options, stdin io.Reader, isTerminal func() bool, readNoEcho func() ([]byte, error), stderr io.Writer) (string, error) {
+	fontes := 0
+	for _, usada := range []bool{opts.Password != "", opts.PasswordStdin, opts.PasswordPrompt} {
+		if usada {
+			fontes++
+		}
+	}
+	switch {
+	case fontes > 1:
+		return "", errors.New("resetpassword: uso: informe no máximo uma fonte de senha (-password, -password-stdin ou -password-prompt)")
+	case opts.Password != "":
+		fmt.Fprintln(stderr, AvisoPasswordDepreciada)
+		return opts.Password, nil
+	case opts.PasswordStdin:
+		return senhaDoStdin(stdin)
+	case opts.PasswordPrompt:
+		return senhaDoPrompt(isTerminal, readNoEcho, stderr)
+	}
+	return "", nil
+}
+
+// senhaDoStdin lê a 1ª linha de stdin, sem o \r\n final; vazia é erro.
+func senhaDoStdin(stdin io.Reader) (string, error) {
+	linha, err := bufio.NewReader(stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("resetpassword: -password-stdin: leitura: %w", err)
+	}
+	senha := strings.TrimRight(linha, "\r\n")
+	if senha == "" {
+		return "", errors.New("resetpassword: -password-stdin: senha vazia (a 1ª linha do stdin está vazia)")
+	}
+	return senha, nil
+}
+
+// senhaDoPrompt lê a senha do terminal sem eco, pedindo confirmação.
+func senhaDoPrompt(isTerminal func() bool, readNoEcho func() ([]byte, error), stderr io.Writer) (string, error) {
+	if !isTerminal() {
+		return "", errors.New("resetpassword: -password-prompt exige um terminal interativo; use -password-stdin " +
+			"(ex.: printf '%s\\n' \"$SENHA\" | go run ./cmd/resetpassword ... -password-stdin) " +
+			"ou, no Git Bash, rode via `winpty go run ./cmd/resetpassword ...`")
+	}
+	senha, err := lerSemEco(readNoEcho, stderr, "Nova senha: ")
+	if err != nil {
+		return "", err
+	}
+	// Registrado já aqui: zera a 1ª senha mesmo se a confirmação falhar.
+	defer limpar(senha)
+	confirmacao, err := lerSemEco(readNoEcho, stderr, "Confirme a senha: ")
+	if err != nil {
+		return "", err
+	}
+	defer limpar(confirmacao)
+	if len(senha) == 0 {
+		return "", errors.New("resetpassword: -password-prompt: senha vazia")
+	}
+	if !bytes.Equal(senha, confirmacao) {
+		return "", errors.New("resetpassword: -password-prompt: as senhas não conferem")
+	}
+	return string(senha), nil
+}
+
+// lerSemEco escreve o rótulo em stderr e lê uma senha sem eco.
+func lerSemEco(readNoEcho func() ([]byte, error), stderr io.Writer, rotulo string) ([]byte, error) {
+	fmt.Fprint(stderr, rotulo)
+	b, err := readNoEcho()
+	fmt.Fprintln(stderr) // o terminal não ecoa o Enter
+	if err != nil {
+		return nil, fmt.Errorf("resetpassword: -password-prompt: leitura: %w", err)
+	}
+	return b, nil
+}
+
+// limpar zera o buffer da senha lida (reduz o tempo em memória).
+func limpar(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }
 
 // Run executa a ação escolhida em opts. A saída tabular e as senhas geradas
@@ -351,18 +467,10 @@ func Truncate(s string, n int) string {
 	return s[:n-3] + "..."
 }
 
-// GenerateRandomPassword devolve uma senha aleatória de n caracteres [a-zA-Z0-9].
+// GenerateRandomPassword devolve uma senha aleatória de n caracteres
+// [a-zA-Z0-9], uniforme (delega a services.SenhaAlfanumerica).
 func GenerateRandomPassword(n int) (string, error) {
-	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	out := make([]byte, n)
-	for i, b := range buf {
-		out[i] = alphabet[int(b)%len(alphabet)]
-	}
-	return string(out), nil
+	return services.SenhaAlfanumerica(n)
 }
 
 // GetEnv devolve a env key ou fallback se estiver vazia.

@@ -15,6 +15,7 @@ import { Paginador } from "@/components/ui/Paginador";
 import { Select } from "@/components/ui/Select";
 import { apiListSenhaHistorico } from "@/lib/api";
 import { SenhaHistoricoItem, TipoReset } from "@/lib/types";
+import { formatarDataHora } from "@/lib/formatarData";
 
 type SortKey = "id" | "created_at" | "usuario_nome" | "tipo_reset" | "resetado_por_nome" | "ip_origem";
 type SortDir = "asc" | "desc";
@@ -78,27 +79,6 @@ function tipoLabel(tipo: TipoReset): string {
     default:
       // Valor desconhecido: exibe o valor bruto em vez de rotular errado.
       return tipo;
-  }
-}
-
-function formatDateTime(iso: string): string {
-  if (!iso) return "-";
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    // BUG-12: o backend devolve o zero do Go ("0001-01-01T00:00:00Z") quando
-    // created_at e NULL; tratar como ausencia de data.
-    if (d.getUTCFullYear() <= 1) return "-";
-    return d.toLocaleString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } catch {
-    return iso;
   }
 }
 
@@ -249,7 +229,7 @@ export default function SenhaHistoricoPage() {
       sortable: true,
       render: (it) => (
         <span className="font-mono text-xs text-slate-700">
-          {formatDateTime(it.created_at)}
+          {formatarDataHora(it.created_at)}
         </span>
       ),
     },

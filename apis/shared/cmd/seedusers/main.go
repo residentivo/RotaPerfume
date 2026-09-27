@@ -1,9 +1,12 @@
-// Command seedusers gera hashes bcrypt para os placeholders nos SQLs de seed
-// e executa os arquivos contra o MySQL. A lógica fica em tools/seedusers.
+// Command seedusers gera hashes bcrypt para os placeholders dos SQLs de seed,
+// grava cópias renderizadas em <raiz>/tmp/seed (sql/ nunca é alterado) e as
+// executa contra o MySQL. A lógica fica em tools/seedusers.
 //
 // Uso:
 //
-//	cd apis/shared && go run ./cmd/seedusers
+//	cd apis/shared && go run ./cmd/seedusers            # exige DB_USUARIO/DB_SENHA no .env; apaga tmp/seed ao final
+//	cd apis/shared && go run ./cmd/seedusers -no-exec   # mantém os SQLs em tmp/seed (apague depois)
+//	cd apis/shared && go run ./cmd/seedusers -dry-run   # só imprime os hashes
 package main
 
 import (
@@ -18,8 +21,8 @@ import (
 
 func main() {
 	var opts seedusers.Options
-	flag.BoolVar(&opts.NoExec, "no-exec", false, "apenas substitui placeholders; não executa SQL no MySQL")
-	flag.BoolVar(&opts.DryRun, "dry-run", false, "imprime hashes gerados sem modificar arquivos")
+	flag.BoolVar(&opts.NoExec, "no-exec", false, "apenas grava os SQLs com hash em tmp/seed (mantidos; apague depois); não executa no MySQL")
+	flag.BoolVar(&opts.DryRun, "dry-run", false, "imprime hashes gerados sem gravar arquivos")
 	flag.BoolVar(&opts.ShowPassword, "show-password", false, "exibe as senhas de seed geradas/usadas no console (cuidado: evite em ambientes compartilhados)")
 	flag.Parse()
 

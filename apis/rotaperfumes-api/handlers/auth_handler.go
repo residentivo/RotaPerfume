@@ -54,6 +54,21 @@ type AuthHandler struct {
 	refreshLimiter       *middleware.LoginRateLimiter
 	resetPasswordLimiter *middleware.LoginRateLimiter
 	captcha              sharedsvc.CaptchaVerifier
+	// alerta avisa usuário/admins sobre reuso de refresh token (SEC-09).
+	// nil = apenas log.
+	alerta AlertaSegurancaNotificador
+}
+
+// AlertaSegurancaNotificador agenda o alerta de reuso de refresh token já
+// rotacionado. Implementações não devem bloquear a requisição.
+type AlertaSegurancaNotificador interface {
+	Notificar(userID, tokenID int64, ip, ua string)
+}
+
+// SetAlertaSeguranca injeta o notificador de alertas de segurança (SEC-09).
+// Sem ele (nil), o reuso de token gera apenas log.
+func (h *AuthHandler) SetAlertaSeguranca(n AlertaSegurancaNotificador) {
+	h.alerta = n
 }
 
 // NewAuthHandler cria um AuthHandler com pool de conexão injetado.
@@ -444,6 +459,10 @@ func (h *AuthHandler) tratarTokenRevogadoForaDaJanela(ctx context.Context, err e
 	corte := time.Now().Truncate(time.Second)
 	if err := h.repo.InvalidarSessoes(ctx, h.db, revogado.UsuarioID, corte); err != nil {
 		log.Printf("[auth][seguranca] refresh: falha ao invalidar access tokens após reuso: user_id=%d: %v", revogado.UsuarioID, err)
+	}
+	// SEC-09: avisa usuário e admins (assíncrono, com dedup/teto próprios).
+	if h.alerta != nil {
+		h.alerta.Notificar(revogado.UsuarioID, revogado.TokenID, ipOrigem, userAgent)
 	}
 }
 

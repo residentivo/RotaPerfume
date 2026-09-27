@@ -21,6 +21,7 @@ import { EstoqueModal } from "@/components/admin/EstoqueModal";
 import { apiListEstoque, apiCreateEstoque, apiUpdateEstoque } from "@/lib/api";
 import { Estoque, EstoqueInput } from "@/lib/types";
 import { useSessionUser } from "@/lib/session";
+import { formatarData } from "@/lib/formatarData";
 
 type SortKey =
   | "id"
@@ -44,13 +45,6 @@ const LIMIT_OPTIONS = [
   { value: "50", label: "50 por pagina" },
   { value: "100", label: "100 por pagina" },
 ];
-
-function fmtDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr.length <= 10 ? `${dateStr}T00:00:00` : dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("pt-BR");
-}
 
 function EstoquePageContent() {
   // Papel vem da sessao em memoria validada por /api/auth/me (nao do cache
@@ -314,7 +308,7 @@ function EstoquePageContent() {
       align: "center",
       sortable: true,
       render: (e) => (
-        <span className="text-slate-600">{fmtDate(e.data_snapshot)}</span>
+        <span className="text-slate-600">{formatarData(e.data_snapshot)}</span>
       ),
     },
     ...(admin

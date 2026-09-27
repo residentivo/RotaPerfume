@@ -14,23 +14,17 @@ import {
   Pedido,
 } from "@/lib/types";
 import { useResetOnOpen } from "@/lib/useResetOnOpen";
+import { formatarData } from "@/lib/formatarData";
 
 const currencyFmt = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 });
 
-function fmtDate(dateStr: string): string {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("pt-BR");
-}
-
 function pedidoOptionLabel(p: Pedido): string {
   return `#${p.pedido_id_origem} - ${p.cliente_nome} - ${currencyFmt.format(
     p.valor_total ?? 0
-  )} - ${fmtDate(p.data_pedido)}`;
+  )} - ${formatarData(p.data_pedido)}`;
 }
 
 interface PagamentoModalProps {

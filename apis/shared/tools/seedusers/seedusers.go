@@ -1,20 +1,28 @@
 // Package seedusers implementa o comando cmd/seedusers: gera hashes bcrypt
-// para os placeholders nos SQLs de seed e executa os arquivos contra o MySQL.
+// para os placeholders dos SQLs de seed, grava cópias renderizadas em
+// <raiz>/tmp/seed e executa essas cópias contra o MySQL. Os arquivos de sql/
+// nunca são alterados (SEC-10).
 //
 // Uso (via comando):
 //
-//	cd apis/shared && go run ./cmd/seedusers
+//	cd apis/shared && go run ./cmd/seedusers               # renderiza, executa e apaga tmp/seed
+//	cd apis/shared && go run ./cmd/seedusers -no-exec      # só renderiza em tmp/seed (apague depois!)
+//	cd apis/shared && go run ./cmd/seedusers -dry-run      # só imprime os hashes
 //
 // Faz:
-//  1. Lê senha real do env (ou defaults: Admin@123, Mudar@123).
-//  2. Gera 2 hashes bcrypt com cost configurado em BCRYPT_COST (default 12).
-//  3. Substitui placeholders nos SQLs: 02_seed_admin.sql e 03_seed_vendedores.sql.
-//  4. Opcionalmente executa os SQLs atualizados (pula com --no-exec).
+//  1. Lê as senhas de SEED_ADMIN_PASSWORD e SEED_USER_PASSWORD; a que não
+//     estiver definida vira uma senha aleatória de 16 caracteres (modo dev).
+//     Não há senha padrão fixa.
+//  2. Gera 2 hashes bcrypt com o custo de BCRYPT_COST (default 12).
+//  3. Lê sql/02_seed_admin.sql e sql/03_seed_vendedores.sql, substitui os
+//     placeholders e grava as cópias em <raiz>/tmp/seed (perm 0600).
+//  4. Executa as cópias (exige DB_USUARIO e DB_SENHA no .env) e as apaga ao
+//     final, mesmo em erro. Com -no-exec as cópias ficam em tmp/seed.
 //  5. Reporta contadores e códigos de saída claros.
 package seedusers
 
 import (
-	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -31,20 +39,21 @@ import (
 // Tag prefixa os logs e as mensagens de erro do comando.
 const Tag = "seedusers"
 
-const (
-	defaultAdminPassword = "Admin@123"
-	defaultUserPassword  = "Mudar@123"
-)
-
 // Placeholders reconhecidos nos SQLs (devem existir literalmente nos arquivos).
 const (
 	PlaceholderAdmin = "$2a$12$XXXXPLACEHOLDER_ADMIN_PRECISA_SER_GERADO_PELO_GOXXXX"
 	PlaceholderUser  = "$2a$12$XXXXPLACEHOLDER_MUDAR123_SERA_SUBSTITUIDO_PELO_GOXXXX"
 )
 
+// ErrSemPlaceholder indica um SQL de seed sem nenhum placeholder conhecido.
+var ErrSemPlaceholder = errors.New("sem placeholder (arquivo já contém hash real? restaure com git checkout)")
+
+// ErrCredenciaisDB indica DB_USUARIO/DB_SENHA ausentes ou vazios no ambiente.
+var ErrCredenciaisDB = errors.New("defina DB_USUARIO/DB_SENHA no .env")
+
 // Options reúne as flags do comando.
 type Options struct {
-	NoExec       bool // -no-exec: só substitui placeholders
+	NoExec       bool // -no-exec: só renderiza os SQLs em tmp/seed
 	DryRun       bool // -dry-run: só imprime os hashes
 	ShowPassword bool // -show-password: imprime as senhas em claro
 }
@@ -58,26 +67,34 @@ type Deps struct {
 	Out io.Writer
 	// ProjectRoot localiza a raiz do repositório (FindProjectRoot no comando).
 	ProjectRoot func() (string, error)
-	// RunSQL executa cada SQL atualizado (RunMySQL no comando).
+	// RunSQL executa cada SQL renderizado (RunMySQL no comando).
 	RunSQL SQLRunner
 }
 
-// Run gera os hashes, substitui os placeholders nos SQLs de seed e (salvo
-// NoExec/DryRun) executa os SQLs. Erros fatais são devolvidos sem o prefixo Tag.
+// Run gera os hashes, renderiza os SQLs de seed em <raiz>/tmp/seed e (salvo
+// NoExec/DryRun) executa as cópias, apagando-as ao final. Erros fatais são
+// devolvidos sem o prefixo Tag.
 func Run(cfg *config.Config, opts Options, deps Deps) error {
 	out := deps.Out
-	auth := services.NewAuthService()
-	// Modo dev (sem SEED_*_Password definidos): gera senhas aleatórias.
-	// Modo prod: exige SEED_ADMIN_PASSWORD e SEED_USER_PASSWORD no .env.
-	adminPwd, err := ResolveSeedPassword("SEED_ADMIN_PASSWORD", defaultAdminPassword)
+	vaiExecutar := !opts.NoExec && !opts.DryRun
+	if vaiExecutar {
+		// Falha cedo, antes do bcrypt: sem credenciais explícitas o mysql
+		// rodaria com um usuário/senha padrão (SEC-10).
+		if err := exigirCredenciaisDB(); err != nil {
+			return err
+		}
+	}
+
+	adminPwd, err := ResolveSeedPassword("SEED_ADMIN_PASSWORD")
 	if err != nil {
 		return err
 	}
-	userPwd, err := ResolveSeedPassword("SEED_USER_PASSWORD", defaultUserPassword)
+	userPwd, err := ResolveSeedPassword("SEED_USER_PASSWORD")
 	if err != nil {
 		return err
 	}
 
+	auth := services.NewAuthService()
 	adminHash, err := auth.HashPassword(cfg, adminPwd)
 	if err != nil {
 		return fmt.Errorf("hash admin falhou: %w", err)
@@ -90,19 +107,7 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 	log.Printf("seedusers: cost=%d, admin_hash=%s..., user_hash=%s...",
 		cfg.BCryptCost, ShortHash(adminHash), ShortHash(userHash))
 
-	// As senhas de seed só são impressas em claro no console quando
-	// --show-password é passado explicitamente — evita vazamento acidental
-	// em logs de CI/terminal compartilhado.
-	fmt.Fprintln(out)
-	if opts.ShowPassword {
-		fmt.Fprintln(out, "=== CREDENCIAIS DE SEED ===")
-		fmt.Fprintf(out, "ADMIN_PASSWORD=%s\n", adminPwd)
-		fmt.Fprintf(out, "USER_PASSWORD =%s\n", userPwd)
-		fmt.Fprintln(out, "============================")
-	} else {
-		fmt.Fprintln(out, "=== CREDENCIAIS DE SEED: definidas com sucesso (use --show-password para exibir) ===")
-	}
-	fmt.Fprintln(out)
+	imprimirCredenciais(out, opts.ShowPassword, adminPwd, userPwd)
 
 	if opts.DryRun {
 		fmt.Fprintln(out, "=== DRY-RUN ===")
@@ -117,64 +122,109 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 		return err
 	}
 
-	sqlFiles := []string{
-		filepath.Join(projectRoot, "sql", "02_seed_admin.sql"),
-		filepath.Join(projectRoot, "sql", "03_seed_vendedores.sql"),
+	repl := map[string]string{PlaceholderAdmin: adminHash, PlaceholderUser: userHash}
+	seedDir := filepath.Join(projectRoot, "tmp", "seed")
+	var renderizados []string
+	if vaiExecutar {
+		// As cópias contêm hashes reais: apaga sempre, inclusive em erro.
+		defer func() { apagarRenderizados(renderizados) }()
 	}
 
-	totalReplacements := 0
-	for _, f := range sqlFiles {
-		n, err := ReplaceInFile(f, map[string]string{
-			PlaceholderAdmin: adminHash,
-			PlaceholderUser:  userHash,
-		})
+	total := 0
+	for _, src := range SeedFiles(projectRoot) {
+		dst, n, err := RenderSeedFile(src, seedDir, repl)
 		if err != nil {
-			return fmt.Errorf("erro em %s: %w", f, err)
+			return fmt.Errorf("erro em %s: %w", src, err)
 		}
-		log.Printf("seedusers: %s → %d substituições", filepath.Base(f), n)
-		totalReplacements += n
+		renderizados = append(renderizados, dst)
+		log.Printf("seedusers: %s → %d substituições (%s)", filepath.Base(src), n, dst)
+		total += n
 	}
-
-	log.Printf("seedusers: total de placeholders substituídos: %d", totalReplacements)
+	log.Printf("seedusers: total de placeholders substituídos: %d", total)
 
 	if opts.NoExec {
-		log.Printf("seedusers: --no-exec informado, SQLs NÃO foram executados")
+		avisarNoExec(out, renderizados)
 		return nil
 	}
 
-	// Executa os SQLs atualizados via mysql CLI.
-	for _, f := range sqlFiles {
+	for _, f := range renderizados {
 		log.Printf("seedusers: executando %s", filepath.Base(f))
 		if err := deps.RunSQL(cfg, f); err != nil {
 			return fmt.Errorf("mysql falhou em %s: %w", f, err)
 		}
 	}
 
-	log.Printf("seedusers: OK — %d arquivos SQL aplicados", len(sqlFiles))
+	log.Printf("seedusers: OK — %d arquivos SQL aplicados", len(renderizados))
 	return nil
 }
 
-// GenerateRandomPassword retorna uma senha aleatória de n caracteres (a-zA-Z0-9).
-// Usada quando o seed roda em modo dev sem credenciais definidas — em produção
-// SEED_ADMIN_PASSWORD e SEED_USER_PASSWORD devem ser sempre fornecidos.
-func GenerateRandomPassword(n int) (string, error) {
-	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	bytes := make([]byte, n)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+// SeedFiles devolve os SQLs de seed (em sql/) na ordem de execução.
+func SeedFiles(projectRoot string) []string {
+	return []string{
+		filepath.Join(projectRoot, "sql", "02_seed_admin.sql"),
+		filepath.Join(projectRoot, "sql", "03_seed_vendedores.sql"),
 	}
-	out := make([]byte, n)
-	for i, b := range bytes {
-		out[i] = alphabet[int(b)%len(alphabet)]
-	}
-	return string(out), nil
 }
 
-// ResolveSeedPassword retorna a senha de seed. Se a env não estiver definida,
-// gera uma senha aleatória (modo dev). Em produção, defina SEED_ADMIN_PASSWORD
-// e SEED_USER_PASSWORD explicitamente no .env — sem elas, o dev não tem como
-// logar.
-func ResolveSeedPassword(envKey, defaultValue string) (string, error) {
+// exigirCredenciaisDB exige DB_USUARIO e DB_SENHA presentes e não vazios.
+func exigirCredenciaisDB() error {
+	for _, k := range []string{"DB_USUARIO", "DB_SENHA"} {
+		if v, ok := os.LookupEnv(k); !ok || v == "" {
+			return ErrCredenciaisDB
+		}
+	}
+	return nil
+}
+
+// imprimirCredenciais só mostra as senhas em claro com --show-password —
+// evita vazamento acidental em logs de CI/terminal compartilhado.
+func imprimirCredenciais(out io.Writer, mostrar bool, adminPwd, userPwd string) {
+	fmt.Fprintln(out)
+	if mostrar {
+		fmt.Fprintln(out, "=== CREDENCIAIS DE SEED ===")
+		fmt.Fprintf(out, "ADMIN_PASSWORD=%s\n", adminPwd)
+		fmt.Fprintf(out, "USER_PASSWORD =%s\n", userPwd)
+		fmt.Fprintln(out, "============================")
+	} else {
+		fmt.Fprintln(out, "=== CREDENCIAIS DE SEED: definidas com sucesso (use --show-password para exibir) ===")
+	}
+	fmt.Fprintln(out)
+}
+
+// avisarNoExec lista os SQLs renderizados mantidos em disco e pede que sejam
+// apagados após o uso (contêm hashes bcrypt das senhas de seed).
+func avisarNoExec(out io.Writer, arquivos []string) {
+	log.Printf("seedusers: --no-exec informado, SQLs NÃO foram executados")
+	fmt.Fprintln(out, "SQLs renderizados (NÃO executados):")
+	for _, f := range arquivos {
+		fmt.Fprintf(out, "  %s\n", f)
+	}
+	fmt.Fprintln(out, "ATENÇÃO: esses arquivos contêm hashes bcrypt das senhas de seed; apague-os após o uso.")
+}
+
+// apagarRenderizados remove as cópias renderizadas; falha só gera log.
+func apagarRenderizados(arquivos []string) {
+	for _, f := range arquivos {
+		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("seedusers: não foi possível apagar %s: %v (apague manualmente)", f, err)
+		}
+	}
+}
+
+// GenerateRandomPassword retorna uma senha aleatória de n caracteres
+// [a-zA-Z0-9], uniforme (delega a services.SenhaAlfanumerica). Usada quando o
+// seed roda em modo dev sem credenciais definidas — em produção
+// SEED_ADMIN_PASSWORD e SEED_USER_PASSWORD devem ser sempre fornecidos.
+func GenerateRandomPassword(n int) (string, error) {
+	return services.SenhaAlfanumerica(n)
+}
+
+// ResolveSeedPassword retorna a senha de seed da env envKey. Se ela não
+// estiver definida (ou vazia), gera uma senha aleatória de 16 caracteres
+// (modo dev) — não existe senha padrão fixa. Em produção, defina
+// SEED_ADMIN_PASSWORD e SEED_USER_PASSWORD no .env (ou rode com
+// -show-password para ver as geradas; sem isso, o dev não tem como logar).
+func ResolveSeedPassword(envKey string) (string, error) {
 	if v := os.Getenv(envKey); v != "" {
 		return v, nil
 	}
@@ -199,30 +249,40 @@ func FindProjectRoot() (string, error) {
 	return cmdutil.FindProjectRoot()
 }
 
-// ReplaceInFile substitui todas as ocorrências (mapa) e grava o arquivo in-place.
-// Retorna o número total de substituições.
-func ReplaceInFile(path string, repl map[string]string) (int, error) {
-	data, err := os.ReadFile(path)
+// RenderSeedFile lê src, substitui todas as ocorrências das chaves de repl e
+// grava o resultado em dstDir/<nome de src> com permissão 0600 (dstDir é
+// criado com 0700 se faltar). src nunca é alterado. Retorna o caminho gravado
+// e o total de substituições; sem nenhuma ocorrência devolve
+// ErrSemPlaceholder e não grava nada.
+func RenderSeedFile(src, dstDir string, repl map[string]string) (dst string, n int, err error) {
+	data, err := os.ReadFile(src)
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
 	content := string(data)
-	total := 0
-	for old, new := range repl {
+	for old, novo := range repl {
 		count := strings.Count(content, old)
 		if count == 0 {
 			continue
 		}
-		content = strings.ReplaceAll(content, old, new)
-		total += count
+		content = strings.ReplaceAll(content, old, novo)
+		n += count
 	}
-	if total == 0 {
-		return 0, nil
+	if n == 0 {
+		return "", 0, ErrSemPlaceholder
 	}
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return 0, err
+	if err := os.MkdirAll(dstDir, 0o700); err != nil {
+		return "", 0, err
 	}
-	return total, nil
+	dst = filepath.Join(dstDir, filepath.Base(src))
+	if err := os.WriteFile(dst, []byte(content), 0o600); err != nil {
+		return "", 0, err
+	}
+	// WriteFile não altera a permissão de um arquivo que já existia.
+	if err := os.Chmod(dst, 0o600); err != nil {
+		return "", 0, err
+	}
+	return dst, n, nil
 }
 
 // RunMySQL executa um arquivo SQL via cliente mysql, lendo o conteúdo via stdin.

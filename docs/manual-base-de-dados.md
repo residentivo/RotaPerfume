@@ -1,39 +1,385 @@
 # Manual da base de dados
 
-**Banco:** MySQL, schema `rotaperfumes` (padrão do `Makefile`: `DB_NAME?=rotaperfumes`), charset `utf8mb4`, collation `utf8mb4_unicode_ci`.
-**Fonte da verdade:** os scripts em `sql/`. Em caso de divergência entre este manual e um script, vale o script.
-**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no fechamento do Lote 5 com o NEG-02, CNPJ alfanumérico, no Lote 6, 2026-09-26, com a migração 21 e a coluna `refresh_tokens.revoked_reason`, e no Lote 8, 2026-09-26, com a migração 22 e a coluna `usuarios.tokens_validos_desde`).
+**Banco:** MySQL, schema `rotaperfumes` (padrão do `Makefile`: `DB_NAME?=rotaperfumes`), charset `utf8mb4`, collation `utf8mb4_unicode_ci` (definidos no `make db-create`).
+**Fonte da verdade:** os scripts em `sql/` (DDLs mais as migrações de alteração, em ordem numérica). Em caso de divergência entre este manual e um script, vale o script.
+**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no Lote 5 com o NEG-02, CNPJ alfanumérico, no Lote 6 com a migração 21 e `refresh_tokens.revoked_reason`, no Lote 8 com a migração 22 e `usuarios.tokens_validos_desde` e, no Lote 11, 2026-09-26, card DOC-04, com o detalhamento de todas as tabelas).
 
-> **Escopo desta versão:** o card DOC-02 cobre a tabela `clientes`, o índice único `uq_clientes_cnpj` e a migração 19 (unificação dos CNPJs duplicados). O Lote 6 acrescentou a tabela `refresh_tokens` e a migração 21 (seção 7). O Lote 8 acrescentou a coluna `usuarios.tokens_validos_desde` e a migração 22 (seção 8). As outras tabelas aparecem só no índice da seção 1, com o script de origem e os relacionamentos com `clientes`. O detalhamento campo a campo delas ainda não foi feito.
+> **Escopo:** todas as tabelas do schema atual, campo a campo, com PK, FKs, índices, relacionamentos, regras de negócio conhecidas e as migrações que afetam cada uma. Os itens que não estão claros nos arquivos estão marcados como **a confirmar** e reunidos na seção 22.
 
 ---
 
-## 1. Tabelas e scripts
+## Sumário
 
-A ordem abaixo é a do `make db-up`, que cria o schema vazio. O `make db-seed` roda o `db-up` e depois os seeds; o `make db-reset` apaga o banco e roda o `db-seed`.
+1. [Visão geral e convenções](#1-visão-geral-e-convenções)
+2. [Índice das tabelas](#2-índice-das-tabelas)
+3. [Diagrama de relacionamentos](#3-diagrama-de-relacionamentos)
+4. [Resumo dos scripts e migrações](#4-resumo-dos-scripts-e-migrações)
+5. Autenticação: [`vendedores`](#5-tabela-vendedores), [`usuarios`](#6-tabela-usuarios) (inclui a migração 22), [`refresh_tokens`](#7-tabela-refresh_tokens-e-migração-21-sec-07-lote-6-2026-09-26) (inclui a migração 21), [`senha_historico`](#8-tabela-senha_historico)
+6. CRM: [`clientes`](#9-tabela-clientes), [`carteiras`](#10-tabela-carteiras), [`oportunidades`](#11-tabela-oportunidades), [`visitas`](#12-tabela-visitas)
+7. ERP: [`produtos`](#13-tabela-produtos), [`pedidos`](#14-tabela-pedidos), [`itens_pedido`](#15-tabela-itens_pedido), [`pagamentos`](#16-tabela-pagamentos), [`estoque`](#17-tabela-estoque)
+8. Migração 19 e backups: [migração 19](#18-migração-19-unificação-dos-cnpjs-duplicados), [tabelas de backup](#19-tabelas-de-backup-da-migração-19), [reversão](#20-reversão-make-db-revert-cnpj-unique), [consultas](#21-consultas-de-verificação-da-migração-19)
+9. [Pontos a confirmar](#22-pontos-a-confirmar)
 
-| Tabela | Script | Relação com `clientes` |
+---
+
+## 1. Visão geral e convenções
+
+- **Engine:** InnoDB em todas as tabelas com `ENGINE` explícito. `senha_historico` não declara engine, charset nem collation: herda os padrões do servidor e do banco (a confirmar, seção 22).
+- **Controle:** quase todas as tabelas têm `created_at` (`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`) e `updated_at` (`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`). Nas tabelas abaixo eles aparecem numa linha só. Exceção: `senha_historico` tem só `created_at`, e ele aceita NULL.
+- **`*_id_origem` promovido a PK (atualização de 2026-09-15):** em `clientes`, `pedidos`, `itens_pedido` e `carteiras`, o id do CSV de origem deixou de ser uma coluna auxiliar e virou a própria PK `BIGINT AUTO_INCREMENT`. A antiga PK interna `id` foi removida. `pagamentos`, `oportunidades` e `visitas` seguem o mesmo princípio, mas com o nome do CSV (`pagamento_id`, `oportunidade_id`, `visita_id`). Os importadores gravam o id explicitamente (upsert na PK). `vendedores`, `usuarios`, `produtos` e `estoque` têm PK `id` própria.
+- **Colunas de FK para clientes:** `cliente_id` das tabelas filhas guarda o `clientes.cliente_id_origem`. Todas as FKs para `clientes` apontam para `cliente_id_origem`.
+- **Booleanos:** `TINYINT(1)` com 0/1. No CSV vêm como S/N.
+- **Valores monetários:** `DECIMAL(15,2)` (totais) ou `DECIMAL(10,2)` (preços unitários). Percentuais: `DECIMAL(5,2)` (ex.: 5.00 = 5%).
+- **Exclusão lógica x física** (conferido nos repositórios em `apis/shared/repositories`):
+
+| Tabela | Como é "excluída" |
+| --- | --- |
+| `vendedores` | Lógica: `data_desligamento` preenchida (`DELETE /api/vendedores/{id}`). Reativação limpa a data. |
+| `usuarios` | Lógica: `ativo = 0` (`PATCH /api/usuarios/{id}/inativar`). Não há DELETE físico no repositório. |
+| `clientes`, `produtos` | Lógica: `ativo = 0`. Não há DELETE físico no repositório. |
+| `pedidos` (+ `itens_pedido`) | Física, numa transação (`DeleteComItens`). O handler/service bloqueia pedido com pagamento vinculado ou com status Faturado. |
+| `pagamentos`, `carteiras`, `oportunidades`, `visitas` | Física. |
+| `refresh_tokens` | Revogação (`revoked_at` + `revoked_reason`). Existe uma limpeza física (`CleanupExpired`), sem chamada fora dos testes (a confirmar). |
+| `estoque`, `senha_historico` | Não há DELETE no repositório. |
+
+---
+
+## 2. Índice das tabelas
+
+A ordem é a do `make db-up`, que cria o schema vazio. O `make db-seed` roda o `db-up` e depois os seeds. O `make db-reset` apaga o banco e roda o `db-seed`. O `make db-rebuild` faz o `db-reset` e roda todos os importadores.
+
+| Tabela | Script de criação | Migrações que alteram | Seção |
+| --- | --- | --- | --- |
+| `vendedores` | `sql/01_ddl_usuarios.sql` | - | 5 |
+| `usuarios` | `sql/01_ddl_usuarios.sql` | 08 (`deve_trocar_senha`), 22 (`tokens_validos_desde`) | 6 |
+| `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` | 21 (`revoked_reason`) | 7 |
+| `senha_historico` | `sql/07_ddl_senha_historico.sql` | 13 (ENUM `tipo_reset`) | 8 |
+| `clientes` | `sql/09_ddl_clientes.sql` | 19 (`uq_clientes_cnpj`), 20 (COMMENT de `cnpj`) | 9 |
+| `produtos` | `sql/10_ddl_produtos.sql` | - | 13 |
+| `pedidos` | `sql/04_ddl_pedidos.sql` | 19 (transferência de `cliente_id`, só dados) | 14 |
+| `itens_pedido` | `sql/11_ddl_itens_pedido.sql` | - | 15 |
+| `pagamentos` | `sql/12_ddl_pagamentos.sql` | - | 16 |
+| `carteiras` | `sql/14_ddl_carteiras.sql` | 19 (transferência/descarte, só dados) | 10 |
+| `oportunidades` | `sql/15_ddl_oportunidades.sql` | 19 (transferência, só dados) | 11 |
+| `visitas` | `sql/16_ddl_visitas.sql` | 19 (transferência, só dados) | 12 |
+| `estoque` | `sql/17_ddl_estoque.sql` (**fora do `db-up`**, seção 17) | 18 (remove `origem`) | 17 |
+| `clientes_merge_backup_20260925` | criada pela migração 19 | - | 19 |
+| `clientes_merge_backup_20260925_vinculos` | criada pela migração 19 | - | 19 |
+
+---
+
+## 3. Diagrama de relacionamentos
+
+Só as colunas de chave. Entre parênteses, a regra `ON DELETE`. Todas as FKs usam `ON UPDATE CASCADE`, exceto as duas de `senha_historico`, que não declaram `ON UPDATE`.
+
+```mermaid
+erDiagram
+    vendedores ||--o{ usuarios : "id_vendedor (SET NULL)"
+    usuarios ||--o{ refresh_tokens : "usuario_id (CASCADE)"
+    usuarios ||--o{ senha_historico : "usuario_id (CASCADE)"
+    usuarios |o--o{ senha_historico : "resetado_por_id (SET NULL)"
+    clientes ||--o{ pedidos : "cliente_id (RESTRICT)"
+    vendedores ||--o{ pedidos : "vendedor_id (RESTRICT)"
+    pedidos ||--o{ itens_pedido : "pedido_id (CASCADE)"
+    produtos ||--o{ itens_pedido : "produto_id (RESTRICT)"
+    pedidos ||--o{ pagamentos : "pedido_id (RESTRICT)"
+    clientes ||--o{ carteiras : "cliente_id (CASCADE)"
+    vendedores ||--o{ carteiras : "vendedor_id (RESTRICT)"
+    clientes ||--o{ oportunidades : "cliente_id (CASCADE)"
+    vendedores ||--o{ oportunidades : "vendedor_id (RESTRICT)"
+    clientes ||--o{ visitas : "cliente_id (CASCADE)"
+    vendedores ||--o{ visitas : "vendedor_id (RESTRICT)"
+    produtos ||--o{ estoque : "sku (RESTRICT)"
+
+    vendedores { BIGINT id PK }
+    usuarios { BIGINT id PK
+               VARCHAR email UK
+               BIGINT id_vendedor FK }
+    refresh_tokens { BIGINT id PK
+                     BIGINT usuario_id FK
+                     VARCHAR token_hash UK }
+    senha_historico { BIGINT id PK
+                      BIGINT usuario_id FK
+                      BIGINT resetado_por_id FK }
+    clientes { BIGINT cliente_id_origem PK
+               CHAR cnpj UK }
+    produtos { BIGINT id PK
+               VARCHAR sku UK }
+    pedidos { BIGINT pedido_id_origem PK
+              BIGINT cliente_id FK
+              BIGINT vendedor_id FK }
+    itens_pedido { BIGINT item_id_origem PK
+                   BIGINT pedido_id FK
+                   BIGINT produto_id FK }
+    pagamentos { BIGINT pagamento_id PK
+                 BIGINT pedido_id FK }
+    carteiras { BIGINT carteira_id_origem PK
+                BIGINT cliente_id FK
+                BIGINT vendedor_id FK }
+    oportunidades { BIGINT oportunidade_id PK
+                    BIGINT cliente_id FK
+                    BIGINT vendedor_id FK }
+    visitas { BIGINT visita_id PK
+              BIGINT cliente_id FK
+              BIGINT vendedor_id FK }
+    estoque { BIGINT id PK
+              VARCHAR sku FK }
+```
+
+As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do diagrama.
+
+**Efeito prático das regras:**
+- Um cliente só pode ser apagado fisicamente se não tiver pedidos (`RESTRICT`). Se puder, leva junto carteiras, oportunidades e visitas (`CASCADE`). Na prática a API só inativa (`ativo = 0`).
+- Um vendedor com pedidos, carteiras, oportunidades ou visitas não pode ser apagado fisicamente (`RESTRICT`). Os usuários vinculados ficariam com `id_vendedor = NULL`. Na prática a API só desliga (`data_desligamento`).
+- Um pedido com pagamentos não pode ser apagado (`RESTRICT`). Os itens vão junto (`CASCADE`).
+- Um produto com itens de pedido ou histórico de estoque não pode ser apagado (`RESTRICT`). A troca do `sku` propaga para `estoque` (`ON UPDATE CASCADE`).
+
+---
+
+## 4. Resumo dos scripts e migrações
+
+"Reversível" indica se existe script de reversão em `sql/`.
+
+| Nº | Arquivo | O que faz | Alvo do Makefile | Reversível? |
+| --- | --- | --- | --- | --- |
+| 01 | `01_ddl_usuarios.sql` | Cria `vendedores` e `usuarios` | `db-up` | Não (DDL base) |
+| 02 | `02_seed_admin.sql` | Upsert do admin (id 1) com hash placeholder | `db-seed` | Não |
+| 03 | `03_seed_vendedores.sql` | 42 vendedores (ids 1..42) e um usuário `normal` por vendedor, com hash placeholder | `db-seed` | Não |
+| 04 | `04_ddl_pedidos.sql` | Cria `pedidos` | `db-up` | Não (DDL base) |
+| 05 | `05_seed_pedidos.sql` | Descontinuado: só comentários, sem SQL | nenhum | - |
+| 06 | `06_ddl_refresh_tokens.sql` | Cria `refresh_tokens` (já com `revoked_reason`) | `db-up` | Não (DDL base) |
+| 07 | `07_ddl_senha_historico.sql` | Cria `senha_historico` (já com o ENUM corrigido) | `db-up` | Não (DDL base) |
+| 08 | `08_alter_usuarios_deve_trocar_senha.sql` | Adiciona `usuarios.deve_trocar_senha` (idempotente) | `db-fix-deve-trocar-senha` | Não (sem script) |
+| 09 | `09_ddl_clientes.sql` | Cria `clientes` (já com `uq_clientes_cnpj` e o COMMENT novo) | `db-up` | Não (DDL base) |
+| 10 | `10_ddl_produtos.sql` | Cria `produtos` | `db-up` | Não (DDL base) |
+| 11 | `11_ddl_itens_pedido.sql` | Cria `itens_pedido` | `db-up` | Não (DDL base) |
+| 12 | `12_ddl_pagamentos.sql` | Cria `pagamentos` | `db-up` | Não (DDL base) |
+| 13 | `13_alter_senha_historico_tipo_reset.sql` | Corrige o ENUM de `tipo_reset` | `db-fix-tipo-reset` | Não (sem script) |
+| 14 | `14_ddl_carteiras.sql` | Cria `carteiras` | `db-up` | Não (DDL base) |
+| 15 | `15_ddl_oportunidades.sql` | Cria `oportunidades` | `db-up` | Não (DDL base) |
+| 16 | `16_ddl_visitas.sql` | Cria `visitas` | `db-up` | Não (DDL base) |
+| 17 | `17_ddl_estoque.sql` | Cria `estoque` (ainda com `origem`) | **nenhum** (a confirmar, seção 22) | Não (DDL base) |
+| 18 | `18_alter_estoque_drop_origem.sql` | Remove `estoque.origem` (não idempotente) | **nenhum** | Não: a coluna e os dados dela se perdem |
+| 19 | `19_alter_clientes_cnpj_unique.sql` | Unifica CNPJs duplicados e cria `uq_clientes_cnpj` | `db-fix-cnpj-unique` | Sim: `19_revert_...`, `db-revert-cnpj-unique` |
+| 20 | `20_alter_clientes_cnpj_comment.sql` | Troca o COMMENT de `clientes.cnpj` | `db-fix-cnpj-comment` | Sim: `20_revert_...`, `db-revert-cnpj-comment` |
+| 21 | `21_alter_refresh_tokens_revoked_reason.sql` | Adiciona `refresh_tokens.revoked_reason` (idempotente) | `db-fix-revoked-reason` | Sim: `21_revert_...`, `db-revert-revoked-reason` (perde os motivos) |
+| 22 | `22_alter_usuarios_tokens_validos_desde.sql` | Adiciona `usuarios.tokens_validos_desde` (idempotente) | `db-fix-tokens-validos-desde` | Sim: `22_revert_...`, `db-revert-tokens-validos-desde` (perde os cortes) |
+
+- As migrações de alteração (08, 13, 18 a 22) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Os DDLs base já nascem com o resultado delas, **exceto o 17**, que ainda cria `estoque.origem`.
+- Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`apis/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por bcrypt real.
+- Importadores (`db-import-*`, `apis/shared/cmd/import*`): upsert idempotente a partir de `dados/crm/*.csv` e `dados/erp/*.csv`. Ordem de dependência: clientes e produtos, depois pedidos (e itens), pagamentos, carteiras, oportunidades, visitas e estoque.
+
+---
+
+## 5. Tabela `vendedores`
+
+Vendedores do CRM. Criada em `01_ddl_usuarios.sql` para servir de destino à FK de `usuarios`. Populada pelo seed `03_seed_vendedores.sql` com 42 vendedores e ids explícitos 1..42. Os CSVs de pedidos, carteiras, oportunidades e visitas usam esses mesmos ids, sem lookup.
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT AUTO_INCREMENT | não | - | PK. |
+| `nome` | VARCHAR(120) | não | - | Nome completo. |
+| `regiao` | VARCHAR(80) | não | - | Região de atuação (ex.: Curitiba). |
+| `uf` | CHAR(2) | não | - | UF. |
+| `data_admissao` | DATE | não | - | Data de admissão. |
+| `data_desligamento` | DATE | sim | NULL | **NULL = vendedor ativo.** Preenchida = desligado. |
+| `meta_mensal` | DECIMAL(15,2) | não | 0.00 | Meta mensal em R$. |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+
+**Índices:** só `PRIMARY` (`id`). Não há UNIQUE de nome.
+
+**Relacionamentos:** referenciada por `usuarios.id_vendedor` (SET NULL), e por `pedidos`, `carteiras`, `oportunidades` e `visitas` via `vendedor_id` (RESTRICT).
+
+**Regras de negócio:**
+- **Exclusão lógica:** `DELETE /api/vendedores/{id}` grava `data_desligamento` com `COALESCE` (desligar de novo mantém a data original). Na mesma transação, inativa os usuários vinculados, grava o corte `tokens_validos_desde` e revoga os refresh tokens deles com motivo `inativacao` (SEC-06, SEC-08). A reativação limpa a data (`SetDataDesligamento` com NULL) e não grava corte. Se ela também reativa os usuários vinculados está a confirmar.
+- O seed 03 usa `INSERT IGNORE`: rodar de novo não altera vendedores existentes.
+
+**Migrações:** nenhuma alteração de schema.
+
+---
+
+## 6. Tabela `usuarios`
+
+Usuários de login do sistema, com papel (`admin`/`normal`) e vínculo opcional a um vendedor.
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT AUTO_INCREMENT | não | - | PK. É o `sub` do JWT. O admin principal do seed é o id 1. |
+| `nome` | VARCHAR(120) | não | - | Nome completo. |
+| `email` | VARCHAR(120) | não | - | E-mail de login. **Único** (`uk_usuarios_email`). A API grava em minúsculas e sem espaços nas pontas. |
+| `password_hash` | VARCHAR(255) | não | - | Hash bcrypt (cost 12). Os seeds gravam um placeholder que o `resetpassword` troca. |
+| `role` | ENUM('admin','normal') | não | 'normal' | Papel. `admin` acessa as rotas de administração. |
+| `id_vendedor` | BIGINT | sim | NULL | FK `fk_usuarios_vendedor` → `vendedores.id` (`ON DELETE SET NULL`, `ON UPDATE CASCADE`). Define o escopo de dados do usuário `normal`. |
+| `ativo` | TINYINT(1) | não | 1 | 1 = ativo, 0 = inativo (exclusão lógica). |
+| `deve_trocar_senha` | TINYINT(1) | não | 0 | 1 = deve trocar a senha no próximo login (senha gerada pelo sistema). Migração 08. |
+| `tokens_validos_desde` | DATETIME | sim | NULL | Corte de sessão. Migração 22, seção 6.1. |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+| `ultimo_login_at` | TIMESTAMP | sim | NULL | Data do último login. |
+
+**Índices:** `PRIMARY` (`id`), `uk_usuarios_email` (UNIQUE, `email`), `idx_usuarios_role`, `idx_usuarios_ativo`, `idx_usuarios_id_vendedor`.
+
+**Relacionamentos:** N:1 opcional com `vendedores`. 1:N com `refresh_tokens` (CASCADE) e com `senha_historico` (`usuario_id` CASCADE, `resetado_por_id` SET NULL).
+
+**Regras de negócio:**
+- **`deve_trocar_senha`:** vai para 1 quando a senha é gerada pelo sistema: criação de usuário pelo admin (senha aleatória enviada por e-mail) e reset pelo admin (`AdminResetPassword`). Volta a 0 na troca feita pelo próprio usuário e no `ResetSenha` interno. O valor gravado pelo CLI `resetpassword` nos seeds está a confirmar.
+- **Exclusão lógica:** inativação (`ativo = 0`) grava o corte `tokens_validos_desde` e revoga os refresh tokens com motivo `inativacao`. O desligamento do vendedor inativa os usuários vinculados (seção 5).
+- **Seeds:** `02_seed_admin.sql` faz upsert do admin (id 1, `admin@rotaperfumes.com.br`). `03_seed_vendedores.sql` cria um usuário `normal` por vendedor (`nome.sobrenome@rotaperfumes.com.br`; homônimos recebem o sufixo da UF).
+
+**Migrações:** 08 (`deve_trocar_senha`, depois de `ativo`, sem reversão) e 22 (`tokens_validos_desde`, seção 6.1).
+
+### 6.1 Coluna `usuarios.tokens_validos_desde` e migração 22 (SEC-08, Lote 8, 2026-09-26)
+
+Corte de sessão por usuário. Revogar refresh tokens não invalida os access tokens (JWT de 24h) já emitidos; esta coluna faz o middleware recusá-los.
+
+| Campo | Tipo | Nulo | Descrição |
+| --- | --- | --- | --- |
+| `tokens_validos_desde` | DATETIME | sim | **Novo (migração 22)**, logo depois de `deve_trocar_senha`. `NULL` = sem corte (vale só assinatura e `exp`). Com valor: access token com `iat <= tokens_validos_desde`, ou sem `iat`, recebe `401` `"sessão encerrada — faça login novamente"`. COMMENT: "Access tokens com iat <= este instante são rejeitados (SEC-08); NULL = sem corte". |
+
+**Índice:** nenhum. A coluna é lida junto com `ativo` e `role`, depois de achar o usuário pela PK (`sub` do JWT).
+
+#### Quando o corte é gravado
+
+O valor vem do Go (`time.Now().Truncate(time.Second)`), nunca do `NOW()` do MySQL (o DSN usa `loc=Local`, fuso fixo `-03:00`).
+
+| Evento | Onde no código |
+| --- | --- |
+| Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) | `UsuarioRepository.SetAtivo(false)` |
+| Desligamento do vendedor (`DELETE /api/vendedores/{id}`), para os usuários vinculados | `UsuarioRepository.InativarByVendedorID` |
+| Troca de senha pelo usuário, reset pelo admin e `ResetSenha` | `UsuarioRepository.UpdatePasswordHash` |
+| Reuso de refresh token rotacionado fora da janela (SEC-07), depois do `RevokeAllUserTokens` | `UsuarioRepository.InvalidarSessoes`, chamado em `tratarTokenRevogadoForaDaJanela` (`auth_handler.go`) |
+| CLI `resetpassword` | `UpsertAdmin`, `UpsertByEmail` (`apis/shared/tools/resetpassword`) |
+
+**Não gravam corte:** reativação do usuário ou do vendedor e logout. Um login feito no mesmo segundo de um corte gera token recusado (regra `iat <= corte`; aceito pelo MegaBrain).
+
+#### Migração 22
+
+**Script:** `sql/22_alter_usuarios_tokens_validos_desde.sql`
+**Comando:** `make db-fix-tokens-validos-desde`
+**Reversão:** `make db-revert-tokens-validos-desde` (`sql/22_revert_usuarios_tokens_validos_desde.sql`; remove a coluna e perde os cortes gravados)
+**Situação:** aplicada no banco local em 2026-09-26.
+
+- Não altera nenhuma linha: os usuários existentes ficam `NULL` (sem corte).
+- **Idempotente:** consulta `information_schema.COLUMNS` e só roda o `ALTER TABLE` se a coluna ainda não existir. O revert também é idempotente.
+- Como a 19, a 20 e a 21, não faz parte do `db-up`/`db-seed`/`db-reset`. Bancos novos já recebem a coluna pelo `sql/01_ddl_usuarios.sql` (atualizado no mesmo card).
+
+#### Consultas de verificação
+
+```sql
+SHOW FULL COLUMNS FROM usuarios LIKE 'tokens_validos_desde';
+-- Type = datetime, Null = YES, Default = NULL
+
+SELECT id, email, ativo, tokens_validos_desde
+  FROM usuarios
+ WHERE tokens_validos_desde IS NOT NULL
+ ORDER BY tokens_validos_desde DESC;
+-- só usuários que tiveram inativação, troca/reset de senha ou revogação em massa depois da migração
+```
+
+Referências: card SEC-08 em `tarefas/feito.md` (Lote 8); roteiro `docs/roteiro-teste-manual-lote8.md`, seção 1.
+
+---
+
+## 7. Tabela `refresh_tokens` e migração 21 (SEC-07, Lote 6, 2026-09-26)
+
+Guarda os refresh tokens (hash SHA-256) emitidos no login e no refresh. Cada refresh é de uso único: o token antigo é revogado e um novo é gravado na mesma transação.
+
+| Campo | Tipo | Nulo | Descrição |
+| --- | --- | --- | --- |
+| `id` | BIGINT AUTO_INCREMENT | não | PK. É o `token_id` dos logs de `[auth]`. |
+| `usuario_id` | BIGINT | não | FK `fk_refresh_token_usuario` → `usuarios.id` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`). |
+| `token_hash` | VARCHAR(255) | não | SHA-256 do refresh token. **Único** (`uk_refresh_token_hash`). O token em texto puro nunca é gravado. |
+| `expires_at` | DATETIME | não | Expiração. |
+| `revoked_at` | DATETIME | sim | Data/hora da revogação. `NULL` = ativo. |
+| `revoked_reason` | ENUM('rotacao','logout','revogacao_massa','senha','inativacao') | sim | **Novo (migração 21).** Motivo da revogação, gravado junto com `revoked_at`. `NULL` = token ativo ou revogado antes da migração (legado). |
+| `ip_origem` | VARCHAR(45) | sim | IP que pediu o token (IPv4/IPv6). |
+| `user_agent` | TEXT | sim | User-Agent no momento da criação. |
+| `created_at`, `updated_at` | TIMESTAMP | não | Controle. |
+
+**Índices:** `PRIMARY` (`id`), `uk_refresh_token_hash` (UNIQUE, `token_hash`), `idx_refresh_usuario_id`, `idx_refresh_expires_at` e `idx_refresh_revoked_at`. A migração 21 **não** cria índice para `revoked_reason`: as buscas são por `token_hash` e `usuario_id`, e o motivo só é lido depois de achar a linha.
+
+**Limpeza:** `RefreshTokenRepository.DeleteExpired` (via `RefreshTokenService.CleanupExpired`) apaga tokens expirados e revogados, e tokens não revogados expirados há mais de 30 dias. Nenhuma rotina fora dos testes chama o `CleanupExpired`: a tabela cresce sem limpeza automática (a confirmar se é intencional).
+
+### Valores de `revoked_reason`
+
+| Valor | Quando é gravado | Onde no código |
 | --- | --- | --- |
-| `vendedores`, `usuarios` | `sql/01_ddl_usuarios.sql` (+ `08_alter_usuarios_deve_trocar_senha.sql` e `22_alter_usuarios_tokens_validos_desde.sql` em bancos existentes; seção 8) | - |
-| `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` (+ `21_alter_refresh_tokens_revoked_reason.sql` em bancos existentes; seção 7) | - (ligada a `usuarios`) |
-| `senha_historico` | `sql/07_ddl_senha_historico.sql` (+ `13_alter_senha_historico_tipo_reset.sql`) | - |
-| `clientes` | `sql/09_ddl_clientes.sql` (+ `19_alter_clientes_cnpj_unique.sql` e `20_alter_clientes_cnpj_comment.sql` em bancos existentes) | tabela principal |
-| `produtos` | `sql/10_ddl_produtos.sql` | - |
-| `pedidos` | `sql/04_ddl_pedidos.sql` | `fk_pedidos_cliente` (`cliente_id`), `ON DELETE RESTRICT` |
-| `itens_pedido` | `sql/11_ddl_itens_pedido.sql` | - (ligada a `pedidos`) |
-| `pagamentos` | `sql/12_ddl_pagamentos.sql` | - (ligada a `pedidos`) |
-| `carteiras` | `sql/14_ddl_carteiras.sql` | `fk_carteiras_cliente` (`cliente_id`), `ON DELETE CASCADE` |
-| `oportunidades` | `sql/15_ddl_oportunidades.sql` | `fk_oportunidades_cliente` (`cliente_id`), `ON DELETE CASCADE` |
-| `visitas` | `sql/16_ddl_visitas.sql` | `fk_visitas_cliente` (`cliente_id`), `ON DELETE CASCADE` |
-| `estoque` | `sql/17_ddl_estoque.sql` (+ `18_alter_estoque_drop_origem.sql`) | - |
-| `clientes_merge_backup_20260925` | criada pela migração 19 | backup das cópias removidas (seção 4) |
-| `clientes_merge_backup_20260925_vinculos` | criada pela migração 19 | log dos filhos das cópias (seção 4) |
+| `rotacao` | `POST /api/auth/refresh`: o token antigo é trocado por um novo. | `RefreshTokenService.BeginRotation` |
+| `logout` | `POST /api/auth/logout`. | `auth_handler.go` (Logout) |
+| `revogacao_massa` | Reuso, fora da janela de 30 s, de um token com motivo `rotacao` (possível roubo): todos os tokens ativos do usuário são revogados. | `auth_handler.go` (`tratarTokenRevogadoForaDaJanela`) |
+| `senha` | Troca de senha pelo usuário (`POST /api/auth/reset-password`) ou reset pelo admin (`POST /api/admin/reset-password`). | `auth_handler.go`, `usuario_handler.go` |
+| `inativacao` | Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) ou desligamento do vendedor dele (`DELETE /api/vendedores/{id}`, na mesma transação, via `RevokeAllByVendedorID`). SEC-06. | `usuario_handler.go`, `vendedor_service.go` |
 
-Todas as FKs para `clientes` apontam para `clientes.cliente_id_origem`.
+**Regra de uso (SEC-07, opção B):** só o reuso de um token com motivo `rotacao` fora da janela de graça gera o alerta `[auth][seguranca]` e a revogação em massa. Os demais motivos e o `NULL` legado geram só log informativo. A resposta HTTP é sempre `401` `"refresh token revogado"`.
+
+### Migração 21
+
+**Script:** `sql/21_alter_refresh_tokens_revoked_reason.sql`
+**Comando:** `make db-fix-revoked-reason`
+**Reversão:** `make db-revert-revoked-reason` (`sql/21_revert_refresh_tokens_revoked_reason.sql`; remove a coluna e perde os motivos gravados)
+**Situação:** aplicada no banco local em 2026-09-26 (107 tokens na tabela; os já revogados antes da migração ficaram com `NULL`).
+
+- Adiciona `revoked_reason` logo depois de `revoked_at`, com `DEFAULT NULL` e COMMENT "Motivo da revogação (NULL = ativo ou revogado antes do SEC-07/legado)".
+- Não altera nenhuma linha: os tokens legados ficam `NULL` de propósito, porque não há como saber o motivo real.
+- **Idempotente:** consulta `information_schema.COLUMNS` e só roda o `ALTER TABLE` se a coluna ainda não existir. O revert também é idempotente.
+- Como a 19 e a 20, não faz parte do `db-up`/`db-seed`/`db-reset`. Bancos novos já recebem a coluna pelo `sql/06_ddl_refresh_tokens.sql` (atualizado no mesmo card).
+
+### Consultas de verificação
+
+```sql
+SHOW FULL COLUMNS FROM refresh_tokens LIKE 'revoked_reason';
+-- Type = enum('rotacao','logout','revogacao_massa','senha','inativacao'), Null = YES, Default = NULL
+
+SELECT revoked_reason, COUNT(*) AS tokens,
+       SUM(revoked_at IS NULL) AS ativos
+  FROM refresh_tokens
+ GROUP BY revoked_reason;
+-- ativos só aparecem na linha revoked_reason = NULL
+
+SELECT COUNT(*) FROM refresh_tokens
+ WHERE revoked_at IS NULL AND revoked_reason IS NOT NULL;   -- 0 (ativo nunca tem motivo)
+```
+
+Referências: cards SEC-06 e SEC-07 em `tarefas/feito.md` (Lote 6); roteiro `docs/roteiro-teste-manual-lote6.md`, seção 5.
 
 ---
 
-## 2. Tabela `clientes`
+## 8. Tabela `senha_historico`
+
+Auditoria das trocas de senha. Cada linha guarda o hash **anterior** e quem fez a troca. A API usa esses dados para a tela de histórico (admin).
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT AUTO_INCREMENT | não | - | PK. |
+| `usuario_id` | BIGINT | não | - | Usuário cuja senha mudou. FK → `usuarios.id` (`ON DELETE CASCADE`). |
+| `resetado_por_id` | BIGINT | sim | NULL | Admin que fez o reset. `NULL` quando o próprio usuário trocou ou quando o admin foi apagado. FK → `usuarios.id` (`ON DELETE SET NULL`). |
+| `senha_hash_anterior` | VARCHAR(255) | não | - | Hash bcrypt da senha substituída. |
+| `ip_origem` | VARCHAR(45) | **sim** | NULL | IP de quem fez a troca. |
+| `user_agent` | TEXT | **sim** | NULL | User-Agent de quem fez a troca. |
+| `tipo_reset` | ENUM('usuario','admin','primeiro_acesso','esquecimento') | não | - | Tipo da troca (ver abaixo). |
+| `created_at` | TIMESTAMP | **sim** | CURRENT_TIMESTAMP | Data da troca. Não tem `NOT NULL` nem `updated_at`. |
+
+**Índices:** `PRIMARY` (`id`), `idx_usuario` (`usuario_id`), `idx_data` (`created_at`).
+
+**FKs:** as duas FKs foram declaradas sem nome, então o MySQL gera os nomes (normalmente `senha_historico_ibfk_1` e `_ibfk_2`; a confirmar no banco). Nenhuma declara `ON UPDATE`: vale o padrão do MySQL (`RESTRICT`/`NO ACTION`).
+
+**Valores de `tipo_reset`** (`apis/rotaperfumes-api/services/senha_historico_service.go`):
+
+| Valor | Significado | Gravado hoje? |
+| --- | --- | --- |
+| `usuario` | O usuário trocou a própria senha (`POST /api/auth/reset-password`). | Sim (`auth_handler.go`) |
+| `admin` | Um admin resetou a senha (`POST /api/admin/reset-password`); `resetado_por_id` = admin. | Sim (`usuario_handler.go`) |
+| `primeiro_acesso` | Troca no primeiro acesso. | Constante definida, sem uso fora dos testes (a confirmar) |
+| `esquecimento` | Recuperação por esquecimento. | Constante definida, sem uso fora dos testes (a confirmar) |
+
+**Regras de negócio e histórico:**
+- **Colunas anuláveis (BUG-12, Lote 10):** `ip_origem`, `user_agent` e `created_at` aceitam NULL. Um registro com NULL derrubava a listagem com `500`. Desde o BUG-12 o repositório lê essas colunas como `sql.Null*`: NULL sai como `""` (texto) ou data zero `"0001-01-01T00:00:00Z"` (`created_at`), e a tela mostra `-`. O contrato JSON não mudou e não houve migração.
+- **ENUM corrigido (migração 13):** o DDL original tinha `ENUM('proprio','admin','primeiro_login')`, mas o código grava `usuario`/`admin`/`primeiro_acesso`/`esquecimento`. Isso causava o erro 1265 e travava a troca de senha obrigatória. O `07_ddl_senha_historico.sql` já foi corrigido; bancos antigos recebem a correção por `make db-fix-tipo-reset`. Não há script de reversão.
+
+**Migrações:** 13.
+
+---
+
+## 9. Tabela `clientes`
 
 Base de clientes do CRM, importada de `dados/crm/clientes.csv` (`make db-import-clientes`).
 
@@ -46,10 +392,16 @@ Base de clientes do CRM, importada de `dados/crm/clientes.csv` (`make db-import-
 | `cidade` | VARCHAR(120) | não | Cidade. |
 | `uf` | CHAR(2) | não | UF. |
 | `bairro` | VARCHAR(120) | sim | Bairro. |
-| `data_cadastro` | DATE | não | Data de cadastro no CRM de origem. |
+| `data_cadastro` | DATE | não | Data de cadastro no CRM de origem. O CSV mistura `YYYY-MM-DD` e `DD/MM/YYYY`; o importador normaliza. |
 | `ativo` | TINYINT(1) | não | 1 = ativo (padrão), 0 = inativo. No CSV vem como S/N. |
 | `created_at` | TIMESTAMP | não | Criação do registro. |
 | `updated_at` | TIMESTAMP | não | Última atualização (`ON UPDATE CURRENT_TIMESTAMP`). |
+
+**Relacionamentos:** 1:N com `pedidos` (`fk_pedidos_cliente`, RESTRICT), `carteiras` (`fk_carteiras_cliente`, CASCADE), `oportunidades` (`fk_oportunidades_cliente`, CASCADE) e `visitas` (`fk_visitas_cliente`, CASCADE). Todas com `ON UPDATE CASCADE`.
+
+**Exclusão:** lógica (`ativo = 0`). O repositório não tem DELETE físico.
+
+**Migrações:** 19 (unificação e `uq_clientes_cnpj`, seção 18) e 20 (COMMENT de `cnpj`).
 
 ### Índices
 
@@ -66,7 +418,7 @@ Base de clientes do CRM, importada de `dados/crm/clientes.csv` (`make db-import-
 
 - Substitui o antigo índice simples `idx_clientes_cnpj`, que não impedia CNPJ repetido. Depois da migração, o `idx_clientes_cnpj` não existe mais.
 - Decisão do usuário (NEG-01): bloquear CNPJ duplicado no banco.
-- Em bancos novos, o `sql/09_ddl_clientes.sql` já cria a tabela com o `uq_clientes_cnpj`. Em bancos que já existiam, quem cria o índice é a migração 19 (seção 3).
+- Em bancos novos, o `sql/09_ddl_clientes.sql` já cria a tabela com o `uq_clientes_cnpj`. Em bancos que já existiam, quem cria o índice é a migração 19 (seção 18).
 - Um INSERT/UPDATE com CNPJ repetido falha com o erro MySQL **1062** (`ER_DUP_ENTRY`). A API converte esse erro em `409` genérico "cnpj já cadastrado", sem revelar o vendedor dono do cliente. Um CNPJ com formato ou DV inválido é recusado antes, com `400` "cnpj inválido" (NEG-03 e NEG-04), então a checagem de duplicidade só se aplica a CNPJ válido.
 - **Importação:** como o CSV tem CNPJs repetidos, os importadores unificam os duplicados antes de gravar (`apis/shared/importers/clientesdedup`; até o Lote 6 ficava em `cmd/internal/clientesdedup`). Fica a primeira ocorrência de cada CNPJ, que é o menor `cliente_id`, igual à regra da migração. O `importclientes` não grava as cópias, e os importadores de carteiras, pedidos, oportunidades e visitas redirecionam o `cliente_id` da cópia para o sobrevivente. Sem isso, a importação falharia com 1062.
 - **Collation:** `cnpj` herda `utf8mb4_unicode_ci`, que ignora maiúsculas e minúsculas. No índice único, valores que só diferem na caixa colidem. O Backend grava em maiúsculas. Detalhes no cabeçalho de `sql/09_ddl_clientes.sql` (nota do NEG-02, CNPJ alfanumérico).
@@ -79,7 +431,7 @@ A coluna `cnpj` aceita o CNPJ alfanumérico da Receita Federal (vigente desde ju
 - **Dígito verificador:** módulo 11 com os pesos do CNPJ numérico. Cada caractere vale o código ASCII − 48 (`0`–`9` → 0–9, `A` → 17, …, `Z` → 42). O DV é validado pela API e pelo frontend, **não pelo banco**.
 - **Regra central:** `apis/shared/cnpj` (`Normalizar`, `FormatoValido`, `Valido`, `DigitosVerificadores`), usada pela API (`services/cnpj.go`) e pelos importadores. O frontend espelha a regra em `frontend/src/lib/cnpj.ts`.
 - **Caixa:** a API normaliza para maiúsculas antes de gravar. Como a collation é `_ci`, um `SELECT ... WHERE cnpj = '12abc34501de35'` também encontra o registro, e o índice único trata `12abc...` e `12ABC...` como o mesmo valor. Para conferir a caixa gravada de verdade, use `BINARY cnpj`. Ex.: `SELECT COUNT(*) FROM clientes WHERE BINARY cnpj <> UPPER(cnpj);` deve voltar 0.
-- **Comentário da coluna (DB-02, 2026-09-25):** o `COMMENT` de `cnpj` diz "CNPJ normalizado: 14 caracteres, sem máscara, em maiúsculas; 12 primeiras posições em [0-9A-Z] e 2 DVs numéricos (NEG-02)". Bancos novos já recebem esse texto pelo `sql/09_ddl_clientes.sql`. Bancos existentes recebem pela migração 20 (`sql/20_alter_clientes_cnpj_comment.sql`, `make db-fix-cnpj-comment`; reversão: `make db-revert-cnpj-comment`). Ela troca só o texto: tipo, collation, índice `uq_clientes_cnpj` e dados não mudam. Como a 19, a migração 20 não faz parte do `db-up`/`db-seed`. Foi aplicada no banco local em 2026-09-25. A tabela `clientes_merge_backup_20260925` mantém o comentário antigo de propósito, porque guarda o retrato das cópias removidas no NEG-01.
+- **Comentário da coluna (DB-02, 2026-09-25):** o `COMMENT` de `cnpj` diz "CNPJ normalizado: 14 caracteres, sem máscara, em maiúsculas; 12 primeiras posições em [0-9A-Z] e 2 DVs numéricos (NEG-02)". Bancos novos já recebem esse texto pelo `sql/09_ddl_clientes.sql`. Bancos existentes recebem pela migração 20 (`sql/20_alter_clientes_cnpj_comment.sql`, `make db-fix-cnpj-comment`; reversão: `make db-revert-cnpj-comment`). Ela troca só o texto (`ALGORITHM=INPLACE, LOCK=NONE`): tipo, collation, índice `uq_clientes_cnpj` e dados não mudam. Como a 19, a migração 20 não faz parte do `db-up`/`db-seed`. Foi aplicada no banco local em 2026-09-25. A tabela `clientes_merge_backup_20260925` mantém o comentário antigo de propósito, porque guarda o retrato das cópias removidas no NEG-01.
 
 ### Importador `importclientes` e o CNPJ (NEG-02, 2026-09-25)
 
@@ -96,7 +448,209 @@ O importador de clientes (`apis/shared/importers/clientes`, chamado pelo `cmd/im
 
 ---
 
-## 3. Migração 19: unificação dos CNPJs duplicados
+## 10. Tabela `carteiras`
+
+Vínculo **histórico** cliente ↔ vendedor (carteira de clientes), importado de `dados/crm/carteira.csv` (`make db-import-carteiras`).
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `carteira_id_origem` | BIGINT AUTO_INCREMENT | não | - | PK. Corresponde 1:1 ao `carteira_id` do CSV. |
+| `cliente_id` | BIGINT | não | - | FK `fk_carteiras_cliente` → `clientes.cliente_id_origem` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`). |
+| `vendedor_id` | BIGINT | não | - | FK `fk_carteiras_vendedor` → `vendedores.id` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`). |
+| `data_inicio` | DATE | não | - | Início do vínculo. |
+| `data_fim` | DATE | sim | NULL | Fim do vínculo. **NULL = vínculo ativo.** |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+
+**Índices:** `PRIMARY` (`carteira_id_origem`), `uk_carteiras_cliente_vendedor_inicio` (UNIQUE: `cliente_id`, `vendedor_id`, `data_inicio`), `idx_carteiras_cliente_id`, `idx_carteiras_vendedor_id`, `idx_carteiras_data_fim`.
+
+**Regras de negócio:**
+- Um cliente pode ter vários vendedores ao longo do tempo e voltar a um vendedor anterior. Por isso não há UNIQUE em `cliente_id` nem em (`cliente_id`, `vendedor_id`).
+- O vínculo "atual" é a linha com `data_fim IS NULL`. **Não há UNIQUE de vínculo ativo:** o banco aceita dois vínculos ativos para o mesmo cliente (situação possível depois da migração 19, seção 18).
+- Exclusão física pela API.
+
+**Migrações:** nenhuma alteração de schema. A migração 19 transfere ou descarta linhas das cópias de clientes.
+
+---
+
+## 11. Tabela `oportunidades`
+
+Oportunidades de venda (funil do CRM), importadas de `dados/crm/oportunidades.csv` (`make db-import-oportunidades`).
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `oportunidade_id` | BIGINT AUTO_INCREMENT | não | - | PK. Corresponde 1:1 ao `oportunidade_id` do CSV. |
+| `cliente_id` | BIGINT | não | - | FK `fk_oportunidades_cliente` → `clientes.cliente_id_origem` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`). |
+| `vendedor_id` | BIGINT | não | - | FK `fk_oportunidades_vendedor` → `vendedores.id` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`). Dono direto, independente da carteira. |
+| `origem` | VARCHAR(80) | não | - | Canal de origem (ex.: WhatsApp, Indicação, Inbound site, Instagram, Feira de beleza, Reativação, Prospecção ativa). |
+| `data_abertura` | DATE | não | - | Abertura. |
+| `etapa` | VARCHAR(40) | não | - | Etapa do funil (ex.: Prospecção, Qualificação, Proposta enviada, Negociação, Fechado ganho, Fechado perdido). |
+| `probabilidade_pct` | DECIMAL(5,2) | não | 0.00 | Probabilidade de fechamento (0 a 100). No CSV sempre inteiro (0, 10, 25, 50, 75, 100). |
+| `valor_estimado` | DECIMAL(15,2) | não | 0.00 | Valor estimado. |
+| `data_fechamento` | DATE | sim | NULL | NULL enquanto aberta. |
+| `ciclo_dias` | INT | sim | NULL | Dias entre abertura e fechamento; NULL enquanto aberta. Guardado como veio do CSV, sem trigger de cálculo. |
+| `motivo_perda` | VARCHAR(255) | sim | NULL | Preenchido quando `etapa` = Fechado perdido. |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+
+**Índices:** `PRIMARY` (`oportunidade_id`), `idx_oportunidades_cliente_id`, `idx_oportunidades_vendedor_id`, `idx_oportunidades_etapa`, `idx_oportunidades_origem`, `idx_oportunidades_data_abertura`.
+
+**Regras de negócio:** `origem` e `etapa` são VARCHAR (e não ENUM) para não travar a importação se surgirem valores novos; o banco não valida a lista. Exclusão física pela API.
+
+**Migrações:** nenhuma alteração de schema (a 19 só transfere dados).
+
+---
+
+## 12. Tabela `visitas`
+
+Visitas de vendedores a clientes, importadas de `dados/crm/visitas.csv` (`make db-import-visitas`).
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `visita_id` | BIGINT AUTO_INCREMENT | não | - | PK. Corresponde 1:1 ao `visita_id` do CSV. |
+| `cliente_id` | BIGINT | não | - | FK `fk_visitas_cliente` → `clientes.cliente_id_origem` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`). |
+| `vendedor_id` | BIGINT | não | - | FK `fk_visitas_vendedor` → `vendedores.id` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`). Responsável pela visita. |
+| `data_visita` | DATE | não | - | Data da visita. |
+| `resultado` | VARCHAR(40) | não | - | Resultado (valores observados: Sem pedido, Pedido realizado, Reagendada, Cliente ausente, Apenas relacionamento). |
+| `duracao_min` | INT | não | 0 | Duração em minutos. |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+
+**Índices:** `PRIMARY` (`visita_id`), `idx_visitas_cliente_id`, `idx_visitas_vendedor_id`, `idx_visitas_data_visita`, `idx_visitas_resultado`.
+
+**Regras de negócio:** `resultado` é VARCHAR pelo mesmo critério de `oportunidades.etapa`. Exclusão física pela API.
+
+**Migrações:** nenhuma alteração de schema (a 19 só transfere dados).
+
+---
+
+## 13. Tabela `produtos`
+
+Catálogo do ERP, importado de `dados/erp/produtos.csv` (`make db-import-produtos`).
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT AUTO_INCREMENT | não | - | PK interna, desacoplada da origem. |
+| `sku` | VARCHAR(40) | não | - | SKU da origem (ex.: SKU00001). **Único** (`uk_produtos_sku`); chave do upsert da importação e destino da FK de `estoque`. |
+| `descricao` | VARCHAR(255) | não | - | Nome/descrição. |
+| `categoria` | VARCHAR(80) | não | - | Categoria (ex.: Eau de Parfum). |
+| `marca` | VARCHAR(80) | não | - | Marca. |
+| `nota_olfativa` | VARCHAR(80) | sim | NULL | Nota olfativa predominante. |
+| `preco_tabela` | DECIMAL(10,2) | não | - | Preço de venda de tabela. |
+| `custo_unitario` | DECIMAL(10,2) | não | - | Custo unitário. |
+| `unidade` | VARCHAR(40) | não | - | Unidade/embalagem como veio da origem (ex.: UN, KIT 5, DISPLAY 24, CX 12). |
+| `data_lancamento` | DATE | sim | NULL | Vazia em parte do CSV. |
+| `ativo` | TINYINT(1) | não | 1 | 1 = ativo, 0 = inativo (exclusão lógica). |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+
+**Índices:** `PRIMARY` (`id`), `uk_produtos_sku` (UNIQUE, `sku`), `idx_produtos_categoria`, `idx_produtos_marca`, `idx_produtos_ativo`.
+
+**Relacionamentos:** 1:N com `itens_pedido` (`produto_id` → `id`, RESTRICT) e com `estoque` (`sku` → `sku`, RESTRICT; a troca de `sku` propaga por `ON UPDATE CASCADE`).
+
+**Migrações:** nenhuma.
+
+---
+
+## 14. Tabela `pedidos`
+
+Pedidos do ERP, importados de `dados/erp/pedidos.csv` (`make db-import-pedidos`, que importa também os itens).
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `pedido_id_origem` | BIGINT AUTO_INCREMENT | não | - | PK. Corresponde 1:1 ao `pedido_id` do CSV. |
+| `cliente_id` | BIGINT | não | - | FK `fk_pedidos_cliente` → `clientes.cliente_id_origem` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`). |
+| `vendedor_id` | BIGINT | não | - | FK `fk_pedidos_vendedor` → `vendedores.id` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`). |
+| `data_pedido` | DATE | não | - | Data do pedido (sem horário). |
+| `canal` | ENUM('App','Telefone','Visita','WhatsApp') | não | - | Canal de venda. |
+| `status` | ENUM('Cancelado','Em separação','Entregue','Faturado') | não | - | Status. |
+| `valor_total` | DECIMAL(15,2) | não | 0.00 | Valor total em R$. |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+
+**Índices:** `PRIMARY` (`pedido_id_origem`), `idx_pedidos_status`, `idx_pedidos_canal`, `idx_pedidos_data_pedido`, `idx_pedidos_cliente_id`, `idx_pedidos_vendedor_id`.
+
+**Relacionamentos:** N:1 com `clientes` e `vendedores`; 1:N com `itens_pedido` (CASCADE) e `pagamentos` (RESTRICT).
+
+**Regras de negócio:** exclusão física de pedido e itens numa transação (`PedidoRepository.DeleteComItens`). O handler/service bloqueia a exclusão de pedido com pagamentos vinculados ou com status Faturado; a FK de `pagamentos` também bloqueia no banco.
+
+**Migrações:** nenhuma alteração de schema (a 19 só transfere dados).
+
+---
+
+## 15. Tabela `itens_pedido`
+
+Linhas de cada pedido, importadas de `dados/erp/itens_pedido.csv`.
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `item_id_origem` | BIGINT AUTO_INCREMENT | não | - | PK. Corresponde 1:1 ao `item_id` do CSV. |
+| `pedido_id` | BIGINT | não | - | FK `fk_itens_pedido_pedido` → `pedidos.pedido_id_origem` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`). |
+| `produto_id` | BIGINT | não | - | FK `fk_itens_pedido_produto` → `produtos.id` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`). A importação resolve o `sku` do CSV para o `id`. |
+| `quantidade` | INT | não | - | Quantidade. |
+| `preco_praticado` | DECIMAL(10,2) | não | - | Preço unitário praticado. |
+| `desconto_pct` | DECIMAL(5,2) | não | 0.00 | Desconto em % (5.00 = 5%). |
+| `valor_bruto` | DECIMAL(15,2) | não | - | Valor do item (quantidade × preço, já com desconto conforme a origem). |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+
+**Índices:** `PRIMARY` (`item_id_origem`), `idx_itens_pedido_pedido_id`, `idx_itens_pedido_produto_id`.
+
+**Regras de negócio:** composição do pedido: o item não existe sem o pedido pai.
+
+**Migrações:** nenhuma.
+
+---
+
+## 16. Tabela `pagamentos`
+
+Pagamentos dos pedidos, importados de `dados/erp/pagamentos.csv` (`make db-import-pagamentos`, depois dos pedidos).
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `pagamento_id` | BIGINT AUTO_INCREMENT | não | - | PK. Corresponde 1:1 ao `pagamento_id` do CSV; o importador grava o valor explicitamente. |
+| `pedido_id` | BIGINT | não | - | FK `fk_pagamentos_pedido` → `pedidos.pedido_id_origem` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`). |
+| `forma_pagamento` | ENUM('Boleto 14 dias','Boleto 28 dias','Cartão de crédito','Cartão de débito','Cheque a prazo','Dinheiro','PIX') | não | - | Forma de pagamento. |
+| `parcelas` | TINYINT UNSIGNED | não | 1 | Número de parcelas (1 a 6 no CSV). |
+| `valor` | DECIMAL(15,2) | não | - | Valor bruto. |
+| `taxa_pct` | DECIMAL(5,2) | não | 0.00 | Taxa em % (3.20 = 3,20%). |
+| `valor_liquido` | DECIMAL(15,2) | não | - | Valor descontada a taxa. |
+| `data_vencimento` | DATE | não | - | Vencimento. |
+| `data_pagamento` | DATE | sim | NULL | **NULL = ainda não pago** (status Em aberto ou Inadimplente). |
+| `status_pagamento` | ENUM('Em aberto','Inadimplente','Pago','Pago com atraso') | não | - | Status. |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+
+**Índices:** `PRIMARY` (`pagamento_id`), `idx_pagamentos_pedido_id`, `idx_pagamentos_status_pagamento`, `idx_pagamentos_data_vencimento`.
+
+**Regras de negócio:** `RESTRICT` no pedido para o pagamento não ficar órfão: a exclusão do pedido exige tratar os pagamentos antes. O pagamento pode ser apagado fisicamente pela API.
+
+**Migrações:** nenhuma.
+
+---
+
+## 17. Tabela `estoque`
+
+Série temporal de saldo por SKU (um snapshot por dia), importada de `dados/erp/estoque.csv` (`make db-import-estoque`). Também recebe a baixa por faturamento de pedidos (`UpsertPorDataSku`).
+
+**Schema atual** = `17_ddl_estoque.sql` + migração 18 (sem a coluna `origem`):
+
+| Campo | Tipo | Nulo | Default | Descrição |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT AUTO_INCREMENT | não | - | PK interna. |
+| `data_snapshot` | DATE | não | - | Data do snapshot. |
+| `sku` | VARCHAR(40) | não | - | FK `fk_estoque_sku` → `produtos.sku` (`ON DELETE RESTRICT`, `ON UPDATE CASCADE`). |
+| `saldo` | INT | não | - | Saldo em unidades. |
+| `ruptura` | TINYINT(1) | não | 0 | 1 = em ruptura, 0 = sem ruptura. No CSV vem como S/N. |
+| `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
+
+**Índices:** `PRIMARY` (`id`), `uk_estoque_data_sku` (UNIQUE: `data_snapshot`, `sku`; chave do upsert do importador e do faturamento), `idx_estoque_sku`, `idx_estoque_data_snapshot`, `idx_estoque_ruptura`.
+
+**Regras de negócio:**
+- A identidade de negócio é o par (`data_snapshot`, `sku`). Os INSERTs do código gravam só `data_snapshot`, `sku`, `saldo` e `ruptura`.
+- **Migração 18 (remove `origem`):** a coluna `origem` ENUM('import_csv','faturamento','manual') foi removida a pedido do usuário. Com isso, o import do CSV e a baixa por faturamento podem se sobrescrever sem rastro quando caem no mesmo (`data_snapshot`, `sku`). O script é um `DROP COLUMN` simples: **não é idempotente** (a segunda execução falha com erro 1091) e não tem reversão.
+- Segundo o card de criação em `feito.md`, `ruptura` é derivada de `saldo <= 0`; o DDL diz que vem do S/N do CSV. A regra aplicada pelo Backend fica a confirmar.
+
+**Atenção (a confirmar, seção 22):** o `make db-up` **não** roda o `17_ddl_estoque.sql` nem o `18`. Num banco recriado por `db-reset`/`db-rebuild`, a tabela não é criada, e o `db-import-estoque` do `db-rebuild` falharia. Se alguém rodar o 17 à mão, a tabela nasce com `origem` até rodar o 18. O `postman/README.md` diz que o `db-up` cria `estoque`, o que não bate com o Makefile atual.
+
+**Migrações:** 18.
+
+---
+
+## 18. Migração 19: unificação dos CNPJs duplicados
 
 **Script:** `sql/19_alter_clientes_cnpj_unique.sql`
 **Comando:** `make db-fix-cnpj-unique` (roda `mysql $(MYSQL_OPTS) $(DB_NAME) < sql/19_alter_clientes_cnpj_unique.sql`)
@@ -135,13 +689,13 @@ Se sobrar alguma cópia, o `ADD UNIQUE` falha com **1062** e nenhum dado é perd
 - `SHOW INDEX FROM clientes WHERE Column_name = 'cnpj'` mostra só o `uq_clientes_cnpj` (`Non_unique` = 0).
 - `pedidos` = 28732, `carteiras` = 3637, `oportunidades` = 5980, `visitas` = 37936 (contagens do roteiro do Lote 4, item 1.5).
 - `clientes_merge_backup_20260925` = **40** linhas.
-- `clientes_merge_backup_20260925_vinculos` = **0** linhas (DB-01, abaixo).
+- `clientes_merge_backup_20260925_vinculos` = **0** linhas (DB-01, seção 19).
 
 ---
 
-## 4. Tabelas de backup da migração 19
+## 19. Tabelas de backup da migração 19
 
-Criadas pela migração 19 e **não apagadas** pela reversão. Só apague manualmente depois de conferir que a reversão não será mais necessária.
+Criadas pela migração 19 e **não apagadas** pela reversão. Só apague manualmente depois de conferir que a reversão não será mais necessária. Não têm FK para as tabelas de negócio.
 
 ### `clientes_merge_backup_20260925`
 
@@ -175,7 +729,7 @@ SELECT (SELECT COUNT(*) FROM pedidos       WHERE cliente_id > 3000) AS pedidos,
 
 ---
 
-## 5. Reversão (`make db-revert-cnpj-unique`)
+## 20. Reversão (`make db-revert-cnpj-unique`)
 
 `sql/19_revert_clientes_cnpj_unique.sql` usa as duas tabelas de backup:
 
@@ -188,7 +742,7 @@ SELECT (SELECT COUNT(*) FROM pedidos       WHERE cliente_id > 3000) AS pedidos,
 
 ---
 
-## 6. Consultas de verificação
+## 21. Consultas de verificação da migração 19
 
 ```sql
 SELECT COUNT(*) AS clientes FROM clientes;                                   -- 3000
@@ -204,114 +758,22 @@ Referências: cards NEG-01, NEG-03, NEG-04 e DB-01 em `tarefas/feito.md`; roteir
 
 ---
 
-## 7. Tabela `refresh_tokens` e migração 21 (SEC-07, Lote 6, 2026-09-26)
+## 22. Pontos a confirmar
 
-Guarda os refresh tokens (hash SHA-256) emitidos no login e no refresh. Cada refresh é de uso único: o token antigo é revogado e um novo é gravado na mesma transação.
+Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Devem ir para o DataBrain ou para o BackBrain, conforme o caso.
 
-| Campo | Tipo | Nulo | Descrição |
+| # | Tabela | Ponto | Onde |
 | --- | --- | --- | --- |
-| `id` | BIGINT AUTO_INCREMENT | não | PK. É o `token_id` dos logs de `[auth]`. |
-| `usuario_id` | BIGINT | não | FK `fk_refresh_token_usuario` → `usuarios.id` (`ON DELETE CASCADE`, `ON UPDATE CASCADE`). |
-| `token_hash` | VARCHAR(255) | não | SHA-256 do refresh token. **Único** (`uk_refresh_token_hash`). O token em texto puro nunca é gravado. |
-| `expires_at` | DATETIME | não | Expiração. |
-| `revoked_at` | DATETIME | sim | Data/hora da revogação. `NULL` = ativo. |
-| `revoked_reason` | ENUM('rotacao','logout','revogacao_massa','senha','inativacao') | sim | **Novo (migração 21).** Motivo da revogação, gravado junto com `revoked_at`. `NULL` = token ativo ou revogado antes da migração (legado). |
-| `ip_origem` | VARCHAR(45) | sim | IP que pediu o token (IPv4/IPv6). |
-| `user_agent` | TEXT | sim | User-Agent no momento da criação. |
-| `created_at`, `updated_at` | TIMESTAMP | não | Controle. |
-
-**Índices:** `PRIMARY` (`id`), `uk_refresh_token_hash` (UNIQUE, `token_hash`), `idx_refresh_usuario_id`, `idx_refresh_expires_at` e `idx_refresh_revoked_at`. A migração 21 **não** cria índice para `revoked_reason`: as buscas são por `token_hash` e `usuario_id`, e o motivo só é lido depois de achar a linha.
-
-### Valores de `revoked_reason`
-
-| Valor | Quando é gravado | Onde no código |
-| --- | --- | --- |
-| `rotacao` | `POST /api/auth/refresh`: o token antigo é trocado por um novo. | `RefreshTokenService.BeginRotation` |
-| `logout` | `POST /api/auth/logout`. | `auth_handler.go` (Logout) |
-| `revogacao_massa` | Reuso, fora da janela de 30 s, de um token com motivo `rotacao` (possível roubo): todos os tokens ativos do usuário são revogados. | `auth_handler.go` (`tratarTokenRevogadoForaDaJanela`) |
-| `senha` | Troca de senha pelo usuário (`POST /api/auth/reset-password`) ou reset pelo admin (`POST /api/admin/reset-password`). | `auth_handler.go`, `usuario_handler.go` |
-| `inativacao` | Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) ou desligamento do vendedor dele (`DELETE /api/vendedores/{id}`, na mesma transação, via `RevokeAllByVendedorID`). SEC-06. | `usuario_handler.go`, `vendedor_service.go` |
-
-**Regra de uso (SEC-07, opção B):** só o reuso de um token com motivo `rotacao` fora da janela de graça gera o alerta `[auth][seguranca]` e a revogação em massa. Os demais motivos e o `NULL` legado geram só log informativo. A resposta HTTP é sempre `401` `"refresh token revogado"`.
-
-### Migração 21
-
-**Script:** `sql/21_alter_refresh_tokens_revoked_reason.sql`
-**Comando:** `make db-fix-revoked-reason`
-**Reversão:** `make db-revert-revoked-reason` (`sql/21_revert_refresh_tokens_revoked_reason.sql`; remove a coluna e perde os motivos gravados)
-**Situação:** aplicada no banco local em 2026-09-26 (107 tokens na tabela; os já revogados antes da migração ficaram com `NULL`).
-
-- Adiciona `revoked_reason` logo depois de `revoked_at`, com `DEFAULT NULL` e COMMENT "Motivo da revogação (NULL = ativo ou revogado antes do SEC-07/legado)".
-- Não altera nenhuma linha: os tokens legados ficam `NULL` de propósito, porque não há como saber o motivo real.
-- **Idempotente:** consulta `information_schema.COLUMNS` e só roda o `ALTER TABLE` se a coluna ainda não existir.
-- Como a 19 e a 20, não faz parte do `db-up`/`db-seed`/`db-reset`. Bancos novos já recebem a coluna pelo `sql/06_ddl_refresh_tokens.sql` (atualizado no mesmo card).
-
-### Consultas de verificação
-
-```sql
-SHOW FULL COLUMNS FROM refresh_tokens LIKE 'revoked_reason';
--- Type = enum('rotacao','logout','revogacao_massa','senha','inativacao'), Null = YES, Default = NULL
-
-SELECT revoked_reason, COUNT(*) AS tokens,
-       SUM(revoked_at IS NULL) AS ativos
-  FROM refresh_tokens
- GROUP BY revoked_reason;
--- ativos só aparecem na linha revoked_reason = NULL
-
-SELECT COUNT(*) FROM refresh_tokens
- WHERE revoked_at IS NULL AND revoked_reason IS NOT NULL;   -- 0 (ativo nunca tem motivo)
-```
-
-Referências: cards SEC-06 e SEC-07 em `tarefas/feito.md` (Lote 6); roteiro `docs/roteiro-teste-manual-lote6.md`, seção 5.
-
----
-
-## 8. Coluna `usuarios.tokens_validos_desde` e migração 22 (SEC-08, Lote 8, 2026-09-26)
-
-Corte de sessão por usuário. Revogar refresh tokens não invalida os access tokens (JWT de 24h) já emitidos; esta coluna faz o middleware recusá-los.
-
-| Campo | Tipo | Nulo | Descrição |
-| --- | --- | --- | --- |
-| `tokens_validos_desde` | DATETIME | sim | **Novo (migração 22)**, logo depois de `deve_trocar_senha`. `NULL` = sem corte (vale só assinatura e `exp`). Com valor: access token com `iat <= tokens_validos_desde`, ou sem `iat`, recebe `401` `"sessão encerrada — faça login novamente"`. COMMENT: "Access tokens com iat <= este instante são rejeitados (SEC-08); NULL = sem corte". |
-
-**Índice:** nenhum. A coluna é lida junto com `ativo` e `role`, depois de achar o usuário pela PK (`sub` do JWT).
-
-### Quando o corte é gravado
-
-O valor vem do Go (`time.Now().Truncate(time.Second)`), nunca do `NOW()` do MySQL (o DSN usa `loc=Local`, fuso fixo `-03:00`).
-
-| Evento | Onde no código |
-| --- | --- |
-| Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) | `UsuarioRepository.SetAtivo(false)` |
-| Desligamento do vendedor (`DELETE /api/vendedores/{id}`), para os usuários vinculados | `UsuarioRepository.InativarByVendedorID` |
-| Troca de senha pelo usuário, reset pelo admin e `ResetSenha` | `UsuarioRepository.UpdatePasswordHash` |
-| Reuso de refresh token rotacionado fora da janela (SEC-07), depois do `RevokeAllUserTokens` | `UsuarioRepository.InvalidarSessoes`, chamado em `tratarTokenRevogadoForaDaJanela` (`auth_handler.go`) |
-| CLI `resetpassword` | `UpsertAdmin`, `UpsertByEmail` (`apis/shared/tools/resetpassword`) |
-
-**Não gravam corte:** reativação do usuário ou do vendedor e logout. Um login feito no mesmo segundo de um corte gera token recusado (regra `iat <= corte`; aceito pelo 🤍 MegaBrain).
-
-### Migração 22
-
-**Script:** `sql/22_alter_usuarios_tokens_validos_desde.sql`
-**Comando:** `make db-fix-tokens-validos-desde`
-**Reversão:** `make db-revert-tokens-validos-desde` (`sql/22_revert_usuarios_tokens_validos_desde.sql`; remove a coluna e perde os cortes gravados)
-**Situação:** aplicada no banco local em 2026-09-26.
-
-- Não altera nenhuma linha: os usuários existentes ficam `NULL` (sem corte).
-- **Idempotente:** consulta `information_schema.COLUMNS` e só roda o `ALTER TABLE` se a coluna ainda não existir. O revert também é idempotente.
-- Como a 19, a 20 e a 21, não faz parte do `db-up`/`db-seed`/`db-reset`. Bancos novos já recebem a coluna pelo `sql/01_ddl_usuarios.sql` (atualizado no mesmo card).
-
-### Consultas de verificação
-
-```sql
-SHOW FULL COLUMNS FROM usuarios LIKE 'tokens_validos_desde';
--- Type = datetime, Null = YES, Default = NULL
-
-SELECT id, email, ativo, tokens_validos_desde
-  FROM usuarios
- WHERE tokens_validos_desde IS NOT NULL
- ORDER BY tokens_validos_desde DESC;
--- só usuários que tiveram inativação, troca/reset de senha ou revogação em massa depois da migração
-```
-
-Referências: card SEC-08 em `tarefas/feito.md` (Lote 8); roteiro `docs/roteiro-teste-manual-lote8.md`, seção 1.
+| 1 | `estoque` | O `make db-up` não roda `17_ddl_estoque.sql` nem o `18`. Um `db-reset`/`db-rebuild` não cria `estoque`, e o `db-import-estoque` falharia. Não se sabe como a tabela foi criada no banco local. | `Makefile` (alvo `db-up`) |
+| 2 | `estoque` | O `17_ddl_estoque.sql` ainda cria `origem`, que a migração 18 remove. O DDL base não reflete o schema atual, ao contrário das demais migrações. | `sql/17_ddl_estoque.sql` |
+| 3 | `estoque` | A migração 18 não é idempotente (`DROP COLUMN` sem checagem) e não tem alvo no Makefile. | `sql/18_alter_estoque_drop_origem.sql` |
+| 4 | `estoque` | `postman/README.md` diz que o `db-up` cria `estoque`; o Makefile atual não cria. | `postman/README.md` |
+| 5 | `estoque` | `ruptura`: o DDL diz que vem do S/N do CSV; o card de criação diz "derivado de `saldo <= 0`". Regra efetiva a confirmar no código. | `sql/17`, `tarefas/feito.md` |
+| 6 | `senha_historico` | Sem `ENGINE`/charset/collation explícitos: herda do servidor e do banco (esperado InnoDB e `utf8mb4_unicode_ci`). Nomes das FKs gerados pelo MySQL. | `sql/07_ddl_senha_historico.sql` |
+| 7 | `senha_historico` | `created_at` aceita NULL (sem `NOT NULL`); o BUG-12 confirmou `timestamp NULL DEFAULT CURRENT_TIMESTAMP` no banco local. Um `NOT NULL` exigiria migração (decisão de negócio). | BUG-12 em `tarefas/feito.md` |
+| 8 | `senha_historico` | O teste de integração do BUG-12 usa um "registro órfão" (`usuario_id` sem usuário), o que a FK `ON DELETE CASCADE` não deveria permitir. Confirmar se a FK existe no banco local ou se o teste desliga `FOREIGN_KEY_CHECKS`. | `apis/shared/tests/repositories/bug12_senha_historico_null_test.go` |
+| 9 | `senha_historico` | `tipo_reset` `primeiro_acesso` e `esquecimento` estão no ENUM, mas nenhum código fora dos testes os grava. A troca de primeiro acesso é gravada como `usuario`. | `senha_historico_service.go`, `auth_handler.go` |
+| 10 | `usuarios` | Valor de `deve_trocar_senha` gravado pelo CLI `resetpassword` (`-all-users`, `-create-admin`) no `db-seed`. | `apis/shared/tools/resetpassword` |
+| 11 | `refresh_tokens` | `CleanupExpired`/`DeleteExpired` existe, mas nada fora dos testes o chama: a tabela não tem limpeza automática. | `refresh_token_service.go` |
+| 12 | `vendedores` | Não há UNIQUE além da PK (nem em `nome`): dois vendedores homônimos são aceitos pelo banco. Confirmar se é intencional. | `sql/01_ddl_usuarios.sql` |
+| 13 | `vendedores` | Se a reativação do vendedor também reativa os usuários vinculados. | `vendedor_service.go` |

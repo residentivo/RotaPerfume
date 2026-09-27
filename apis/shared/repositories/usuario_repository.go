@@ -99,7 +99,13 @@ func corteDeSessaoAgora() time.Time {
 // ErrNotFound se o usuário não existir. Aceita *sql.DB ou *sql.Tx.
 func (r *UsuarioRepository) InvalidarSessoes(ctx context.Context, db Execer, id int64, t time.Time) error {
 	const q = `UPDATE usuarios SET tokens_validos_desde = ? WHERE id = ?`
-	res, err := db.ExecContext(ctx, q, t, id)
+	// Trunca em segundos (mesma regra de corteDeSessaoAgora): o iat do JWT tem
+	// precisão de segundo e o middleware recusa iat <= corte. Um DATETIME sem
+	// fração no MySQL ARREDONDA a fração (10:00:00.7 vira 10:00:01), o que
+	// derrubaria também um token legítimo emitido no segundo seguinte (ex.: o
+	// novo login logo após a revogação). Truncar no Go torna o valor gravado
+	// determinístico e independente do chamador passar t com fração.
+	res, err := db.ExecContext(ctx, q, t.Truncate(time.Second), id)
 	if err != nil {
 		return fmt.Errorf("repositories: invalidar sessoes: %w", err)
 	}

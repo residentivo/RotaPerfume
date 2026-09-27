@@ -4,19 +4,16 @@
 -- Data: 2026-09-06
 -- Agente: DataBrain (🌸)
 --
--- ATENÇÃO: o hash abaixo é um PLACEHOLDER.
--- Substitua pelo hash real via:
---   make gen-hash
--- O Go em apis/shared/cmd/seedusers gera o bcrypt com cost 12.
--- ============================================================
---
--- Hash real esperado (cost 12) para: Admin@123
+-- ATENÇÃO: o hash abaixo é um PLACEHOLDER e DEVE continuar placeholder
+-- neste arquivo (nunca commite um hash real aqui).
 -- Placeholder usado porque não temos bcrypt em SQL puro:
 --   $2a$12$XXXXPLACEHOLDER_ADMIN_PRECISA_SER_GERADO_PELO_GOXXXX
 --
--- Para gerar o hash real, o BackBrain deve rodar:
---   cd apis/shared && go run ./cmd/seedusers
--- E o resultado substituirá o placeholder neste arquivo.
+-- Para aplicar o seed com hash real (bcrypt, cost BCRYPT_COST):
+--   make gen-hash   (= cd apis/shared && go run ./cmd/seedusers)
+-- A senha vem de SEED_ADMIN_PASSWORD do .env (ou é aleatória; veja
+-- -show-password). O comando grava uma cópia com o hash em tmp/seed/,
+-- executa essa cópia e a apaga; este arquivo NÃO é alterado.
 -- ============================================================
 
 SET NAMES utf8mb4;

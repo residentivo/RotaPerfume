@@ -201,7 +201,7 @@ deps: ## Instala dependências Go
 # =============================================================================
 # Seed de usuários (gera bcrypt hash)
 # =============================================================================
-gen-hash: ## Gera hash bcrypt e atualiza SQLs de seed (para db-reset limpo)
+gen-hash: ## aplica os seeds com hash gerado (sem alterar sql/)
 	cd apis/shared && go run ./cmd/seedusers
 
 fix-hash: ## Lista usuários e corrige TODOS os PLACEHOLDER + cria admin (se faltar)

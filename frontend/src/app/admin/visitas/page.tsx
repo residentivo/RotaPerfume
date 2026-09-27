@@ -29,6 +29,7 @@ import {
 } from "@/lib/api";
 import { useSessionUser } from "@/lib/session";
 import { Visita, VisitaInput, Vendedor, Cliente } from "@/lib/types";
+import { formatarData } from "@/lib/formatarData";
 
 type SortKey =
   | "visita_id"
@@ -73,13 +74,6 @@ const resultadoColor: Record<string, string> = {
   "Cliente ausente": "bg-red-100 text-red-700",
   "Apenas relacionamento": "bg-blue-100 text-blue-700",
 };
-
-function fmtDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr.length <= 10 ? `${dateStr}T00:00:00` : dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("pt-BR");
-}
 
 function VisitasContent() {
   const [visitas, setVisitas] = useState<Visita[]>([]);
@@ -419,7 +413,7 @@ function VisitasContent() {
       width: "120px",
       align: "center",
       sortable: true,
-      render: (v) => <span className="text-slate-600">{fmtDate(v.data_visita)}</span>,
+      render: (v) => <span className="text-slate-600">{formatarData(v.data_visita)}</span>,
     },
     {
       key: "resultado",

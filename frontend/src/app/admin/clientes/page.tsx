@@ -28,6 +28,7 @@ import { ApiError } from "@/lib/apiError";
 import { useSessionUser, useVendedorDesligado } from "@/lib/session";
 import { Cliente, ClienteInput } from "@/lib/types";
 import { formatCnpj } from "@/lib/cnpj";
+import { formatarData } from "@/lib/formatarData";
 
 // Mensagens do backend (SEC-01), usadas so como fallback se a API nao
 // devolver texto.
@@ -76,13 +77,6 @@ const LIMIT_OPTIONS = [
   { value: "50", label: "50 por pagina" },
   { value: "100", label: "100 por pagina" },
 ];
-
-function fmtDate(dateStr: string): string {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("pt-BR");
-}
 
 function ClientesContent() {
   // SEC-01: permissao de criacao vem da sessao em memoria validada por
@@ -399,7 +393,7 @@ function ClientesContent() {
       align: "center",
       sortable: true,
       render: (c) => (
-        <span className="text-slate-600">{fmtDate(c.data_cadastro)}</span>
+        <span className="text-slate-600">{formatarData(c.data_cadastro)}</span>
       ),
     },
     {

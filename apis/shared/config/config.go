@@ -60,6 +60,12 @@ type Config struct {
 	// /api/auth/reset-password (env TURNSTILE_SECRET_KEY). Nunca é logada nem
 	// retornada em resposta JSON.
 	TurnstileSecretKey string
+
+	// SecurityAlertEmails são os destinatários administrativos dos alertas de
+	// segurança (SEC-09, ex.: reuso de refresh token), via
+	// SECURITY_ALERT_EMAILS (separados por vírgula). Entradas vazias, sem "@"
+	// ou com caracteres de quebra de linha são descartadas.
+	SecurityAlertEmails []string
 }
 
 // Load lê as variáveis de ambiente e retorna uma Config preenchida.
@@ -108,8 +114,24 @@ func Load() (*Config, error) {
 	cfg.CORSAllowedOrigins = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
 	cfg.TrustProxyHeaders = getEnv("TRUST_PROXY_HEADERS", "false") == "true"
 	cfg.TurnstileSecretKey = os.Getenv("TURNSTILE_SECRET_KEY")
+	cfg.SecurityAlertEmails = ParseSecurityAlertEmails(os.Getenv("SECURITY_ALERT_EMAILS"))
 
 	return cfg, nil
+}
+
+// ParseSecurityAlertEmails interpreta SECURITY_ALERT_EMAILS: separa por
+// vírgula, aplica trim e descarta entradas vazias, sem "@" ou contendo CR/LF
+// (evita injeção de cabeçalho no envio SMTP).
+func ParseSecurityAlertEmails(raw string) []string {
+	var emails []string
+	for _, e := range strings.Split(raw, ",") {
+		e = strings.TrimSpace(e)
+		if e == "" || !strings.Contains(e, "@") || strings.ContainsAny(e, "\r\n") {
+			continue
+		}
+		emails = append(emails, e)
+	}
+	return emails
 }
 
 // defaultDevOrigins são as origens de desenvolvimento local sempre permitidas,

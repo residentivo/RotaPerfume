@@ -4,6 +4,105 @@
 
 ---
 
+## Lote 11 de 2026-09-26: 4 cards concluídos (de 4)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "continue com o backlog e commit em seguida" (Lotes 9 e 10 commitados em `9e297b9`). Entraram FE-14, SEC-10, SEC-09 e DOC-04; INFO-01 é informativo. Resultados finais **conferidos pelo 🤍 MegaBrain em 2026-09-26** (`go vet` limpo, suítes sem FAIL). Commit a seguir pelo 🤍 MegaBrain.
+>
+> **Fluxo:** 🟣 SecBrain (especificação SEC-10 e SEC-09) ∥ 🟢 FrontBrain (FE-14) ∥ 🔵 SubBrain (DOC-04) → 🟡 BackBrain (SEC-10, SEC-09) → 🔴 TestBrain → 🔵 SubBrain.
+>
+> **Decisões:**
+> - 🌸 DataBrain dispensado: nenhuma migração.
+> - 🤍 MegaBrain (FE-14): colunas DATE chegam do Go como `"AAAA-MM-DDT00:00:00-03:00"` (DSN `loc=Local`, fuso fixo -03) e aparecem corretas no Brasil; não é bug.
+>
+> **Cobertura** (total do `go tool cover -func` com `-coverpkg=./...`): `shared` 92.8% (Lote 10: 92.9%), `rotaperfumes-api` 89.9% (Lote 10: 89.8%). Frontend: Vitest 36 arquivos / 1482 testes, cobertura 95.63 / 90.78 / 91.97 / 95.71. Ramos inalcançáveis novos registrados no INFO-01.
+>
+> **Documentação (🔵 SubBrain) do lote:** `docs/manual-base-de-dados.md` (DOC-04), `docs/roteiro-teste-manual-lote11.md` (novo), `docs/roteiro-teste-manual-lote6.md` e `docs/roteiro-teste-manual-lote8.md` (`-password` → `-password-prompt`, com nota de `winpty`/`-password-stdin` e de `DB_USUARIO`/`DB_SENHA`), `postman/README.md` (seção "Mudanças do Lote 11", nota de `SECURITY_ALERT_EMAILS` no envio de e-mail e comentário do `make gen-hash`). Sem mudança de contrato HTTP; a collection não foi alterada.
+>
+> **Cards derivados que ficaram em `afazer.md`:** SEC-11, SEC-12, DB-01, CHORE-02; INFO-01 atualizado.
+
+## FE-14: formatador de data único — 2026-09-26
+**Agentes:** 🟢 FrontBrain (implementação e testes) → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Frontend
+**Origem:** 🟢 FrontBrain, BUG-12 (Lote 10).
+
+**Descrição:** Os formatadores de data locais só tratavam string vazia; a data zero do Go aparecia como "31/12/1, ...".
+
+**🟢 FrontBrain (2026-09-26) — implementado:**
+- Novo `frontend/src/lib/formatarData.ts` (`formatarData`, `formatarDataHora`): vazio/`null`/`undefined` e data zero do Go → `-`; data inválida → texto cru; `"AAAA-MM-DD"` (regex `^\d{4}-\d{2}-\d{2}$`) lido como meia-noite local.
+- Substituiu os formatadores locais em `pagamentos`, `PagamentoModal`, `admin/{estoque,clientes,pedidos,visitas,oportunidades}`, `VendedorModal` e `admin/senha-historico`.
+- **Bug latente corrigido:** `pagamentos`, `PagamentoModal`, `clientes` e `VendedorModal` mostravam datas `"AAAA-MM-DD"` um dia antes (lidas como UTC).
+- `frontend/tests/lib/formatarData.test.ts`: 16 testes, 100%.
+
+**Resultado final:** Vitest 36 arquivos / 1482 testes; cobertura 95.63 / 90.78 / 91.97 / 95.71.
+
+---
+
+## SEC-10: endurecimentos da revisão do Lote 7 — 2026-09-26
+**Agentes:** 🟣 SecBrain (especificação) → 🟡 BackBrain → 🔴 TestBrain → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Segurança + Backend shared
+**Origem:** 🟣 SecBrain, revisão do Lote 7 (item 6 do Lote 8).
+
+**🟡 BackBrain (2026-09-26) — implementado:**
+1. **TLS SMTP:** `NewSMTPEmailServiceWithTLSConfig` força `InsecureSkipVerify = false` e `MinVersion` ≥ TLS 1.2 (1.3 mantido se pedido).
+2. **Viés de módulo:** `indiceAleatorio` (`crypto/rand.Int`) em `charAleatorio` e `embaralhar` (`password_generator.go`, 3º ponto encontrado, gera as senhas iniciais/reset da API); nova `SenhaAlfanumerica`; os dois `GenerateRandomPassword` delegam a ela.
+3. **CLI `resetpassword`:** flags novas `-password-stdin` e `-password-prompt` (sem eco, com confirmação; no Git Bash/mintty exige `winpty` ou `-password-stdin`); `-password` aceito com aviso de depreciação no stderr; mais de uma fonte → erro; `ResolverSenha` extraída. Dependência nova `golang.org/x/term v0.21.0` (+ `x/sys` indireta) em `apis/shared/go.mod`. Correção pós-teste: `senhaDoPrompt` zera o buffer da 1ª senha mesmo se a confirmação falhar.
+4. **`seedusers`:** sem senhas padrão fixas (`ResolveSeedPassword(envKey)`: env ou aleatória de 16 em modo dev). `seedusers.Run` e `resetpassword.DSN()` (agora `(string, error)`, `ErrCredenciaisDB`) exigem `DB_USUARIO`/`DB_SENHA`, sem fallback `golang/golang`. `config.Load()` não mudou (ver SEC-11).
+5. **`RenderSeedFile`** substitui `ReplaceInFile`: cópias com hash em `tmp/seed` (0600), apagadas ao final; `-no-exec` mantém e avisa; nunca escreve em `sql/`. Help do `make gen-hash`: "aplica os seeds com hash gerado (sem alterar sql/)"; cabeçalhos de `sql/02` e `sql/03` atualizados.
+6. **`InvalidarSessoes`** trunca o corte para o segundo.
+
+**🔴 TestBrain (2026-09-26) — testado:** `sec10_tls_test.go`, `sec10_aleatoriedade_test.go` (qui-quadrado), `sec10_resolver_senha_test.go`, `sec10_seedusers_test.go` (com guarda de regressão: `sql/02` e `sql/03` só com placeholders) e `sec10_invalidar_sessoes_truncate_test.go`, em `apis/shared/tests/`.
+
+**Resultado final:** os 6 itens aplicados; roteiros dos Lotes 6 e 8 atualizados; teste manual na seção 2 de `docs/roteiro-teste-manual-lote11.md`.
+
+---
+
+## SEC-09: e-mail de alerta no reuso de refresh token rotacionado — 2026-09-26
+**Agentes:** 🟣 SecBrain (especificação) → 🟡 BackBrain → 🔴 TestBrain → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Segurança + Backend
+**Origem:** 🟡 BackBrain, SEC-07 (Lote 6).
+
+**Descrição:** O alerta `[auth][seguranca]` só ia para o log; ninguém era avisado.
+
+**🟡 BackBrain (2026-09-26) — implementado:**
+- Reuso de refresh rotacionado fora da janela envia e-mail ao usuário e cópia aos admins de `SECURITY_ALERT_EMAILS` (nova env, separada por vírgula; documentada em `.env.example`).
+- Interface `AlertaSegurancaSender` (SMTP e Noop; o Noop só loga). E-mail do usuário sem `user_id`/`token_id`; o do admin com eles; horário de Brasília; saneamento de CR/LF/controles; UA truncado a 120; `ErrDestinatarioInvalido` (vale também para `EnviarSenhaInicial`); destinatário aparado depois de validar CR/LF.
+- `AlertaSegurancaNotifier` (`apis/rotaperfumes-api/services/alerta_seguranca_notifier.go`): dedup de 30 min por usuário em memória, teto de 20/h, 4 envios simultâneos (fila cheia descarta e, correção pós-teste, desfaz a reserva de dedup/teto), envio assíncrono com ctx próprio de 30 s; o e-mail do usuário nunca vai ao log (`[email-usuario]`).
+- Handler chama `Notificar` só no reuso por rotação fora da janela; `401` inalterado. `main.go` faz o wiring; sem SMTP → "alertas de segurança só no log".
+
+**🔴 TestBrain (2026-09-26) — testado:** `sec09_security_alert_emails_test.go`, `sec09_alerta_email_test.go`, `sec09_notifier_test.go`, `sec09_alerta_reuso_test.go`; estáveis com `-count=200` (`-race` indisponível sem cgo).
+
+**Resultado final:** contrato HTTP inalterado; teste manual na seção 1 de `docs/roteiro-teste-manual-lote11.md`.
+
+---
+
+## DOC-04: manual completo da base de dados — 2026-09-26
+**Agentes:** 🔵 SubBrain → conferência do 🤍 MegaBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Documentação
+**Origem:** 🔵 SubBrain, DOC-02 (2026-09-25).
+
+**🔵 SubBrain (2026-09-26) — feito:** `docs/manual-base-de-dados.md` reescrito: 15 tabelas detalhadas, diagrama mermaid, resumo das migrações 01–22 e seção 22 "Pontos a confirmar" com 13 itens, em resumo:
+- `estoque` (1–5): fora do `db-up`/`db-reset`; `17_ddl_estoque.sql` ainda cria `origem`; migração 18 não idempotente e sem alvo; `postman/README.md` diz que o `db-up` cria a tabela; regra de `ruptura` a confirmar. Itens 1–4 viraram o card DB-01.
+- `senha_historico` (6–9): sem ENGINE/charset explícitos; `created_at` aceita NULL; teste do BUG-12 com registro órfão apesar da FK; `primeiro_acesso`/`esquecimento` nunca gravados.
+- `usuarios` (10): `deve_trocar_senha` gravado pelo `resetpassword` no seed.
+- `refresh_tokens` (11): sem limpeza automática (card CHORE-02).
+- `vendedores` (12–13): sem UNIQUE em `nome`; reativação reativa os usuários?
+
+**Resultado final:** manual completo; detalhes na seção 22 do manual.
+
+---
+
 ## Lote 10 de 2026-09-26: 1 card concluído (de 1)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "seguir com o BUG-12". O Lote 9 ainda não foi commitado (o usuário não pediu). SEC-10, SEC-09 e DOC-04 ficaram em `afazer.md` aguardando o usuário; INFO-01 é informativo. Resultados finais **conferidos pelo 🤍 MegaBrain em 2026-09-26**.

@@ -24,8 +24,10 @@ Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevToo
 3. Crie o usuário de teste como **normal** (no terminal, na pasta `apis/shared`):
 
    ```bash
-   go run ./cmd/resetpassword -email qa.lote8@rotaperfumes.test -password 'QaLote8@2026' -role normal -nome "QA Lote 8"
+   go run ./cmd/resetpassword -email qa.lote8@rotaperfumes.test -password-prompt -role normal -nome "QA Lote 8"
    ```
+
+   Digite `QaLote8@2026` duas vezes (sem eco). **Atualizado no Lote 11 (SEC-10):** no Git Bash (mintty) o prompt exige `winpty go run ...`; a alternativa é `-password-stdin`, por exemplo `read -rs P && printf '%s' "$P" | go run ./cmd/resetpassword -email qa.lote8@rotaperfumes.test -password-stdin -role normal -nome "QA Lote 8"`. O `-password` ainda funciona, mas está depreciado (fica no histórico do shell e gera aviso no stderr). O `resetpassword` agora exige `DB_USUARIO` e `DB_SENHA` no `.env` (sem o default `golang/golang`).
 
    Confira: `SELECT id, email, role, ativo, deve_trocar_senha, tokens_validos_desde FROM usuarios WHERE email = 'qa.lote8@rotaperfumes.test';` Anote o **id** (`<QA>` abaixo). O `tokens_validos_desde` já vem preenchido: a CLI também grava o corte (SEC-08). Se `deve_trocar_senha` = 1, o primeiro login leva a `/trocar-senha`: troque para `QaLote8@2027` e use essa daqui em diante.
 
@@ -102,8 +104,10 @@ Use duas janelas: **A** (normal) com o admin e **B** (anônima) com o `qa.lote8@
 3. Volte a senha do QA para uma conhecida (a senha gerada vai por e-mail e não aparece em log):
 
    ```bash
-   go run ./cmd/resetpassword -email qa.lote8@rotaperfumes.test -password 'QaLote8@2026' -role normal -nome "QA Lote 8"
+   go run ./cmd/resetpassword -email qa.lote8@rotaperfumes.test -password-prompt -role normal -nome "QA Lote 8"
    ```
+
+   Digite `QaLote8@2026` duas vezes. No Git Bash, use `winpty` ou `-password-stdin`, como na preparação.
 
 > **Limite aceito:** pela regra `iat <= corte`, um login feito no **mesmo segundo** de um corte gera um token já recusado. Na prática só acontece se você logar menos de 1 s depois do corte; se vir um `401 "sessão encerrada"` logo após o login, espere 1 s e logue de novo. A revogação em massa do SEC-07 (reuso de refresh token) também grava o corte e está coberta pelos testes de integração.
 

@@ -137,6 +137,16 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 |------|----------|---------|
 | BUG-12 | `GET /api/senha-historico`, `GET /api/senha-historico/{usuario_id}` | Registro com NULL no banco não derruba mais a listagem (antes: `500` "converting NULL to string is unsupported"). `ip_origem`/`user_agent` NULL saem `""`; `created_at` NULL sai `"0001-01-01T00:00:00Z"`; `usuario_nome` de usuário inexistente sai `""`. A tela `admin/senha-historico` exibe `-` para a data zero. |
 
+## Mudanças do Lote 11 (2026-09-26)
+
+> **Sem mudança de contrato HTTP** (nenhum endpoint, corpo ou status mudou; a collection não foi alterada). Teste manual: `docs/roteiro-teste-manual-lote11.md`.
+
+| Card | Onde | Mudança |
+|------|------|---------|
+| SEC-09 | `POST /api/auth/refresh` | O reuso de um refresh token já rotacionado, fora da janela de 30 s, continua respondendo `401` `"refresh token revogado"`, mas agora envia um e-mail de alerta ao usuário e uma cópia aos admins listados em `SECURITY_ALERT_EMAILS` (nova env, separada por vírgula; ver `.env.example`). Dedup de 30 min por usuário, teto de 20 e-mails/h, envio assíncrono. Sem SMTP, o alerta fica só no log. |
+| SEC-10 | CLIs e SMTP | `resetpassword`: novas flags `-password-prompt` (sem eco) e `-password-stdin`; `-password` depreciado. `resetpassword` e `seedusers` exigem `DB_USUARIO`/`DB_SENHA` no `.env`. `make gen-hash` não altera mais `sql/` (usa cópias temporárias em `tmp/seed`). SMTP exige TLS 1.2+ com validação de certificado. |
+| FE-14 | (frontend) | Formatador de data único; datas `AAAA-MM-DD` não aparecem mais um dia antes; vazio e data zero do Go aparecem como `-`. Sem mudança na API. |
+
 ## Endpoints
 
 ### Healthcheck
@@ -969,7 +979,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 # 1. Recriar o banco com seed
 make db-reset
 
-# 2. Gerar hashes bcrypt reais (substitui placeholders no seed)
+# 2. Aplicar os seeds com hash gerado (sem alterar sql/; senhas de SEED_ADMIN_PASSWORD/SEED_USER_PASSWORD)
 make gen-hash
 
 # 3. Iniciar a API
@@ -979,6 +989,8 @@ make dev-api
 ### Envio de email (senha inicial / reset de senha)
 
 Copie `.env.example` (raiz do projeto) para `.env` e preencha as variáveis `SMTP_*` (Gmail com "senha de app") para que `POST /api/usuarios` e `POST /api/admin/reset-password` realmente enviem a senha gerada por email. Se essas variáveis não forem preenchidas, a API sobe normalmente e usa um serviço de email "noop" (apenas loga que o envio foi pulado, sem nunca logar a senha em texto claro) — útil para dev local, mas nesse caso `email_enviado` retorna `false` e o usuário não recebe a nova senha por nenhum canal (o admin precisaria providenciá-la manualmente).
+
+Desde o Lote 11 (SEC-09), o mesmo SMTP envia o alerta de reuso de refresh token ao usuário e aos endereços de `SECURITY_ALERT_EMAILS` (vírgula; vazio = só o usuário). Sem SMTP, a API loga "alertas de segurança só no log".
 
 ### CAPTCHA (Cloudflare Turnstile) em Login e Troca de Senha
 

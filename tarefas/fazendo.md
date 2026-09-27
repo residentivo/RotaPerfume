@@ -1,5 +1,5 @@
 # Fazendo
 
-> Nenhum card em execução.
->
-> Último lote fechado: **Lote 10 de 2026-09-26** (BUG-12; ver `feito.md`). SEC-10, SEC-09, DOC-04 e FE-14 aguardam a priorização do usuário em `afazer.md`; INFO-01 é só informativo. Os Lotes 9 e 10 ainda não foram commitados (o usuário não pediu).
+Nenhum card em execução.
+
+> Último lote fechado: **Lote 11 de 2026-09-26** (FE-14, SEC-10, SEC-09, DOC-04; ver `feito.md`). Commit a seguir pelo 🤍 MegaBrain. Backlog em `afazer.md`: SEC-11, DB-01, SEC-12, CHORE-02 (INFO-01 informativo).

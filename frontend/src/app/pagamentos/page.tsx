@@ -32,6 +32,7 @@ import {
   PagamentoCreateInput,
   PagamentoUpdateInput,
 } from "@/lib/types";
+import { formatarData } from "@/lib/formatarData";
 
 type SortKey =
   | "pagamento_id"
@@ -77,13 +78,6 @@ const currencyFmt = new Intl.NumberFormat("pt-BR", {
 
 function fmtValor(v: number): string {
   return currencyFmt.format(v ?? 0);
-}
-
-function fmtDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("pt-BR");
 }
 
 function statusBadgeColor(status: string): "green" | "yellow" | "red" | "gray" {
@@ -369,7 +363,7 @@ function PagamentosContent() {
       width: "120px",
       sortable: true,
       render: (p) => (
-        <span className="text-slate-600">{fmtDate(p.data_vencimento)}</span>
+        <span className="text-slate-600">{formatarData(p.data_vencimento)}</span>
       ),
     },
     {
@@ -378,7 +372,7 @@ function PagamentosContent() {
       width: "120px",
       sortable: true,
       render: (p) => (
-        <span className="text-slate-600">{fmtDate(p.data_pagamento)}</span>
+        <span className="text-slate-600">{formatarData(p.data_pagamento)}</span>
       ),
     },
     {

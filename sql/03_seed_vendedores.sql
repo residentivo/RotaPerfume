@@ -16,6 +16,11 @@
 --   1) SEED_USER_PASSWORD do .env, se estiver definida; ou
 --   2) uma senha aleatória de 16 caracteres, impressa no console
 --      (USER_PASSWORD=...), a mesma para todos os usuários com placeholder.
+--
+-- Alternativa: `make gen-hash` (go run ./cmd/seedusers) grava uma cópia deste
+-- arquivo com o hash real em tmp/seed/, executa a cópia e a apaga. Este
+-- arquivo NÃO é alterado e o placeholder DEVE permanecer aqui (nunca commite
+-- um hash real).
 -- ============================================================
 
 SET NAMES utf8mb4;

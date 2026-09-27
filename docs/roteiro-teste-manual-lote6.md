@@ -25,8 +25,10 @@ Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevToo
 3. Crie o usuário de teste como **admin** (no terminal, na pasta `apis/shared`):
 
    ```bash
-   go run ./cmd/resetpassword -email qa.lote6@rotaperfumes.test -password 'QaLote6@2026' -role admin -nome "QA Lote 6"
+   go run ./cmd/resetpassword -email qa.lote6@rotaperfumes.test -password-prompt -role admin -nome "QA Lote 6"
    ```
+
+   Digite `QaLote6@2026` duas vezes (sem eco). **Atualizado no Lote 11 (SEC-10):** no Git Bash (mintty) o prompt exige `winpty go run ...`; a alternativa é `-password-stdin`, por exemplo `read -rs P && printf '%s' "$P" | go run ./cmd/resetpassword -email qa.lote6@rotaperfumes.test -password-stdin -role admin -nome "QA Lote 6"`. O `-password` ainda funciona, mas está depreciado (fica no histórico do shell e gera aviso no stderr). O `resetpassword` agora exige `DB_USUARIO` e `DB_SENHA` no `.env` (sem o default `golang/golang`).
 
    Confira: `SELECT id, email, role, ativo, deve_trocar_senha FROM usuarios WHERE email = 'qa.lote6@rotaperfumes.test';` Anote o **id** (chamado de `<QA>` abaixo). Se `deve_trocar_senha` = 1, o primeiro login leva para `/trocar-senha`: troque a senha e anote a nova.
 

@@ -65,11 +65,20 @@ func ler(t *testing.T, path string) string {
 	return string(b)
 }
 
-type execucoes struct{ arquivos []string }
+type execucoes struct {
+	arquivos  []string
+	conteudos map[string]string
+}
 
 func (e *execucoes) runner(falharEm string) seedusers.SQLRunner {
 	return func(_ *config.Config, file string) error {
 		e.arquivos = append(e.arquivos, filepath.Base(file))
+		if e.conteudos == nil {
+			e.conteudos = map[string]string{}
+		}
+		if b, err := os.ReadFile(file); err == nil {
+			e.conteudos[filepath.Base(file)] = string(b)
+		}
 		if filepath.Base(file) == falharEm {
 			return errMySQL
 		}
@@ -85,6 +94,7 @@ func TestRun_SubstituiEExecuta(t *testing.T) {
 	logs := silenciarLog(t)
 	t.Setenv("SEED_ADMIN_PASSWORD", "Admin@Env1")
 	t.Setenv("SEED_USER_PASSWORD", "User@Env1")
+	credenciaisDB(t)
 	root := raizFalsa(t)
 	var ex execucoes
 	var out bytes.Buffer
@@ -94,8 +104,12 @@ func TestRun_SubstituiEExecuta(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	admin := ler(t, filepath.Join(root, "sql", "02_seed_admin.sql"))
-	vend := ler(t, filepath.Join(root, "sql", "03_seed_vendedores.sql"))
+	// SEC-10: sql/ fica intacto; o que roda são as cópias de tmp/seed,
+	// apagadas ao final.
+	assert.Equal(t, sqlAdmin, ler(t, filepath.Join(root, "sql", "02_seed_admin.sql")))
+	assert.NoFileExists(t, filepath.Join(root, "tmp", "seed", "02_seed_admin.sql"))
+	admin := ex.conteudos["02_seed_admin.sql"]
+	vend := ex.conteudos["03_seed_vendedores.sql"]
 	assert.NotContains(t, admin+vend, "PLACEHOLDER", "nenhum placeholder sobra")
 
 	hAdmin := reHash.FindString(admin)
@@ -128,7 +142,15 @@ func TestRun_ShowPasswordENoExec(t *testing.T) {
 	assert.Empty(t, ex.arquivos, "--no-exec não roda o mysql")
 	assert.Contains(t, out.String(), "ADMIN_PASSWORD=Admin@Env1")
 	assert.Contains(t, out.String(), "USER_PASSWORD =User@Env1")
-	assert.NotContains(t, ler(t, filepath.Join(root, "sql", "02_seed_admin.sql")), "PLACEHOLDER")
+	assert.NotContains(t, ler(t, filepath.Join(root, "tmp", "seed", "02_seed_admin.sql")), "PLACEHOLDER")
+	assert.Equal(t, sqlAdmin, ler(t, filepath.Join(root, "sql", "02_seed_admin.sql")), "sql/ nunca é alterado")
+}
+
+// credenciaisDB define DB_USUARIO/DB_SENHA, exigidos no caminho que executa SQL.
+func credenciaisDB(t *testing.T) {
+	t.Helper()
+	t.Setenv("DB_USUARIO", "u")
+	t.Setenv("DB_SENHA", "s")
 }
 
 func TestRun_DryRunNaoTocaArquivos(t *testing.T) {
@@ -189,6 +211,7 @@ func TestRun_Erros(t *testing.T) {
 			silenciarLog(t)
 			t.Setenv("SEED_ADMIN_PASSWORD", "a")
 			t.Setenv("SEED_USER_PASSWORD", "b")
+			credenciaisDB(t)
 			cfg := c.cfg
 			if cfg == nil {
 				cfg = cfgRapida()
@@ -211,12 +234,12 @@ func TestRun_Erros(t *testing.T) {
 func TestResolveSeedPassword(t *testing.T) {
 	logs := silenciarLog(t)
 	t.Setenv("SEED_X", "definida")
-	got, err := seedusers.ResolveSeedPassword("SEED_X", "padrao")
+	got, err := seedusers.ResolveSeedPassword("SEED_X")
 	require.NoError(t, err)
 	assert.Equal(t, "definida", got)
 
 	t.Setenv("SEED_X", "")
-	got, err = seedusers.ResolveSeedPassword("SEED_X", "padrao")
+	got, err = seedusers.ResolveSeedPassword("SEED_X")
 	require.NoError(t, err)
 	assert.Len(t, got, 16)
 	assert.NotEqual(t, "padrao", got, "modo dev gera senha aleatória, não usa o default fixo")
@@ -238,32 +261,29 @@ func TestShortHash(t *testing.T) {
 	assert.Equal(t, "12345678901234567890", seedusers.ShortHash("12345678901234567890XYZ"))
 }
 
-func TestReplaceInFile(t *testing.T) {
+// TestRenderSeedFile: adaptação mínima do antigo TestReplaceInFile (SEC-10);
+// a cobertura completa fica com o TestBrain.
+func TestRenderSeedFile(t *testing.T) {
 	dir := t.TempDir()
-	t.Run("substitui todas as ocorrências de todas as chaves", func(t *testing.T) {
+	t.Run("substitui todas as ocorrências e grava em dstDir sem tocar src", func(t *testing.T) {
 		p := filepath.Join(dir, "a.sql")
 		require.NoError(t, os.WriteFile(p, []byte("A B A C"), 0o600))
-		n, err := seedusers.ReplaceInFile(p, map[string]string{"A": "x", "C": "y", "Z": "w"})
+		dst, n, err := seedusers.RenderSeedFile(p, filepath.Join(dir, "out"), map[string]string{"A": "x", "C": "y", "Z": "w"})
 		require.NoError(t, err)
 		assert.Equal(t, 3, n)
-		assert.Equal(t, "x B x y", ler(t, p))
+		assert.Equal(t, filepath.Join(dir, "out", "a.sql"), dst)
+		assert.Equal(t, "x B x y", ler(t, dst))
+		assert.Equal(t, "A B A C", ler(t, p))
 	})
-	t.Run("sem ocorrências não regrava o arquivo", func(t *testing.T) {
+	t.Run("sem placeholder é erro", func(t *testing.T) {
 		p := filepath.Join(dir, "b.sql")
-		require.NoError(t, os.WriteFile(p, []byte("nada"), 0o400)) // só leitura
-		n, err := seedusers.ReplaceInFile(p, map[string]string{"A": "x"})
-		require.NoError(t, err)
-		assert.Zero(t, n)
+		require.NoError(t, os.WriteFile(p, []byte("nada"), 0o600))
+		_, _, err := seedusers.RenderSeedFile(p, filepath.Join(dir, "out"), map[string]string{"A": "x"})
+		assert.ErrorIs(t, err, seedusers.ErrSemPlaceholder)
 	})
 	t.Run("arquivo ausente", func(t *testing.T) {
-		_, err := seedusers.ReplaceInFile(filepath.Join(dir, "nada.sql"), map[string]string{"A": "x"})
+		_, _, err := seedusers.RenderSeedFile(filepath.Join(dir, "nada.sql"), filepath.Join(dir, "out"), map[string]string{"A": "x"})
 		assert.ErrorIs(t, err, os.ErrNotExist)
-	})
-	t.Run("arquivo só leitura com ocorrência", func(t *testing.T) {
-		p := filepath.Join(dir, "c.sql")
-		require.NoError(t, os.WriteFile(p, []byte("A"), 0o400))
-		_, err := seedusers.ReplaceInFile(p, map[string]string{"A": "x"})
-		assert.Error(t, err)
 	})
 }
 

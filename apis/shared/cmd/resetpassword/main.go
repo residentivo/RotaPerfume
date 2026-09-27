@@ -4,9 +4,13 @@
 // Uso:
 //
 //	cd apis/shared && go run ./cmd/resetpassword -list
-//	cd apis/shared && go run ./cmd/resetpassword -email=admin@rotaperfumes.com.br -password=Senha123 -role=admin
-//	cd apis/shared && go run ./cmd/resetpassword -all-users -password=SenhaPadrao123
-//	cd apis/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
+//	cd apis/shared && go run ./cmd/resetpassword -email=admin@rotaperfumes.com.br -password-prompt -role=admin
+//	printf '%s\n' "$NOVA_SENHA" | go run ./cmd/resetpassword -all-users -password-stdin
+//	cd apis/shared && go run ./cmd/resetpassword -create-admin   # SEED_ADMIN_PASSWORD do .env ou aleatória
+//
+// Exige DB_USUARIO e DB_SENHA no .env. -password=... ainda funciona, mas é
+// depreciada (fica no histórico do shell) e gera aviso no stderr. No Git Bash
+// (mintty), -password-prompt precisa de `winpty go run ...`.
 package main
 
 import (
@@ -18,6 +22,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"golang.org/x/term"
 
 	"github.com/rotaperfumes/shared/cmdutil"
 	"github.com/rotaperfumes/shared/tools/resetpassword"
@@ -29,7 +34,9 @@ import (
 func main() {
 	var opts resetpassword.Options
 	flag.StringVar(&opts.Email, "email", "", "email do usuário a criar/atualizar")
-	flag.StringVar(&opts.Password, "password", "", "senha em texto puro (vazio = gera aleatória de 16 chars)")
+	flag.StringVar(&opts.Password, "password", "", "DEPRECIADA (fica no histórico do shell): senha em texto puro; prefira -password-prompt ou -password-stdin")
+	flag.BoolVar(&opts.PasswordStdin, "password-stdin", false, "lê a senha da 1ª linha do stdin")
+	flag.BoolVar(&opts.PasswordPrompt, "password-prompt", false, "pede a senha no terminal, sem eco e com confirmação (Git Bash: use winpty)")
 	flag.StringVar(&opts.Role, "role", "normal", "papel (admin|normal) — usado ao criar novo usuário")
 	flag.StringVar(&opts.Nome, "nome", "", "nome completo — usado ao criar novo usuário (padrão: derivado do email)")
 	flag.Int64Var(&opts.IDVendedor, "id-vendedor", 0, "id do vendedor vinculado (opcional, usado ao criar)")
@@ -38,9 +45,25 @@ func main() {
 	flag.BoolVar(&opts.List, "list", false, "lista os usuários atuais")
 	flag.Parse()
 
+	// Sem fonte de senha, devolve "" e o Run usa env SEED_* / aleatória.
+	stdinFd := int(os.Stdin.Fd())
+	senha, err := resetpassword.ResolverSenha(opts, os.Stdin,
+		func() bool { return term.IsTerminal(stdinFd) },
+		func() ([]byte, error) { return term.ReadPassword(stdinFd) },
+		os.Stderr,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	opts.Password = senha
+
 	cmdutil.LoadEnvFromCwd()
 
-	db, err := sql.Open("mysql", resetpassword.DSN())
+	dsn, err := resetpassword.DSN()
+	if err != nil {
+		log.Fatalf("resetpassword: %v", err)
+	}
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		log.Fatalf("resetpassword: sql.Open: %v", err)
 	}

@@ -16,6 +16,7 @@ import {
 import { Cliente, ClienteResumo, VendedorCompleto, VendedorDetalhe, VendedorInput } from "@/lib/types";
 import { useAjustarAoMudar, useResetOnOpen } from "@/lib/useResetOnOpen";
 import { formatCnpj } from "@/lib/cnpj";
+import { formatarData } from "@/lib/formatarData";
 
 interface VendedorModalProps {
   open: boolean;
@@ -38,13 +39,6 @@ function toDateInput(dateStr: string | null | undefined): string {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return "";
   return d.toISOString().slice(0, 10);
-}
-
-function fmtDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("pt-BR");
 }
 
 function buildClienteColumns(
@@ -91,7 +85,7 @@ function buildClienteColumns(
       header: "Vinculado em",
       width: "120px",
       align: "center",
-      render: (c) => <span className="text-slate-600">{fmtDate(c.data_inicio)}</span>,
+      render: (c) => <span className="text-slate-600">{formatarData(c.data_inicio)}</span>,
     },
     {
       key: "actions",

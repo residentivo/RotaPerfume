@@ -19,6 +19,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/routes"
+	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 func main() {
@@ -49,10 +50,14 @@ func main() {
 	// EmailService: usa SMTP real se as credenciais estiverem configuradas,
 	// caso contrário cai no fallback noop (log-only) — permite `make dev-api`
 	// funcionar sem SMTP configurado.
-	emailSvc := newEmailService(cfg)
+	emailSvc, alertaSender := newEmailService(cfg)
 
 	// Handler + rotas (injetam o pool de conexão).
 	authHandler := handlers.NewAuthHandler(conn, cfg)
+	// SEC-09: alerta por e-mail (usuário + SECURITY_ALERT_EMAILS) no reuso de
+	// refresh token já rotacionado.
+	authHandler.SetAlertaSeguranca(services.NewAlertaSegurancaNotifier(conn, alertaSender, cfg.SecurityAlertEmails))
+	log.Printf("[server] alertas de segurança: admins=%d", len(cfg.SecurityAlertEmails))
 	userHandler := handlers.NewUsuarioHandler(conn, cfg, emailSvc)
 	dashboardHandler := handlers.NewDashboardHandler(conn, cfg)
 	senhaHandler := handlers.NewSenhaHistoricoHandler(conn)
@@ -102,14 +107,19 @@ func main() {
 // SMTP real quando SMTP_USER/SMTP_PASSWORD/SMTP_FROM estão presentes, ou o
 // fallback noop (log-only) caso contrário — assim `make dev-api` funciona
 // mesmo sem SMTP configurado.
-func newEmailService(cfg *config.Config) sharedsvc.EmailService {
+//
+// Devolve também o AlertaSegurancaSender (SEC-09) — a mesma instância
+// implementa as duas interfaces.
+func newEmailService(cfg *config.Config) (sharedsvc.EmailService, sharedsvc.AlertaSegurancaSender) {
 	svc, err := sharedsvc.NewSMTPEmailService(cfg)
 	if err != nil {
 		log.Printf("[server] SMTP não configurado — emails de senha inicial/reset serão apenas logados (%v)", err)
-		return sharedsvc.NewNoopEmailService()
+		log.Printf("[server] SMTP não configurado — alertas de segurança só no log")
+		noop := sharedsvc.NewNoopEmailService()
+		return noop, noop
 	}
 	log.Printf("[server] EmailService SMTP configurado: host=%s port=%s from=%s", cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
-	return svc
+	return svc, svc
 }
 
 // withLogging envolve o mux com log mínimo de cada request.
