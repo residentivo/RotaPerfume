@@ -219,7 +219,13 @@ func (r *UsuarioRepository) UpdateUltimoLogin(ctx context.Context, db *sql.DB, i
 // ErrEmailDuplicado é retornado quando o email já existe (UNIQUE constraint).
 var ErrEmailDuplicado = errors.New("repositories: email já cadastrado")
 
-// Create insere um novo usuário e retorna o registro populado (id, created_at, updated_at).
+// Create insere um novo usuário e preenche apenas u.ID (LastInsertId).
+//
+// BUG-11: não relê o registro. Campos preenchidos pelo MySQL (created_at,
+// updated_at) e o nome do vendedor vinculado ficam a cargo do chamador, que
+// deve reler com GetByID depois do INSERT (ver relerUsuarioCriado no
+// UsuarioService). Assim uma falha só na releitura não é confundida com
+// falha na gravação.
 func (r *UsuarioRepository) Create(ctx context.Context, db *sql.DB, u *models.Usuario) error {
 	const q = `
 		INSERT INTO usuarios (nome, email, password_hash, role, id_vendedor, ativo, deve_trocar_senha)
@@ -236,11 +242,7 @@ func (r *UsuarioRepository) Create(ctx context.Context, db *sql.DB, u *models.Us
 	if err != nil {
 		return fmt.Errorf("repositories: last insert id: %w", err)
 	}
-	created, err := r.GetByID(ctx, db, id)
-	if err != nil {
-		return err
-	}
-	*u = *created
+	u.ID = id
 	return nil
 }
 

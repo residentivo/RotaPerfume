@@ -119,6 +119,16 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | BUG-10 | (CLI `seedusers`) | `FindProjectRoot` acha a raiz pela pasta com `apis/shared/go.mod` (até 6 níveis acima) e devolve erro se não achar. Sem mudança na API. |
 | FE-10, FE-11, FE-12 | (frontend) | Paginador e contador coerentes quando a carga falha; mensagens temporárias sem timer pendente no unmount; `sortValue` removido das colunas (ordenação é server-side). Sem mudança na API. |
 
+## Mudanças de contrato do Lote 9 (2026-09-26)
+
+> Resumo das mudanças. O detalhe está nas descrições marcadas com `(FE-13 | BUG-11, Lote 9, 2026-09-26)` na collection. Teste manual do FE-13: anexo de `docs/roteiro-teste-manual-lote8.md`.
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| FE-13 | `GET /api/senha-historico`, `GET /api/senha-historico/{usuario_id}` | `order_by` aceita também `usuario_nome`, `resetado_por_nome` e `ip_origem`. Quando a coluna não é `id`, desempate por `id DESC` (vale também para as chaves antigas; paginação sem repetir nem pular). `resetado_por_nome` nulo (troca pelo próprio usuário) vem primeiro em `asc` e por último em `desc`. Chave fora da lista → `id` na direção pedida, sem `400`. A tela `admin/senha-historico` envia as três chaves novas. |
+| BUG-11 | `POST /api/usuarios` | Ordem: INSERT → e-mail com a senha inicial → releitura. Se só a releitura falhar: `201` (antes: erro, com o usuário gravado e sem e-mail), com `email_enviado` correto, `created_at`/`updated_at` zerados e `vendedor_nome` vazio; log `[usuarios] criado, mas falhou a releitura: id=...`. Falha no INSERT continua com erro e sem e-mail. |
+| CHORE-01 | (repositório) | `*.tsbuildinfo` no `.gitignore`; `frontend/tsconfig.tsbuildinfo` deixou de ser rastreado. Sem mudança na API. |
+
 ## Endpoints
 
 ### Healthcheck
@@ -191,6 +201,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "nome", "email", "role": "admin"|"normal" }`
 - **Descrição:** Cria um novo usuário. A senha inicial é gerada aleatoriamente e enviada por email para o endereço cadastrado (nunca retornada pela API). `deve_trocar_senha` é setada para `true` no banco. Resposta inclui `email_enviado: boolean`.
+- **Releitura (BUG-11, Lote 9, 2026-09-26):** o usuário é relido no service depois do envio do e-mail. Se só a releitura falhar, a resposta é `201` com `email_enviado` correto, timestamps zerados e `vendedor_nome` vazio (antes: erro, sem e-mail, e nova tentativa batia em e-mail duplicado).
 
 #### PUT /api/usuarios/{id}
 - **Auth:** Bearer Token (admin)
@@ -289,7 +300,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Auth:** Bearer Token (admin)
 - **Query:** `?page=1&limit=20&order_by=created_at&order_dir=desc`
 - **Descrição:** Lista global paginada de alterações de senha (com tipo, IP, user agent)
-- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, usuario_id, tipo_reset, created_at` (default: `id`); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente no default (sem erro 400).
+- **Ordenação (`order_by`/`order_dir`, opcionais):** `order_by` aceita `id, usuario_id, tipo_reset, created_at, usuario_nome, resetado_por_nome, ip_origem` (default: `id`; as três últimas desde o FE-13, Lote 9); `order_dir` aceita `asc`|`desc` case-insensitive (default: `desc`). Valor inválido/ausente cai silenciosamente em `id` (sem erro 400). Quando a coluna não é `id`, desempate por `id DESC`. `resetado_por_nome` nulo vem primeiro em `asc` e por último em `desc`.
 
 #### GET /api/senha-historico/{usuario_id}
 - **Auth:** Bearer Token (admin)

@@ -193,14 +193,18 @@ describe("Senha historico - ordenacao, limite e paginacao", () => {
     );
   });
 
-  it.each([["Usuario"], ["Resetado Por"], ["IP Origem"]])(
-    "coluna %s (fora da whitelist) nao envia order_by",
-    async (header) => {
+  it.each([
+    ["Usuario", "usuario_nome"],
+    ["Resetado Por", "resetado_por_nome"],
+    ["IP Origem", "ip_origem"],
+  ])(
+    "coluna %s envia order_by=%s (FE-13)",
+    async (header, orderBy) => {
       render(<SenhaHistoricoPage />);
       await screen.findByText("#100 - Pessoa 100");
       await userEvent.click(botaoCabecalho(header));
       await waitFor(() =>
-        expect(api.apiListSenhaHistorico).toHaveBeenLastCalledWith(1, 20, undefined, undefined, undefined, "asc")
+        expect(api.apiListSenhaHistorico).toHaveBeenLastCalledWith(1, 20, undefined, undefined, orderBy, "asc")
       );
     }
   );

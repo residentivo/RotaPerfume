@@ -120,9 +120,9 @@ func TestListarTodos_OrderBy(t *testing.T) {
 		query       string
 		orderRegexp string
 	}{
-		{"order_by e order_dir válidos", "order_by=tipo_reset&order_dir=asc", `ORDER BY sh\.tipo_reset ASC`},
-		{"order_dir inválido cai no default (desc)", "order_by=usuario_id&order_dir=sideways", `ORDER BY sh\.usuario_id DESC`},
-		{"order_by fora da whitelist cai no default", "order_by=ip_origem&order_dir=asc", `ORDER BY sh\.id ASC`},
+		{"order_by e order_dir válidos", "order_by=tipo_reset&order_dir=asc", `ORDER BY sh\.tipo_reset ASC, sh\.id DESC`},
+		{"order_dir inválido cai no default (desc)", "order_by=usuario_id&order_dir=sideways", `ORDER BY sh\.usuario_id DESC, sh\.id DESC`},
+		{"order_by fora da whitelist cai no default", "order_by=user_agent&order_dir=asc", `ORDER BY sh\.id ASC`},
 	}
 
 	for _, tc := range testCases {

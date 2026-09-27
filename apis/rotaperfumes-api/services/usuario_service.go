@@ -261,12 +261,28 @@ func (s *UsuarioService) CreateUsuario(ctx context.Context, db *sql.DB, input st
 
 	// Usuário já foi criado com sucesso — falha no envio de email não desfaz
 	// a criação, apenas é refletida em emailEnviado para o handler avisar o admin.
+	// Usa os dados em memória (não os relidos): o e-mail sai mesmo que a
+	// releitura abaixo falhe (BUG-11).
 	emailEnviado = s.enviarSenhaInicial(ctx, u.Email, u.Nome, senha)
 
 	if s.Cfg.Verbose {
 		log.Printf("[usuarios] criado: id=%d email=%s role=%s email_enviado=%t", u.ID, u.Email, u.Role, emailEnviado)
 	}
-	return u, emailEnviado, nil
+	return s.relerUsuarioCriado(ctx, db, u), emailEnviado, nil
+}
+
+// relerUsuarioCriado relê do banco o usuário recém-gravado (BUG-11), para
+// devolver created_at/updated_at preenchidos pelo MySQL e o nome do vendedor
+// vinculado. O INSERT já foi confirmado: se a releitura falhar, loga e
+// devolve o objeto em memória (timestamps zerados, sem vendedor_nome) em vez
+// de responder erro para uma gravação que deu certo.
+func (s *UsuarioService) relerUsuarioCriado(ctx context.Context, db *sql.DB, u *models.Usuario) *models.Usuario {
+	gravado, err := s.repo.GetByID(ctx, db, u.ID)
+	if err != nil {
+		log.Printf("[usuarios] criado, mas falhou a releitura: id=%d: %v", u.ID, err)
+		return u
+	}
+	return gravado
 }
 
 // UpdateUsuario atualiza nome, role e vendedor vinculado.

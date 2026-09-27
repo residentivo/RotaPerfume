@@ -254,3 +254,15 @@ cd apis/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/midd
 | `frontend/tests/app/admin/listasAdmin.test.tsx`, `listasPaginadas`, `crudPaginas`, `crudAdmin`, `clientes/page`, `trocar-senha/page`, `useListaSegura` | FE-10, FE-11 e FE-12 nas telas. |
 
 **Regressão do 🔴 TestBrain (2026-09-26):** suítes Go 3× verdes com e sem `INTEGRATION=1`. Cobertura: `rotaperfumes-api` 89,7%, `shared` 92,8%, `tools/seedusers` 95,6%. Frontend: 35 arquivos, 1465 testes, cobertura 95,27 / 90,16 / 92,00 / 95,70 (stmts/branches/funcs/lines); `tsc` e `eslint` limpos.
+
+---
+
+## Anexo — Lote 9 (FE-13, 2026-09-26)
+
+Logado como admin, abra `admin/senha-historico` (com pelo menos 3 registros, incluindo um de troca feita pelo próprio usuário, que não tem "Resetado Por").
+
+- [ ] A.1 Clique em **Usuario**: a lista reordena pelo nome (A→Z); clique de novo: Z→A. No DevTools (Network), a requisição leva `order_by=usuario_nome`.
+- [ ] A.2 Clique em **Resetado Por**: em `asc`, as linhas sem "Resetado Por" vêm primeiro; em `desc`, por último (`order_by=resetado_por_nome`).
+- [ ] A.3 Clique em **IP Origem**: a lista reordena pelo IP nas duas direções (`order_by=ip_origem`).
+- [ ] A.4 Com mais de uma página, troque de página em cada ordenação: nenhum registro repete nem some (desempate por `id DESC`).
+- [ ] A.5 (BUG-11, opcional) Crie um usuário em `admin/usuarios`: resposta de sucesso e e-mail com a senha inicial, como antes. O caminho de falha só da releitura é coberto pelos testes automatizados (`tests/services/bug11_create_usuario_releitura_test.go`).

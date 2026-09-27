@@ -30,7 +30,7 @@ func NewSenhaHistoricoHandler(db *sql.DB) *SenhaHistoricoHandler {
 // ListarTodos GET /api/senha-historico
 //
 // Query params: page (default 1), limit (default 20, max 100),
-// order_by (id|usuario_id|tipo_reset|created_at; default id),
+// order_by (id|usuario_id|usuario_nome|resetado_por_nome|ip_origem|tipo_reset|created_at; default id; desempate id desc),
 // order_dir (asc|desc; default desc).
 // Response: {success, data: [{id, usuario_id, usuario_nome, resetado_por_id, resetado_por_nome, ip_origem, user_agent, tipo_reset, created_at}], pagination}
 // Admin only.
@@ -91,7 +91,7 @@ func (h *SenhaHistoricoHandler) ListarTodos(w http.ResponseWriter, r *http.Reque
 // ListarPorUsuario GET /api/senha-historico/{usuario_id}
 //
 // Query params: page (default 1), limit (default 20, max 100),
-// order_by (id|usuario_id|tipo_reset|created_at; default id),
+// order_by (id|usuario_id|usuario_nome|resetado_por_nome|ip_origem|tipo_reset|created_at; default id; desempate id desc),
 // order_dir (asc|desc; default desc).
 // Response: {success, data: [...], pagination}
 // Admin only.

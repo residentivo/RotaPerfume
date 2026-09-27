@@ -61,11 +61,36 @@ var senhaHistoricoOrderWhitelist = map[string]string{
 	"usuario_id": "sh.usuario_id",
 	"tipo_reset": "sh.tipo_reset",
 	"created_at": "sh.created_at",
+	// FE-13: colunas exibidas na tela admin/senha-historico. Os nomes vêm dos
+	// LEFT JOINs já existentes (u1 = usuário, u2 = quem resetou; u2.nome é
+	// NULL em reset feito pelo próprio usuário e o MySQL ordena NULL primeiro
+	// no ASC).
+	"usuario_nome":      "u1.nome",
+	"resetado_por_nome": "u2.nome",
+	"ip_origem":         "sh.ip_origem",
+}
+
+// senhaHistoricoDesempate é o critério fixo de desempate da listagem: as
+// colunas ordenáveis (nome, IP, tipo) se repetem entre linhas, e sem ele a
+// paginação por LIMIT/OFFSET pode repetir ou pular registros entre páginas.
+const senhaHistoricoDesempate = "sh.id DESC"
+
+// senhaHistoricoOrderClause monta o ORDER BY da listagem (whitelist:
+// senhaHistoricoOrderWhitelist; default "sh.id DESC") acrescentando o
+// desempate estável sh.id DESC quando a coluna escolhida não é o próprio id.
+func senhaHistoricoOrderClause(orderBy, orderDir string) string {
+	col := resolveOrderColumn(senhaHistoricoOrderWhitelist, orderBy, "sh.id")
+	clause := buildOrderByClause(senhaHistoricoOrderWhitelist, orderBy, orderDir, "sh.id", "DESC")
+	if col == "sh.id" {
+		return clause
+	}
+	return clause + ", " + senhaHistoricoDesempate
 }
 
 // FindByUsuario lista histórico de senhas de um usuário (paginado).
 // orderBy/orderDir controlam a ordenação (whitelist: ver
-// senhaHistoricoOrderWhitelist); default "id DESC" (comportamento atual).
+// senhaHistoricoOrderWhitelist); default "sh.id DESC", com desempate
+// sh.id DESC nas demais colunas (ver senhaHistoricoOrderClause).
 func (r *SenhaHistoricoRepository) FindByUsuario(ctx context.Context, db *sql.DB, usuarioID int64, page, limit int, orderBy, orderDir string) ([]SenhaHistorico, int, error) {
 	if page < 1 {
 		page = 1
@@ -83,7 +108,7 @@ func (r *SenhaHistoricoRepository) FindByUsuario(ctx context.Context, db *sql.DB
 		return nil, 0, fmt.Errorf("repositories: count senha_historico: %w", err)
 	}
 
-	orderClause := buildOrderByClause(senhaHistoricoOrderWhitelist, orderBy, orderDir, "sh.id", "DESC")
+	orderClause := senhaHistoricoOrderClause(orderBy, orderDir)
 	q := `
 		SELECT sh.id, sh.usuario_id, sh.resetado_por_id, sh.senha_hash_anterior, sh.ip_origem, sh.user_agent, sh.tipo_reset, sh.created_at,
 			u1.nome AS usuario_nome, u2.nome AS resetado_por_nome
@@ -111,7 +136,8 @@ func (r *SenhaHistoricoRepository) FindByUsuario(ctx context.Context, db *sql.DB
 
 // FindAll lista todos os históricos de senhas (paginado) — admin only.
 // orderBy/orderDir controlam a ordenação (whitelist: ver
-// senhaHistoricoOrderWhitelist); default "id DESC" (comportamento atual).
+// senhaHistoricoOrderWhitelist); default "sh.id DESC", com desempate
+// sh.id DESC nas demais colunas (ver senhaHistoricoOrderClause).
 func (r *SenhaHistoricoRepository) FindAll(ctx context.Context, db *sql.DB, page, limit int, orderBy, orderDir string) ([]SenhaHistorico, int, error) {
 	if page < 1 {
 		page = 1
@@ -129,7 +155,7 @@ func (r *SenhaHistoricoRepository) FindAll(ctx context.Context, db *sql.DB, page
 		return nil, 0, fmt.Errorf("repositories: count senha_historico: %w", err)
 	}
 
-	orderClause := buildOrderByClause(senhaHistoricoOrderWhitelist, orderBy, orderDir, "sh.id", "DESC")
+	orderClause := senhaHistoricoOrderClause(orderBy, orderDir)
 	q := `
 		SELECT sh.id, sh.usuario_id, sh.resetado_por_id, sh.senha_hash_anterior, sh.ip_origem, sh.user_agent, sh.tipo_reset, sh.created_at,
 			u1.nome AS usuario_nome, u2.nome AS resetado_por_nome

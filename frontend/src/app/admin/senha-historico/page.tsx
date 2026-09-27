@@ -20,14 +20,17 @@ type SortKey = "id" | "created_at" | "usuario_nome" | "tipo_reset" | "resetado_p
 type SortDir = "asc" | "desc";
 
 // Mapeia a sortKey interna do frontend para o campo aceito pelo backend em
-// order_by. Apenas id, usuario_id, tipo_reset e created_at estao na
-// whitelist do backend — usuario_nome, resetado_por_nome e ip_origem nao
-// existem la, entao nao enviamos order_by para essas colunas (a ordenacao
-// cai no default do backend: id desc).
-const ORDER_BY_MAP: Partial<Record<SortKey, string>> = {
+// order_by. FE-13: a whitelist do backend aceita id, usuario_id, tipo_reset,
+// created_at, usuario_nome, resetado_por_nome e ip_origem. O Record completo
+// (nao Partial) garante em tempo de compilacao que toda coluna ordenavel da
+// tela tem chave valida no backend.
+const ORDER_BY_MAP: Record<SortKey, string> = {
   id: "id",
   created_at: "created_at",
+  usuario_nome: "usuario_nome",
   tipo_reset: "tipo_reset",
+  resetado_por_nome: "resetado_por_nome",
+  ip_origem: "ip_origem",
 };
 
 const TIPO_OPTIONS: { value: "" | TipoReset; label: string }[] = [
@@ -208,8 +211,7 @@ export default function SenhaHistoricoPage() {
   };
 
   // Busca continua client-side (aplicada sobre os itens da pagina atual);
-  // a ordenacao agora e feita pela API quando o campo esta na whitelist do
-  // backend (ver ORDER_BY_MAP e load()).
+  // a ordenacao e feita pela API para todas as colunas (ver ORDER_BY_MAP).
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     let list = items;

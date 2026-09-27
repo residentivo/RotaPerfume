@@ -1,51 +1,25 @@
 # A Fazer
 
-> Os cards BUG-10, BUG-09, SEC-08, FE-11, FE-12 e FE-10 foram concluídos no Lote 8 (2026-09-26; ver `feito.md`). SEC-10, SEC-09 e DOC-04 aguardam a priorização do usuário; INFO-01 é só informativo. Os cards BUG-11, FE-13 e CHORE-01 foram registrados no fechamento do Lote 8, que também acrescentou o item 6 ao SEC-10.
+> Os cards CHORE-01, BUG-11 e FE-13 foram concluídos no Lote 9 (2026-09-26; ver `feito.md`). SEC-10, SEC-09 e DOC-04 aguardam a priorização do usuário; INFO-01 é só informativo. O card BUG-12 foi registrado no fechamento do Lote 9.
 
 ---
 
-## BUG-11: `UsuarioRepository.Create` devolve erro com o INSERT já gravado se só a releitura falhar — prioridade BAIXA
+## BUG-12: `scanSenhaHistorico` lê `ip_origem` e `user_agent` como string, mas as colunas aceitam NULL — prioridade BAIXA
 
 **Status:** não iniciado
-**Camada:** Backend shared
-**Responsável:** 🟡 BackBrain (testes: 🔴 TestBrain)
-**Origem:** 🟡 BackBrain, BUG-09 (Lote 8, 2026-09-26).
+**Camada:** Backend shared (ou Database)
+**Responsável:** 🟡 BackBrain **ou** 🌸 DataBrain (testes: 🔴 TestBrain)
+**Origem:** 🔴 TestBrain, Lote 9 (2026-09-26).
 
 **Descrição:**
-- O `UsuarioRepository.Create` (`apis/shared/repositories/usuario_repository.go`) relê o usuário com `GetByID` depois do INSERT. Se só a releitura falhar, ele devolve erro, mas o usuário já foi gravado.
-- Efeito: o service responde erro, **não** envia o e-mail com a senha inicial, e uma nova tentativa bate em e-mail duplicado.
-
-**Ação esperada:**
-- 🟡 BackBrain: tirar a releitura do repositório e fazer no service, no padrão `relerXCriado` do BUG-08/BUG-09 (falha na releitura → log e objeto em memória).
-- 🔴 TestBrain: cobrir a falha só da releitura (usuário criado, e-mail enviado, resposta de sucesso).
-
----
-
-## FE-13: colunas de `admin/senha-historico` parecem ordenáveis, mas não reordenam — prioridade BAIXA
-
-**Status:** não iniciado; aguarda decisão (Front ou Back)
-**Camada:** Frontend + Backend
-**Responsável:** 🟡 BackBrain **ou** 🟢 FrontBrain (testes: 🔴 TestBrain)
-**Origem:** 🟢 FrontBrain, FE-12 (Lote 8, 2026-09-26).
-
-**Descrição:** Em `admin/senha-historico`, as colunas Usuario, Resetado Por e IP Origem aparecem como ordenáveis, mas o `ORDER_BY_MAP` não as envia, porque estão fora da whitelist de `GET /api/senha-historico` (`id, usuario_id, tipo_reset, created_at`). O clique muda a seta, mas não a ordem.
+- Em `apis/shared/repositories/senha_historico_repository.go`, o `scanSenhaHistorico` lê `ip_origem` e `user_agent` como `string`, mas as colunas aceitam NULL no banco. Um registro com NULL derruba a listagem com `500` ("converting NULL to string is unsupported").
+- Com a ordenação por `ip_origem asc` (FE-13), esse registro cairia na primeira página.
+- Hoje há 0 linhas com NULL e o `Create` sempre grava string: risco latente.
 
 **Ação esperada (escolher uma):**
-- 🟡 BackBrain: incluir `usuario_nome`, `resetado_por_nome` e `ip_origem` na whitelist (e 🟢 FrontBrain mapeá-las no `ORDER_BY_MAP`); 🔵 SubBrain atualiza o Postman.
-- 🟢 FrontBrain: tornar as três colunas não ordenáveis.
-- 🔴 TestBrain: cobrir a opção escolhida.
-
----
-
-## CHORE-01: `frontend/tsconfig.tsbuildinfo` rastreado pelo git — prioridade BAIXA
-
-**Status:** não iniciado; aguarda o usuário
-**Camada:** Repositório
-**Origem:** 🔴 TestBrain (Lote 8, 2026-09-26).
-
-**Descrição:** O `frontend/tsconfig.tsbuildinfo` é rastreado pelo git e é regravado a cada `tsc`, sujando o `git status`.
-
-**Ação esperada:** `git rm --cached frontend/tsconfig.tsbuildinfo` e `*.tsbuildinfo` no `.gitignore`, se o usuário aprovar.
+- 🟡 BackBrain: ler com `sql.NullString` ou `COALESCE`.
+- 🌸 DataBrain: tornar as colunas `NOT NULL` (com migração e revert).
+- 🔴 TestBrain: cobrir registro com NULL na listagem (e na ordenação por `ip_origem`).
 
 ---
 

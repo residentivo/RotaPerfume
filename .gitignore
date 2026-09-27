@@ -30,6 +30,9 @@ build/
 .lighthouse/
 .chronicle/
 
+# TypeScript incremental build (regravado a cada tsc)
+*.tsbuildinfo
+
 # Test
 *.test
 *.out

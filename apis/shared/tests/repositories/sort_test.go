@@ -82,10 +82,10 @@ func TestOrdenacao_SenhaHistoricoFindAll(t *testing.T) {
 		want     string
 	}{
 		{"tudo vazio usa default DESC", "", "", "ORDER BY sh.id DESC"},
-		{"campo mapeado para alias", "usuario_id", "asc", "ORDER BY sh.usuario_id ASC"},
-		{"campo mapeado com dir default", "created_at", "", "ORDER BY sh.created_at DESC"},
+		{"campo mapeado para alias", "usuario_id", "asc", "ORDER BY sh.usuario_id ASC, sh.id DESC"},
+		{"campo mapeado com dir default", "created_at", "", "ORDER BY sh.created_at DESC, sh.id DESC"},
 		{"campo fora da whitelist", "senha_hash_anterior", "asc", "ORDER BY sh.id ASC"},
-		{"dir inválida cai no default DESC", "tipo_reset", "up", "ORDER BY sh.tipo_reset DESC"},
+		{"dir inválida cai no default DESC", "tipo_reset", "up", "ORDER BY sh.tipo_reset DESC, sh.id DESC"},
 		{"injection", "id; DELETE FROM usuarios", "desc", "ORDER BY sh.id DESC"},
 	}
 	for _, tt := range casos {

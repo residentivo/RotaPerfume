@@ -173,10 +173,10 @@ func TestSenhaHistoricoFindByUsuario_OrderBy(t *testing.T) {
 		orderDir    string
 		orderRegexp string
 	}{
-		{"order_by válido asc", "tipo_reset", "asc", `ORDER BY sh\.tipo_reset ASC`},
-		{"order_by válido desc", "usuario_id", "desc", `ORDER BY sh\.usuario_id DESC`},
+		{"order_by válido asc", "tipo_reset", "asc", `ORDER BY sh\.tipo_reset ASC, sh\.id DESC`},
+		{"order_by válido desc", "usuario_id", "desc", `ORDER BY sh\.usuario_id DESC, sh\.id DESC`},
 		{"order_by fora da whitelist cai no default", "1; DROP TABLE senha_historico;--", "asc", `ORDER BY sh\.id ASC`},
-		{"order_dir inválido cai no default (desc)", "tipo_reset", "invalido", `ORDER BY sh\.tipo_reset DESC`},
+		{"order_dir inválido cai no default (desc)", "tipo_reset", "invalido", `ORDER BY sh\.tipo_reset DESC, sh\.id DESC`},
 		{"tudo vazio cai no default", "", "", `ORDER BY sh\.id DESC`},
 	}
 
@@ -341,7 +341,7 @@ func TestSenhaHistoricoFindAll_OrderBy(t *testing.T) {
 		orderDir    string
 		orderRegexp string
 	}{
-		{"order_by válido asc", "usuario_id", "asc", `ORDER BY sh\.usuario_id ASC`},
+		{"order_by válido asc", "usuario_id", "asc", `ORDER BY sh\.usuario_id ASC, sh\.id DESC`},
 		{"order_by fora da whitelist cai no default", "1; DROP TABLE senha_historico;--", "asc", `ORDER BY sh\.id ASC`},
 		{"order_dir inválido cai no default (desc)", "id", "invalido", `ORDER BY sh\.id DESC`},
 		{"tudo vazio cai no default", "", "", `ORDER BY sh\.id DESC`},

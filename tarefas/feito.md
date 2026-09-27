@@ -4,6 +4,81 @@
 
 ---
 
+## Lote 9 de 2026-09-26: 3 cards concluídos (de 3)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "comite o lote 8 e siga com o próximo lote" (Lote 8 commitado em `259f889`). Entraram CHORE-01, BUG-11 e FE-13. SEC-10, SEC-09 e DOC-04 ficaram em `afazer.md` aguardando o usuário; INFO-01 é informativo. Resultados finais **conferidos pelo 🤍 MegaBrain em 2026-09-26**.
+>
+> **Fluxo:** 🤍 MegaBrain (CHORE-01) ∥ 🟡 BackBrain (BUG-11, FE-13) → 🟢 FrontBrain (FE-13) → 🔴 TestBrain → 🔵 SubBrain.
+>
+> **Decisões:**
+> - 🟣 SecBrain dispensado: BUG-11 é robustez; FE-13 amplia uma whitelist de `ORDER BY` já existente, sem interpolar entrada do usuário; CHORE-01 é do repositório.
+> - 🤍 MegaBrain (FE-13): incluir as colunas na whitelist do backend (em vez de torná-las não ordenáveis no front).
+>
+> **Cobertura** (total do `go tool cover -func` com `-coverpkg=./...`): `rotaperfumes-api` 89.8% (Lote 8: 89.7%), `shared` 92.8% / 93.2% com integração (92.8%). Funções alteradas: `relerUsuarioCriado` 100%, `CreateUsuario` 95.2%, `Create` 100%, `senhaHistoricoOrderClause` 100%. Suítes Go verdes com e sem `INTEGRATION=1`; frontend `tsc` e `eslint` limpos, Vitest 35 arquivos / 1465 testes.
+>
+> **Documentação (🔵 SubBrain) do lote:** `postman/collection.json` (seção "Mudanças de contrato do Lote 9" na descrição da collection; notas FE-13 nas requisições Histórico de Senhas — Todos e Por Usuário; nota BUG-11 em Criar Usuário), `postman/README.md` (seção do Lote 9 e notas em `POST /api/usuarios` e `GET /api/senha-historico`) e o anexo "Anexo — Lote 9" em `docs/roteiro-teste-manual-lote8.md`.
+>
+> **Card derivado que ficou em `afazer.md`:** BUG-12.
+
+## CHORE-01: `frontend/tsconfig.tsbuildinfo` rastreado pelo git — 2026-09-26
+**Agentes:** 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Repositório
+**Origem:** 🔴 TestBrain (Lote 8).
+
+**Descrição:** O `frontend/tsconfig.tsbuildinfo` era rastreado e regravado a cada `tsc`, sujando o `git status`.
+
+**🤍 MegaBrain (2026-09-26) — feito:** `*.tsbuildinfo` no `.gitignore` (bloco próprio depois da seção Next.js) e `git rm --cached frontend/tsconfig.tsbuildinfo` (o arquivo continua no disco).
+
+---
+
+## BUG-11: `UsuarioRepository.Create` devolvia erro com o INSERT já gravado se só a releitura falhasse — 2026-09-26
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain (Postman) → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Backend shared + Backend
+**Origem:** 🟡 BackBrain, BUG-09 (Lote 8).
+
+**Descrição:** A releitura ficava no repositório; se só ela falhasse, o service respondia erro, não enviava o e-mail com a senha inicial, e uma nova tentativa batia em e-mail duplicado.
+
+**🟡 BackBrain (2026-09-26) — implementado:**
+- `apis/shared/repositories/usuario_repository.go`: `Create` só faz o INSERT e preenche `u.ID`.
+- `apis/rotaperfumes-api/services/usuario_service.go`: `CreateUsuario` faz INSERT → e-mail com a senha inicial → log verbose → `relerUsuarioCriado` (novo). Falha na releitura → log `[usuarios] criado, mas falhou a releitura: id=%d: %v` e objeto em memória. Único chamador de `Create` em `apis/`.
+- Contrato: `POST /api/usuarios` responde `201` quando só a releitura falha (`email_enviado` correto, timestamps zerados, `vendedor_nome` vazio), em vez de erro.
+
+**🔴 TestBrain (2026-09-26) — testado:**
+- `apis/rotaperfumes-api/tests/services/bug11_create_usuario_releitura_test.go`: releitura OK (6 casos), falha só na releitura (12 casos), ordem INSERT → e-mail → SELECT, falha no INSERT (4 casos, sem e-mail).
+- `apis/rotaperfumes-api/tests/handlers/bug11_fe13_handler_test.go`: 4 casos HTTP. `TestUsuarioCreate` ajustado.
+
+**Resultado final:** `relerUsuarioCriado` 100%, `CreateUsuario` 95.2%, `Create` 100%.
+
+---
+
+## FE-13: colunas de `admin/senha-historico` pareciam ordenáveis, mas não reordenavam — 2026-09-26
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain (Postman e roteiro) → conferência do 🤍 MegaBrain → fechamento por 🔵 SubBrain
+
+**Status:** concluído em 2026-09-26.
+
+**Camada:** Backend shared + Frontend
+**Origem:** 🟢 FrontBrain, FE-12 (Lote 8).
+
+**Descrição:** Usuario, Resetado Por e IP Origem mudavam a seta ao clicar, mas estavam fora da whitelist de `GET /api/senha-historico`, e a ordem não mudava.
+
+**🟡 BackBrain (2026-09-26) — implementado:** `apis/shared/repositories/senha_historico_repository.go`: `order_by` aceita `id, usuario_id, tipo_reset, created_at, usuario_nome` (`u1.nome`), `resetado_por_nome` (`u2.nome`) e `ip_origem` (`sh.ip_origem`), em `GET /api/senha-historico` e `/api/senha-historico/{usuario_id}`. Novo `senhaHistoricoOrderClause` acrescenta desempate `, sh.id DESC` quando a coluna não é `sh.id` (também nas chaves antigas). Fora da whitelist → `sh.id` na direção pedida. `resetado_por_nome` NULL vem primeiro em ASC e por último em DESC.
+
+**🟢 FrontBrain (2026-09-26) — implementado:** `ORDER_BY_MAP` em `frontend/src/app/admin/senha-historico/page.tsx` virou `Record<SortKey, string>` completo (as 6 colunas ordenáveis têm chave; coluna nova sem chave não compila). `frontend/tests/app/admin/filtrosAdmin.test.tsx` ajustado para as 3 chaves.
+
+**🔴 TestBrain (2026-09-26) — testado:**
+- `apis/shared/tests/repositories/fe13_senha_historico_ordenacao_test.go`: chaves × direções, fora da whitelist/injeção e `TestIntegracaoFE13_OrdenacaoReal` (MySQL real: NULLs, desempate, paginação sem repetir nem pular).
+- `apis/rotaperfumes-api/tests/handlers/bug11_fe13_handler_test.go`: 13 casos × 2 handlers.
+
+**Resultado final:** `senhaHistoricoOrderClause` 100%. Roteiro: `docs/roteiro-teste-manual-lote8.md`, "Anexo — Lote 9".
+
+---
+
 ## Lote 8 de 2026-09-26: 6 cards concluídos (de 6)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "continuar fazendo as tarefas a fazer". Entraram os cards que não dependiam de priorização do usuário: BUG-10, BUG-09, SEC-08, FE-11, FE-12 e FE-10. SEC-10, SEC-09 e DOC-04 ficaram em `afazer.md` aguardando o usuário; INFO-01 é informativo. Resultados finais **conferidos pelo 🤍 MegaBrain em 2026-09-26**.

@@ -320,25 +320,23 @@ func TestCarteiraGetVinculoByClienteVendedorData(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUsuarioCreate(t *testing.T) {
-	agora := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	vend := int64(3)
 	errBanco := errors.New("falha de rede")
 	errLastID := errors.New("sem last insert id")
 
 	const insertRe = `INSERT INTO usuarios \(nome, email, password_hash, role, id_vendedor, ativo, deve_trocar_senha\)`
-	const selectRe = `WHERE u.id = \?`
 
+	// BUG-11: Create só faz o INSERT e preenche o ID; a releitura passou
+	// para o UsuarioService (relerUsuarioCriado). Nenhum SELECT é esperado.
 	casos := []struct {
 		nome      string
 		prepara   func(m sqlmock.Sqlmock)
 		wantErrIs error
 		wantErr   bool
 	}{
-		{"sucesso relê o registro criado", func(m sqlmock.Sqlmock) {
+		{"sucesso preenche só o ID, sem releitura", func(m sqlmock.Sqlmock) {
 			m.ExpectExec(insertRe).WithArgs("Ana", "ana@rp.com", "hash", "normal", int64(3), true, true).
 				WillReturnResult(sqlmock.NewResult(42, 1))
-			m.ExpectQuery(selectRe).WithArgs(int64(42)).WillReturnRows(sqlmock.NewRows(baseColumns).
-				AddRow(int64(42), "Ana", "ana@rp.com", "hash", "normal", int64(3), true, true, agora, agora, nil, "Vendedor 3"))
 		}, nil, false},
 		{"email duplicado (Error 1062)", func(m sqlmock.Sqlmock) {
 			m.ExpectExec(insertRe).WillReturnError(errors.New("Error 1062 (23000): Duplicate entry 'ana@rp.com' for key 'usuarios.email'"))
@@ -352,10 +350,6 @@ func TestUsuarioCreate(t *testing.T) {
 		{"erro no LastInsertId", func(m sqlmock.Sqlmock) {
 			m.ExpectExec(insertRe).WillReturnResult(sqlmock.NewErrorResult(errLastID))
 		}, errLastID, true},
-		{"registro some antes da releitura", func(m sqlmock.Sqlmock) {
-			m.ExpectExec(insertRe).WillReturnResult(sqlmock.NewResult(42, 1))
-			m.ExpectQuery(selectRe).WithArgs(int64(42)).WillReturnRows(sqlmock.NewRows(baseColumns))
-		}, repositories.ErrNotFound, true},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -371,9 +365,9 @@ func TestUsuarioCreate(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, int64(42), u.ID)
-				assert.Equal(t, agora, u.CreatedAt)
-				require.NotNil(t, u.VendedorNome)
-				assert.Equal(t, "Vendedor 3", *u.VendedorNome)
+				assert.Equal(t, "Ana", u.Nome, "os campos informados permanecem em memória")
+				assert.True(t, u.CreatedAt.IsZero(), "created_at só vem da releitura no service")
+				assert.Nil(t, u.VendedorNome, "vendedor_nome só vem da releitura no service")
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
