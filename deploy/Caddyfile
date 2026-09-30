@@ -1,0 +1,58 @@
+# Proxy reverso unico do rotaperfumes (unica porta publicada no host).
+#
+# - HTTPS com CA interna do Caddy (tls internal): o navegador mostra aviso de
+#   certificado ate a raiz da CA ser instalada nos clientes. A raiz fica no
+#   volume caddy_data: /data/caddy/pki/authorities/local/root.crt
+# - Acesso por hostname ({$SITE_HOST}) e por IP ({$SITE_IP}). Navegadores nao
+#   mandam SNI para IP, por isso default_sni aponta para o IP.
+# - As rotas da API ja comecam com /api/... -> "handle" (SEM strip do prefixo).
+# - Dentro do container o Caddy escuta 443; o host publica ${HTTPS_PORT}:443.
+#   O matcher de host ignora a porta do header Host, entao host:8443 casa.
+
+{
+	default_sni {$SITE_IP}
+	skip_install_trust
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://{$SITE_HOST}, https://{$SITE_IP} {
+	tls internal
+
+	encode gzip zstd
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Healthcheck da API exposto como /api/health (a API responde em /health).
+	handle /api/health {
+		rewrite * /health
+		reverse_proxy api:8080
+	}
+
+	handle /api/* {
+		reverse_proxy api:8080 {
+			# Sem trusted_proxies, o Caddy IGNORA X-Forwarded-* de entrada e
+			# grava X-Forwarded-For = IP do cliente (a API le o valor mais a
+			# esquerda com TRUST_PROXY_HEADERS=true). X-Real-IP nao e gerado
+			# pelo Caddy: remove o que vier do cliente.
+			header_up -X-Real-IP
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:3000 {
+			header_up -X-Real-IP
+		}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

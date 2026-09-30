@@ -1,0 +1,20 @@
+# Contexto de build da API (apis/). So precisa de shared/ e rotaperfumes-api/.
+**/.git
+**/.env
+**/.env.*
+**/*.env
+**/*.exe
+**/*.exe~
+**/bin/
+**/coverage*
+**/*.out
+**/*.log
+**/*.test
+**/*.sql.gz
+**/dados/
+**/export/
+**/tmp/
+**/.vscode/
+**/.idea/
+Dockerfile
+.dockerignore

@@ -1,0 +1,3 @@
+# Contexto de build da imagem do Caddy (deploy/): so o Caddyfile interessa.
+*
+!Caddyfile

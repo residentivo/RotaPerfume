@@ -1,0 +1,110 @@
+# Deploy do rotaperfumes (API Go + frontend Next.js atras de um Caddy HTTPS).
+#
+#   cd deploy
+#   PUBLIC_URL=https://ivo-inspiron-15-3530:8443 TURNSTILE_SITE_KEY=... \
+#     docker compose -p rotaperfumes up -d --build --remove-orphans
+#
+# Variaveis de interpolacao (shell do Jenkins ou deploy/.env):
+#   SITE_HOST          hostname da LAN          (default ivo-inspiron-15-3530)
+#   SITE_IP            IP da LAN                (default 192.168.168.106)
+#   HTTPS_PORT         porta publicada no host  (default 8443)
+#   PUBLIC_URL         origem publica SEM /api  (ex. https://ivo-inspiron-15-3530:8443)
+#   TURNSTILE_SITE_KEY chave PUBLICA do Turnstile (embutida no bundle)
+#
+# O MySQL roda no HOST (fora do compose): a API acessa via host.docker.internal.
+# Segredos da API ficam em ./api.env (gerado pelo Jenkins, nunca versionado).
+
+name: rotaperfumes
+
+services:
+  api:
+    build:
+      context: ../apis
+      dockerfile: Dockerfile
+    image: rotaperfumes-api:latest
+    # O arquivo so existe durante o deploy (o Jenkins grava e apaga). Para
+    # comandos manuais sem ele (build/ps/logs/down) use API_ENV_FILE=/dev/null.
+    # NAO rode "up" manual com /dev/null: o container da API seria recriado sem
+    # as variaveis. Sem API_ENV_FILE e sem ./api.env o compose falha (de proposito).
+    env_file:
+      - ${API_ENV_FILE:-./api.env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    # Sem healthcheck: a imagem distroless nao tem shell/curl. O Jenkins faz
+    # o smoke test em /api/health atraves do Caddy.
+    expose:
+      - "8080"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_URL:-https://ivo-inspiron-15-3530:8443}
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+    image: rotaperfumes-frontend:latest
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    expose:
+      - "3000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  caddy:
+    # Caddyfile embutido na imagem (em vez de bind mount): funciona mesmo se o
+    # Jenkins rodar em container, onde o path do workspace nao existe no host.
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM caddy:2-alpine
+        COPY Caddyfile /etc/caddy/Caddyfile
+    image: rotaperfumes-caddy:latest
+    depends_on:
+      - api
+      - frontend
+    ports:
+      - "${HTTPS_PORT:-8443}:443"
+    environment:
+      SITE_HOST: ${SITE_HOST:-ivo-inspiron-15-3530}
+      SITE_IP: ${SITE_IP:-192.168.168.106}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  caddy_data:
+  caddy_config:

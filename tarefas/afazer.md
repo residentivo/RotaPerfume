@@ -1,6 +1,6 @@
 # A Fazer
 
-> Os cards FE-14, SEC-10, SEC-09 e DOC-04 foram concluídos no Lote 11 (2026-09-26; ver `feito.md`). SEC-11, DB-01, SEC-12 e CHORE-02 foram para `fazendo.md` no Lote 12 (2026-09-27). Resta só o INFO-01, que é informativo.
+> Os cards FE-14, SEC-10, SEC-09 e DOC-04 foram concluídos no Lote 11 (2026-09-26; ver `feito.md`). SEC-11, DB-01, SEC-12 e CHORE-02 foram para `fazendo.md` no Lote 12 (2026-09-27). O DEPLOY-01 foi para `fazendo.md` no Lote 13 (2026-09-30). Resta só o INFO-01, que é informativo.
 
 ---
 

@@ -39,7 +39,9 @@ export { ApiError };
 // Configuração
 // ============================================
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+// Remove barra(s) final(is): NEXT_PUBLIC_API_URL pode vir com sufixo de caminho
+// (ex. https://host:8443/api) e os endpoints ja comecam com "/api/...".
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080").replace(/\/+$/, "");
 
 // Tempo máximo de espera pelo refresh (ms)
 const REFRESH_TIMEOUT = 10000;

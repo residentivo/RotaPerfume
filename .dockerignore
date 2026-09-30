@@ -1,0 +1,32 @@
+# Contexto de build a partir da raiz (caso algum build use "."). Os builds do
+# deploy usam apis/ e frontend/ como contexto, cada um com seu .dockerignore.
+.git
+.gitignore
+.gitattributes
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/*.env
+**/node_modules
+**/.next
+**/*.exe
+**/*.exe~
+bin/
+**/bin/
+dados/
+export/
+**/coverage*
+**/*.out
+**/*.log
+**/*.sql.gz
+.claude/
+tarefas/
+.vscode/
+.idea/
+.postman/
+postman/
+deploy/api.env
+deploy/dumps/
+itenslocais.txt

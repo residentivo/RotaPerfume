@@ -68,3 +68,8 @@ build/
 out/
 
 
+
+# Deploy (DEPLOY-01): segredos e dumps nunca versionados
+deploy/api.env
+deploy/dumps/
+*.sql.gz

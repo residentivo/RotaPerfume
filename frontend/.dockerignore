@@ -1,0 +1,16 @@
+node_modules
+.next
+coverage
+.env
+.env*
+!.env.local.example
+*.log
+npm-debug.log*
+tsconfig.tsbuildinfo
+tests
+vitest.config.mts
+vitest.setup.ts
+.git
+.gitignore
+Dockerfile
+.dockerignore
