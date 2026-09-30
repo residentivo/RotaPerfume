@@ -1,10 +1,13 @@
 // Package config carrega configurações do sistema a partir de variáveis de ambiente.
 //
-// O arquivo .env na raiz do projeto é lido uma vez (carregado por outras ferramentas
-// como o Makefile antes de invocar os binários Go) — aqui apenas consumimos via os.Getenv.
+// O arquivo .env na raiz do projeto é carregado pelos binários (cmdutil /
+// godotenv) ou pelo Makefile ("-include .env") antes de chamar o Load — aqui
+// apenas consumimos via os.Getenv. DB_USUARIO/DB_SENHA são obrigatórios e
+// não têm default (SEC-11): sem eles, Load devolve ErrCredenciaisDB.
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -66,17 +69,61 @@ type Config struct {
 	// SECURITY_ALERT_EMAILS (separados por vírgula). Entradas vazias, sem "@"
 	// ou com caracteres de quebra de linha são descartadas.
 	SecurityAlertEmails []string
+
+	// RefreshReuseSuppressWindow é a janela em que um novo reuso do MESMO
+	// refresh token já rotacionado não derruba as sessões de novo (SEC-12),
+	// via REFRESH_REUSE_SUPPRESS_WINDOW. Padrão 30m, faixa [1m, 24h].
+	RefreshReuseSuppressWindow time.Duration
+
+	// RefreshCleanupInterval é o intervalo da limpeza periódica de
+	// refresh_tokens (CHORE-02), via REFRESH_CLEANUP_INTERVAL. Padrão 6h,
+	// mínimo 1m; "0" desativa a limpeza.
+	RefreshCleanupInterval time.Duration
+
+	// RefreshTokenRetencao é quanto tempo um refresh token fica no banco
+	// depois de expires_at antes de ser apagado (CHORE-02), via
+	// REFRESH_TOKEN_RETENCAO. Padrão 720h (30 dias), faixa [24h, 8760h].
+	RefreshTokenRetencao time.Duration
 }
 
+// ErrCredenciaisDB: DB_USUARIO/DB_SENHA ausentes ou vazios (SEC-11).
+var ErrCredenciaisDB = errors.New("config: defina DB_USUARIO/DB_SENHA no .env")
+
+// Faixas e padrões das durações de refresh token (SEC-12 / CHORE-02).
+const (
+	refreshReuseWindowPadrao = 30 * time.Minute
+	refreshReuseWindowMin    = time.Minute
+	refreshReuseWindowMax    = 24 * time.Hour
+
+	refreshCleanupIntervalPadrao = 6 * time.Hour
+	refreshCleanupIntervalMin    = time.Minute
+
+	refreshRetencaoPadrao = 720 * time.Hour
+	refreshRetencaoMin    = 24 * time.Hour
+	refreshRetencaoMax    = 8760 * time.Hour
+)
+
 // Load lê as variáveis de ambiente e retorna uma Config preenchida.
-// Retorna erro se variáveis obrigatórias estiverem ausentes.
+// Retorna erro se variáveis obrigatórias estiverem ausentes — inclusive
+// DB_USUARIO/DB_SENHA (ErrCredenciaisDB, SEC-11).
 func Load() (*Config, error) {
+	return load(true)
+}
+
+// LoadSemCredenciaisDB é o Load sem a exigência de DB_USUARIO/DB_SENHA, para
+// ferramentas que não abrem conexão (ex.: seedusers -dry-run/-no-exec, SEC-10).
+// As demais validações continuam valendo.
+func LoadSemCredenciaisDB() (*Config, error) {
+	return load(false)
+}
+
+func load(exigirDB bool) (*Config, error) {
 	cfg := &Config{
 		DBHost:    getEnv("DB_HOST", "localhost"),
 		DBPort:    getEnv("DB_PORT", "3306"),
 		DBName:    getEnv("DB_NAME", "rotaperfumes"),
-		DBUsuario: getEnv("DB_USUARIO", "golang"),
-		DBSenha:   getEnv("DB_SENHA", "golang"),
+		DBUsuario: os.Getenv("DB_USUARIO"),
+		DBSenha:   os.Getenv("DB_SENHA"),
 		JWTSecret: os.Getenv("JWT_SECRET"),
 		JWTIssuer: getEnv("JWT_ISSUER", "rotaperfumes"),
 	}
@@ -116,7 +163,82 @@ func Load() (*Config, error) {
 	cfg.TurnstileSecretKey = os.Getenv("TURNSTILE_SECRET_KEY")
 	cfg.SecurityAlertEmails = ParseSecurityAlertEmails(os.Getenv("SECURITY_ALERT_EMAILS"))
 
+	if err := carregarDuracoesRefresh(cfg); err != nil {
+		return nil, err
+	}
+
+	// SEC-11: checagem no fim, depois das demais validações, para que os
+	// erros já existentes (JWT_SECRET, JWT_TTL, BCRYPT_COST) tenham prioridade.
+	// A mensagem nunca inclui os valores.
+	if exigirDB && (strings.TrimSpace(cfg.DBUsuario) == "" || cfg.DBSenha == "") {
+		return nil, ErrCredenciaisDB
+	}
+
 	return cfg, nil
+}
+
+// carregarDuracoesRefresh lê as durações de refresh token (SEC-12 e CHORE-02)
+// e valida as faixas; valor inválido vira erro do Load (estilo JWT_TTL).
+func carregarDuracoesRefresh(cfg *Config) error {
+	janela, err := parseDuracaoNaFaixa("REFRESH_REUSE_SUPPRESS_WINDOW", refreshReuseWindowPadrao, refreshReuseWindowMin, refreshReuseWindowMax)
+	if err != nil {
+		return err
+	}
+	cfg.RefreshReuseSuppressWindow = janela
+
+	intervalo, err := parseIntervaloLimpeza()
+	if err != nil {
+		return err
+	}
+	cfg.RefreshCleanupInterval = intervalo
+
+	retencao, err := parseDuracaoNaFaixa("REFRESH_TOKEN_RETENCAO", refreshRetencaoPadrao, refreshRetencaoMin, refreshRetencaoMax)
+	if err != nil {
+		return err
+	}
+	cfg.RefreshTokenRetencao = retencao
+	return nil
+}
+
+// parseIntervaloLimpeza lê REFRESH_CLEANUP_INTERVAL: "0" (ou "0s") desativa a
+// limpeza; qualquer outro valor precisa ser >= 1m.
+func parseIntervaloLimpeza() (time.Duration, error) {
+	const chave = "REFRESH_CLEANUP_INTERVAL"
+	raw := strings.TrimSpace(os.Getenv(chave))
+	if raw == "" {
+		return refreshCleanupIntervalPadrao, nil
+	}
+	if raw == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("config: %s inválido (%q): %w", chave, raw, err)
+	}
+	if d == 0 {
+		return 0, nil
+	}
+	if d < refreshCleanupIntervalMin {
+		return 0, fmt.Errorf("config: %s inválido (%q): esperado 0 (desativa) ou >= %s", chave, raw, refreshCleanupIntervalMin)
+	}
+	return d, nil
+}
+
+// parseDuracaoNaFaixa lê a env chave como time.Duration (padrão se vazia) e
+// exige minimo <= valor <= maximo.
+func parseDuracaoNaFaixa(chave string, padrao, minimo, maximo time.Duration) (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv(chave))
+	if raw == "" {
+		return padrao, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("config: %s inválido (%q): %w", chave, raw, err)
+	}
+	if d < minimo || d > maximo {
+		return 0, fmt.Errorf("config: %s inválido (%q): esperado entre %s e %s", chave, raw, minimo, maximo)
+	}
+	return d, nil
 }
 
 // ParseSecurityAlertEmails interpreta SECURITY_ALERT_EMAILS: separa por

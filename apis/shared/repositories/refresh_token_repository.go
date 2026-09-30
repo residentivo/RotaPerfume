@@ -141,19 +141,52 @@ func (r *RefreshTokenRepository) RevokeAllByVendedorID(ctx context.Context, db E
 	return n, nil
 }
 
-// DeleteExpired remove tokens expirados e não revogados mais antigos que 30 dias.
-func (r *RefreshTokenRepository) DeleteExpired(ctx context.Context, db *sql.DB) (int64, error) {
+// MarcarReusoDetectado grava agora em reuso_detectado_em se o token foi
+// rotacionado e o último reuso é NULL ou <= limite. true = marcou (deve
+// cortar); false = suprimido. Condição no WHERE (regra do DSN clientFoundRows).
+//
+// SEC-12: o UPDATE condicional é atômico — em duas requisições concorrentes
+// com o mesmo token reusado, só uma marca (e corta as sessões).
+func (r *RefreshTokenRepository) MarcarReusoDetectado(ctx context.Context, db Execer, id int64, agora, limite time.Time) (bool, error) {
 	const q = `
-		DELETE FROM refresh_tokens
-		WHERE (expires_at < ? AND revoked_at IS NOT NULL)
-		   OR (expires_at < ? AND revoked_at IS NULL)`
-	cutoff := time.Now().Add(-30 * 24 * time.Hour) // 30 dias
-	cutoffExpired := time.Now()
-	res, err := db.ExecContext(ctx, q, cutoffExpired, cutoff)
+		UPDATE refresh_tokens SET reuso_detectado_em = ?
+		WHERE id = ? AND revoked_reason = 'rotacao'
+		  AND (reuso_detectado_em IS NULL OR reuso_detectado_em <= ?)`
+	res, err := db.ExecContext(ctx, q, agora, id, limite)
+	if err != nil {
+		return false, fmt.Errorf("repositories: marcar reuso refresh_token: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("repositories: marcar reuso refresh_token rows affected: %w", err)
+	}
+	return n > 0, nil
+}
+
+// DesfazerReusoDetectado limpa a marca se ainda for a desta chamada (corte falhou).
+func (r *RefreshTokenRepository) DesfazerReusoDetectado(ctx context.Context, db Execer, id int64, marca time.Time) error {
+	const q = `UPDATE refresh_tokens SET reuso_detectado_em = NULL WHERE id = ? AND reuso_detectado_em = ?`
+	if _, err := db.ExecContext(ctx, q, id, marca); err != nil {
+		return fmt.Errorf("repositories: desfazer reuso refresh_token: %w", err)
+	}
+	return nil
+}
+
+// DeleteExpired apaga, em lote, tokens com expires_at < corte (corte = agora - retenção).
+//
+// CHORE-02: o chamador garante corte <= agora, então nunca apaga token com
+// expires_at >= agora (ainda útil para detectar reuso). ORDER BY id + LIMIT
+// mantém cada DELETE curto (índice idx_refresh_expires_at).
+func (r *RefreshTokenRepository) DeleteExpired(ctx context.Context, db *sql.DB, corte time.Time, lote int) (int64, error) {
+	const q = `DELETE FROM refresh_tokens WHERE expires_at < ? ORDER BY id LIMIT ?`
+	res, err := db.ExecContext(ctx, q, corte, lote)
 	if err != nil {
 		return 0, fmt.Errorf("repositories: delete expired refresh_tokens: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("repositories: delete expired refresh_tokens rows affected: %w", err)
+	}
 	return n, nil
 }
 

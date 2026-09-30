@@ -4,8 +4,9 @@ package services_test
 //
 // Só roda com INTEGRATION=1 (ex.: `make test-integration`, ou
 // `INTEGRATION=1 go test ./services/ -run TestIntegracaoBUG01 -v`).
-// Credenciais via DB_HOST/DB_PORT/DB_NAME/DB_USUARIO/DB_SENHA (defaults do
-// .env local: localhost:3306/rotaperfumes, golang/golang).
+// Credenciais via DB_HOST/DB_PORT/DB_NAME/DB_USUARIO/DB_SENHA (host/porta/banco
+// com default localhost:3306/rotaperfumes; usuário/senha sem default — SEC-11:
+// sem eles o teste é pulado).
 //
 // Fluxo (por fuso de time.Local): cria um vendedor e um produto TEMPORÁRIOS
 // (nome/sku com prefixo ZZ-TEST-BUG01-), confere no banco (DATE_FORMAT) que
@@ -44,12 +45,17 @@ func envOr(k, def string) string {
 // resolve loc=Local no parse do DSN).
 func abrirDBIntegracao(t *testing.T) *sql.DB {
 	t.Helper()
+	// SEC-11: sem fallback de credenciais; sem DB_USUARIO/DB_SENHA, pula.
+	usuario, senha := os.Getenv("DB_USUARIO"), os.Getenv("DB_SENHA")
+	if usuario == "" || senha == "" {
+		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
+	}
 	cfg := &config.Config{
 		DBHost:    envOr("DB_HOST", "localhost"),
 		DBPort:    envOr("DB_PORT", "3306"),
 		DBName:    envOr("DB_NAME", "rotaperfumes"),
-		DBUsuario: envOr("DB_USUARIO", "golang"),
-		DBSenha:   envOr("DB_SENHA", "golang"),
+		DBUsuario: usuario,
+		DBSenha:   senha,
 	}
 	db, err := shareddb.Open(cfg.DSN())
 	require.NoError(t, err, "MySQL local indisponível")

@@ -230,13 +230,14 @@ func TestRefreshTokenDeleteExpired_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`DELETE FROM refresh_tokens`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
+	corte := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	mock.ExpectExec(`DELETE FROM refresh_tokens WHERE expires_at < \? ORDER BY id LIMIT \?`).
+		WithArgs(corte, 1000).
 		WillReturnResult(sqlmock.NewResult(0, 4))
 
 	repo := repositories.NewRefreshTokenRepository()
 	ctx := context.Background()
-	n, err := repo.DeleteExpired(ctx, db)
+	n, err := repo.DeleteExpired(ctx, db, corte, 1000)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), n)
@@ -252,7 +253,7 @@ func TestRefreshTokenDeleteExpired_DBError(t *testing.T) {
 
 	repo := repositories.NewRefreshTokenRepository()
 	ctx := context.Background()
-	_, err := repo.DeleteExpired(ctx, db)
+	_, err := repo.DeleteExpired(ctx, db, time.Now(), 1000)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

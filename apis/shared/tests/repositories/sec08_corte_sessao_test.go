@@ -234,12 +234,17 @@ func abrirDBSEC08(t *testing.T) *sql.DB {
 	if os.Getenv("INTEGRATION") != "1" {
 		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
 	}
+	// SEC-11: sem fallback de credenciais; sem DB_USUARIO/DB_SENHA, pula.
+	usuario, senha := os.Getenv("DB_USUARIO"), os.Getenv("DB_SENHA")
+	if usuario == "" || senha == "" {
+		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
+	}
 	cfg := &config.Config{
 		DBHost:    envOrSEC08("DB_HOST", "localhost"),
 		DBPort:    envOrSEC08("DB_PORT", "3306"),
 		DBName:    envOrSEC08("DB_NAME", "rotaperfumes"),
-		DBUsuario: envOrSEC08("DB_USUARIO", "golang"),
-		DBSenha:   envOrSEC08("DB_SENHA", "golang"),
+		DBUsuario: usuario,
+		DBSenha:   senha,
 	}
 	db, err := shareddb.Open(cfg.DSN())
 	require.NoError(t, err, "MySQL local indisponível")

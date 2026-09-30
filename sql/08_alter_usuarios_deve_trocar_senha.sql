@@ -10,7 +10,7 @@
 -- quer/pode rodar `make db-reset` (que apaga todos os dados).
 --
 -- Uso:
---   mysql --local-infile=1 -u $DB_USUARIO -p$DB_SENHA -h $DB_HOST -P $DB_PORT \
+--   MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
 --     --default-character-set=utf8mb4 $DB_NAME < sql/08_alter_usuarios_deve_trocar_senha.sql
 -- ============================================================
 

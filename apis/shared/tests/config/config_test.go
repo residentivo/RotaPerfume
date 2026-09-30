@@ -91,8 +91,9 @@ func TestLoad(t *testing.T) {
 			nome: "defaults",
 			env: map[string]string{
 				"JWT_SECRET": "s", "JWT_TTL": "", "BCRYPT_COST": "", "DB_HOST": "", "DB_PORT": "",
-				"DB_NAME": "", "DB_USUARIO": "", "DB_SENHA": "", "VERBOSE": "", "LOG_LEVEL": "",
+				"DB_NAME": "", "DB_USUARIO": "u", "DB_SENHA": "s", "VERBOSE": "", "LOG_LEVEL": "",
 				"CORS_ALLOWED_ORIGINS": "", "TRUST_PROXY_HEADERS": "", "JWT_ISSUER": "",
+				"REFRESH_REUSE_SUPPRESS_WINDOW": "", "REFRESH_CLEANUP_INTERVAL": "", "REFRESH_TOKEN_RETENCAO": "",
 			},
 			check: func(t *testing.T, c *config.Config) {
 				assert.Equal(t, "localhost", c.DBHost)
@@ -110,6 +111,7 @@ func TestLoad(t *testing.T) {
 			nome: "valores customizados",
 			env: map[string]string{
 				"JWT_SECRET": "s", "JWT_TTL": "2h", "BCRYPT_COST": "4", "LOG_LEVEL": "debug", "VERBOSE": "",
+				"DB_USUARIO": "u", "DB_SENHA": "s",
 				"CORS_ALLOWED_ORIGINS": " https://a.com , ,https://b.com", "TRUST_PROXY_HEADERS": "true",
 			},
 			check: func(t *testing.T, c *config.Config) {

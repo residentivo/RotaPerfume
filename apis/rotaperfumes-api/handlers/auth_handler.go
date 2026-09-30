@@ -73,7 +73,7 @@ func (h *AuthHandler) SetAlertaSeguranca(n AlertaSegurancaNotificador) {
 
 // NewAuthHandler cria um AuthHandler com pool de conexão injetado.
 func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
-	return &AuthHandler{
+	h := &AuthHandler{
 		db:                   db,
 		repo:                 repositories.NewUsuarioRepository(),
 		vendedorRepo:         repositories.NewVendedorRepository(),
@@ -86,6 +86,9 @@ func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
 		resetPasswordLimiter: middleware.NewLoginRateLimiter(resetPasswordMaxFailures, resetPasswordWindow, resetPasswordBlockFor),
 		captcha:              sharedsvc.NewTurnstileService(cfg),
 	}
+	// SEC-12: janela de supressão de reuso repetido do mesmo token rotacionado.
+	h.refreshSvc.SetReuseSuppressWindow(cfg.RefreshReuseSuppressWindow)
+	return h
 }
 
 // LoginRequest body do POST /api/auth/login.
@@ -450,20 +453,54 @@ func (h *AuthHandler) tratarTokenRevogadoForaDaJanela(ctx context.Context, err e
 		return
 	}
 
+	// SEC-12: marca o reuso deste token (UPDATE condicional atômico). Um novo
+	// reuso do MESMO token dentro da janela não corta as sessões de novo —
+	// senão cada replay derrubaria o re-login da vítima. Fail-closed: erro ao
+	// marcar corta assim mesmo.
+	cortar, marca, err := h.refreshSvc.RegistrarReuso(ctx, h.db, revogado.TokenID)
+	if err != nil {
+		log.Printf("[auth][seguranca] refresh: falha ao registrar reuso (fail-closed, corta assim mesmo): token_id=%d: %v", revogado.TokenID, err)
+		cortar, marca = true, time.Time{}
+	}
+	if !cortar {
+		log.Printf("[auth][seguranca] refresh: reuso repetido de token rotacionado dentro da janela de supressão — sessões NÃO revogadas de novo: user_id=%d token_id=%d ip=%s ua=%s",
+			revogado.UsuarioID, revogado.TokenID, ipOrigem, userAgent)
+		return
+	}
+
+	h.cortarSessoesPorReuso(ctx, revogado, marca, ipOrigem, userAgent)
+	// SEC-09: avisa usuário e admins (assíncrono, com dedup/teto próprios).
+	if h.alerta != nil {
+		h.alerta.Notificar(revogado.UsuarioID, revogado.TokenID, ipOrigem, userAgent)
+	}
+}
+
+// cortarSessoesPorReuso revoga todos os refresh tokens do usuário e invalida
+// os access tokens já emitidos (SEC-07/SEC-08). Se alguma das duas etapas
+// falhar, desfaz a marca de reuso (SEC-12) para que o próximo reuso volte a
+// tentar o corte em vez de ser suprimido.
+func (h *AuthHandler) cortarSessoesPorReuso(ctx context.Context, revogado *services.RevokedTokenError, marca time.Time, ipOrigem, userAgent string) {
 	log.Printf("[auth][seguranca] refresh: reuso de refresh token já rotacionado fora da janela de graça (possível roubo de token) — revogando todas as sessões: user_id=%d token_id=%d revoked_at=%s ip=%s ua=%s",
 		revogado.UsuarioID, revogado.TokenID, revogado.RevokedAt.Format(time.RFC3339), ipOrigem, userAgent)
+	falhou := false
 	if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, revogado.UsuarioID, repositories.RevokeReasonRevogacaoMassa); err != nil {
+		falhou = true
 		log.Printf("[auth][seguranca] refresh: falha na revogação em massa após reuso: user_id=%d: %v", revogado.UsuarioID, err)
 	}
 	// SEC-08: derruba também os access tokens já emitidos (corte de sessão).
 	corte := time.Now().Truncate(time.Second)
 	if err := h.repo.InvalidarSessoes(ctx, h.db, revogado.UsuarioID, corte); err != nil {
+		falhou = true
 		log.Printf("[auth][seguranca] refresh: falha ao invalidar access tokens após reuso: user_id=%d: %v", revogado.UsuarioID, err)
 	}
-	// SEC-09: avisa usuário e admins (assíncrono, com dedup/teto próprios).
-	if h.alerta != nil {
-		h.alerta.Notificar(revogado.UsuarioID, revogado.TokenID, ipOrigem, userAgent)
+	if !falhou || marca.IsZero() {
+		return
 	}
+	if err := h.refreshSvc.DesfazerReuso(ctx, h.db, revogado.TokenID, marca); err != nil {
+		log.Printf("[auth][seguranca] refresh: falha ao desfazer a marca de reuso após corte incompleto: token_id=%d: %v", revogado.TokenID, err)
+		return
+	}
+	log.Printf("[auth][seguranca] refresh: corte incompleto — marca de reuso desfeita (o próximo reuso tenta cortar de novo): token_id=%d", revogado.TokenID)
 }
 
 // motivoRevogacaoLog formata o motivo para log; NULL vira "desconhecido(legado)".

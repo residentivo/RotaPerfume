@@ -44,6 +44,10 @@ func TestOpen_Integracao(t *testing.T) {
 	if os.Getenv("INTEGRATION") != "1" {
 		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
 	}
+	// SEC-11: Load exige DB_USUARIO/DB_SENHA (sem default); sem eles, pula.
+	if os.Getenv("DB_USUARIO") == "" || os.Getenv("DB_SENHA") == "" {
+		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
+	}
 	t.Setenv("JWT_SECRET", "integracao")
 	cfg, err := config.Load()
 	require.NoError(t, err)

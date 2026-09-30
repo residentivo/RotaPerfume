@@ -147,6 +147,17 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | SEC-10 | CLIs e SMTP | `resetpassword`: novas flags `-password-prompt` (sem eco) e `-password-stdin`; `-password` depreciado. `resetpassword` e `seedusers` exigem `DB_USUARIO`/`DB_SENHA` no `.env`. `make gen-hash` não altera mais `sql/` (usa cópias temporárias em `tmp/seed`). SMTP exige TLS 1.2+ com validação de certificado. |
 | FE-14 | (frontend) | Formatador de data único; datas `AAAA-MM-DD` não aparecem mais um dia antes; vazio e data zero do Go aparecem como `-`. Sem mudança na API. |
 
+## Mudanças do Lote 12 (2026-09-27)
+
+> **Sem mudança de contrato HTTP** (nenhum endpoint, corpo ou status mudou; a collection não foi alterada). Teste manual: `docs/roteiro-teste-manual-lote12.md`. Detalhes do banco: `docs/manual-base-de-dados.md` (seções 7.1, 7.2, 17 e 23).
+
+| Card | Onde | Mudança |
+|------|------|---------|
+| SEC-12 | `POST /api/auth/refresh` | Reenviar um refresh token já rotacionado derruba as sessões do usuário **uma vez** por token: novos reusos do **mesmo** token dentro de `REFRESH_REUSE_SUPPRESS_WINDOW` (padrão 30 min) não revogam as sessões de novo nem enviam outro e-mail, e o re-login da vítima sobrevive. A resposta continua **idêntica** nos dois casos (`401` `{"success":false,"error":"refresh token revogado"}`, sem `Set-Cookie`, contando no rate limit): o cliente não distingue o reuso suprimido. Coluna nova `refresh_tokens.reuso_detectado_em` (migração 23, `make db-fix-reuso-detectado`). |
+| CHORE-02 | (API, tarefa de fundo) | Limpeza periódica de `refresh_tokens`: na partida e a cada `REFRESH_CLEANUP_INTERVAL` (padrão `6h`; `0` desativa), apaga em lotes de 1000 os tokens com `expires_at` há mais de `REFRESH_TOKEN_RETENCAO` (padrão `720h`). Token ainda não expirado nunca é apagado. Logs `[refresh] cleanup: ...`. |
+| SEC-11 | `Makefile`, `config.Load()` | `DB_USUARIO`/`DB_SENHA` obrigatórios no `.env`, sem o default `golang/golang`: a API e os importadores não sobem sem eles, e os alvos `db-*` param no `db-check-env`. O `make` passa a senha ao `mysql` por `MYSQL_PWD` (não mais `-p...` no argv) e lê o `.env` com `-include .env` (ver "Subindo o ambiente"). |
+| DB-01 | `make db-up` | Passa a criar a tabela `estoque` (`sql/17_ddl_estoque.sql`, já sem `origem`), depois de `visitas`. Bancos antigos com `estoque.origem`: `make db-fix-estoque-origem` (idempotente). |
+
 ## Endpoints
 
 ### Healthcheck
@@ -185,6 +196,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
   - token revogado por `rotacao` → log `[auth][seguranca] refresh: reuso de refresh token já rotacionado fora da janela de graça (possível roubo de token) — revogando todas as sessões: user_id=... token_id=... revoked_at=... ip=... ua=...` e `RevokeAllUserTokens` com motivo `revogacao_massa` (todas as sessões do usuário perdem o refresh);
   - outro motivo ou `NULL` (tokens de antes da migração) → só log informativo `token revogado apresentado fora da janela de graça: user_id=... token_id=... motivo=...`, sem revogação em massa. Isso elimina o falso positivo de "possível roubo" para abas antigas depois de um logout.
   - A resposta HTTP continua idêntica (`401` `"refresh token revogado"`) e o reuso fora da janela continua contando no rate limit.
+- **Reuso repetido do mesmo token (SEC-12, Lote 12, 2026-09-27):** só o primeiro reuso de um token `rotacao` revoga todas as sessões e envia o alerta. Novos reusos do **mesmo** token dentro de `REFRESH_REUSE_SUPPRESS_WINDOW` (padrão 30 min) só geram o log `[auth][seguranca] refresh: reuso repetido de token rotacionado dentro da janela de supressão — sessões NÃO revogadas de novo`, sem revogar nem enviar e-mail; depois da janela, o reuso volta a cortar. A supressão é por token: reuso de **outro** token roubado continua cortando. Resposta idêntica (`401` `"refresh token revogado"`), contando no rate limit.
 - **Usuário inativado (SEC-06):** como os refresh tokens são revogados na inativação, o refresh desse usuário responde `401` `"refresh token revogado"`. `401` `"usuário inativo"` continua valendo para um token ainda válido de usuário inativo.
 
 #### POST /api/auth/logout
@@ -975,8 +987,12 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 ## Subindo o ambiente
 
+Antes, copie `.env.example` para `.env` na raiz e preencha **`DB_USUARIO` e `DB_SENHA`** (obrigatórios desde o SEC-11, Lote 12, sem default). Sem eles, os alvos `db-*` param com `SEC-11: defina DB_USUARIO/DB_SENHA no .env` e a API não sobe (`config: defina DB_USUARIO/DB_SENHA no .env`).
+
+> **Formato do `.env` (SEC-11):** o `make` lê o arquivo inteiro (`-include .env`) e exporta todas as variáveis. Em **qualquer** valor, evite `$`, `#`, aspas, espaços nas pontas e começar com `/`, e salve o arquivo com final de linha LF. Precedência: `make DB_SENHA=x` na linha de comando > `.env` > variável do shell. A senha chega ao `mysql` por `MYSQL_PWD`, nunca por `-p` na linha de comando. Para rodar um script de `sql/` à mão: `MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT --default-character-set=utf8mb4 $DB_NAME < sql/<script>.sql`.
+
 ```bash
-# 1. Recriar o banco com seed
+# 1. Recriar o banco com seed (cria todas as tabelas, inclusive estoque)
 make db-reset
 
 # 2. Aplicar os seeds com hash gerado (sem alterar sql/; senhas de SEED_ADMIN_PASSWORD/SEED_USER_PASSWORD)
@@ -1065,13 +1081,13 @@ O importador (`apis/shared/cmd/importvisitas`) é idempotente (upsert por `visit
 
 ### Estoque (ERP)
 
-`make db-up`/`make db-reset` criam a tabela `estoque` (via `sql/17_ddl_estoque.sql`, FK `sku → produtos.sku`, `UNIQUE (data_snapshot, sku)`), mas **não** carregam os dados nela. Para popular a tabela `estoque` a partir de `dados/erp/estoque.csv` (colunas `data_snapshot,sku,saldo,ruptura`), rode adicionalmente:
+`make db-up`/`make db-reset` criam a tabela `estoque` (via `sql/17_ddl_estoque.sql`, último passo do `db-up` desde o DB-01, Lote 12; FK `sku → produtos.sku`, `UNIQUE (data_snapshot, sku)`; sem a coluna `origem`), mas **não** carregam os dados nela. Banco criado antes do Lote 12 com `estoque.origem`: rode `make db-fix-estoque-origem` (idempotente; reversão `make db-revert-estoque-origem`). Para popular a tabela `estoque` a partir de `dados/erp/estoque.csv` (colunas `data_snapshot,sku,saldo,ruptura`), rode adicionalmente:
 
 ```bash
 make db-up && make db-import-estoque
 ```
 
-O importador (`apis/shared/cmd/importestoque`) é idempotente (upsert por `(data_snapshot, sku)`) e grava `origem=import_csv`. Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/estoque` e `GET/PUT /api/estoque/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto snapshots criados manualmente via `POST`, que exigem que o `sku` informado já exista em `produtos`. Além do importador, o saldo de estoque também é alimentado automaticamente pelo hook de faturamento de pedidos (`origem=faturamento`, ver seção "Estoque" em Endpoints acima).
+O importador (`apis/shared/cmd/importestoque`) é idempotente (upsert por `(data_snapshot, sku)`). Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/estoque` e `GET/PUT /api/estoque/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto snapshots criados manualmente via `POST`, que exigem que o `sku` informado já exista em `produtos`. Além do importador, o saldo de estoque também é alimentado automaticamente pelo hook de faturamento de pedidos (ver seção "Estoque" em Endpoints acima). Desde a migração 18 não há mais registro de qual processo gravou cada snapshot (a coluna `origem` foi removida): import e faturamento no mesmo `(data_snapshot, sku)` se sobrescrevem.
 
 Depois, em outro terminal:
 

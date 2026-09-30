@@ -56,6 +56,8 @@ func TestSEC09_Load_SecurityAlertEmails(t *testing.T) {
 			t.Setenv("JWT_SECRET", "segredo")
 			t.Setenv("JWT_TTL", "24h")
 			t.Setenv("BCRYPT_COST", "12")
+			t.Setenv("DB_USUARIO", "u")
+			t.Setenv("DB_SENHA", "s")
 			t.Setenv("SECURITY_ALERT_EMAILS", c.raw)
 			cfg, err := config.Load()
 			require.NoError(t, err)

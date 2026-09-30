@@ -27,6 +27,16 @@ const (
 	// do front. Dentro da janela o 401 não conta no rate limit; nenhum token é
 	// emitido, dentro ou fora da janela.
 	RefreshRevokeGraceWindow = 30 * time.Second
+	// RefreshReuseSuppressWindowPadrao é a janela padrão (SEC-12) em que um
+	// novo reuso do MESMO token rotacionado não derruba as sessões de novo.
+	RefreshReuseSuppressWindowPadrao = 30 * time.Minute
+	// RefreshTokenRetencaoPadrao é quanto tempo um token fica no banco depois
+	// de expires_at antes de ser apagado pela limpeza (CHORE-02).
+	RefreshTokenRetencaoPadrao = 720 * time.Hour
+	// RefreshTokenRetencaoMinima é o piso da retenção usado pela limpeza.
+	RefreshTokenRetencaoMinima = 24 * time.Hour
+	// RefreshCleanupLote é o número máximo de linhas apagadas por DELETE.
+	RefreshCleanupLote = 1000
 )
 
 var (
@@ -75,6 +85,10 @@ func (e *RevokedTokenError) IsRotationReuse() bool {
 type RefreshTokenService struct {
 	repo *repositories.RefreshTokenRepository
 	now  func() time.Time // relógio injetável (testes); padrão time.Now
+	// reuseWindow: janela de supressão de reuso repetido (SEC-12).
+	reuseWindow time.Duration
+	// retencao: tempo após expires_at antes da limpeza apagar (CHORE-02).
+	retencao time.Duration
 }
 
 // NewRefreshTokenService cria um RefreshTokenService com o relógio do sistema.
@@ -90,9 +104,30 @@ func NewRefreshTokenServiceWithClock(now func() time.Time) *RefreshTokenService 
 		now = time.Now
 	}
 	return &RefreshTokenService{
-		repo: repositories.NewRefreshTokenRepository(),
-		now:  now,
+		repo:        repositories.NewRefreshTokenRepository(),
+		now:         now,
+		reuseWindow: RefreshReuseSuppressWindowPadrao,
+		retencao:    RefreshTokenRetencaoPadrao,
 	}
+}
+
+// SetReuseSuppressWindow define a janela de supressão de reuso repetido
+// (SEC-12). d <= 0 mantém o padrão.
+func (s *RefreshTokenService) SetReuseSuppressWindow(d time.Duration) {
+	if d <= 0 {
+		d = RefreshReuseSuppressWindowPadrao
+	}
+	s.reuseWindow = d
+}
+
+// SetRetencao define a retenção pós-expiração usada por CleanupExpired
+// (CHORE-02). d <= 0 mantém o padrão; valores abaixo do mínimo são elevados
+// a RefreshTokenRetencaoMinima na limpeza.
+func (s *RefreshTokenService) SetRetencao(d time.Duration) {
+	if d <= 0 {
+		d = RefreshTokenRetencaoPadrao
+	}
+	s.retencao = d
 }
 
 // generateRandomToken gera um token hexadecimal aleatório.
@@ -269,16 +304,61 @@ func (s *RefreshTokenService) RevokeAllUserTokens(ctx context.Context, db *sql.D
 	return nil
 }
 
-// CleanupExpired remove tokens expirados antigos.
-func (s *RefreshTokenService) CleanupExpired(ctx context.Context, db *sql.DB) (int64, error) {
-	n, err := s.repo.DeleteExpired(ctx, db)
+// RegistrarReuso marca, de forma atômica, o reuso do token rotacionado
+// tokenID (SEC-12). cortar = true quando é o primeiro reuso ou o anterior
+// ficou fora da janela de supressão — o chamador deve revogar as sessões;
+// false = reuso repetido dentro da janela (suprimido). marca é o instante
+// gravado, usado por DesfazerReuso se o corte falhar. O relógio é sempre o
+// do Go (s.now()), truncado ao segundo como a coluna DATETIME.
+func (s *RefreshTokenService) RegistrarReuso(ctx context.Context, db *sql.DB, tokenID int64) (cortar bool, marca time.Time, err error) {
+	agora := s.now().Truncate(time.Second)
+	limite := agora.Add(-s.reuseWindow)
+	cortar, err = s.repo.MarcarReusoDetectado(ctx, db, tokenID, agora, limite)
 	if err != nil {
-		return 0, err
+		return false, time.Time{}, err
 	}
-	if n > 0 {
-		log.Printf("[refresh] cleanup: %d tokens expirados removidos", n)
+	if !cortar {
+		return false, time.Time{}, nil
 	}
-	return n, nil
+	return true, agora, nil
+}
+
+// DesfazerReuso limpa a marca gravada por RegistrarReuso (se ainda for a
+// mesma), para que o próximo reuso volte a cortar quando o corte falhou.
+func (s *RefreshTokenService) DesfazerReuso(ctx context.Context, db *sql.DB, tokenID int64, marca time.Time) error {
+	return s.repo.DesfazerReusoDetectado(ctx, db, tokenID, marca)
+}
+
+// CleanupExpired apaga, em lotes de RefreshCleanupLote, os tokens com
+// expires_at < agora - retenção (CHORE-02). Para quando um lote vem
+// incompleto ou o ctx é cancelado. Em erro (inclusive ctx cancelado),
+// devolve o total já apagado junto com o erro. Retenção abaixo de RefreshTokenRetencaoMinima vira o mínimo,
+// garantindo que nenhum token ainda válido (expires_at >= agora) seja apagado.
+func (s *RefreshTokenService) CleanupExpired(ctx context.Context, db *sql.DB) (int64, error) {
+	retencao := s.retencao
+	if retencao < RefreshTokenRetencaoMinima {
+		retencao = RefreshTokenRetencaoMinima
+	}
+	corte := s.now().Add(-retencao)
+
+	var total int64
+	for ctx.Err() == nil {
+		n, err := s.repo.DeleteExpired(ctx, db, corte, RefreshCleanupLote)
+		total += n
+		if err != nil {
+			log.Printf("[refresh] cleanup: falha após %d tokens removidos (corte=%s): %v", total, corte.Format(time.RFC3339), err)
+			return total, err
+		}
+		if n < RefreshCleanupLote {
+			break
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		log.Printf("[refresh] cleanup: interrompido após %d tokens removidos (corte=%s): %v", total, corte.Format(time.RFC3339), err)
+		return total, err
+	}
+	log.Printf("[refresh] cleanup: %d tokens removidos (corte=%s)", total, corte.Format(time.RFC3339))
+	return total, nil
 }
 
 // hashToken aplica SHA256 no token para armazenamento.

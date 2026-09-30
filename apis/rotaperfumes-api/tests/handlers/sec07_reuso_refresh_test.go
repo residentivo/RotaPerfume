@@ -23,6 +23,29 @@ import (
 
 const revokeAllUsuarioSQL = `UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`
 
+// SEC-12: marca atômica do reuso do token rotacionado (antes do corte) e o
+// desfazer da marca quando o corte falha.
+const (
+	marcarReusoSQL   = `UPDATE refresh_tokens SET reuso_detectado_em = \? WHERE id = \? AND revoked_reason = 'rotacao'`
+	desfazerReusoSQL = `UPDATE refresh_tokens SET reuso_detectado_em = NULL WHERE id = \? AND reuso_detectado_em = \?`
+)
+
+// expectMarcarReuso programa a marca do reuso do token id=10 como primeiro
+// reuso (1 linha → o handler corta as sessões).
+func expectMarcarReuso(mock sqlmock.Sqlmock) {
+	mock.ExpectExec(marcarReusoSQL).
+		WithArgs(sqlmock.AnyArg(), int64(10), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+}
+
+// expectDesfazerReuso programa a limpeza da marca do token id=10 depois de um
+// corte incompleto (revogação em massa ou corte de sessão falhou).
+func expectDesfazerReuso(mock sqlmock.Sqlmock) {
+	mock.ExpectExec(desfazerReusoSQL).
+		WithArgs(int64(10), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+}
+
 // expectRefreshRevogadoComMotivo programa a busca do token id=10 do
 // usuario_id=5, revogado em revokedAt com o motivo informado (nil = NULL).
 func expectRefreshRevogadoComMotivo(mock sqlmock.Sqlmock, revokedAt time.Time, motivo any) {
@@ -39,6 +62,7 @@ func TestSEC07_ReusoDeTokenRotacionado_ForaDaJanela_RevogaTudoEAlerta(t *testing
 	logs := capturarLog(t)
 
 	expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "rotacao")
+	expectMarcarReuso(mock) // SEC-12
 	mock.ExpectExec(revokeAllUsuarioSQL).
 		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(5)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
@@ -62,10 +86,12 @@ func TestSEC07_ReusoDeTokenRotacionado_FalhaNaRevogacaoEmMassa_Loga401(t *testin
 	logs := capturarLog(t)
 
 	expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "rotacao")
+	expectMarcarReuso(mock) // SEC-12
 	mock.ExpectExec(revokeAllUsuarioSQL).
 		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(5)).
 		WillReturnError(sqlmock.ErrCancelled)
 	mock.ExpectExec(invalidarSessoesSQL).WithArgs(sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1)) // SEC-08
+	expectDesfazerReuso(mock)                                                                                           // SEC-12: corte incompleto
 
 	assertRefreshRevogado401(t, server.URL+"/api/auth/refresh")
 
@@ -82,6 +108,7 @@ func TestSEC07_ReusoDeTokenRotacionado_ContaNoRateLimit(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "rotacao")
+		expectMarcarReuso(mock) // SEC-12
 		mock.ExpectExec(revokeAllUsuarioSQL).
 			WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(5)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
@@ -177,6 +204,7 @@ func TestSEC07_RespostaHTTPIgualEntreReusoEOutrosMotivos(t *testing.T) {
 	url := server.URL + "/api/auth/refresh"
 
 	expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "rotacao")
+	expectMarcarReuso(mock) // SEC-12
 	mock.ExpectExec(revokeAllUsuarioSQL).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(invalidarSessoesSQL).WithArgs(sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1)) // SEC-08
 	statusReuso, corpoReuso := refreshSemEmissao(t, url)

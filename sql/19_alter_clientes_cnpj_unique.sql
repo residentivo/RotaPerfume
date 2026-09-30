@@ -52,7 +52,7 @@
 -- fica isolada em uma única transação.
 --
 -- Uso:
---   mysql --local-infile=1 -u $DB_USUARIO -p$DB_SENHA -h $DB_HOST -P $DB_PORT \
+--   MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
 --     --default-character-set=utf8mb4 $DB_NAME < sql/19_alter_clientes_cnpj_unique.sql
 -- ============================================================
 

@@ -4,7 +4,8 @@ package handlers_test
 // MySQL local) dos cards SEC-01, BUG-04 e RISCO-01.
 //
 // Só roda com INTEGRATION=1. Credenciais via DB_HOST/DB_PORT/DB_NAME/
-// DB_USUARIO/DB_SENHA (defaults: localhost:3306/rotaperfumes, golang/golang).
+// DB_USUARIO/DB_SENHA (defaults: localhost:3306/rotaperfumes; usuário/senha
+// sem default — SEC-11: sem eles o teste é pulado).
 //
 // Dados: todo registro criado usa o marcador da execução
 //   - nome/razao_social/sku/descricao: "ZZ-TEST-HTTP-<sufixo>-..."
@@ -64,12 +65,17 @@ func novoItCtx(t *testing.T) *itCtx {
 	if os.Getenv("INTEGRATION") != "1" {
 		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
 	}
+	// SEC-11: sem fallback de credenciais; sem DB_USUARIO/DB_SENHA, pula.
+	usuario, senha := os.Getenv("DB_USUARIO"), os.Getenv("DB_SENHA")
+	if usuario == "" || senha == "" {
+		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
+	}
 	dbCfg := &config.Config{
 		DBHost:    envOrIT("DB_HOST", "localhost"),
 		DBPort:    envOrIT("DB_PORT", "3306"),
 		DBName:    envOrIT("DB_NAME", "rotaperfumes"),
-		DBUsuario: envOrIT("DB_USUARIO", "golang"),
-		DBSenha:   envOrIT("DB_SENHA", "golang"),
+		DBUsuario: usuario,
+		DBSenha:   senha,
 	}
 	db, err := shareddb.Open(dbCfg.DSN())
 	require.NoError(t, err, "MySQL local indisponível")

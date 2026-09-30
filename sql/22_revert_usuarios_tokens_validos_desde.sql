@@ -13,7 +13,7 @@
 -- Idempotente: só remove a coluna se ela existir.
 --
 -- Uso:
---   mysql --local-infile=1 -u $DB_USUARIO -p$DB_SENHA -h $DB_HOST -P $DB_PORT \
+--   MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
 --     --default-character-set=utf8mb4 $DB_NAME < sql/22_revert_usuarios_tokens_validos_desde.sql
 -- ============================================================
 

@@ -35,14 +35,17 @@
 --     UNIQUE composto) para os filtros esperados pelo Backend/Frontend:
 --     listagem por SKU (histórico de um produto) e listagem por intervalo
 --     de datas (posição de estoque num dia).
---   - ATUALIZAÇÃO (2026-09-22, revisão SecBrain 🟣): adicionada coluna
---     `origem` ENUM('import_csv','faturamento','manual') NOT NULL DEFAULT
---     'import_csv', para rastrear quem gerou/alterou por último cada
---     snapshot (data_snapshot, sku). Motivo: sem essa coluna, o import
---     diário do CSV do ERP e a baixa de estoque do faturamento de pedidos
---     do dia corrente poderiam se sobrescrever silenciosamente ao colidir
---     na mesma UNIQUE KEY uk_estoque_data_sku, sem nenhum rastro de qual
---     processo gravou o valor vigente.
+--   - HISTÓRICO (2026-09-22): uma revisão do SecBrain (🟣) chegou a
+--     adicionar a coluna `origem` ENUM('import_csv','faturamento','manual'),
+--     removida no mesmo dia pela migração
+--     sql/18_alter_estoque_drop_origem.sql a pedido do usuário.
+--   - ATUALIZAÇÃO (2026-09-27, Lote 12, card DB-01): este DDL foi alinhado
+--     ao schema atual (resultado de 17 + 18), SEM a coluna `origem`. Bancos
+--     novos (make db-up / db-reset / db-rebuild) já nascem corretos; a 18
+--     só é necessária em bancos criados com a versão antiga deste arquivo
+--     (make db-fix-estoque-origem), e é idempotente.
+--   - Depende de `produtos` (sql/10_ddl_produtos.sql) por causa da FK;
+--     no Makefile roda depois do 10 no alvo db-up.
 -- ============================================================
 
 SET NAMES utf8mb4;
@@ -59,7 +62,6 @@ CREATE TABLE IF NOT EXISTS `estoque` (
     `sku` VARCHAR(40) NOT NULL COMMENT 'SKU do produto (FK para produtos.sku)',
     `saldo` INT NOT NULL COMMENT 'Saldo em estoque na data do snapshot',
     `ruptura` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '0 = sem ruptura, 1 = em ruptura (origem: N/S)',
-    `origem` ENUM('import_csv','faturamento','manual') NOT NULL DEFAULT 'import_csv' COMMENT 'Processo que gravou/atualizou por último este snapshot (import_csv = dados/erp/estoque.csv, faturamento = baixa por pedido faturado, manual = ajuste direto via Backend)',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Data de criação do registro',
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Data de última atualização',
     PRIMARY KEY (`id`),

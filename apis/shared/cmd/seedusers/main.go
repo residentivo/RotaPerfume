@@ -30,7 +30,7 @@ func main() {
 	cmdutil.LoadEnvFromCwd()
 
 	// Carrega config (lê .env via os.Getenv; o Makefile exporta antes de chamar)
-	cfg, err := config.Load()
+	cfg, err := carregarConfig(opts)
 	if err != nil {
 		log.Fatalf("%s: falha ao carregar config: %v", seedusers.Tag, err)
 	}
@@ -39,4 +39,13 @@ func main() {
 	if err := seedusers.Run(cfg, opts, deps); err != nil {
 		log.Fatalf("%s: %v", seedusers.Tag, err)
 	}
+}
+
+// carregarConfig não exige DB_USUARIO/DB_SENHA em -dry-run/-no-exec, que não
+// tocam o banco (SEC-10); a execução real usa o Load completo (SEC-11).
+func carregarConfig(opts seedusers.Options) (*config.Config, error) {
+	if opts.DryRun || opts.NoExec {
+		return config.LoadSemCredenciaisDB()
+	}
+	return config.Load()
 }

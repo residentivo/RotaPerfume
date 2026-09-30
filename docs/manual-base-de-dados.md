@@ -2,7 +2,7 @@
 
 **Banco:** MySQL, schema `rotaperfumes` (padrão do `Makefile`: `DB_NAME?=rotaperfumes`), charset `utf8mb4`, collation `utf8mb4_unicode_ci` (definidos no `make db-create`).
 **Fonte da verdade:** os scripts em `sql/` (DDLs mais as migrações de alteração, em ordem numérica). Em caso de divergência entre este manual e um script, vale o script.
-**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no Lote 5 com o NEG-02, CNPJ alfanumérico, no Lote 6 com a migração 21 e `refresh_tokens.revoked_reason`, no Lote 8 com a migração 22 e `usuarios.tokens_validos_desde` e, no Lote 11, 2026-09-26, card DOC-04, com o detalhamento de todas as tabelas).
+**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no Lote 5 com o NEG-02, CNPJ alfanumérico, no Lote 6 com a migração 21 e `refresh_tokens.revoked_reason`, no Lote 8 com a migração 22 e `usuarios.tokens_validos_desde` e, no Lote 11, 2026-09-26, card DOC-04, com o detalhamento de todas as tabelas; no Lote 12, 2026-09-27, com DB-01 (`estoque` no `db-up`), SEC-11 (credenciais do banco), SEC-12 (migração 23, `refresh_tokens.reuso_detectado_em`) e CHORE-02 (limpeza de `refresh_tokens`)).
 
 > **Escopo:** todas as tabelas do schema atual, campo a campo, com PK, FKs, índices, relacionamentos, regras de negócio conhecidas e as migrações que afetam cada uma. Os itens que não estão claros nos arquivos estão marcados como **a confirmar** e reunidos na seção 22.
 
@@ -19,6 +19,7 @@
 7. ERP: [`produtos`](#13-tabela-produtos), [`pedidos`](#14-tabela-pedidos), [`itens_pedido`](#15-tabela-itens_pedido), [`pagamentos`](#16-tabela-pagamentos), [`estoque`](#17-tabela-estoque)
 8. Migração 19 e backups: [migração 19](#18-migração-19-unificação-dos-cnpjs-duplicados), [tabelas de backup](#19-tabelas-de-backup-da-migração-19), [reversão](#20-reversão-make-db-revert-cnpj-unique), [consultas](#21-consultas-de-verificação-da-migração-19)
 9. [Pontos a confirmar](#22-pontos-a-confirmar)
+10. [Credenciais do banco e uso do `mysql` (SEC-11)](#23-credenciais-do-banco-e-uso-do-mysql-sec-11-lote-12-2026-09-27)
 
 ---
 
@@ -39,7 +40,7 @@
 | `clientes`, `produtos` | Lógica: `ativo = 0`. Não há DELETE físico no repositório. |
 | `pedidos` (+ `itens_pedido`) | Física, numa transação (`DeleteComItens`). O handler/service bloqueia pedido com pagamento vinculado ou com status Faturado. |
 | `pagamentos`, `carteiras`, `oportunidades`, `visitas` | Física. |
-| `refresh_tokens` | Revogação (`revoked_at` + `revoked_reason`). Existe uma limpeza física (`CleanupExpired`), sem chamada fora dos testes (a confirmar). |
+| `refresh_tokens` | Revogação (`revoked_at` + `revoked_reason`). Limpeza física periódica pela própria API desde o CHORE-02 (Lote 12): apaga tokens com `expires_at` anterior a agora menos `REFRESH_TOKEN_RETENCAO` (seção 7.2). |
 | `estoque`, `senha_historico` | Não há DELETE no repositório. |
 
 ---
@@ -52,7 +53,7 @@ A ordem é a do `make db-up`, que cria o schema vazio. O `make db-seed` roda o `
 | --- | --- | --- | --- |
 | `vendedores` | `sql/01_ddl_usuarios.sql` | - | 5 |
 | `usuarios` | `sql/01_ddl_usuarios.sql` | 08 (`deve_trocar_senha`), 22 (`tokens_validos_desde`) | 6 |
-| `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` | 21 (`revoked_reason`) | 7 |
+| `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` | 21 (`revoked_reason`), 23 (`reuso_detectado_em`) | 7 |
 | `senha_historico` | `sql/07_ddl_senha_historico.sql` | 13 (ENUM `tipo_reset`) | 8 |
 | `clientes` | `sql/09_ddl_clientes.sql` | 19 (`uq_clientes_cnpj`), 20 (COMMENT de `cnpj`) | 9 |
 | `produtos` | `sql/10_ddl_produtos.sql` | - | 13 |
@@ -62,7 +63,7 @@ A ordem é a do `make db-up`, que cria o schema vazio. O `make db-seed` roda o `
 | `carteiras` | `sql/14_ddl_carteiras.sql` | 19 (transferência/descarte, só dados) | 10 |
 | `oportunidades` | `sql/15_ddl_oportunidades.sql` | 19 (transferência, só dados) | 11 |
 | `visitas` | `sql/16_ddl_visitas.sql` | 19 (transferência, só dados) | 12 |
-| `estoque` | `sql/17_ddl_estoque.sql` (**fora do `db-up`**, seção 17) | 18 (remove `origem`) | 17 |
+| `estoque` | `sql/17_ddl_estoque.sql` (no `db-up` desde o DB-01, Lote 12, depois do 16) | 18 (remove `origem`; só bancos antigos) | 17 |
 | `clientes_merge_backup_20260925` | criada pela migração 19 | - | 19 |
 | `clientes_merge_backup_20260925_vinculos` | criada pela migração 19 | - | 19 |
 
@@ -147,7 +148,7 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 03 | `03_seed_vendedores.sql` | 42 vendedores (ids 1..42) e um usuário `normal` por vendedor, com hash placeholder | `db-seed` | Não |
 | 04 | `04_ddl_pedidos.sql` | Cria `pedidos` | `db-up` | Não (DDL base) |
 | 05 | `05_seed_pedidos.sql` | Descontinuado: só comentários, sem SQL | nenhum | - |
-| 06 | `06_ddl_refresh_tokens.sql` | Cria `refresh_tokens` (já com `revoked_reason`) | `db-up` | Não (DDL base) |
+| 06 | `06_ddl_refresh_tokens.sql` | Cria `refresh_tokens` (já com `revoked_reason` e `reuso_detectado_em`) | `db-up` | Não (DDL base) |
 | 07 | `07_ddl_senha_historico.sql` | Cria `senha_historico` (já com o ENUM corrigido) | `db-up` | Não (DDL base) |
 | 08 | `08_alter_usuarios_deve_trocar_senha.sql` | Adiciona `usuarios.deve_trocar_senha` (idempotente) | `db-fix-deve-trocar-senha` | Não (sem script) |
 | 09 | `09_ddl_clientes.sql` | Cria `clientes` (já com `uq_clientes_cnpj` e o COMMENT novo) | `db-up` | Não (DDL base) |
@@ -158,14 +159,16 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 14 | `14_ddl_carteiras.sql` | Cria `carteiras` | `db-up` | Não (DDL base) |
 | 15 | `15_ddl_oportunidades.sql` | Cria `oportunidades` | `db-up` | Não (DDL base) |
 | 16 | `16_ddl_visitas.sql` | Cria `visitas` | `db-up` | Não (DDL base) |
-| 17 | `17_ddl_estoque.sql` | Cria `estoque` (ainda com `origem`) | **nenhum** (a confirmar, seção 22) | Não (DDL base) |
-| 18 | `18_alter_estoque_drop_origem.sql` | Remove `estoque.origem` (não idempotente) | **nenhum** | Não: a coluna e os dados dela se perdem |
+| 17 | `17_ddl_estoque.sql` | Cria `estoque` já no schema final, **sem** `origem` (DB-01) | `db-up` (último passo, depois do 16) | Não (DDL base) |
+| 18 | `18_alter_estoque_drop_origem.sql` | Remove `estoque.origem` em bancos criados com o 17 antigo (idempotente desde o DB-01) | `db-fix-estoque-origem` | Sim: `18_revert_...`, `db-revert-estoque-origem` (recria `origem`, mas todas as linhas voltam como `import_csv`) |
 | 19 | `19_alter_clientes_cnpj_unique.sql` | Unifica CNPJs duplicados e cria `uq_clientes_cnpj` | `db-fix-cnpj-unique` | Sim: `19_revert_...`, `db-revert-cnpj-unique` |
 | 20 | `20_alter_clientes_cnpj_comment.sql` | Troca o COMMENT de `clientes.cnpj` | `db-fix-cnpj-comment` | Sim: `20_revert_...`, `db-revert-cnpj-comment` |
 | 21 | `21_alter_refresh_tokens_revoked_reason.sql` | Adiciona `refresh_tokens.revoked_reason` (idempotente) | `db-fix-revoked-reason` | Sim: `21_revert_...`, `db-revert-revoked-reason` (perde os motivos) |
 | 22 | `22_alter_usuarios_tokens_validos_desde.sql` | Adiciona `usuarios.tokens_validos_desde` (idempotente) | `db-fix-tokens-validos-desde` | Sim: `22_revert_...`, `db-revert-tokens-validos-desde` (perde os cortes) |
+| 23 | `23_alter_refresh_tokens_reuso_detectado_em.sql` | Adiciona `refresh_tokens.reuso_detectado_em` (SEC-12, idempotente) | `db-fix-reuso-detectado` | Sim: `23_revert_...`, `db-revert-reuso-detectado` (perde as marcas de reuso) |
 
-- As migrações de alteração (08, 13, 18 a 22) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Os DDLs base já nascem com o resultado delas, **exceto o 17**, que ainda cria `estoque.origem`.
+- As migrações de alteração (08, 13, 18 a 23) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
+- Todos os alvos que chamam o `mysql` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed`/`db-reset` herdam via `db-create`) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h ...`, sem `-p` no argv.
 - Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`apis/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por bcrypt real.
 - Importadores (`db-import-*`, `apis/shared/cmd/import*`): upsert idempotente a partir de `dados/crm/*.csv` e `dados/erp/*.csv`. Ordem de dependência: clientes e produtos, depois pedidos (e itens), pagamentos, carteiras, oportunidades, visitas e estoque.
 
@@ -246,7 +249,7 @@ O valor vem do Go (`time.Now().Truncate(time.Second)`), nunca do `NOW()` do MySQ
 | Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) | `UsuarioRepository.SetAtivo(false)` |
 | Desligamento do vendedor (`DELETE /api/vendedores/{id}`), para os usuários vinculados | `UsuarioRepository.InativarByVendedorID` |
 | Troca de senha pelo usuário, reset pelo admin e `ResetSenha` | `UsuarioRepository.UpdatePasswordHash` |
-| Reuso de refresh token rotacionado fora da janela (SEC-07), depois do `RevokeAllUserTokens` | `UsuarioRepository.InvalidarSessoes`, chamado em `tratarTokenRevogadoForaDaJanela` (`auth_handler.go`) |
+| Reuso de refresh token rotacionado fora da janela (SEC-07), depois do `RevokeAllUserTokens`. Desde o SEC-12 (Lote 12), só no primeiro reuso do mesmo token dentro da janela de supressão (seção 7.1) | `UsuarioRepository.InvalidarSessoes`, chamado em `tratarTokenRevogadoForaDaJanela` (`auth_handler.go`) |
 | CLI `resetpassword` | `UpsertAdmin`, `UpsertByEmail` (`apis/shared/tools/resetpassword`) |
 
 **Não gravam corte:** reativação do usuário ou do vendedor e logout. Um login feito no mesmo segundo de um corte gera token recusado (regra `iat <= corte`; aceito pelo MegaBrain).
@@ -291,13 +294,14 @@ Guarda os refresh tokens (hash SHA-256) emitidos no login e no refresh. Cada ref
 | `expires_at` | DATETIME | não | Expiração. |
 | `revoked_at` | DATETIME | sim | Data/hora da revogação. `NULL` = ativo. |
 | `revoked_reason` | ENUM('rotacao','logout','revogacao_massa','senha','inativacao') | sim | **Novo (migração 21).** Motivo da revogação, gravado junto com `revoked_at`. `NULL` = token ativo ou revogado antes da migração (legado). |
+| `reuso_detectado_em` | DATETIME | sim | **Novo (migração 23, SEC-12, Lote 12).** Instante do último reuso deste token já rotacionado que gerou corte de sessões. `NULL` = nunca. COMMENT: "Último reuso detectado deste token já rotacionado (SEC-12); NULL = nunca". Seção 7.1. |
 | `ip_origem` | VARCHAR(45) | sim | IP que pediu o token (IPv4/IPv6). |
 | `user_agent` | TEXT | sim | User-Agent no momento da criação. |
 | `created_at`, `updated_at` | TIMESTAMP | não | Controle. |
 
-**Índices:** `PRIMARY` (`id`), `uk_refresh_token_hash` (UNIQUE, `token_hash`), `idx_refresh_usuario_id`, `idx_refresh_expires_at` e `idx_refresh_revoked_at`. A migração 21 **não** cria índice para `revoked_reason`: as buscas são por `token_hash` e `usuario_id`, e o motivo só é lido depois de achar a linha.
+**Índices:** `PRIMARY` (`id`), `uk_refresh_token_hash` (UNIQUE, `token_hash`), `idx_refresh_usuario_id`, `idx_refresh_expires_at` e `idx_refresh_revoked_at`. A migração 21 **não** cria índice para `revoked_reason`: as buscas são por `token_hash` e `usuario_id`, e o motivo só é lido depois de achar a linha. A migração 23 também não cria índice: `reuso_detectado_em` só é gravado por UPDATE pela PK.
 
-**Limpeza:** `RefreshTokenRepository.DeleteExpired` (via `RefreshTokenService.CleanupExpired`) apaga tokens expirados e revogados, e tokens não revogados expirados há mais de 30 dias. Nenhuma rotina fora dos testes chama o `CleanupExpired`: a tabela cresce sem limpeza automática (a confirmar se é intencional).
+**Limpeza:** periódica, feita pela própria API desde o CHORE-02 (Lote 12). Detalhes na seção 7.2.
 
 ### Valores de `revoked_reason`
 
@@ -340,6 +344,55 @@ SELECT COUNT(*) FROM refresh_tokens
 ```
 
 Referências: cards SEC-06 e SEC-07 em `tarefas/feito.md` (Lote 6); roteiro `docs/roteiro-teste-manual-lote6.md`, seção 5.
+
+### 7.1 Coluna `reuso_detectado_em` e migração 23 (SEC-12, Lote 12, 2026-09-27)
+
+**Problema:** o token reusado continua com `revoked_reason = 'rotacao'`. Antes do SEC-12, cada novo envio dele (replay) repetia a revogação em massa e o corte `tokens_validos_desde`, derrubando a vítima de novo mesmo depois do re-login.
+
+**Regra:** a supressão é **por token** (`id`), nunca por usuário. Assim, um atacante com **outro** refresh roubado continua sendo detectado depois do re-login da vítima.
+
+- No reuso de um token `rotacao` fora da janela de graça de 30 s, o backend roda um UPDATE condicional atômico pela PK:
+  `UPDATE refresh_tokens SET reuso_detectado_em = ? WHERE id = ? AND revoked_reason = 'rotacao' AND (reuso_detectado_em IS NULL OR reuso_detectado_em <= ?)`, com `agora` e `limite = agora - janela` vindos do relógio do Go (truncados no segundo), nunca do `NOW()` do MySQL.
+- 1 linha afetada → corta as sessões (`RevokeAllUserTokens` com `revogacao_massa`, `InvalidarSessoes`) e envia o alerta do SEC-09. 0 linha → reuso repetido dentro da janela: **não** corta de novo e não envia e-mail; log `[auth][seguranca] refresh: reuso repetido de token rotacionado dentro da janela de supressão — sessões NÃO revogadas de novo`.
+- Depois da janela, o próximo reuso do mesmo token volta a cortar.
+- **Fail-closed:** erro ao gravar a marca → corta assim mesmo. Se o corte falhar (`RevokeAllUserTokens` ou `InvalidarSessoes`), a marca é desfeita (`UPDATE ... SET reuso_detectado_em = NULL WHERE id = ? AND reuso_detectado_em = ?`), para o próximo reuso tentar de novo.
+- **Janela:** `REFRESH_REUSE_SUPPRESS_WINDOW`, padrão `30m`, faixa `1m` a `24h`. Valor inválido ou fora da faixa → a API não sobe.
+- **Resposta HTTP:** idêntica nos dois casos (`401` `"refresh token revogado"`, sem `Set-Cookie`); o reuso continua contando no rate limit.
+
+**Script:** `sql/23_alter_refresh_tokens_reuso_detectado_em.sql`
+**Comando:** `make db-fix-reuso-detectado`
+**Reversão:** `make db-revert-reuso-detectado` (`sql/23_revert_refresh_tokens_reuso_detectado_em.sql`; remove a coluna e perde as marcas gravadas. Volte antes o backend para uma versão que não usa a coluna, senão o refresh com reuso falha.)
+**Situação:** aplicada no banco local (dev) em 2026-09-27.
+
+- Adiciona a coluna logo depois de `revoked_reason`, `DATETIME NULL DEFAULT NULL`. Não altera nenhuma linha: as existentes ficam `NULL`.
+- **Idempotente:** consulta `information_schema.COLUMNS` e usa `PREPARE`; o revert também é idempotente.
+- Não faz parte do `db-up`/`db-seed`/`db-reset`. Bancos novos recebem a coluna pelo `sql/06_ddl_refresh_tokens.sql`.
+
+```sql
+SHOW FULL COLUMNS FROM refresh_tokens LIKE 'reuso_detectado_em';
+-- Type = datetime, Null = YES, Default = NULL
+
+SELECT id, usuario_id, revoked_reason, revoked_at, reuso_detectado_em
+  FROM refresh_tokens
+ WHERE reuso_detectado_em IS NOT NULL
+ ORDER BY reuso_detectado_em DESC;
+-- só tokens com revoked_reason = 'rotacao' que foram reusados
+```
+
+### 7.2 Limpeza periódica (CHORE-02, Lote 12, 2026-09-27)
+
+- **Quem roda:** a própria API (`services.IniciarLimpezaRefreshTokens`, chamado no `cmd/server/main.go` depois do `db ping OK`). Roda uma vez na partida e depois a cada `REFRESH_CLEANUP_INTERVAL`. Cada execução tem timeout de 2 min; um panic é recuperado e logado sem derrubar a API. No shutdown, a API cancela a limpeza e espera até 10 s antes de fechar a conexão.
+- **O que apaga:** `DELETE FROM refresh_tokens WHERE expires_at < ? ORDER BY id LIMIT ?`, com `corte = agora - REFRESH_TOKEN_RETENCAO` (relógio do Go) e lotes de **1000** linhas, repetidos até um lote vir incompleto ou o contexto ser cancelado. Usa o índice `idx_refresh_expires_at`. A regra é a mesma para revogados e não revogados.
+- **Invariante:** nenhuma linha com `expires_at >= agora` é apagada. Depois de `expires_at` o token já não passa na validação (a expiração é checada antes da revogação), então não há mais detecção de reuso a preservar.
+- **Configuração:**
+
+| Variável | Padrão | Faixa | Observação |
+| --- | --- | --- | --- |
+| `REFRESH_TOKEN_RETENCAO` | `720h` (30 dias após `expires_at`) | `24h` a `8760h` | Fora da faixa → a API não sobe. O serviço nunca usa menos de 24h. |
+| `REFRESH_CLEANUP_INTERVAL` | `6h` | `0` ou `>= 1m` | `0` desativa (log `limpeza periódica desativada`). `30s` → a API não sobe. |
+
+- **Logs:** `[refresh] cleanup: limpeza periódica iniciada (intervalo=6h0m0s)`, `[refresh] cleanup: N tokens removidos (corte=...)`, `[refresh] cleanup: limpeza periódica encerrada` (shutdown) e `[server] tarefas de fundo encerradas`.
+- **Sem alvo no Makefile:** um DELETE via `mysql` usaria o `NOW()` do servidor e duplicaria a regra. Um `cmd/cleanuprefresh` em Go fica como opção futura (seção 23.4).
 
 ---
 
@@ -626,7 +679,7 @@ Pagamentos dos pedidos, importados de `dados/erp/pagamentos.csv` (`make db-impor
 
 Série temporal de saldo por SKU (um snapshot por dia), importada de `dados/erp/estoque.csv` (`make db-import-estoque`). Também recebe a baixa por faturamento de pedidos (`UpsertPorDataSku`).
 
-**Schema atual** = `17_ddl_estoque.sql` + migração 18 (sem a coluna `origem`):
+**Schema atual** = `17_ddl_estoque.sql` (desde o DB-01, Lote 12, o 17 já é o schema final, sem a coluna `origem`):
 
 | Campo | Tipo | Nulo | Default | Descrição |
 | --- | --- | --- | --- | --- |
@@ -641,10 +694,20 @@ Série temporal de saldo por SKU (um snapshot por dia), importada de `dados/erp/
 
 **Regras de negócio:**
 - A identidade de negócio é o par (`data_snapshot`, `sku`). Os INSERTs do código gravam só `data_snapshot`, `sku`, `saldo` e `ruptura`.
-- **Migração 18 (remove `origem`):** a coluna `origem` ENUM('import_csv','faturamento','manual') foi removida a pedido do usuário. Com isso, o import do CSV e a baixa por faturamento podem se sobrescrever sem rastro quando caem no mesmo (`data_snapshot`, `sku`). O script é um `DROP COLUMN` simples: **não é idempotente** (a segunda execução falha com erro 1091) e não tem reversão.
-- Segundo o card de criação em `feito.md`, `ruptura` é derivada de `saldo <= 0`; o DDL diz que vem do S/N do CSV. A regra aplicada pelo Backend fica a confirmar.
+- **Coluna `origem` removida:** a coluna `origem` ENUM('import_csv','faturamento','manual') foi removida a pedido do usuário. Com isso, o import do CSV e a baixa por faturamento podem se sobrescrever sem rastro quando caem no mesmo (`data_snapshot`, `sku`). O backend não lê nem grava `origem`.
+- Segundo o card de criação em `feito.md`, `ruptura` é derivada de `saldo <= 0`; o DDL diz que vem do S/N do CSV. A regra aplicada pelo Backend fica a confirmar (seção 22, item 5).
 
-**Atenção (a confirmar, seção 22):** o `make db-up` **não** roda o `17_ddl_estoque.sql` nem o `18`. Num banco recriado por `db-reset`/`db-rebuild`, a tabela não é criada, e o `db-import-estoque` do `db-rebuild` falharia. Se alguém rodar o 17 à mão, a tabela nasce com `origem` até rodar o 18. O `postman/README.md` diz que o `db-up` cria `estoque`, o que não bate com o Makefile atual.
+**Criação (DB-01, Lote 12, 2026-09-27):** o `make db-up` roda o `17_ddl_estoque.sql` como último passo, depois do `16_ddl_visitas.sql` (a FK `sku → produtos.sku` exige `produtos`, criado antes). Com isso, `db-seed`, `db-reset` e `db-rebuild` criam `estoque`, e o `db-import-estoque` do `db-rebuild` funciona. O 17 usa `CREATE TABLE IF NOT EXISTS`: num banco antigo que já tem a tabela com `origem`, ele não altera nada (rode a 18).
+
+**Migração 18 (só para bancos antigos):**
+- **Script:** `sql/18_alter_estoque_drop_origem.sql`. **Comando:** `make db-fix-estoque-origem`.
+- Serve só para bancos criados com a versão antiga do 17 (com `origem`). Não faz parte do `db-up`/`db-seed`/`db-reset`.
+- **Idempotente** desde o DB-01: consulta `information_schema.COLUMNS` e só roda o `DROP COLUMN` se a coluna existir. Rodar duas vezes, ou num banco criado pelo 17 atual, não dá mais o erro 1091.
+- **Reversão:** `make db-revert-estoque-origem` (`sql/18_revert_estoque_drop_origem.sql`, idempotente). Recria `origem` com a definição antiga, logo depois de `ruptura`, mas o valor original se perdeu: **todas** as linhas voltam com o DEFAULT `import_csv`, que não reflete o processo que gravou cada snapshot. Como a coluna tem DEFAULT, os INSERTs/upserts atuais continuam funcionando depois do revert.
+
+```sql
+SHOW COLUMNS FROM estoque LIKE 'origem';   -- vazio = schema atual
+```
 
 **Migrações:** 18.
 
@@ -764,16 +827,65 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 
 | # | Tabela | Ponto | Onde |
 | --- | --- | --- | --- |
-| 1 | `estoque` | O `make db-up` não roda `17_ddl_estoque.sql` nem o `18`. Um `db-reset`/`db-rebuild` não cria `estoque`, e o `db-import-estoque` falharia. Não se sabe como a tabela foi criada no banco local. | `Makefile` (alvo `db-up`) |
-| 2 | `estoque` | O `17_ddl_estoque.sql` ainda cria `origem`, que a migração 18 remove. O DDL base não reflete o schema atual, ao contrário das demais migrações. | `sql/17_ddl_estoque.sql` |
-| 3 | `estoque` | A migração 18 não é idempotente (`DROP COLUMN` sem checagem) e não tem alvo no Makefile. | `sql/18_alter_estoque_drop_origem.sql` |
-| 4 | `estoque` | `postman/README.md` diz que o `db-up` cria `estoque`; o Makefile atual não cria. | `postman/README.md` |
-| 5 | `estoque` | `ruptura`: o DDL diz que vem do S/N do CSV; o card de criação diz "derivado de `saldo <= 0`". Regra efetiva a confirmar no código. | `sql/17`, `tarefas/feito.md` |
+| 1 | `estoque` | ~~O `make db-up` não roda `17_ddl_estoque.sql` nem o `18`.~~ **Resolvido no DB-01 (Lote 12):** o `db-up` roda o 17 depois do 16; `db-reset`/`db-rebuild` criam `estoque`. | `Makefile` (alvo `db-up`) |
+| 2 | `estoque` | ~~O `17_ddl_estoque.sql` ainda cria `origem`.~~ **Resolvido no DB-01:** o 17 é o schema final, sem `origem`. | `sql/17_ddl_estoque.sql` |
+| 3 | `estoque` | ~~A migração 18 não é idempotente e não tem alvo no Makefile.~~ **Resolvido no DB-01:** idempotente, com `db-fix-estoque-origem` e reversão `db-revert-estoque-origem`. | `sql/18_*.sql` |
+| 4 | `estoque` | ~~`postman/README.md` diz que o `db-up` cria `estoque`; o Makefile não criava.~~ **Resolvido no DB-01:** agora o `db-up` cria, e o README foi revisto no Lote 12. | `postman/README.md` |
+| 5 | `estoque` | **Aberto.** `ruptura`: o DDL diz que vem do S/N do CSV; o card de criação diz "derivado de `saldo <= 0`". Regra efetiva a confirmar no código. | `sql/17`, `tarefas/feito.md` |
 | 6 | `senha_historico` | Sem `ENGINE`/charset/collation explícitos: herda do servidor e do banco (esperado InnoDB e `utf8mb4_unicode_ci`). Nomes das FKs gerados pelo MySQL. | `sql/07_ddl_senha_historico.sql` |
 | 7 | `senha_historico` | `created_at` aceita NULL (sem `NOT NULL`); o BUG-12 confirmou `timestamp NULL DEFAULT CURRENT_TIMESTAMP` no banco local. Um `NOT NULL` exigiria migração (decisão de negócio). | BUG-12 em `tarefas/feito.md` |
 | 8 | `senha_historico` | O teste de integração do BUG-12 usa um "registro órfão" (`usuario_id` sem usuário), o que a FK `ON DELETE CASCADE` não deveria permitir. Confirmar se a FK existe no banco local ou se o teste desliga `FOREIGN_KEY_CHECKS`. | `apis/shared/tests/repositories/bug12_senha_historico_null_test.go` |
 | 9 | `senha_historico` | `tipo_reset` `primeiro_acesso` e `esquecimento` estão no ENUM, mas nenhum código fora dos testes os grava. A troca de primeiro acesso é gravada como `usuario`. | `senha_historico_service.go`, `auth_handler.go` |
 | 10 | `usuarios` | Valor de `deve_trocar_senha` gravado pelo CLI `resetpassword` (`-all-users`, `-create-admin`) no `db-seed`. | `apis/shared/tools/resetpassword` |
-| 11 | `refresh_tokens` | `CleanupExpired`/`DeleteExpired` existe, mas nada fora dos testes o chama: a tabela não tem limpeza automática. | `refresh_token_service.go` |
+| 11 | `refresh_tokens` | ~~`CleanupExpired`/`DeleteExpired` existe, mas nada fora dos testes o chama.~~ **Resolvido no CHORE-02 (Lote 12):** limpeza periódica na API, retenção `REFRESH_TOKEN_RETENCAO` (720h) após `expires_at`, intervalo `REFRESH_CLEANUP_INTERVAL` (6h; `0` desativa), lotes de 1000 (seção 7.2). | `refresh_token_service.go`, `refresh_cleanup.go` |
 | 12 | `vendedores` | Não há UNIQUE além da PK (nem em `nome`): dois vendedores homônimos são aceitos pelo banco. Confirmar se é intencional. | `sql/01_ddl_usuarios.sql` |
 | 13 | `vendedores` | Se a reativação do vendedor também reativa os usuários vinculados. | `vendedor_service.go` |
+
+---
+
+## 23. Credenciais do banco e uso do `mysql` (SEC-11, Lote 12, 2026-09-27)
+
+### 23.1 Credenciais obrigatórias, sem default
+
+- `DB_USUARIO` e `DB_SENHA` são **obrigatórios** no `.env` da raiz. Não existe mais o default `golang/golang` em nenhum lugar: nem no `Makefile` (sem `DB_USUARIO?=`/`DB_SENHA?=`), nem no `config.Load()`, nem no `resetpassword`/`seedusers` (já desde o SEC-10), nem nos testes de integração (que dão `t.Skip` sem as variáveis).
+- **API e importadores:** `config.Load()` devolve `config: defina DB_USUARIO/DB_SENHA no .env` (`ErrCredenciaisDB`) se faltar um dos dois (usuário só com espaços também conta como vazio). A mensagem nunca traz os valores. A checagem roda depois das demais validações: sem `JWT_SECRET` e sem DB, o erro citado é o do `JWT_SECRET`. A API loga `[server] config: ...` e não sobe.
+- **`seedusers` com `-dry-run`/`-no-exec`:** usa `config.LoadSemCredenciaisDB()` e funciona sem credenciais (não toca no banco).
+- **Makefile:** o alvo `db-check-env` falha com `SEC-11: defina DB_USUARIO/DB_SENHA no .env`. É pré-requisito de `db-create`, `db-down` e de todos os `db-fix-*`/`db-revert-*`; `db-up`, `db-seed`, `db-reset` e `db-rebuild` herdam via `db-create`/`db-down`. `help`, `build`, `test`, `lint` e `dev-frontend` não exigem credenciais.
+
+### 23.2 Senha fora da linha de comando (`MYSQL_PWD`)
+
+- O `MYSQL_OPTS` não tem mais `-p$(DB_SENHA)`: fica só `--local-infile=1 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4`. A senha vai pela variável de ambiente `MYSQL_PWD`, que o Makefile exporta e que o `mysql`/`mysql.exe` lê nativamente. Assim ela não aparece no argv do `mysql` (lista de processos) nem no eco das linhas `mysql ...` do `make` (exceção pendente: a receita do `db-check-env`, seção 23.4, item 6).
+- `MSYS2_ENV_CONV_EXCL = MYSQL_PWD` impede o Git Bash/MSYS de converter a senha como se fosse um caminho POSIX.
+- Execução manual de um script (padrão dos cabeçalhos em `sql/`):
+
+  ```bash
+  MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
+    --default-character-set=utf8mb4 $DB_NAME < sql/<script>.sql
+  ```
+
+- Não se usa `--defaults-extra-file`: o arquivo temporário gravaria a senha em disco (pasta do OneDrive), sem `chmod 600` no Windows e com limpeza pouco confiável.
+
+### 23.3 Como o `make` lê o `.env`
+
+- **`-include .env`:** o `make` lê o `.env` **inteiro** como sintaxe de Makefile e, por causa do `export` sem argumentos, exporta **todas** as variáveis dele para as receitas (inclusive `make dev-api`, `go run` dos importadores e o `mysql`). Como o `godotenv` da API não sobrescreve variáveis já definidas, sob `make` valem os valores lidos pelo `make`.
+- **Precedência:** `make DB_SENHA=x` na linha de comando ganha de tudo; depois vem o `.env`; a variável do shell (`export DB_SENHA=...`) perde para o `.env`.
+- **Restrições de formato, para TODOS os valores do `.env`** (não só `DB_SENHA`; valem também para `JWT_SECRET`, `SMTP_PASSWORD`, `TURNSTILE_SECRET_KEY` etc.), porque o `make` interpretaria:
+  - `$` (expansão de variável do make);
+  - `#` (início de comentário: o resto da linha some);
+  - aspas (o `make` **não** remove aspas: elas entram no valor, ao contrário do `godotenv`);
+  - espaços nas pontas;
+  - valor começando com `/` (o Git Bash/MSYS pode convertê-lo como caminho; o Makefile só protege o `MYSQL_PWD`).
+- **CRLF:** salve o `.env` com final de linha **LF**. O Makefile remove um `\r` final só de `DB_USUARIO`, `DB_SENHA`, `DB_HOST`, `DB_PORT` e `DB_NAME`; nas demais variáveis, um `\r` de CRLF pode chegar à API quando ela roda via `make` (ex.: `JWT_TTL=24h\r` não seria uma duração válida).
+
+### 23.4 Pendências fora do escopo do Lote 12
+
+Registradas para lotes futuros (não corrigidas no SEC-11):
+
+| # | Pendência | Onde |
+| --- | --- | --- |
+| 1 | `fix-hash` e `fix-admin` passam `-password=Admin@123` no argv (visível na lista de processos e no eco do `make`; o `-password` está depreciado desde o SEC-10). | `Makefile` |
+| 2 | `db-seed` imprime `Admin@123` no console (`=== Admin: admin@rotaperfumes.com.br / Admin@123 ===`). | `Makefile` |
+| 3 | O usuário local do MySQL (banco de dev) ainda é `golang/golang`; trocar a senha do usuário no servidor e no `.env`. | MySQL local |
+| 4 | `MYSQL_PWD` é considerado obsoleto (inseguro) pelo cliente MySQL e pode sair em versões futuras. Próximo passo: `mysql_config_editor set --login-path=...` e `--login-path` no `MYSQL_OPTS`. | `Makefile` |
+| 5 | Opcional: `cmd/cleanuprefresh` em Go para rodar a limpeza de `refresh_tokens` sob demanda (hoje só a API faz, seção 7.2). | `apis/shared/cmd` |
+| 6 | **Achado do SubBrain no fechamento da documentação (a validar pelo SecBrain/BackBrain):** a receita do `db-check-env` é `@test -n "$(DB_USUARIO)" -a -n "$(DB_SENHA)"`. O `make` expande `$(DB_SENHA)` na linha de comando, então a senha aparece no argv do `test` durante a execução e é impressa por `make -n db-up`/`make -n db-create` (o `-n` mostra também as linhas com `@`). Alternativa sugerida: testar a variável de ambiente já exportada (`test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD"`). | `Makefile`, alvo `db-check-env` |

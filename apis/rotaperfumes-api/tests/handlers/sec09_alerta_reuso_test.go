@@ -79,6 +79,7 @@ func TestSEC09_Refresh_ReusoNotificaAlerta(t *testing.T) {
 		{
 			nome: "rotacao fora da janela → notifica 1×", revokedAt: -time.Minute, motivo: "rotacao",
 			setupDB: func(mock sqlmock.Sqlmock) {
+				expectMarcarReuso(mock) // SEC-12
 				mock.ExpectExec(revokeAllUsuarioSQL).WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(5)).WillReturnResult(sqlmock.NewResult(0, 2))
 				mock.ExpectExec(invalidarSessoesSQL).WithArgs(sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
 			},
@@ -87,8 +88,10 @@ func TestSEC09_Refresh_ReusoNotificaAlerta(t *testing.T) {
 		{
 			nome: "rotacao com falha na revogação e no corte → ainda notifica", revokedAt: -time.Hour, motivo: "rotacao",
 			setupDB: func(mock sqlmock.Sqlmock) {
+				expectMarcarReuso(mock) // SEC-12
 				mock.ExpectExec(revokeAllUsuarioSQL).WillReturnError(sqlmock.ErrCancelled)
 				mock.ExpectExec(invalidarSessoesSQL).WillReturnError(sqlmock.ErrCancelled)
+				expectDesfazerReuso(mock) // SEC-12: corte incompleto desfaz a marca
 			},
 			wantCalls: 1,
 		},
@@ -143,6 +146,7 @@ func TestSEC09_Refresh_ReusoRepetido_NotificaCadaVez(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "rotacao")
+		expectMarcarReuso(mock) // SEC-12
 		mock.ExpectExec(revokeAllUsuarioSQL).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec(invalidarSessoesSQL).WillReturnResult(sqlmock.NewResult(0, 1))
 		status, msg := sec09PostRefresh(t, server.URL+"/api/auth/refresh")
@@ -177,6 +181,7 @@ func TestSEC09_Refresh_AlertaNil_MantemComportamento(t *testing.T) {
 			f := c.setup(h, mock)
 
 			expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "rotacao")
+			expectMarcarReuso(mock) // SEC-12
 			mock.ExpectExec(revokeAllUsuarioSQL).WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
 			mock.ExpectExec(invalidarSessoesSQL).WithArgs(sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
 

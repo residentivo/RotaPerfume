@@ -11,7 +11,7 @@ Marque cada checkbox depois de conferir. Se algo divergir, anote o caso e encami
 
 ## 0. Preparação
 
-1. No `.env` da raiz, confira `DB_USUARIO` e `DB_SENHA` preenchidos (o `resetpassword` e o `seedusers` não usam mais o default `golang/golang`).
+1. No `.env` da raiz, confira `DB_USUARIO` e `DB_SENHA` preenchidos (o `resetpassword` e o `seedusers` não usam mais o default `golang/golang`; desde o Lote 12, SEC-11, também a API, os importadores e o `make` exigem os dois).
 2. Preencha `SMTP_USER`, `SMTP_PASSWORD` e `SMTP_FROM` (veja `.env.example`) e `SECURITY_ALERT_EMAILS` com 1 ou 2 caixas de admin que você consiga ler (separadas por vírgula).
 3. Crie um usuário de teste com um **e-mail real** que você consiga ler (por exemplo, um alias `+qa11` do seu Gmail), na pasta `apis/shared`:
 

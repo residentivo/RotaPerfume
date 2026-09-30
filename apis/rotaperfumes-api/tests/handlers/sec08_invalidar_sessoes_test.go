@@ -34,17 +34,18 @@ func TestSEC08_ReusoDeRotacao_InvalidaSessoes(t *testing.T) {
 		invalidarErr  error
 		wantLog       []string
 		wantSemLogFal bool
+		wantDesfazer  bool // SEC-12: corte incompleto desfaz a marca de reuso
 	}{
 		{nome: "sucesso: grava corte, sem log de falha",
 			invalidarRes: sqlmock.NewResult(0, 1), wantSemLogFal: true},
 		{nome: "erro no UPDATE: loga e responde 401",
-			invalidarErr: sqlmock.ErrCancelled,
-			wantLog:      []string{"[auth][seguranca] refresh: falha ao invalidar access tokens após reuso: user_id=5"}},
+			invalidarErr: sqlmock.ErrCancelled, wantDesfazer: true,
+			wantLog: []string{"[auth][seguranca] refresh: falha ao invalidar access tokens após reuso: user_id=5"}},
 		{nome: "usuário sumiu (0 linhas): loga ErrNotFound e responde 401",
-			invalidarRes: sqlmock.NewResult(0, 0),
-			wantLog:      []string{"falha ao invalidar access tokens após reuso: user_id=5"}},
+			invalidarRes: sqlmock.NewResult(0, 0), wantDesfazer: true,
+			wantLog: []string{"falha ao invalidar access tokens após reuso: user_id=5"}},
 		{nome: "revogação em massa falha: ainda grava o corte",
-			revokeErr: sqlmock.ErrCancelled, invalidarRes: sqlmock.NewResult(0, 1),
+			revokeErr: sqlmock.ErrCancelled, invalidarRes: sqlmock.NewResult(0, 1), wantDesfazer: true,
 			wantLog:       []string{"falha na revogação em massa após reuso: user_id=5"},
 			wantSemLogFal: true},
 	}
@@ -56,6 +57,7 @@ func TestSEC08_ReusoDeRotacao_InvalidaSessoes(t *testing.T) {
 			logs := capturarLog(t)
 
 			expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "rotacao")
+			expectMarcarReuso(mock) // SEC-12
 			rev := mock.ExpectExec(revokeAllUsuarioSQL).WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(5))
 			if tc.revokeErr != nil {
 				rev.WillReturnError(tc.revokeErr)
@@ -67,6 +69,9 @@ func TestSEC08_ReusoDeRotacao_InvalidaSessoes(t *testing.T) {
 				inv.WillReturnError(tc.invalidarErr)
 			} else {
 				inv.WillReturnResult(tc.invalidarRes)
+			}
+			if tc.wantDesfazer {
+				expectDesfazerReuso(mock)
 			}
 
 			assertRefreshRevogado401(t, server.URL+"/api/auth/refresh")

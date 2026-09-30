@@ -47,6 +47,15 @@ func main() {
 	}
 	log.Printf("[server] db ping OK")
 
+	// CHORE-02: limpeza periódica de refresh_tokens (roda já no início e a
+	// cada REFRESH_CLEANUP_INTERVAL; "0" desativa). Encerrada no shutdown,
+	// antes de fechar o pool.
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	limpezaSvc := services.NewRefreshTokenService()
+	limpezaSvc.SetRetencao(cfg.RefreshTokenRetencao)
+	limpezaDone := services.IniciarLimpezaRefreshTokens(bgCtx, conn, limpezaSvc, cfg.RefreshCleanupInterval)
+
 	// EmailService: usa SMTP real se as credenciais estiverem configuradas,
 	// caso contrário cai no fallback noop (log-only) — permite `make dev-api`
 	// funcionar sem SMTP configurado.
@@ -99,8 +108,21 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("[server] shutdown erro: %v", err)
 	}
+	pararTarefasDeFundo(bgCancel, limpezaDone, 10*time.Second)
 	_ = conn.Close()
 	log.Printf("[server] bye")
+}
+
+// pararTarefasDeFundo cancela as tarefas em segundo plano (CHORE-02) e espera
+// o término por até timeout, para não fechar o pool no meio de um DELETE.
+func pararTarefasDeFundo(cancel context.CancelFunc, done <-chan struct{}, timeout time.Duration) {
+	cancel()
+	select {
+	case <-done:
+		log.Printf("[server] tarefas de fundo encerradas")
+	case <-time.After(timeout):
+		log.Printf("[server] tarefas de fundo não encerraram em %s — seguindo com o shutdown", timeout)
+	}
 }
 
 // newEmailService escolhe a implementação de EmailService com base na config:

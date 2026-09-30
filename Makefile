@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
+.PHONY: help db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared gen-hash fix-hash \
 	frontend-deps \
@@ -7,13 +7,33 @@
 # =============================================================================
 # Helpers
 # =============================================================================
-MYSQL_OPTS=--local-infile=1 -u $(DB_USUARIO) -p$(DB_SENHA) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4
-DB_NAME?=rotaperfumes
-DB_USUARIO?=golang
-DB_SENHA?=golang
-DB_HOST?=localhost
-DB_PORT?=3306
+# SEC-11: as credenciais do banco vêm do .env (sem default).
+# Precedência: com "-include .env", o valor do .env ganha da variável do
+# shell; "make DB_SENHA=x" na linha de comando ganha de tudo.
+# Formato do .env: DB_SENHA sem "$", "#", aspas, espaços nas pontas e sem
+# começar com "/" (o make e o Git Bash interpretariam esses caracteres).
+-include .env
+
+DB_NAME ?= rotaperfumes
+DB_HOST ?= localhost
+DB_PORT ?= 3306
+# SEC-11: sem default para DB_USUARIO/DB_SENHA (obrigatórios no .env).
+
+# .env salvo com CRLF no Windows deixaria "\r" no fim do valor.
+CR := $(shell printf '\r')
+DB_USUARIO := $(strip $(subst $(CR),,$(DB_USUARIO)))
+DB_SENHA   := $(subst $(CR),,$(DB_SENHA))
+DB_HOST    := $(strip $(subst $(CR),,$(DB_HOST)))
+DB_PORT    := $(strip $(subst $(CR),,$(DB_PORT)))
+DB_NAME    := $(strip $(subst $(CR),,$(DB_NAME)))
+
+# Senha só pelo ambiente (lida nativamente pelo mysql/mysql.exe), nunca no argv.
+MYSQL_PWD = $(DB_SENHA)
+# Git Bash/MSYS: impede a conversão de caminho POSIX no valor da senha.
+MSYS2_ENV_CONV_EXCL = MYSQL_PWD
 export
+
+MYSQL_OPTS = --local-infile=1 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4
 
 help: ## Mostra esta ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -21,7 +41,13 @@ help: ## Mostra esta ajuda
 # =============================================================================
 # Banco de dados
 # =============================================================================
-db-create: ## Cria o banco de dados se não existir
+# SEC-11: pré-requisito de todo alvo que chama o mysql (db-create, db-down,
+# db-fix-*, db-revert-*; db-up/db-seed herdam via db-create). Fica depois do
+# "help" para não virar o alvo padrão do make.
+db-check-env: ## Confere se DB_USUARIO/DB_SENHA estão definidos no .env (SEC-11)
+	@test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD" || { echo "SEC-11: defina DB_USUARIO/DB_SENHA no .env"; exit 1; }
+
+db-create: db-check-env ## Cria o banco de dados se não existir
 	mysql $(MYSQL_OPTS) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 db-up: db-create ## Cria o schema (tabelas vazias)
@@ -47,6 +73,8 @@ db-up: db-create ## Cria o schema (tabelas vazias)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/15_ddl_oportunidades.sql
 	@echo "=== Aplicando DDL de visitas (depende de clientes + vendedores) ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/16_ddl_visitas.sql
+	@echo "=== Aplicando DDL de estoque (depende de produtos; ja sem a coluna origem da migracao 18) ==="
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/17_ddl_estoque.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
@@ -62,40 +90,52 @@ db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed completo com hashes validos! ==="
 	@echo "=== Admin: admin@rotaperfumes.com.br / Admin@123 ==="
 
-db-down: ## Dropa o banco de dados (CUIDADO!)
+db-down: db-check-env ## Dropa o banco de dados (CUIDADO!)
 	mysql $(MYSQL_OPTS) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
 
 db-reset: db-down db-seed ## Recria o banco do zero com hashes validos
 
-db-fix-deve-trocar-senha: ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
+db-fix-deve-trocar-senha: db-check-env ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
 
-db-fix-tipo-reset: ## Corrige o ENUM de senha_historico.tipo_reset em bancos existentes (nao destrutivo, sem apagar dados)
+db-fix-tipo-reset: db-check-env ## Corrige o ENUM de senha_historico.tipo_reset em bancos existentes (nao destrutivo, sem apagar dados)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/13_alter_senha_historico_tipo_reset.sql
 
-db-fix-cnpj-unique: ## Unifica clientes com CNPJ duplicado no menor id e cria UNIQUE uq_clientes_cnpj (APAGA as copias; backup em clientes_merge_backup_20260925*)
+db-fix-estoque-origem: db-check-env ## Remove estoque.origem (migracao 18) em bancos criados com o 17 antigo (idempotente; perde o rastreio de origem)
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/18_alter_estoque_drop_origem.sql
+
+db-revert-estoque-origem: db-check-env ## Reverte db-fix-estoque-origem (recria estoque.origem; linhas existentes voltam como import_csv)
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/18_revert_estoque_drop_origem.sql
+
+db-fix-cnpj-unique: db-check-env ## Unifica clientes com CNPJ duplicado no menor id e cria UNIQUE uq_clientes_cnpj (APAGA as copias; backup em clientes_merge_backup_20260925*)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/19_alter_clientes_cnpj_unique.sql
 
-db-revert-cnpj-unique: ## Reverte db-fix-cnpj-unique a partir das tabelas clientes_merge_backup_20260925*
+db-revert-cnpj-unique: db-check-env ## Reverte db-fix-cnpj-unique a partir das tabelas clientes_merge_backup_20260925*
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/19_revert_clientes_cnpj_unique.sql
 
-db-fix-cnpj-comment: ## Atualiza o COMMENT de clientes.cnpj para o formato alfanumerico (so metadado, sem apagar dados)
+db-fix-cnpj-comment: db-check-env ## Atualiza o COMMENT de clientes.cnpj para o formato alfanumerico (so metadado, sem apagar dados)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/20_alter_clientes_cnpj_comment.sql
 
-db-revert-cnpj-comment: ## Reverte db-fix-cnpj-comment (volta o COMMENT antigo "somente digitos")
+db-revert-cnpj-comment: db-check-env ## Reverte db-fix-cnpj-comment (volta o COMMENT antigo "somente digitos")
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/20_revert_clientes_cnpj_comment.sql
 
-db-fix-revoked-reason: ## Adiciona refresh_tokens.revoked_reason (SEC-07) em bancos existentes (nao destrutivo, legado fica NULL)
+db-fix-revoked-reason: db-check-env ## Adiciona refresh_tokens.revoked_reason (SEC-07) em bancos existentes (nao destrutivo, legado fica NULL)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/21_alter_refresh_tokens_revoked_reason.sql
 
-db-revert-revoked-reason: ## Reverte db-fix-revoked-reason (remove a coluna; perde os motivos gravados)
+db-revert-revoked-reason: db-check-env ## Reverte db-fix-revoked-reason (remove a coluna; perde os motivos gravados)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/21_revert_refresh_tokens_revoked_reason.sql
 
-db-fix-tokens-validos-desde: ## Adiciona usuarios.tokens_validos_desde (SEC-08) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
+db-fix-tokens-validos-desde: db-check-env ## Adiciona usuarios.tokens_validos_desde (SEC-08) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/22_alter_usuarios_tokens_validos_desde.sql
 
-db-revert-tokens-validos-desde: ## Reverte db-fix-tokens-validos-desde (remove a coluna; perde os cortes de token gravados)
+db-revert-tokens-validos-desde: db-check-env ## Reverte db-fix-tokens-validos-desde (remove a coluna; perde os cortes de token gravados)
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/22_revert_usuarios_tokens_validos_desde.sql
+
+db-fix-reuso-detectado: db-check-env ## Adiciona refresh_tokens.reuso_detectado_em (SEC-12) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/23_alter_refresh_tokens_reuso_detectado_em.sql
+
+db-revert-reuso-detectado: db-check-env ## Reverte db-fix-reuso-detectado (remove a coluna; perde as marcas de reuso gravadas)
+	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/23_revert_refresh_tokens_reuso_detectado_em.sql
 
 db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
 	cd apis/shared && go run ./cmd/importclientes
