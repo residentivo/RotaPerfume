@@ -1,6 +1,45 @@
 # Deploy no servidor da LAN (`ivo-inspiron-15-3530`) com Docker + Jenkins
 
-> Card **DEPLOY-01** (Lote 13, 2026-09-30). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/api.env.example`, `deploy/mysql-setup.sql`, `deploy/dump-local.ps1`, `apis/Dockerfile`, `frontend/Dockerfile`.
+> Card **DEPLOY-01** (Lote 13, 2026-09-30). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/api.env.example`, `deploy/mysql-setup.sql`, `deploy/dump-local.ps1`, `deploy/setup-servidor.sh`, `apis/Dockerfile`, `frontend/Dockerfile`.
+
+## 0. Instalação automática (recomendado)
+
+O script `deploy/setup-servidor.sh` faz, no servidor, tudo o que as seções 2, 3, 6 e 7 descrevem. As **duas credenciais do Jenkins** continuam sendo cadastradas **à mão**, porque o script não cria, não altera e não apaga credenciais. Ele pausa, mostra as instruções e depois só **confere** (por leitura) se elas existem.
+
+**Antes:** faça commit e push dos arquivos de deploy para o `main`, gere o dump no Windows (seção 7.1) e deixe o Jenkins com os plugins Pipeline, Git e Credentials Binding. O Jenkins precisa ser **nativo** (serviço systemd `jenkins`). Se ele rodar em container, o script aborta e explica o motivo.
+
+1. **No Windows**, na raiz do projeto, copie o dump e o `.env` para o `/tmp` do servidor:
+   ```powershell
+   scp deploy\dumps\rotaperfumes-AAAAMMDD-HHMMSS.sql.gz .env SEU_USUARIO@ivo-inspiron-15-3530:/tmp/
+   ```
+2. **No servidor**, baixe e rode o script:
+   ```bash
+   curl -fsSLO https://raw.githubusercontent.com/residentivo/RotaPerfume/main/deploy/setup-servidor.sh
+   sudo bash setup-servidor.sh --env /tmp/.env --dump /tmp/rotaperfumes-AAAAMMDD-HHMMSS.sql.gz \
+     --turnstile-site-key SUA_SITE_KEY --remove-inputs
+   ```
+   Opções: `--site-host` (padrão `ivo-inspiron-15-3530`), `--site-ip` (`192.168.168.106`), `--https-port` (`8443`), `--jenkins-url` (`http://localhost:8888`), `--skip-mysql` (não mexe em banco/usuários e pede a senha atual do `rotaperfumes_app`), `--skip-build` e `--remove-inputs` (apaga o `.env` e o dump do `/tmp` no final). Veja `bash setup-servidor.sh --help`.
+3. O script executa 11 etapas e mostra o andamento como `[n/11]`:
+   1. **Pré-checagens:** root via `sudo`, `docker compose` ≥ 2.17, integridade do dump (`gzip -t`), Jenkins nativo, MySQL ou MariaDB e acesso root ao banco. Se o acesso root por socket falhar, o script pede a senha do root.
+   2. Coloca o usuário `jenkins` no grupo `docker`. O Jenkins só é reiniciado se o grupo mudou.
+   3. **bind-address:** se o banco escuta só em loopback, grava `zz-rotaperfumes.cnf` com `bind-address = 0.0.0.0` e reinicia o banco.
+   4. **ufw:** se estiver ativo, libera a porta do banco só para `172.16.0.0/12`, nega o resto e libera a 8443. Se estiver inativo, **só avisa** e sugere os comandos. O script nunca ativa o ufw.
+   5. **Banco e usuários:** cria o banco `rotaperfumes` e os usuários `rotaperfumes_app` e `rotaperfumes_admin`. A senha do app é gerada automaticamente. A senha do admin é **você** que escolhe, com no mínimo 12 caracteres, e a digita depois no Jenkins. Se os usuários já existirem, o script pergunta se deve redefinir as senhas.
+   6. Instala o dump em `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` (dono `root:jenkins`, modo 640).
+   7. Gera `~/rotaperfumes-api.env` (modo 600) a partir do seu `.env`. Substitui `DB_*`, gera um `JWT_SECRET` novo e define `CORS_ALLOWED_ORIGINS` e `TRUST_PROXY_HEADERS=true`. Se algum valor tiver `$` sem aspas simples, o script avisa (mostra só o nome da chave).
+   8. Pede seu usuário e um **API token** do Jenkins (Jenkins → seu usuário → Security → API Token), confere os plugins e cria ou atualiza o job `rotaperfumes-deploy`.
+   9. **Pausa para as credenciais manuais.** Siga as instruções que aparecem na tela:
+      1. No Windows: `scp SEU_USUARIO@ivo-inspiron-15-3530:rotaperfumes-api.env .`
+      2. Jenkins → Gerenciar Jenkins → Credentials → System → Global credentials → **Add Credentials**. Kind **Secret file**, ID `rotaperfumes-api-env`, arquivo `rotaperfumes-api.env`.
+      3. **Add Credentials** de novo. Kind **Username with password**, ID `rotaperfumes-db-admin`, usuário `rotaperfumes_admin`, senha = a escolhida na etapa 5.
+      4. Apague o `rotaperfumes-api.env` do Windows.
+
+      Tecle ENTER. O script confere as duas credenciais e, se estiverem cadastradas, apaga o `~/rotaperfumes-api.env` do servidor.
+   10. Dispara o build com `IMPORTAR_DUMP=true` (quando há `--dump`) e mostra o log ao vivo. Se o build não terminar em `SUCCESS`, o script sai com erro.
+   11. **Resumo:** mostra a URL de acesso, exporta a CA do Caddy para `~/rotaperfumes-caddy-root.crt` (instale no Windows como na seção 8) e lembra de cadastrar o hostname no Turnstile.
+4. **Reexecução:** o script pode ser rodado de novo sem problemas. Se ele **redefinir as senhas** ou gerar um `api.env` novo, que sempre traz um `JWT_SECRET` novo, **atualize** as credenciais no Jenkins: abra a credencial → **Update** → envie o arquivo novo ou digite a senha nova. O script só confere se as credenciais existem, não o conteúdo delas.
+
+As seções abaixo descrevem o mesmo processo **manualmente**, como alternativa ou para diagnóstico.
 
 ## 1. Visão geral
 

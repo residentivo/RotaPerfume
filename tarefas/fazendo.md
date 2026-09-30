@@ -6,14 +6,14 @@
 
 **Fluxo:** 🟣 SecBrain (spec de segurança do deploy) → 🟡 BackBrain (infra: API, compose, Caddy, Jenkins, dump) ∥ 🟢 FrontBrain (Dockerfile do frontend) → 🔵 SubBrain (manual e Kanban) → **usuário** (commit/push, servidor, primeira execução) → 🔵 SubBrain (fechamento em `feito.md`).
 
-**Passo atual:** código de deploy pronto e validado localmente (go build/test, next build, 1482 testes do front); aguardando o usuário: commit/push, pré-requisitos do servidor e primeira execução do job Jenkins.
+**Passo atual:** código enviado ao GitHub (commit 87d79af) e `deploy/setup-servidor.sh` criado (🟡 BackBrain); aguardando o usuário rodar o script no servidor, cadastrar as 2 credenciais no Jenkins e acompanhar a 1ª execução do job.
 
 ---
 
 ## DEPLOY-01: implantar o sistema no servidor `ivo-inspiron-15-3530` via Docker + Jenkins — prioridade ALTA
 
 **Status:** em execução (Lote 13, 2026-09-30)
-**Passo atual:** código de deploy pronto e validado localmente (go build/test, next build, 1482 testes do front); aguardando o usuário: commit/push, pré-requisitos do servidor e primeira execução do job Jenkins.
+**Passo atual:** ver linha 9.
 **Camadas:** Segurança, Backend (infra), Frontend (infra), Documentação
 **Origem:** pedido do usuário, "implementar o projeto no servidor ivo-inspiron-15-3530 com Docker".
 
