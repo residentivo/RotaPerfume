@@ -51,13 +51,16 @@ pipeline {
                 // Codigo enviado por stdin (tar) em vez de bind mount: funciona
                 // tambem com Jenkins em container. Testes de integracao so rodam
                 // com INTEGRATION=1, entao aqui sao pulados (sem MySQL).
+                // O layout do repositorio e preservado (apis/..., sql/, Makefile):
+                // cmdutil.FindProjectRoot procura apis/shared/go.mod e os testes
+                // de config leem o Makefile e os .sql da raiz.
                 sh '''#!/bin/bash
                     set -euo pipefail
-                    tar -C apis -cf - shared rotaperfumes-api \
+                    tar -cf - apis/shared apis/rotaperfumes-api sql Makefile \
                       | docker run --rm -i -e CGO_ENABLED=0 -e GOFLAGS=-mod=readonly "$GO_IMAGE" sh -ec '
                           mkdir -p /src && tar -xf - -C /src
-                          cd /src/shared && go vet ./... && go test ./...
-                          cd /src/rotaperfumes-api && go vet ./... && go test ./...
+                          cd /src/apis/shared && go vet ./... && go test ./...
+                          cd /src/apis/rotaperfumes-api && go vet ./... && go test ./...
                         '
                 '''
             }
