@@ -37,7 +37,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE
   TO 'rotaperfumes_app'@'172.16.0.0/255.240.0.0';
 
 -- Usuario ADMIN para importar o dump / migracoes (credencial Jenkins
--- "rotaperfumes-db-admin"). O import roda num container mysql:8 que tambem
+-- "rotaperfumes-admin"). O import roda num container mysql:8 que tambem
 -- sai pela rede docker, por isso a mesma faixa. Precisa de DDL porque o dump
 -- faz DROP/CREATE TABLE. Descomente e troque a senha se ainda nao tiver um.
 --

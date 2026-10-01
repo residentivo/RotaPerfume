@@ -6,7 +6,7 @@
 //   - curl, gzip (zcat), install (coreutils), bash.
 // Credenciais Jenkins:
 //   - rotaperfumes-api-env   (Secret file)              -> deploy/api.env (ver deploy/api.env.example)
-//   - rotaperfumes-db-admin  (Username with password)   -> so para IMPORTAR_DUMP
+//   - rotaperfumes-admin  (Username with password)   -> so para IMPORTAR_DUMP
 //
 // Regras: nunca "set -x", nunca cat de segredo, nunca "-e SEGREDO=valor".
 // Todo "sh" comeca com #!/bin/bash: com shebang o Jenkins NAO aplica o
@@ -80,7 +80,7 @@ pipeline {
         stage('Importar dump') {
             when { expression { params.IMPORTAR_DUMP } }
             steps {
-                withCredentials([usernamePassword(credentialsId: 'rotaperfumes-db-admin',
+                withCredentials([usernamePassword(credentialsId: 'rotaperfumes-admin',
                                                   usernameVariable: 'DB_ADMIN_USER',
                                                   passwordVariable: 'MYSQL_PWD')]) {
                     dir('deploy') {
