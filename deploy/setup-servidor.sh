@@ -454,7 +454,7 @@ checar_compose() {
   v=$(docker compose version --short 2>/dev/null) || falhar "Plugin 'docker compose' nao encontrado (instale docker-compose-plugin)."
   v=$(normalizar_versao "$v")
   versao_ge "$v" "$COMPOSE_MINIMO" ||
-    falhar "docker compose $v < $COMPOSE_MINIMO (dockerfile_inline). Atualize o docker-compose-plugin."
+    falhar "docker compose $v < $COMPOSE_MINIMO . Atualize o docker-compose-plugin."
   ok "docker compose $v"
 }
 

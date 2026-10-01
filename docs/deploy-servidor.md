@@ -1,6 +1,6 @@
 # Deploy no servidor da LAN (`ivo-inspiron-15-3530`) com Docker + Jenkins
 
-> Card **DEPLOY-01** (Lote 13, 2026-09-30). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/api.env.example`, `deploy/mysql-setup.sql`, `deploy/dump-local.ps1`, `deploy/setup-servidor.sh`, `apis/Dockerfile`, `frontend/Dockerfile`.
+> Card **DEPLOY-01** (Lote 13, 2026-09-30). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/Dockerfile.caddy`, `deploy/api.env.example`, `deploy/mysql-setup.sql`, `deploy/dump-local.ps1`, `deploy/setup-servidor.sh`, `apis/Dockerfile`, `frontend/Dockerfile`.
 
 ## 0. Instalação automática (recomendado)
 
@@ -87,7 +87,7 @@ Navegador (LAN)
 
 Rode no servidor (via SSH ou no terminal local dele):
 
-1. Instale o Docker Engine e o plugin compose. O compose precisa ser **≥ 2.17**, porque o serviço `caddy` usa `dockerfile_inline`:
+1. Instale o Docker Engine e o plugin compose. O compose precisa ser **≥ 2.17** (checado pelo `setup-servidor.sh`). O build funciona com o builder clássico ou com BuildKit; a imagem do Caddy usa `deploy/Dockerfile.caddy`:
    ```bash
    docker --version
    docker compose version     # precisa ser v2.17 ou superior
@@ -335,7 +335,7 @@ As imagens são sempre `:latest`, sem tag por versão. Para voltar:
 | Estágio **Importar dump** falha com "Dump nao encontrado/legivel" | Arquivo fora do `DUMP_PATH` ou sem permissão para o usuário `jenkins` | Seção 7.2/7.3 (`chown`/`chmod`) |
 | Import falha com `Access denied` ou erro de DDL | Credencial `rotaperfumes-db-admin` sem ALL no banco, ou usuário com host `localhost` | Crie o `rotaperfumes_admin@'172.16.0.0/255.240.0.0'` (seção 3.2) |
 | `permission denied ... docker.sock` no build | Usuário `jenkins` fora do grupo `docker`, ou Jenkins não reiniciado | Seção 2.2 |
-| `dockerfile_inline` desconhecido / erro de schema do compose | Compose < 2.17 | Atualize o plugin `docker-compose-plugin` |
+| Erro de schema do compose | Compose < 2.17 | Atualize o plugin `docker-compose-plugin` |
 | `Bind for 0.0.0.0:8443 failed: port is already allocated` | Outra aplicação usa a 8443 | `sudo ss -ltnp \| grep 8443`. Libere a porta ou rode o job com outro `HTTPS_PORT` e ajuste `CORS_ALLOWED_ORIGINS` no Secret file |
 | Smoke test falha após 30 tentativas | API caiu na subida (env inválido, MySQL inacessível) | O próprio job imprime as últimas 80 linhas de `api`, `frontend` e `caddy`. Veja também a seção 9 |
 | `compose` reclama de `api.env` não encontrado em comando manual | Falta `API_ENV_FILE=/dev/null` | Prefixe o comando com a variável (seção 9) |

@@ -1,0 +1,5 @@
+# Imagem do Caddy com o Caddyfile embutido (contexto de build: deploy/).
+# Arquivo real em vez de dockerfile_inline: o builder classico (sem BuildKit/
+# buildx) ignora dockerfile_inline e procura deploy/Dockerfile.
+FROM caddy:2-alpine
+COPY Caddyfile /etc/caddy/Caddyfile

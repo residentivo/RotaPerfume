@@ -1,3 +1,4 @@
-# Contexto de build da imagem do Caddy (deploy/): so o Caddyfile interessa.
+# Contexto de build da imagem do Caddy (deploy/): so o Caddyfile e o Dockerfile.caddy interessam.
 *
 !Caddyfile
+!Dockerfile.caddy

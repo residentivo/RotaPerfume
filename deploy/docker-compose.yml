@@ -74,9 +74,7 @@ services:
     # Jenkins rodar em container, onde o path do workspace nao existe no host.
     build:
       context: .
-      dockerfile_inline: |
-        FROM caddy:2-alpine
-        COPY Caddyfile /etc/caddy/Caddyfile
+      dockerfile: Dockerfile.caddy
     image: rotaperfumes-caddy:latest
     depends_on:
       - api

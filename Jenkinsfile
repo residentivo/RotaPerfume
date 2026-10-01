@@ -1,7 +1,7 @@
 // Pipeline de deploy do rotaperfumes no servidor da LAN (ivo-inspiron-15-3530).
 //
 // Pre-requisitos no agente (o proprio servidor):
-//   - docker + plugin "docker compose" (>= 2.17, por causa de dockerfile_inline);
+//   - docker + plugin "docker compose" v2;
 //     usuario do Jenkins no grupo "docker".
 //   - curl, gzip (zcat), install (coreutils), bash.
 // Credenciais Jenkins:
