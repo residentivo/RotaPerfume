@@ -30,7 +30,7 @@ readonly FAIXA_DOCKER="172.16.0.0/12"
 readonly DUMP_DIR="/opt/rotaperfumes/dumps"
 readonly DUMP_DESTINO="$DUMP_DIR/rotaperfumes.sql.gz"
 readonly CRED_API_ENV="rotaperfumes-api-env"
-readonly CRED_DB_ADMIN="rotaperfumes-admin"
+readonly CRED_DB_ADMIN="rotaperfumes-db-admin"
 readonly COMPOSE_MINIMO="2.17.0"
 readonly PLUGINS_EXIGIDOS=(workflow-job workflow-cps git credentials plain-credentials credentials-binding)
 # Chaves do api.env que o script sempre define (as do --env sao descartadas).
@@ -117,7 +117,7 @@ Fluxo:
             sudo bash setup-servidor.sh --env /tmp/.env --dump /tmp/<arquivo>.sql.gz
 
 O script pausa para voce cadastrar MANUALMENTE as credenciais
-"rotaperfumes-api-env" e "rotaperfumes-admin" na UI do Jenkins.
+"rotaperfumes-api-env" e "rotaperfumes-db-admin" na UI do Jenkins.
 EOF
 }
 

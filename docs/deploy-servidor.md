@@ -31,7 +31,7 @@ O script `deploy/setup-servidor.sh` faz, no servidor, tudo o que as seções 2, 
    9. **Pausa para as credenciais manuais.** Siga as instruções que aparecem na tela:
       1. No Windows: `scp SEU_USUARIO@ivo-inspiron-15-3530:rotaperfumes-api.env .`
       2. Jenkins → Gerenciar Jenkins → Credentials → System → Global credentials → **Add Credentials**. Kind **Secret file**, ID `rotaperfumes-api-env`, arquivo `rotaperfumes-api.env`.
-      3. **Add Credentials** de novo. Kind **Username with password**, ID `rotaperfumes-admin`, usuário `rotaperfumes_admin`, senha = a escolhida na etapa 5.
+      3. **Add Credentials** de novo. Kind **Username with password**, ID `rotaperfumes-db-admin`, usuário `rotaperfumes_admin`, senha = a escolhida na etapa 5.
       4. Apague o `rotaperfumes-api.env` do Windows.
 
       Tecle ENTER. O script confere as duas credenciais e, se estiverem cadastradas, apaga o `~/rotaperfumes-api.env` do servidor.
@@ -79,7 +79,7 @@ Navegador (LAN)
 | ID | Tipo | Conteúdo |
 |---|---|---|
 | `rotaperfumes-api-env` | Secret file | `.env` de produção da API (modelo: `deploy/api.env.example`) |
-| `rotaperfumes-admin` | Username with password | Usuário MySQL com DDL no banco `rotaperfumes` (usado só quando `IMPORTAR_DUMP=true`) |
+| `rotaperfumes-db-admin` | Username with password | Usuário MySQL com DDL no banco `rotaperfumes` (usado só quando `IMPORTAR_DUMP=true`) |
 
 ---
 
@@ -133,7 +133,7 @@ A API roda em container e acessa o MySQL do host por `host.docker.internal` (IP 
    nano /tmp/mysql-setup.sql
    ```
    - Troque `<TROCAR>` pela senha do `rotaperfumes_app`. Esse usuário tem só SELECT/INSERT/UPDATE/DELETE e é o que a API usa.
-   - **Descomente** o bloco do `rotaperfumes_admin` e troque `<TROCAR_ADMIN>`. Esse usuário tem ALL PRIVILEGES no banco, porque o dump faz DROP/CREATE TABLE e o pipeline roda `TRUNCATE refresh_tokens`. Ele será a credencial `rotaperfumes-admin`. O `root` via socket **não** serve, porque o import sai por um container na rede docker.
+   - **Descomente** o bloco do `rotaperfumes_admin` e troque `<TROCAR_ADMIN>`. Esse usuário tem ALL PRIVILEGES no banco, porque o dump faz DROP/CREATE TABLE e o pipeline roda `TRUNCATE refresh_tokens`. Ele será a credencial `rotaperfumes-db-admin`. O `root` via socket **não** serve, porque o import sai por um container na rede docker.
    ```bash
    sudo mysql < /tmp/mysql-setup.sql
    shred -u /tmp/mysql-setup.sql
@@ -185,11 +185,11 @@ Caminho: **Gerenciar Jenkins → Credentials → System → Global credentials (
 
 O pipeline grava esse arquivo em `deploy/api.env` (modo 600) só durante o deploy e o apaga no final (`post { always }`).
 
-### 5.2 Username with password `rotaperfumes-admin`
+### 5.2 Username with password `rotaperfumes-db-admin`
 
 1. Kind **Username with password**.
 2. Username `rotaperfumes_admin`, Password = senha do admin (passo 3.2).
-3. ID **`rotaperfumes-admin`**.
+3. ID **`rotaperfumes-db-admin`**.
 
 ### 5.3 Credencial do GitHub (só se o repositório for privado)
 
@@ -242,7 +242,7 @@ Kind **Username with password**: o usuário do GitHub e um **Personal Access Tok
 5. O estágio **Importar dump**:
    - valida o gzip;
    - para o container da API;
-   - importa via container `mysql:8.4` com o usuário `rotaperfumes-admin`;
+   - importa via container `mysql:8.4` com o usuário `rotaperfumes-db-admin`;
    - roda `TRUNCATE TABLE refresh_tokens`, porque as sessões do ambiente local não valem no servidor.
 
    Em seguida vêm `Deploy` e `Smoke test`.
@@ -333,7 +333,7 @@ As imagens são sempre `:latest`, sem tag por versão. Para voltar:
 | API não conecta no MySQL (logs com `connection refused`/`timeout`) | `bind-address` em 127.0.0.1; ufw bloqueando a faixa docker | Seção 3.1 e 3.4, depois `sudo systemctl restart mysql` |
 | API: `Access denied for user 'rotaperfumes_app'` | Senha diferente entre o MySQL e o `DB_SENHA`; usuário criado com outro host | Confira o `mysql-setup.sql` aplicado (host `172.16.0.0/255.240.0.0`) e a credencial `rotaperfumes-api-env` |
 | Estágio **Importar dump** falha com "Dump nao encontrado/legivel" | Arquivo fora do `DUMP_PATH` ou sem permissão para o usuário `jenkins` | Seção 7.2/7.3 (`chown`/`chmod`) |
-| Import falha com `Access denied` ou erro de DDL | Credencial `rotaperfumes-admin` sem ALL no banco, ou usuário com host `localhost` | Crie o `rotaperfumes_admin@'172.16.0.0/255.240.0.0'` (seção 3.2) |
+| Import falha com `Access denied` ou erro de DDL | Credencial `rotaperfumes-db-admin` sem ALL no banco, ou usuário com host `localhost` | Crie o `rotaperfumes_admin@'172.16.0.0/255.240.0.0'` (seção 3.2) |
 | `permission denied ... docker.sock` no build | Usuário `jenkins` fora do grupo `docker`, ou Jenkins não reiniciado | Seção 2.2 |
 | Erro de schema do compose | Compose < 2.17 | Atualize o plugin `docker-compose-plugin` |
 | `Bind for 0.0.0.0:8443 failed: port is already allocated` | Outra aplicação usa a 8443 | `sudo ss -ltnp \| grep 8443`. Libere a porta ou rode o job com outro `HTTPS_PORT` e ajuste `CORS_ALLOWED_ORIGINS` no Secret file |
