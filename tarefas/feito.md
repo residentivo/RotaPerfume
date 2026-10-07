@@ -3,6 +3,26 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## INFO-01: linhas não alcançáveis aceitas como fora da meta de cobertura — 2026-10-07
+**Agentes:** 🔴 TestBrain (registro) → aceito pelo 🤍 MegaBrain → encerrado pelo 🔵 SubBrain
+
+**Status:** registrado/informativo, encerrado a pedido do usuário em 2026-10-07 ("mover INFO-01 para feito"). Nenhuma ação de código.
+
+**Camada:** Testes
+**Origem:** 🔴 TestBrain, TST-02 e TST-03 (Lote 7, 2026-09-26). Aceito pelo 🤍 MegaBrain.
+
+**Descrição:** As linhas que restam sem cobertura no Go só são alcançáveis mudando o código de produção: erros de `crypto/rand` (`password_generator`), `os.Getwd`/`os.Executable`, `rows.Columns()`, a escrita no `DATA` do SMTP, a escrita do cabeçalho num `csv.Writer` com buffer e os ramos de `maskDSN` sem `@`/`:`. Também ficam fora da meta os `cmd/*/main.go` finos e o `cmd/server`. Não há ação a tomar, salvo se o usuário pedir 100%.
+
+> **Nota (BUG-12, Lote 10):** em `scanSenhaHistorico` (92.3%), o ramo `sql.ErrNoRows` → `ErrNotFound` é inalcançável, porque a função só é chamada dentro de `rows.Next`.
+
+> **Nota (SEC-10 e SEC-09, Lote 11):** ramos inalcançáveis do SEC-10: erros de `crypto/rand` em `indiceAleatorio`/`SenhaAlfanumerica`, `indiceAleatorio` com `n <= 0` e a falha de `os.Chmod` em `RenderSeedFile`. `newEmailService` fica em `package main` do `cmd/server` (0%).
+
+> **Nota (SEC-13, Lote 14):** o erro de `crypto/rand` em `GerarHashSenha` também é inalcançável (registrado na entrada do SEC-13 com "ver INFO-01").
+
+**Resultado final:** card encerrado sem mudança de código. Se o usuário pedir cobertura de 100%, abrir um card novo.
+
+---
+
 ## Lote 15 de 2026-10-07: 1 card concluído (de 1)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "faça o processo de reset de senha para todos os usuários ativos para que atualizemos as senhas atuais. A senha enviada já deve ser criada no banco no método novo com argon2id".
@@ -68,6 +88,91 @@
 **Pendências para o usuário:**
 - **Produção:** o Secret file `rotaperfumes-api-env` do Jenkins precisa de `PASSWORD_PEPPER`, ou a API não sobe. Use o mesmo pepper do `.env` local se for importar um dump que já tenha hashes argon2id.
 - O `.env` local tem duas linhas com nome inválido (`rotaperfumes-api-env=`, `rotaperfumes-admin=`). Por causa delas o `godotenv` rejeita o arquivo inteiro e os comandos `go run` (`resetpassword`, `seedusers`) não leem o `.env`; os alvos do `make` funcionam porque usam `-include .env`. Problema anterior a este card.
+
+## Lote 12 de 2026-09-27/30: 4 cards concluídos (de 4)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "faça os cards a fazer da lista de tarefas". Entraram SEC-11, DB-01, SEC-12 e CHORE-02 (derivados do Lote 11); INFO-01 ficou em `afazer.md` (informativo). Entregue no commit `069d708` ("lote 12"). **Fechamento no Kanban em 2026-10-07** (o lote tinha ficado em `fazendo.md` com o passo desatualizado); na mesma data o 🤍 MegaBrain conferiu `go vet ./...` e `go test ./...` verdes em `apis/shared` e `apis/rotaperfumes-api`.
+>
+> **Fluxo:** 🟣 SecBrain (especificação SEC-11, SEC-12, CHORE-02) ∥ 🌸 DataBrain (DB-01) → 🟡 BackBrain (SEC-11, SEC-12, CHORE-02) → 🔴 TestBrain → 🔵 SubBrain.
+>
+> **Migrações:** 23 (`refresh_tokens.reuso_detectado_em`, aplicada no banco de dev em 2026-09-27) e 18 (agora idempotente, só para bancos antigos). **Sem mudança de contrato HTTP.**
+>
+> **Documentação (🔵 SubBrain) do lote:** `docs/manual-base-de-dados.md` (seções 7.1, 7.2, 17, 22 itens 1–4 e 11 marcados como resolvidos, e nova seção 23 "Credenciais do banco e uso do `mysql`"), `postman/README.md` (o `db-up` cria `estoque`), `docs/roteiro-teste-manual-lote12.md` (novo).
+>
+> **Pendência do usuário:** executar o roteiro manual `docs/roteiro-teste-manual-lote12.md` (seções 1 a 6, ~35–50 min; a seção 3 apaga e recria o banco de dev). Nenhum checkbox foi marcado até o fechamento: SEC-11 (1.1–1.10), CHORE-02 (2.1–2.6), DB-01 (3.1–3.7), migração 23 (4.1–4.3), SEC-12 (5.1–5.9) e limpeza (6.1–6.3). Divergências voltam ao 🔵 SubBrain.
+>
+> **Pendências registradas para lotes futuros** (`docs/manual-base-de-dados.md`, seção 23.4): `fix-hash`/`fix-admin` com `-password=Admin@123` no argv; `db-seed` imprime `Admin@123`; usuário MySQL local ainda `golang/golang`; `MYSQL_PWD` obsoleto no cliente MySQL (migrar para `--login-path`); `cmd/cleanuprefresh` opcional. Por decisão do 🤍 MegaBrain (2026-10-07), esses itens não viram cards por enquanto. O item 6 (senha no argv do `test` do `db-check-env`) está resolvido: o Makefile testa `$$DB_USUARIO`/`$$MYSQL_PWD` do ambiente (linha 48), e a seção 23.4 do manual foi marcada como resolvida em 2026-10-07.
+
+## SEC-11: credenciais do banco no Makefile e no `config.Load()` — 2026-09-27
+**Agentes:** 🟣 SecBrain (especificação) → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (commit `069d708`); fechado no Kanban em 2026-10-07.
+
+**Camada:** Segurança + Repositório/Makefile + Backend shared
+**Origem:** 🟣 SecBrain, SEC-10 (Lote 11).
+
+**Entregue:**
+- `Makefile`: `-include .env` com `export` (o `.env` ganha da variável do shell; a linha de comando ganha de tudo); sem `DB_USUARIO ?=`/`DB_SENHA ?=`; `MYSQL_OPTS` sem `-p` (só `--local-infile=1 -u ... -h ... -P ... --default-character-set=utf8mb4`) e senha via `MYSQL_PWD = $(DB_SENHA)` exportado, com `MSYS2_ENV_CONV_EXCL = MYSQL_PWD`; `\r` final removido de `DB_*`.
+- Alvo novo `db-check-env` (mensagem `SEC-11: defina DB_USUARIO/DB_SENHA no .env`), pré-requisito de `db-create`, `db-down` e de todos os `db-fix-*`/`db-revert-*`; `help`, `build`, `test`, `lint` e `dev-frontend` não exigem credenciais.
+- `apis/shared/config/config.go`: `config.Load()` devolve `ErrCredenciaisDB` (`config: defina DB_USUARIO/DB_SENHA no .env`) sem os dois, sem mostrar valores; `LoadSemCredenciaisDB()` para o `seedusers -dry-run/-no-exec`.
+- Cabeçalhos de `sql/*.sql` ensinam `MYSQL_PWD="$DB_SENHA" mysql ...`.
+
+**Testes (🔴 TestBrain):** `apis/shared/tests/config/sec11_credenciais_db_test.go`, `sec11_makefile_sql_test.go`.
+
+**Restrição documentada:** todos os valores do `.env` não podem ter `$`, `#`, aspas, espaços nas pontas nem começar com `/`, e o arquivo deve ser LF (manual da base, seção 23.3).
+
+---
+
+## DB-01: tabela `estoque` fora do `make db-up`/`db-reset` — 2026-09-27
+**Agentes:** 🌸 DataBrain → 🔴 TestBrain → 🔵 SubBrain (documentação)
+
+**Status:** concluído (commit `069d708`); fechado no Kanban em 2026-10-07.
+
+**Camada:** Database + Makefile + Documentação
+**Origem:** 🔵 SubBrain, DOC-04 (Lote 11): itens 1–4 da seção 22 do manual.
+
+**Entregue:**
+- `sql/17_ddl_estoque.sql` alinhado ao schema atual (sem `origem`) e incluído no `db-up` depois do `16` (`db-reset`/`db-rebuild` criam `estoque`; o `db-import-estoque` do `db-rebuild` deixa de falhar).
+- Migração 18 idempotente, com alvo `make db-fix-estoque-origem` e reversão `make db-revert-estoque-origem` (`sql/18_revert_estoque_drop_origem.sql`; recria `origem` com as linhas como `import_csv`).
+- `postman/README.md` e `docs/manual-base-de-dados.md` corrigidos.
+
+**Testes (🔴 TestBrain):** `apis/shared/tests/db/db01_sec12_schema_integration_test.go`.
+
+**Em aberto (fora do card):** regra de `ruptura` (item 5 da seção 22 do manual).
+
+---
+
+## SEC-12: reenvio de refresh rotacionado derrubava as sessões da vítima repetidamente — 2026-09-27
+**Agentes:** 🟣 SecBrain (especificação) → 🌸 DataBrain (migração) → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (commit `069d708`); fechado no Kanban em 2026-10-07.
+
+**Camada:** Segurança + Backend + Database
+**Origem:** 🟣 SecBrain, SEC-09 (Lote 11).
+
+**Entregue:**
+- Migração `sql/23_alter_refresh_tokens_reuso_detectado_em.sql` (+ `sql/23_revert_...`), idempotente; alvos `make db-fix-reuso-detectado`/`make db-revert-reuso-detectado`; bancos novos recebem a coluna pelo `sql/06_ddl_refresh_tokens.sql`.
+- `refresh_token_service.go`/`auth_handler.go`: supressão **por token** (não por usuário) via UPDATE condicional atômico em `reuso_detectado_em`; 1 linha afetada → corta as sessões e envia o alerta do SEC-09; 0 linha → log `reuso repetido ... sessões NÃO revogadas de novo`, sem novo corte nem e-mail. Fail-closed: erro ao gravar a marca corta assim mesmo; falha no corte desfaz a marca.
+- Janela `REFRESH_REUSE_SUPPRESS_WINDOW` (padrão `30m`, faixa `1m`–`24h`; inválida → a API não sobe). Resposta HTTP idêntica nos dois casos (`401`, sem `Set-Cookie`).
+
+**Testes (🔴 TestBrain):** `rotaperfumes-api/tests/handlers/sec12_reuso_suprimido_test.go`, `sec12_http_integration_test.go`, `tests/services/sec12_registrar_reuso_test.go`, `sec12_chore02_integration_test.go`; `shared/tests/config/sec12_chore02_duracoes_refresh_test.go`, `shared/tests/repositories/sec12_chore02_refresh_repository_test.go`, `sec12_chore02_refresh_integration_test.go`.
+
+---
+
+## CHORE-02: `refresh_tokens` sem limpeza automática — 2026-09-27
+**Agentes:** 🟣 SecBrain (especificação) → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (commit `069d708`); fechado no Kanban em 2026-10-07.
+
+**Camada:** Backend + Database
+**Origem:** 🔵 SubBrain, DOC-04 (Lote 11): item 11 da seção 22 do manual.
+
+**Entregue:**
+- `apis/rotaperfumes-api/services/refresh_cleanup.go` (`IniciarLimpezaRefreshTokens`), iniciado no `cmd/server/main.go` depois do `db ping OK`: roda na partida e a cada `REFRESH_CLEANUP_INTERVAL` (padrão `6h`; `0` desativa; `< 1m` → a API não sobe); timeout de 2 min por execução, panic recuperado, encerramento no shutdown (espera até 10 s).
+- `CleanupExpired` em lotes de 1000 (`DELETE ... WHERE expires_at < corte ORDER BY id LIMIT ?`), com `corte = agora - REFRESH_TOKEN_RETENCAO` (padrão `720h`, faixa `24h`–`8760h`). Nenhum token com `expires_at >= agora` é apagado.
+- Sem alvo no Makefile (decisão: evitar duplicar a regra com o `NOW()` do MySQL).
+
+**Testes (🔴 TestBrain):** `rotaperfumes-api/tests/services/chore02_cleanup_test.go`, `chore02_agendador_test.go` e os `sec12_chore02_*` acima.
 
 
 ## Lote 11 de 2026-09-26: 4 cards concluídos (de 4)

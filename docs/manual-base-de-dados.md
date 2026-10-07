@@ -854,7 +854,7 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 
 ### 23.2 Senha fora da linha de comando (`MYSQL_PWD`)
 
-- O `MYSQL_OPTS` não tem mais `-p$(DB_SENHA)`: fica só `--local-infile=1 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4`. A senha vai pela variável de ambiente `MYSQL_PWD`, que o Makefile exporta e que o `mysql`/`mysql.exe` lê nativamente. Assim ela não aparece no argv do `mysql` (lista de processos) nem no eco das linhas `mysql ...` do `make` (exceção pendente: a receita do `db-check-env`, seção 23.4, item 6).
+- O `MYSQL_OPTS` não tem mais `-p$(DB_SENHA)`: fica só `--local-infile=1 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4`. A senha vai pela variável de ambiente `MYSQL_PWD`, que o Makefile exporta e que o `mysql`/`mysql.exe` lê nativamente. Assim ela não aparece no argv do `mysql` (lista de processos) nem no eco das linhas `mysql ...` do `make`. O `db-check-env` também testa só o ambiente (`$$DB_USUARIO`/`$$MYSQL_PWD`), sem expandir a senha (seção 23.4, item 6, resolvido).
 - `MSYS2_ENV_CONV_EXCL = MYSQL_PWD` impede o Git Bash/MSYS de converter a senha como se fosse um caminho POSIX.
 - Execução manual de um script (padrão dos cabeçalhos em `sql/`):
 
@@ -888,4 +888,4 @@ Registradas para lotes futuros (não corrigidas no SEC-11):
 | 3 | O usuário local do MySQL (banco de dev) ainda é `golang/golang`; trocar a senha do usuário no servidor e no `.env`. | MySQL local |
 | 4 | `MYSQL_PWD` é considerado obsoleto (inseguro) pelo cliente MySQL e pode sair em versões futuras. Próximo passo: `mysql_config_editor set --login-path=...` e `--login-path` no `MYSQL_OPTS`. | `Makefile` |
 | 5 | Opcional: `cmd/cleanuprefresh` em Go para rodar a limpeza de `refresh_tokens` sob demanda (hoje só a API faz, seção 7.2). | `apis/shared/cmd` |
-| 6 | **Achado do SubBrain no fechamento da documentação (a validar pelo SecBrain/BackBrain):** a receita do `db-check-env` é `@test -n "$(DB_USUARIO)" -a -n "$(DB_SENHA)"`. O `make` expande `$(DB_SENHA)` na linha de comando, então a senha aparece no argv do `test` durante a execução e é impressa por `make -n db-up`/`make -n db-create` (o `-n` mostra também as linhas com `@`). Alternativa sugerida: testar a variável de ambiente já exportada (`test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD"`). | `Makefile`, alvo `db-check-env` |
+| 6 | ~~A receita do `db-check-env` era `@test -n "$(DB_USUARIO)" -a -n "$(DB_SENHA)"`: o `make` expandia a senha no argv do `test` e no `make -n`.~~ **Resolvido no Lote 12 (commit `069d708`, conferido em 2026-10-07):** a receita testa as variáveis de ambiente já exportadas (`@test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD"`, `Makefile` linha 48), então a senha não aparece no argv nem no eco do `make -n`. | `Makefile`, alvo `db-check-env` |
