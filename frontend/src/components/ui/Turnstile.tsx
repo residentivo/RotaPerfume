@@ -22,6 +22,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { vlog } from "@/lib/vlog";
+
+const F = "Turnstile.tsx";
 
 declare global {
   interface Window {
@@ -63,34 +66,45 @@ export const isTurnstileEnabled = Boolean(SITE_KEY);
 
 export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
   function Turnstile({ onVerify, onExpire, onError }, ref) {
+    vlog(F, "Turnstile", "criando ref do container");
     const containerRef = useRef<HTMLDivElement>(null);
+    vlog(F, "Turnstile", "criando ref do widgetId");
     const widgetIdRef = useRef<string | undefined>(undefined);
     // Se o script já foi carregado por outra tela (navegação client-side,
     // ex: login -> trocar-senha), `window.turnstile` já existe e o widget
     // pode ser renderizado de imediato — o next/script deduplica pelo `src`
     // e não dispara `onLoad` de novo.
+    vlog(F, "Turnstile", "criando estado de script carregado");
     const [scriptLoaded, setScriptLoaded] = useState(
       () => typeof window !== "undefined" && Boolean(window.turnstile)
     );
 
     const removeWidget = () => {
+      vlog(F, "Turnstile.removeWidget", "verificando se há widget registrado:", !!widgetIdRef.current);
       if (window.turnstile && widgetIdRef.current) {
         // Remove a instância registrada no Turnstile antes de limpar o DOM
         // ou renderizar de novo — sem isso, o script mantém referência a um
         // widgetId "órfão" e loga o warning
         // "Cannot find Widget ..., consider using turnstile.remove()".
+        vlog(F, "Turnstile.removeWidget", "removendo widget do Turnstile");
         window.turnstile.remove(widgetIdRef.current);
       }
+      vlog(F, "Turnstile.removeWidget", "limpando ref do widgetId");
       widgetIdRef.current = undefined;
     };
 
     const renderWidget = () => {
+      vlog(F, "Turnstile.renderWidget", "verificando pré-requisitos (script, container, site key)");
       if (!window.turnstile || !containerRef.current || !SITE_KEY) return;
       // Evita renderizar duplicado se o efeito rodar mais de uma vez
       // (ex: React Strict Mode em dev): limpa a instância anterior via API
       // do Turnstile antes de renderizar uma nova.
+      vlog(F, "Turnstile.renderWidget", "removendo widget anterior");
       removeWidget();
+      vlog(F, "Turnstile.renderWidget", "limpando container");
       containerRef.current.innerHTML = "";
+      // LOG-02: o token do desafio vai direto para onVerify e nunca e logado.
+      vlog(F, "Turnstile.renderWidget", "renderizando widget do Turnstile");
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: SITE_KEY,
         callback: onVerify,
@@ -100,24 +114,32 @@ export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
       });
     };
 
+    vlog(F, "Turnstile", "registrando efeito de renderização do widget");
     useEffect(() => {
+      vlog(F, "Turnstile.useEffect", "verificando se o script foi carregado:", scriptLoaded);
       if (scriptLoaded) {
+        vlog(F, "Turnstile.useEffect", "renderizando widget");
         renderWidget();
       }
       return () => {
+        vlog(F, "Turnstile.useEffect", "cleanup: removendo widget");
         removeWidget();
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scriptLoaded]);
 
+    vlog(F, "Turnstile", "expondo handle imperativo reset");
     useImperativeHandle(ref, () => ({
       reset: () => {
+        vlog(F, "Turnstile.reset", "verificando se há widget para resetar:", !!widgetIdRef.current);
         if (window.turnstile && widgetIdRef.current) {
+          vlog(F, "Turnstile.reset", "resetando widget do Turnstile");
           window.turnstile.reset(widgetIdRef.current);
         }
       },
     }));
 
+    vlog(F, "Turnstile", "verificando se a site key está configurada:", isTurnstileEnabled);
     if (!SITE_KEY) {
       // Sem site key configurada: não bloqueia o dev local, mas avisa.
       return (

@@ -12,6 +12,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // ProdutoHandler trata as rotas /api/produtos/*.
@@ -38,11 +39,13 @@ func NewProdutoHandler(db *sql.DB, cfg *config.Config) *ProdutoHandler {
 // Response: {success, data: [produto...], error, pagination: {page, limit, total, pages}}
 // Acesso comum.
 func (h *ProdutoHandler) ListProdutos(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ListProdutos", "chamando services.ParsePagination e atribuindo resultado a page, limit")
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ListProdutos", "montando services.ProdutoFiltro em filtro")
 	filtro := services.ProdutoFiltro{
 		Categoria: strings.TrimSpace(r.URL.Query().Get("categoria")),
 		Marca:     strings.TrimSpace(r.URL.Query().Get("marca")),
@@ -52,15 +55,20 @@ func (h *ProdutoHandler) ListProdutos(w http.ResponseWriter, r *http.Request) {
 		OrderDir:  parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ListProdutos", "chamando h.svc.ListProdutos e atribuindo resultado a produtos, total, err")
 	produtos, total, err := h.svc.ListProdutos(r.Context(), h.db, page, limit, filtro)
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ListProdutos", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[produtos] ListProdutos: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ListProdutos", "definindo pages := total / limit")
 	pages := total / limit
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ListProdutos", "verificando se total%%limit != 0")
 	if total%limit != 0 {
+		vlog.Printf("produto_handler.go", "ProdutoHandler.ListProdutos", "incrementando pages")
 		pages++
 	}
 
@@ -72,14 +80,19 @@ func (h *ProdutoHandler) ListProdutos(w http.ResponseWriter, r *http.Request) {
 // Response: {success, data: produto, error}
 // Acesso comum.
 func (h *ProdutoHandler) GetProduto(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("produto_handler.go", "ProdutoHandler.GetProduto", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("produto_handler.go", "ProdutoHandler.GetProduto", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.GetProduto", "chamando h.svc.GetProdutoByID e atribuindo resultado a produto, err")
 	produto, err := h.svc.GetProdutoByID(r.Context(), h.db, id)
+	vlog.Printf("produto_handler.go", "ProdutoHandler.GetProduto", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("produto_handler.go", "ProdutoHandler.GetProduto", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrProdutoNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "produto não encontrado")
 			return
@@ -103,19 +116,26 @@ type ToggleAtivoProdutoRequest struct {
 // Response: {success, data: produto atualizado, error}
 // Acesso comum.
 func (h *ProdutoHandler) ToggleAtivoProduto(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ToggleAtivoProduto", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ToggleAtivoProduto", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ToggleAtivoProduto", "chamando lerAtivoOpcional e atribuindo resultado a ativo, ok")
 	ativo, ok := lerAtivoOpcional(w, r) // vazio/null/{} = toggle; inválido = 400
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ToggleAtivoProduto", "verificando se !ok")
 	if !ok {
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ToggleAtivoProduto", "chamando h.svc.ToggleAtivoProduto e atribuindo resultado a produto, err")
 	produto, err := h.svc.ToggleAtivoProduto(r.Context(), h.db, id, ativo)
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ToggleAtivoProduto", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("produto_handler.go", "ProdutoHandler.ToggleAtivoProduto", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrProdutoNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "produto não encontrado")
 			return
@@ -125,6 +145,7 @@ func (h *ProdutoHandler) ToggleAtivoProduto(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.ToggleAtivoProduto", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[produtos] ativo=%t: id=%d por usuario role=%s", produto.Ativo, id, role)
 	writeJSON(w, http.StatusOK, produto, "")
@@ -163,6 +184,7 @@ type UpdateProdutoRequest struct {
 // para o status HTTP e mensagem apropriados. Retorna ok=false se o erro não
 // for reconhecido (cabe ao chamador tratar como erro interno).
 func produtoErroParaStatus(err error) (status int, msg string, ok bool) {
+	vlog.Printf("produto_handler.go", "produtoErroParaStatus", "avaliando switch de condições")
 	switch {
 	case errors.Is(err, services.ErrProdutoNaoEncontrado):
 		return http.StatusNotFound, "produto não encontrado", true
@@ -194,12 +216,15 @@ func produtoErroParaStatus(err error) (status int, msg string, ok bool) {
 // Retorna: 201 com o produto criado.
 // Acesso comum.
 func (h *ProdutoHandler) CreateProduto(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("produto_handler.go", "ProdutoHandler.CreateProduto", "declarando variável req")
 	var req CreateProdutoRequest
+	vlog.Printf("produto_handler.go", "ProdutoHandler.CreateProduto", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.CreateProduto", "montando services.ProdutoInput em input")
 	input := services.ProdutoInput{
 		SKU:            req.SKU,
 		Descricao:      req.Descricao,
@@ -212,8 +237,11 @@ func (h *ProdutoHandler) CreateProduto(w http.ResponseWriter, r *http.Request) {
 		DataLancamento: req.DataLancamento,
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.CreateProduto", "chamando h.svc.CreateProduto e atribuindo resultado a produto, err")
 	produto, err := h.svc.CreateProduto(r.Context(), h.db, input)
+	vlog.Printf("produto_handler.go", "ProdutoHandler.CreateProduto", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("produto_handler.go", "ProdutoHandler.CreateProduto", "chamando produtoErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := produtoErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -223,6 +251,7 @@ func (h *ProdutoHandler) CreateProduto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.CreateProduto", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[produtos] criado: id=%d por usuario role=%s", produto.ID, role)
 	writeJSON(w, http.StatusCreated, produto, "")
@@ -235,18 +264,23 @@ func (h *ProdutoHandler) CreateProduto(w http.ResponseWriter, r *http.Request) {
 // Retorna: 200 com o produto atualizado, 404 se não existir, 400 se o payload for inválido.
 // Acesso comum.
 func (h *ProdutoHandler) UpdateProduto(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("produto_handler.go", "ProdutoHandler.UpdateProduto", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("produto_handler.go", "ProdutoHandler.UpdateProduto", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.UpdateProduto", "declarando variável req")
 	var req UpdateProdutoRequest
+	vlog.Printf("produto_handler.go", "ProdutoHandler.UpdateProduto", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.UpdateProduto", "montando services.ProdutoInput em input")
 	input := services.ProdutoInput{
 		Descricao:      req.Descricao,
 		Categoria:      req.Categoria,
@@ -258,8 +292,11 @@ func (h *ProdutoHandler) UpdateProduto(w http.ResponseWriter, r *http.Request) {
 		DataLancamento: req.DataLancamento,
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.UpdateProduto", "chamando h.svc.UpdateProduto e atribuindo resultado a produto, err")
 	produto, err := h.svc.UpdateProduto(r.Context(), h.db, id, input)
+	vlog.Printf("produto_handler.go", "ProdutoHandler.UpdateProduto", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("produto_handler.go", "ProdutoHandler.UpdateProduto", "chamando produtoErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := produtoErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -269,6 +306,7 @@ func (h *ProdutoHandler) UpdateProduto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("produto_handler.go", "ProdutoHandler.UpdateProduto", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[produtos] atualizado: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, produto, "")

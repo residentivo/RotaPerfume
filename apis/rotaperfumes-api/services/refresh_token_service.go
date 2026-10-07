@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 const (
@@ -68,6 +69,7 @@ func (e *RevokedTokenError) Error() string { return e.Unwrap().Error() }
 
 // Unwrap devolve o sentinela correspondente (Recently ou Revoked).
 func (e *RevokedTokenError) Unwrap() error {
+	vlog.Printf("refresh_token_service.go", "RevokedTokenError.Unwrap", "verificando condição e.Recent")
 	if e.Recent {
 		return ErrRefreshTokenRevokedRecently
 	}
@@ -100,7 +102,9 @@ func NewRefreshTokenService() *RefreshTokenService {
 // injetado (expiração e janela de graça são calculadas a partir de now()).
 // now == nil usa time.Now.
 func NewRefreshTokenServiceWithClock(now func() time.Time) *RefreshTokenService {
+	vlog.Printf("refresh_token_service.go", "NewRefreshTokenServiceWithClock", "verificando condição now == nil")
 	if now == nil {
+		vlog.Printf("refresh_token_service.go", "NewRefreshTokenServiceWithClock", "atribuindo time.Now a now")
 		now = time.Now
 	}
 	return &RefreshTokenService{
@@ -114,9 +118,12 @@ func NewRefreshTokenServiceWithClock(now func() time.Time) *RefreshTokenService 
 // SetReuseSuppressWindow define a janela de supressão de reuso repetido
 // (SEC-12). d <= 0 mantém o padrão.
 func (s *RefreshTokenService) SetReuseSuppressWindow(d time.Duration) {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.SetReuseSuppressWindow", "verificando condição d <= 0")
 	if d <= 0 {
+		vlog.Printf("refresh_token_service.go", "RefreshTokenService.SetReuseSuppressWindow", "atribuindo RefreshReuseSuppressWindowPadrao a d")
 		d = RefreshReuseSuppressWindowPadrao
 	}
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.SetReuseSuppressWindow", "atribuindo d a s.reuseWindow")
 	s.reuseWindow = d
 }
 
@@ -124,15 +131,20 @@ func (s *RefreshTokenService) SetReuseSuppressWindow(d time.Duration) {
 // (CHORE-02). d <= 0 mantém o padrão; valores abaixo do mínimo são elevados
 // a RefreshTokenRetencaoMinima na limpeza.
 func (s *RefreshTokenService) SetRetencao(d time.Duration) {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.SetRetencao", "verificando condição d <= 0")
 	if d <= 0 {
+		vlog.Printf("refresh_token_service.go", "RefreshTokenService.SetRetencao", "atribuindo RefreshTokenRetencaoPadrao a d")
 		d = RefreshTokenRetencaoPadrao
 	}
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.SetRetencao", "atribuindo d a s.retencao")
 	s.retencao = d
 }
 
 // generateRandomToken gera um token hexadecimal aleatório.
 func generateRandomToken() (string, error) {
+	vlog.Printf("refresh_token_service.go", "generateRandomToken", "chamando make e declarando bytes")
 	bytes := make([]byte, RefreshTokenBytes)
+	vlog.Printf("refresh_token_service.go", "generateRandomToken", "chamando rand.Read e declarando _, err e verificando condição err != nil")
 	if _, err := rand.Read(bytes); err != nil {
 		return "", fmt.Errorf("generate token: %w", err)
 	}
@@ -143,14 +155,18 @@ func generateRandomToken() (string, error) {
 // O IP e UserAgent são armazenados para auditoria. Aceita Execer (*sql.DB ou
 // *sql.Tx) para ser usado dentro da transação de rotação.
 func (s *RefreshTokenService) GenerateRefreshToken(ctx context.Context, db repositories.Execer, usuarioID int64, ipOrigem, userAgent string) (string, error) {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.GenerateRefreshToken", "chamando generateRandomToken e declarando token, err")
 	token, err := generateRandomToken()
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.GenerateRefreshToken", "verificando condição err != nil")
 	if err != nil {
 		return "", err
 	}
 
 	// Hash do token para armazenamento (nunca salvar o token em texto puro).
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.GenerateRefreshToken", "chamando hashToken e declarando tokenHash")
 	tokenHash := hashToken(token)
 
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.GenerateRefreshToken", "montando &repositories.RefreshToken e declarando rt")
 	rt := &repositories.RefreshToken{
 		UsuarioID: usuarioID,
 		TokenHash: tokenHash,
@@ -159,6 +175,7 @@ func (s *RefreshTokenService) GenerateRefreshToken(ctx context.Context, db repos
 		UserAgent: userAgent,
 	}
 
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.GenerateRefreshToken", "chamando s.repo.Create e declarando err e verificando condição err != nil")
 	if err := s.repo.Create(ctx, db, rt); err != nil {
 		return "", fmt.Errorf("generate refresh token: %w", err)
 	}
@@ -173,10 +190,14 @@ func (s *RefreshTokenService) GenerateRefreshToken(ctx context.Context, db repos
 // devolve ErrRefreshTokenRevokedRecently (corrida entre abas); fora dela,
 // ErrRefreshTokenRevoked (possível reuso de token roubado).
 func (s *RefreshTokenService) ValidateRefreshToken(ctx context.Context, db *sql.DB, token string) (*repositories.RefreshToken, error) {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.ValidateRefreshToken", "chamando hashToken e declarando tokenHash")
 	tokenHash := hashToken(token)
 
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.ValidateRefreshToken", "chamando s.repo.FindByTokenHash e declarando rt, err")
 	rt, err := s.repo.FindByTokenHash(ctx, db, tokenHash)
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.ValidateRefreshToken", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("refresh_token_service.go", "RefreshTokenService.ValidateRefreshToken", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrRefreshTokenNotFound
 		}
@@ -184,11 +205,13 @@ func (s *RefreshTokenService) ValidateRefreshToken(ctx context.Context, db *sql.
 	}
 
 	// Verifica se está expirado.
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.ValidateRefreshToken", "verificando condição s.now().After(rt.ExpiresAt)")
 	if s.now().After(rt.ExpiresAt) {
 		return nil, ErrRefreshTokenExpired
 	}
 
 	// Verifica se foi revogado.
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.ValidateRefreshToken", "verificando condição rt.RevokedAt.Valid")
 	if rt.RevokedAt.Valid {
 		return nil, &RevokedTokenError{
 			TokenID:   rt.ID,
@@ -206,23 +229,30 @@ func (s *RefreshTokenService) ValidateRefreshToken(ctx context.Context, db *sql.
 // RefreshRevokeGraceWindow do relógio atual, em qualquer direção (tolera
 // pequena diferença de relógio entre a API e o banco).
 func (s *RefreshTokenService) revokedRecently(revokedAt time.Time) bool {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.revokedRecently", "chamando s.now().Sub e declarando age")
 	age := s.now().Sub(revokedAt)
 	return age >= -RefreshRevokeGraceWindow && age <= RefreshRevokeGraceWindow
 }
 
 // RevokeToken revoga um refresh token específico, gravando o motivo (SEC-07).
 func (s *RefreshTokenService) RevokeToken(ctx context.Context, db *sql.DB, token string, reason repositories.RevokeReason) error {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RevokeToken", "chamando hashToken e declarando tokenHash")
 	tokenHash := hashToken(token)
 
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RevokeToken", "chamando s.repo.FindByTokenHash e declarando rt, err")
 	rt, err := s.repo.FindByTokenHash(ctx, db, tokenHash)
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RevokeToken", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("refresh_token_service.go", "RefreshTokenService.RevokeToken", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrRefreshTokenNotFound
 		}
 		return err
 	}
 
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RevokeToken", "chamando s.repo.Revoke e declarando err e verificando condição err != nil")
 	if err := s.repo.Revoke(ctx, db, rt.ID, reason); err != nil {
+		vlog.Printf("refresh_token_service.go", "RefreshTokenService.RevokeToken", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrRefreshTokenRevoked
 		}
@@ -250,12 +280,17 @@ type RefreshRotation struct {
 // ErrRefreshTokenRevoked e nada é emitido. O chamador deve sempre chamar
 // Rollback (via defer); após um Issue bem-sucedido ele é no-op.
 func (s *RefreshTokenService) BeginRotation(ctx context.Context, db *sql.DB, oldID int64) (*RefreshRotation, error) {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.BeginRotation", "chamando db.BeginTx e declarando tx, err")
 	tx, err := db.BeginTx(ctx, nil)
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.BeginRotation", "verificando condição err != nil")
 	if err != nil {
 		return nil, fmt.Errorf("begin refresh rotation: %w", err)
 	}
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.BeginRotation", "chamando s.repo.Revoke e declarando err e verificando condição err != nil")
 	if err := s.repo.Revoke(ctx, tx, oldID, repositories.RevokeReasonRotacao); err != nil {
+		vlog.Printf("refresh_token_service.go", "RefreshTokenService.BeginRotation", "chamando tx.Rollback e atribuindo a _")
 		_ = tx.Rollback()
+		vlog.Printf("refresh_token_service.go", "RefreshTokenService.BeginRotation", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			log.Printf("[refresh] rotação recusada: token já revogado id=%d", oldID)
 			return nil, ErrRefreshTokenRevoked
@@ -268,15 +303,21 @@ func (s *RefreshTokenService) BeginRotation(ctx context.Context, db *sql.DB, old
 // Issue insere o novo refresh token na mesma transação da revogação e
 // confirma (commit). Em caso de erro, a transação é desfeita.
 func (r *RefreshRotation) Issue(ctx context.Context, usuarioID int64, ipOrigem, userAgent string) (string, error) {
+	vlog.Printf("refresh_token_service.go", "RefreshRotation.Issue", "verificando condição r.done")
 	if r.done {
 		return "", errors.New("refresh rotation já finalizada")
 	}
+	vlog.Printf("refresh_token_service.go", "RefreshRotation.Issue", "chamando r.svc.GenerateRefreshToken e declarando token, err")
 	token, err := r.svc.GenerateRefreshToken(ctx, r.tx, usuarioID, ipOrigem, userAgent)
+	vlog.Printf("refresh_token_service.go", "RefreshRotation.Issue", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("refresh_token_service.go", "RefreshRotation.Issue", "chamando r.Rollback")
 		r.Rollback()
 		return "", err
 	}
+	vlog.Printf("refresh_token_service.go", "RefreshRotation.Issue", "atribuindo true a r.done")
 	r.done = true
+	vlog.Printf("refresh_token_service.go", "RefreshRotation.Issue", "chamando r.tx.Commit e declarando err e verificando condição err != nil")
 	if err := r.tx.Commit(); err != nil {
 		return "", fmt.Errorf("commit refresh rotation: %w", err)
 	}
@@ -287,16 +328,20 @@ func (r *RefreshRotation) Issue(ctx context.Context, usuarioID int64, ipOrigem, 
 // Rollback desfaz a rotação (a revogação do token antigo). É no-op se a
 // rotação já foi confirmada ou desfeita.
 func (r *RefreshRotation) Rollback() {
+	vlog.Printf("refresh_token_service.go", "RefreshRotation.Rollback", "verificando condição r.done")
 	if r.done {
 		return
 	}
+	vlog.Printf("refresh_token_service.go", "RefreshRotation.Rollback", "atribuindo true a r.done")
 	r.done = true
+	vlog.Printf("refresh_token_service.go", "RefreshRotation.Rollback", "chamando r.tx.Rollback e atribuindo a _")
 	_ = r.tx.Rollback()
 }
 
 // RevokeAllUserTokens revoga todos os refresh tokens ativos de um usuário,
 // gravando o motivo informado (SEC-07).
 func (s *RefreshTokenService) RevokeAllUserTokens(ctx context.Context, db *sql.DB, usuarioID int64, reason repositories.RevokeReason) error {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RevokeAllUserTokens", "chamando s.repo.RevokeAllByUser e declarando err e verificando condição err != nil")
 	if err := s.repo.RevokeAllByUser(ctx, db, usuarioID, reason); err != nil {
 		return err
 	}
@@ -311,12 +356,17 @@ func (s *RefreshTokenService) RevokeAllUserTokens(ctx context.Context, db *sql.D
 // gravado, usado por DesfazerReuso se o corte falhar. O relógio é sempre o
 // do Go (s.now()), truncado ao segundo como a coluna DATETIME.
 func (s *RefreshTokenService) RegistrarReuso(ctx context.Context, db *sql.DB, tokenID int64) (cortar bool, marca time.Time, err error) {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RegistrarReuso", "chamando s.now().Truncate e declarando agora")
 	agora := s.now().Truncate(time.Second)
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RegistrarReuso", "chamando agora.Add e declarando limite")
 	limite := agora.Add(-s.reuseWindow)
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RegistrarReuso", "chamando s.repo.MarcarReusoDetectado e atribuindo a cortar, err")
 	cortar, err = s.repo.MarcarReusoDetectado(ctx, db, tokenID, agora, limite)
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RegistrarReuso", "verificando condição err != nil")
 	if err != nil {
 		return false, time.Time{}, err
 	}
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.RegistrarReuso", "verificando condição !cortar")
 	if !cortar {
 		return false, time.Time{}, nil
 	}
@@ -335,13 +385,19 @@ func (s *RefreshTokenService) DesfazerReuso(ctx context.Context, db *sql.DB, tok
 // devolve o total já apagado junto com o erro. Retenção abaixo de RefreshTokenRetencaoMinima vira o mínimo,
 // garantindo que nenhum token ainda válido (expires_at >= agora) seja apagado.
 func (s *RefreshTokenService) CleanupExpired(ctx context.Context, db *sql.DB) (int64, error) {
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.CleanupExpired", "declarando retencao com s.retencao")
 	retencao := s.retencao
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.CleanupExpired", "verificando condição retencao < RefreshTokenRetencaoMinima")
 	if retencao < RefreshTokenRetencaoMinima {
+		vlog.Printf("refresh_token_service.go", "RefreshTokenService.CleanupExpired", "atribuindo RefreshTokenRetencaoMinima a retencao")
 		retencao = RefreshTokenRetencaoMinima
 	}
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.CleanupExpired", "chamando s.now().Add e declarando corte")
 	corte := s.now().Add(-retencao)
 
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.CleanupExpired", "declarando total")
 	var total int64
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.CleanupExpired", "iniciando loop enquanto ctx.Err() == nil")
 	for ctx.Err() == nil {
 		n, err := s.repo.DeleteExpired(ctx, db, corte, RefreshCleanupLote)
 		total += n
@@ -353,6 +409,8 @@ func (s *RefreshTokenService) CleanupExpired(ctx context.Context, db *sql.DB) (i
 			break
 		}
 	}
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.CleanupExpired", "loop concluído (enquanto ctx.Err() == nil)")
+	vlog.Printf("refresh_token_service.go", "RefreshTokenService.CleanupExpired", "chamando ctx.Err e declarando err e verificando condição err != nil")
 	if err := ctx.Err(); err != nil {
 		log.Printf("[refresh] cleanup: interrompido após %d tokens removidos (corte=%s): %v", total, corte.Format(time.RFC3339), err)
 		return total, err
@@ -364,6 +422,7 @@ func (s *RefreshTokenService) CleanupExpired(ctx context.Context, db *sql.DB) (i
 // hashToken aplica SHA256 no token para armazenamento.
 // Em produção, considere usar HMAC-SHA256 com segredo adicional.
 func hashToken(token string) string {
+	vlog.Printf("refresh_token_service.go", "hashToken", "chamando sha256.Sum256 e declarando sum")
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }

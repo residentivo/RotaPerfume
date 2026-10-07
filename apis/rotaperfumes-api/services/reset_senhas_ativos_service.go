@@ -9,6 +9,7 @@ import (
 
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // ErrEmailResetFalhou indica que o e-mail com a nova senha de um usuário não
@@ -63,11 +64,15 @@ func (s *ResetSenhasAtivosService) ListarAtivos(ctx context.Context, db *sql.DB)
 // falhar, devolvendo ErrEmailResetFalhou junto com os itens processados até
 // ali (o último com Status "falha_email").
 func (s *ResetSenhasAtivosService) Executar(ctx context.Context, db *sql.DB, simular bool) ([]ItemResetMassa, error) {
+	vlog.Printf("reset_senhas_ativos_service.go", "ResetSenhasAtivosService.Executar", "chamando s.ListarAtivos e declarando ativos, err")
 	ativos, err := s.ListarAtivos(ctx, db)
+	vlog.Printf("reset_senhas_ativos_service.go", "ResetSenhasAtivosService.Executar", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("reset_senhas_ativos_service.go", "ResetSenhasAtivosService.Executar", "chamando make e declarando itens")
 	itens := make([]ItemResetMassa, 0, len(ativos))
+	vlog.Printf("reset_senhas_ativos_service.go", "ResetSenhasAtivosService.Executar", "iniciando loop range sobre ativos")
 	for _, u := range ativos {
 		item := ItemResetMassa{ID: u.ID, Email: u.Email, Role: u.Role, Status: "simulado"}
 		if simular {
@@ -96,5 +101,6 @@ func (s *ResetSenhasAtivosService) Executar(ctx context.Context, db *sql.DB, sim
 		item.Status = "resetado"
 		itens = append(itens, item)
 	}
+	vlog.Printf("reset_senhas_ativos_service.go", "ResetSenhasAtivosService.Executar", "loop range concluído sobre ativos: %d itens", len(ativos))
 	return itens, nil
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
+import { vlog } from "@/lib/vlog";
 
 type AlertVariant = "error" | "success" | "info" | "warning";
 
@@ -79,6 +80,7 @@ export function Alert({
   onClose,
   className = "",
 }: AlertProps) {
+  vlog("Alert.tsx", "Alert", "resolvendo estilos da variante:", variant);
   const styles = variantStyles[variant];
   return (
     <div

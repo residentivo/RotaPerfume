@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 const (
@@ -37,6 +38,7 @@ func NewSenhaHistoricoService() *SenhaHistoricoService {
 // resetadoPorID é o ID do admin que resetou (nil se foi o próprio usuário).
 // tipo é "usuario", "admin", "primeiro_acesso" ou "esquecimento".
 func (s *SenhaHistoricoService) Registrar(ctx context.Context, db *sql.DB, usuarioID int64, resetadoPorID *int64, senhaHashAnterior, ipOrigem, userAgent, tipo string) error {
+	vlog.Printf("senha_historico_service.go", "SenhaHistoricoService.Registrar", "montando &repositories.SenhaHistorico e declarando h")
 	h := &repositories.SenhaHistorico{
 		UsuarioID:         usuarioID,
 		SenhaHashAnterior: senhaHashAnterior,
@@ -44,11 +46,15 @@ func (s *SenhaHistoricoService) Registrar(ctx context.Context, db *sql.DB, usuar
 		UserAgent:         userAgent,
 		TipoReset:         tipo,
 	}
+	vlog.Printf("senha_historico_service.go", "SenhaHistoricoService.Registrar", "verificando condição resetadoPorID != nil")
 	if resetadoPorID != nil {
+		vlog.Printf("senha_historico_service.go", "SenhaHistoricoService.Registrar", "atribuindo true a h.ResetadoPorID.Valid")
 		h.ResetadoPorID.Valid = true
+		vlog.Printf("senha_historico_service.go", "SenhaHistoricoService.Registrar", "atribuindo *resetadoPorID a h.ResetadoPorID.Int64")
 		h.ResetadoPorID.Int64 = *resetadoPorID
 	}
 
+	vlog.Printf("senha_historico_service.go", "SenhaHistoricoService.Registrar", "chamando s.repo.Create e declarando err e verificando condição err != nil")
 	if err := s.repo.Create(ctx, db, h); err != nil {
 		log.Printf("[senha-historico] Registrar: %v", err)
 		return fmt.Errorf("registrar histórico de senha: %w", err)

@@ -47,6 +47,7 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/shared/cmdutil"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Tag prefixa os logs e as mensagens de erro do importador.
@@ -78,34 +79,45 @@ type Options struct {
 // open (só se não for dry-run) e faz o upsert. Erros fatais são devolvidos
 // sem o prefixo Tag.
 func Run(opts Options, open cmdutil.Opener) error {
+	vlog.Printf("estoque.go", "Run", "declarando csvPath, err com resultado de ResolveCSVPath()")
 	csvPath, err := ResolveCSVPath(opts.CSVFlag)
+	vlog.Printf("estoque.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
 	log.Printf("importestoque: lendo CSV de %s", csvPath)
 
+	vlog.Printf("estoque.go", "Run", "declarando rows, parseErrs, err com resultado de ReadCSVFile()")
 	rows, parseErrs, err := ReadCSVFile(csvPath)
+	vlog.Printf("estoque.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("falha ao ler CSV: %w", err)
 	}
 	log.Printf("importestoque: %d linhas válidas lidas, %d linhas com erro de parsing", len(rows), parseErrs)
 
+	vlog.Printf("estoque.go", "Run", "verificando se opts.DryRun")
 	if opts.DryRun {
 		log.Printf("importestoque: --dry-run informado, nada foi gravado no banco")
 		return nil
 	}
 
+	vlog.Printf("estoque.go", "Run", "declarando db, err com resultado de open()")
 	db, err := open()
+	vlog.Printf("estoque.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("estoque.go", "Run", "agendando defer de db.Close()")
 	defer db.Close()
 
+	vlog.Printf("estoque.go", "Run", "chamando db.Ping() e verificando se err != nil")
 	if err := db.Ping(); err != nil {
 		return fmt.Errorf("ping no banco falhou: %w", err)
 	}
 
+	vlog.Printf("estoque.go", "Run", "declarando inserted, updated, failed, err com resultado de UpsertAll()")
 	inserted, updated, failed, err := UpsertAll(db, rows)
+	vlog.Printf("estoque.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
@@ -118,13 +130,17 @@ func Run(opts Options, open cmdutil.Opener) error {
 // ResolveCSVPath decide o caminho final do CSV, na ordem:
 // flag -csv > env ESTOQUE_CSV_PATH > default (dados/erp/estoque.csv na raiz do projeto).
 func ResolveCSVPath(flagValue string) (string, error) {
+	vlog.Printf("estoque.go", "ResolveCSVPath", "verificando condição do if")
 	if flagValue != "" {
 		return flagValue, nil
 	}
+	vlog.Printf("estoque.go", "ResolveCSVPath", "chamando os.Getenv() e verificando condição do if")
 	if v := os.Getenv(EnvCSVPath); v != "" {
 		return v, nil
 	}
+	vlog.Printf("estoque.go", "ResolveCSVPath", "declarando root, err com resultado de cmdutil.FindProjectRoot()")
 	root, err := cmdutil.FindProjectRoot()
+	vlog.Printf("estoque.go", "ResolveCSVPath", "verificando se err != nil")
 	if err != nil {
 		return "", fmt.Errorf("não foi possível localizar a raiz do projeto: %w", err)
 	}
@@ -133,10 +149,13 @@ func ResolveCSVPath(flagValue string) (string, error) {
 
 // ReadCSVFile abre o arquivo em path e delega para ReadCSV.
 func ReadCSVFile(path string) (rows []Row, parseErrs int, err error) {
+	vlog.Printf("estoque.go", "ReadCSVFile", "declarando f, err com resultado de os.Open()")
 	f, err := os.Open(path)
+	vlog.Printf("estoque.go", "ReadCSVFile", "verificando se err != nil")
 	if err != nil {
 		return nil, 0, fmt.Errorf("abrindo arquivo: %w", err)
 	}
+	vlog.Printf("estoque.go", "ReadCSVFile", "agendando defer de f.Close()")
 	defer f.Close()
 	return ReadCSV(f)
 }
@@ -144,15 +163,20 @@ func ReadCSVFile(path string) (rows []Row, parseErrs int, err error) {
 // ReadCSV lê e normaliza o CSV (com cabeçalho). Linhas malformadas são
 // contadas em parseErrs e puladas (não abortam a importação inteira).
 func ReadCSV(rd io.Reader) (rows []Row, parseErrs int, err error) {
+	vlog.Printf("estoque.go", "ReadCSV", "declarando r com resultado de csv.NewReader()")
 	r := csv.NewReader(rd)
+	vlog.Printf("estoque.go", "ReadCSV", "atribuindo a r.FieldsPerRecord o valor de valor literal")
 	r.FieldsPerRecord = 4
 
 	// Descarta o cabeçalho.
+	vlog.Printf("estoque.go", "ReadCSV", "chamando r.Read() e verificando se err != nil")
 	if _, err := r.Read(); err != nil {
 		return nil, 0, fmt.Errorf("lendo cabeçalho: %w", err)
 	}
 
+	vlog.Printf("estoque.go", "ReadCSV", "declarando lineNum com valor literal")
 	lineNum := 1
+	vlog.Printf("estoque.go", "ReadCSV", "iniciando loop for sem condição (até break)")
 	for {
 		record, err := r.Read()
 		if err == io.EOF {
@@ -173,6 +197,7 @@ func ReadCSV(rd io.Reader) (rows []Row, parseErrs int, err error) {
 		}
 		rows = append(rows, row)
 	}
+	vlog.Printf("estoque.go", "ReadCSV", "loop concluído; linhas válidas: %d, erros de parsing: %d", len(rows), parseErrs)
 	return rows, parseErrs, nil
 }
 
@@ -224,6 +249,7 @@ func ParseRuptura(raw string) bool {
 // mesmo que uma baixa por faturamento tenha gravado esse par
 // (data_snapshot, sku) antes. Só devolve err se o prepare falhar.
 func UpsertAll(db cmdutil.DB, rows []Row) (inserted, updated, failed int, err error) {
+	vlog.Printf("estoque.go", "UpsertAll", "declarando constante query")
 	const query = `
 		INSERT INTO estoque
 			(data_snapshot, sku, saldo, ruptura)
@@ -234,12 +260,16 @@ func UpsertAll(db cmdutil.DB, rows []Row) (inserted, updated, failed int, err er
 			ruptura = VALUES(ruptura)
 	`
 
+	vlog.Printf("estoque.go", "UpsertAll", "declarando stmt, err com resultado de db.Prepare()")
 	stmt, err := db.Prepare(query)
+	vlog.Printf("estoque.go", "UpsertAll", "verificando se err != nil")
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("prepare falhou: %w", err)
 	}
+	vlog.Printf("estoque.go", "UpsertAll", "agendando defer de stmt.Close()")
 	defer stmt.Close()
 
+	vlog.Printf("estoque.go", "UpsertAll", "iniciando loop range sobre rows")
 	for _, row := range rows {
 		result, err := stmt.Exec(
 			row.DataSnapshot.Format(dataSnapshotLayout), row.SKU, row.Saldo, row.Ruptura,
@@ -265,5 +295,6 @@ func UpsertAll(db cmdutil.DB, rows []Row) (inserted, updated, failed int, err er
 			updated++
 		}
 	}
+	vlog.Printf("estoque.go", "UpsertAll", "loop concluído; itens: %d", len(rows))
 	return inserted, updated, failed, nil
 }

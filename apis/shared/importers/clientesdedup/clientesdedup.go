@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/rotaperfumes/shared/cnpj"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // EnvCSVPath é a variável de ambiente que sobrescreve o caminho do CSV de
@@ -61,8 +62,11 @@ func NormalizarCNPJ(raw string) (normalizado string, ok bool) {
 // cópias → sobrevivente. CNPJ vazio ou fora do formato (após normalizar) é
 // ignorado.
 func Calcular(regs []Registro) Unificacao {
+	vlog.Printf("clientesdedup.go", "Calcular", "declarando primeiro com resultado de make()")
 	primeiro := make(map[string]int64, len(regs))
+	vlog.Printf("clientesdedup.go", "Calcular", "declarando u com literal Unificacao")
 	u := Unificacao{}
+	vlog.Printf("clientesdedup.go", "Calcular", "iniciando loop range sobre regs")
 	for _, r := range regs {
 		doc, ok := NormalizarCNPJ(r.CNPJ)
 		if !ok {
@@ -77,11 +81,13 @@ func Calcular(regs []Registro) Unificacao {
 			u[r.ClienteID] = sobrevivente
 		}
 	}
+	vlog.Printf("clientesdedup.go", "Calcular", "loop concluído; itens: %d", len(regs))
 	return u
 }
 
 // Canonico devolve o id sobrevivente de clienteID (ele mesmo se não for cópia).
 func (u Unificacao) Canonico(clienteID int64) int64 {
+	vlog.Printf("clientesdedup.go", "Unificacao.Canonico", "executando inicialização e verificando se ok")
 	if s, ok := u[clienteID]; ok {
 		return s
 	}
@@ -93,13 +99,16 @@ func (u Unificacao) Canonico(clienteID int64) int64 {
 // que o sobrevivente exista no banco. Retorna quantas cópias foram
 // redirecionadas.
 func (u Unificacao) AplicarAoLookup(lookup map[int64]int64) int {
+	vlog.Printf("clientesdedup.go", "Unificacao.AplicarAoLookup", "declarando n com valor literal")
 	n := 0
+	vlog.Printf("clientesdedup.go", "Unificacao.AplicarAoLookup", "iniciando loop range sobre u")
 	for copia, sobrevivente := range u {
 		if id, ok := lookup[sobrevivente]; ok {
 			lookup[copia] = id
 			n++
 		}
 	}
+	vlog.Printf("clientesdedup.go", "Unificacao.AplicarAoLookup", "loop concluído; itens: %d", len(u))
 	return n
 }
 
@@ -109,12 +118,16 @@ func (u Unificacao) AplicarAoLookup(lookup map[int64]int64) int {
 // aviso: o importador segue sem unificação (as cópias ficam sem cliente no
 // lookup e são contadas como erro, como antes). Devolve a unificação lida.
 func Redirecionar(tag, projectRoot string, lookup map[int64]int64) Unificacao {
+	vlog.Printf("clientesdedup.go", "Redirecionar", "declarando path com resultado de CaminhoCSV()")
 	path := CaminhoCSV(projectRoot)
+	vlog.Printf("clientesdedup.go", "Redirecionar", "declarando u, err com resultado de CarregarDoCSV()")
 	u, err := CarregarDoCSV(path)
+	vlog.Printf("clientesdedup.go", "Redirecionar", "verificando se err != nil")
 	if err != nil {
 		log.Printf("%s: aviso: unificação de CNPJ duplicado não aplicada: %v", tag, err)
 		return Unificacao{}
 	}
+	vlog.Printf("clientesdedup.go", "Redirecionar", "declarando n com resultado de u.AplicarAoLookup()")
 	n := u.AplicarAoLookup(lookup)
 	log.Printf("%s: %d cliente_id(s) de CNPJ duplicado redirecionados para o cliente sobrevivente (%d cópias no CSV de clientes)",
 		tag, n, len(u))
@@ -124,6 +137,7 @@ func Redirecionar(tag, projectRoot string, lookup map[int64]int64) Unificacao {
 // CaminhoCSV resolve o caminho do CSV de clientes: env CLIENTES_CSV_PATH ou
 // <raiz do projeto>/dados/crm/clientes.csv.
 func CaminhoCSV(projectRoot string) string {
+	vlog.Printf("clientesdedup.go", "CaminhoCSV", "chamando os.Getenv() e verificando condição do if")
 	if v := os.Getenv(EnvCSVPath); v != "" {
 		return v
 	}
@@ -135,10 +149,13 @@ func CaminhoCSV(projectRoot string) string {
 // formato (ver NormalizarCNPJ) são ignoradas (o importclientes também as
 // descarta).
 func CarregarDoCSV(path string) (Unificacao, error) {
+	vlog.Printf("clientesdedup.go", "CarregarDoCSV", "declarando f, err com resultado de os.Open()")
 	f, err := os.Open(path)
+	vlog.Printf("clientesdedup.go", "CarregarDoCSV", "verificando se err != nil")
 	if err != nil {
 		return nil, fmt.Errorf("clientesdedup: abrindo %s: %w", path, err)
 	}
+	vlog.Printf("clientesdedup.go", "CarregarDoCSV", "agendando defer de f.Close()")
 	defer f.Close()
 	return LerRegistros(f)
 }
@@ -146,12 +163,17 @@ func CarregarDoCSV(path string) (Unificacao, error) {
 // LerRegistros lê o CSV de clientes de rd (cabeçalho + linhas) e calcula a
 // unificação. Mesmas regras de CarregarDoCSV, sem abrir arquivo.
 func LerRegistros(rd io.Reader) (Unificacao, error) {
+	vlog.Printf("clientesdedup.go", "LerRegistros", "declarando r com resultado de csv.NewReader()")
 	r := csv.NewReader(rd)
+	vlog.Printf("clientesdedup.go", "LerRegistros", "atribuindo a r.FieldsPerRecord o valor de expressão -1")
 	r.FieldsPerRecord = -1
+	vlog.Printf("clientesdedup.go", "LerRegistros", "chamando r.Read() e verificando se err != nil")
 	if _, err := r.Read(); err != nil {
 		return nil, fmt.Errorf("clientesdedup: lendo cabeçalho: %w", err)
 	}
+	vlog.Printf("clientesdedup.go", "LerRegistros", "declarando variável regs")
 	var regs []Registro
+	vlog.Printf("clientesdedup.go", "LerRegistros", "iniciando loop for sem condição (até break)")
 	for {
 		rec, err := r.Read()
 		if errors.Is(err, io.EOF) {
@@ -170,5 +192,6 @@ func LerRegistros(rd io.Reader) (Unificacao, error) {
 		}
 		regs = append(regs, Registro{ClienteID: id, CNPJ: doc})
 	}
+	vlog.Printf("clientesdedup.go", "LerRegistros", "loop concluído; registros lidos: %d", len(regs))
 	return Calcular(regs), nil
 }

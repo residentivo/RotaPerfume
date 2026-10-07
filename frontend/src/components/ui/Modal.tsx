@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect } from "react";
+import { vlog } from "@/lib/vlog";
 
 interface ModalProps {
   open: boolean;
@@ -18,15 +19,21 @@ const sizeClasses: Record<string, string> = {
 
 export function Modal({ open, onClose, title, children, size = "md" }: ModalProps) {
   // Fechar com ESC
+  vlog("Modal.tsx", "Modal", "registrando efeito de fechar com ESC");
   useEffect(() => {
+    vlog("Modal.tsx", "Modal.useEffect", "verificando se o modal está aberto:", open);
     if (!open) return;
+    vlog("Modal.tsx", "Modal.useEffect", "criando handler de teclado");
     const handler = (e: KeyboardEvent) => {
+      vlog("Modal.tsx", "Modal.handler", "verificando se a tecla é Escape");
       if (e.key === "Escape") onClose();
     };
+    vlog("Modal.tsx", "Modal.useEffect", "registrando listener de keydown");
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
+  vlog("Modal.tsx", "Modal", "verificando se deve renderizar o modal:", open);
   if (!open) return null;
 
   return (

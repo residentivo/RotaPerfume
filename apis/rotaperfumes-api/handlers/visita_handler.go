@@ -13,6 +13,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // VisitaHandler trata as rotas /api/visitas/*.
@@ -40,21 +41,26 @@ func NewVisitaHandler(db *sql.DB, cfg *config.Config) *VisitaHandler {
 // Acesso comum: usuário role=normal só enxerga visitas da própria carteira
 // (vendedor_id da query é ignorado e forçado ao vendedor vinculado).
 func (h *VisitaHandler) ListVisitas(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "chamando services.ParsePagination e atribuindo resultado a page, limit")
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[visitas] ListVisitas", err)
 		return
 	}
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSONWithPagination(w, http.StatusOK, []any{}, page, limit, 0, 0)
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "montando services.VisitaFiltro em filtro")
 	filtro := services.VisitaFiltro{
 		ClienteID:     parseInt64Query(r.URL.Query().Get("cliente_id")),
 		VendedorID:    parseInt64Query(r.URL.Query().Get("vendedor_id")),
@@ -65,21 +71,28 @@ func (h *VisitaHandler) ListVisitas(w http.ResponseWriter, r *http.Request) {
 		OrderBy:       strings.TrimSpace(r.URL.Query().Get("order_by")),
 		OrderDir:      parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "atribuindo filtro.VendedorID = scope.VendedorID")
 		// Usuário role=normal: força o filtro à própria carteira, ignorando
 		// qualquer vendedor_id vindo da query string (evita bypass via URL).
 		filtro.VendedorID = scope.VendedorID
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "chamando h.svc.ListVisitas e atribuindo resultado a visitas, total, err")
 	visitas, total, err := h.svc.ListVisitas(r.Context(), h.db, page, limit, filtro)
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[visitas] ListVisitas: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "definindo pages := total / limit")
 	pages := total / limit
+	vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "verificando se total%%limit != 0")
 	if total%limit != 0 {
+		vlog.Printf("visita_handler.go", "VisitaHandler.ListVisitas", "incrementando pages")
 		pages++
 	}
 
@@ -93,24 +106,32 @@ func (h *VisitaHandler) ListVisitas(w http.ResponseWriter, r *http.Request) {
 // (404 — não 403 — se pertencer a outro vendedor, para não permitir
 // enumeração de IDs).
 func (h *VisitaHandler) GetVisita(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("visita_handler.go", "VisitaHandler.GetVisita", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("visita_handler.go", "VisitaHandler.GetVisita", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.GetVisita", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("visita_handler.go", "VisitaHandler.GetVisita", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[visitas] GetVisita", err)
 		return
 	}
+	vlog.Printf("visita_handler.go", "VisitaHandler.GetVisita", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.GetVisita", "chamando h.svc.GetVisitaByID e atribuindo resultado a visita, err")
 	visita, err := h.svc.GetVisitaByID(r.Context(), h.db, id)
+	vlog.Printf("visita_handler.go", "VisitaHandler.GetVisita", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("visita_handler.go", "VisitaHandler.GetVisita", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrVisitaNaoEncontrada) {
 			writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 			return
@@ -120,6 +141,7 @@ func (h *VisitaHandler) GetVisita(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.GetVisita", "verificando se scope.Restrito && !scope.PermiteVendedor(...)")
 	if scope.Restrito && !scope.PermiteVendedor(visita.VendedorID) {
 		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 		return
@@ -154,6 +176,7 @@ type UpdateVisitaRequest struct {
 // para o status HTTP e mensagem apropriados. Retorna ok=false se o erro não
 // for reconhecido (cabe ao chamador tratar como erro interno).
 func visitaErroParaStatus(err error) (status int, msg string, ok bool) {
+	vlog.Printf("visita_handler.go", "visitaErroParaStatus", "avaliando switch de condições")
 	switch {
 	case errors.Is(err, services.ErrVisitaNaoEncontrada):
 		return http.StatusNotFound, "visita não encontrada", true
@@ -181,41 +204,53 @@ func visitaErroParaStatus(err error) (status int, msg string, ok bool) {
 // carteira (vendedor_id do payload é ignorado e forçado ao vendedor
 // vinculado; cliente_id deve pertencer à carteira ativa desse vendedor).
 func (h *VisitaHandler) CreateVisita(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[visitas] CreateVisita", err)
 		return
 	}
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusForbidden, nil, "usuário sem vendedor vinculado")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "declarando variável req")
 	var req CreateVisitaRequest
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "atribuindo req.VendedorID = scope.VendedorID")
 		// Usuário role=normal: nunca confia no vendedor_id do payload — força
 		// à própria carteira (evita forjar registro para outro vendedor).
 		req.VendedorID = scope.VendedorID
 
+		vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "chamando clienteNaCarteiraDoVendedor e atribuindo resultado a pertence, err")
 		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "verificando se err != nil")
 		if err != nil {
 			log.Printf("[visitas] CreateVisita checar carteira: %v", err)
 			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 			return
 		}
+		vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "verificando se !pertence")
 		if !pertence {
 			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
 			return
 		}
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "montando services.VisitaInput em input")
 	input := services.VisitaInput{
 		ClienteID:  req.ClienteID,
 		VendedorID: req.VendedorID,
@@ -224,8 +259,11 @@ func (h *VisitaHandler) CreateVisita(w http.ResponseWriter, r *http.Request) {
 		DuracaoMin: req.DuracaoMin,
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "chamando h.svc.CreateVisita e atribuindo resultado a visita, err")
 	visita, err := h.svc.CreateVisita(r.Context(), h.db, input)
+	vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("visita_handler.go", "VisitaHandler.CreateVisita", "chamando visitaErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := visitaErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -248,24 +286,32 @@ func (h *VisitaHandler) CreateVisita(w http.ResponseWriter, r *http.Request) {
 // carteira (404 se pertencer a outro vendedor) e não pode reatribuir
 // vendedor_id para outro vendedor.
 func (h *VisitaHandler) UpdateVisita(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[visitas] UpdateVisita", err)
 		return
 	}
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "chamando h.svc.GetVisitaByID e atribuindo resultado a atual, err")
 	atual, err := h.svc.GetVisitaByID(r.Context(), h.db, id)
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrVisitaNaoEncontrada) {
 			writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 			return
@@ -274,34 +320,43 @@ func (h *VisitaHandler) UpdateVisita(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se scope.Restrito && !scope.PermiteVendedor(...)")
 	if scope.Restrito && !scope.PermiteVendedor(atual.VendedorID) {
 		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "declarando variável req")
 	var req UpdateVisitaRequest
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "atribuindo req.VendedorID = scope.VendedorID")
 		// Usuário role=normal: nunca confia no vendedor_id do payload — força
 		// à própria carteira (evita reatribuir o registro a outro vendedor).
 		req.VendedorID = scope.VendedorID
 
+		vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "chamando clienteNaCarteiraDoVendedor e atribuindo resultado a pertence, err")
 		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se err != nil")
 		if err != nil {
 			log.Printf("[visitas] UpdateVisita checar carteira: %v", err)
 			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 			return
 		}
+		vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se !pertence")
 		if !pertence {
 			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
 			return
 		}
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "montando services.VisitaInput em input")
 	input := services.VisitaInput{
 		ClienteID:  req.ClienteID,
 		VendedorID: req.VendedorID,
@@ -310,8 +365,11 @@ func (h *VisitaHandler) UpdateVisita(w http.ResponseWriter, r *http.Request) {
 		DuracaoMin: req.DuracaoMin,
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "chamando h.svc.UpdateVisita e atribuindo resultado a visita, err")
 	visita, err := h.svc.UpdateVisita(r.Context(), h.db, id, input)
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "chamando visitaErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := visitaErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -321,6 +379,7 @@ func (h *VisitaHandler) UpdateVisita(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.UpdateVisita", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[visitas] atualizada: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, visita, "")
@@ -335,24 +394,32 @@ func (h *VisitaHandler) UpdateVisita(w http.ResponseWriter, r *http.Request) {
 // Acesso comum: usuário role=normal só pode excluir visita da própria
 // carteira (404 — não 403 — se pertencer a outro vendedor).
 func (h *VisitaHandler) DeleteVisita(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[visitas] DeleteVisita", err)
 		return
 	}
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "chamando h.svc.GetVisitaByID e atribuindo resultado a atual, err")
 	atual, err := h.svc.GetVisitaByID(r.Context(), h.db, id)
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrVisitaNaoEncontrada) {
 			writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 			return
@@ -361,12 +428,15 @@ func (h *VisitaHandler) DeleteVisita(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "verificando se scope.Restrito && !scope.PermiteVendedor(...)")
 	if scope.Restrito && !scope.PermiteVendedor(atual.VendedorID) {
 		writeJSON(w, http.StatusNotFound, nil, "visita não encontrada")
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "chamando h.svc.DeleteVisita e atribuindo resultado a err e verificando se err != nil")
 	if err := h.svc.DeleteVisita(r.Context(), h.db, id); err != nil {
+		vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "chamando visitaErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := visitaErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -376,6 +446,7 @@ func (h *VisitaHandler) DeleteVisita(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("visita_handler.go", "VisitaHandler.DeleteVisita", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[visitas] excluída: id=%d por usuario role=%s", id, role)
 	writeNoContent(w)

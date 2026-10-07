@@ -55,6 +55,7 @@ import (
 
 	"github.com/rotaperfumes/shared/cmdutil"
 	"github.com/rotaperfumes/shared/importers/clientesdedup"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Tag prefixa os logs e as mensagens de erro do importador.
@@ -91,39 +92,52 @@ type Options struct {
 // duplicados (NEG-01), abre o banco via open (só se não for dry-run) e faz o
 // upsert. Erros fatais são devolvidos sem o prefixo Tag.
 func Run(opts Options, open cmdutil.Opener) error {
+	vlog.Printf("clientes.go", "Run", "declarando csvPath, err com resultado de ResolveCSVPath()")
 	csvPath, err := ResolveCSVPath(opts.CSVFlag)
+	vlog.Printf("clientes.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
 	log.Printf("importclientes: lendo CSV de %s", csvPath)
 
+	vlog.Printf("clientes.go", "Run", "declarando rows, parseErrs, err com resultado de ReadCSVFile()")
 	rows, parseErrs, err := ReadCSVFile(csvPath)
+	vlog.Printf("clientes.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("falha ao ler CSV: %w", err)
 	}
 	log.Printf("importclientes: %d linhas válidas lidas, %d linhas com erro de parsing", len(rows), parseErrs)
 
+	vlog.Printf("clientes.go", "Run", "declarando lidas com resultado de len()")
 	lidas := len(rows)
+	vlog.Printf("clientes.go", "Run", "declarando rows, unificadas com resultado de UnificarPorCNPJ()")
 	rows, unificadas := UnificarPorCNPJ(rows)
 	log.Printf("importclientes: %d linhas unificadas por CNPJ duplicado (mantida a 1ª ocorrência de cada CNPJ); %d clientes a gravar",
 		unificadas, len(rows))
 
+	vlog.Printf("clientes.go", "Run", "verificando se opts.DryRun")
 	if opts.DryRun {
 		log.Printf("importclientes: --dry-run informado, nada foi gravado no banco")
 		return nil
 	}
 
+	vlog.Printf("clientes.go", "Run", "declarando db, err com resultado de open()")
 	db, err := open()
+	vlog.Printf("clientes.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("clientes.go", "Run", "agendando defer de db.Close()")
 	defer db.Close()
 
+	vlog.Printf("clientes.go", "Run", "chamando db.Ping() e verificando se err != nil")
 	if err := db.Ping(); err != nil {
 		return fmt.Errorf("ping no banco falhou: %w", err)
 	}
 
+	vlog.Printf("clientes.go", "Run", "declarando res, err com resultado de UpsertAll()")
 	res, err := UpsertAll(db, rows)
+	vlog.Printf("clientes.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
@@ -139,13 +153,19 @@ func Run(opts Options, open cmdutil.Opener) error {
 // pedidos, oportunidades, visitas) redirecionam o cliente_id das cópias para
 // o sobrevivente via clientesdedup. O DV do CNPJ não é validado aqui.
 func UnificarPorCNPJ(rows []Row) (mantidas []Row, unificadas int) {
+	vlog.Printf("clientes.go", "UnificarPorCNPJ", "declarando regs com resultado de make()")
 	regs := make([]clientesdedup.Registro, len(rows))
+	vlog.Printf("clientes.go", "UnificarPorCNPJ", "iniciando loop range sobre rows")
 	for i, r := range rows {
 		regs[i] = clientesdedup.Registro{ClienteID: r.ClienteIDOrigem, CNPJ: r.CNPJ}
 	}
+	vlog.Printf("clientes.go", "UnificarPorCNPJ", "loop concluído; itens: %d", len(rows))
+	vlog.Printf("clientes.go", "UnificarPorCNPJ", "declarando copias com resultado de clientesdedup.Calcular()")
 	copias := clientesdedup.Calcular(regs)
 
+	vlog.Printf("clientes.go", "UnificarPorCNPJ", "atribuindo a mantidas o valor de resultado de make()")
 	mantidas = make([]Row, 0, len(rows))
+	vlog.Printf("clientes.go", "UnificarPorCNPJ", "iniciando loop range sobre rows")
 	for _, r := range rows {
 		if sobrevivente, ehCopia := copias[r.ClienteIDOrigem]; ehCopia {
 			log.Printf("importclientes: cliente_id=%d unificado em cliente_id=%d (CNPJ duplicado)", r.ClienteIDOrigem, sobrevivente)
@@ -154,6 +174,7 @@ func UnificarPorCNPJ(rows []Row) (mantidas []Row, unificadas int) {
 		}
 		mantidas = append(mantidas, r)
 	}
+	vlog.Printf("clientes.go", "UnificarPorCNPJ", "loop concluído; itens: %d", len(rows))
 	return mantidas, unificadas
 }
 
@@ -167,13 +188,17 @@ func IsDuplicateCNPJ(err error) bool {
 // ResolveCSVPath decide o caminho final do CSV, na ordem:
 // flag -csv > env CLIENTES_CSV_PATH > default (dados/crm/clientes.csv na raiz do projeto).
 func ResolveCSVPath(flagValue string) (string, error) {
+	vlog.Printf("clientes.go", "ResolveCSVPath", "verificando condição do if")
 	if flagValue != "" {
 		return flagValue, nil
 	}
+	vlog.Printf("clientes.go", "ResolveCSVPath", "chamando os.Getenv() e verificando condição do if")
 	if v := os.Getenv(EnvCSVPath); v != "" {
 		return v, nil
 	}
+	vlog.Printf("clientes.go", "ResolveCSVPath", "declarando root, err com resultado de cmdutil.FindProjectRoot()")
 	root, err := cmdutil.FindProjectRoot()
+	vlog.Printf("clientes.go", "ResolveCSVPath", "verificando se err != nil")
 	if err != nil {
 		return "", fmt.Errorf("não foi possível localizar a raiz do projeto: %w", err)
 	}
@@ -182,10 +207,13 @@ func ResolveCSVPath(flagValue string) (string, error) {
 
 // ReadCSVFile abre o arquivo em path e delega para ReadCSV.
 func ReadCSVFile(path string) (rows []Row, parseErrs int, err error) {
+	vlog.Printf("clientes.go", "ReadCSVFile", "declarando f, err com resultado de os.Open()")
 	f, err := os.Open(path)
+	vlog.Printf("clientes.go", "ReadCSVFile", "verificando se err != nil")
 	if err != nil {
 		return nil, 0, fmt.Errorf("abrindo arquivo: %w", err)
 	}
+	vlog.Printf("clientes.go", "ReadCSVFile", "agendando defer de f.Close()")
 	defer f.Close()
 	return ReadCSV(f)
 }
@@ -193,15 +221,20 @@ func ReadCSVFile(path string) (rows []Row, parseErrs int, err error) {
 // ReadCSV lê e normaliza o CSV (com cabeçalho). Linhas malformadas são
 // contadas em parseErrs e puladas (não abortam a importação inteira).
 func ReadCSV(rd io.Reader) (rows []Row, parseErrs int, err error) {
+	vlog.Printf("clientes.go", "ReadCSV", "declarando r com resultado de csv.NewReader()")
 	r := csv.NewReader(rd)
+	vlog.Printf("clientes.go", "ReadCSV", "atribuindo a r.FieldsPerRecord o valor de valor literal")
 	r.FieldsPerRecord = 9
 
 	// Descarta o cabeçalho.
+	vlog.Printf("clientes.go", "ReadCSV", "chamando r.Read() e verificando se err != nil")
 	if _, err := r.Read(); err != nil {
 		return nil, 0, fmt.Errorf("lendo cabeçalho: %w", err)
 	}
 
+	vlog.Printf("clientes.go", "ReadCSV", "declarando lineNum com valor literal")
 	lineNum := 1
+	vlog.Printf("clientes.go", "ReadCSV", "iniciando loop for sem condição (até break)")
 	for {
 		record, err := r.Read()
 		if err == io.EOF {
@@ -222,6 +255,7 @@ func ReadCSV(rd io.Reader) (rows []Row, parseErrs int, err error) {
 		}
 		rows = append(rows, row)
 	}
+	vlog.Printf("clientes.go", "ReadCSV", "loop concluído; linhas válidas: %d, erros de parsing: %d", len(rows), parseErrs)
 	return rows, parseErrs, nil
 }
 
@@ -320,6 +354,7 @@ type ResultadoUpsert struct {
 // índice de CNPJ, não na PK) ou falharia com 1062. O 1062 que ainda escapar
 // (ex.: escrita concorrente) também é contado como conflito, sem abortar.
 func UpsertAll(db cmdutil.DB, rows []Row) (ResultadoUpsert, error) {
+	vlog.Printf("clientes.go", "UpsertAll", "declarando constante query")
 	const query = `
 		INSERT INTO clientes
 			(cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo)
@@ -336,19 +371,26 @@ func UpsertAll(db cmdutil.DB, rows []Row) (ResultadoUpsert, error) {
 			ativo = VALUES(ativo)
 	`
 
+	vlog.Printf("clientes.go", "UpsertAll", "declarando variável res")
 	var res ResultadoUpsert
 
+	vlog.Printf("clientes.go", "UpsertAll", "declarando donos, err com resultado de LoadDonosCNPJ()")
 	donos, err := LoadDonosCNPJ(db)
+	vlog.Printf("clientes.go", "UpsertAll", "verificando se err != nil")
 	if err != nil {
 		return res, fmt.Errorf("falha ao carregar CNPJs existentes: %w", err)
 	}
 
+	vlog.Printf("clientes.go", "UpsertAll", "declarando stmt, err com resultado de db.Prepare()")
 	stmt, err := db.Prepare(query)
+	vlog.Printf("clientes.go", "UpsertAll", "verificando se err != nil")
 	if err != nil {
 		return res, fmt.Errorf("prepare falhou: %w", err)
 	}
+	vlog.Printf("clientes.go", "UpsertAll", "agendando defer de stmt.Close()")
 	defer stmt.Close()
 
+	vlog.Printf("clientes.go", "UpsertAll", "iniciando loop range sobre rows")
 	for _, row := range rows {
 		if dono, ok := donos.Dono(row.CNPJ); ok && dono != row.ClienteIDOrigem {
 			log.Printf("importclientes: cliente_id_origem=%d pulado: CNPJ já pertence a outro cliente no banco (cliente_id_origem=%d)",
@@ -387,6 +429,7 @@ func UpsertAll(db cmdutil.DB, rows []Row) (ResultadoUpsert, error) {
 			res.Updated++
 		}
 	}
+	vlog.Printf("clientes.go", "UpsertAll", "loop concluído; itens: %d", len(rows))
 	return res, nil
 }
 
@@ -420,12 +463,17 @@ func (d DonosCNPJ) Gravar(id int64, cnpj string) {
 
 // LoadDonosCNPJ carrega cnpj → cliente_id_origem de todos os clientes do banco.
 func LoadDonosCNPJ(db cmdutil.DB) (DonosCNPJ, error) {
+	vlog.Printf("clientes.go", "LoadDonosCNPJ", "declarando d com resultado de NovosDonosCNPJ()")
 	d := NovosDonosCNPJ()
+	vlog.Printf("clientes.go", "LoadDonosCNPJ", "declarando rows, err com resultado de db.Query()")
 	rows, err := db.Query("SELECT cliente_id_origem, cnpj FROM clientes")
+	vlog.Printf("clientes.go", "LoadDonosCNPJ", "verificando se err != nil")
 	if err != nil {
 		return d, err
 	}
+	vlog.Printf("clientes.go", "LoadDonosCNPJ", "agendando defer de rows.Close()")
 	defer rows.Close()
+	vlog.Printf("clientes.go", "LoadDonosCNPJ", "iniciando loop for enquanto rows.Next()")
 	for rows.Next() {
 		var id int64
 		var cnpj string
@@ -434,5 +482,6 @@ func LoadDonosCNPJ(db cmdutil.DB) (DonosCNPJ, error) {
 		}
 		d.Gravar(id, cnpj)
 	}
+	vlog.Printf("clientes.go", "LoadDonosCNPJ", "loop concluído; donos carregados: %d", len(d.porID))
 	return d, rows.Err()
 }

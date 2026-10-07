@@ -1,6 +1,7 @@
 "use client";
 
 import { SelectHTMLAttributes, forwardRef } from "react";
+import { vlog } from "@/lib/vlog";
 
 interface Option {
   value: string;
@@ -16,6 +17,7 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
   ({ label, error, options, placeholder, className = "", id, ...rest }, ref) => {
+    vlog("Select.tsx", "Select", "resolvendo id do select, id informado:", !!id);
     const selectId = id || `select-${Math.random().toString(36).slice(2, 9)}`;
     return (
       <div className="w-full">

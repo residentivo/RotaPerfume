@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"unicode"
+
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Erros de validação de força de senha. Mensagens curtas e sem detalhes
@@ -58,14 +60,18 @@ const (
 // uma mensagem curta e sem detalhes sensíveis, apta a ser repassada ao
 // cliente numa resposta 400.
 func ValidarForcaSenha(senha string) error {
+	vlog.Printf("password_policy.go", "ValidarForcaSenha", "verificando se a senha excede %d bytes (senha não logada)", senhaForteMaxBytes)
 	if len([]byte(senha)) > senhaForteMaxBytes {
 		return ErrSenhaMuitoLonga
 	}
+	vlog.Printf("password_policy.go", "ValidarForcaSenha", "verificando se a senha tem menos de %d caracteres", senhaForteMinLen)
 	if len([]rune(senha)) < senhaForteMinLen {
 		return ErrSenhaCurta
 	}
 
+	vlog.Printf("password_policy.go", "ValidarForcaSenha", "declarando flags das classes de caractere")
 	var temMinuscula, temMaiuscula, temDigito, temSimbolo bool
+	vlog.Printf("password_policy.go", "ValidarForcaSenha", "iterando caracteres para identificar as classes presentes")
 	for _, r := range senha {
 		switch {
 		case unicode.IsLower(r):
@@ -79,12 +85,15 @@ func ValidarForcaSenha(senha string) error {
 		}
 	}
 
+	vlog.Printf("password_policy.go", "ValidarForcaSenha", "inicializando contador de classes")
 	classes := 0
+	vlog.Printf("password_policy.go", "ValidarForcaSenha", "contando as classes de caractere presentes")
 	for _, classeOK := range [...]bool{temMinuscula, temMaiuscula, temDigito, temSimbolo} {
 		if classeOK {
 			classes++
 		}
 	}
+	vlog.Printf("password_policy.go", "ValidarForcaSenha", "verificando se classes=%d atinge o mínimo %d", classes, senhaForteMinClasses)
 	if classes < senhaForteMinClasses {
 		return ErrSenhaFraca
 	}

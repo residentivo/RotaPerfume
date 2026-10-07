@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 
 	"github.com/rotaperfumes/shared/cmdutil"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Tag prefixa os logs e as mensagens de erro do comando.
@@ -51,18 +52,24 @@ type Options struct {
 // Run resolve o diretório de destino, abre o banco via open e exporta todas
 // as tabelas de Exports. Erros fatais são devolvidos sem o prefixo Tag.
 func Run(opts Options, open cmdutil.Opener) error {
+	vlog.Printf("exportdados.go", "Run", "declarando outDir, err com resultado de ResolveOutDir()")
 	outDir, err := ResolveOutDir(opts.OutFlag)
+	vlog.Printf("exportdados.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
 	log.Printf("exportdados: exportando para %s", outDir)
 
+	vlog.Printf("exportdados.go", "Run", "declarando db, err com resultado de open()")
 	db, err := open()
+	vlog.Printf("exportdados.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("exportdados.go", "Run", "agendando defer de db.Close()")
 	defer db.Close()
 
+	vlog.Printf("exportdados.go", "Run", "chamando db.Ping() e verificando se err != nil")
 	if err := db.Ping(); err != nil {
 		return fmt.Errorf("ping no banco falhou: %w", err)
 	}
@@ -73,6 +80,7 @@ func Run(opts Options, open cmdutil.Opener) error {
 // ExportAll exporta cada tabela de exps para outDir/<RelPath>, parando no
 // primeiro erro.
 func ExportAll(db Querier, outDir string, exps []TableExport) error {
+	vlog.Printf("exportdados.go", "ExportAll", "iniciando loop range sobre exps")
 	for _, exp := range exps {
 		dest := filepath.Join(outDir, exp.RelPath)
 		n, err := ExportTable(db, exp, dest)
@@ -81,6 +89,7 @@ func ExportAll(db Querier, outDir string, exps []TableExport) error {
 		}
 		log.Printf("exportdados: %s — %d linhas", dest, n)
 	}
+	vlog.Printf("exportdados.go", "ExportAll", "loop concluído; itens: %d", len(exps))
 
 	log.Printf("exportdados: OK — %d arquivos exportados", len(exps))
 	return nil
@@ -192,25 +201,34 @@ var Exports = []TableExport{
 // ExportTable roda a query de um TableExport e grava o resultado em CSV,
 // criando os diretórios intermediários necessários.
 func ExportTable(db Querier, exp TableExport, destPath string) (int, error) {
+	vlog.Printf("exportdados.go", "ExportTable", "criando diretórios intermediários do destino e verificando erro")
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return 0, fmt.Errorf("criando diretório: %w", err)
 	}
 
+	vlog.Printf("exportdados.go", "ExportTable", "executando SELECT de exportação da tabela via db.Query()")
 	rows, err := db.Query(exp.Query)
+	vlog.Printf("exportdados.go", "ExportTable", "verificando se err != nil")
 	if err != nil {
 		return 0, fmt.Errorf("query: %w", err)
 	}
+	vlog.Printf("exportdados.go", "ExportTable", "agendando defer de rows.Close()")
 	defer rows.Close()
 
+	vlog.Printf("exportdados.go", "ExportTable", "obtendo colunas do resultado via rows.Columns()")
 	cols, err := rows.Columns()
+	vlog.Printf("exportdados.go", "ExportTable", "verificando se err != nil")
 	if err != nil {
 		return 0, fmt.Errorf("columns: %w", err)
 	}
 
+	vlog.Printf("exportdados.go", "ExportTable", "criando arquivo CSV de destino via os.Create()")
 	f, err := os.Create(destPath)
+	vlog.Printf("exportdados.go", "ExportTable", "verificando se err != nil")
 	if err != nil {
 		return 0, fmt.Errorf("criando arquivo: %w", err)
 	}
+	vlog.Printf("exportdados.go", "ExportTable", "agendando defer de f.Close()")
 	defer f.Close()
 
 	return WriteCSV(f, exp.Header, rows, len(cols))
@@ -220,21 +238,31 @@ func ExportTable(db Querier, exp TableExport, destPath string) (int, error) {
 // no formato CSV. Valores NULL viram string vazia. Devolve quantas linhas
 // (sem o header) foram escritas.
 func WriteCSV(w io.Writer, header []string, rows *sql.Rows, ncols int) (int, error) {
+	vlog.Printf("exportdados.go", "WriteCSV", "criando csv.Writer")
 	cw := csv.NewWriter(w)
+	vlog.Printf("exportdados.go", "WriteCSV", "agendando defer de cw.Flush()")
 	defer cw.Flush()
 
+	vlog.Printf("exportdados.go", "WriteCSV", "escrevendo cabeçalho do CSV e verificando erro")
 	if err := cw.Write(header); err != nil {
 		return 0, fmt.Errorf("escrevendo header: %w", err)
 	}
 
+	vlog.Printf("exportdados.go", "WriteCSV", "alocando buffer de valores com %d colunas", ncols)
 	values := make([]sql.NullString, ncols)
+	vlog.Printf("exportdados.go", "WriteCSV", "alocando ponteiros de scan")
 	scanArgs := make([]any, ncols)
+	vlog.Printf("exportdados.go", "WriteCSV", "iniciando loop que liga scanArgs aos valores")
 	for i := range values {
 		scanArgs[i] = &values[i]
 	}
+	vlog.Printf("exportdados.go", "WriteCSV", "loop concluído; itens: %d", len(values))
 
+	vlog.Printf("exportdados.go", "WriteCSV", "alocando registro de saída")
 	record := make([]string, ncols)
+	vlog.Printf("exportdados.go", "WriteCSV", "inicializando contador de linhas")
 	n := 0
+	vlog.Printf("exportdados.go", "WriteCSV", "iniciando loop rows.Next() (sem log por linha)")
 	for rows.Next() {
 		if err := rows.Scan(scanArgs...); err != nil {
 			return n, fmt.Errorf("scan: %w", err)
@@ -247,10 +275,13 @@ func WriteCSV(w io.Writer, header []string, rows *sql.Rows, ncols int) (int, err
 		}
 		n++
 	}
+	vlog.Printf("exportdados.go", "WriteCSV", "loop rows.Next() concluído; linhas escritas: %d", n)
+	vlog.Printf("exportdados.go", "WriteCSV", "verificando erro de iteração em rows.Err()")
 	if err := rows.Err(); err != nil {
 		return n, fmt.Errorf("iterando linhas: %w", err)
 	}
 
+	vlog.Printf("exportdados.go", "WriteCSV", "descarregando buffer do CSV via cw.Flush()")
 	cw.Flush()
 	return n, cw.Error()
 }
@@ -258,10 +289,13 @@ func WriteCSV(w io.Writer, header []string, rows *sql.Rows, ncols int) (int, err
 // ResolveOutDir decide o diretório final de export, na ordem:
 // flag -out > default (export/ na raiz do repositório).
 func ResolveOutDir(flagValue string) (string, error) {
+	vlog.Printf("exportdados.go", "ResolveOutDir", "verificando condição do if")
 	if flagValue != "" {
 		return flagValue, nil
 	}
+	vlog.Printf("exportdados.go", "ResolveOutDir", "declarando root, err com resultado de cmdutil.FindProjectRoot()")
 	root, err := cmdutil.FindProjectRoot()
+	vlog.Printf("exportdados.go", "ResolveOutDir", "verificando se err != nil")
 	if err != nil {
 		return "", fmt.Errorf("não foi possível localizar a raiz do projeto: %w", err)
 	}

@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
+import { vlog } from "@/lib/vlog";
 
 interface PaginadorProps {
   /**
@@ -20,6 +21,7 @@ interface PaginadorProps {
  * da pagina pedida, para que uma troca que falhou nao desloque a navegacao.
  */
 export function Paginador({ pagina, paginas, onIrPara }: PaginadorProps) {
+  vlog("Paginador.tsx", "Paginador", "verificando se há mais de uma página:", pagina, paginas);
   if (paginas <= 1) return null;
 
   return (

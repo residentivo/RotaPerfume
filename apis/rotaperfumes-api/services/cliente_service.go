@@ -13,6 +13,7 @@ import (
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Erros exportados para uso em handlers.
@@ -64,6 +65,7 @@ func (s *ClienteService) ListClientes(ctx context.Context, db *sql.DB, page, lim
 		log.Printf("[clientes] list page=%d limit=%d uf=%q segmento=%q ativo=%v q=%q vendedor_id=%d",
 			page, limit, filtro.UF, filtro.Segmento, filtro.Ativo, filtro.Q, filtro.VendedorID)
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.ListClientes", "montando literal repositories.ClienteFiltro e declarando repoFiltro")
 	repoFiltro := repositories.ClienteFiltro{
 		UF:         filtro.UF,
 		Segmento:   filtro.Segmento,
@@ -79,8 +81,11 @@ func (s *ClienteService) ListClientes(ctx context.Context, db *sql.DB, page, lim
 
 // GetClienteByID busca um cliente por id. Retorna ErrClienteNaoEncontrado se não existir.
 func (s *ClienteService) GetClienteByID(ctx context.Context, db *sql.DB, id int64) (*models.Cliente, error) {
+	vlog.Printf("cliente_service.go", "ClienteService.GetClienteByID", "chamando s.repo.GetByID e declarando c, err")
 	c, err := s.repo.GetByID(ctx, db, id)
+	vlog.Printf("cliente_service.go", "ClienteService.GetClienteByID", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("cliente_service.go", "ClienteService.GetClienteByID", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrClienteNaoEncontrado
 		}
@@ -92,23 +97,32 @@ func (s *ClienteService) GetClienteByID(ctx context.Context, db *sql.DB, id int6
 // ToggleAtivoCliente ativa/inativa um cliente. Se ativo for nil, inverte o
 // status atual (toggle). Retorna ErrClienteNaoEncontrado se não existir.
 func (s *ClienteService) ToggleAtivoCliente(ctx context.Context, db *sql.DB, id int64, ativo *bool) (*models.Cliente, error) {
+	vlog.Printf("cliente_service.go", "ClienteService.ToggleAtivoCliente", "chamando s.repo.GetByID e declarando c, err")
 	c, err := s.repo.GetByID(ctx, db, id)
+	vlog.Printf("cliente_service.go", "ClienteService.ToggleAtivoCliente", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("cliente_service.go", "ClienteService.ToggleAtivoCliente", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrClienteNaoEncontrado
 		}
 		return nil, err
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.ToggleAtivoCliente", "declarando newAtivo com !c.Ativo")
 	newAtivo := !c.Ativo
+	vlog.Printf("cliente_service.go", "ClienteService.ToggleAtivoCliente", "verificando condição ativo != nil")
 	if ativo != nil {
+		vlog.Printf("cliente_service.go", "ClienteService.ToggleAtivoCliente", "atribuindo *ativo a newAtivo")
 		newAtivo = *ativo
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.ToggleAtivoCliente", "chamando s.repo.SetAtivo e declarando err e verificando condição err != nil")
 	if err := s.repo.SetAtivo(ctx, db, id, newAtivo); err != nil {
+		vlog.Printf("cliente_service.go", "ClienteService.ToggleAtivoCliente", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrClienteNaoEncontrado
 		}
 		return nil, err
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.ToggleAtivoCliente", "atribuindo newAtivo a c.Ativo")
 	c.Ativo = newAtivo
 	if s.Cfg.Verbose {
 		log.Printf("[clientes] ativo toggle: id=%d ativo=%t", id, newAtivo)
@@ -133,54 +147,82 @@ type ClienteInput struct {
 // defaultHoje controla se data_cadastro vazio vira a data atual (criação)
 // ou é considerado erro (edição, onde o campo já deveria existir).
 func validarClienteInput(input ClienteInput, defaultHoje bool) (razaoSocial, cnpj, segmento, cidade, uf, bairro string, dataCadastro time.Time, err error) {
+	vlog.Printf("cliente_service.go", "validarClienteInput", "chamando strings.TrimSpace e atribuindo a razaoSocial")
 	razaoSocial = strings.TrimSpace(input.RazaoSocial)
+	vlog.Printf("cliente_service.go", "validarClienteInput", "chamando strings.TrimSpace e atribuindo a cnpj")
 	cnpj = strings.TrimSpace(input.CNPJ)
+	vlog.Printf("cliente_service.go", "validarClienteInput", "chamando strings.TrimSpace e atribuindo a segmento")
 	segmento = strings.TrimSpace(input.Segmento)
+	vlog.Printf("cliente_service.go", "validarClienteInput", "chamando strings.TrimSpace e atribuindo a cidade")
 	cidade = strings.TrimSpace(input.Cidade)
+	vlog.Printf("cliente_service.go", "validarClienteInput", "chamando strings.ToUpper e atribuindo a uf")
 	uf = strings.ToUpper(strings.TrimSpace(input.UF))
+	vlog.Printf("cliente_service.go", "validarClienteInput", "chamando strings.TrimSpace e atribuindo a bairro")
 	bairro = strings.TrimSpace(input.Bairro)
+	vlog.Printf("cliente_service.go", "validarClienteInput", "chamando strings.TrimSpace e declarando dataCadastroStr")
 	dataCadastroStr := strings.TrimSpace(input.DataCadastro)
 
+	vlog.Printf("cliente_service.go", "validarClienteInput", "verificando condição razaoSocial == \"\"")
 	if razaoSocial == "" {
+		vlog.Printf("cliente_service.go", "validarClienteInput", "atribuindo ErrRazaoSocialObrigatoria a err")
 		err = ErrRazaoSocialObrigatoria
 		return
 	}
+	vlog.Printf("cliente_service.go", "validarClienteInput", "verificando condição cnpj == \"\"")
 	if cnpj == "" {
+		vlog.Printf("cliente_service.go", "validarClienteInput", "atribuindo ErrCNPJObrigatorio a err")
 		err = ErrCNPJObrigatorio
 		return
 	}
 	// NEG-01/NEG-02: aceita máscara e minúsculas; grava sem máscara e em
 	// MAIÚSCULAS (numérico ou alfanumérico). O dígito verificador é checado
 	// à parte, em toda gravação (Create e Update — NEG-04).
+	vlog.Printf("cliente_service.go", "validarClienteInput", "chamando normalizarCNPJ e declarando cnpjNormalizado, cnpjOK")
 	cnpjNormalizado, cnpjOK := normalizarCNPJ(cnpj)
+	vlog.Printf("cliente_service.go", "validarClienteInput", "verificando condição !cnpjOK")
 	if !cnpjOK {
+		vlog.Printf("cliente_service.go", "validarClienteInput", "atribuindo ErrCNPJInvalido a err")
 		err = ErrCNPJInvalido
 		return
 	}
+	vlog.Printf("cliente_service.go", "validarClienteInput", "atribuindo cnpjNormalizado a cnpj")
 	cnpj = cnpjNormalizado
+	vlog.Printf("cliente_service.go", "validarClienteInput", "verificando condição segmento == \"\"")
 	if segmento == "" {
+		vlog.Printf("cliente_service.go", "validarClienteInput", "atribuindo ErrSegmentoObrigatorio a err")
 		err = ErrSegmentoObrigatorio
 		return
 	}
+	vlog.Printf("cliente_service.go", "validarClienteInput", "verificando condição cidade == \"\"")
 	if cidade == "" {
+		vlog.Printf("cliente_service.go", "validarClienteInput", "atribuindo ErrCidadeObrigatoria a err")
 		err = ErrCidadeObrigatoria
 		return
 	}
+	vlog.Printf("cliente_service.go", "validarClienteInput", "verificando condição len(uf) != 2")
 	if len(uf) != 2 {
+		vlog.Printf("cliente_service.go", "validarClienteInput", "atribuindo ErrUFInvalida a err")
 		err = ErrUFInvalida
 		return
 	}
 
+	vlog.Printf("cliente_service.go", "validarClienteInput", "verificando condição dataCadastroStr == \"\"")
 	if dataCadastroStr == "" {
+		vlog.Printf("cliente_service.go", "validarClienteInput", "verificando condição defaultHoje")
 		if defaultHoje {
+			vlog.Printf("cliente_service.go", "validarClienteInput", "chamando time.Now e atribuindo a dataCadastro")
 			dataCadastro = time.Now()
 			return
 		}
+		vlog.Printf("cliente_service.go", "validarClienteInput", "atribuindo ErrDataCadastroInvalida a err")
 		err = ErrDataCadastroInvalida
 		return
 	}
+	vlog.Printf("cliente_service.go", "validarClienteInput", "chamando time.ParseInLocation e declarando dataCadastro, parseErr")
 	dataCadastro, parseErr := time.ParseInLocation(dataCadastroLayout, dataCadastroStr, time.Local)
+	vlog.Printf("cliente_service.go", "validarClienteInput", "verificando condição parseErr != nil")
 	if parseErr != nil {
+		vlog.Printf("cliente_service.go", "validarClienteInput", "atribuindo ErrDataCadastroInvalida a err")
 		err = ErrDataCadastroInvalida
 		return
 	}
@@ -191,10 +233,13 @@ func validarClienteInput(input ClienteInput, defaultHoje bool) (razaoSocial, cnp
 // (ativo, data_cadastro default hoje). Compartilhado por CreateCliente e
 // CreateClienteNaCarteira.
 func novoClienteValidado(input ClienteInput) (*models.Cliente, error) {
+	vlog.Printf("cliente_service.go", "novoClienteValidado", "chamando validarClienteInput e declarando razaoSocial, cnpj, segmento, cidade, uf, bairro, dataCadastro, err")
 	razaoSocial, cnpj, segmento, cidade, uf, bairro, dataCadastro, err := validarClienteInput(input, true)
+	vlog.Printf("cliente_service.go", "novoClienteValidado", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("cliente_service.go", "novoClienteValidado", "verificando condição !cnpjDigitosValidos(cnpj)")
 	if !cnpjDigitosValidos(cnpj) {
 		return nil, ErrCNPJInvalido
 	}
@@ -214,10 +259,13 @@ func novoClienteValidado(input ClienteInput) (*models.Cliente, error) {
 // cliente_id_origem é gerado nativamente pelo AUTO_INCREMENT do MySQL.
 // Usado pelo admin: NÃO cria vínculo de carteira.
 func (s *ClienteService) CreateCliente(ctx context.Context, db *sql.DB, input ClienteInput) (*models.Cliente, error) {
+	vlog.Printf("cliente_service.go", "ClienteService.CreateCliente", "chamando novoClienteValidado e declarando c, err")
 	c, err := novoClienteValidado(input)
+	vlog.Printf("cliente_service.go", "ClienteService.CreateCliente", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.CreateCliente", "chamando s.repo.Create e declarando err e verificando condição err != nil")
 	if err := s.repo.Create(ctx, db, c); err != nil {
 		return nil, mapearErroCNPJDuplicado(err)
 	}
@@ -234,7 +282,9 @@ func (s *ClienteService) CreateCliente(ctx context.Context, db *sql.DB, input Cl
 // (timestamps zerados) em vez de responder erro para uma gravação que deu
 // certo — um retry do cliente esbarraria no CNPJ duplicado.
 func (s *ClienteService) relerClienteCriado(ctx context.Context, db *sql.DB, c *models.Cliente) *models.Cliente {
+	vlog.Printf("cliente_service.go", "ClienteService.relerClienteCriado", "chamando s.repo.GetByID e declarando gravado, err")
 	gravado, err := s.repo.GetByID(ctx, db, c.ClienteIDOrigem)
+	vlog.Printf("cliente_service.go", "ClienteService.relerClienteCriado", "verificando condição err != nil")
 	if err != nil {
 		log.Printf("[clientes] criado, mas falhou a releitura: cliente_id_origem=%d: %v", c.ClienteIDOrigem, err)
 		return c
@@ -251,29 +301,38 @@ func (s *ClienteService) relerClienteCriado(ctx context.Context, db *sql.DB, c *
 // Erros de validação são devolvidos antes de abrir a transação. Qualquer
 // falha de banco faz rollback (nem cliente nem carteira ficam gravados).
 func (s *ClienteService) CreateClienteNaCarteira(ctx context.Context, db *sql.DB, input ClienteInput, vendedorID int64) (*models.Cliente, error) {
+	vlog.Printf("cliente_service.go", "ClienteService.CreateClienteNaCarteira", "chamando novoClienteValidado e declarando c, err")
 	c, err := novoClienteValidado(input)
+	vlog.Printf("cliente_service.go", "ClienteService.CreateClienteNaCarteira", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
+	vlog.Printf("cliente_service.go", "ClienteService.CreateClienteNaCarteira", "chamando db.BeginTx e declarando tx, err")
 	tx, err := db.BeginTx(ctx, nil)
+	vlog.Printf("cliente_service.go", "ClienteService.CreateClienteNaCarteira", "verificando condição err != nil")
 	if err != nil {
 		return nil, fmt.Errorf("services: begin tx criar cliente na carteira: %w", err)
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.CreateClienteNaCarteira", "agendando defer: tx.Rollback")
 	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
 
+	vlog.Printf("cliente_service.go", "ClienteService.CreateClienteNaCarteira", "chamando s.repo.Create e declarando err e verificando condição err != nil")
 	if err := s.repo.Create(ctx, tx, c); err != nil {
 		return nil, mapearErroCNPJDuplicado(err)
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.CreateClienteNaCarteira", "montando &models.Carteira e declarando vinculo")
 	vinculo := &models.Carteira{
 		ClienteID:  c.ClienteIDOrigem,
 		VendedorID: vendedorID,
 		DataInicio: inicioDoDia(time.Now()),
 		DataFim:    nil,
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.CreateClienteNaCarteira", "chamando s.carteiraRepo.Create e declarando err e verificando condição err != nil")
 	if err := s.carteiraRepo.Create(ctx, tx, vinculo); err != nil {
 		return nil, err
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.CreateClienteNaCarteira", "chamando tx.Commit e declarando err e verificando condição err != nil")
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("services: commit criar cliente na carteira: %w", err)
 	}
@@ -289,6 +348,7 @@ func (s *ClienteService) CreateClienteNaCarteira(ctx context.Context, db *sql.DB
 // (repositories.ErrCNPJDuplicado) em ErrCNPJDuplicado; demais erros passam
 // inalterados.
 func mapearErroCNPJDuplicado(err error) error {
+	vlog.Printf("cliente_service.go", "mapearErroCNPJDuplicado", "verificando condição errors.Is(err, repositories.ErrCNPJDuplicado)")
 	if errors.Is(err, repositories.ErrCNPJDuplicado) {
 		log.Printf("[clientes] cnpj duplicado recusado (uq_clientes_cnpj)")
 		return ErrCNPJDuplicado
@@ -299,6 +359,7 @@ func mapearErroCNPJDuplicado(err error) error {
 // inicioDoDia devolve a meia-noite (time.Local) do dia de t — usada para
 // colunas DATE, evitando carregar hora/minuto no valor gravado.
 func inicioDoDia(t time.Time) time.Time {
+	vlog.Printf("cliente_service.go", "inicioDoDia", "chamando t.In(time.Local).Date e declarando y, m, d")
 	y, m, d := t.In(time.Local).Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, time.Local)
 }
@@ -307,7 +368,9 @@ func inicioDoDia(t time.Time) time.Time {
 // (cliente_id_origem e ativo não são alterados por aqui).
 // Retorna ErrClienteNaoEncontrado se não existir.
 func (s *ClienteService) UpdateCliente(ctx context.Context, db *sql.DB, id int64, input ClienteInput) (*models.Cliente, error) {
+	vlog.Printf("cliente_service.go", "ClienteService.UpdateCliente", "chamando validarClienteInput e declarando razaoSocial, cnpj, segmento, cidade, uf, bairro, dataCadastro, err")
 	razaoSocial, cnpj, segmento, cidade, uf, bairro, dataCadastro, err := validarClienteInput(input, false)
+	vlog.Printf("cliente_service.go", "ClienteService.UpdateCliente", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
@@ -317,6 +380,7 @@ func (s *ClienteService) UpdateCliente(ctx context.Context, db *sql.DB, id int64
 	// DV inválido só volta a ser salvo depois de ter o CNPJ corrigido.
 	// A existência do cliente (404) é verificada pelo próprio repo.Update
 	// (RowsAffected=0 com clientFoundRows=true).
+	vlog.Printf("cliente_service.go", "ClienteService.UpdateCliente", "verificando condição !cnpjDigitosValidos(cnpj)")
 	if !cnpjDigitosValidos(cnpj) {
 		if s.Cfg.Verbose {
 			log.Printf("[clientes] update recusado: id=%d cnpj com dígito verificador inválido", id)
@@ -324,6 +388,7 @@ func (s *ClienteService) UpdateCliente(ctx context.Context, db *sql.DB, id int64
 		return nil, ErrCNPJInvalido
 	}
 
+	vlog.Printf("cliente_service.go", "ClienteService.UpdateCliente", "montando &models.Cliente e declarando c")
 	c := &models.Cliente{
 		CNPJ:         cnpj,
 		RazaoSocial:  razaoSocial,
@@ -333,14 +398,18 @@ func (s *ClienteService) UpdateCliente(ctx context.Context, db *sql.DB, id int64
 		Bairro:       bairro,
 		DataCadastro: dataCadastro,
 	}
+	vlog.Printf("cliente_service.go", "ClienteService.UpdateCliente", "chamando s.repo.Update e declarando err e verificando condição err != nil")
 	if err := s.repo.Update(ctx, db, id, c); err != nil {
+		vlog.Printf("cliente_service.go", "ClienteService.UpdateCliente", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrClienteNaoEncontrado
 		}
 		return nil, mapearErroCNPJDuplicado(err)
 	}
 
+	vlog.Printf("cliente_service.go", "ClienteService.UpdateCliente", "chamando s.repo.GetByID e declarando atualizado, err")
 	atualizado, err := s.repo.GetByID(ctx, db, id)
+	vlog.Printf("cliente_service.go", "ClienteService.UpdateCliente", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}

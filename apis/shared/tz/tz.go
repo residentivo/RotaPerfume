@@ -13,7 +13,11 @@
 // idêntico em Windows, Linux e Docker, independente da variável TZ.
 package tz
 
-import "time"
+import (
+	"time"
+
+	"github.com/rotaperfumes/shared/vlog"
+)
 
 // Nome e offset do fuso fixo usado pelo sistema.
 const (
@@ -25,5 +29,6 @@ const (
 var Local = time.FixedZone(Nome, OffsetSegundos)
 
 func init() {
+	vlog.Printf("tz.go", "init", "fixando time.Local no fuso %s", Nome)
 	time.Local = Local
 }

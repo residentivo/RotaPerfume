@@ -13,6 +13,7 @@ import (
 
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // ctxKey é o tipo das chaves de contexto para evitar colisões.
@@ -49,7 +50,9 @@ func JWTMiddleware(cfg *config.Config, protected bool, requireAdmin bool) func(h
 // Em rotas não protegidas o checker não é chamado. checker nil é erro de
 // programação (panic na montagem das rotas, nunca em runtime).
 func JWTMiddlewareWithUserCheck(cfg *config.Config, checker UserStatusChecker, protected bool, requireAdmin bool) func(http.Handler) http.Handler {
+	vlog.Printf("auth_middleware.go", "JWTMiddlewareWithUserCheck", "verificando condição checker == nil")
 	if checker == nil {
+		vlog.Printf("auth_middleware.go", "JWTMiddlewareWithUserCheck", "chamando panic")
 		panic("middleware: JWTMiddlewareWithUserCheck exige um UserStatusChecker não nulo")
 	}
 	return newJWTMiddleware(cfg, checker, protected, requireAdmin)
@@ -57,41 +60,58 @@ func JWTMiddlewareWithUserCheck(cfg *config.Config, checker UserStatusChecker, p
 
 // newJWTMiddleware monta o middleware; checker nil = confia no role do JWT.
 func newJWTMiddleware(cfg *config.Config, checker UserStatusChecker, protected bool, requireAdmin bool) func(http.Handler) http.Handler {
+	vlog.Printf("auth_middleware.go", "newJWTMiddleware", "chamando services.NewAuthService e declarando auth")
 	auth := services.NewAuthService()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "declarando tokenString com literal string")
 			tokenString := ""
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando r.Header.Get e declarando authHeader")
 			authHeader := r.Header.Get("Authorization")
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição authHeader != \"\"")
 			if authHeader != "" {
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando strings.SplitN e declarando parts")
 				parts := strings.SplitN(authHeader, " ", 2)
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição len(parts) != 2 || !strings.EqualFold(parts[0], \"Bearer\")")
 				if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+					vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição protected")
 					if protected {
 						writeError(w, http.StatusUnauthorized, "authorization header mal formado")
 						return
 					}
+					vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando next.ServeHTTP")
 					next.ServeHTTP(w, r)
 					return
 				}
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "atribuindo parts[1] a tokenString")
 				tokenString = parts[1]
 			} else if c, err := r.Cookie("access_token"); err == nil && c.Value != "" {
 				// Sem header Authorization: usa o cookie HttpOnly access_token
 				// (o frontend não consegue ler esse cookie via JS para montar o header).
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "atribuindo c.Value a tokenString")
 				tokenString = c.Value
 			}
 
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição tokenString == \"\"")
 			if tokenString == "" {
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição protected")
 				if protected {
 					writeError(w, http.StatusUnauthorized, "authorization header ausente")
 					return
 				}
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando next.ServeHTTP")
 				next.ServeHTTP(w, r)
 				return
 			}
 
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando auth.ValidateJWT e declarando claims, err")
 			claims, err := auth.ValidateJWT(tokenString, cfg.JWTSecret)
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição err != nil")
 			if err != nil {
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição protected")
 				if protected {
 					// Distingue token expirado de inválido para melhor UX no frontend.
+					vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição errors.Is(err, jwt.ErrTokenExpired)")
 					if errors.Is(err, jwt.ErrTokenExpired) {
 						writeError(w, http.StatusUnauthorized, "access token expirado — use /api/auth/refresh")
 						return
@@ -99,35 +119,47 @@ func newJWTMiddleware(cfg *config.Config, checker UserStatusChecker, protected b
 					writeError(w, http.StatusUnauthorized, "token inválido ou expirado")
 					return
 				}
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando next.ServeHTTP")
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			// Validação defensiva adicional de expiração.
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(timeNow())")
 			if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(timeNow()) {
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição protected")
 				if protected {
 					writeError(w, http.StatusUnauthorized, "access token expirado — use /api/auth/refresh")
 					return
 				}
 			}
 
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "declarando role com claims.Role")
 			role := claims.Role
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição checker != nil && protected")
 			if checker != nil && protected {
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando checkUserStatus e declarando dbRole, ok")
 				dbRole, ok := checkUserStatus(w, r, checker, claims)
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição !ok")
 				if !ok {
 					return
 				}
+				vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "atribuindo dbRole a role")
 				role = dbRole
 			}
 
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "verificando condição requireAdmin && role != \"admin\"")
 			if requireAdmin && role != "admin" {
 				writeError(w, http.StatusForbidden, "acesso restrito a administradores")
 				return
 			}
 
 			// Injeta claims no contexto para os handlers downstream.
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando context.WithValue e declarando ctx")
 			ctx := context.WithValue(r.Context(), keyUserID, claims.UserID)
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando context.WithValue e atribuindo a ctx")
 			ctx = context.WithValue(ctx, keyRole, role)
+			vlog.Printf("auth_middleware.go", "newJWTMiddleware.func.func", "chamando next.ServeHTTP")
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -141,9 +173,13 @@ func newJWTMiddleware(cfg *config.Config, checker UserStatusChecker, protected b
 // sessão do usuário (tokens_validos_desde) — troca/reset de senha,
 // inativação e revogação em massa derrubam os access tokens já emitidos.
 func checkUserStatus(w http.ResponseWriter, r *http.Request, checker UserStatusChecker, claims *services.AuthClaims) (string, bool) {
+	vlog.Printf("auth_middleware.go", "checkUserStatus", "declarando userID, tokenRole com claims.UserID; claims.Role")
 	userID, tokenRole := claims.UserID, claims.Role
+	vlog.Printf("auth_middleware.go", "checkUserStatus", "chamando checker.CheckUserStatus e declarando st, err")
 	st, err := checker.CheckUserStatus(r.Context(), userID)
+	vlog.Printf("auth_middleware.go", "checkUserStatus", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("auth_middleware.go", "checkUserStatus", "verificando condição errors.Is(err, ErrUserNotFound)")
 		if errors.Is(err, ErrUserNotFound) {
 			log.Printf("[auth] acesso negado: user_id=%d inexistente (token válido) %s %s", userID, r.Method, r.URL.Path)
 			writeError(w, http.StatusUnauthorized, msgUsuarioInativo)
@@ -153,11 +189,13 @@ func checkUserStatus(w http.ResponseWriter, r *http.Request, checker UserStatusC
 		writeError(w, http.StatusInternalServerError, "erro interno")
 		return "", false
 	}
+	vlog.Printf("auth_middleware.go", "checkUserStatus", "verificando condição !st.Ativo")
 	if !st.Ativo {
 		log.Printf("[auth] acesso negado: user_id=%d inativo %s %s", userID, r.Method, r.URL.Path)
 		writeError(w, http.StatusUnauthorized, msgUsuarioInativo)
 		return "", false
 	}
+	vlog.Printf("auth_middleware.go", "checkUserStatus", "verificando condição tokenAnteriorAoCorte(claims, st.TokensValidosDesde)")
 	if tokenAnteriorAoCorte(claims, st.TokensValidosDesde) {
 		log.Printf("[auth] acesso negado: user_id=%d token anterior ao corte de sessão iat=%d corte=%d",
 			userID, issuedAtUnix(claims), st.TokensValidosDesde.Unix())
@@ -174,9 +212,11 @@ func checkUserStatus(w http.ResponseWriter, r *http.Request, checker UserStatusC
 // (comparação em segundos, mesma precisão do iat). Sem corte (nil) o token
 // vale; com corte, token sem iat é recusado (fail-closed).
 func tokenAnteriorAoCorte(claims *services.AuthClaims, corte *time.Time) bool {
+	vlog.Printf("auth_middleware.go", "tokenAnteriorAoCorte", "verificando condição corte == nil")
 	if corte == nil {
 		return false
 	}
+	vlog.Printf("auth_middleware.go", "tokenAnteriorAoCorte", "verificando condição claims.IssuedAt == nil")
 	if claims.IssuedAt == nil {
 		return true
 	}
@@ -185,6 +225,7 @@ func tokenAnteriorAoCorte(claims *services.AuthClaims, corte *time.Time) bool {
 
 // issuedAtUnix devolve o iat do token em segundos (0 se ausente), para log.
 func issuedAtUnix(claims *services.AuthClaims) int64 {
+	vlog.Printf("auth_middleware.go", "issuedAtUnix", "verificando condição claims.IssuedAt == nil")
 	if claims.IssuedAt == nil {
 		return 0
 	}
@@ -196,12 +237,14 @@ var timeNow = func() time.Time { return time.Now() }
 
 // GetUserID extrai o userID injetado pelo middleware.
 func GetUserID(ctx context.Context) (int64, bool) {
+	vlog.Printf("auth_middleware.go", "GetUserID", "declarando v, ok com ctx.Value(keyUserID).(int64)")
 	v, ok := ctx.Value(keyUserID).(int64)
 	return v, ok
 }
 
 // GetRole extrai o role injetado pelo middleware.
 func GetRole(ctx context.Context) (string, bool) {
+	vlog.Printf("auth_middleware.go", "GetRole", "declarando v, ok com ctx.Value(keyRole).(string)")
 	v, ok := ctx.Value(keyRole).(string)
 	return v, ok
 }
@@ -212,24 +255,30 @@ func RequireAdmin() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Get role from context (set by JWTMiddleware)
+			vlog.Printf("auth_middleware.go", "RequireAdmin.func.func", "chamando r.Context().Value e declarando roleCtx")
 			roleCtx := r.Context().Value(keyRole)
+			vlog.Printf("auth_middleware.go", "RequireAdmin.func.func", "verificando condição roleCtx == nil")
 			if roleCtx == nil {
 				writeError(w, http.StatusUnauthorized, "Não autenticado")
 				return
 			}
 
+			vlog.Printf("auth_middleware.go", "RequireAdmin.func.func", "declarando role, ok com roleCtx.(string)")
 			role, ok := roleCtx.(string)
+			vlog.Printf("auth_middleware.go", "RequireAdmin.func.func", "verificando condição !ok || role != \"admin\"")
 			if !ok || role != "admin" {
 				writeError(w, http.StatusForbidden, "Acesso negado. Requer permissão admin.")
 				return
 			}
 
+			vlog.Printf("auth_middleware.go", "RequireAdmin.func.func", "chamando next.ServeHTTP")
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
+	vlog.Printf("auth_middleware.go", "writeError", "chamando w.Header().Set")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write([]byte(`{"success":false,"error":"` + msg + `"}` + "\n"))

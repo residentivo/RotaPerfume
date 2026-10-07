@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/shared/models"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // VendedorRepository agrupa queries da tabela vendedores.
@@ -50,7 +51,9 @@ func (r *VendedorRepository) List(ctx context.Context, db *sql.DB) ([]VendedorRe
 		SELECT id, nome, regiao, uf, data_desligamento
 		FROM vendedores
 		ORDER BY nome ASC`
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.List", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q)
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.List", "verificando se err != nil")
 	if err != nil {
 		return nil, fmt.Errorf("repositories: list vendedores: %w", err)
 	}
@@ -67,15 +70,21 @@ func (r *VendedorRepository) ListResumoByID(ctx context.Context, db *sql.DB, id 
 		FROM vendedores
 		WHERE id = ?
 		LIMIT 1`
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.ListResumoByID", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, id)
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.ListResumoByID", "verificando se err != nil")
 	if err != nil {
 		return nil, fmt.Errorf("repositories: list vendedor por id: %w", err)
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.ListResumoByID", "definindo out, err com resultado de chamada a scanVendedoresResumo")
 	out, err := scanVendedoresResumo(rows)
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.ListResumoByID", "verificando se err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.ListResumoByID", "verificando se out == nil")
 	if out == nil {
+		vlog.Printf("vendedor_repository.go", "VendedorRepository.ListResumoByID", "atribuindo out com literal []VendedorResumo")
 		out = []VendedorResumo{}
 	}
 	return out, nil
@@ -83,9 +92,12 @@ func (r *VendedorRepository) ListResumoByID(ctx context.Context, db *sql.DB, id 
 
 // scanVendedoresResumo lê as linhas de VendedorResumo e fecha rows.
 func scanVendedoresResumo(rows *sql.Rows) ([]VendedorResumo, error) {
+	vlog.Printf("vendedor_repository.go", "scanVendedoresResumo", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("vendedor_repository.go", "scanVendedoresResumo", "declarando variável out")
 	var out []VendedorResumo
+	vlog.Printf("vendedor_repository.go", "scanVendedoresResumo", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		var v VendedorResumo
 		if err := rows.Scan(&v.ID, &v.Nome, &v.Regiao, &v.UF, &v.DataDesligamento); err != nil {
@@ -93,6 +105,8 @@ func scanVendedoresResumo(rows *sql.Rows) ([]VendedorResumo, error) {
 		}
 		out = append(out, v)
 	}
+	vlog.Printf("vendedor_repository.go", "scanVendedoresResumo", "loop concluído; itens acumulados em out: %d", len(out))
+	vlog.Printf("vendedor_repository.go", "scanVendedoresResumo", "definindo err com resultado de chamada a rows.Err e verificando se err != nil")
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("repositories: list vendedores iteração: %w", err)
 	}
@@ -102,9 +116,13 @@ func scanVendedoresResumo(rows *sql.Rows) ([]VendedorResumo, error) {
 // ExistsByID verifica se existe um vendedor com o id informado (ativo ou não).
 func (r *VendedorRepository) ExistsByID(ctx context.Context, db *sql.DB, id int64) (bool, error) {
 	const q = `SELECT 1 FROM vendedores WHERE id = ? LIMIT 1`
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.ExistsByID", "declarando variável one")
 	var one int
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.ExistsByID", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query q, args omitidos) com leitura do resultado")
 	err := db.QueryRowContext(ctx, q, id).Scan(&one)
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.ExistsByID", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("vendedor_repository.go", "VendedorRepository.ExistsByID", "verificando se errors.Is(err, sql.ErrNoRows)")
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -119,8 +137,11 @@ func (r *VendedorRepository) ExistsByID(ctx context.Context, db *sql.DB, id int6
 // imediatamente nas próximas requisições.
 func (r *VendedorRepository) IsDesligado(ctx context.Context, db *sql.DB, id int64) (bool, error) {
 	const q = `SELECT data_desligamento IS NOT NULL FROM vendedores WHERE id = ? LIMIT 1`
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.IsDesligado", "declarando variável desligado")
 	var desligado int64
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.IsDesligado", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query q, args omitidos) com leitura do resultado e verificando se err != nil")
 	if err := db.QueryRowContext(ctx, q, id).Scan(&desligado); err != nil {
+		vlog.Printf("vendedor_repository.go", "VendedorRepository.IsDesligado", "verificando se errors.Is(err, sql.ErrNoRows)")
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, ErrNotFound
 		}
@@ -131,7 +152,9 @@ func (r *VendedorRepository) IsDesligado(ctx context.Context, db *sql.DB, id int
 
 // GetByID busca um vendedor pelo ID (ativo ou não). Retorna ErrNotFound se não existir.
 func (r *VendedorRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (*models.Vendedor, error) {
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.GetByID", "montando texto da query SQL SELECT em q")
 	q := "SELECT " + vendedorColunas + " FROM vendedores WHERE id = ? LIMIT 1"
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.GetByID", "definindo row com resultado de execução SQL via db.QueryRowContext (query q, args omitidos)")
 	row := db.QueryRowContext(ctx, q, id)
 	return scanVendedor(row)
 }
@@ -141,6 +164,7 @@ func (r *VendedorRepository) Create(ctx context.Context, db *sql.DB, v *models.V
 	const q = `
 		INSERT INTO vendedores (nome, regiao, uf, data_admissao, data_desligamento, meta_mensal)
 		VALUES (?, ?, ?, ?, ?, ?)`
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Create", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
 	res, err := db.ExecContext(ctx, q,
 		v.Nome,
 		v.Regiao,
@@ -149,13 +173,17 @@ func (r *VendedorRepository) Create(ctx context.Context, db *sql.DB, v *models.V
 		v.DataDesligamento,
 		v.MetaMensal,
 	)
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Create", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: create vendedor: %w", err)
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Create", "definindo id, err com resultado de chamada a res.LastInsertId")
 	id, err := res.LastInsertId()
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Create", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: create vendedor lastInsertId: %w", err)
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Create", "atribuindo v.ID = id")
 	v.ID = id
 	return nil
 }
@@ -167,6 +195,7 @@ func (r *VendedorRepository) Update(ctx context.Context, db *sql.DB, id int64, v
 		UPDATE vendedores
 		SET nome = ?, regiao = ?, uf = ?, data_admissao = ?, meta_mensal = ?
 		WHERE id = ?`
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Update", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
 	res, err := db.ExecContext(ctx, q,
 		v.Nome,
 		v.Regiao,
@@ -175,13 +204,17 @@ func (r *VendedorRepository) Update(ctx context.Context, db *sql.DB, id int64, v
 		v.MetaMensal,
 		id,
 	)
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Update", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: update vendedor: %w", err)
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Update", "definindo n, err com resultado de chamada a res.RowsAffected")
 	n, err := res.RowsAffected()
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Update", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: update vendedor rowsAffected: %w", err)
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.Update", "verificando se n == 0")
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -193,14 +226,19 @@ func (r *VendedorRepository) Update(ctx context.Context, db *sql.DB, id int64, v
 // Aceita *sql.DB ou *sql.Tx (ver Execer).
 func (r *VendedorRepository) SetDataDesligamento(ctx context.Context, db Execer, id int64, dataDesligamento *sql.NullTime) error {
 	const q = `UPDATE vendedores SET data_desligamento = ? WHERE id = ?`
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.SetDataDesligamento", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
 	res, err := db.ExecContext(ctx, q, dataDesligamento, id)
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.SetDataDesligamento", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: set data_desligamento vendedor: %w", err)
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.SetDataDesligamento", "definindo n, err com resultado de chamada a res.RowsAffected")
 	n, err := res.RowsAffected()
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.SetDataDesligamento", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: set data_desligamento vendedor rowsAffected: %w", err)
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.SetDataDesligamento", "verificando se n == 0")
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -218,14 +256,19 @@ func (r *VendedorRepository) SetDataDesligamento(ctx context.Context, db Execer,
 // inválido.
 func (r *VendedorRepository) MarcarDesligamento(ctx context.Context, db Execer, id int64, dataDesligamento time.Time) error {
 	const q = `UPDATE vendedores SET data_desligamento = COALESCE(data_desligamento, ?) WHERE id = ?`
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.MarcarDesligamento", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
 	res, err := db.ExecContext(ctx, q, dataDesligamento, id)
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.MarcarDesligamento", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: marcar desligamento vendedor: %w", err)
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.MarcarDesligamento", "definindo n, err com resultado de chamada a res.RowsAffected")
 	n, err := res.RowsAffected()
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.MarcarDesligamento", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: marcar desligamento vendedor rowsAffected: %w", err)
 	}
+	vlog.Printf("vendedor_repository.go", "VendedorRepository.MarcarDesligamento", "verificando se n == 0")
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -233,7 +276,9 @@ func (r *VendedorRepository) MarcarDesligamento(ctx context.Context, db Execer, 
 }
 
 func scanVendedor(s rowScanner) (*models.Vendedor, error) {
+	vlog.Printf("vendedor_repository.go", "scanVendedor", "declarando variável v")
 	var v models.Vendedor
+	vlog.Printf("vendedor_repository.go", "scanVendedor", "definindo err com resultado de leitura das colunas via s.Scan e verificando se err != nil")
 	if err := s.Scan(
 		&v.ID,
 		&v.Nome,
@@ -245,6 +290,7 @@ func scanVendedor(s rowScanner) (*models.Vendedor, error) {
 		&v.CreatedAt,
 		&v.UpdatedAt,
 	); err != nil {
+		vlog.Printf("vendedor_repository.go", "scanVendedor", "verificando se err == sql.ErrNoRows")
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}

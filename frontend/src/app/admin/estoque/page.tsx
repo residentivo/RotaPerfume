@@ -22,6 +22,9 @@ import { apiListEstoque, apiCreateEstoque, apiUpdateEstoque } from "@/lib/api";
 import { Estoque, EstoqueInput } from "@/lib/types";
 import { useSessionUser } from "@/lib/session";
 import { formatarData } from "@/lib/formatarData";
+import { vlog } from "@/lib/vlog";
+
+const FILE = "admin/estoque/page.tsx";
 
 type SortKey =
   | "id"
@@ -49,30 +52,46 @@ const LIMIT_OPTIONS = [
 function EstoquePageContent() {
   // Papel vem da sessao em memoria validada por /api/auth/me (nao do cache
   // do localStorage); derivado no render, sem efeito.
+  vlog(FILE, "EstoquePageContent", "calculando se usuario da sessao e admin");
   const admin = useSessionUser()?.role === "admin";
+  vlog(FILE, "EstoquePageContent", "inicializando estado da lista de registros");
   const [registros, setRegistros] = useState<Estoque[]>([]);
+  vlog(FILE, "EstoquePageContent", "inicializando estado de loading");
   const [loading, setLoading] = useState(true);
+  vlog(FILE, "EstoquePageContent", "inicializando estado de erro");
   const [error, setError] = useState<string | null>(null);
+  vlog(FILE, "EstoquePageContent", "inicializando estado de erro de carga");
   const [erroCarga, setErroCarga] = useState(false);
+  vlog(FILE, "EstoquePageContent", "obtendo controle de mensagem temporaria de sucesso");
   const {
     mensagem: success,
     mostrar: mostrarSucesso,
     limpar: limparSucesso,
   } = useMensagemTemporaria();
 
+  vlog(FILE, "EstoquePageContent", "inicializando estado da busca por SKU");
   const [search, setSearch] = useState("");
+  vlog(FILE, "EstoquePageContent", "inicializando estado do filtro de data");
   const [dataFiltro, setDataFiltro] = useState("");
+  vlog(FILE, "EstoquePageContent", "inicializando estado do filtro de ruptura");
   const [rupturaFilter, setRupturaFilter] = useState<"" | "sim" | "nao">("");
 
+  vlog(FILE, "EstoquePageContent", "inicializando estado da coluna de ordenacao");
   const [sortKey, setSortKey] = useState<SortKey>("sku");
+  vlog(FILE, "EstoquePageContent", "inicializando estado da direcao de ordenacao");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
+  vlog(FILE, "EstoquePageContent", "inicializando estado da pagina atual");
   const [page, setPage] = useState(1);
+  vlog(FILE, "EstoquePageContent", "inicializando estado do limite por pagina");
   const [limit, setLimit] = useState(20);
+  vlog(FILE, "EstoquePageContent", "inicializando estado do total de registros");
   const [total, setTotal] = useState(0);
+  vlog(FILE, "EstoquePageContent", "inicializando estado do total de paginas");
   const [pages, setPages] = useState(0);
   // FE-10: pagina/limite exibidos (a pedida, ou a ultima carregada se a
   // ultima carga falhou).
+  vlog(FILE, "EstoquePageContent", "obtendo pagina exibida (page=%d, limit=%d, erroCarga=%s)", page, limit, erroCarga);
   const { exibida, registrar: registrarCarregada } = usePaginaCarregada(
     page,
     limit,
@@ -80,18 +99,24 @@ function EstoquePageContent() {
   );
 
   // Modal state
+  vlog(FILE, "EstoquePageContent", "inicializando estado de abertura do modal");
   const [modalOpen, setModalOpen] = useState(false);
+  vlog(FILE, "EstoquePageContent", "inicializando estado do modo do modal");
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  vlog(FILE, "EstoquePageContent", "inicializando estado do registro em edicao");
   const [editingEstoque, setEditingEstoque] = useState<Estoque | null>(null);
 
   // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
   // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  vlog(FILE, "EstoquePageContent", "obtendo executor de busca com descarte de respostas obsoletas");
   const executarBusca = useUltimaResposta();
 
   // Busca separada em requisicao pura + aplicacao do resultado no callback
   // assincrono (.then): o efeito nunca chama setState de forma sincrona.
-  const buscarEstoque = () =>
-    apiListEstoque(
+  vlog(FILE, "EstoquePageContent", "definindo funcao buscarEstoque");
+  const buscarEstoque = () => {
+    vlog(FILE, "EstoquePageContent.buscarEstoque", "chamando apiListEstoque (page=%d, limit=%d, sortKey=%s, sortDir=%s)", page, limit, sortKey, sortDir);
+    return apiListEstoque(
       page,
       limit,
       {
@@ -103,36 +128,55 @@ function EstoquePageContent() {
       sortKey,
       sortDir
     );
+  };
 
+  vlog(FILE, "EstoquePageContent", "definindo funcao aplicarEstoque");
   const aplicarEstoque = (res: Awaited<ReturnType<typeof apiListEstoque>>) => {
+    vlog(FILE, "EstoquePageContent.aplicarEstoque", "aplicando lista de registros (qtd=%d)", res.data.length);
     setRegistros(res.data);
+    vlog(FILE, "EstoquePageContent.aplicarEstoque", "atualizando total (total=%d)", res.total);
     setTotal(res.total);
+    vlog(FILE, "EstoquePageContent.aplicarEstoque", "atualizando total de paginas (pages=%d)", res.pages);
     setPages(res.pages);
+    vlog(FILE, "EstoquePageContent.aplicarEstoque", "registrando pagina carregada (page=%d, limit=%d)", page, limit);
     registrarCarregada(page, limit);
+    vlog(FILE, "EstoquePageContent.aplicarEstoque", "limpando erro de carga");
     setErroCarga(false);
+    vlog(FILE, "EstoquePageContent.aplicarEstoque", "desativando loading");
     setLoading(false);
   };
 
   // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
   // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
+  vlog(FILE, "EstoquePageContent", "definindo funcao aplicarErroEstoque");
   const aplicarErroEstoque = (err: unknown): string => {
+    vlog(FILE, "EstoquePageContent.aplicarErroEstoque", "extraindo mensagem do erro de carga");
     const message =
       err instanceof Error
         ? err.message
         : "Erro ao carregar estoque. O endpoint /api/estoque pode nao existir no backend.";
+    vlog(FILE, "EstoquePageContent.aplicarErroEstoque", "exibindo mensagem de erro");
     setError(message);
+    vlog(FILE, "EstoquePageContent.aplicarErroEstoque", "marcando erro de carga");
     setErroCarga(true);
+    vlog(FILE, "EstoquePageContent.aplicarErroEstoque", "desativando loading");
     setLoading(false);
     return message;
   };
 
   // Recarga imperativa (handlers e timers). FE-10: devolve a mensagem de erro se a
   // recarga falhar (null se deu certo ou foi superada por outra busca).
+  vlog(FILE, "EstoquePageContent", "definindo funcao loadEstoque");
   const loadEstoque = async (): Promise<string | null> => {
+    vlog(FILE, "EstoquePageContent.loadEstoque", "ativando loading");
     setLoading(true);
+    vlog(FILE, "EstoquePageContent.loadEstoque", "limpando erro");
     setError(null);
+    vlog(FILE, "EstoquePageContent.loadEstoque", "inicializando variavel de falha");
     let falha: string | null = null;
+    vlog(FILE, "EstoquePageContent.loadEstoque", "executando busca de estoque");
     await executarBusca(buscarEstoque(), aplicarEstoque, (err) => {
+      vlog(FILE, "EstoquePageContent.loadEstoque.func", "registrando falha da recarga");
       falha = aplicarErroEstoque(err);
     });
     return falha;
@@ -140,22 +184,32 @@ function EstoquePageContent() {
 
   // FE-10: navegacao a partir da pagina exibida. Se o destino ja e a pagina
   // pedida (a troca anterior falhou), repete a busca em vez de nao fazer nada.
+  vlog(FILE, "EstoquePageContent", "definindo funcao irParaPagina");
   const irParaPagina = (n: number) => {
+    vlog(FILE, "EstoquePageContent.irParaPagina", "verificando se destino e a pagina atual (destino=%d, atual=%d)", n, page);
     if (n === page) loadEstoque();
     else setPage(n);
   };
 
   // Paginacao/ordenacao mudou: liga o loading durante o render (padrao
   // "ajustar estado quando a entrada muda") e o efeito so faz a busca.
+  vlog(FILE, "EstoquePageContent", "montando chave de paginacao/ordenacao");
   const chaveLista = `${page}|${limit}|${sortKey}|${sortDir}`;
+  vlog(FILE, "EstoquePageContent", "inicializando estado da chave anterior");
   const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  vlog(FILE, "EstoquePageContent", "verificando se a chave de paginacao/ordenacao mudou");
   if (chaveAnterior !== chaveLista) {
+    vlog(FILE, "EstoquePageContent", "atualizando chave anterior");
     setChaveAnterior(chaveLista);
+    vlog(FILE, "EstoquePageContent", "ativando loading");
     setLoading(true);
+    vlog(FILE, "EstoquePageContent", "limpando erro");
     setError(null);
   }
 
+  vlog(FILE, "EstoquePageContent", "registrando efeito de busca por paginacao/ordenacao");
   useEffect(() => {
+    vlog(FILE, "EstoquePageContent.useEffect", "executando busca de estoque");
     executarBusca(buscarEstoque(), aplicarEstoque, aplicarErroEstoque);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, sortKey, sortDir]);
@@ -163,68 +217,103 @@ function EstoquePageContent() {
   // Debounce da busca textual/data e reset para pagina 1 quando filtros mudam
   // FE-04: o debounce nao dispara na montagem, so quando a chave dos filtros
   // muda (evita a busca dupla e a tabela voltando para a pagina 1).
+  vlog(FILE, "EstoquePageContent", "montando chave dos filtros");
   const chaveFiltros = JSON.stringify([search, dataFiltro, rupturaFilter]);
+  vlog(FILE, "EstoquePageContent", "registrando debounce dos filtros");
   useDebounceFiltros(chaveFiltros, () => {
+    vlog(FILE, "EstoquePageContent.useDebounceFiltros", "filtros mudaram; verificando se esta na pagina 1 (page=%d)", page);
     if (page !== 1) {
+      vlog(FILE, "EstoquePageContent.useDebounceFiltros", "voltando para a pagina 1");
       setPage(1);
     } else {
+      vlog(FILE, "EstoquePageContent.useDebounceFiltros", "recarregando estoque");
       loadEstoque();
     }
   });
 
+  vlog(FILE, "EstoquePageContent", "definindo handler handleSort");
   const handleSort = (key: SortKey) => {
+    vlog(FILE, "EstoquePageContent.handleSort", "verificando se coluna ja e a ordenada (key=%s)", key);
     if (sortKey === key) {
+      vlog(FILE, "EstoquePageContent.handleSort", "invertendo direcao da ordenacao");
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
+      vlog(FILE, "EstoquePageContent.handleSort", "definindo nova coluna de ordenacao");
       setSortKey(key);
+      vlog(FILE, "EstoquePageContent.handleSort", "definindo direcao asc");
       setSortDir("asc");
     }
   };
 
+  vlog(FILE, "EstoquePageContent", "definindo handler openCreate");
   const openCreate = () => {
+    vlog(FILE, "EstoquePageContent.openCreate", "definindo modo create");
     setModalMode("create");
+    vlog(FILE, "EstoquePageContent.openCreate", "limpando registro em edicao");
     setEditingEstoque(null);
+    vlog(FILE, "EstoquePageContent.openCreate", "abrindo modal");
     setModalOpen(true);
   };
 
+  vlog(FILE, "EstoquePageContent", "definindo handler openEdit");
   const openEdit = (registro: Estoque) => {
+    vlog(FILE, "EstoquePageContent.openEdit", "verificando permissao de admin (admin=%s)", admin);
     if (!admin) return;
+    vlog(FILE, "EstoquePageContent.openEdit", "definindo modo edit (estoque_id=%d)", registro.id);
     setModalMode("edit");
+    vlog(FILE, "EstoquePageContent.openEdit", "definindo registro em edicao");
     setEditingEstoque(registro);
+    vlog(FILE, "EstoquePageContent.openEdit", "abrindo modal");
     setModalOpen(true);
   };
 
+  vlog(FILE, "EstoquePageContent", "definindo handler handleModalSubmit");
   const handleModalSubmit = async (data: EstoqueInput) => {
+    vlog(FILE, "EstoquePageContent.handleModalSubmit", "limpando erro");
     setError(null);
+    vlog(FILE, "EstoquePageContent.handleModalSubmit", "iniciando envio do formulario (modo=%s)", modalMode);
     try {
+      vlog(FILE, "EstoquePageContent.handleModalSubmit", "verificando modo do modal");
       if (modalMode === "create") {
+        vlog(FILE, "EstoquePageContent.handleModalSubmit", "chamando apiCreateEstoque");
         const created = await apiCreateEstoque(data);
+        vlog(FILE, "EstoquePageContent.handleModalSubmit", "montando mensagem de sucesso (estoque_id=%d)", created.id);
         const msg = `Registro de estoque #${created.id} (${created.sku}) criado com sucesso.`;
+        vlog(FILE, "EstoquePageContent.handleModalSubmit", "recarregando estoque apos criacao");
         const erroRecarga = await loadEstoque();
+        vlog(FILE, "EstoquePageContent.handleModalSubmit", "verificando falha na recarga (falhou=%s)", erroRecarga !== null);
         if (erroRecarga) setError(mensagemRecargaFalhou(msg, erroRecarga));
         else mostrarSucesso(msg);
       } else if (editingEstoque) {
+        vlog(FILE, "EstoquePageContent.handleModalSubmit", "chamando apiUpdateEstoque (estoque_id=%d)", editingEstoque.id);
         const updated = await apiUpdateEstoque(editingEstoque.id, {
           saldo: data.saldo,
         });
+        vlog(FILE, "EstoquePageContent.handleModalSubmit", "substituindo registro atualizado na lista");
         setRegistros((prev) =>
           prev.map((r) => (r.id === updated.id ? updated : r))
         );
+        vlog(FILE, "EstoquePageContent.handleModalSubmit", "exibindo mensagem de sucesso");
         mostrarSucesso(`Registro de estoque #${updated.id} (${updated.sku}) atualizado com sucesso.`);
       }
+      vlog(FILE, "EstoquePageContent.handleModalSubmit", "fechando modal");
       setModalOpen(false);
     } catch (err) {
+      vlog(FILE, "EstoquePageContent.handleModalSubmit", "falha no envio; extraindo mensagem do erro");
       const message =
         err instanceof Error ? err.message : "Erro ao salvar registro de estoque.";
+      vlog(FILE, "EstoquePageContent.handleModalSubmit", "convertendo para mensagem amigavel se for erro de permissao");
       const friendly = /403|forbidden|permiss|acesso negado/i.test(message)
         ? "Voce nao tem permissao para criar ou editar registros de estoque (acao restrita a administradores)."
         : message;
       // Relancado com mensagem amigavel: o EstoqueModal exibe este erro no
       // proprio Alert do formulario (mesmo padrao do ProdutoModal).
+      vlog(FILE, "EstoquePageContent.handleModalSubmit", "relancando erro para o modal");
       throw new Error(friendly);
     }
   };
 
+  vlog(FILE, "EstoquePageContent", "montando definicao das colunas da tabela (admin=%s)", admin);
   const columns: Column<Estoque>[] = [
     {
       key: "id",
@@ -337,12 +426,15 @@ function EstoquePageContent() {
 
   // FE-10: contador baseado na pagina exibida; oculto se nada foi carregado
   // (a primeira carga falhou), para nao afirmar "0 registros".
+  vlog(FILE, "EstoquePageContent", "calculando faixa exibida (pagina=%d, limite=%d, total=%d)", exibida.pagina, exibida.limite, total);
   const { inicio: startItem, fim: endItem } = faixaExibida(
     exibida.pagina,
     exibida.limite,
     total
   );
+  vlog(FILE, "EstoquePageContent", "calculando se oculta o contador (qtd=%d)", registros.length);
   const ocultarContador = erroCarga && registros.length === 0;
+  vlog(FILE, "EstoquePageContent", "verificando se ha filtros aplicados");
   const hasFilters = search || dataFiltro || rupturaFilter;
 
   return (

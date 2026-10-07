@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { logout } from "@/lib/auth";
 import { useSessionUser, useVendedorDesligado } from "@/lib/session";
+import { vlog } from "@/lib/vlog";
 
 interface NavDropdownItem {
   label: string;
@@ -11,6 +12,7 @@ interface NavDropdownItem {
 }
 
 function NavDropdown({ label, items }: { label: string; items: NavDropdownItem[] }) {
+  vlog("Navbar.tsx", "NavDropdown", "verificando se o dropdown tem itens:", items.length);
   if (items.length === 0) {
     return null;
   }
@@ -45,12 +47,15 @@ export function Navbar() {
   // A Navbar so e renderizada dentro do ProtectedRoute, que popula a sessao
   // em memoria via /api/auth/me antes de liberar os filhos; a sessao e a
   // fonte da verdade (inclui id_vendedor e vendedor_desligado).
+  vlog("Navbar.tsx", "Navbar", "lendo usuário da sessão");
   const user = useSessionUser();
   // Proativo (UX): vendedor desligado nao ve os itens da carteira no menu.
   // O bloqueio real e do backend (403).
+  vlog("Navbar.tsx", "Navbar", "lendo bloqueio da carteira");
   const carteiraBloqueada = useVendedorDesligado();
 
   const handleLogout = () => {
+    vlog("Navbar.tsx", "Navbar.handleLogout", "executando logout");
     void logout();
   };
 

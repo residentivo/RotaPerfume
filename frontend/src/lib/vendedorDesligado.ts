@@ -13,6 +13,9 @@
  */
 
 import { ApiError } from "./apiError";
+import { vlog } from "./vlog";
+
+const F = "vendedorDesligado.ts";
 
 export const MSG_VENDEDOR_DESLIGADO = "acesso bloqueado: vendedor desligado";
 
@@ -36,13 +39,16 @@ type Listener = () => void;
 const listeners = new Set<Listener>();
 
 export function subscribeVendedorDesligado(listener: Listener): () => void {
+  vlog(F, "subscribeVendedorDesligado", "registrando listener de vendedor desligado");
   listeners.add(listener);
   return () => {
+    vlog(F, "subscribeVendedorDesligado.func", "removendo listener de vendedor desligado");
     listeners.delete(listener);
   };
 }
 
 export function notifyVendedorDesligado(): void {
+  vlog(F, "notifyVendedorDesligado", "notificando listeners de vendedor desligado:", listeners.size);
   listeners.forEach((l) => l());
 }
 

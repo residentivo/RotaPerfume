@@ -16,6 +16,7 @@ import (
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // UsuarioHandler trata as rotas /api/usuarios/*.
@@ -49,33 +50,45 @@ func NewUsuarioHandler(db *sql.DB, cfg *config.Config, emailSvc sharedsvc.EmailS
 //
 // Exclui password_hash de todas as respostas.
 func (h *UsuarioHandler) ListUsuarios(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "chamando middleware.GetRole e atribuindo resultado a role, ok")
 	role, ok := middleware.GetRole(r.Context())
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "verificando se !ok || role != models.RoleAdmin")
 	if !ok || role != models.RoleAdmin {
 		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "chamando services.ParsePagination e atribuindo resultado a page, limit")
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "chamando strings.TrimSpace e atribuindo resultado a orderBy")
 	orderBy := strings.TrimSpace(r.URL.Query().Get("order_by"))
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "chamando parseOrderDirQuery e atribuindo resultado a orderDir")
 	orderDir := parseOrderDirQuery(r.URL.Query().Get("order_dir"))
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "chamando h.svc.ListUsuarios e atribuindo resultado a usuarios, total, err")
 	usuarios, total, err := h.svc.ListUsuarios(r.Context(), h.db, page, limit, orderBy, orderDir)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[usuarios] ListUsuarios: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "definindo pages := total / limit")
 	pages := total / limit
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "verificando se total%%limit != 0")
 	if total%limit != 0 {
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "incrementando pages")
 		pages++
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "chamando make e atribuindo resultado a out")
 	// Transforma para output, omitindo password_hash.
 	out := make([]map[string]any, 0, len(usuarios))
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "iniciando loop sobre usuarios")
 	for _, u := range usuarios {
 		out = append(out, map[string]any{
 			"id":              u.ID,
@@ -90,6 +103,7 @@ func (h *UsuarioHandler) ListUsuarios(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ListUsuarios", "loop sobre usuarios concluído: %d itens", len(usuarios))
 	writeJSONWithPagination(w, http.StatusOK, out, page, limit, total, pages)
 }
 
@@ -145,6 +159,7 @@ func usuarioToMap(u *models.Usuario) map[string]any {
 // vendedorNomeOuVazio retorna o nome do vendedor vinculado ou string vazia
 // quando o usuário não tem vendedor associado.
 func vendedorNomeOuVazio(nome *string) string {
+	vlog.Printf("usuario_handler.go", "vendedorNomeOuVazio", "verificando se nome == nil")
 	if nome == nil {
 		return ""
 	}
@@ -158,54 +173,71 @@ func vendedorNomeOuVazio(nome *string) string {
 // cadastrado — nunca é retornada nesta resposta.
 // Retorna: { id, id_vendedor, vendedor_nome, email, role, ativo, nome, created_at, updated_at, ultimo_login_at, email_enviado }
 func (h *UsuarioHandler) CreateUsuario(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "chamando middleware.GetRole e atribuindo resultado a role, ok")
 	role, ok := middleware.GetRole(r.Context())
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se !ok || role != models.RoleAdmin")
 	if !ok || role != models.RoleAdmin {
 		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "declarando variável req")
 	var req CreateUsuarioRequest
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "chamando strings.TrimSpace e atribuindo resultado a req.Nome")
 	req.Nome = strings.TrimSpace(req.Nome)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "normalizando (TrimSpace) o e-mail informado — valor não logado")
 	req.Email = strings.TrimSpace(req.Email)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "chamando strings.TrimSpace e atribuindo resultado a req.Role")
 	req.Role = strings.TrimSpace(req.Role)
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se req.Nome == \"\"")
 	if req.Nome == "" {
 		writeJSON(w, http.StatusBadRequest, nil, "nome é obrigatório")
 		return
 	}
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se o e-mail veio vazio — valor não logado")
 	if req.Email == "" {
 		writeJSON(w, http.StatusBadRequest, nil, "email é obrigatório")
 		return
 	}
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se req.Role != models.RoleAdmin && req.Role != models.RoleNormal")
 	if req.Role != models.RoleAdmin && req.Role != models.RoleNormal {
 		writeJSON(w, http.StatusBadRequest, nil, "role deve ser 'admin' ou 'normal'")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "chamando r.Context e atribuindo resultado a ctx")
 	ctx := r.Context()
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "chamando h.svc.CreateUsuario e atribuindo resultado a u, emailEnviado, err")
 	u, emailEnviado, err := h.svc.CreateUsuario(ctx, h.db, struct {
 		Nome       string
 		Email      string
 		Role       string
 		IDVendedor *int64
 	}{req.Nome, req.Email, req.Role, req.IDVendedor})
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrEmailDuplicado) {
 			writeJSON(w, http.StatusConflict, nil, "email já cadastrado")
 			return
 		}
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrRoleInvalido) {
 			writeJSON(w, http.StatusBadRequest, nil, "role deve ser 'admin' ou 'normal'")
 			return
 		}
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrEmailInvalido) {
 			writeJSON(w, http.StatusBadRequest, nil, "email inválido")
 			return
 		}
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrVendedorNaoEncontrado) {
 			writeJSON(w, http.StatusBadRequest, nil, "vendedor não encontrado")
 			return
@@ -215,12 +247,15 @@ func (h *UsuarioHandler) CreateUsuario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "verificando se !emailEnviado")
 	if !emailEnviado {
 		log.Printf("[usuarios] ATENÇÃO: usuário id=%d criado, mas email com senha inicial NÃO foi enviado", u.ID)
 	}
 
 	log.Printf("[usuarios] criado: id=%d por admin=%s email_enviado=%t", u.ID, role, emailEnviado)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "chamando usuarioToMap e atribuindo resultado a out")
 	out := usuarioToMap(u)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.CreateUsuario", "atribuindo out[\"...\"] = emailEnviado")
 	out["email_enviado"] = emailEnviado
 	writeJSON(w, http.StatusCreated, out, "")
 }
@@ -230,46 +265,62 @@ func (h *UsuarioHandler) CreateUsuario(w http.ResponseWriter, r *http.Request) {
 // Body: { "nome": string, "role": "admin"|"normal", "id_vendedor": int|null }
 // Retorna: usuário atualizado
 func (h *UsuarioHandler) UpdateUsuario(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "chamando middleware.GetRole e atribuindo resultado a role, ok")
 	role, ok := middleware.GetRole(r.Context())
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "verificando se !ok || role != models.RoleAdmin")
 	if !ok || role != models.RoleAdmin {
 		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "declarando variável req")
 	var req UpdateUsuarioRequest
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "chamando strings.TrimSpace e atribuindo resultado a req.Nome")
 	req.Nome = strings.TrimSpace(req.Nome)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "chamando strings.TrimSpace e atribuindo resultado a req.Role")
 	req.Role = strings.TrimSpace(req.Role)
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "verificando se req.Nome == \"\"")
 	if req.Nome == "" {
 		writeJSON(w, http.StatusBadRequest, nil, "nome é obrigatório")
 		return
 	}
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "verificando se req.Role != models.RoleAdmin && req.Role != models.RoleNormal")
 	if req.Role != models.RoleAdmin && req.Role != models.RoleNormal {
 		writeJSON(w, http.StatusBadRequest, nil, "role deve ser 'admin' ou 'normal'")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "chamando r.Context e atribuindo resultado a ctx")
 	ctx := r.Context()
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "chamando h.svc.UpdateUsuario e atribuindo resultado a u, err")
 	u, err := h.svc.UpdateUsuario(ctx, h.db, id, req.Nome, req.Role, req.IDVendedor)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrUsuarioNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "usuário não encontrado")
 			return
 		}
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrRoleInvalido) {
 			writeJSON(w, http.StatusBadRequest, nil, "role deve ser 'admin' ou 'normal'")
 			return
 		}
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.UpdateUsuario", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrVendedorNaoEncontrado) {
 			writeJSON(w, http.StatusBadRequest, nil, "vendedor não encontrado")
 			return
@@ -288,26 +339,36 @@ func (h *UsuarioHandler) UpdateUsuario(w http.ResponseWriter, r *http.Request) {
 // Body opcional: { "ativo": bool } — omitido = toggle
 // Retorna: usuário atualizado
 func (h *UsuarioHandler) ToggleAtivoUsuario(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "chamando middleware.GetRole e atribuindo resultado a role, ok")
 	role, ok := middleware.GetRole(r.Context())
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "verificando se !ok || role != models.RoleAdmin")
 	if !ok || role != models.RoleAdmin {
 		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "chamando lerAtivoOpcional e atribuindo resultado a ativo, ok")
 	ativo, ok := lerAtivoOpcional(w, r) // vazio/null/{} = toggle; inválido = 400
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "verificando se !ok")
 	if !ok {
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "chamando r.Context e atribuindo resultado a ctx")
 	ctx := r.Context()
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "chamando h.svc.ToggleAtivoUsuario e atribuindo resultado a u, err")
 	u, err := h.svc.ToggleAtivoUsuario(ctx, h.db, id, ativo)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrUsuarioNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "usuário não encontrado")
 			return
@@ -317,10 +378,12 @@ func (h *UsuarioHandler) ToggleAtivoUsuario(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "verificando se !u.Ativo")
 	// SEC-06: usuário inativado perde as sessões de refresh na hora (ativar
 	// não revoga). Falha na revogação não desfaz a inativação — o middleware
 	// já bloqueia o usuário inativo em todo request protegido —, mas é logada.
 	if !u.Ativo {
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.ToggleAtivoUsuario", "chamando h.refreshSvc.RevokeAllUserTokens e atribuindo resultado a err e verificando se err != nil")
 		if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, id, repositories.RevokeReasonInativacao); err != nil {
 			log.Printf("[usuarios] ToggleAtivoUsuario: falha ao revogar refresh tokens do usuario_id=%d: %v", id, err)
 		}
@@ -337,27 +400,36 @@ func (h *UsuarioHandler) ToggleAtivoUsuario(w http.ResponseWriter, r *http.Reque
 // cadastrado do usuário — nunca é retornada nesta resposta.
 // Retorna: { sucesso: true, mensagem: "...", email_enviado: bool }
 func (h *UsuarioHandler) AdminResetPassword(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando middleware.GetRole e atribuindo resultado a role, ok")
 	role, ok := middleware.GetRole(r.Context())
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "verificando se !ok || role != models.RoleAdmin")
 	if !ok || role != models.RoleAdmin {
 		writeJSON(w, http.StatusForbidden, nil, "acesso restrito a administradores")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "declarando variável req")
 	var req AdminResetPasswordRequest
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "verificando se req.UsuarioID <= 0")
 	if req.UsuarioID <= 0 {
 		writeJSON(w, http.StatusBadRequest, nil, "usuario_id é obrigatório e deve ser > 0")
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando r.Context e atribuindo resultado a ctx")
 	ctx := r.Context()
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando h.svc.GetUsuarioByID e atribuindo resultado a targetUser, err")
 	// Busca usuário atual para capturar o hash anterior (auditoria).
 	targetUser, err := h.svc.GetUsuarioByID(ctx, h.db, req.UsuarioID)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrUsuarioNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "usuário não encontrado")
 			return
@@ -367,13 +439,19 @@ func (h *UsuarioHandler) AdminResetPassword(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando middleware.GetUserID e atribuindo resultado a adminID, _")
 	// Captura adminID do contexto.
 	adminID, _ := middleware.GetUserID(r.Context())
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando getClientIP e atribuindo resultado a ipOrigem")
 	ipOrigem := getClientIP(r, h.cfg.TrustProxyHeaders)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando r.UserAgent e atribuindo resultado a userAgent")
 	userAgent := r.UserAgent()
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando h.svc.AdminResetPassword e atribuindo resultado a emailEnviado, err")
 	emailEnviado, err := h.svc.AdminResetPassword(ctx, h.db, req.UsuarioID, targetUser.Email, targetUser.Nome)
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrUsuarioNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "usuário não encontrado")
 			return
@@ -383,16 +461,19 @@ func (h *UsuarioHandler) AdminResetPassword(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando h.senhaSvc.Registrar e atribuindo resultado a err e verificando se err != nil")
 	// Registra no histórico de senhas (tipo "admin").
 	if err := h.senhaSvc.Registrar(ctx, h.db, req.UsuarioID, &adminID, targetUser.PasswordHash, ipOrigem, userAgent, "admin"); err != nil {
 		log.Printf("[usuarios] AdminResetPassword: falha ao registrar histórico de senha do usuario_id=%d: %v", req.UsuarioID, err)
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "chamando h.refreshSvc.RevokeAllUserTokens e atribuindo resultado a err e verificando se err != nil")
 	// Revoga todos os refresh tokens do usuário após reset (security best practice).
 	if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, req.UsuarioID, repositories.RevokeReasonSenha); err != nil {
 		log.Printf("[usuarios] AdminResetPassword: falha ao revogar refresh tokens do usuario_id=%d: %v", req.UsuarioID, err)
 	}
 
+	vlog.Printf("usuario_handler.go", "UsuarioHandler.AdminResetPassword", "verificando se !emailEnviado")
 	if !emailEnviado {
 		log.Printf("[usuarios] ATENÇÃO: senha de usuario_id=%d resetada, mas email NÃO foi enviado", req.UsuarioID)
 	}

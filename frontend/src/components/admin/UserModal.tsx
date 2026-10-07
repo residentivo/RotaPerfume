@@ -9,6 +9,9 @@ import { Alert } from "@/components/ui/Alert";
 import { User, UserRole, Vendedor } from "@/lib/types";
 import { useResetOnOpen } from "@/lib/useResetOnOpen";
 import { apiListVendedores } from "@/lib/api";
+import { vlog } from "@/lib/vlog";
+
+const F = "UserModal.tsx";
 
 interface UserModalProps {
   open: boolean;
@@ -35,70 +38,106 @@ export function UserModal({
   onClose,
   onSubmit,
 }: UserModalProps) {
+  vlog(F, "UserModal", "criando estado nome, modo:", mode);
   const [nome, setNome] = useState("");
+  vlog(F, "UserModal", "criando estado email");
   const [email, setEmail] = useState("");
+  vlog(F, "UserModal", "criando estado role");
   const [role, setRole] = useState<UserRole>("normal");
+  vlog(F, "UserModal", "criando estado idVendedor");
   const [idVendedor, setIdVendedor] = useState("");
+  vlog(F, "UserModal", "criando estado submitting");
   const [submitting, setSubmitting] = useState(false);
+  vlog(F, "UserModal", "criando estado error");
   const [error, setError] = useState<string | null>(null);
 
+  vlog(F, "UserModal", "criando estado vendedores");
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
+  vlog(F, "UserModal", "criando estado vendedoresError");
   const [vendedoresError, setVendedoresError] = useState<string | null>(null);
+  vlog(F, "UserModal", "criando estado loadingVendedores");
   const [loadingVendedores, setLoadingVendedores] = useState(false);
 
   // Reseta o formulario ao abrir (ou quando as props mudam com o modal
   // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  vlog(F, "UserModal", "registrando reset do formulário ao abrir");
   useResetOnOpen(open, [mode, user], () => {
+    vlog(F, "UserModal.reset", "limpando erro");
     setError(null);
+    vlog(F, "UserModal.reset", "limpando estado de envio");
     setSubmitting(false);
+    vlog(F, "UserModal.reset", "verificando se é edição com usuário, id:", user?.id);
     if (mode === "edit" && user) {
+      vlog(F, "UserModal.reset", "preenchendo nome");
       setNome(user.nome);
+      // LOG-02: e-mail nunca vai para o log.
+      vlog(F, "UserModal.reset", "preenchendo e-mail");
       setEmail(user.email);
+      vlog(F, "UserModal.reset", "preenchendo papel:", user.role);
       setRole(user.role);
+      vlog(F, "UserModal.reset", "preenchendo vendedor vinculado, id:", user.id_vendedor);
       setIdVendedor(
         user.id_vendedor !== null && user.id_vendedor !== undefined
           ? String(user.id_vendedor)
           : ""
       );
     } else {
+      vlog(F, "UserModal.reset", "limpando nome");
       setNome("");
+      vlog(F, "UserModal.reset", "limpando e-mail");
       setEmail("");
+      vlog(F, "UserModal.reset", "definindo papel padrão");
       setRole("normal");
+      vlog(F, "UserModal.reset", "limpando vendedor vinculado");
       setIdVendedor("");
     }
   });
 
   // Parte sincrona (liga o loading / limpa o erro) roda durante o render
   // ao abrir; o efeito so busca e aplica o resultado nos callbacks.
+  vlog(F, "UserModal", "registrando reset do carregamento de vendedores");
   useResetOnOpen(open, [], () => {
+    vlog(F, "UserModal.resetVendedores", "ligando loading de vendedores");
     setLoadingVendedores(true);
+    vlog(F, "UserModal.resetVendedores", "limpando erro de vendedores");
     setVendedoresError(null);
   });
 
+  vlog(F, "UserModal", "registrando efeito de carga de vendedores");
   useEffect(() => {
+    vlog(F, "UserModal.useEffect", "verificando se o modal está aberto:", open);
     if (!open) return;
+    vlog(F, "UserModal.useEffect", "inicializando flag de cancelamento");
     let cancelled = false;
+    vlog(F, "UserModal.useEffect", "buscando vendedores");
     apiListVendedores()
       .then((data) => {
+        vlog(F, "UserModal.useEffect", "vendedores recebidos, qtd/cancelado:", data.length, cancelled);
         if (!cancelled) setVendedores(data);
       })
       .catch((err) => {
+        vlog(F, "UserModal.useEffect", "falha ao buscar vendedores, cancelado:", cancelled);
         if (!cancelled) {
+          vlog(F, "UserModal.useEffect", "montando mensagem de erro de vendedores");
           const message =
             err instanceof Error
               ? err.message
               : "Erro ao carregar vendedores.";
+          vlog(F, "UserModal.useEffect", "exibindo erro de vendedores");
           setVendedoresError(message);
         }
       })
       .finally(() => {
+        vlog(F, "UserModal.useEffect", "desligando loading de vendedores se não cancelado");
         if (!cancelled) setLoadingVendedores(false);
       });
     return () => {
+      vlog(F, "UserModal.useEffect", "cleanup: cancelando carga de vendedores");
       cancelled = true;
     };
   }, [open]);
 
+  vlog(F, "UserModal", "montando opções de vendedor, qtd:", vendedores.length);
   const vendedorOptions = [
     { value: "", label: "Nenhum" },
     ...vendedores.map((v) => ({
@@ -110,20 +149,28 @@ export function UserModal({
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
+    vlog(F, "UserModal.handleSubmit", "impedindo submit padrão do form");
     e.preventDefault();
+    vlog(F, "UserModal.handleSubmit", "limpando erro");
     setError(null);
 
+    vlog(F, "UserModal.handleSubmit", "validando nome");
     if (!nome.trim()) {
+      vlog(F, "UserModal.handleSubmit", "nome ausente");
       setError("Nome e obrigatorio.");
       return;
     }
+    vlog(F, "UserModal.handleSubmit", "validando e-mail na criação");
     if (mode === "create" && !email.trim()) {
+      vlog(F, "UserModal.handleSubmit", "e-mail ausente");
       setError("Email e obrigatorio.");
       return;
     }
 
+    vlog(F, "UserModal.handleSubmit", "marcando envio em andamento");
     setSubmitting(true);
     try {
+      vlog(F, "UserModal.handleSubmit", "enviando usuário, modo/papel:", mode, role);
       await onSubmit({
         nome: nome.trim(),
         email: email.trim(),
@@ -131,10 +178,13 @@ export function UserModal({
         id_vendedor: idVendedor ? Number(idVendedor) : null,
       });
     } catch (err) {
+      vlog(F, "UserModal.handleSubmit", "falha ao salvar usuário: montando mensagem de erro");
       const message =
         err instanceof Error ? err.message : "Erro ao salvar usuario.";
+      vlog(F, "UserModal.handleSubmit", "exibindo erro");
       setError(message);
     } finally {
+      vlog(F, "UserModal.handleSubmit", "finalizando envio");
       setSubmitting(false);
     }
   };

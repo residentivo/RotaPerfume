@@ -11,6 +11,7 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // vendedorScope resume a restrição de carteira aplicada à requisição atual.
@@ -37,6 +38,7 @@ func (s vendedorScope) SemAcesso() bool {
 // PermiteVendedor reporta se o escopo atual permite acesso a registros do
 // vendedorID informado. Sempre true para admin (Restrito=false).
 func (s vendedorScope) PermiteVendedor(vendedorID int64) bool {
+	vlog.Printf("scope.go", "vendedorScope.PermiteVendedor", "verificando se !s.Restrito")
 	if !s.Restrito {
 		return true
 	}
@@ -61,25 +63,33 @@ var errVendedorDesligado = errors.New("handlers: vendedor desligado")
 // garantindo que uma mudança de vínculo id_vendedor reflita imediatamente
 // nas próximas requisições, sem depender de reemissão do JWT.
 func resolverVendedorScopeBase(ctx context.Context, db *sql.DB) (vendedorScope, error) {
+	vlog.Printf("scope.go", "resolverVendedorScopeBase", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(ctx)
+	vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se role == \"...\"")
 	if role == "admin" {
 		return vendedorScope{Restrito: false}, nil
 	}
 
+	vlog.Printf("scope.go", "resolverVendedorScopeBase", "chamando middleware.GetUserID e atribuindo resultado a userID, ok")
 	userID, ok := middleware.GetUserID(ctx)
+	vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se !ok")
 	if !ok {
 		// Não deveria ocorrer (a rota exige JWT válido) — trata como o
 		// escopo mais restritivo possível.
 		return vendedorScope{Restrito: true, VendedorID: 0}, nil
 	}
 
+	vlog.Printf("scope.go", "resolverVendedorScopeBase", "chamando repositories.NewUsuarioRepository().GetIDVendedorByUsuarioID e atribuindo resultado a idVendedor, err")
 	idVendedor, err := repositories.NewUsuarioRepository().GetIDVendedorByUsuarioID(ctx, db, userID)
+	vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se errors.Is(...)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return vendedorScope{Restrito: true, VendedorID: 0}, nil
 		}
 		return vendedorScope{}, fmt.Errorf("handlers: resolver escopo de vendedor: %w", err)
 	}
+	vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se idVendedor == nil")
 	if idVendedor == nil {
 		return vendedorScope{Restrito: true, VendedorID: 0}, nil
 	}
@@ -102,21 +112,27 @@ func resolverVendedorScopeBase(ctx context.Context, db *sql.DB) (vendedorScope, 
 // que um desligamento bloqueie imediatamente as próximas requisições, sem
 // depender de reemissão do JWT.
 func resolverVendedorScope(r *http.Request, db *sql.DB) (vendedorScope, error) {
+	vlog.Printf("scope.go", "resolverVendedorScope", "chamando resolverVendedorScopeBase e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScopeBase(r.Context(), db)
+	vlog.Printf("scope.go", "resolverVendedorScope", "verificando se err != nil")
 	if err != nil {
 		return vendedorScope{}, err
 	}
+	vlog.Printf("scope.go", "resolverVendedorScope", "verificando se !scope.Restrito || scope.VendedorID <= 0")
 	if !scope.Restrito || scope.VendedorID <= 0 {
 		return scope, nil
 	}
 
+	vlog.Printf("scope.go", "resolverVendedorScope", "chamando repositories.NewVendedorRepository().IsDesligado e atribuindo resultado a desligado, err")
 	desligado, err := repositories.NewVendedorRepository().IsDesligado(r.Context(), db, scope.VendedorID)
+	vlog.Printf("scope.go", "resolverVendedorScope", "avaliando switch de condições")
 	switch {
 	case errors.Is(err, repositories.ErrNotFound):
 		return vendedorScope{Restrito: true, VendedorID: 0}, nil
 	case err != nil:
 		return vendedorScope{}, fmt.Errorf("handlers: checar vendedor desligado: %w", err)
 	case desligado:
+		vlog.Printf("scope.go", "resolverVendedorScope", "chamando middleware.GetUserID e atribuindo resultado a userID, _")
 		userID, _ := middleware.GetUserID(r.Context())
 		log.Printf("[escopo] bloqueado vendedor_desligado user_id=%d vendedor_id=%d rota=%s",
 			userID, scope.VendedorID, r.Method+" "+r.URL.Path)
@@ -129,6 +145,7 @@ func resolverVendedorScope(r *http.Request, db *sql.DB) (vendedorScope, error) {
 // HTTP: errVendedorDesligado → 403 com msgVendedorDesligado; qualquer outro
 // erro → log (com a tag do handler) + 500 "erro interno". Fail-closed.
 func responderErroEscopo(w http.ResponseWriter, tag string, err error) {
+	vlog.Printf("scope.go", "responderErroEscopo", "verificando se errors.Is(...)")
 	if errors.Is(err, errVendedorDesligado) {
 		writeJSON(w, http.StatusForbidden, nil, msgVendedorDesligado)
 		return
@@ -145,8 +162,11 @@ func responderErroEscopo(w http.ResponseWriter, tag string, err error) {
 //
 // Cada chamada executa sua própria consulta ao banco (sem cache L1).
 func clienteNaCarteiraDoVendedor(ctx context.Context, db *sql.DB, vendedorID, clienteID int64) (bool, error) {
+	vlog.Printf("scope.go", "clienteNaCarteiraDoVendedor", "chamando repositories.NewCarteiraRepository().GetVinculoAtivo e atribuindo resultado a _, err")
 	_, err := repositories.NewCarteiraRepository().GetVinculoAtivo(ctx, db, vendedorID, clienteID)
+	vlog.Printf("scope.go", "clienteNaCarteiraDoVendedor", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("scope.go", "clienteNaCarteiraDoVendedor", "verificando se errors.Is(...)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return false, nil
 		}

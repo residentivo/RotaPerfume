@@ -9,6 +9,9 @@
  * e travado: o backend continua validando o vendedor no POST/PUT.
  */
 import { useSessionUser } from "./session";
+import { vlog } from "./vlog";
+
+const F = "useVendedorTravado.ts";
 
 export interface VendedorTravado {
   /** Sessao carregada e usuario nao-admin. */
@@ -21,8 +24,11 @@ export interface VendedorTravado {
 }
 
 export function useVendedorTravado(): VendedorTravado {
+  vlog(F, "useVendedorTravado", "lendo usuário da sessão");
   const user = useSessionUser();
+  vlog(F, "useVendedorTravado", "verificando se é usuário normal (não admin)");
   const normal = !!user && user.role !== "admin";
+  vlog(F, "useVendedorTravado", "calculando vendedor travado, normal:", normal);
   const vendedorTravadoId = normal && user?.id_vendedor ? user.id_vendedor : null;
   return {
     normal,
@@ -34,6 +40,7 @@ export function useVendedorTravado(): VendedorTravado {
 
 /** Valor inicial do select de vendedor: travado (normal) ou o do registro. */
 export function vendedorInicial(t: VendedorTravado, doRegistro: string): string {
+  vlog(F, "vendedorInicial", "verificando se é usuário normal:", t.normal);
   if (!t.normal) return doRegistro;
   return t.vendedorTravadoId ? String(t.vendedorTravadoId) : "";
 }

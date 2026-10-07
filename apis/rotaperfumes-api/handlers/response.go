@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"github.com/rotaperfumes/shared/vlog"
 	"net/http"
 	"strings"
 )
@@ -12,6 +13,7 @@ import (
 // tratado como "sem valor" (string vazia), deixando o default de cada
 // entidade prevalecer no repositório.
 func parseOrderDirQuery(v string) string {
+	vlog.Printf("response.go", "parseOrderDirQuery", "avaliando switch sobre strings.ToLower(...)")
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "asc":
 		return "asc"

@@ -19,6 +19,7 @@ import (
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Parâmetros do rate limiting anti-bruteforce de login/refresh: no máximo
@@ -68,11 +69,13 @@ type AlertaSegurancaNotificador interface {
 // SetAlertaSeguranca injeta o notificador de alertas de segurança (SEC-09).
 // Sem ele (nil), o reuso de token gera apenas log.
 func (h *AuthHandler) SetAlertaSeguranca(n AlertaSegurancaNotificador) {
+	vlog.Printf("auth_handler.go", "AuthHandler.SetAlertaSeguranca", "atribuindo h.alerta = n")
 	h.alerta = n
 }
 
 // NewAuthHandler cria um AuthHandler com pool de conexão injetado.
 func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
+	vlog.Printf("auth_handler.go", "NewAuthHandler", "montando &AuthHandler em h")
 	h := &AuthHandler{
 		db:                   db,
 		repo:                 repositories.NewUsuarioRepository(),
@@ -86,6 +89,7 @@ func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
 		resetPasswordLimiter: middleware.NewLoginRateLimiter(resetPasswordMaxFailures, resetPasswordWindow, resetPasswordBlockFor),
 		captcha:              sharedsvc.NewTurnstileService(cfg),
 	}
+	vlog.Printf("auth_handler.go", "NewAuthHandler", "chamando h.refreshSvc.SetReuseSuppressWindow")
 	// SEC-12: janela de supressão de reuso repetido do mesmo token rotacionado.
 	h.refreshSvc.SetReuseSuppressWindow(cfg.RefreshReuseSuppressWindow)
 	return h
@@ -120,10 +124,12 @@ type ResetPasswordRequest struct {
 // setTokenCookies define os cookies HttpOnly com os tokens de autenticacao.
 // Secure eh ativado apenas em producao (false em dev localhost para evitar erro de HTTPS).
 func setTokenCookies(w http.ResponseWriter, r *http.Request, accessToken, refreshToken string, maxAge int) {
+	vlog.Printf("auth_handler.go", "setTokenCookies", "verificando se o host da requisição é local (define flag Secure dos cookies)")
 	isLocalhost := strings.HasPrefix(r.Host, "localhost") ||
 		strings.HasPrefix(r.Host, "127.0.0.1") ||
 		strings.HasPrefix(r.Host, "0.0.0.0")
 
+	vlog.Printf("auth_handler.go", "setTokenCookies", "montando &http.Cookie em accessCookie")
 	// access_token: SameSite=Strict para protecao CSRF maxima.
 	accessCookie := &http.Cookie{
 		Name:     "access_token",
@@ -134,8 +140,10 @@ func setTokenCookies(w http.ResponseWriter, r *http.Request, accessToken, refres
 		Secure:   !isLocalhost, // true em producao, false em dev localhost
 		SameSite: http.SameSiteStrictMode,
 	}
+	vlog.Printf("auth_handler.go", "setTokenCookies", "chamando http.SetCookie")
 	http.SetCookie(w, accessCookie)
 
+	vlog.Printf("auth_handler.go", "setTokenCookies", "montando &http.Cookie em refreshCookie")
 	// refresh_token: SameSite=Lax para permitir refresh em navegacao top-level.
 	refreshCookie := &http.Cookie{
 		Name:     "refresh_token",
@@ -146,17 +154,20 @@ func setTokenCookies(w http.ResponseWriter, r *http.Request, accessToken, refres
 		Secure:   !isLocalhost,
 		SameSite: http.SameSiteLaxMode,
 	}
+	vlog.Printf("auth_handler.go", "setTokenCookies", "chamando http.SetCookie")
 	http.SetCookie(w, refreshCookie)
 }
 
 // clearTokenCookies remove os cookies de tokens (logout).
 func clearTokenCookies(w http.ResponseWriter) {
+	vlog.Printf("auth_handler.go", "clearTokenCookies", "chamando http.SetCookie")
 	http.SetCookie(w, &http.Cookie{
 		Name:   "access_token",
 		Value:  "",
 		Path:   "/",
 		MaxAge: -1,
 	})
+	vlog.Printf("auth_handler.go", "clearTokenCookies", "chamando http.SetCookie")
 	http.SetCookie(w, &http.Cookie{
 		Name:   "refresh_token",
 		Value:  "",
@@ -167,9 +178,11 @@ func clearTokenCookies(w http.ResponseWriter) {
 
 // extractRefreshToken extrai o refresh token do body OU do cookie (Set-Cookie flow).
 func extractRefreshToken(r *http.Request, bodyRefresh string) string {
+	vlog.Printf("auth_handler.go", "extractRefreshToken", "verificando se bodyRefresh != \"\"")
 	if bodyRefresh != "" {
 		return bodyRefresh
 	}
+	vlog.Printf("auth_handler.go", "extractRefreshToken", "chamando r.Cookie e atribuindo resultado a c, err e verificando se err == nil")
 	if c, err := r.Cookie("refresh_token"); err == nil {
 		return c.Value
 	}
@@ -178,22 +191,28 @@ func extractRefreshToken(r *http.Request, bodyRefresh string) string {
 
 // Login POST /api/auth/login
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "declarando variável req")
 	var req LoginRequest
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "normalizando (TrimSpace) o e-mail informado — valor não logado")
 	req.Email = strings.TrimSpace(req.Email)
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "verificando se e-mail ou senha vieram vazios — valores não logados")
 	if req.Email == "" || req.Password == "" {
 		writeJSON(w, http.StatusBadRequest, nil, "email e senha são obrigatórios")
 		return
 	}
 
-	maskedEmail := maskEmail(req.Email)
+	maskedEmail := vlog.MaskEmail(req.Email)
 	log.Printf("[auth] Login attempt: email=%s", maskedEmail)
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando getClientIP e atribuindo resultado a ipOrigemPreCheck")
 	ipOrigemPreCheck := getClientIP(r, h.cfg.TrustProxyHeaders)
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "verificando se !h.verifyCaptcha(...)")
 	// Validação do CAPTCHA (Cloudflare Turnstile) roda ANTES do rate limiting
 	// para não gastar o "budget" de rate limit contra bots óbvios. Fail-closed:
 	// token ausente ou inválido/irverificável => recusa imediatamente.
@@ -201,29 +220,40 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "montando chave de rate limit por IP — valor não logado")
 	// Rate limiting anti-bruteforce: bloqueia por IP e por conta (IP+email)
 	// após várias falhas consecutivas em janela curta.
 	ipKey := "ip:" + ipOrigemPreCheck
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "montando chave de rate limit por conta (IP+e-mail) — valor não logado")
 	acctKey := "acct:" + ipOrigemPreCheck + "|" + req.Email
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.Blocked e atribuindo resultado a blocked, retryAfter e verificando se blocked")
 	if blocked, retryAfter := h.loginLimiter.Blocked(ipKey); blocked {
 		log.Printf("[auth] login: IP bloqueado por rate limit: ip=%s retry_after=%s", ipOrigemPreCheck, retryAfter)
 		writeRateLimited(w, retryAfter)
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.Blocked e atribuindo resultado a blocked, retryAfter e verificando se blocked")
 	if blocked, retryAfter := h.loginLimiter.Blocked(acctKey); blocked {
 		log.Printf("[auth] login: conta bloqueada por rate limit: email=%s retry_after=%s", maskedEmail, retryAfter)
 		writeRateLimited(w, retryAfter)
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando r.Context e atribuindo resultado a ctx")
 	ctx := r.Context()
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.repo.GetByEmail e atribuindo resultado a u, err")
 	u, err := h.repo.GetByEmail(ctx, h.db, req.Email)
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("auth_handler.go", "AuthHandler.Login", "verificando se err == repositories.ErrNotFound")
 		if err == repositories.ErrNotFound {
 			log.Printf("[auth] login: usuário não encontrado: %s", maskedEmail)
+			vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.auth.VerifyDummyPassword")
 			// Mesmo custo de um login real: não revela pelo tempo se a conta existe.
 			h.auth.VerifyDummyPassword(h.cfg, req.Password)
+			vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.RegisterFailure")
 			h.loginLimiter.RegisterFailure(ipKey)
+			vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.RegisterFailure")
 			h.loginLimiter.RegisterFailure(acctKey)
 			writeJSON(w, http.StatusUnauthorized, nil, "credenciais inválidas")
 			return
@@ -233,59 +263,77 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "verificando se !u.IsActive()")
 	if !u.IsActive() {
 		log.Printf("[auth] login: usuário inativo: %s", maskedEmail)
+		vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.RegisterFailure")
 		h.loginLimiter.RegisterFailure(ipKey)
+		vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.RegisterFailure")
 		h.loginLimiter.RegisterFailure(acctKey)
 		writeJSON(w, http.StatusUnauthorized, nil, "usuário inativo")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "verificando se !h.auth.VerifyPassword(...)")
 	if !h.auth.VerifyPassword(h.cfg, u.PasswordHash, req.Password) {
 		log.Printf("[auth] login: senha incorreta para: %s", maskedEmail)
+		vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.RegisterFailure")
 		h.loginLimiter.RegisterFailure(ipKey)
+		vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.RegisterFailure")
 		h.loginLimiter.RegisterFailure(acctKey)
 		writeJSON(w, http.StatusUnauthorized, nil, "credenciais inválidas")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.RegisterSuccess")
 	// Login bem-sucedido: limpa os contadores de falhas.
 	h.loginLimiter.RegisterSuccess(ipKey)
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.loginLimiter.RegisterSuccess")
 	h.loginLimiter.RegisterSuccess(acctKey)
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.rehashSeNecessario")
 	h.rehashSeNecessario(ctx, u, req.Password)
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.auth.GenerateJWT e atribuindo resultado a token, err")
 	// Gera access token JWT.
 	token, err := h.auth.GenerateJWT(h.cfg, u.ID, u.Role)
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth] login: GenerateJWT: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro ao gerar token")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando r.UserAgent e atribuindo resultado a userAgent")
 	// Gera refresh token.
 	userAgent := r.UserAgent()
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.refreshSvc.GenerateRefreshToken e atribuindo resultado a refreshToken, err")
 	refreshToken, err := h.refreshSvc.GenerateRefreshToken(ctx, h.db, u.ID, ipOrigemPreCheck, userAgent)
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth] login: GenerateRefreshToken: %v", err)
 		// Não falha o login, apenas não retorna refresh token.
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando h.repo.UpdateUltimoLogin (retorno descartado)")
 	// Atualiza ultimo_login_at (não falha o login se falhar).
 	_ = h.repo.UpdateUltimoLogin(ctx, h.db, u.ID, time.Now())
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "definindo trocarSenha := u.DeveTrocarSenha")
 	// Flag de primeiro acesso / senha gerada pelo sistema, persistida na coluna
 	// deve_trocar_senha e populada pelo repositório em GetByEmail.
 	trocarSenha := u.DeveTrocarSenha
 
 	log.Printf("[auth] login OK: user_id=%d role=%s trocar_senha=%t", u.ID, u.Role, trocarSenha)
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "chamando setTokenCookies")
 	// Define tokens via Set-Cookie HttpOnly (NÃO mais no body JSON — vulnerabilidade #1 mitigada).
 	setTokenCookies(w, r, token, refreshToken, int(h.cfg.JWTTTL.Seconds()))
 
 	// Retorna apenas dados do usuário (tokens via cookie).
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	vlog.Printf("auth_handler.go", "AuthHandler.Login", "montando map[string]any em resp")
 	resp := map[string]any{
 		"success": true,
 		"data": map[string]any{
@@ -307,19 +355,27 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // Recebe refresh_token (body OU cookie), valida, revoga o antigo e retorna novo
 // access_token + refresh_token via Set-Cookie HttpOnly.
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "declarando variável req")
 	var req RefreshTokenRequest
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando json.NewDecoder(...).Decode (retorno descartado)")
 	_ = json.NewDecoder(r.Body).Decode(&req) // body opcional, usa cookie se vazio
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando extractRefreshToken e atribuindo resultado a refreshTokenInput")
 	refreshTokenInput := extractRefreshToken(r, req.RefreshToken)
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se refreshTokenInput == \"\"")
 	if refreshTokenInput == "" {
 		writeJSON(w, http.StatusBadRequest, nil, "refresh_token é obrigatório (body ou cookie)")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando r.Context e atribuindo resultado a ctx")
 	ctx := r.Context()
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando getClientIP e atribuindo resultado a ipOrigem")
 	ipOrigem := getClientIP(r, h.cfg.TrustProxyHeaders)
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando r.UserAgent e atribuindo resultado a userAgent")
 	userAgent := r.UserAgent()
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "montando chave de rate limit de refresh por IP — valor não logado")
 	// Rate limiting anti-bruteforce por IP: bloqueia tentativas repetidas de
 	// forjar/adivinhar refresh tokens. Contam como falha: token não encontrado,
 	// expirado e revogado fora da janela de graça (possível roubo). NÃO contam
@@ -327,35 +383,46 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	// corrida no BeginRotation — ambos são rotação concorrente legítima (abas,
 	// usuários atrás de NAT) e continuam recebendo 401 sem emitir tokens.
 	refreshIPKey := "refresh-ip:" + ipOrigem
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.refreshLimiter.Blocked e atribuindo resultado a blocked, retryAfter e verificando se blocked")
 	if blocked, retryAfter := h.refreshLimiter.Blocked(refreshIPKey); blocked {
 		log.Printf("[auth] refresh: IP bloqueado por rate limit: ip=%s retry_after=%s", ipOrigem, retryAfter)
 		writeRateLimited(w, retryAfter)
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.refreshSvc.ValidateRefreshToken e atribuindo resultado a rt, err")
 	// Valida o refresh token.
 	rt, err := h.refreshSvc.ValidateRefreshToken(ctx, h.db, refreshTokenInput)
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrRefreshTokenNotFound) {
 			log.Printf("[auth] refresh: token não encontrado")
+			vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.refreshLimiter.RegisterFailure")
 			h.refreshLimiter.RegisterFailure(refreshIPKey)
 			writeJSON(w, http.StatusUnauthorized, nil, "refresh token inválido")
 			return
 		}
+		vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrRefreshTokenExpired) {
 			log.Printf("[auth] refresh: token expirado")
+			vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.refreshLimiter.RegisterFailure")
 			h.refreshLimiter.RegisterFailure(refreshIPKey)
 			writeJSON(w, http.StatusUnauthorized, nil, "refresh token expirado")
 			return
 		}
+		vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se errors.Is(...)")
 		// Deve vir antes de ErrRefreshTokenRevoked, que ele envolve.
 		if errors.Is(err, services.ErrRefreshTokenRevokedRecently) {
 			log.Printf("[auth] refresh: token revogado recentemente (corrida entre abas), não conta no rate limit: ip=%s", ipOrigem)
 			writeJSON(w, http.StatusUnauthorized, nil, "refresh token revogado")
 			return
 		}
+		vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrRefreshTokenRevoked) {
+			vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.tratarTokenRevogadoForaDaJanela")
 			h.tratarTokenRevogadoForaDaJanela(ctx, err, ipOrigem, userAgent)
+			vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.refreshLimiter.RegisterFailure")
 			h.refreshLimiter.RegisterFailure(refreshIPKey)
 			writeJSON(w, http.StatusUnauthorized, nil, "refresh token revogado")
 			return
@@ -365,26 +432,32 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.repo.GetByID e atribuindo resultado a u, err")
 	// Busca o usuário para gerar novo access token.
 	u, err := h.repo.GetByID(ctx, h.db, rt.UsuarioID)
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth] refresh: GetByID: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se !u.IsActive()")
 	if !u.IsActive() {
 		log.Printf("[auth] refresh: usuário inativo: user_id=%d", u.ID)
 		writeJSON(w, http.StatusUnauthorized, nil, "usuário inativo")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.refreshSvc.BeginRotation e atribuindo resultado a rotation, err")
 	// Revoga o refresh token antigo (single-use) de forma atômica, reutilizando
 	// o ID obtido na validação. Em uma corrida entre duas requisições com o
 	// mesmo token, só uma revoga; a outra recebe 401 sem emitir tokens. Essa
 	// corrida é rotação concorrente legítima e não conta no rate limit (SEC-04).
 	rotation, err := h.refreshSvc.BeginRotation(ctx, h.db, rt.ID)
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrRefreshTokenRevoked) {
 			log.Printf("[auth] refresh: token já revogado por requisição concorrente (corrida no BeginRotation), não conta no rate limit: user_id=%d ip=%s", u.ID, ipOrigem)
 			writeJSON(w, http.StatusUnauthorized, nil, "refresh token revogado")
@@ -394,34 +467,42 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "agendando defer rotation.Rollback")
 	defer rotation.Rollback() // no-op após Issue bem-sucedido
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.auth.GenerateJWT e atribuindo resultado a newAccessToken, err")
 	// Gera novo access token.
 	newAccessToken, err := h.auth.GenerateJWT(h.cfg, u.ID, u.Role)
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth] refresh: GenerateJWT: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro ao gerar access token")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando rotation.Issue e atribuindo resultado a newRefreshToken, err")
 	// Gera novo refresh token na mesma transação da revogação e confirma.
 	newRefreshToken, err := rotation.Issue(ctx, u.ID, ipOrigem, userAgent)
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth] refresh: GenerateRefreshToken: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando h.refreshLimiter.RegisterSuccess")
 	// Refresh concluído: limpa o contador de falhas do IP.
 	h.refreshLimiter.RegisterSuccess(refreshIPKey)
 
 	log.Printf("[auth] refresh OK: user_id=%d", u.ID)
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "chamando setTokenCookies")
 	// Define novos tokens via Set-Cookie HttpOnly.
 	setTokenCookies(w, r, newAccessToken, newRefreshToken, int(h.cfg.JWTTTL.Seconds()))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	vlog.Printf("auth_handler.go", "AuthHandler.Refresh", "montando map[string]any em resp")
 	resp := map[string]any{
 		"success": true,
 		"data": map[string]any{
@@ -445,36 +526,46 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 //     (legado, tratado de forma conservadora): só log informativo, sem alerta
 //     e sem revogação em massa.
 func (h *AuthHandler) tratarTokenRevogadoForaDaJanela(ctx context.Context, err error, ipOrigem, userAgent string) {
+	vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "declarando variável revogado")
 	var revogado *services.RevokedTokenError
+	vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "verificando se !errors.As(...)")
 	if !errors.As(err, &revogado) {
 		log.Printf("[auth] refresh: token revogado fora da janela de graça (sem detalhes): ip=%s", ipOrigem)
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "verificando se !revogado.IsRotationReuse()")
 	if !revogado.IsRotationReuse() {
 		log.Printf("[auth] refresh: token revogado apresentado fora da janela de graça: user_id=%d token_id=%d motivo=%s ip=%s",
 			revogado.UsuarioID, revogado.TokenID, motivoRevogacaoLog(revogado.Reason), ipOrigem)
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "chamando h.refreshSvc.RegistrarReuso e atribuindo resultado a cortar, marca, err")
 	// SEC-12: marca o reuso deste token (UPDATE condicional atômico). Um novo
 	// reuso do MESMO token dentro da janela não corta as sessões de novo —
 	// senão cada replay derrubaria o re-login da vítima. Fail-closed: erro ao
 	// marcar corta assim mesmo.
 	cortar, marca, err := h.refreshSvc.RegistrarReuso(ctx, h.db, revogado.TokenID)
+	vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth][seguranca] refresh: falha ao registrar reuso (fail-closed, corta assim mesmo): token_id=%d: %v", revogado.TokenID, err)
+		vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "atribuindo cortar, marca = true, time.Time{}")
 		cortar, marca = true, time.Time{}
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "verificando se !cortar")
 	if !cortar {
 		log.Printf("[auth][seguranca] refresh: reuso repetido de token rotacionado dentro da janela de supressão — sessões NÃO revogadas de novo: user_id=%d token_id=%d ip=%s ua=%s",
 			revogado.UsuarioID, revogado.TokenID, ipOrigem, userAgent)
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "chamando h.cortarSessoesPorReuso")
 	h.cortarSessoesPorReuso(ctx, revogado, marca, ipOrigem, userAgent)
+	vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "verificando se h.alerta != nil")
 	// SEC-09: avisa usuário e admins (assíncrono, com dedup/teto próprios).
 	if h.alerta != nil {
+		vlog.Printf("auth_handler.go", "AuthHandler.tratarTokenRevogadoForaDaJanela", "chamando h.alerta.Notificar")
 		h.alerta.Notificar(revogado.UsuarioID, revogado.TokenID, ipOrigem, userAgent)
 	}
 }
@@ -486,20 +577,28 @@ func (h *AuthHandler) tratarTokenRevogadoForaDaJanela(ctx context.Context, err e
 func (h *AuthHandler) cortarSessoesPorReuso(ctx context.Context, revogado *services.RevokedTokenError, marca time.Time, ipOrigem, userAgent string) {
 	log.Printf("[auth][seguranca] refresh: reuso de refresh token já rotacionado fora da janela de graça (possível roubo de token) — revogando todas as sessões: user_id=%d token_id=%d revoked_at=%s ip=%s ua=%s",
 		revogado.UsuarioID, revogado.TokenID, revogado.RevokedAt.Format(time.RFC3339), ipOrigem, userAgent)
+	vlog.Printf("auth_handler.go", "AuthHandler.cortarSessoesPorReuso", "definindo falhou := false")
 	falhou := false
+	vlog.Printf("auth_handler.go", "AuthHandler.cortarSessoesPorReuso", "chamando h.refreshSvc.RevokeAllUserTokens e atribuindo resultado a err e verificando se err != nil")
 	if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, revogado.UsuarioID, repositories.RevokeReasonRevogacaoMassa); err != nil {
+		vlog.Printf("auth_handler.go", "AuthHandler.cortarSessoesPorReuso", "atribuindo falhou = true")
 		falhou = true
 		log.Printf("[auth][seguranca] refresh: falha na revogação em massa após reuso: user_id=%d: %v", revogado.UsuarioID, err)
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.cortarSessoesPorReuso", "chamando time.Now().Truncate e atribuindo resultado a corte")
 	// SEC-08: derruba também os access tokens já emitidos (corte de sessão).
 	corte := time.Now().Truncate(time.Second)
+	vlog.Printf("auth_handler.go", "AuthHandler.cortarSessoesPorReuso", "chamando h.repo.InvalidarSessoes e atribuindo resultado a err e verificando se err != nil")
 	if err := h.repo.InvalidarSessoes(ctx, h.db, revogado.UsuarioID, corte); err != nil {
+		vlog.Printf("auth_handler.go", "AuthHandler.cortarSessoesPorReuso", "atribuindo falhou = true")
 		falhou = true
 		log.Printf("[auth][seguranca] refresh: falha ao invalidar access tokens após reuso: user_id=%d: %v", revogado.UsuarioID, err)
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.cortarSessoesPorReuso", "verificando se !falhou || marca.IsZero()")
 	if !falhou || marca.IsZero() {
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.cortarSessoesPorReuso", "chamando h.refreshSvc.DesfazerReuso e atribuindo resultado a err e verificando se err != nil")
 	if err := h.refreshSvc.DesfazerReuso(ctx, h.db, revogado.TokenID, marca); err != nil {
 		log.Printf("[auth][seguranca] refresh: falha ao desfazer a marca de reuso após corte incompleto: token_id=%d: %v", revogado.TokenID, err)
 		return
@@ -509,6 +608,7 @@ func (h *AuthHandler) cortarSessoesPorReuso(ctx context.Context, revogado *servi
 
 // motivoRevogacaoLog formata o motivo para log; NULL vira "desconhecido(legado)".
 func motivoRevogacaoLog(m repositories.RevokeReason) string {
+	vlog.Printf("auth_handler.go", "motivoRevogacaoLog", "verificando se m == repositories.RevokeReasonDesconhecido")
 	if m == repositories.RevokeReasonDesconhecido {
 		return "desconhecido(legado)"
 	}
@@ -519,46 +619,60 @@ func motivoRevogacaoLog(m repositories.RevokeReason) string {
 // O usuário autenticado troca a própria senha informando a senha atual.
 // O usuario_id é extraído do token JWT — não deve vir no body.
 func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando middleware.GetUserID e atribuindo resultado a uid, ok")
 	uid, ok := middleware.GetUserID(r.Context())
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se !ok")
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, nil, "não autenticado")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "declarando variável req")
 	var req ResetPasswordRequest
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se senha_atual veio vazia — valor não logado")
 	if req.SenhaAtual == "" {
 		writeJSON(w, http.StatusBadRequest, nil, "senha_atual é obrigatória")
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se nova_senha veio vazia — valor não logado")
 	if req.NovaSenha == "" {
 		writeJSON(w, http.StatusBadRequest, nil, "nova_senha é obrigatória")
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando getClientIP e atribuindo resultado a ipOrigemPreCheck")
 	ipOrigemPreCheck := getClientIP(r, h.cfg.TrustProxyHeaders)
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se !h.verifyCaptcha(...)")
 	// Validação do CAPTCHA (Cloudflare Turnstile) roda ANTES do rate limiting,
 	// mesmo padrão do Login. Fail-closed: token ausente/inválido => recusa.
 	if !h.verifyCaptcha(w, r, req.CaptchaToken, ipOrigemPreCheck, "reset-password") {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "montando chave de rate limit de reset-password (IP+usuario_id) — valor não logado")
 	// Rate limiting anti-bruteforce por IP+usuário: protege contra automação
 	// de tentativas de adivinhar a senha_atual (endpoint antes não tinha
 	// nenhum rate limit).
 	resetKey := "reset:" + ipOrigemPreCheck + "|" + strconv.FormatInt(uid, 10)
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.resetPasswordLimiter.Blocked e atribuindo resultado a blocked, retryAfter e verificando se blocked")
 	if blocked, retryAfter := h.resetPasswordLimiter.Blocked(resetKey); blocked {
 		log.Printf("[auth] reset-password: bloqueado por rate limit: user_id=%d retry_after=%s", uid, retryAfter)
 		writeRateLimited(w, retryAfter)
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando r.Context e atribuindo resultado a ctx")
 	ctx := r.Context()
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.repo.GetByID e atribuindo resultado a u, err")
 	u, err := h.repo.GetByID(ctx, h.db, uid)
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se err == repositories.ErrNotFound")
 		if err == repositories.ErrNotFound {
 			writeJSON(w, http.StatusNotFound, nil, "usuário não encontrado")
 			return
@@ -568,8 +682,10 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se !h.auth.VerifyPassword(...)")
 	if !h.auth.VerifyPassword(h.cfg, u.PasswordHash, req.SenhaAtual) {
 		log.Printf("[auth] reset-password: senha atual incorreta: user_id=%d", uid)
+		vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.resetPasswordLimiter.RegisterFailure")
 		h.resetPasswordLimiter.RegisterFailure(resetKey)
 		// 400 (e não 401): o usuário está autenticado. 401 fica reservado para
 		// sessão/JWT inválido — o frontend trata 401 como token expirado, faz
@@ -579,9 +695,11 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.resetPasswordLimiter.RegisterSuccess")
 	// Senha atual confirmada: limpa o contador de falhas do rate limiter.
 	h.resetPasswordLimiter.RegisterSuccess(resetKey)
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se a nova senha é igual à atual — valores não logados")
 	// Nova senha igual à atual: checado ANTES da força, senão uma senha atual
 	// fraca retornaria o erro de força em vez do problema real. Não conta no
 	// rate limit: a senha atual já foi confirmada, então não há vazamento.
@@ -591,6 +709,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando sharedsvc.ValidarForcaSenha e atribuindo resultado a err e verificando se err != nil")
 	// Força da nova senha: erro de usabilidade normal — não conta no rate
 	// limit de reset-password (só tentativas de adivinhar segredo contam).
 	if err := sharedsvc.ValidarForcaSenha(req.NovaSenha); err != nil {
@@ -599,48 +718,65 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.senhaSvc.ListarPorUsuario e atribuindo resultado a historico, _, err")
 	// Bloqueio de reuso das últimas 3 senhas: hash atual + os 2 registros
 	// mais recentes do histórico. Rodamos as 3 comparações de hash até o
 	// fim, sem short-circuit, para não criar um side-channel de timing que
 	// revele qual das 3 senhas anteriores foi reutilizada.
 	historico, _, err := h.senhaSvc.ListarPorUsuario(ctx, h.db, uid, 1, 2, "id", "desc")
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth] reset-password: ListarPorUsuario: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "criando lista de candidatos para checagem de reuso de senha — valores não logados")
 	hashesCandidatos := make([]string, 0, 3)
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "adicionando o hash atual à lista de candidatos — valor não logado")
 	hashesCandidatos = append(hashesCandidatos, u.PasswordHash)
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "iniciando loop sobre historico")
 	for _, registro := range historico {
 		hashesCandidatos = append(hashesCandidatos, registro.SenhaHashAnterior)
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "loop sobre historico concluído: %d itens", len(historico))
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "definindo reutilizada := false")
 	reutilizada := false
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "iniciando loop sobre hashesCandidatos")
 	for _, hashCandidato := range hashesCandidatos {
 		if h.auth.VerifyPassword(h.cfg, hashCandidato, req.NovaSenha) {
 			reutilizada = true
 		}
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "loop sobre hashesCandidatos concluído: %d itens", len(hashesCandidatos))
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se reutilizada")
 	if reutilizada {
 		log.Printf("[auth] reset-password: rejeitada: user_id=%d motivo=senha_reutilizada", uid)
+		vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.resetPasswordLimiter.RegisterFailure")
 		h.resetPasswordLimiter.RegisterFailure(resetKey)
 		writeJSON(w, http.StatusBadRequest, nil, "a nova senha não pode ser igual a uma das últimas senhas utilizadas")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.auth.HashPassword e atribuindo resultado a newHash, err")
 	newHash, err := h.auth.HashPassword(h.cfg, req.NovaSenha)
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth] reset-password: HashPassword: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando getClientIP e atribuindo resultado a ipOrigem")
 	// Registrar no histórico de senhas (tipo "usuario" = auto-troca).
 	ipOrigem := getClientIP(r, h.cfg.TrustProxyHeaders)
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando r.UserAgent e atribuindo resultado a userAgent")
 	userAgent := r.UserAgent()
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.senhaSvc.Registrar e atribuindo resultado a err e verificando se err != nil")
 	if err := h.senhaSvc.Registrar(ctx, h.db, uid, nil, u.PasswordHash, ipOrigem, userAgent, "usuario"); err != nil {
 		log.Printf("[auth] reset-password: falha ao registrar histórico de senha do user_id=%d: %v", uid, err)
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.repo.UpdatePasswordHash e atribuindo resultado a err e verificando se err != nil")
 	// Troca voluntária pelo próprio usuário — não é mais primeiro acesso.
 	if err := h.repo.UpdatePasswordHash(ctx, h.db, uid, newHash, false); err != nil {
 		log.Printf("[auth] reset-password: UpdatePasswordHash: %v", err)
@@ -648,11 +784,13 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando h.refreshSvc.RevokeAllUserTokens e atribuindo resultado a err e verificando se err != nil")
 	// Revoga todos os refresh tokens após troca de senha (security best practice).
 	if err := h.refreshSvc.RevokeAllUserTokens(ctx, h.db, uid, repositories.RevokeReasonSenha); err != nil {
 		log.Printf("[auth] reset-password: falha ao revogar refresh tokens do user_id=%d: %v", uid, err)
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.ResetPassword", "chamando clearTokenCookies")
 	// Limpa cookies (forçar novo login).
 	clearTokenCookies(w)
 
@@ -664,15 +802,21 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 // Me GET /api/auth/me
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("auth_handler.go", "AuthHandler.Me", "chamando middleware.GetUserID e atribuindo resultado a uid, ok")
 	uid, ok := middleware.GetUserID(r.Context())
+	vlog.Printf("auth_handler.go", "AuthHandler.Me", "verificando se !ok")
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, nil, "não autenticado")
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Me", "chamando r.Context e atribuindo resultado a ctx")
 	ctx := r.Context()
+	vlog.Printf("auth_handler.go", "AuthHandler.Me", "chamando h.repo.GetByID e atribuindo resultado a u, err")
 	u, err := h.repo.GetByID(ctx, h.db, uid)
+	vlog.Printf("auth_handler.go", "AuthHandler.Me", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("auth_handler.go", "AuthHandler.Me", "verificando se err == repositories.ErrNotFound")
 		if err == repositories.ErrNotFound {
 			writeJSON(w, http.StatusNotFound, nil, "usuário não encontrado")
 			return
@@ -682,7 +826,9 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Me", "chamando h.vendedorDesligadoDoUsuario e atribuindo resultado a vendedorDesligado, err")
 	vendedorDesligado, err := h.vendedorDesligadoDoUsuario(ctx, u)
+	vlog.Printf("auth_handler.go", "AuthHandler.Me", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth] me: vendedor desligado: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
@@ -707,10 +853,13 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 // retornam false sem erro. Consulta própria ao banco a cada chamada (sem
 // cache L1).
 func (h *AuthHandler) vendedorDesligadoDoUsuario(ctx context.Context, u *models.Usuario) (bool, error) {
+	vlog.Printf("auth_handler.go", "AuthHandler.vendedorDesligadoDoUsuario", "verificando se u.IsAdmin() || u.IDVendedor == nil || *u.IDVendedor <= 0")
 	if u.IsAdmin() || u.IDVendedor == nil || *u.IDVendedor <= 0 {
 		return false, nil
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.vendedorDesligadoDoUsuario", "chamando h.vendedorRepo.IsDesligado e atribuindo resultado a desligado, err")
 	desligado, err := h.vendedorRepo.IsDesligado(ctx, h.db, *u.IDVendedor)
+	vlog.Printf("auth_handler.go", "AuthHandler.vendedorDesligadoDoUsuario", "verificando se errors.Is(...)")
 	if errors.Is(err, repositories.ErrNotFound) {
 		return false, nil
 	}
@@ -720,20 +869,28 @@ func (h *AuthHandler) vendedorDesligadoDoUsuario(ctx context.Context, u *models.
 // Logout POST /api/auth/logout
 // Revoga o refresh token atual e limpa os cookies.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("auth_handler.go", "AuthHandler.Logout", "declarando variável req")
 	// Pode receber refresh_token no body OU no cookie.
 	var req RefreshTokenRequest
+	vlog.Printf("auth_handler.go", "AuthHandler.Logout", "chamando json.NewDecoder(...).Decode (retorno descartado)")
 	_ = json.NewDecoder(r.Body).Decode(&req) // body opcional
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Logout", "chamando r.Context e atribuindo resultado a ctx")
 	ctx := r.Context()
+	vlog.Printf("auth_handler.go", "AuthHandler.Logout", "chamando extractRefreshToken e atribuindo resultado a refreshInput")
 	refreshInput := extractRefreshToken(r, req.RefreshToken)
+	vlog.Printf("auth_handler.go", "AuthHandler.Logout", "verificando se refreshInput != \"\"")
 	if refreshInput != "" {
+		vlog.Printf("auth_handler.go", "AuthHandler.Logout", "chamando h.refreshSvc.RevokeToken e atribuindo resultado a err e verificando se err != nil")
 		if err := h.refreshSvc.RevokeToken(ctx, h.db, refreshInput, repositories.RevokeReasonLogout); err != nil {
+			vlog.Printf("auth_handler.go", "AuthHandler.Logout", "verificando se !errors.Is(...) && !errors.Is(...)")
 			if !errors.Is(err, services.ErrRefreshTokenNotFound) && !errors.Is(err, services.ErrRefreshTokenRevoked) {
 				log.Printf("[auth] logout: RevokeToken: %v", err)
 			}
 		}
 	}
 
+	vlog.Printf("auth_handler.go", "AuthHandler.Logout", "chamando clearTokenCookies")
 	// Limpa cookies.
 	clearTokenCookies(w)
 
@@ -749,11 +906,15 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 // Caso contrário — e por padrão — esses headers são ignorados (são facilmente
 // forjáveis pelo próprio cliente) e r.RemoteAddr é sempre usado.
 func getClientIP(r *http.Request, trustProxyHeaders bool) string {
+	vlog.Printf("auth_handler.go", "getClientIP", "verificando se trustProxyHeaders")
 	if trustProxyHeaders {
+		vlog.Printf("auth_handler.go", "getClientIP", "chamando r.Header.Get e atribuindo resultado a fwd e verificando se fwd != \"\"")
 		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			vlog.Printf("auth_handler.go", "getClientIP", "chamando strings.Split e atribuindo resultado a parts")
 			parts := strings.Split(fwd, ",")
 			return strings.TrimSpace(parts[0])
 		}
+		vlog.Printf("auth_handler.go", "getClientIP", "chamando r.Header.Get e atribuindo resultado a fwd e verificando se fwd != \"\"")
 		if fwd := r.Header.Get("X-Real-IP"); fwd != "" {
 			return fwd
 		}
@@ -765,22 +926,13 @@ func getClientIP(r *http.Request, trustProxyHeaders bool) string {
 // retornando apenas o IP. Se o valor não puder ser interpretado como
 // host:porta (ex.: já é só um IP), o valor original é devolvido sem mudanças.
 func stripPort(hostport string) string {
+	vlog.Printf("auth_handler.go", "stripPort", "chamando net.SplitHostPort e atribuindo resultado a host, _, err")
 	host, _, err := net.SplitHostPort(hostport)
+	vlog.Printf("auth_handler.go", "stripPort", "verificando se err != nil")
 	if err != nil {
 		return hostport
 	}
 	return host
-}
-
-// maskEmail mascara parcialmente um e-mail para uso em logs, preservando
-// apenas o primeiro caractere do usuário e o domínio completo
-// (ex.: "ana.silva@empresa.com" -> "a***@empresa.com").
-func maskEmail(email string) string {
-	at := strings.Index(email, "@")
-	if at <= 0 {
-		return "***"
-	}
-	return email[:1] + "***" + email[at:]
 }
 
 // SetCaptchaVerifier substitui o CaptchaVerifier usado pelo handler. Existe
@@ -788,6 +940,7 @@ func maskEmail(email string) string {
 // o TurnstileService criado por NewAuthHandler) — não redesenha a
 // arquitetura, apenas expõe um setter mínimo para testabilidade.
 func (h *AuthHandler) SetCaptchaVerifier(v sharedsvc.CaptchaVerifier) {
+	vlog.Printf("auth_handler.go", "AuthHandler.SetCaptchaVerifier", "atribuindo h.captcha = v")
 	h.captcha = v
 }
 
@@ -799,7 +952,9 @@ func (h *AuthHandler) SetCaptchaVerifier(v sharedsvc.CaptchaVerifier) {
 // sem nunca logar o token ou a secret key. Retorna true se a validação
 // passou (chamador pode prosseguir).
 func (h *AuthHandler) verifyCaptcha(w http.ResponseWriter, r *http.Request, token, remoteIP, acao string) bool {
+	vlog.Printf("auth_handler.go", "AuthHandler.verifyCaptcha", "chamando h.captcha.Verify e atribuindo resultado a err e verificando se err != nil")
 	if err := h.captcha.Verify(r.Context(), token, remoteIP); err != nil {
+		vlog.Printf("auth_handler.go", "AuthHandler.verifyCaptcha", "verificando se errors.Is(...)")
 		if errors.Is(err, sharedsvc.ErrCaptchaTokenAusente) {
 			log.Printf("[auth] %s: captchaToken ausente: ip=%s", acao, remoteIP)
 		} else {
@@ -814,8 +969,11 @@ func (h *AuthHandler) verifyCaptcha(w http.ResponseWriter, r *http.Request, toke
 // writeRateLimited escreve uma resposta 429 padronizada, incluindo o header
 // Retry-After (em segundos) para orientar o cliente sobre quando tentar de novo.
 func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration) {
+	vlog.Printf("auth_handler.go", "writeRateLimited", "chamando int e atribuindo resultado a seconds")
 	seconds := int(retryAfter.Seconds())
+	vlog.Printf("auth_handler.go", "writeRateLimited", "verificando se seconds < 1")
 	if seconds < 1 {
+		vlog.Printf("auth_handler.go", "writeRateLimited", "atribuindo seconds = 1")
 		seconds = 1
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(seconds))
@@ -827,14 +985,18 @@ func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration) {
 // bcrypt legados ou Argon2id com parâmetros antigos. Best-effort: falha só gera
 // log e não afeta o login.
 func (h *AuthHandler) rehashSeNecessario(ctx context.Context, u *models.Usuario, senha string) {
+	vlog.Printf("auth_handler.go", "AuthHandler.rehashSeNecessario", "verificando se !h.auth.NeedsRehash(...)")
 	if !h.auth.NeedsRehash(h.cfg, u.PasswordHash) {
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.rehashSeNecessario", "chamando h.auth.HashPassword e atribuindo resultado a novo, err")
 	novo, err := h.auth.HashPassword(h.cfg, senha)
+	vlog.Printf("auth_handler.go", "AuthHandler.rehashSeNecessario", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[auth] login: rehash: HashPassword: %v", err)
 		return
 	}
+	vlog.Printf("auth_handler.go", "AuthHandler.rehashSeNecessario", "chamando h.auth.RehashPassword e atribuindo resultado a err e verificando se err != nil")
 	if err := h.auth.RehashPassword(ctx, h.db, u.ID, u.PasswordHash, novo); err != nil {
 		log.Printf("[auth] login: rehash user_id=%d: %v", u.ID, err)
 		return

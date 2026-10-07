@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/shared/models"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // PedidoRepository agrupa queries das tabelas pedidos e itens_pedido.
@@ -107,38 +108,62 @@ func (f PedidoFiltro) orderBy() string {
 // where monta a cláusula WHERE (sem a palavra "WHERE") e os args correspondentes.
 // Retorna string vazia quando não há filtros.
 func (f PedidoFiltro) where() (string, []any) {
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "declarando variável conds")
 	var conds []string
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "declarando variável args")
 	var args []any
 
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "verificando se f.Status != \"\"")
 	if f.Status != "" {
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando cláusula de filtro/SQL [p.status = ?] em conds")
 		conds = append(conds, "p.status = ?")
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
 		args = append(args, f.Status)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "verificando se f.Canal != \"\"")
 	if f.Canal != "" {
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando cláusula de filtro/SQL [p.canal = ?] em conds")
 		conds = append(conds, "p.canal = ?")
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
 		args = append(args, f.Canal)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "verificando se f.ClienteID > 0")
 	if f.ClienteID > 0 {
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando cláusula de filtro/SQL [p.cliente_id = ?] em conds")
 		conds = append(conds, "p.cliente_id = ?")
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
 		args = append(args, f.ClienteID)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "verificando se f.VendedorID > 0")
 	if f.VendedorID > 0 {
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando cláusula de filtro/SQL [p.vendedor_id = ?] em conds")
 		conds = append(conds, "p.vendedor_id = ?")
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
 		args = append(args, f.VendedorID)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "verificando se f.DataInicio != \"\"")
 	if f.DataInicio != "" {
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando cláusula de filtro/SQL [p.data_pedido >= ?] em conds")
 		conds = append(conds, "p.data_pedido >= ?")
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
 		args = append(args, f.DataInicio)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "verificando se f.DataFim != \"\"")
 	if f.DataFim != "" {
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando cláusula de filtro/SQL [p.data_pedido <= ?] em conds")
 		conds = append(conds, "p.data_pedido <= ?")
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
 		args = append(args, f.DataFim)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "verificando se f.Q != \"\"")
 	if f.Q != "" {
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando cláusula de filtro/SQL [c.razao_social LIKE ?] em conds")
 		conds = append(conds, "c.razao_social LIKE ?")
+		vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
 		args = append(args, "%"+f.Q+"%")
 	}
 
+	vlog.Printf("pedido_repository.go", "PedidoFiltro.where", "verificando se len(conds) == 0")
 	if len(conds) == 0 {
 		return "", nil
 	}
@@ -148,35 +173,53 @@ func (f PedidoFiltro) where() (string, []any) {
 // List retorna pedidos paginados (sem itens, por performance) conforme o
 // filtro informado, mais o total para meta-dados de paginação.
 func (r *PedidoRepository) List(ctx context.Context, db *sql.DB, page, limit int, filtro PedidoFiltro) ([]PedidoListagem, int, error) {
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "verificando se page < 1")
 	if page < 1 {
+		vlog.Printf("pedido_repository.go", "PedidoRepository.List", "atribuindo page = 1")
 		page = 1
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "verificando se limit < 1")
 	if limit < 1 {
+		vlog.Printf("pedido_repository.go", "PedidoRepository.List", "atribuindo limit = 20")
 		limit = 20
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "verificando se limit > 100")
 	if limit > 100 {
+		vlog.Printf("pedido_repository.go", "PedidoRepository.List", "atribuindo limit = 100")
 		limit = 100
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "definindo offset = (page - 1) * limit")
 	offset := (page - 1) * limit
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "definindo whereClause, args com resultado de chamada a filtro.where")
 	whereClause, args := filtro.where()
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "declarando variável total")
 	var total int
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "montando texto da query SQL SELECT em countQ")
 	countQ := "SELECT COUNT(*)" + pedidoFrom + whereClause
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query countQ, args omitidos) com leitura do resultado e verificando se err != nil")
 	if err := db.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("repositories: count pedidos: %w", err)
 	}
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "montando texto da query SQL SELECT em q")
 	q := "SELECT " + pedidoColunas + pedidoFrom + whereClause + filtro.orderBy() + " LIMIT ? OFFSET ?"
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "adicionando 2 parâmetro(s) de placeholder em queryArgs (valores omitidos)")
 	queryArgs := append(append([]any{}, args...), limit, offset)
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, queryArgs...)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "verificando se err != nil")
 	if err != nil {
 		return nil, 0, fmt.Errorf("repositories: list pedidos: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "declarando variável out")
 	var out []PedidoListagem
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		p, err := scanPedidoListagem(rows)
 		if err != nil {
@@ -184,6 +227,8 @@ func (r *PedidoRepository) List(ctx context.Context, db *sql.DB, page, limit int
 		}
 		out = append(out, *p)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "loop concluído; itens acumulados em out: %d", len(out))
+	vlog.Printf("pedido_repository.go", "PedidoRepository.List", "definindo err com resultado de chamada a rows.Err e verificando se err != nil")
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("repositories: list pedidos iteração: %w", err)
 	}
@@ -193,7 +238,9 @@ func (r *PedidoRepository) List(ctx context.Context, db *sql.DB, page, limit int
 // GetByID busca o cabeçalho de um pedido pelo ID (com nomes de
 // cliente/vendedor). Retorna ErrNotFound se não existir.
 func (r *PedidoRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (*PedidoListagem, error) {
+	vlog.Printf("pedido_repository.go", "PedidoRepository.GetByID", "montando texto da query SQL SELECT em q")
 	q := "SELECT " + pedidoColunas + pedidoFrom + " WHERE p.pedido_id_origem = ? LIMIT 1"
+	vlog.Printf("pedido_repository.go", "PedidoRepository.GetByID", "definindo row com resultado de execução SQL via db.QueryRowContext (query q, args omitidos)")
 	row := db.QueryRowContext(ctx, q, id)
 	return scanPedidoListagem(row)
 }
@@ -201,14 +248,20 @@ func (r *PedidoRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (*
 // ListItensByPedidoID retorna todos os itens de um pedido (com sku/descrição
 // do produto), ordenados por item_id_origem.
 func (r *PedidoRepository) ListItensByPedidoID(ctx context.Context, db *sql.DB, pedidoID int64) ([]ItemPedidoDetalhe, error) {
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ListItensByPedidoID", "montando texto da query SQL SELECT em q")
 	q := "SELECT " + itemPedidoColunas + itemPedidoFrom + " WHERE i.pedido_id = ? ORDER BY i.item_id_origem ASC"
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ListItensByPedidoID", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, pedidoID)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ListItensByPedidoID", "verificando se err != nil")
 	if err != nil {
 		return nil, fmt.Errorf("repositories: list itens_pedido: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ListItensByPedidoID", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ListItensByPedidoID", "declarando variável out")
 	var out []ItemPedidoDetalhe
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ListItensByPedidoID", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		it, err := scanItemPedidoDetalhe(rows)
 		if err != nil {
@@ -216,6 +269,8 @@ func (r *PedidoRepository) ListItensByPedidoID(ctx context.Context, db *sql.DB, 
 		}
 		out = append(out, *it)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ListItensByPedidoID", "loop concluído; itens acumulados em out: %d", len(out))
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ListItensByPedidoID", "definindo err com resultado de chamada a rows.Err e verificando se err != nil")
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("repositories: list itens_pedido iteração: %w", err)
 	}
@@ -226,9 +281,13 @@ func (r *PedidoRepository) ListItensByPedidoID(ctx context.Context, db *sql.DB, 
 // serviço de Pagamentos para validar pedido_id antes de criar um pagamento.
 func (r *PedidoRepository) ExistsByID(ctx context.Context, db *sql.DB, id int64) (bool, error) {
 	const q = `SELECT 1 FROM pedidos WHERE pedido_id_origem = ? LIMIT 1`
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ExistsByID", "declarando variável one")
 	var one int
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ExistsByID", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query q, args omitidos) com leitura do resultado")
 	err := db.QueryRowContext(ctx, q, id).Scan(&one)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.ExistsByID", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("pedido_repository.go", "PedidoRepository.ExistsByID", "verificando se errors.Is(err, sql.ErrNoRows)")
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -242,31 +301,41 @@ func (r *PedidoRepository) ExistsByID(ctx context.Context, db *sql.DB, id int64)
 // item_id_origem são gerados nativamente pelo AUTO_INCREMENT do MySQL.
 // Preenche p.PedidoIDOrigem e o ItemIDOrigem/PedidoID de cada item em itens.
 func (r *PedidoRepository) CreateComItens(ctx context.Context, db *sql.DB, p *models.Pedido, itens []models.ItemPedido) error {
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "definindo tx, err com resultado de operação de banco via db.BeginTx")
 	tx, err := db.BeginTx(ctx, nil)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: begin tx create pedido: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "agendando defer de operação de banco via tx.Rollback")
 	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
 
 	const insertPedido = `
 		INSERT INTO pedidos (cliente_id, vendedor_id, data_pedido, canal, status, valor_total)
 		VALUES (?, ?, ?, ?, ?, ?)`
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "definindo res, err com resultado de execução SQL via tx.ExecContext (query insertPedido, args omitidos)")
 	res, err := tx.ExecContext(ctx, insertPedido,
 		p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal,
 	)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: create pedido: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "definindo pedidoID, err com resultado de chamada a res.LastInsertId")
 	pedidoID, err := res.LastInsertId()
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: create pedido lastInsertId: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "atribuindo p.PedidoIDOrigem = pedidoID")
 	p.PedidoIDOrigem = pedidoID
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "definindo err com resultado de chamada a insertItensTx e verificando se err != nil")
 	if err := insertItensTx(ctx, tx, pedidoID, itens); err != nil {
 		return err
 	}
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.CreateComItens", "definindo err com resultado de operação de banco via tx.Commit e verificando se err != nil")
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("repositories: commit create pedido: %w", err)
 	}
@@ -291,27 +360,38 @@ func (r *PedidoRepository) CreateComItens(ctx context.Context, db *sql.DB, p *mo
 //     recebendo novamente status "Faturado") não baixam estoque de novo. Se a
 //     baixa falhar, a transação inteira é revertida (rollback do faturamento).
 func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id int64, p *models.Pedido, itens []models.ItemPedido) error {
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo tx, err com resultado de operação de banco via db.BeginTx")
 	tx, err := db.BeginTx(ctx, nil)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: begin tx update pedido: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "agendando defer de operação de banco via tx.Rollback")
 	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "declarando variável statusAtual")
 	var statusAtual string
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "atribuindo err com resultado de execução SQL via tx.QueryRowContext(...).Scan (query SELECT em pedidos, args omitidos) com leitura do resultado")
 	err = tx.QueryRowContext(ctx, `SELECT status FROM pedidos WHERE pedido_id_origem = ? FOR UPDATE`, id).Scan(&statusAtual)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se errors.Is(err, sql.ErrNoRows)")
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
 		return fmt.Errorf("repositories: lock pedido para update: %w", err)
 	}
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo itensAtuais, err com resultado de chamada a listItensByPedidoIDTx")
 	itensAtuais, err := listItensByPedidoIDTx(ctx, tx, id)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo itensAlterados = !itensIguais(itensAtuais, itens)")
 	itensAlterados := !itensIguais(itensAtuais, itens)
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se statusAtual == statusFaturado && itensAlterados")
 	if statusAtual == statusFaturado && itensAlterados {
 		return ErrPedidoJaFaturadoNaoPodeAlterarItens
 	}
@@ -320,16 +400,21 @@ func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id in
 		UPDATE pedidos
 		SET cliente_id = ?, vendedor_id = ?, data_pedido = ?, canal = ?, status = ?, valor_total = ?
 		WHERE pedido_id_origem = ?`
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo res, err com resultado de execução SQL via tx.ExecContext (query updatePedido, args omitidos)")
 	res, err := tx.ExecContext(ctx, updatePedido,
 		p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal, id,
 	)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: update pedido: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo n, err com resultado de chamada a res.RowsAffected")
 	n, err := res.RowsAffected()
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: update pedido rowsAffected: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se n == 0")
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -338,11 +423,14 @@ func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id in
 	// então preserva as linhas de itens_pedido como estão (mesmo
 	// item_id_origem/created_at) — apenas o cabeçalho do pedido (ex: status)
 	// foi atualizado.
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se statusAtual != statusFaturado")
 	if statusAtual != statusFaturado {
+		vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo _, err com resultado de execução SQL via tx.ExecContext (query DELETE em itens_pedido, args omitidos) e verificando se err != nil")
 		if _, err := tx.ExecContext(ctx, `DELETE FROM itens_pedido WHERE pedido_id = ?`, id); err != nil {
 			return fmt.Errorf("repositories: delete itens_pedido: %w", err)
 		}
 
+		vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo err com resultado de chamada a insertItensTx e verificando se err != nil")
 		if err := insertItensTx(ctx, tx, id, itens); err != nil {
 			return err
 		}
@@ -350,9 +438,13 @@ func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id in
 
 	// Baixa de estoque automática na transição para "Faturado" (idempotente:
 	// só dispara se o pedido NÃO estava faturado antes).
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "verificando se statusAtual != statusFaturado && p.Status == statusFaturado")
 	if statusAtual != statusFaturado && p.Status == statusFaturado {
+		vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo estoqueRepo com resultado de chamada a NewEstoqueRepository")
 		estoqueRepo := NewEstoqueRepository()
+		vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo dataFaturamento com resultado de chamada a time.Now")
 		dataFaturamento := time.Now()
+		vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "iniciando loop range sobre itens (sem log por iteração)")
 		for _, it := range itens {
 			sku, err := skuPorProdutoIDTx(ctx, tx, it.ProdutoID)
 			if err != nil {
@@ -362,8 +454,10 @@ func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id in
 				return fmt.Errorf("repositories: baixa de estoque no faturamento do pedido %d: %w", id, err)
 			}
 		}
+		vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "loop concluído")
 	}
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.UpdateComItens", "definindo err com resultado de operação de banco via tx.Commit e verificando se err != nil")
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("repositories: commit update pedido: %w", err)
 	}
@@ -374,9 +468,13 @@ func (r *PedidoRepository) UpdateComItens(ctx context.Context, db *sql.DB, id in
 // informada. Usado pela baixa automática de estoque no faturamento (a tabela
 // estoque referencia produtos por sku, não por id).
 func skuPorProdutoIDTx(ctx context.Context, tx *sql.Tx, produtoID int64) (string, error) {
+	vlog.Printf("pedido_repository.go", "skuPorProdutoIDTx", "declarando variável sku")
 	var sku string
+	vlog.Printf("pedido_repository.go", "skuPorProdutoIDTx", "definindo err com resultado de execução SQL via tx.QueryRowContext(...).Scan (query SELECT em produtos, args omitidos) com leitura do resultado")
 	err := tx.QueryRowContext(ctx, `SELECT sku FROM produtos WHERE id = ? LIMIT 1`, produtoID).Scan(&sku)
+	vlog.Printf("pedido_repository.go", "skuPorProdutoIDTx", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("pedido_repository.go", "skuPorProdutoIDTx", "verificando se errors.Is(err, sql.ErrNoRows)")
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", fmt.Errorf("repositories: produto_id %d não encontrado para baixa de estoque", produtoID)
 		}
@@ -391,13 +489,18 @@ func skuPorProdutoIDTx(ctx context.Context, tx *sql.Tx, produtoID int64) (string
 // permitida.
 func listItensByPedidoIDTx(ctx context.Context, tx *sql.Tx, pedidoID int64) ([]models.ItemPedido, error) {
 	const q = `SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido WHERE pedido_id = ? ORDER BY item_id_origem ASC`
+	vlog.Printf("pedido_repository.go", "listItensByPedidoIDTx", "definindo rows, err com resultado de execução SQL via tx.QueryContext (query q, args omitidos)")
 	rows, err := tx.QueryContext(ctx, q, pedidoID)
+	vlog.Printf("pedido_repository.go", "listItensByPedidoIDTx", "verificando se err != nil")
 	if err != nil {
 		return nil, fmt.Errorf("repositories: list itens_pedido (tx): %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "listItensByPedidoIDTx", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("pedido_repository.go", "listItensByPedidoIDTx", "declarando variável out")
 	var out []models.ItemPedido
+	vlog.Printf("pedido_repository.go", "listItensByPedidoIDTx", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		var it models.ItemPedido
 		if err := rows.Scan(&it.ProdutoID, &it.Quantidade, &it.PrecoPraticado, &it.DescontoPct); err != nil {
@@ -405,6 +508,8 @@ func listItensByPedidoIDTx(ctx context.Context, tx *sql.Tx, pedidoID int64) ([]m
 		}
 		out = append(out, it)
 	}
+	vlog.Printf("pedido_repository.go", "listItensByPedidoIDTx", "loop concluído; itens acumulados em out: %d", len(out))
+	vlog.Printf("pedido_repository.go", "listItensByPedidoIDTx", "definindo err com resultado de chamada a rows.Err e verificando se err != nil")
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("repositories: list itens_pedido (tx) iteração: %w", err)
 	}
@@ -416,9 +521,11 @@ func listItensByPedidoIDTx(ctx context.Context, tx *sql.Tx, pedidoID int64) ([]m
 // ids/timestamps — usado para detectar se um update de pedido está tentando
 // alterar os itens de um pedido já faturado.
 func itensIguais(a, b []models.ItemPedido) bool {
+	vlog.Printf("pedido_repository.go", "itensIguais", "verificando se len(a) != len(b)")
 	if len(a) != len(b) {
 		return false
 	}
+	vlog.Printf("pedido_repository.go", "itensIguais", "iniciando loop range sobre a (sem log por iteração)")
 	for i := range a {
 		if a[i].ProdutoID != b[i].ProdutoID ||
 			a[i].Quantidade != b[i].Quantidade ||
@@ -427,12 +534,14 @@ func itensIguais(a, b []models.ItemPedido) bool {
 			return false
 		}
 	}
+	vlog.Printf("pedido_repository.go", "itensIguais", "loop concluído")
 	return true
 }
 
 // insertItensTx insere os itens de um pedido dentro da transação informada.
 // item_id_origem é gerado nativamente pelo AUTO_INCREMENT do MySQL.
 func insertItensTx(ctx context.Context, tx *sql.Tx, pedidoID int64, itens []models.ItemPedido) error {
+	vlog.Printf("pedido_repository.go", "insertItensTx", "verificando se len(itens) == 0")
 	if len(itens) == 0 {
 		return nil
 	}
@@ -441,6 +550,7 @@ func insertItensTx(ctx context.Context, tx *sql.Tx, pedidoID int64, itens []mode
 		INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_praticado, desconto_pct, valor_bruto)
 		VALUES (?, ?, ?, ?, ?, ?)`
 
+	vlog.Printf("pedido_repository.go", "insertItensTx", "iniciando loop range sobre itens (sem log por iteração)")
 	for i := range itens {
 		it := &itens[i]
 		it.PedidoID = pedidoID
@@ -457,6 +567,7 @@ func insertItensTx(ctx context.Context, tx *sql.Tx, pedidoID int64, itens []mode
 		}
 		it.ItemIDOrigem = itemID
 	}
+	vlog.Printf("pedido_repository.go", "insertItensTx", "loop concluído")
 	return nil
 }
 
@@ -467,28 +578,38 @@ func insertItensTx(ctx context.Context, tx *sql.Tx, pedidoID int64, itens []mode
 // são responsabilidade do handler/service chamador — este método assume que
 // já foram checadas. Retorna ErrNotFound se o pedido não existir.
 func (r *PedidoRepository) DeleteComItens(ctx context.Context, db *sql.DB, id int64) error {
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "definindo tx, err com resultado de operação de banco via db.BeginTx")
 	tx, err := db.BeginTx(ctx, nil)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: begin tx delete pedido: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "agendando defer de operação de banco via tx.Rollback")
 	defer tx.Rollback() //nolint:errcheck // rollback é no-op após commit bem-sucedido
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "definindo _, err com resultado de execução SQL via tx.ExecContext (query DELETE em itens_pedido, args omitidos) e verificando se err != nil")
 	if _, err := tx.ExecContext(ctx, `DELETE FROM itens_pedido WHERE pedido_id = ?`, id); err != nil {
 		return fmt.Errorf("repositories: delete itens_pedido: %w", err)
 	}
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "definindo res, err com resultado de execução SQL via tx.ExecContext (query DELETE em pedidos, args omitidos)")
 	res, err := tx.ExecContext(ctx, `DELETE FROM pedidos WHERE pedido_id_origem = ?`, id)
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: delete pedido: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "definindo n, err com resultado de chamada a res.RowsAffected")
 	n, err := res.RowsAffected()
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: delete pedido rowsAffected: %w", err)
 	}
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "verificando se n == 0")
 	if n == 0 {
 		return ErrNotFound
 	}
 
+	vlog.Printf("pedido_repository.go", "PedidoRepository.DeleteComItens", "definindo err com resultado de operação de banco via tx.Commit e verificando se err != nil")
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("repositories: commit delete pedido: %w", err)
 	}
@@ -496,7 +617,9 @@ func (r *PedidoRepository) DeleteComItens(ctx context.Context, db *sql.DB, id in
 }
 
 func scanPedidoListagem(s rowScanner) (*PedidoListagem, error) {
+	vlog.Printf("pedido_repository.go", "scanPedidoListagem", "declarando variável p")
 	var p PedidoListagem
+	vlog.Printf("pedido_repository.go", "scanPedidoListagem", "definindo err com resultado de leitura das colunas via s.Scan e verificando se err != nil")
 	if err := s.Scan(
 		&p.PedidoIDOrigem,
 		&p.ClienteID,
@@ -510,6 +633,7 @@ func scanPedidoListagem(s rowScanner) (*PedidoListagem, error) {
 		&p.ClienteNome,
 		&p.VendedorNome,
 	); err != nil {
+		vlog.Printf("pedido_repository.go", "scanPedidoListagem", "verificando se err == sql.ErrNoRows")
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}
@@ -519,7 +643,9 @@ func scanPedidoListagem(s rowScanner) (*PedidoListagem, error) {
 }
 
 func scanItemPedidoDetalhe(s rowScanner) (*ItemPedidoDetalhe, error) {
+	vlog.Printf("pedido_repository.go", "scanItemPedidoDetalhe", "declarando variável it")
 	var it ItemPedidoDetalhe
+	vlog.Printf("pedido_repository.go", "scanItemPedidoDetalhe", "definindo err com resultado de leitura das colunas via s.Scan e verificando se err != nil")
 	if err := s.Scan(
 		&it.ItemIDOrigem,
 		&it.PedidoID,
@@ -533,6 +659,7 @@ func scanItemPedidoDetalhe(s rowScanner) (*ItemPedidoDetalhe, error) {
 		&it.ProdutoSKU,
 		&it.ProdutoDescricao,
 	); err != nil {
+		vlog.Printf("pedido_repository.go", "scanItemPedidoDetalhe", "verificando se err == sql.ErrNoRows")
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}

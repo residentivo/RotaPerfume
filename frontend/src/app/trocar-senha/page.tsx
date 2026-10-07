@@ -10,90 +10,135 @@ import { Turnstile, TurnstileHandle, isTurnstileEnabled } from "@/components/ui/
 import { apiChangePassword } from "@/lib/api";
 import { getUser } from "@/lib/auth";
 import { useTimeoutSeguro } from "@/lib/useMensagemTemporaria";
+import { vlog } from "@/lib/vlog";
+
+const FILE = "trocar-senha/page.tsx";
 
 export default function TrocarSenhaPage() {
+  vlog(FILE, "TrocarSenhaPage", "obtendo router de navegacao");
   const router = useRouter();
+  vlog(FILE, "TrocarSenhaPage", "inicializando estado do campo senha atual");
   const [senhaAtual, setSenhaAtual] = useState("");
+  vlog(FILE, "TrocarSenhaPage", "inicializando estado do campo nova senha");
   const [novaSenha, setNovaSenha] = useState("");
+  vlog(FILE, "TrocarSenhaPage", "inicializando estado do campo confirmar senha");
   const [confirmarSenha, setConfirmarSenha] = useState("");
+  vlog(FILE, "TrocarSenhaPage", "inicializando estado de loading");
   const [loading, setLoading] = useState(false);
+  vlog(FILE, "TrocarSenhaPage", "inicializando estado de erro geral");
   const [error, setError] = useState<string | null>(null);
+  vlog(FILE, "TrocarSenhaPage", "inicializando estado de mensagem de sucesso");
   const [success, setSuccess] = useState<string | null>(null);
+  vlog(FILE, "TrocarSenhaPage", "inicializando estado de erros por campo");
   const [fieldErrors, setFieldErrors] = useState<{
     senhaAtual?: string;
     novaSenha?: string;
     confirmarSenha?: string;
   }>({});
+  vlog(FILE, "TrocarSenhaPage", "inicializando estado do token do captcha");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  vlog(FILE, "TrocarSenhaPage", "criando ref do widget Turnstile");
   const turnstileRef = useRef<TurnstileHandle>(null);
+  vlog(FILE, "TrocarSenhaPage", "obtendo agendador de timeout seguro");
   const { agendar } = useTimeoutSeguro();
 
+  vlog(FILE, "TrocarSenhaPage", "registrando efeito de verificacao de sessao");
   useEffect(() => {
     // Verificar se o usuário está logado
+    vlog(FILE, "TrocarSenhaPage.useEffect", "verificando se ha usuario logado");
     if (!getUser()) {
+      vlog(FILE, "TrocarSenhaPage.useEffect", "sem usuario; redirecionando para /login");
       router.replace("/login");
       return;
     }
   }, [router]);
 
+  vlog(FILE, "TrocarSenhaPage", "definindo funcao validate");
   const validate = (): boolean => {
+    vlog(FILE, "TrocarSenhaPage.validate", "criando objeto de erros por campo");
     const errs: {
       senhaAtual?: string;
       novaSenha?: string;
       confirmarSenha?: string;
     } = {};
 
+    vlog(FILE, "TrocarSenhaPage.validate", "verificando se senha atual esta vazia");
     if (!senhaAtual) {
+      vlog(FILE, "TrocarSenhaPage.validate", "senha atual vazia; registrando erro");
       errs.senhaAtual = "Senha atual e obrigatoria";
     }
 
+    vlog(FILE, "TrocarSenhaPage.validate", "verificando regras da nova senha");
     if (!novaSenha) {
+      vlog(FILE, "TrocarSenhaPage.validate", "nova senha vazia; registrando erro");
       errs.novaSenha = "Nova senha e obrigatoria";
     } else if (senhaAtual && novaSenha === senhaAtual) {
+      vlog(FILE, "TrocarSenhaPage.validate", "nova senha igual a atual; registrando erro");
       errs.novaSenha = "A nova senha nao pode ser igual a senha atual";
     } else if (novaSenha.length < 8) {
+      vlog(FILE, "TrocarSenhaPage.validate", "nova senha curta demais; registrando erro");
       errs.novaSenha = "Nova senha deve ter pelo menos 8 caracteres";
     } else {
+      vlog(FILE, "TrocarSenhaPage.validate", "contando classes de caracteres da nova senha");
       const classesCount = [
         /[a-z]/.test(novaSenha),
         /[A-Z]/.test(novaSenha),
         /[0-9]/.test(novaSenha),
         /[^a-zA-Z0-9]/.test(novaSenha),
       ].filter(Boolean).length;
+      vlog(FILE, "TrocarSenhaPage.validate", "verificando se ha ao menos 3 classes de caracteres");
       if (classesCount < 3) {
+        vlog(FILE, "TrocarSenhaPage.validate", "complexidade insuficiente; registrando erro");
         errs.novaSenha =
           "Nova senha deve conter ao menos 3 dos 4 tipos: letra minuscula, letra maiuscula, digito e simbolo";
       }
     }
 
+    vlog(FILE, "TrocarSenhaPage.validate", "verificando confirmacao da senha");
     if (!confirmarSenha) {
+      vlog(FILE, "TrocarSenhaPage.validate", "confirmacao vazia; registrando erro");
       errs.confirmarSenha = "Confirmacao de senha e obrigatoria";
     } else if (novaSenha !== confirmarSenha) {
+      vlog(FILE, "TrocarSenhaPage.validate", "confirmacao diferente da nova senha; registrando erro");
       errs.confirmarSenha = "As senhas nao conferem";
     }
 
+    vlog(FILE, "TrocarSenhaPage.validate", "atualizando erros por campo (qtd=%d)", Object.keys(errs).length);
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
+  vlog(FILE, "TrocarSenhaPage", "definindo handler handleSubmit");
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    vlog(FILE, "TrocarSenhaPage.handleSubmit", "prevenindo submit padrao do formulario");
     e.preventDefault();
+    vlog(FILE, "TrocarSenhaPage.handleSubmit", "limpando erro geral");
     setError(null);
+    vlog(FILE, "TrocarSenhaPage.handleSubmit", "limpando mensagem de sucesso");
     setSuccess(null);
+    vlog(FILE, "TrocarSenhaPage.handleSubmit", "validando campos do formulario");
     if (!validate()) return;
 
+    vlog(FILE, "TrocarSenhaPage.handleSubmit", "ativando loading");
     setLoading(true);
+    vlog(FILE, "TrocarSenhaPage.handleSubmit", "iniciando chamada de troca de senha");
     try {
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "chamando apiChangePassword (captcha presente=%s)", captchaToken !== null);
       await apiChangePassword(senhaAtual, novaSenha, captchaToken ?? undefined);
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "senha alterada; exibindo mensagem de sucesso");
       setSuccess("Senha alterada com sucesso!");
       // Redirecionar para dashboard após breve delay. FE-11: o timer e
       // cancelado se a tela desmontar antes (o usuario ja saiu da tela).
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "agendando redirecionamento para /dashboard em 1500ms");
       agendar(() => router.replace("/dashboard"), 1500);
     } catch (err) {
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "falha na troca de senha; extraindo mensagem do erro");
       const rawMessage = err instanceof Error ? err.message : "";
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "verificando se a falha foi de captcha");
       const isCaptchaFailure = /captcha|turnstile/i.test(rawMessage);
       // Falha de captcha: mensagem genérica, sem expor detalhes técnicos do
       // motivo. Demais falhas mantêm a mensagem retornada pela API.
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "exibindo mensagem de erro (falha de captcha=%s)", isCaptchaFailure);
       setError(
         isCaptchaFailure
           ? "Nao foi possivel validar o captcha. Tente novamente."
@@ -101,9 +146,12 @@ export default function TrocarSenhaPage() {
       );
       // Token do Turnstile e de uso unico: apos qualquer falha, reseta o
       // widget para forcar um novo desafio antes de reenviar.
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "descartando token do captcha usado");
       setCaptchaToken(null);
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "resetando widget Turnstile");
       turnstileRef.current?.reset();
     } finally {
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "desativando loading");
       setLoading(false);
     }
   };

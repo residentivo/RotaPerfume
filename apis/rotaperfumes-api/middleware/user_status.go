@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // msgUsuarioInativo é a mensagem do 401 para usuário inativo ou inexistente
@@ -53,8 +54,11 @@ func NewDBUserStatusChecker(db *sql.DB) *DBUserStatusChecker {
 // CheckUserStatus devolve ativo/role do usuário; ErrUserNotFound se ele não
 // existir; demais erros de banco são repassados.
 func (c *DBUserStatusChecker) CheckUserStatus(ctx context.Context, userID int64) (UserStatus, error) {
+	vlog.Printf("user_status.go", "DBUserStatusChecker.CheckUserStatus", "chamando c.repo.GetStatusByID e declarando st, err")
 	st, err := c.repo.GetStatusByID(ctx, c.db, userID)
+	vlog.Printf("user_status.go", "DBUserStatusChecker.CheckUserStatus", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("user_status.go", "DBUserStatusChecker.CheckUserStatus", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return UserStatus{}, ErrUserNotFound
 		}

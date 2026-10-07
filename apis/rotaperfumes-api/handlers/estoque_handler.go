@@ -12,6 +12,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // EstoqueHandler trata as rotas /api/estoque/*.
@@ -31,11 +32,14 @@ func NewEstoqueHandler(db *sql.DB, cfg *config.Config) *EstoqueHandler {
 // parseRupturaQuery lê o query param "ruptura" ("true"/"false"). Qualquer
 // outro valor (incluindo ausente/vazio) é tratado como "sem filtro" (nil).
 func parseRupturaQuery(v string) *bool {
+	vlog.Printf("estoque_handler.go", "parseRupturaQuery", "avaliando switch sobre strings.ToLower(...)")
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "true":
+		vlog.Printf("estoque_handler.go", "parseRupturaQuery", "definindo b := true")
 		b := true
 		return &b
 	case "false":
+		vlog.Printf("estoque_handler.go", "parseRupturaQuery", "definindo b := false")
 		b := false
 		return &b
 	default:
@@ -59,13 +63,16 @@ func parseRupturaQuery(v string) *bool {
 // Response: {success, data: [estoque...], error, pagination: {page, limit, total, pages}}
 // Acesso comum.
 func (h *EstoqueHandler) ListEstoque(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.ListEstoque", "chamando services.ParsePagination e atribuindo resultado a page, limit")
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.ListEstoque", "chamando strings.EqualFold e atribuindo resultado a historico")
 	historico := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("historico")), "true")
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.ListEstoque", "montando services.EstoqueFiltro em filtro")
 	filtro := services.EstoqueFiltro{
 		SKU:       strings.TrimSpace(r.URL.Query().Get("sku")),
 		DataDe:    strings.TrimSpace(r.URL.Query().Get("data_de")),
@@ -76,8 +83,11 @@ func (h *EstoqueHandler) ListEstoque(w http.ResponseWriter, r *http.Request) {
 		Historico: historico,
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.ListEstoque", "chamando h.svc.ListEstoque e atribuindo resultado a registros, total, err")
 	registros, total, err := h.svc.ListEstoque(r.Context(), h.db, page, limit, filtro)
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.ListEstoque", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("estoque_handler.go", "EstoqueHandler.ListEstoque", "chamando estoqueErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := estoqueErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -87,8 +97,11 @@ func (h *EstoqueHandler) ListEstoque(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.ListEstoque", "definindo pages := total / limit")
 	pages := total / limit
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.ListEstoque", "verificando se total%%limit != 0")
 	if total%limit != 0 {
+		vlog.Printf("estoque_handler.go", "EstoqueHandler.ListEstoque", "incrementando pages")
 		pages++
 	}
 
@@ -100,14 +113,19 @@ func (h *EstoqueHandler) ListEstoque(w http.ResponseWriter, r *http.Request) {
 // Response: {success, data: estoque, error}
 // Acesso comum.
 func (h *EstoqueHandler) GetEstoque(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.GetEstoque", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.GetEstoque", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.GetEstoque", "chamando h.svc.GetEstoqueByID e atribuindo resultado a registro, err")
 	registro, err := h.svc.GetEstoqueByID(r.Context(), h.db, id)
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.GetEstoque", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("estoque_handler.go", "EstoqueHandler.GetEstoque", "chamando estoqueErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := estoqueErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -143,6 +161,7 @@ type UpdateEstoqueRequest struct {
 // para o status HTTP e mensagem apropriados. Retorna ok=false se o erro não
 // for reconhecido (cabe ao chamador tratar como erro interno).
 func estoqueErroParaStatus(err error) (status int, msg string, ok bool) {
+	vlog.Printf("estoque_handler.go", "estoqueErroParaStatus", "avaliando switch de condições")
 	switch {
 	case errors.Is(err, services.ErrEstoqueNaoEncontrado):
 		return http.StatusNotFound, "registro de estoque não encontrado", true
@@ -170,20 +189,26 @@ func estoqueErroParaStatus(err error) (status int, msg string, ok bool) {
 // Retorna: 201 com o registro criado.
 // Admin only.
 func (h *EstoqueHandler) CreateEstoque(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.CreateEstoque", "declarando variável req")
 	var req CreateEstoqueRequest
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.CreateEstoque", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.CreateEstoque", "montando services.EstoqueInput em input")
 	input := services.EstoqueInput{
 		SKU:          req.SKU,
 		DataSnapshot: req.DataSnapshot,
 		Saldo:        req.Saldo,
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.CreateEstoque", "chamando h.svc.CreateEstoque e atribuindo resultado a registro, err")
 	registro, err := h.svc.CreateEstoque(r.Context(), h.db, input)
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.CreateEstoque", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("estoque_handler.go", "EstoqueHandler.CreateEstoque", "chamando estoqueErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := estoqueErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -193,6 +218,7 @@ func (h *EstoqueHandler) CreateEstoque(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.CreateEstoque", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[estoque] criado manualmente: id=%d sku=%s por usuario role=%s", registro.ID, registro.SKU, role)
 	writeJSON(w, http.StatusCreated, registro, "")
@@ -207,24 +233,32 @@ func (h *EstoqueHandler) CreateEstoque(w http.ResponseWriter, r *http.Request) {
 // payload for inválido.
 // Admin only.
 func (h *EstoqueHandler) UpdateEstoque(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.UpdateEstoque", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.UpdateEstoque", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.UpdateEstoque", "declarando variável req")
 	var req UpdateEstoqueRequest
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.UpdateEstoque", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.UpdateEstoque", "montando services.EstoqueInput em input")
 	input := services.EstoqueInput{
 		Saldo: req.Saldo,
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.UpdateEstoque", "chamando h.svc.UpdateEstoque e atribuindo resultado a registro, err")
 	registro, err := h.svc.UpdateEstoque(r.Context(), h.db, id, input)
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.UpdateEstoque", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("estoque_handler.go", "EstoqueHandler.UpdateEstoque", "chamando estoqueErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := estoqueErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -234,6 +268,7 @@ func (h *EstoqueHandler) UpdateEstoque(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vlog.Printf("estoque_handler.go", "EstoqueHandler.UpdateEstoque", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[estoque] atualizado manualmente: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, registro, "")

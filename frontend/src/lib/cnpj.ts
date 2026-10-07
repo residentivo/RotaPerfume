@@ -14,7 +14,13 @@
  *    senao 11 - resto.
  * O backend devolve sempre 14 caracteres sem mascara e em maiusculas; a
  * mascara de exibicao (XX.XXX.XXX/XXXX-XX) fica com o frontend.
+ *
+ * LOG-02: o CNPJ NUNCA vai para o log verbose (spec de seguranca §3) — so
+ * tamanhos e booleanos.
  */
+import { vlog } from "./vlog";
+
+const F = "cnpj.ts";
 
 /** Tamanho do CNPJ sem mascara. */
 export const CNPJ_LENGTH = 14;
@@ -63,21 +69,30 @@ export function normalizeCnpj(value: string | null | undefined): string {
 }
 
 function calcDV(base: string, pesos: number[]): number {
+  vlog(F, "calcDV", "inicializando soma do DV");
   let soma = 0;
+  vlog(F, "calcDV", "somando caracteres ponderados, qtd pesos:", pesos.length);
   for (let i = 0; i < pesos.length; i++) {
     soma += (base.charCodeAt(i) - 48) * pesos[i];
   }
+  vlog(F, "calcDV", "calculando resto da divisão por 11");
   const resto = soma % 11;
   return resto < 2 ? 0 : 11 - resto;
 }
 
 /** Valida o CNPJ (numerico ou alfanumerico), com ou sem mascara. */
 export function isValidCnpj(value: string | null | undefined): boolean {
+  vlog(F, "isValidCnpj", "normalizando CNPJ");
   const cnpj = normalizeCnpj(value);
+  vlog(F, "isValidCnpj", "verificando formato do CNPJ, tamanho:", cnpj.length);
   if (!CNPJ_REGEX.test(cnpj)) return false;
+  vlog(F, "isValidCnpj", "verificando se todos os caracteres são iguais");
   if (/^(.)\1*$/.test(cnpj)) return false;
+  vlog(F, "isValidCnpj", "calculando 1º DV");
   const dv1 = calcDV(cnpj, PESOS_DV1);
+  vlog(F, "isValidCnpj", "verificando 1º DV");
   if (dv1 !== Number(cnpj[12])) return false;
+  vlog(F, "isValidCnpj", "calculando 2º DV");
   const dv2 = calcDV(cnpj, PESOS_DV2);
   return dv2 === Number(cnpj[13]);
 }
@@ -86,7 +101,9 @@ export function isValidCnpj(value: string | null | undefined): boolean {
  * Mensagem de erro de validacao do formulario, ou null se o CNPJ e valido.
  */
 export function validateCnpj(value: string | null | undefined): string | null {
+  vlog(F, "validateCnpj", "normalizando CNPJ");
   const cnpj = normalizeCnpj(value);
+  vlog(F, "validateCnpj", "verificando se CNPJ foi informado:", !!cnpj);
   if (!cnpj) return MSG_CNPJ_OBRIGATORIO;
   return isValidCnpj(cnpj) ? null : MSG_CNPJ_INVALIDO;
 }
@@ -98,21 +115,30 @@ export function validateCnpj(value: string | null | undefined): string | null {
  * primeiras posicoes (as 2 do DV aceitam so digitos) e limita a 14.
  */
 export function sanitizeCnpjInput(value: string | null | undefined): string {
+  vlog(F, "sanitizeCnpjInput", "removendo caracteres fora de [0-9A-Za-z] e passando para maiúsculas");
   const chars = (value ?? "").replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+  vlog(F, "sanitizeCnpjInput", "inicializando saída sanitizada");
   let out = "";
+  vlog(F, "sanitizeCnpjInput", "filtrando caracteres por posição, qtd:", chars.length);
   for (const ch of chars) {
     if (out.length >= CNPJ_LENGTH) break;
     if (out.length < CNPJ_BASE_LENGTH || /[0-9]/.test(ch)) out += ch;
   }
+  vlog(F, "sanitizeCnpjInput", "sanitização concluída, tamanho:", out.length);
   return out;
 }
 
 /** Aplica a mascara XX.XXX.XXX/XXXX-XX progressivamente (valor parcial). */
 function applyMask(raw: string): string {
+  vlog(F, "applyMask", "aplicando máscara aos 2 primeiros caracteres, tamanho:", raw.length);
   let out = raw.slice(0, 2);
+  vlog(F, "applyMask", "verificando se adiciona 1º ponto");
   if (raw.length > 2) out += "." + raw.slice(2, 5);
+  vlog(F, "applyMask", "verificando se adiciona 2º ponto");
   if (raw.length > 5) out += "." + raw.slice(5, 8);
+  vlog(F, "applyMask", "verificando se adiciona barra");
   if (raw.length > 8) out += "/" + raw.slice(8, 12);
+  vlog(F, "applyMask", "verificando se adiciona hífen do DV");
   if (raw.length > 12) out += "-" + raw.slice(12, 14);
   return out;
 }
@@ -131,7 +157,9 @@ export function maskCnpjInput(value: string | null | undefined): string {
  * o valor original, sem esconder dado legado fora do padrao.
  */
 export function formatCnpj(value: string | null | undefined): string {
+  vlog(F, "formatCnpj", "normalizando CNPJ para exibição");
   const cnpj = normalizeCnpj(value);
+  vlog(F, "formatCnpj", "verificando se CNPJ está no formato padrão");
   if (!CNPJ_REGEX.test(cnpj)) return value ?? "";
   return applyMask(cnpj);
 }

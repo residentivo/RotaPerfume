@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/shared/models"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // CarteiraRepository agrupa queries da tabela carteiras.
@@ -44,18 +45,24 @@ const clienteResumoFrom = ` FROM carteiras ca JOIN clientes c ON c.cliente_id_or
 // ListClientesByVendedorID retorna os clientes vinculados (carteira ativa,
 // data_fim IS NULL) a um vendedor, ordenados por razão social.
 func (r *CarteiraRepository) ListClientesByVendedorID(ctx context.Context, db *sql.DB, vendedorID int64) ([]ClienteResumo, error) {
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ListClientesByVendedorID", "montando texto da query SQL SELECT em q")
 	q := "SELECT " + clienteResumoColunas + clienteResumoFrom +
 		" WHERE ca.vendedor_id = ? AND ca.data_fim IS NULL ORDER BY c.razao_social ASC"
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ListClientesByVendedorID", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, vendedorID)
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ListClientesByVendedorID", "verificando se err != nil")
 	if err != nil {
 		return nil, fmt.Errorf("repositories: list clientes por vendedor: %w", err)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ListClientesByVendedorID", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
 	// Inicializado como slice vazio (não nil) para que a serialização JSON
 	// produza "clientes": [] em vez de "clientes": null quando o vendedor
 	// não tiver nenhum cliente vinculado.
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ListClientesByVendedorID", "definindo out com literal []ClienteResumo")
 	out := []ClienteResumo{}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ListClientesByVendedorID", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		cr, err := scanClienteResumo(rows)
 		if err != nil {
@@ -63,6 +70,8 @@ func (r *CarteiraRepository) ListClientesByVendedorID(ctx context.Context, db *s
 		}
 		out = append(out, *cr)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ListClientesByVendedorID", "loop concluído; itens acumulados em out: %d", len(out))
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ListClientesByVendedorID", "definindo err com resultado de chamada a rows.Err e verificando se err != nil")
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("repositories: list clientes por vendedor iteração: %w", err)
 	}
@@ -76,6 +85,7 @@ func (r *CarteiraRepository) GetByID(ctx context.Context, db *sql.DB, id int64) 
 		FROM carteiras
 		WHERE carteira_id_origem = ?
 		LIMIT 1`
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.GetByID", "definindo row com resultado de execução SQL via db.QueryRowContext (query q, args omitidos)")
 	row := db.QueryRowContext(ctx, q, id)
 	return scanCarteira(row)
 }
@@ -90,6 +100,7 @@ func (r *CarteiraRepository) GetVinculoAtivoByClienteID(ctx context.Context, db 
 		FROM carteiras
 		WHERE cliente_id = ? AND data_fim IS NULL
 		LIMIT 1`
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.GetVinculoAtivoByClienteID", "definindo row com resultado de execução SQL via db.QueryRowContext (query q, args omitidos)")
 	row := db.QueryRowContext(ctx, q, clienteID)
 	return scanCarteira(row)
 }
@@ -102,6 +113,7 @@ func (r *CarteiraRepository) GetVinculoAtivo(ctx context.Context, db *sql.DB, ve
 		FROM carteiras
 		WHERE vendedor_id = ? AND cliente_id = ? AND data_fim IS NULL
 		LIMIT 1`
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.GetVinculoAtivo", "definindo row com resultado de execução SQL via db.QueryRowContext (query q, args omitidos)")
 	row := db.QueryRowContext(ctx, q, vendedorID, clienteID)
 	return scanCarteira(row)
 }
@@ -117,6 +129,7 @@ func (r *CarteiraRepository) GetVinculoByClienteVendedorData(ctx context.Context
 		FROM carteiras
 		WHERE cliente_id = ? AND vendedor_id = ? AND data_inicio = ?
 		LIMIT 1`
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.GetVinculoByClienteVendedorData", "definindo row com resultado de execução SQL via db.QueryRowContext (query q, args omitidos)")
 	row := db.QueryRowContext(ctx, q, clienteID, vendedorID, dataInicio.Format("2006-01-02"))
 	return scanCarteira(row)
 }
@@ -128,14 +141,19 @@ func (r *CarteiraRepository) GetVinculoByClienteVendedorData(ctx context.Context
 // ErrNotFound se o vínculo não existir.
 func (r *CarteiraRepository) ReativarVinculo(ctx context.Context, db *sql.DB, id int64) error {
 	const q = `UPDATE carteiras SET data_fim = NULL WHERE carteira_id_origem = ?`
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ReativarVinculo", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
 	res, err := db.ExecContext(ctx, q, id)
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ReativarVinculo", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: reativar vinculo carteira: %w", err)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ReativarVinculo", "definindo n, err com resultado de chamada a res.RowsAffected")
 	n, err := res.RowsAffected()
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ReativarVinculo", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: reativar vinculo carteira rowsAffected: %w", err)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.ReativarVinculo", "verificando se n == 0")
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -149,19 +167,24 @@ func (r *CarteiraRepository) Create(ctx context.Context, db Execer, c *models.Ca
 	const q = `
 		INSERT INTO carteiras (cliente_id, vendedor_id, data_inicio, data_fim)
 		VALUES (?, ?, ?, ?)`
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Create", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
 	res, err := db.ExecContext(ctx, q,
 		c.ClienteID,
 		c.VendedorID,
 		c.DataInicio,
 		c.DataFim,
 	)
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Create", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: create carteira: %w", err)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Create", "definindo id, err com resultado de chamada a res.LastInsertId")
 	id, err := res.LastInsertId()
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Create", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: create carteira lastInsertId: %w", err)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Create", "atribuindo c.CarteiraIDOrigem = id")
 	c.CarteiraIDOrigem = id
 	return nil
 }
@@ -171,14 +194,19 @@ func (r *CarteiraRepository) Create(ctx context.Context, db Execer, c *models.Ca
 // ErrNotFound se o vínculo não existir.
 func (r *CarteiraRepository) EncerrarVinculo(ctx context.Context, db *sql.DB, id int64, dataFim time.Time) error {
 	const q = `UPDATE carteiras SET data_fim = ? WHERE carteira_id_origem = ?`
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.EncerrarVinculo", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
 	res, err := db.ExecContext(ctx, q, dataFim, id)
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.EncerrarVinculo", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: encerrar vinculo carteira: %w", err)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.EncerrarVinculo", "definindo n, err com resultado de chamada a res.RowsAffected")
 	n, err := res.RowsAffected()
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.EncerrarVinculo", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: encerrar vinculo carteira rowsAffected: %w", err)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.EncerrarVinculo", "verificando se n == 0")
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -188,14 +216,19 @@ func (r *CarteiraRepository) EncerrarVinculo(ctx context.Context, db *sql.DB, id
 // Delete remove um vínculo de carteira pelo ID. Retorna ErrNotFound se não existir.
 func (r *CarteiraRepository) Delete(ctx context.Context, db *sql.DB, id int64) error {
 	const q = `DELETE FROM carteiras WHERE carteira_id_origem = ?`
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Delete", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
 	res, err := db.ExecContext(ctx, q, id)
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Delete", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: delete carteira: %w", err)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Delete", "definindo n, err com resultado de chamada a res.RowsAffected")
 	n, err := res.RowsAffected()
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Delete", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("repositories: delete carteira rowsAffected: %w", err)
 	}
+	vlog.Printf("carteira_repository.go", "CarteiraRepository.Delete", "verificando se n == 0")
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -203,7 +236,9 @@ func (r *CarteiraRepository) Delete(ctx context.Context, db *sql.DB, id int64) e
 }
 
 func scanCarteira(s rowScanner) (*models.Carteira, error) {
+	vlog.Printf("carteira_repository.go", "scanCarteira", "declarando variável c")
 	var c models.Carteira
+	vlog.Printf("carteira_repository.go", "scanCarteira", "definindo err com resultado de leitura das colunas via s.Scan e verificando se err != nil")
 	if err := s.Scan(
 		&c.CarteiraIDOrigem,
 		&c.ClienteID,
@@ -213,6 +248,7 @@ func scanCarteira(s rowScanner) (*models.Carteira, error) {
 		&c.CreatedAt,
 		&c.UpdatedAt,
 	); err != nil {
+		vlog.Printf("carteira_repository.go", "scanCarteira", "verificando se err == sql.ErrNoRows")
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}
@@ -222,7 +258,9 @@ func scanCarteira(s rowScanner) (*models.Carteira, error) {
 }
 
 func scanClienteResumo(s rowScanner) (*ClienteResumo, error) {
+	vlog.Printf("carteira_repository.go", "scanClienteResumo", "declarando variável cr")
 	var cr ClienteResumo
+	vlog.Printf("carteira_repository.go", "scanClienteResumo", "definindo err com resultado de leitura das colunas via s.Scan e verificando se err != nil")
 	if err := s.Scan(
 		&cr.ID, // ClienteResumo.ID mapeia c.cliente_id_origem (identidade do cliente)
 		&cr.CNPJ,
@@ -234,6 +272,7 @@ func scanClienteResumo(s rowScanner) (*ClienteResumo, error) {
 		&cr.DataInicio,
 		&cr.DataFim,
 	); err != nil {
+		vlog.Printf("carteira_repository.go", "scanClienteResumo", "verificando se err == sql.ErrNoRows")
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}

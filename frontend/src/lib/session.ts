@@ -8,6 +8,9 @@
  * - o 403 de vendedor desligado (apiClient) marca o bloqueio e rebusca /me.
  *
  * `vendedor_desligado` e o flag de bloqueio existem apenas em memoria.
+ *
+ * LOG-02: logs verbose aqui nunca recebem o objeto User — so id, papel e
+ * booleanos.
  */
 
 import { useSyncExternalStore } from "react";
@@ -15,6 +18,9 @@ import { apiMe } from "./api";
 import { saveUser } from "./auth";
 import { MeResponse } from "./types";
 import { subscribeVendedorDesligado } from "./vendedorDesligado";
+import { vlog } from "./vlog";
+
+const F = "session.ts";
 
 interface SessionState {
   user: MeResponse | null;
@@ -32,13 +38,17 @@ let state: SessionState = { user: null, bloqueado403: false };
 const listeners = new Set<() => void>();
 
 function setState(next: Partial<SessionState>): void {
+  vlog(F, "setState", "mesclando novo estado da sessão");
   state = { ...state, ...next };
+  vlog(F, "setState", "notificando listeners da sessão:", listeners.size);
   listeners.forEach((l) => l());
 }
 
 function subscribe(listener: () => void): () => void {
+  vlog(F, "subscribe", "registrando listener da sessão");
   listeners.add(listener);
   return () => {
+    vlog(F, "subscribe.func", "removendo listener da sessão");
     listeners.delete(listener);
   };
 }
@@ -77,27 +87,38 @@ interface Inflight {
 let inflight: Inflight | null = null;
 
 function runMe(entry: Inflight): Promise<MeResponse> {
+  vlog(F, "runMe", "incrementando relógio lógico da sessão");
   const mySeq = ++seqCounter;
+  vlog(F, "runMe", "atribuindo seq ao /me em voo:", mySeq);
   entry.seq = mySeq;
+  vlog(F, "runMe", "chamando GET /api/auth/me, origem403:", entry.origem403);
   return apiMe().then((user) => {
+    vlog(F, "runMe.func", "salvando cache do usuário, id/papel:", user.id, user.role);
     saveUser(user);
+    vlog(F, "runMe.func", "preparando novo estado com o usuário");
     const next: Partial<SessionState> = { user };
+    vlog(F, "runMe.func", "verificando se pode limpar bloqueio 403", mySeq, seqBloqueio, user.vendedor_desligado === false);
     if (
       !entry.origem403 &&
       mySeq > seqBloqueio &&
       user.vendedor_desligado === false
     ) {
+      vlog(F, "runMe.func", "limpando bloqueio 403");
       next.bloqueado403 = false;
     }
+    vlog(F, "runMe.func", "atualizando estado da sessão");
     setState(next);
     return user;
   });
 }
 
 function track(entry: Inflight, promise: Promise<MeResponse>): Promise<MeResponse> {
+  vlog(F, "track", "registrando promise do /me com limpeza ao finalizar");
   entry.promise = promise.finally(() => {
+    vlog(F, "track.func", "liberando /me em voo se ainda for o atual");
     if (inflight === entry) inflight = null;
   });
+  vlog(F, "track", "marcando /me como em voo");
   inflight = entry;
   return entry.promise;
 }
@@ -119,15 +140,22 @@ function track(entry: Inflight, promise: Promise<MeResponse>): Promise<MeRespons
 export function refreshSessionUser(
   opts: { origem403?: boolean } = {}
 ): Promise<MeResponse> {
+  vlog(F, "refreshSessionUser", "lendo origem da revalidação");
   const origem403 = opts.origem403 === true;
+  vlog(F, "refreshSessionUser", "lendo /me em voo");
   const atual = inflight;
 
+  vlog(F, "refreshSessionUser", "verificando se há /me em voo:", !!atual, "origem403:", origem403);
   if (atual) {
+    vlog(F, "refreshSessionUser", "verificando se é origem 403 para reaproveitar");
     if (origem403) return atual.promise;
+    vlog(F, "refreshSessionUser", "calculando se pode reaproveitar /me em voo");
     const podeReaproveitar =
       !atual.origem403 && (atual.seq === null || atual.seq > seqBloqueio);
+    vlog(F, "refreshSessionUser", "verificando se pode reaproveitar:", podeReaproveitar);
     if (podeReaproveitar) return atual.promise;
 
+    vlog(F, "refreshSessionUser", "criando /me encadeado após o atual");
     const encadeada: Inflight = {
       promise: undefined as unknown as Promise<MeResponse>,
       origem403: false,
@@ -139,6 +167,7 @@ export function refreshSessionUser(
     );
   }
 
+  vlog(F, "refreshSessionUser", "criando novo /me");
   const entry: Inflight = {
     promise: undefined as unknown as Promise<MeResponse>,
     origem403,
@@ -148,6 +177,7 @@ export function refreshSessionUser(
 }
 
 export function clearSession(): void {
+  vlog(F, "clearSession", "limpando sessão em memória");
   setState({ user: null, bloqueado403: false });
 }
 
@@ -156,10 +186,14 @@ export function clearSession(): void {
 // token nem logout).
 if (typeof window !== "undefined") {
   subscribeVendedorDesligado(() => {
+    vlog(F, "subscribeVendedorDesligado.func", "registrando seq do bloqueio 403");
     seqBloqueio = ++seqCounter;
+    vlog(F, "subscribeVendedorDesligado.func", "marcando bloqueio 403 se ainda não marcado:", state.bloqueado403);
     if (!state.bloqueado403) setState({ bloqueado403: true });
+    vlog(F, "subscribeVendedorDesligado.func", "rebuscando /me com origem 403");
     refreshSessionUser({ origem403: true }).catch(() => {
       // Falha ao rebuscar /me nao muda o bloqueio ja detectado.
+      vlog(F, "subscribeVendedorDesligado.func", "falha ao rebuscar /me após 403 (bloqueio mantido)");
     });
   });
 }
@@ -175,7 +209,9 @@ export function useSessionUser(): MeResponse | null {
  * Admin nunca e bloqueado.
  */
 export function useVendedorDesligado(): boolean {
+  vlog(F, "useVendedorDesligado", "lendo snapshot da sessão");
   const s = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  vlog(F, "useVendedorDesligado", "verificando se é admin");
   if (s.user?.role === "admin") return false;
   return s.user?.vendedor_desligado === true || s.bloqueado403;
 }

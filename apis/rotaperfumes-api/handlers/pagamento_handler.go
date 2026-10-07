@@ -11,6 +11,7 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // PagamentoHandler trata as rotas /api/pagamentos/*.
@@ -47,31 +48,41 @@ func NewPagamentoHandler(db *sql.DB, cfg *config.Config) *PagamentoHandler {
 // Response: {success, data: [pagamento...], error, pagination: {page, limit, total, pages}}
 // Acesso comum (qualquer usuário autenticado).
 func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "chamando services.ParsePagination e atribuindo resultado a page, limit")
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] ListPagamentos", err)
 		return
 	}
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSONWithPagination(w, http.StatusOK, []any{}, page, limit, 0, 0)
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "declarando variável pedidoID")
 	var pedidoID int64
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "chamando strings.TrimSpace e atribuindo resultado a v e verificando se v != \"\"")
 	if v := strings.TrimSpace(r.URL.Query().Get("pedido_id")); v != "" {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 		id, err := strconv.ParseInt(v, 10, 64)
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "verificando se err != nil")
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, nil, "pedido_id inválido")
 			return
 		}
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "atribuindo pedidoID = id")
 		pedidoID = id
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "montando services.PagamentoFiltro em filtro")
 	filtro := services.PagamentoFiltro{
 		StatusPagamento: strings.TrimSpace(r.URL.Query().Get("status_pagamento")),
 		FormaPagamento:  strings.TrimSpace(r.URL.Query().Get("forma_pagamento")),
@@ -81,20 +92,27 @@ func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request
 		OrderBy:         strings.TrimSpace(r.URL.Query().Get("order_by")),
 		OrderDir:        parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "atribuindo filtro.VendedorID = scope.VendedorID")
 		// Usuário role=normal: força o filtro à própria carteira.
 		filtro.VendedorID = scope.VendedorID
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "chamando h.svc.ListPagamentos e atribuindo resultado a pagamentos, total, err")
 	pagamentos, total, err := h.svc.ListPagamentos(r.Context(), h.db, page, limit, filtro)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[pagamentos] ListPagamentos: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "definindo pages := total / limit")
 	pages := total / limit
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "verificando se total%%limit != 0")
 	if total%limit != 0 {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "incrementando pages")
 		pages++
 	}
 
@@ -106,24 +124,32 @@ func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request
 // Response: {success, data: pagamento, error}
 // Acesso comum (qualquer usuário autenticado).
 func (h *PagamentoHandler) GetPagamento(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] GetPagamento", err)
 		return
 	}
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "chamando h.svc.GetPagamentoByID e atribuindo resultado a pagamento, err")
 	pagamento, err := h.svc.GetPagamentoByID(r.Context(), h.db, id)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrPagamentoNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 			return
@@ -133,8 +159,11 @@ func (h *PagamentoHandler) GetPagamento(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "chamando h.svc.VendedorIDDoPedido e atribuindo resultado a vendedorID, err")
 		vendedorID, err := h.svc.VendedorIDDoPedido(r.Context(), h.db, pagamento.PedidoID)
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se err != nil")
 		if err != nil {
 			// Pedido do pagamento não encontrado é inesperado (FK garante
 			// integridade), mas por segurança trata como "sem acesso" em vez
@@ -143,6 +172,7 @@ func (h *PagamentoHandler) GetPagamento(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 			return
 		}
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se !scope.PermiteVendedor(...)")
 		if !scope.PermiteVendedor(vendedorID) {
 			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 			return
@@ -187,6 +217,7 @@ type UpdatePagamentoRequest struct {
 // ok=false se o erro não for reconhecido (cabe ao chamador tratar como erro
 // interno).
 func pagamentoErroParaStatus(err error) (status int, msg string, ok bool) {
+	vlog.Printf("pagamento_handler.go", "pagamentoErroParaStatus", "avaliando switch de condições")
 	switch {
 	case errors.Is(err, services.ErrPagamentoNaoEncontrado):
 		return http.StatusNotFound, "pagamento não encontrado", true
@@ -227,8 +258,11 @@ func pagamentoErroParaStatus(err error) (status int, msg string, ok bool) {
 // de terceiros — e retorna false. Erro inesperado de banco vira 500.
 // Retorna true quando o chamador pode prosseguir.
 func (h *PagamentoHandler) pedidoNoEscopo(w http.ResponseWriter, r *http.Request, scope vendedorScope, pedidoID int64, op, msgNaoEncontrado string) bool {
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.pedidoNoEscopo", "chamando h.svc.VendedorIDDoPedido e atribuindo resultado a vendedorID, err")
 	vendedorID, err := h.svc.VendedorIDDoPedido(r.Context(), h.db, pedidoID)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.pedidoNoEscopo", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.pedidoNoEscopo", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrPedidoNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, msgNaoEncontrado)
 			return false
@@ -237,6 +271,7 @@ func (h *PagamentoHandler) pedidoNoEscopo(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return false
 	}
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.pedidoNoEscopo", "verificando se !scope.PermiteVendedor(...)")
 	if !scope.PermiteVendedor(vendedorID) {
 		writeJSON(w, http.StatusNotFound, nil, msgNaoEncontrado)
 		return false
@@ -260,30 +295,38 @@ func (h *PagamentoHandler) pedidoNoEscopo(w http.ResponseWriter, r *http.Request
 // pedido for de outro vendedor ou não existir). 403 se o usuário normal não
 // tiver vendedor vinculado.
 func (h *PagamentoHandler) CreatePagamento(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] CreatePagamento", err)
 		return
 	}
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusForbidden, nil, "usuário sem vendedor vinculado")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "declarando variável req")
 	var req CreatePagamentoRequest
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "verificando se scope.Restrito && req.PedidoID > 0")
 	// pedido_id <= 0 segue para o service, que responde 400 "pedido_id é
 	// obrigatório" (nenhum registro é criado nesse caso).
 	if scope.Restrito && req.PedidoID > 0 {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "verificando se !h.pedidoNoEscopo(...)")
 		if !h.pedidoNoEscopo(w, r, scope, req.PedidoID, "CreatePagamento", "pedido não encontrado") {
 			return
 		}
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "montando services.PagamentoInput em input")
 	input := services.PagamentoInput{
 		PedidoID:        req.PedidoID,
 		FormaPagamento:  req.FormaPagamento,
@@ -296,8 +339,11 @@ func (h *PagamentoHandler) CreatePagamento(w http.ResponseWriter, r *http.Reques
 		StatusPagamento: req.StatusPagamento,
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "chamando h.svc.CreatePagamento e atribuindo resultado a pagamento, err")
 	pagamento, err := h.svc.CreatePagamento(r.Context(), h.db, input)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "chamando pagamentoErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := pagamentoErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -327,25 +373,34 @@ func (h *PagamentoHandler) CreatePagamento(w http.ResponseWriter, r *http.Reques
 // o expõe e o service não o altera), não há como mover o pagamento para um
 // pedido de outro vendedor.
 func (h *PagamentoHandler) UpdatePagamento(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] UpdatePagamento", err)
 		return
 	}
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "chamando h.svc.GetPagamentoByID e atribuindo resultado a atual, err")
 		atual, err := h.svc.GetPagamentoByID(r.Context(), h.db, id)
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se err != nil")
 		if err != nil {
+			vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se errors.Is(...)")
 			if errors.Is(err, services.ErrPagamentoNaoEncontrado) {
 				writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 				return
@@ -354,17 +409,21 @@ func (h *PagamentoHandler) UpdatePagamento(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 			return
 		}
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se !h.pedidoNoEscopo(...)")
 		if !h.pedidoNoEscopo(w, r, scope, atual.PedidoID, "UpdatePagamento", "pagamento não encontrado") {
 			return
 		}
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "declarando variável req")
 	var req UpdatePagamentoRequest
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "montando services.PagamentoInput em input")
 	input := services.PagamentoInput{
 		FormaPagamento:  req.FormaPagamento,
 		Parcelas:        req.Parcelas,
@@ -376,8 +435,11 @@ func (h *PagamentoHandler) UpdatePagamento(w http.ResponseWriter, r *http.Reques
 		StatusPagamento: req.StatusPagamento,
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "chamando h.svc.UpdatePagamento e atribuindo resultado a pagamento, err")
 	pagamento, err := h.svc.UpdatePagamento(r.Context(), h.db, id, input)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "chamando pagamentoErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := pagamentoErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -400,24 +462,32 @@ func (h *PagamentoHandler) UpdatePagamento(w http.ResponseWriter, r *http.Reques
 // vendedor), 409 se já estiver quitado.
 // Acesso comum (qualquer usuário autenticado).
 func (h *PagamentoHandler) DeletePagamento(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] DeletePagamento", err)
 		return
 	}
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "chamando h.svc.GetPagamentoByID e atribuindo resultado a pagamento, err")
 	pagamento, err := h.svc.GetPagamentoByID(r.Context(), h.db, id)
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrPagamentoNaoEncontrado) {
 			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 			return
@@ -427,20 +497,26 @@ func (h *PagamentoHandler) DeletePagamento(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "chamando h.svc.VendedorIDDoPedido e atribuindo resultado a vendedorID, err")
 		vendedorID, err := h.svc.VendedorIDDoPedido(r.Context(), h.db, pagamento.PedidoID)
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se err != nil")
 		if err != nil {
 			log.Printf("[pagamentos] DeletePagamento vendedor do pedido: %v", err)
 			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 			return
 		}
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se !scope.PermiteVendedor(...)")
 		if !scope.PermiteVendedor(vendedorID) {
 			writeJSON(w, http.StatusNotFound, nil, "pagamento não encontrado")
 			return
 		}
 	}
 
+	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "chamando h.svc.DeletePagamento e atribuindo resultado a err e verificando se err != nil")
 	if err := h.svc.DeletePagamento(r.Context(), h.db, id); err != nil {
+		vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "chamando pagamentoErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := pagamentoErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return

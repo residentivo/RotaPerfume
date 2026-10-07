@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // turnstileVerifyURL é o endpoint oficial de verificação do Cloudflare Turnstile.
@@ -61,7 +62,9 @@ func NewTurnstileService(cfg *config.Config) *TurnstileService {
 // httptest.Server). client nil usa um client com o timeout padrão de
 // verificação.
 func NewTurnstileServiceWithEndpoint(cfg *config.Config, verifyURL string, client *http.Client) *TurnstileService {
+	vlog.Printf("turnstile_service.go", "NewTurnstileServiceWithEndpoint", "verificando se foi injetado um http.Client")
 	if client == nil {
+		vlog.Printf("turnstile_service.go", "NewTurnstileServiceWithEndpoint", "criando http.Client padrão com timeout %s", turnstileVerifyTimeout)
 		client = &http.Client{Timeout: turnstileVerifyTimeout}
 	}
 	return &TurnstileService{
@@ -82,45 +85,64 @@ type turnstileSiteverifyResponse struct {
 // HTTP não-2xx, payload inesperado, ou success=false resulta em erro — nunca
 // deixa passar silenciosamente. O token e a secret key nunca são logados.
 func (s *TurnstileService) Verify(ctx context.Context, token, remoteIP string) error {
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "verificando se o token de captcha foi enviado (token não logado)")
 	if strings.TrimSpace(token) == "" {
 		return ErrCaptchaTokenAusente
 	}
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "verificando se a secret do Turnstile está configurada")
 	if s.secretKey == "" {
 		// Falha fechada: sem secret configurada não há como verificar — recusa.
 		return fmt.Errorf("%w: TURNSTILE_SECRET_KEY não configurada", ErrCaptchaInvalido)
 	}
 
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "criando contexto com timeout de %s", turnstileVerifyTimeout)
 	ctx, cancel := context.WithTimeout(ctx, turnstileVerifyTimeout)
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "agendando cancel do contexto")
 	defer cancel()
 
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "criando formulário do siteverify")
 	form := url.Values{}
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "adicionando secret ao formulário (valor não logado)")
 	form.Set("secret", s.secretKey)
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "adicionando token ao formulário (valor não logado)")
 	form.Set("response", token)
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "verificando se há IP remoto para enviar (IP não logado)")
 	if remoteIP != "" {
+		vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "adicionando IP remoto ao formulário")
 		form.Set("remoteip", remoteIP)
 	}
 
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "montando requisição POST para o siteverify")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.verifyURL, strings.NewReader(form.Encode()))
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "verificando se err != nil após montar a requisição")
 	if err != nil {
 		return fmt.Errorf("%w: erro ao montar requisição: %v", ErrCaptchaInvalido, err)
 	}
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "definindo Content-Type form-urlencoded")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "enviando requisição ao Cloudflare")
 	resp, err := s.client.Do(req)
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "verificando se err != nil após client.Do")
 	if err != nil {
 		return fmt.Errorf("%w: falha ao contatar Cloudflare: %v", ErrCaptchaInvalido, err)
 	}
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "agendando fechamento do corpo da resposta")
 	defer resp.Body.Close()
 
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "verificando status HTTP do Cloudflare (status=%d)", resp.StatusCode)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("%w: status HTTP inesperado do Cloudflare: %d", ErrCaptchaInvalido, resp.StatusCode)
 	}
 
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "declarando estrutura da resposta do siteverify")
 	var result turnstileSiteverifyResponse
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "decodificando JSON da resposta (conteúdo não logado)")
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return fmt.Errorf("%w: resposta inesperada do Cloudflare: %v", ErrCaptchaInvalido, err)
 	}
 
+	vlog.Printf("turnstile_service.go", "TurnstileService.Verify", "verificando success=%t retornado pelo Cloudflare", result.Success)
 	if !result.Success {
 		return fmt.Errorf("%w: %v", ErrCaptchaInvalido, result.ErrorCodes)
 	}

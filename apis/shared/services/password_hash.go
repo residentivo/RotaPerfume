@@ -28,6 +28,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 const (
@@ -50,17 +51,23 @@ type hashArgon2 struct {
 // GerarHashSenha gera o hash Argon2id (formato PHC) de senha com o pepper e
 // os parâmetros de p.
 func GerarHashSenha(p config.HashSenha, senha string) (string, error) {
+	vlog.Printf("password_hash.go", "GerarHashSenha", "verificando se o pepper está configurado")
 	if p.Pepper == "" {
 		return "", ErrPepperNaoConfigurado
 	}
+	vlog.Printf("password_hash.go", "GerarHashSenha", "verificando parâmetros Argon2id (m=%d t=%d p=%d)", p.MemoriaKiB, p.Iteracoes, p.Paralelismo)
 	if p.MemoriaKiB == 0 || p.Iteracoes == 0 || p.Paralelismo == 0 {
 		return "", fmt.Errorf("auth: parâmetros Argon2id inválidos (m=%d t=%d p=%d)", p.MemoriaKiB, p.Iteracoes, p.Paralelismo)
 	}
+	vlog.Printf("password_hash.go", "GerarHashSenha", "alocando salt de %d bytes", argon2SaltBytes)
 	salt := make([]byte, argon2SaltBytes)
+	vlog.Printf("password_hash.go", "GerarHashSenha", "preenchendo salt via crypto/rand e verificando erro")
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("auth: gerar salt: %w", err)
 	}
+	vlog.Printf("password_hash.go", "GerarHashSenha", "derivando chave Argon2id sobre HMAC(pepper, senha) (valores não logados)")
 	chave := argon2.IDKey(aplicarPepper(p.Pepper, senha), salt, p.Iteracoes, p.MemoriaKiB, p.Paralelismo, argon2ChaveBytes)
+	vlog.Printf("password_hash.go", "GerarHashSenha", "selecionando codificação base64 sem padding")
 	b64 := base64.RawStdEncoding
 	return fmt.Sprintf("%sv=%d$m=%d,t=%d,p=%d$%s$%s",
 		prefixoArgon2id, argon2.Version, p.MemoriaKiB, p.Iteracoes, p.Paralelismo,
@@ -70,16 +77,21 @@ func GerarHashSenha(p config.HashSenha, senha string) (string, error) {
 // VerificarSenha confere senha contra hash: Argon2id com pepper ou bcrypt
 // legado (sem pepper). Hash vazio, malformado ou desconhecido devolve false.
 func VerificarSenha(p config.HashSenha, hash, senha string) bool {
+	vlog.Printf("password_hash.go", "VerificarSenha", "verificando se o hash armazenado é bcrypt legado")
 	if ehBcrypt(hash) {
 		return bcrypt.CompareHashAndPassword([]byte(hash), []byte(senha)) == nil
 	}
+	vlog.Printf("password_hash.go", "VerificarSenha", "verificando se o pepper está configurado")
 	if p.Pepper == "" {
 		return false
 	}
+	vlog.Printf("password_hash.go", "VerificarSenha", "decodificando hash Argon2id armazenado (hash não logado)")
 	h, err := decodificarArgon2(hash)
+	vlog.Printf("password_hash.go", "VerificarSenha", "verificando se err != nil após decodificarArgon2")
 	if err != nil {
 		return false
 	}
+	vlog.Printf("password_hash.go", "VerificarSenha", "recalculando chave Argon2id para comparação em tempo constante")
 	calc := argon2.IDKey(aplicarPepper(p.Pepper, senha), h.salt, h.iteracoes, h.memoria, h.paralelismo, uint32(len(h.chave)))
 	return subtle.ConstantTimeCompare(calc, h.chave) == 1
 }
@@ -87,10 +99,13 @@ func VerificarSenha(p config.HashSenha, hash, senha string) bool {
 // PrecisaRehash indica se hash deve ser regravado com os parâmetros atuais:
 // bcrypt legado ou Argon2id com parâmetros diferentes de p.
 func PrecisaRehash(p config.HashSenha, hash string) bool {
+	vlog.Printf("password_hash.go", "PrecisaRehash", "verificando se o hash é bcrypt legado")
 	if ehBcrypt(hash) {
 		return true
 	}
+	vlog.Printf("password_hash.go", "PrecisaRehash", "decodificando hash Argon2id para comparar parâmetros")
 	h, err := decodificarArgon2(hash)
+	vlog.Printf("password_hash.go", "PrecisaRehash", "verificando se err != nil após decodificarArgon2")
 	if err != nil {
 		return false // placeholder/desconhecido: não é caso de re-hash
 	}
@@ -99,7 +114,9 @@ func PrecisaRehash(p config.HashSenha, hash string) bool {
 
 // aplicarPepper devolve HMAC-SHA256(pepper, senha), a entrada do Argon2id.
 func aplicarPepper(pepper, senha string) []byte {
+	vlog.Printf("password_hash.go", "aplicarPepper", "criando HMAC-SHA256 com o pepper (pepper não logado)")
 	mac := hmac.New(sha256.New, []byte(pepper))
+	vlog.Printf("password_hash.go", "aplicarPepper", "escrevendo a senha no HMAC (senha não logada)")
 	mac.Write([]byte(senha))
 	return mac.Sum(nil)
 }
@@ -110,26 +127,37 @@ func ehBcrypt(hash string) bool {
 
 // decodificarArgon2 interpreta um hash PHC $argon2id$v=19$m=..,t=..,p=..$salt$chave.
 func decodificarArgon2(hash string) (*hashArgon2, error) {
+	vlog.Printf("password_hash.go", "decodificarArgon2", "separando o hash PHC por '$' (hash não logado)")
 	partes := strings.Split(hash, "$")
+	vlog.Printf("password_hash.go", "decodificarArgon2", "verificando quantidade de partes (%d) e identificador argon2id", len(partes))
 	if len(partes) != 6 || partes[1] != "argon2id" {
 		return nil, errors.New("auth: hash não é argon2id")
 	}
+	vlog.Printf("password_hash.go", "decodificarArgon2", "declarando variável da versão")
 	var versao int
+	vlog.Printf("password_hash.go", "decodificarArgon2", "lendo e verificando a versão do argon2")
 	if _, err := fmt.Sscanf(partes[2], "v=%d", &versao); err != nil || versao != argon2.Version {
 		return nil, errors.New("auth: versão argon2 incompatível")
 	}
+	vlog.Printf("password_hash.go", "decodificarArgon2", "alocando estrutura hashArgon2")
 	h := &hashArgon2{}
+	vlog.Printf("password_hash.go", "decodificarArgon2", "lendo parâmetros m/t/p e verificando erro")
 	if _, err := fmt.Sscanf(partes[3], "m=%d,t=%d,p=%d", &h.memoria, &h.iteracoes, &h.paralelismo); err != nil {
 		return nil, fmt.Errorf("auth: parâmetros argon2 malformados: %w", err)
 	}
+	vlog.Printf("password_hash.go", "decodificarArgon2", "verificando se algum parâmetro está zerado (m=%d t=%d p=%d)", h.memoria, h.iteracoes, h.paralelismo)
 	if h.memoria == 0 || h.iteracoes == 0 || h.paralelismo == 0 {
 		return nil, errors.New("auth: parâmetros argon2 zerados")
 	}
+	vlog.Printf("password_hash.go", "decodificarArgon2", "declarando variável de erro")
 	var err error
+	vlog.Printf("password_hash.go", "decodificarArgon2", "selecionando codificação base64 sem padding")
 	b64 := base64.RawStdEncoding
+	vlog.Printf("password_hash.go", "decodificarArgon2", "decodificando salt e verificando se é válido")
 	if h.salt, err = b64.DecodeString(partes[4]); err != nil || len(h.salt) == 0 {
 		return nil, errors.New("auth: salt argon2 malformado")
 	}
+	vlog.Printf("password_hash.go", "decodificarArgon2", "decodificando chave e verificando se é válida")
 	if h.chave, err = b64.DecodeString(partes[5]); err != nil || len(h.chave) == 0 {
 		return nil, errors.New("auth: hash argon2 malformado")
 	}

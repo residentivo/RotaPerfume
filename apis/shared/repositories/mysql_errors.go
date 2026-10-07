@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
+
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // mysqlErrDuplicateEntry é o código MySQL de violação de chave única
@@ -22,7 +24,9 @@ var ErrCNPJDuplicado = errors.New("repositories: cnpj duplicado")
 // o índice keyName. O nome do índice aparece na mensagem do MySQL
 // ("Duplicate entry '...' for key 'clientes.uq_clientes_cnpj'").
 func isDuplicateKey(err error, keyName string) bool {
+	vlog.Printf("mysql_errors.go", "isDuplicateKey", "declarando variável myErr")
 	var myErr *mysql.MySQLError
+	vlog.Printf("mysql_errors.go", "isDuplicateKey", "verificando se !errors.As(err, &myErr)")
 	if !errors.As(err, &myErr) {
 		return false
 	}

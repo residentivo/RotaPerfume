@@ -19,6 +19,9 @@ import {
   VendedorRanking,
   ClienteDashboardMetrics,
 } from "@/lib/types";
+import { vlog } from "@/lib/vlog";
+
+const FILE = "dashboard/page.tsx";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -130,7 +133,9 @@ function BarChart({
   series: VendasSeries;
   ocultarVazio?: boolean;
 }) {
+  vlog(FILE, "BarChart", "verificando se a serie tem pontos (qtd=%d)", series.pontos.length);
   if (!series.pontos.length) {
+    vlog(FILE, "BarChart", "serie vazia; verificando se oculta o vazio (ocultarVazio=%s)", ocultarVazio);
     if (ocultarVazio) return null;
     return (
       <div className="flex h-48 w-full items-center justify-center text-sm text-slate-400">
@@ -139,9 +144,11 @@ function BarChart({
     );
   }
 
+  vlog(FILE, "BarChart", "calculando valor maximo de vendas da serie");
   const maxVendas = Math.max(...series.pontos.map((p) => p.total_vendas), 1);
 
   // Amostra maxima de 30 barras visiveis
+  vlog(FILE, "BarChart", "amostrando no maximo 30 barras");
   const sampled =
     series.pontos.length > 30
       ? series.pontos.filter((_, i) => i % Math.ceil(series.pontos.length / 30) === 0)
@@ -203,7 +210,9 @@ function RankingTable({
   vendedores: VendedorRanking[];
   ocultarVazio?: boolean;
 }) {
+  vlog(FILE, "RankingTable", "verificando se ha vendedores no ranking (qtd=%d)", vendedores.length);
   if (!vendedores.length) {
+    vlog(FILE, "RankingTable", "ranking vazio; verificando se oculta o vazio (ocultarVazio=%s)", ocultarVazio);
     if (ocultarVazio) return null;
     return (
       <div className="py-8 text-center text-sm text-slate-400">
@@ -328,7 +337,9 @@ function HorizontalBarList({
   colorClass?: string;
   ocultarVazio?: boolean;
 }) {
+  vlog(FILE, "HorizontalBarList", "verificando se ha itens (qtd=%d)", items.length);
   if (!items.length) {
+    vlog(FILE, "HorizontalBarList", "lista vazia; verificando se oculta o vazio (ocultarVazio=%s)", ocultarVazio);
     if (ocultarVazio) return null;
     return (
       <div className="py-6 text-center text-sm text-slate-400">
@@ -337,6 +348,7 @@ function HorizontalBarList({
     );
   }
 
+  vlog(FILE, "HorizontalBarList", "calculando valor maximo dos itens");
   const max = Math.max(...items.map((i) => i.total), 1);
 
   return (
@@ -373,9 +385,12 @@ function GoalProgress({
   current: number;
   target: number;
 }) {
+  vlog(FILE, "GoalProgress", "calculando percentual atingido da meta");
   const pct = target > 0 ? Math.min(100, (current / target) * 100) : 0;
+  vlog(FILE, "GoalProgress", "definindo cor pelo percentual (pct=%d)", Math.round(pct));
   const color = pct >= 100 ? "emerald" : pct >= 70 ? "amber" : "red";
 
+  vlog(FILE, "GoalProgress", "montando paleta de cores");
   const colors = {
     emerald: {
       bar: "bg-emerald-500",
@@ -394,6 +409,7 @@ function GoalProgress({
     },
   };
 
+  vlog(FILE, "GoalProgress", "selecionando cores (cor=%s)", color);
   const c = colors[color];
 
   return (
@@ -518,7 +534,9 @@ function MeuDesempenho({
   vendedor: VendedorRanking | undefined;
   ocultarVazio?: boolean;
 }) {
+  vlog(FILE, "MeuDesempenho", "verificando se ha dados do vendedor");
   if (!vendedor) {
+    vlog(FILE, "MeuDesempenho", "sem dados; verificando se oculta o vazio (ocultarVazio=%s)", ocultarVazio);
     if (ocultarVazio) return null;
     return (
       <div className="py-8 text-center text-sm text-slate-400">
@@ -527,10 +545,13 @@ function MeuDesempenho({
     );
   }
 
+  vlog(FILE, "MeuDesempenho", "obtendo atingimento da meta (vendedor_id=%d)", vendedor.vendedor_id);
   const pct = vendedor.atingimento_meta ?? 0;
+  vlog(FILE, "MeuDesempenho", "definindo cor da barra de atingimento");
   const barColor =
     pct >= 100 ? "bg-emerald-500" : pct >= 70 ? "bg-amber-400" : "bg-red-400";
 
+  vlog(FILE, "MeuDesempenho", "montando lista de estatisticas");
   const stats: { label: string; value: string; highlight?: boolean }[] = [
     { label: "Vendas", value: fmtCurrency(vendedor.total_vendas ?? 0), highlight: true },
     { label: "Pedidos", value: fmtNumber(vendedor.total_pedidos ?? 0) },
@@ -583,31 +604,49 @@ function DashboardContent() {
   // /api/auth/me; a sessao em memoria e a fonte da verdade (revalidada ao
   // voltar o foco). O escopo real (admin x vendedor) e aplicado pelo
   // backend; aqui so muda a apresentacao.
+  vlog(FILE, "DashboardContent", "obtendo usuario da sessao em memoria");
   const currentUser = useSessionUser();
+  vlog(FILE, "DashboardContent", "verificando se o vendedor esta desligado na sessao");
   const desligadoNaSessao = useVendedorDesligado();
+  vlog(FILE, "DashboardContent", "calculando se usuario e admin");
   const isAdmin = currentUser?.role === "admin";
+  vlog(FILE, "DashboardContent", "calculando se usuario esta sem vendedor (admin=%s)", isAdmin);
   const semVendedor = !isAdmin && !currentUser?.id_vendedor;
 
+  vlog(FILE, "DashboardContent", "inicializando estado do periodo");
   const [periodo, setPeriodo] = useState<PeriodFilter>("month");
+  vlog(FILE, "DashboardContent", "inicializando estado das metricas");
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  vlog(FILE, "DashboardContent", "inicializando estado da serie de vendas");
   const [vendasSeries, setVendasSeries] = useState<VendasSeries | null>(null);
+  vlog(FILE, "DashboardContent", "inicializando estado do ranking de vendedores");
   const [vendedores, setVendedores] = useState<VendedorRanking[]>([]);
+  vlog(FILE, "DashboardContent", "inicializando estado das metricas de clientes");
   const [clienteMetrics, setClienteMetrics] = useState<ClienteDashboardMetrics | null>(null);
+  vlog(FILE, "DashboardContent", "inicializando estado de dias dos graficos");
   const [chartsDias, setChartsDias] = useState(30);
   // Incrementado pelo botao "Atualizar" para refazer a busca.
+  vlog(FILE, "DashboardContent", "inicializando contador de recarga");
   const [recarga, setRecarga] = useState(0);
   // Resultado da ultima busca concluida (sucesso ou erro), identificado pela
   // chave dos filtros. `loading`/`error` sao derivados no render — o efeito
   // so faz setState dentro dos callbacks assincronos.
+  vlog(FILE, "DashboardContent", "montando chave da busca (periodo=%s, dias=%d, recarga=%d)", periodo, chartsDias, recarga);
   const chave = `${periodo}|${chartsDias}|${recarga}`;
+  vlog(FILE, "DashboardContent", "inicializando estado do resultado da ultima busca");
   const [resultado, setResultado] = useState<{ chave: string; error: string | null } | null>(
     null
   );
+  vlog(FILE, "DashboardContent", "derivando loading pela chave do resultado");
   const loading = resultado?.chave !== chave;
+  vlog(FILE, "DashboardContent", "derivando erro do resultado (loading=%s)", loading);
   const error = loading ? null : resultado?.error ?? null;
 
+  vlog(FILE, "DashboardContent", "registrando efeito de carga das metricas");
   useEffect(() => {
+    vlog(FILE, "DashboardContent.useEffect", "inicializando flag de cancelamento");
     let cancelado = false;
+    vlog(FILE, "DashboardContent.useEffect", "buscando metricas, vendas, vendedores e clientes em paralelo (periodo=%s, dias=%d)", periodo, chartsDias);
     Promise.all([
       apiDashboardMetrics(periodo),
       apiDashboardVendas(chartsDias),
@@ -615,40 +654,53 @@ function DashboardContent() {
       apiDashboardClientes(periodo),
     ])
       .then(([m, v, vd, cm]) => {
+        vlog(FILE, "DashboardContent.useEffect.then", "verificando se a busca foi cancelada (cancelado=%s)", cancelado);
         if (cancelado) return;
+        vlog(FILE, "DashboardContent.useEffect.then", "aplicando metricas");
         setMetrics(m);
+        vlog(FILE, "DashboardContent.useEffect.then", "aplicando serie de vendas");
         setVendasSeries(v);
+        vlog(FILE, "DashboardContent.useEffect.then", "aplicando ranking de vendedores (top 10)");
         setVendedores((Array.isArray(vd?.data) ? vd.data : []).slice(0, 10));
+        vlog(FILE, "DashboardContent.useEffect.then", "aplicando metricas de clientes");
         setClienteMetrics(cm);
+        vlog(FILE, "DashboardContent.useEffect.then", "registrando resultado de sucesso");
         setResultado({ chave, error: null });
       })
       .catch((err) => {
+        vlog(FILE, "DashboardContent.useEffect.catch", "falha na busca; verificando se foi cancelada (cancelado=%s)", cancelado);
         if (cancelado) return;
+        vlog(FILE, "DashboardContent.useEffect.catch", "registrando resultado de erro");
         setResultado({
           chave,
           error: err instanceof Error ? err.message : "Erro ao carregar dados",
         });
       });
     return () => {
+      vlog(FILE, "DashboardContent.useEffect.cleanup", "cancelando busca anterior");
       cancelado = true;
     };
   }, [chave, periodo, chartsDias]);
 
+  vlog(FILE, "DashboardContent", "memorizando callback recarregar");
   const recarregar = useCallback(() => setRecarga((r) => r + 1), []);
 
   // Vendedor desligado: flag vem da API (/api/dashboard/metrics ou
   // /api/auth/me via sessao em memoria), nunca do cache local — o vinculo
   // pode continuar existindo no usuario, mas o vendedor ter data_desligamento.
+  vlog(FILE, "DashboardContent", "calculando se vendedor esta desligado (metricas ou sessao)");
   const vendedorDesligado =
     !isAdmin && (metrics?.vendedor_desligado === true || desligadoNaSessao);
 
   // FE-02 (defesa em profundidade): sem vendedor vinculado ou vendedor
   // desligado, a tela exibe tudo zerado IGNORANDO o payload da API — mesmo
   // que o backend, por regressao, devolva dados da carteira.
+  vlog(FILE, "DashboardContent", "calculando se forca zeros (semVendedor=%s, desligado=%s)", semVendedor, vendedorDesligado);
   const forcarZeros = !isAdmin && (semVendedor || vendedorDesligado);
 
   // Dados reais vindos da API. Quando ainda nao carregados (ou forcados a
   // zero), usa valores zerados — nunca dados inventados.
+  vlog(FILE, "DashboardContent", "definindo metricas exibidas (forcarZeros=%s)", forcarZeros);
   const displayMetrics: DashboardMetrics =
     !forcarZeros && metrics
       ? metrics
@@ -662,19 +714,24 @@ function DashboardContent() {
           periodo,
         };
 
+  vlog(FILE, "DashboardContent", "definindo serie de vendas exibida");
   const displayVendas: VendasSeries = {
     dias: vendasSeries?.dias ?? chartsDias,
     pontos:
       !forcarZeros && Array.isArray(vendasSeries?.pontos) ? vendasSeries.pontos : [],
   };
 
+  vlog(FILE, "DashboardContent", "definindo ranking exibido (qtd=%d)", vendedores.length);
   const displayVendedores = forcarZeros ? [] : vendedores;
+  vlog(FILE, "DashboardContent", "definindo metricas de clientes exibidas");
   const displayClientes: ClienteDashboardMetrics | null = forcarZeros
     ? null
     : clienteMetrics;
 
   // Usuario normal: o ranking vem com no maximo 1 linha (a dele).
+  vlog(FILE, "DashboardContent", "selecionando desempenho proprio (admin=%s)", isAdmin);
   const meuDesempenho = isAdmin ? undefined : displayVendedores[0];
+  vlog(FILE, "DashboardContent", "verificando se ha meta definida");
   const temMeta = displayMetrics.meta_mes != null && displayMetrics.meta_mes > 0;
 
   // FE-09: com erro e nenhuma carga bem-sucedida ainda (metrics null — o
@@ -682,6 +739,7 @@ function DashboardContent() {
   // falsos: a tela mostra so o alerta. Apos uma carga, um erro seguinte mantem
   // os dados anteriores (nada e zerado no catch). Com zeros forcados (FE-02)
   // o vazio e legitimo e continua aparecendo.
+  vlog(FILE, "DashboardContent", "calculando se oculta estados vazios (erro=%s)", error !== null);
   const ocultarVazios = error !== null && metrics === null && !forcarZeros;
 
   return (

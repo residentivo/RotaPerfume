@@ -7,6 +7,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // DashboardRepository agrupa queries do dashboard.
@@ -22,6 +24,7 @@ func NewDashboardRepository() *DashboardRepository {
 // periodo: "today" = dia atual, "week" = ultimos 7 dias (incluindo hoje),
 // qualquer outro valor (inclusive "month") = mes atual.
 func periodoWhereClause(periodo string) string {
+	vlog.Printf("dashboard_repository.go", "periodoWhereClause", "avaliando switch sobre periodo")
 	switch periodo {
 	case "today":
 		return "DATE(data_pedido) = CURDATE()"
@@ -39,6 +42,7 @@ func periodoWhereClause(periodo string) string {
 // argumento. A coluna é sempre uma constante do código (nunca entrada do
 // usuário); o valor vai exclusivamente por placeholder.
 func vendedorFilter(coluna string, vendedorID int64) (string, []any) {
+	vlog.Printf("dashboard_repository.go", "vendedorFilter", "verificando se vendedorID <= 0")
 	if vendedorID <= 0 {
 		return "", nil
 	}
@@ -54,20 +58,28 @@ func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, p
 	// Tenta buscar da tabela pedidos (se existir).
 	// A query abaixo usa um filtro de periodo baseado na coluna data_pedido (se existir).
 	// Se a tabela nao existir, a query falha e retornamos 0,0.
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "declarando variável valorTotal")
 	var valorTotal sql.NullFloat64
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "declarando variável quantidade")
 	var quantidade sql.NullInt64
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "definindo whereClause com resultado de chamada a periodoWhereClause")
 	whereClause := periodoWhereClause(periodo)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "definindo filtroVendedor, args com resultado de chamada a vendedorFilter")
 	filtroVendedor, args := vendedorFilter("vendedor_id", vendedorID)
 
 	// Query genérica que só funciona se a tabela pedidos existir.
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "definindo q com resultado de chamada a fmt.Sprintf")
 	q := fmt.Sprintf(`
 		SELECT COALESCE(SUM(valor_total), 0), COUNT(*)
 		FROM pedidos
 		WHERE %s AND status NOT IN ('cancelado', 'devolvido')%s`, whereClause, filtroVendedor)
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query q, args omitidos) com leitura do resultado")
 	err := db.QueryRowContext(ctx, q, args...).Scan(&valorTotal, &quantidade)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "verificando se isTableNotFound(err)")
 		if isTableNotFound(err) {
 			// Tabela pedidos ainda não existe - retorna zeros.
 			return 0, 0, nil
@@ -75,12 +87,18 @@ func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, p
 		return 0, 0, fmt.Errorf("GetVendasTotais: %w", err)
 	}
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "definindo v com resultado de chamada a float64")
 	v := float64(0)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "definindo qtd com resultado de chamada a int")
 	qtd := int(0)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "verificando se valorTotal.Valid")
 	if valorTotal.Valid {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "atribuindo v = valorTotal.Float64")
 		v = valorTotal.Float64
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "verificando se quantidade.Valid")
 	if quantidade.Valid {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasTotais", "atribuindo qtd com resultado de chamada a int")
 		qtd = int(quantidade.Int64)
 	}
 	return v, qtd, nil
@@ -89,22 +107,30 @@ func (r *DashboardRepository) GetVendasTotais(ctx context.Context, db *sql.DB, p
 // GetTotalPedidos retorna o total de pedidos no periodo.
 // vendedorID > 0 restringe aos pedidos do vendedor; 0 (admin) = todos.
 func (r *DashboardRepository) GetTotalPedidos(ctx context.Context, db *sql.DB, periodo string, vendedorID int64) (int, error) {
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTotalPedidos", "definindo whereClause com resultado de chamada a periodoWhereClause")
 	whereClause := periodoWhereClause(periodo)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTotalPedidos", "definindo filtroVendedor, args com resultado de chamada a vendedorFilter")
 	filtroVendedor, args := vendedorFilter("vendedor_id", vendedorID)
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTotalPedidos", "definindo q com resultado de chamada a fmt.Sprintf")
 	q := fmt.Sprintf(`
 		SELECT COUNT(*) FROM pedidos
 		WHERE %s AND status NOT IN ('cancelado', 'devolvido')%s`, whereClause, filtroVendedor)
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTotalPedidos", "declarando variável total")
 	var total sql.NullInt64
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTotalPedidos", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query q, args omitidos) com leitura do resultado")
 	err := db.QueryRowContext(ctx, q, args...).Scan(&total)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTotalPedidos", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTotalPedidos", "verificando se isTableNotFound(err)")
 		if isTableNotFound(err) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("GetTotalPedidos: %w", err)
 	}
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTotalPedidos", "verificando se total.Valid")
 	if total.Valid {
 		return int(total.Int64), nil
 	}
@@ -116,22 +142,29 @@ func (r *DashboardRepository) GetTotalPedidos(ctx context.Context, db *sql.DB, p
 // retorna 0. vendedorID > 0 considera apenas a meta_mensal do próprio
 // vendedor; 0 (admin) soma todos os vendedores ativos.
 func (r *DashboardRepository) GetMetaMensalTotal(ctx context.Context, db *sql.DB, vendedorID int64) (float64, error) {
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetaMensalTotal", "declarando variável metaTotal")
 	var metaTotal sql.NullFloat64
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetaMensalTotal", "definindo filtroVendedor, args com resultado de chamada a vendedorFilter")
 	filtroVendedor, args := vendedorFilter("id", vendedorID)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetaMensalTotal", "montando texto da query SQL SELECT em vendedores em q")
 	q := `
 		SELECT COALESCE(SUM(meta_mensal), 0)
 		FROM vendedores
 		WHERE data_desligamento IS NULL` + filtroVendedor
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetaMensalTotal", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query q, args omitidos) com leitura do resultado")
 	err := db.QueryRowContext(ctx, q, args...).Scan(&metaTotal)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetaMensalTotal", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetaMensalTotal", "verificando se isTableNotFound(err)")
 		if isTableNotFound(err) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("GetMetaMensalTotal: %w", err)
 	}
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetaMensalTotal", "verificando se metaTotal.Valid")
 	if metaTotal.Valid {
 		return metaTotal.Float64, nil
 	}
@@ -153,7 +186,9 @@ type VendedorRanking struct {
 func (r *DashboardRepository) GetTopVendedores(ctx context.Context, db *sql.DB, limit int, vendedorID int64) ([]VendedorRanking, error) {
 	// Join entre vendedores e pedidos (se existir).
 	// Para funcionar sem pedidos, retornamos vendedores ativos ordenados por meta.
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "definindo filtroVendedor, args com resultado de chamada a vendedorFilter")
 	filtroVendedor, args := vendedorFilter("v.id", vendedorID)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "montando texto da query SQL SELECT em vendedores em q")
 	q := `
 		SELECT
 			v.id,
@@ -164,16 +199,22 @@ func (r *DashboardRepository) GetTopVendedores(ctx context.Context, db *sql.DB, 
 		ORDER BY v.meta_mensal DESC
 		LIMIT ?`
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, append(args, limit)...)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "verificando se isTableNotFound(err)")
 		if isTableNotFound(err) {
 			return []VendedorRanking{}, nil
 		}
 		return nil, fmt.Errorf("GetTopVendedores: %w", err)
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "definindo result com resultado de chamada a make")
 	result := make([]VendedorRanking, 0)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		var vr VendedorRanking
 		if err := rows.Scan(&vr.ID, &vr.Nome, &vr.Meta); err != nil {
@@ -184,9 +225,12 @@ func (r *DashboardRepository) GetTopVendedores(ctx context.Context, db *sql.DB, 
 		vr.PercentualMeta = 0
 		result = append(result, vr)
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "loop concluído; itens acumulados em result: %d", len(result))
 
 	// Se a tabela pedidos existir, enriquecemos com dados de vendas.
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "verificando se len(result) > 0")
 	if len(result) > 0 {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetTopVendedores", "executando chamada a r.enrichWithVendas")
 		r.enrichWithVendas(ctx, db, result)
 	}
 
@@ -203,13 +247,17 @@ type vendasVendedor struct {
 
 // enrichWithVendas atualiza TotalVendas e PercentualMeta a partir de pedidos.
 func (r *DashboardRepository) enrichWithVendas(ctx context.Context, db *sql.DB, ranking []VendedorRanking) {
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "verificando se len(ranking) == 0")
 	if len(ranking) == 0 {
 		return
 	}
 
 	// Monta placeholders (?) para IN.
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "definindo placeholders = \"\"")
 	placeholders := ""
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "definindo args com resultado de chamada a make")
 	args := make([]any, len(ranking))
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "iniciando loop range sobre ranking (sem log por iteração)")
 	for i, v := range ranking {
 		if i > 0 {
 			placeholders += ","
@@ -217,7 +265,9 @@ func (r *DashboardRepository) enrichWithVendas(ctx context.Context, db *sql.DB, 
 		placeholders += "?"
 		args[i] = v.ID
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "loop concluído; itens acumulados em args: %d", len(args))
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "definindo q com resultado de chamada a fmt.Sprintf")
 	q := fmt.Sprintf(`
 		SELECT vendedor_id,
 			   COALESCE(SUM(valor_total), 0),
@@ -229,14 +279,19 @@ func (r *DashboardRepository) enrichWithVendas(ctx context.Context, db *sql.DB, 
 		  AND status NOT IN ('cancelado', 'devolvido')
 		GROUP BY vendedor_id`, placeholders)
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, args...)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "verificando se err != nil")
 	if err != nil {
 		return // silent fail - ranking ja tem dados
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "definindo salesMap com resultado de chamada a make")
 	salesMap := make(map[int64]vendasVendedor)
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		var vid int64
 		var total sql.NullFloat64
@@ -246,7 +301,9 @@ func (r *DashboardRepository) enrichWithVendas(ctx context.Context, db *sql.DB, 
 		}
 		salesMap[vid] = vendasVendedor{total: total.Float64, qtd: int(qtd.Int64)}
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "loop concluído; itens acumulados em salesMap: %d", len(salesMap))
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "iniciando loop range sobre ranking (sem log por iteração)")
 	for i := range ranking {
 		if sale, ok := salesMap[ranking[i].ID]; ok {
 			ranking[i].TotalVendas = sale.total
@@ -256,6 +313,7 @@ func (r *DashboardRepository) enrichWithVendas(ctx context.Context, db *sql.DB, 
 			}
 		}
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichWithVendas", "loop concluído")
 }
 
 // MetaVendedor representa a meta de um vendedor comparada com realizacao.
@@ -273,7 +331,9 @@ type MetaVendedor struct {
 // GetMetasVendedores retorna todas as metas dos vendedores ativos com comparativo.
 // vendedorID > 0 restringe à linha do próprio vendedor; 0 (admin) = todos.
 func (r *DashboardRepository) GetMetasVendedores(ctx context.Context, db *sql.DB, vendedorID int64) ([]MetaVendedor, error) {
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetasVendedores", "definindo filtroVendedor, args com resultado de chamada a vendedorFilter")
 	filtroVendedor, args := vendedorFilter("v.id", vendedorID)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetasVendedores", "montando texto da query SQL SELECT em vendedores em q")
 	q := `
 		SELECT
 			v.id,
@@ -285,13 +345,18 @@ func (r *DashboardRepository) GetMetasVendedores(ctx context.Context, db *sql.DB
 		WHERE v.data_desligamento IS NULL` + filtroVendedor + `
 		ORDER BY v.meta_mensal DESC`
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetasVendedores", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, args...)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetasVendedores", "verificando se err != nil")
 	if err != nil {
 		return nil, fmt.Errorf("GetMetasVendedores: %w", err)
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetasVendedores", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetasVendedores", "definindo result com resultado de chamada a make")
 	result := make([]MetaVendedor, 0)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetasVendedores", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		var mv MetaVendedor
 		if err := rows.Scan(&mv.ID, &mv.Nome, &mv.Regiao, &mv.UF, &mv.Meta); err != nil {
@@ -302,8 +367,10 @@ func (r *DashboardRepository) GetMetasVendedores(ctx context.Context, db *sql.DB
 		mv.QuantidadeVendas = 0
 		result = append(result, mv)
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetasVendedores", "loop concluído; itens acumulados em result: %d", len(result))
 
 	// Enriquecer com vendas do mes atual.
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetMetasVendedores", "executando chamada a r.enrichMetasWithVendas")
 	r.enrichMetasWithVendas(ctx, db, result)
 
 	return result, nil
@@ -311,12 +378,16 @@ func (r *DashboardRepository) GetMetasVendedores(ctx context.Context, db *sql.DB
 
 // enrichMetasWithVendas atualiza Realizado e Percentual a partir de pedidos.
 func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql.DB, metas []MetaVendedor) {
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "verificando se len(metas) == 0")
 	if len(metas) == 0 {
 		return
 	}
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "definindo placeholders = \"\"")
 	placeholders := ""
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "definindo args com resultado de chamada a make")
 	args := make([]any, len(metas))
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "iniciando loop range sobre metas (sem log por iteração)")
 	for i, v := range metas {
 		if i > 0 {
 			placeholders += ","
@@ -324,7 +395,9 @@ func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql
 		placeholders += "?"
 		args[i] = v.ID
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "loop concluído; itens acumulados em args: %d", len(args))
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "definindo q com resultado de chamada a fmt.Sprintf")
 	q := fmt.Sprintf(`
 		SELECT vendedor_id,
 			   COALESCE(SUM(valor_total), 0),
@@ -336,14 +409,19 @@ func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql
 		  AND status NOT IN ('cancelado', 'devolvido')
 		GROUP BY vendedor_id`, placeholders)
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, args...)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "verificando se err != nil")
 	if err != nil {
 		return
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "definindo salesMap com resultado de chamada a make")
 	salesMap := make(map[int64]vendasVendedor)
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		var vid int64
 		var total sql.NullFloat64
@@ -353,7 +431,9 @@ func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql
 		}
 		salesMap[vid] = vendasVendedor{total: total.Float64, qtd: int(qtd.Int64)}
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "loop concluído; itens acumulados em salesMap: %d", len(salesMap))
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "iniciando loop range sobre metas (sem log por iteração)")
 	for i := range metas {
 		if sale, ok := salesMap[metas[i].ID]; ok {
 			metas[i].Realizado = sale.total
@@ -363,12 +443,15 @@ func (r *DashboardRepository) enrichMetasWithVendas(ctx context.Context, db *sql
 			}
 		}
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.enrichMetasWithVendas", "loop concluído")
 }
 
 // GetVendasSeries retorna serie temporal (data -> valor, quantidade) dos ultimos N dias.
 // vendedorID > 0 restringe aos pedidos do vendedor; 0 (admin) = todos.
 func (r *DashboardRepository) GetVendasSeries(ctx context.Context, db *sql.DB, dias int, vendedorID int64) ([]map[string]any, error) {
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "definindo filtroVendedor, filtroArgs com resultado de chamada a vendedorFilter")
 	filtroVendedor, filtroArgs := vendedorFilter("vendedor_id", vendedorID)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "montando texto da query SQL SELECT em pedidos em q")
 	q := `
 		SELECT DATE_FORMAT(data_pedido, '%Y-%m-%d') AS data,
 			   COALESCE(SUM(valor_total), 0) AS valor,
@@ -379,22 +462,29 @@ func (r *DashboardRepository) GetVendasSeries(ctx context.Context, db *sql.DB, d
 		GROUP BY DATE_FORMAT(data_pedido, '%Y-%m-%d')
 		ORDER BY data ASC`
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
 	args := append([]any{dias}, filtroArgs...)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, args...)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "verificando se isTableNotFound(err)")
 		if isTableNotFound(err) {
 			// Gera serie vazia com dias zeros.
 			return r.emptySeries(dias), nil
 		}
 		return nil, fmt.Errorf("GetVendasSeries: %w", err)
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "definindo seriesMap com resultado de chamada a make")
 	seriesMap := make(map[string]struct {
 		valor      float64
 		quantidade int
 	})
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		var data string
 		var valor sql.NullFloat64
@@ -415,13 +505,16 @@ func (r *DashboardRepository) GetVendasSeries(ctx context.Context, db *sql.DB, d
 			quantidade int
 		}{valor: v, quantidade: q}
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "loop concluído; itens acumulados em seriesMap: %d", len(seriesMap))
 
 	// Se nao teve dados, retorna serie vazia.
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "verificando se len(seriesMap) == 0")
 	if len(seriesMap) == 0 {
 		return r.emptySeries(dias), nil
 	}
 
 	// Monta serie completa (todos os dias do range, mesmo sem vendas).
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendasSeries", "definindo series com resultado de chamada a r.buildFullSeries")
 	series := r.buildFullSeries(ctx, db, dias, seriesMap)
 	return series, nil
 }
@@ -437,8 +530,11 @@ func (r *DashboardRepository) EmptySeries(dias int) []map[string]any {
 // As datas sao geradas em Go no formato YYYY-MM-DD, equivalente a
 // DATE_SUB(CURDATE(), INTERVAL i DAY), para bater com o contrato do frontend.
 func (r *DashboardRepository) emptySeries(dias int) []map[string]any {
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.emptySeries", "definindo hoje com resultado de chamada a time.Now")
 	hoje := time.Now()
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.emptySeries", "definindo series com resultado de chamada a make")
 	series := make([]map[string]any, 0, dias)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.emptySeries", "iniciando loop enquanto i >= 0 (sem log por iteração)")
 	for i := dias - 1; i >= 0; i-- {
 		dia := hoje.AddDate(0, 0, -i).Format("2006-01-02")
 		series = append(series, map[string]any{
@@ -447,6 +543,7 @@ func (r *DashboardRepository) emptySeries(dias int) []map[string]any {
 			"total_pedidos": 0,
 		})
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.emptySeries", "loop concluído; itens acumulados em series: %d", len(series))
 	return series
 }
 
@@ -455,9 +552,11 @@ func (r *DashboardRepository) buildFullSeries(ctx context.Context, db *sql.DB, d
 	valor      float64
 	quantidade int
 }) []map[string]any {
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.buildFullSeries", "definindo series com resultado de chamada a make")
 	series := make([]map[string]any, 0, dias)
 
 	// Pega datas do banco para ter a sequencia correta.
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.buildFullSeries", "montando texto da query SQL SELECT em q")
 	q := `SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL n DAY), '%Y-%m-%d') AS dia
 	      FROM (
 	          SELECT 0 AS n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4
@@ -537,16 +636,21 @@ func (r *DashboardRepository) buildFullSeries(ctx context.Context, db *sql.DB, d
 	      WHERE n < ?
 	      ORDER BY dia ASC`
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.buildFullSeries", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, dias)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.buildFullSeries", "verificando se err != nil")
 	if err != nil {
 		return r.emptySeries(dias)
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.buildFullSeries", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.buildFullSeries", "definindo err com resultado de chamada a rows.Err e verificando se err != nil")
 	if err := rows.Err(); err != nil {
 		return r.emptySeries(dias)
 	}
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.buildFullSeries", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		var dia string
 		if err := rows.Scan(&dia); err != nil {
@@ -566,6 +670,7 @@ func (r *DashboardRepository) buildFullSeries(ctx context.Context, db *sql.DB, d
 			})
 		}
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.buildFullSeries", "loop concluído; itens acumulados em series: %d", len(series))
 
 	return series
 }
@@ -574,20 +679,30 @@ func (r *DashboardRepository) buildFullSeries(ctx context.Context, db *sql.DB, d
 // vendedorID > 0 restringe à linha do próprio vendedor (total coerente: 0
 // ou 1); 0 (admin) = todos os vendedores ativos.
 func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.DB, page, limit int, vendedorID int64) ([]map[string]any, int, error) {
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "verificando se page < 1")
 	if page < 1 {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "atribuindo page = 1")
 		page = 1
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "verificando se limit < 1")
 	if limit < 1 {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "atribuindo limit = 20")
 		limit = 20
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "verificando se limit > 100")
 	if limit > 100 {
+		vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "atribuindo limit = 100")
 		limit = 100
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "definindo offset = (page - 1) * limit")
 	offset := (page - 1) * limit
 
 	// Total de vendedores ativos (no escopo).
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "definindo filtroCount, countArgs com resultado de chamada a vendedorFilter")
 	filtroCount, countArgs := vendedorFilter("id", vendedorID)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "declarando variável total")
 	var total int
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query dinâmica, args omitidos) com leitura do resultado e verificando se err != nil")
 	if err := db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM vendedores WHERE data_desligamento IS NULL`+filtroCount,
 		countArgs...).Scan(&total); err != nil {
@@ -597,7 +712,9 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 	// Lista de vendedores com vendas do mes, ordenados por meta e, em caso de
 	// empate, por atingimento da meta — ordenacao feita no banco, antes do
 	// LIMIT/OFFSET, para que a paginacao seja consistente entre paginas.
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "definindo filtroLista, listaArgs com resultado de chamada a vendedorFilter")
 	filtroLista, listaArgs := vendedorFilter("v.id", vendedorID)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "montando texto da query SQL SELECT em vendedores em q")
 	q := `
 		SELECT
 			v.id, v.nome, v.regiao, v.uf, v.meta_mensal,
@@ -616,13 +733,18 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 		ORDER BY v.meta_mensal DESC, atingimento_meta DESC
 		LIMIT ? OFFSET ?`
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
 	rows, err := db.QueryContext(ctx, q, append(listaArgs, limit, offset)...)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "verificando se err != nil")
 	if err != nil {
 		return nil, 0, fmt.Errorf("GetVendedoresRanking: %w", err)
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "agendando defer de chamada a rows.Close")
 	defer rows.Close()
 
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "definindo result com resultado de chamada a make")
 	result := make([]map[string]any, 0, limit)
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "iniciando loop enquanto rows.Next() (sem log por iteração)")
 	for rows.Next() {
 		var (
 			id             int64
@@ -655,6 +777,8 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 			"atingimento_meta": mathRound(atingimentoRaw, 2),
 		})
 	}
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "loop concluído; itens acumulados em result: %d", len(result))
+	vlog.Printf("dashboard_repository.go", "DashboardRepository.GetVendedoresRanking", "definindo err com resultado de chamada a rows.Err e verificando se err != nil")
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("GetVendedoresRanking rows: %w", err)
 	}
@@ -664,9 +788,11 @@ func (r *DashboardRepository) GetVendedoresRanking(ctx context.Context, db *sql.
 
 // isTableNotFound retorna true se o erro indica que a tabela nao existe.
 func isTableNotFound(err error) bool {
+	vlog.Printf("dashboard_repository.go", "isTableNotFound", "verificando se err == nil")
 	if err == nil {
 		return false
 	}
+	vlog.Printf("dashboard_repository.go", "isTableNotFound", "definindo errStr com resultado de chamada a err.Error")
 	errStr := err.Error()
 	return contains(errStr, "doesn't exist") || contains(errStr, "not found") ||
 		contains(errStr, "Error 1146") || contains(errStr, "no such table")
@@ -677,19 +803,24 @@ func contains(s, substr string) bool {
 }
 
 func containsSubstr(s, substr string) bool {
+	vlog.Printf("dashboard_repository.go", "containsSubstr", "iniciando loop enquanto i <= len(s)-len(substr) (sem log por iteração)")
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {
 			return true
 		}
 	}
+	vlog.Printf("dashboard_repository.go", "containsSubstr", "loop concluído")
 	return false
 }
 
 // mathRound arredonda um float para N casas decimais.
 func mathRound(val float64, prec int) float64 {
+	vlog.Printf("dashboard_repository.go", "mathRound", "definindo mult = 1.0")
 	mult := 1.0
+	vlog.Printf("dashboard_repository.go", "mathRound", "iniciando loop enquanto i < prec (sem log por iteração)")
 	for i := 0; i < prec; i++ {
 		mult *= 10
 	}
+	vlog.Printf("dashboard_repository.go", "mathRound", "loop concluído")
 	return float64(int(val*mult+0.5)) / mult
 }

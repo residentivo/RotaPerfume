@@ -13,6 +13,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // OportunidadeHandler trata as rotas /api/oportunidades/*.
@@ -40,21 +41,26 @@ func NewOportunidadeHandler(db *sql.DB, cfg *config.Config) *OportunidadeHandler
 // Acesso comum: usuário role=normal só enxerga oportunidades da própria
 // carteira (vendedor_id da query é ignorado e forçado ao vendedor vinculado).
 func (h *OportunidadeHandler) ListOportunidades(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "chamando services.ParsePagination e atribuindo resultado a page, limit")
 	page, limit := services.ParsePagination(
 		r.URL.Query().Get("page"),
 		r.URL.Query().Get("limit"),
 	)
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[oportunidades] ListOportunidades", err)
 		return
 	}
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSONWithPagination(w, http.StatusOK, []any{}, page, limit, 0, 0)
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "montando services.OportunidadeFiltro em filtro")
 	filtro := services.OportunidadeFiltro{
 		ClienteID:       parseInt64Query(r.URL.Query().Get("cliente_id")),
 		VendedorID:      parseInt64Query(r.URL.Query().Get("vendedor_id")),
@@ -66,21 +72,28 @@ func (h *OportunidadeHandler) ListOportunidades(w http.ResponseWriter, r *http.R
 		OrderBy:         strings.TrimSpace(r.URL.Query().Get("order_by")),
 		OrderDir:        parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "atribuindo filtro.VendedorID = scope.VendedorID")
 		// Usuário role=normal: força o filtro à própria carteira, ignorando
 		// qualquer vendedor_id vindo da query string (evita bypass via URL).
 		filtro.VendedorID = scope.VendedorID
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "chamando h.svc.ListOportunidades e atribuindo resultado a oportunidades, total, err")
 	oportunidades, total, err := h.svc.ListOportunidades(r.Context(), h.db, page, limit, filtro)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "verificando se err != nil")
 	if err != nil {
 		log.Printf("[oportunidades] ListOportunidades: %v", err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "definindo pages := total / limit")
 	pages := total / limit
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "verificando se total%%limit != 0")
 	if total%limit != 0 {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.ListOportunidades", "incrementando pages")
 		pages++
 	}
 
@@ -94,24 +107,32 @@ func (h *OportunidadeHandler) ListOportunidades(w http.ResponseWriter, r *http.R
 // carteira (404 — não 403 — se pertencer a outro vendedor, para não permitir
 // enumeração de IDs).
 func (h *OportunidadeHandler) GetOportunidade(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.GetOportunidade", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.GetOportunidade", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.GetOportunidade", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.GetOportunidade", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[oportunidades] GetOportunidade", err)
 		return
 	}
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.GetOportunidade", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.GetOportunidade", "chamando h.svc.GetOportunidadeByID e atribuindo resultado a oportunidade, err")
 	oportunidade, err := h.svc.GetOportunidadeByID(r.Context(), h.db, id)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.GetOportunidade", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.GetOportunidade", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrOportunidadeNaoEncontrada) {
 			writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 			return
@@ -121,6 +142,7 @@ func (h *OportunidadeHandler) GetOportunidade(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.GetOportunidade", "verificando se scope.Restrito && !scope.PermiteVendedor(...)")
 	if scope.Restrito && !scope.PermiteVendedor(oportunidade.VendedorID) {
 		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 		return
@@ -166,6 +188,7 @@ type UpdateOportunidadeRequest struct {
 // ok=false se o erro não for reconhecido (cabe ao chamador tratar como erro
 // interno).
 func oportunidadeErroParaStatus(err error) (status int, msg string, ok bool) {
+	vlog.Printf("oportunidade_handler.go", "oportunidadeErroParaStatus", "avaliando switch de condições")
 	switch {
 	case errors.Is(err, services.ErrOportunidadeNaoEncontrada):
 		return http.StatusNotFound, "oportunidade não encontrada", true
@@ -204,41 +227,53 @@ func oportunidadeErroParaStatus(err error) (status int, msg string, ok bool) {
 // própria carteira (vendedor_id do payload é ignorado e forçado ao vendedor
 // vinculado; cliente_id deve pertencer à carteira ativa desse vendedor).
 func (h *OportunidadeHandler) CreateOportunidade(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[oportunidades] CreateOportunidade", err)
 		return
 	}
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusForbidden, nil, "usuário sem vendedor vinculado")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "declarando variável req")
 	var req CreateOportunidadeRequest
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "atribuindo req.VendedorID = scope.VendedorID")
 		// Usuário role=normal: nunca confia no vendedor_id do payload — força
 		// à própria carteira (evita forjar registro para outro vendedor).
 		req.VendedorID = scope.VendedorID
 
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "chamando clienteNaCarteiraDoVendedor e atribuindo resultado a pertence, err")
 		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "verificando se err != nil")
 		if err != nil {
 			log.Printf("[oportunidades] CreateOportunidade checar carteira: %v", err)
 			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 			return
 		}
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "verificando se !pertence")
 		if !pertence {
 			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
 			return
 		}
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "montando services.OportunidadeInput em input")
 	input := services.OportunidadeInput{
 		ClienteID:        req.ClienteID,
 		VendedorID:       req.VendedorID,
@@ -252,8 +287,11 @@ func (h *OportunidadeHandler) CreateOportunidade(w http.ResponseWriter, r *http.
 		MotivoPerda:      req.MotivoPerda,
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "chamando h.svc.CreateOportunidade e atribuindo resultado a oportunidade, err")
 	oportunidade, err := h.svc.CreateOportunidade(r.Context(), h.db, input)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.CreateOportunidade", "chamando oportunidadeErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := oportunidadeErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -276,24 +314,32 @@ func (h *OportunidadeHandler) CreateOportunidade(w http.ResponseWriter, r *http.
 // própria carteira (404 se pertencer a outro vendedor) e não pode reatribuir
 // vendedor_id para outro vendedor.
 func (h *OportunidadeHandler) UpdateOportunidade(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[oportunidades] UpdateOportunidade", err)
 		return
 	}
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "chamando h.svc.GetOportunidadeByID e atribuindo resultado a atual, err")
 	atual, err := h.svc.GetOportunidadeByID(r.Context(), h.db, id)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrOportunidadeNaoEncontrada) {
 			writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 			return
@@ -302,34 +348,43 @@ func (h *OportunidadeHandler) UpdateOportunidade(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se scope.Restrito && !scope.PermiteVendedor(...)")
 	if scope.Restrito && !scope.PermiteVendedor(atual.VendedorID) {
 		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "declarando variável req")
 	var req UpdateOportunidadeRequest
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "chamando json.NewDecoder(...).Decode e atribuindo resultado a err e verificando se err != nil")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "body JSON inválido")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se scope.Restrito")
 	if scope.Restrito {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "atribuindo req.VendedorID = scope.VendedorID")
 		// Usuário role=normal: nunca confia no vendedor_id do payload — força
 		// à própria carteira (evita reatribuir o registro a outro vendedor).
 		req.VendedorID = scope.VendedorID
 
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "chamando clienteNaCarteiraDoVendedor e atribuindo resultado a pertence, err")
 		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se err != nil")
 		if err != nil {
 			log.Printf("[oportunidades] UpdateOportunidade checar carteira: %v", err)
 			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 			return
 		}
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se !pertence")
 		if !pertence {
 			writeJSON(w, http.StatusBadRequest, nil, "cliente não pertence à carteira deste vendedor")
 			return
 		}
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "montando services.OportunidadeInput em input")
 	input := services.OportunidadeInput{
 		ClienteID:        req.ClienteID,
 		VendedorID:       req.VendedorID,
@@ -343,8 +398,11 @@ func (h *OportunidadeHandler) UpdateOportunidade(w http.ResponseWriter, r *http.
 		MotivoPerda:      req.MotivoPerda,
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "chamando h.svc.UpdateOportunidade e atribuindo resultado a oportunidade, err")
 	oportunidade, err := h.svc.UpdateOportunidade(r.Context(), h.db, id, input)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "chamando oportunidadeErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := oportunidadeErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -354,6 +412,7 @@ func (h *OportunidadeHandler) UpdateOportunidade(w http.ResponseWriter, r *http.
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.UpdateOportunidade", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[oportunidades] atualizada: id=%d por usuario role=%s", id, role)
 	writeJSON(w, http.StatusOK, oportunidade, "")
@@ -368,24 +427,32 @@ func (h *OportunidadeHandler) UpdateOportunidade(w http.ResponseWriter, r *http.
 // Acesso comum: usuário role=normal só pode excluir oportunidade da própria
 // carteira (404 — não 403 — se pertencer a outro vendedor).
 func (h *OportunidadeHandler) DeleteOportunidade(w http.ResponseWriter, r *http.Request) {
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "chamando strconv.ParseInt e atribuindo resultado a id, err")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "verificando se err != nil")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, nil, "id inválido")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
 	scope, err := resolverVendedorScope(r, h.db)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[oportunidades] DeleteOportunidade", err)
 		return
 	}
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "verificando se scope.SemAcesso()")
 	if scope.SemAcesso() {
 		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "chamando h.svc.GetOportunidadeByID e atribuindo resultado a atual, err")
 	atual, err := h.svc.GetOportunidadeByID(r.Context(), h.db, id)
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "verificando se err != nil")
 	if err != nil {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "verificando se errors.Is(...)")
 		if errors.Is(err, services.ErrOportunidadeNaoEncontrada) {
 			writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 			return
@@ -394,12 +461,15 @@ func (h *OportunidadeHandler) DeleteOportunidade(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return
 	}
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "verificando se scope.Restrito && !scope.PermiteVendedor(...)")
 	if scope.Restrito && !scope.PermiteVendedor(atual.VendedorID) {
 		writeJSON(w, http.StatusNotFound, nil, "oportunidade não encontrada")
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "chamando h.svc.DeleteOportunidade e atribuindo resultado a err e verificando se err != nil")
 	if err := h.svc.DeleteOportunidade(r.Context(), h.db, id); err != nil {
+		vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "chamando oportunidadeErroParaStatus e atribuindo resultado a status, msg, ok e verificando se ok")
 		if status, msg, ok := oportunidadeErroParaStatus(err); ok {
 			writeJSON(w, status, nil, msg)
 			return
@@ -409,6 +479,7 @@ func (h *OportunidadeHandler) DeleteOportunidade(w http.ResponseWriter, r *http.
 		return
 	}
 
+	vlog.Printf("oportunidade_handler.go", "OportunidadeHandler.DeleteOportunidade", "chamando middleware.GetRole e atribuindo resultado a role, _")
 	role, _ := middleware.GetRole(r.Context())
 	log.Printf("[oportunidades] excluída: id=%d por usuario role=%s", id, role)
 	writeNoContent(w)

@@ -12,6 +12,7 @@ import (
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Erros exportados para uso em handlers.
@@ -93,6 +94,7 @@ func (s *PagamentoService) ListPagamentos(ctx context.Context, db *sql.DB, page,
 		log.Printf("[pagamentos] list page=%d limit=%d status=%q forma=%q pedido_id=%d vencimento_de=%q vencimento_ate=%q vendedor_id=%d",
 			page, limit, filtro.StatusPagamento, filtro.FormaPagamento, filtro.PedidoID, filtro.VencimentoDe, filtro.VencimentoAte, filtro.VendedorID)
 	}
+	vlog.Printf("pagamento_service.go", "PagamentoService.ListPagamentos", "montando literal repositories.PagamentoFiltro e declarando repoFiltro")
 	repoFiltro := repositories.PagamentoFiltro{
 		StatusPagamento: filtro.StatusPagamento,
 		FormaPagamento:  filtro.FormaPagamento,
@@ -109,8 +111,11 @@ func (s *PagamentoService) ListPagamentos(ctx context.Context, db *sql.DB, page,
 // GetPagamentoByID busca um pagamento por pagamento_id. Retorna
 // ErrPagamentoNaoEncontrado se não existir.
 func (s *PagamentoService) GetPagamentoByID(ctx context.Context, db *sql.DB, pagamentoID int64) (*models.Pagamento, error) {
+	vlog.Printf("pagamento_service.go", "PagamentoService.GetPagamentoByID", "chamando s.repo.GetByID e declarando p, err")
 	p, err := s.repo.GetByID(ctx, db, pagamentoID)
+	vlog.Printf("pagamento_service.go", "PagamentoService.GetPagamentoByID", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("pagamento_service.go", "PagamentoService.GetPagamentoByID", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrPagamentoNaoEncontrado
 		}
@@ -125,8 +130,11 @@ func (s *PagamentoService) GetPagamentoByID(ctx context.Context, db *sql.DB, pag
 // diretamente — o vínculo é via pedidos.vendedor_id.
 // Retorna ErrPedidoNaoEncontrado se o pedido não existir.
 func (s *PagamentoService) VendedorIDDoPedido(ctx context.Context, db *sql.DB, pedidoID int64) (int64, error) {
+	vlog.Printf("pagamento_service.go", "PagamentoService.VendedorIDDoPedido", "chamando s.pedidoRepo.GetByID e declarando pedido, err")
 	pedido, err := s.pedidoRepo.GetByID(ctx, db, pedidoID)
+	vlog.Printf("pagamento_service.go", "PagamentoService.VendedorIDDoPedido", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("pagamento_service.go", "PagamentoService.VendedorIDDoPedido", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return 0, ErrPedidoNaoEncontrado
 		}
@@ -159,52 +167,79 @@ type PagamentoInput struct {
 // validarPagamentoInput aplica as validações comuns a criação e edição,
 // normaliza os campos e resolve as datas.
 func validarPagamentoInput(input PagamentoInput) (formaPagamento, statusPagamento string, dataVencimento time.Time, dataPagamento *time.Time, err error) {
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "chamando strings.TrimSpace e atribuindo a formaPagamento")
 	formaPagamento = strings.TrimSpace(input.FormaPagamento)
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "chamando strings.TrimSpace e atribuindo a statusPagamento")
 	statusPagamento = strings.TrimSpace(input.StatusPagamento)
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "chamando strings.TrimSpace e declarando dataVencimentoStr")
 	dataVencimentoStr := strings.TrimSpace(input.DataVencimento)
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "chamando strings.TrimSpace e declarando dataPagamentoStr")
 	dataPagamentoStr := strings.TrimSpace(input.DataPagamento)
 
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição !formasPagamentoValidas[formaPagamento]")
 	if !formasPagamentoValidas[formaPagamento] {
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo ErrFormaPagamentoInvalida a err")
 		err = ErrFormaPagamentoInvalida
 		return
 	}
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição !statusPagamentoValidos[statusPagamento]")
 	if !statusPagamentoValidos[statusPagamento] {
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo ErrStatusPagamentoInvalido a err")
 		err = ErrStatusPagamentoInvalido
 		return
 	}
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição input.Parcelas < 1")
 	if input.Parcelas < 1 {
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo ErrParcelasInvalidas a err")
 		err = ErrParcelasInvalidas
 		return
 	}
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição input.Valor < 0")
 	if input.Valor < 0 {
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo ErrValorInvalido a err")
 		err = ErrValorInvalido
 		return
 	}
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição input.TaxaPct < 0")
 	if input.TaxaPct < 0 {
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo ErrTaxaPctInvalida a err")
 		err = ErrTaxaPctInvalida
 		return
 	}
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição input.ValorLiquido < 0")
 	if input.ValorLiquido < 0 {
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo ErrValorLiquidoInvalido a err")
 		err = ErrValorLiquidoInvalido
 		return
 	}
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição dataVencimentoStr == \"\"")
 	if dataVencimentoStr == "" {
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo ErrDataVencimentoObrigatoria a err")
 		err = ErrDataVencimentoObrigatoria
 		return
 	}
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "chamando time.ParseInLocation e declarando t, parseErr")
 	t, parseErr := time.ParseInLocation(dataPagamentoLayout, dataVencimentoStr, time.Local)
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição parseErr != nil")
 	if parseErr != nil {
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo ErrDataVencimentoInvalida a err")
 		err = ErrDataVencimentoInvalida
 		return
 	}
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo t a dataVencimento")
 	dataVencimento = t
 
+	vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição dataPagamentoStr != \"\"")
 	if dataPagamentoStr != "" {
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "chamando time.ParseInLocation e declarando dp, parseErr")
 		dp, parseErr := time.ParseInLocation(dataPagamentoLayout, dataPagamentoStr, time.Local)
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "verificando condição parseErr != nil")
 		if parseErr != nil {
+			vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo ErrDataPagamentoInvalida a err")
 			err = ErrDataPagamentoInvalida
 			return
 		}
+		vlog.Printf("pagamento_service.go", "validarPagamentoInput", "atribuindo &dp a dataPagamento")
 		dataPagamento = &dp
 	}
 	return
@@ -213,22 +248,29 @@ func validarPagamentoInput(input PagamentoInput) (formaPagamento, statusPagament
 // CreatePagamento cria um novo pagamento, validando pedido_id (deve
 // existir) e os demais campos.
 func (s *PagamentoService) CreatePagamento(ctx context.Context, db *sql.DB, input PagamentoInput) (*models.Pagamento, error) {
+	vlog.Printf("pagamento_service.go", "PagamentoService.CreatePagamento", "verificando condição input.PedidoID <= 0")
 	if input.PedidoID <= 0 {
 		return nil, ErrPedidoIDObrigatorio
 	}
+	vlog.Printf("pagamento_service.go", "PagamentoService.CreatePagamento", "chamando s.pedidoRepo.ExistsByID e declarando existe, err")
 	existe, err := s.pedidoRepo.ExistsByID(ctx, db, input.PedidoID)
+	vlog.Printf("pagamento_service.go", "PagamentoService.CreatePagamento", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("pagamento_service.go", "PagamentoService.CreatePagamento", "verificando condição !existe")
 	if !existe {
 		return nil, ErrPedidoNaoEncontrado
 	}
 
+	vlog.Printf("pagamento_service.go", "PagamentoService.CreatePagamento", "chamando validarPagamentoInput e declarando formaPagamento, statusPagamento, dataVencimento, dataPagamento, err")
 	formaPagamento, statusPagamento, dataVencimento, dataPagamento, err := validarPagamentoInput(input)
+	vlog.Printf("pagamento_service.go", "PagamentoService.CreatePagamento", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
+	vlog.Printf("pagamento_service.go", "PagamentoService.CreatePagamento", "montando &models.Pagamento e declarando p")
 	p := &models.Pagamento{
 		PedidoID:        input.PedidoID,
 		FormaPagamento:  formaPagamento,
@@ -240,6 +282,7 @@ func (s *PagamentoService) CreatePagamento(ctx context.Context, db *sql.DB, inpu
 		DataPagamento:   dataPagamento,
 		StatusPagamento: statusPagamento,
 	}
+	vlog.Printf("pagamento_service.go", "PagamentoService.CreatePagamento", "chamando s.repo.Create e declarando err e verificando condição err != nil")
 	if err := s.repo.Create(ctx, db, p); err != nil {
 		return nil, err
 	}
@@ -256,7 +299,9 @@ func (s *PagamentoService) CreatePagamento(ctx context.Context, db *sql.DB, inpu
 // (timestamps zerados) em vez de responder erro para uma gravação que deu
 // certo — um retry duplicaria o pagamento.
 func (s *PagamentoService) relerPagamentoCriado(ctx context.Context, db *sql.DB, p *models.Pagamento) *models.Pagamento {
+	vlog.Printf("pagamento_service.go", "PagamentoService.relerPagamentoCriado", "chamando s.repo.GetByID e declarando gravado, err")
 	gravado, err := s.repo.GetByID(ctx, db, p.PagamentoID)
+	vlog.Printf("pagamento_service.go", "PagamentoService.relerPagamentoCriado", "verificando condição err != nil")
 	if err != nil {
 		log.Printf("[pagamentos] criado, mas falhou a releitura: pagamento_id=%d: %v", p.PagamentoID, err)
 		return p
@@ -271,11 +316,14 @@ func (s *PagamentoService) relerPagamentoCriado(ctx context.Context, db *sql.DB,
 // clara em vez de um UPDATE silencioso na FK).
 // Retorna ErrPagamentoNaoEncontrado se não existir.
 func (s *PagamentoService) UpdatePagamento(ctx context.Context, db *sql.DB, pagamentoID int64, input PagamentoInput) (*models.Pagamento, error) {
+	vlog.Printf("pagamento_service.go", "PagamentoService.UpdatePagamento", "chamando validarPagamentoInput e declarando formaPagamento, statusPagamento, dataVencimento, dataPagamento, err")
 	formaPagamento, statusPagamento, dataVencimento, dataPagamento, err := validarPagamentoInput(input)
+	vlog.Printf("pagamento_service.go", "PagamentoService.UpdatePagamento", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
+	vlog.Printf("pagamento_service.go", "PagamentoService.UpdatePagamento", "montando &models.Pagamento e declarando p")
 	p := &models.Pagamento{
 		FormaPagamento:  formaPagamento,
 		Parcelas:        input.Parcelas,
@@ -286,14 +334,18 @@ func (s *PagamentoService) UpdatePagamento(ctx context.Context, db *sql.DB, paga
 		DataPagamento:   dataPagamento,
 		StatusPagamento: statusPagamento,
 	}
+	vlog.Printf("pagamento_service.go", "PagamentoService.UpdatePagamento", "chamando s.repo.Update e declarando err e verificando condição err != nil")
 	if err := s.repo.Update(ctx, db, pagamentoID, p); err != nil {
+		vlog.Printf("pagamento_service.go", "PagamentoService.UpdatePagamento", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrPagamentoNaoEncontrado
 		}
 		return nil, err
 	}
 
+	vlog.Printf("pagamento_service.go", "PagamentoService.UpdatePagamento", "chamando s.repo.GetByID e declarando atualizado, err")
 	atualizado, err := s.repo.GetByID(ctx, db, pagamentoID)
+	vlog.Printf("pagamento_service.go", "PagamentoService.UpdatePagamento", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
@@ -317,19 +369,25 @@ var statusPagamentoQuitados = map[string]bool{
 // ou "Pago com atraso". O scope check por carteira (via VendedorIDDoPedido) é
 // responsabilidade do handler chamador, feito antes de invocar este método.
 func (s *PagamentoService) DeletePagamento(ctx context.Context, db *sql.DB, pagamentoID int64) error {
+	vlog.Printf("pagamento_service.go", "PagamentoService.DeletePagamento", "chamando s.repo.GetByID e declarando pagamento, err")
 	pagamento, err := s.repo.GetByID(ctx, db, pagamentoID)
+	vlog.Printf("pagamento_service.go", "PagamentoService.DeletePagamento", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("pagamento_service.go", "PagamentoService.DeletePagamento", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrPagamentoNaoEncontrado
 		}
 		return err
 	}
 
+	vlog.Printf("pagamento_service.go", "PagamentoService.DeletePagamento", "verificando condição statusPagamentoQuitados[pagamento.StatusPagamento]")
 	if statusPagamentoQuitados[pagamento.StatusPagamento] {
 		return ErrPagamentoJaQuitadoNaoPodeSerExcluido
 	}
 
+	vlog.Printf("pagamento_service.go", "PagamentoService.DeletePagamento", "chamando s.repo.Delete e declarando err e verificando condição err != nil")
 	if err := s.repo.Delete(ctx, db, pagamentoID); err != nil {
+		vlog.Printf("pagamento_service.go", "PagamentoService.DeletePagamento", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrPagamentoNaoEncontrado
 		}

@@ -15,6 +15,7 @@
 // dígito, então o cálculo coincide com o do CNPJ numérico.
 package cnpj
 
+// Sem vlog: chamado por linha nos importers (spec LOG-02 §5).
 import "strings"
 
 // Tamanho é a quantidade de caracteres de um CNPJ normalizado (sem máscara).

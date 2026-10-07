@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Conjuntos de caracteres usados na geração de senha aleatória. Cada conjunto
@@ -30,14 +32,19 @@ var alfabetoCompleto = minusculas + maiusculas + digitos + simbolos
 //
 // n é o tamanho desejado; se menor que 12, é ajustado para 12.
 func GerarSenhaAleatoria(n int) (string, error) {
+	vlog.Printf("password_generator.go", "GerarSenhaAleatoria", "verificando se o tamanho pedido (%d) é menor que o mínimo %d", n, senhaAleatoriaMinLen)
 	if n < senhaAleatoriaMinLen {
+		vlog.Printf("password_generator.go", "GerarSenhaAleatoria", "ajustando tamanho para o mínimo %d", senhaAleatoriaMinLen)
 		n = senhaAleatoriaMinLen
 	}
 
+	vlog.Printf("password_generator.go", "GerarSenhaAleatoria", "alocando buffer da senha com %d bytes", n)
 	senha := make([]byte, n)
 
 	// Garante 1 caractere de cada conjunto obrigatório nas primeiras posições.
+	vlog.Printf("password_generator.go", "GerarSenhaAleatoria", "definindo os conjuntos obrigatórios de caracteres")
 	obrigatorios := []string{minusculas, maiusculas, digitos, simbolos}
+	vlog.Printf("password_generator.go", "GerarSenhaAleatoria", "sorteando 1 caractere de cada um dos %d conjuntos obrigatórios", len(obrigatorios))
 	for i, conjunto := range obrigatorios {
 		c, err := charAleatorio(conjunto)
 		if err != nil {
@@ -47,6 +54,7 @@ func GerarSenhaAleatoria(n int) (string, error) {
 	}
 
 	// Preenche o restante com o alfabeto completo.
+	vlog.Printf("password_generator.go", "GerarSenhaAleatoria", "preenchendo %d posições restantes com o alfabeto completo", n-len(obrigatorios))
 	for i := len(obrigatorios); i < n; i++ {
 		c, err := charAleatorio(alfabetoCompleto)
 		if err != nil {
@@ -56,6 +64,7 @@ func GerarSenhaAleatoria(n int) (string, error) {
 	}
 
 	// Embaralha para que os caracteres obrigatórios não fiquem sempre no início.
+	vlog.Printf("password_generator.go", "GerarSenhaAleatoria", "embaralhando a senha gerada (valor não logado) e verificando erro")
 	if err := embaralhar(senha); err != nil {
 		return "", fmt.Errorf("services: gerar senha aleatória: %w", err)
 	}
@@ -71,10 +80,13 @@ const alfanumerico = minusculas + maiusculas + digitos
 // CLIs de seed/reset (tools/seedusers, tools/resetpassword) quando nenhuma
 // senha é informada. n <= 0 devolve string vazia.
 func SenhaAlfanumerica(n int) (string, error) {
+	vlog.Printf("password_generator.go", "SenhaAlfanumerica", "verificando se o tamanho pedido (%d) é <= 0", n)
 	if n <= 0 {
 		return "", nil
 	}
+	vlog.Printf("password_generator.go", "SenhaAlfanumerica", "alocando buffer da senha com %d bytes", n)
 	senha := make([]byte, n)
+	vlog.Printf("password_generator.go", "SenhaAlfanumerica", "sorteando %d caracteres alfanuméricos", n)
 	for i := range senha {
 		c, err := charAleatorio(alfanumerico)
 		if err != nil {
@@ -113,6 +125,7 @@ func charAleatorio(conjunto string) (byte, error) {
 // de aleatoriedade (evita viés previsível de math/rand e, via
 // indiceAleatorio, o viés de módulo).
 func embaralhar(b []byte) error {
+	vlog.Printf("password_generator.go", "embaralhar", "aplicando Fisher-Yates em %d posições", len(b))
 	for i := len(b) - 1; i > 0; i-- {
 		j, err := indiceAleatorio(i + 1)
 		if err != nil {

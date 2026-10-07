@@ -8,6 +8,7 @@ import (
 
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // DashboardService agrega metricas de dashboard.
@@ -36,38 +37,51 @@ func (s *DashboardService) GetMetrics(ctx context.Context, db *sql.DB, periodo s
 	}
 
 	// Vendas do dia/mes (sera 0 se tabela pedidos nao existir).
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "chamando s.repo.GetVendasTotais e declarando totalVendasValor, totalVendasQuantidade, err")
 	totalVendasValor, totalVendasQuantidade, err := s.repo.GetVendasTotais(ctx, db, periodo, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
 	// Total de pedidos.
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "chamando s.repo.GetTotalPedidos e declarando totalPedidos, err")
 	totalPedidos, err := s.repo.GetTotalPedidos(ctx, db, periodo, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
 	// Ranking top 10 vendedores (por valor de vendas).
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "chamando s.repo.GetTopVendedores e declarando topVendedores, err")
 	topVendedores, err := s.repo.GetTopVendedores(ctx, db, 10, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
 	// Metas: comparativo real vs meta dos vendedores ativos.
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "chamando s.repo.GetMetasVendedores e declarando metas, err")
 	metas, err := s.repo.GetMetasVendedores(ctx, db, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
 	// Meta mensal total: soma de meta_mensal dos vendedores ativos (no escopo).
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "chamando s.repo.GetMetaMensalTotal e declarando metaMensalTotal, err")
 	metaMensalTotal, err := s.repo.GetMetaMensalTotal(ctx, db, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
 	// Ticket medio (derivado dos totais ja filtrados pelo escopo).
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "declarando ticketMedio")
 	var ticketMedio float64
+	vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "verificando condição totalVendasQuantidade > 0")
 	if totalVendasQuantidade > 0 {
+		vlog.Printf("dashboard_service.go", "DashboardService.GetMetrics", "atribuindo totalVendasValor / float64(totalVendasQuantidade) a ticketMedio")
 		ticketMedio = totalVendasValor / float64(totalVendasQuantidade)
 	}
 
@@ -118,7 +132,9 @@ func (s *DashboardService) GetVendasSeries(ctx context.Context, db *sql.DB, dias
 	if s.Cfg.Verbose {
 		log.Printf("[dashboard] GetVendasSeries dias=%d vendedor_id=%d", dias, vendedorID)
 	}
+	vlog.Printf("dashboard_service.go", "DashboardService.GetVendasSeries", "chamando s.repo.GetVendasSeries e declarando pontos, err")
 	pontos, err := s.repo.GetVendasSeries(ctx, db, dias, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetVendasSeries", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
@@ -162,27 +178,39 @@ func (s *DashboardService) GetClienteMetrics(ctx context.Context, db *sql.DB, pe
 		log.Printf("[dashboard] GetClienteMetrics periodo=%s vendedor_id=%d", periodo, vendedorID)
 	}
 
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "chamando s.clienteRepo.CountTotal e declarando total, err")
 	total, err := s.clienteRepo.CountTotal(ctx, db, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "chamando s.clienteRepo.CountPorAtivo e declarando totalAtivos, err")
 	totalAtivos, err := s.clienteRepo.CountPorAtivo(ctx, db, true, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "chamando s.clienteRepo.CountPorAtivo e declarando totalInativos, err")
 	totalInativos, err := s.clienteRepo.CountPorAtivo(ctx, db, false, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "chamando s.clienteRepo.CountNovosNoPeriodo e declarando novosNoPeriodo, err")
 	novosNoPeriodo, err := s.clienteRepo.CountNovosNoPeriodo(ctx, db, periodo, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "chamando s.clienteRepo.CountPorSegmento e declarando porSegmento, err")
 	porSegmento, err := s.clienteRepo.CountPorSegmento(ctx, db, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "chamando s.clienteRepo.CountPorUF e declarando porUF, err")
 	porUF, err := s.clienteRepo.CountPorUF(ctx, db, vendedorID)
+	vlog.Printf("dashboard_service.go", "DashboardService.GetClienteMetrics", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}

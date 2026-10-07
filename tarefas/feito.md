@@ -3,6 +3,40 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 17 de 2026-10-07: 1 card concluído (de 1)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário "Log de todas as linhas de código que já não sejam um log e que não será um retorno da api. A linha deve conter o nome do arquivo entre colchetes e o nome da função entre colchetes e depois a descrição da linha". O card foi aberto direto em `fazendo.md`, sem passar por `afazer.md`.
+>
+> **Fluxo:** 🟣 SecBrain (spec) → 🟡 BackBrain ∥ 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain. 🌸 DataBrain dispensado: não há mudança de schema.
+>
+> **Validação (🔴 TestBrain, 2026-10-07):** `go build`, `go vet` e `go test` verdes; `tsc` e `eslint` verdes; vitest com 1482 testes verdes. Auditoria AST de 100% das chamadas vlog: 0 vazamentos, 0 logs dentro de loop, arquivo/função 100% corretos. **Sem mudança de contrato HTTP.**
+
+## LOG-02: log verbose de cada linha de código (API, importers/tools e frontend) — 2026-10-07
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain ∥ 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-07.
+
+**Camadas:** Segurança, Backend, Frontend, Testes, Documentação
+**Origem:** pedido do usuário (Lote 17).
+
+**Decisões do usuário:** toda linha, exceto as que já são log e os `return`/respostas da API; ativo **só** em modo verbose (`VERBOSE=true` na API, `NEXT_PUBLIC_VERBOSE=true` no frontend); escopo API, importers/tools/cmd e `frontend/src`. Formato: `[arquivo] [Funcao] descrição`.
+
+**Entregue:**
+- 🟣 **SecBrain (spec):** o que nunca pode ir pro log (config sensível, senhas, hashes, tokens, cookies, `Authorization`, CNPJ, IP/User-Agent, strings do usuário, corpo de request/response, SQL com valores); só IDs, contagens, booleanos, status, papel e e-mail mascarado; proibido log por iteração em loops; WARN no startup quando ativo; `LOG_LEVEL=debug` também liga. Essencial copiado para o manual.
+- 🟡 **BackBrain:**
+  - pacote `apis/shared/vlog` (`SetEnabled`/`Enabled`/`Printf`/`MaskEmail`, flag em `atomic.Bool` checada antes de formatar) e `vlog.SetEnabled` em todos os mains;
+  - cerca de 3.700 `vlog.Printf` entre handlers, services, middleware, routes, repositories, shared services/config/db/cmdutil/tz, cmd, importers e tools;
+  - `maskEmail` movido do `auth_handler.go` para `vlog.MaskEmail`;
+  - corrigido o log antigo do `NoopEmailService` que vazava e-mail;
+  - pacote `cnpj` sem vlog (chamado por linha nos importers);
+  - `maskDSN` sem posições.
+- 🟢 **FrontBrain:** `frontend/src/lib/vlog.ts` (gated por `NEXT_PUBLIC_VERBOSE`) e cerca de 2.400 `vlog()` em `lib`, `components` e `app`; `frontend/.env.local.example` documentado.
+- 🔴 **TestBrain:** build/vet/test Go OK; `tsc`/`eslint` OK; vitest 1482 OK; auditoria AST de 100% das chamadas (0 vazamentos, 0 logs em loop, arquivo/função 100% corretos); testes novos em `apis/shared/tests/vlog/` (`vlog_test.go` e `vlog_runtime_test.go`).
+- 🔵 **SubBrain:** manual `docs/logs-verbose.md` (o que é, formato, como ligar, aviso de produção, o que nunca é logado, exceções, como adicionar log em código novo, testes).
+
+**Pendência registrada:** teste de runtime com `VERBOSE` ligado nos handlers de login/reset, que depende de mock HTTP/DB. Virou o card **TST-05** (prioridade BAIXA) em `afazer.md`.
+
+---
 ## Lote 16 de 2026-10-07: 3 cards concluídos (de 3)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário "Pode seguir com esses a fazer". Os cards vieram dos achados do roteiro manual do Lote 12 (divergências D1, D2 e D3). O TST-04 ficou em `afazer.md`, bloqueado até o usuário liberar `make db-*` ou rodar os alvos.

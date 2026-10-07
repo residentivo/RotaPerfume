@@ -9,6 +9,9 @@
  * timer da mensagem anterior.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { vlog } from "./vlog";
+
+const F = "useMensagemTemporaria.ts";
 
 /** Duracao padrao das mensagens de sucesso das listagens. */
 export const DURACAO_MENSAGEM_MS = 4000;
@@ -18,22 +21,33 @@ export const DURACAO_MENSAGEM_MS = 4000;
  * o novo; o timer pendente e cancelado no unmount.
  */
 export function useTimeoutSeguro() {
+  vlog(F, "useTimeoutSeguro", "criando ref do timer");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  vlog(F, "useTimeoutSeguro", "criando callback cancelar");
   const cancelar = useCallback(() => {
+    vlog(F, "useTimeoutSeguro.cancelar", "verificando se há timer pendente:", timer.current !== null);
     if (timer.current !== null) {
+      vlog(F, "useTimeoutSeguro.cancelar", "cancelando timer pendente");
       clearTimeout(timer.current);
+      vlog(F, "useTimeoutSeguro.cancelar", "zerando ref do timer");
       timer.current = null;
     }
   }, []);
 
+  vlog(F, "useTimeoutSeguro", "registrando efeito de cancelamento no unmount");
   useEffect(() => cancelar, [cancelar]);
 
+  vlog(F, "useTimeoutSeguro", "criando callback agendar");
   const agendar = useCallback(
     (acao: () => void, atrasoMs: number) => {
+      vlog(F, "useTimeoutSeguro.agendar", "cancelando timer anterior");
       cancelar();
+      vlog(F, "useTimeoutSeguro.agendar", "armando novo timer (ms):", atrasoMs);
       timer.current = setTimeout(() => {
+        vlog(F, "useTimeoutSeguro.func", "timer vencido: zerando ref");
         timer.current = null;
+        vlog(F, "useTimeoutSeguro.func", "executando ação agendada");
         acao();
       }, atrasoMs);
     },
@@ -51,19 +65,27 @@ export function useTimeoutSeguro() {
  * No unmount o timer pendente e cancelado.
  */
 export function useMensagemTemporaria(duracaoMs = DURACAO_MENSAGEM_MS) {
+  vlog(F, "useMensagemTemporaria", "criando estado da mensagem");
   const [mensagem, setMensagem] = useState<string | null>(null);
+  vlog(F, "useMensagemTemporaria", "obtendo timer seguro");
   const { agendar, cancelar } = useTimeoutSeguro();
 
+  vlog(F, "useMensagemTemporaria", "criando callback mostrar");
   const mostrar = useCallback(
     (texto: string) => {
+      vlog(F, "useMensagemTemporaria.mostrar", "exibindo mensagem temporária");
       setMensagem(texto);
+      vlog(F, "useMensagemTemporaria.mostrar", "agendando ocultação da mensagem (ms):", duracaoMs);
       agendar(() => setMensagem(null), duracaoMs);
     },
     [agendar, duracaoMs]
   );
 
+  vlog(F, "useMensagemTemporaria", "criando callback limpar");
   const limpar = useCallback(() => {
+    vlog(F, "useMensagemTemporaria.limpar", "cancelando timer da mensagem");
     cancelar();
+    vlog(F, "useMensagemTemporaria.limpar", "ocultando mensagem");
     setMensagem(null);
   }, [cancelar]);
 

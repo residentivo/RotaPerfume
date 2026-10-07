@@ -12,6 +12,7 @@ import (
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Erros exportados para uso em handlers.
@@ -87,6 +88,7 @@ func (s *PedidoService) ListPedidos(ctx context.Context, db *sql.DB, page, limit
 		log.Printf("[pedidos] list page=%d limit=%d status=%q canal=%q cliente_id=%d vendedor_id=%d data_inicio=%q data_fim=%q q=%q",
 			page, limit, filtro.Status, filtro.Canal, filtro.ClienteID, filtro.VendedorID, filtro.DataInicio, filtro.DataFim, filtro.Q)
 	}
+	vlog.Printf("pedido_service.go", "PedidoService.ListPedidos", "montando literal repositories.PedidoFiltro e declarando repoFiltro")
 	repoFiltro := repositories.PedidoFiltro{
 		Status:     filtro.Status,
 		Canal:      filtro.Canal,
@@ -104,15 +106,20 @@ func (s *PedidoService) ListPedidos(ctx context.Context, db *sql.DB, page, limit
 // GetPedidoDetalhe busca o cabeçalho de um pedido e seus itens (master-detail).
 // Retorna ErrPedidoNaoEncontrado se não existir.
 func (s *PedidoService) GetPedidoDetalhe(ctx context.Context, db *sql.DB, id int64) (*repositories.PedidoDetalhe, error) {
+	vlog.Printf("pedido_service.go", "PedidoService.GetPedidoDetalhe", "chamando s.repo.GetByID e declarando p, err")
 	p, err := s.repo.GetByID(ctx, db, id)
+	vlog.Printf("pedido_service.go", "PedidoService.GetPedidoDetalhe", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("pedido_service.go", "PedidoService.GetPedidoDetalhe", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrPedidoNaoEncontrado
 		}
 		return nil, err
 	}
 
+	vlog.Printf("pedido_service.go", "PedidoService.GetPedidoDetalhe", "chamando s.repo.ListItensByPedidoID e declarando itens, err")
 	itens, err := s.repo.ListItensByPedidoID(ctx, db, id)
+	vlog.Printf("pedido_service.go", "PedidoService.GetPedidoDetalhe", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
@@ -146,45 +153,66 @@ type PedidoInput struct {
 // normaliza os campos e calcula o valor_bruto de cada item e o valor_total
 // do pedido (quantidade * preco_praticado * (1 - desconto_pct/100)).
 func validarPedidoInput(input PedidoInput) (pedido models.Pedido, itens []models.ItemPedido, err error) {
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "verificando condição input.ClienteID <= 0")
 	if input.ClienteID <= 0 {
+		vlog.Printf("pedido_service.go", "validarPedidoInput", "atribuindo ErrClienteIDObrigatorio a err")
 		err = ErrClienteIDObrigatorio
 		return
 	}
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "verificando condição input.VendedorID <= 0")
 	if input.VendedorID <= 0 {
+		vlog.Printf("pedido_service.go", "validarPedidoInput", "atribuindo ErrVendedorIDObrigatorio a err")
 		err = ErrVendedorIDObrigatorio
 		return
 	}
 
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "chamando strings.TrimSpace e declarando dataPedidoStr")
 	dataPedidoStr := strings.TrimSpace(input.DataPedido)
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "verificando condição dataPedidoStr == \"\"")
 	if dataPedidoStr == "" {
+		vlog.Printf("pedido_service.go", "validarPedidoInput", "atribuindo ErrDataPedidoInvalida a err")
 		err = ErrDataPedidoInvalida
 		return
 	}
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "chamando time.ParseInLocation e declarando dataPedido, parseErr")
 	dataPedido, parseErr := time.ParseInLocation(dataPedidoLayout, dataPedidoStr, time.Local)
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "verificando condição parseErr != nil")
 	if parseErr != nil {
+		vlog.Printf("pedido_service.go", "validarPedidoInput", "atribuindo ErrDataPedidoInvalida a err")
 		err = ErrDataPedidoInvalida
 		return
 	}
 
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "chamando strings.TrimSpace e declarando canal")
 	canal := strings.TrimSpace(input.Canal)
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "verificando condição !canaisValidos[canal]")
 	if !canaisValidos[canal] {
+		vlog.Printf("pedido_service.go", "validarPedidoInput", "atribuindo ErrCanalInvalido a err")
 		err = ErrCanalInvalido
 		return
 	}
 
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "chamando strings.TrimSpace e declarando status")
 	status := strings.TrimSpace(input.Status)
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "verificando condição !statusValidos[status]")
 	if !statusValidos[status] {
+		vlog.Printf("pedido_service.go", "validarPedidoInput", "atribuindo ErrStatusInvalido a err")
 		err = ErrStatusInvalido
 		return
 	}
 
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "verificando condição len(input.Itens) == 0")
 	if len(input.Itens) == 0 {
+		vlog.Printf("pedido_service.go", "validarPedidoInput", "atribuindo ErrItensObrigatorios a err")
 		err = ErrItensObrigatorios
 		return
 	}
 
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "declarando valorTotal")
 	var valorTotal float64
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "chamando make e atribuindo a itens")
 	itens = make([]models.ItemPedido, 0, len(input.Itens))
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "iniciando loop range sobre input.Itens")
 	for _, itemInput := range input.Itens {
 		if itemInput.ProdutoID <= 0 {
 			err = ErrProdutoIDObrigatorio
@@ -214,7 +242,9 @@ func validarPedidoInput(input PedidoInput) (pedido models.Pedido, itens []models
 			ValorBruto:     valorBruto,
 		})
 	}
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "loop range concluído sobre input.Itens: %d itens", len(input.Itens))
 
+	vlog.Printf("pedido_service.go", "validarPedidoInput", "montando literal models.Pedido e atribuindo a pedido")
 	pedido = models.Pedido{
 		ClienteID:  input.ClienteID,
 		VendedorID: input.VendedorID,
@@ -236,11 +266,14 @@ func calcularValorBruto(quantidade int, precoPraticado, descontoPct float64) flo
 // cada item e valor_total do pedido no backend. pedido_id_origem é gerado
 // nativamente pelo AUTO_INCREMENT do MySQL.
 func (s *PedidoService) CreatePedido(ctx context.Context, db *sql.DB, input PedidoInput) (*repositories.PedidoDetalhe, error) {
+	vlog.Printf("pedido_service.go", "PedidoService.CreatePedido", "chamando validarPedidoInput e declarando pedido, itens, err")
 	pedido, itens, err := validarPedidoInput(input)
+	vlog.Printf("pedido_service.go", "PedidoService.CreatePedido", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
+	vlog.Printf("pedido_service.go", "PedidoService.CreatePedido", "chamando s.repo.CreateComItens e declarando err e verificando condição err != nil")
 	if err := s.repo.CreateComItens(ctx, db, &pedido, itens); err != nil {
 		return nil, err
 	}
@@ -257,12 +290,16 @@ func (s *PedidoService) CreatePedido(ctx context.Context, db *sql.DB, input Pedi
 // integralmente a lista de itens, recalculando valor_bruto/valor_total.
 // Retorna ErrPedidoNaoEncontrado se não existir.
 func (s *PedidoService) UpdatePedido(ctx context.Context, db *sql.DB, id int64, input PedidoInput) (*repositories.PedidoDetalhe, error) {
+	vlog.Printf("pedido_service.go", "PedidoService.UpdatePedido", "chamando validarPedidoInput e declarando pedido, itens, err")
 	pedido, itens, err := validarPedidoInput(input)
+	vlog.Printf("pedido_service.go", "PedidoService.UpdatePedido", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
 
+	vlog.Printf("pedido_service.go", "PedidoService.UpdatePedido", "chamando s.repo.UpdateComItens e declarando err e verificando condição err != nil")
 	if err := s.repo.UpdateComItens(ctx, db, id, &pedido, itens); err != nil {
+		vlog.Printf("pedido_service.go", "PedidoService.UpdatePedido", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrPedidoNaoEncontrado
 		}
@@ -287,27 +324,36 @@ func (s *PedidoService) UpdatePedido(ctx context.Context, db *sql.DB, id int64, 
 // carteira (vendedor) é responsabilidade do handler chamador, feito antes de
 // invocar este método.
 func (s *PedidoService) DeletePedido(ctx context.Context, db *sql.DB, id int64) error {
+	vlog.Printf("pedido_service.go", "PedidoService.DeletePedido", "chamando s.repo.GetByID e declarando pedido, err")
 	pedido, err := s.repo.GetByID(ctx, db, id)
+	vlog.Printf("pedido_service.go", "PedidoService.DeletePedido", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("pedido_service.go", "PedidoService.DeletePedido", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrPedidoNaoEncontrado
 		}
 		return err
 	}
 
+	vlog.Printf("pedido_service.go", "PedidoService.DeletePedido", "chamando s.pagamentoRepo.ExistsByPedidoID e declarando possuiPagamentos, err")
 	possuiPagamentos, err := s.pagamentoRepo.ExistsByPedidoID(ctx, db, id)
+	vlog.Printf("pedido_service.go", "PedidoService.DeletePedido", "verificando condição err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("pedido_service.go", "PedidoService.DeletePedido", "verificando condição possuiPagamentos")
 	if possuiPagamentos {
 		return ErrPedidoPossuiPagamentosVinculados
 	}
 
+	vlog.Printf("pedido_service.go", "PedidoService.DeletePedido", "verificando condição pedido.Status == \"Faturado\"")
 	if pedido.Status == "Faturado" {
 		return ErrPedidoFaturadoNaoPodeSerExcluido
 	}
 
+	vlog.Printf("pedido_service.go", "PedidoService.DeletePedido", "chamando s.repo.DeleteComItens e declarando err e verificando condição err != nil")
 	if err := s.repo.DeleteComItens(ctx, db, id); err != nil {
+		vlog.Printf("pedido_service.go", "PedidoService.DeletePedido", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrPedidoNaoEncontrado
 		}

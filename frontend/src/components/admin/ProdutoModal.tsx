@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Produto, ProdutoInput } from "@/lib/types";
 import { useResetOnOpen } from "@/lib/useResetOnOpen";
+import { vlog } from "@/lib/vlog";
+
+const F = "ProdutoModal.tsx";
 
 interface ProdutoModalProps {
   open: boolean;
@@ -23,89 +26,142 @@ export function ProdutoModal({
   onClose,
   onSubmit,
 }: ProdutoModalProps) {
+  vlog(F, "ProdutoModal", "criando estado sku, modo:", mode);
   const [sku, setSku] = useState("");
+  vlog(F, "ProdutoModal", "criando estado descricao");
   const [descricao, setDescricao] = useState("");
+  vlog(F, "ProdutoModal", "criando estado categoria");
   const [categoria, setCategoria] = useState("");
+  vlog(F, "ProdutoModal", "criando estado marca");
   const [marca, setMarca] = useState("");
+  vlog(F, "ProdutoModal", "criando estado notaOlfativa");
   const [notaOlfativa, setNotaOlfativa] = useState("");
+  vlog(F, "ProdutoModal", "criando estado precoTabela");
   const [precoTabela, setPrecoTabela] = useState("");
+  vlog(F, "ProdutoModal", "criando estado custoUnitario");
   const [custoUnitario, setCustoUnitario] = useState("");
+  vlog(F, "ProdutoModal", "criando estado unidade");
   const [unidade, setUnidade] = useState("");
+  vlog(F, "ProdutoModal", "criando estado dataLancamento");
   const [dataLancamento, setDataLancamento] = useState("");
+  vlog(F, "ProdutoModal", "criando estado submitting");
   const [submitting, setSubmitting] = useState(false);
+  vlog(F, "ProdutoModal", "criando estado error");
   const [error, setError] = useState<string | null>(null);
 
   // Reseta o formulario ao abrir (ou quando as props mudam com o modal
   // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
+  vlog(F, "ProdutoModal", "registrando reset do formulário ao abrir");
   useResetOnOpen(open, [mode, produto], () => {
+    vlog(F, "ProdutoModal.reset", "limpando erro");
     setError(null);
+    vlog(F, "ProdutoModal.reset", "limpando estado de envio");
     setSubmitting(false);
+    vlog(F, "ProdutoModal.reset", "verificando se é edição com produto, id:", produto?.id);
     if (mode === "edit" && produto) {
+      vlog(F, "ProdutoModal.reset", "preenchendo SKU");
       setSku(produto.sku);
+      vlog(F, "ProdutoModal.reset", "preenchendo descrição");
       setDescricao(produto.descricao);
+      vlog(F, "ProdutoModal.reset", "preenchendo categoria");
       setCategoria(produto.categoria);
+      vlog(F, "ProdutoModal.reset", "preenchendo marca");
       setMarca(produto.marca);
+      vlog(F, "ProdutoModal.reset", "preenchendo nota olfativa");
       setNotaOlfativa(produto.nota_olfativa || "");
+      vlog(F, "ProdutoModal.reset", "preenchendo preço de tabela");
       setPrecoTabela(String(produto.preco_tabela));
+      vlog(F, "ProdutoModal.reset", "preenchendo custo unitário");
       setCustoUnitario(String(produto.custo_unitario));
+      vlog(F, "ProdutoModal.reset", "preenchendo unidade");
       setUnidade(produto.unidade);
+      vlog(F, "ProdutoModal.reset", "preenchendo data de lançamento");
       setDataLancamento(
         produto.data_lancamento ? produto.data_lancamento.slice(0, 10) : ""
       );
     } else {
+      vlog(F, "ProdutoModal.reset", "limpando SKU");
       setSku("");
+      vlog(F, "ProdutoModal.reset", "limpando descrição");
       setDescricao("");
+      vlog(F, "ProdutoModal.reset", "limpando categoria");
       setCategoria("");
+      vlog(F, "ProdutoModal.reset", "limpando marca");
       setMarca("");
+      vlog(F, "ProdutoModal.reset", "limpando nota olfativa");
       setNotaOlfativa("");
+      vlog(F, "ProdutoModal.reset", "limpando preço de tabela");
       setPrecoTabela("");
+      vlog(F, "ProdutoModal.reset", "limpando custo unitário");
       setCustoUnitario("");
+      vlog(F, "ProdutoModal.reset", "limpando unidade");
       setUnidade("");
+      vlog(F, "ProdutoModal.reset", "limpando data de lançamento");
       setDataLancamento("");
     }
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
+    vlog(F, "ProdutoModal.handleSubmit", "impedindo submit padrão do form");
     e.preventDefault();
+    vlog(F, "ProdutoModal.handleSubmit", "limpando erro");
     setError(null);
 
+    vlog(F, "ProdutoModal.handleSubmit", "validando SKU na criação");
     if (mode === "create" && !sku.trim()) {
+      vlog(F, "ProdutoModal.handleSubmit", "SKU ausente");
       setError("SKU e obrigatorio.");
       return;
     }
+    vlog(F, "ProdutoModal.handleSubmit", "validando descrição");
     if (!descricao.trim()) {
+      vlog(F, "ProdutoModal.handleSubmit", "descrição ausente");
       setError("Descricao e obrigatoria.");
       return;
     }
+    vlog(F, "ProdutoModal.handleSubmit", "validando categoria");
     if (!categoria.trim()) {
+      vlog(F, "ProdutoModal.handleSubmit", "categoria ausente");
       setError("Categoria e obrigatoria.");
       return;
     }
+    vlog(F, "ProdutoModal.handleSubmit", "validando marca");
     if (!marca.trim()) {
+      vlog(F, "ProdutoModal.handleSubmit", "marca ausente");
       setError("Marca e obrigatoria.");
       return;
     }
+    vlog(F, "ProdutoModal.handleSubmit", "validando unidade");
     if (!unidade.trim()) {
+      vlog(F, "ProdutoModal.handleSubmit", "unidade ausente");
       setError("Unidade e obrigatoria.");
       return;
     }
+    vlog(F, "ProdutoModal.handleSubmit", "convertendo preço de tabela");
     const precoNum = Number(precoTabela);
+    vlog(F, "ProdutoModal.handleSubmit", "validando preço de tabela:", precoNum);
     if (precoTabela.trim() === "" || Number.isNaN(precoNum) || precoNum < 0) {
+      vlog(F, "ProdutoModal.handleSubmit", "preço de tabela inválido");
       setError("Preco de tabela deve ser um numero maior ou igual a zero.");
       return;
     }
+    vlog(F, "ProdutoModal.handleSubmit", "convertendo custo unitário");
     const custoNum = Number(custoUnitario);
+    vlog(F, "ProdutoModal.handleSubmit", "validando custo unitário:", custoNum);
     if (
       custoUnitario.trim() === "" ||
       Number.isNaN(custoNum) ||
       custoNum < 0
     ) {
+      vlog(F, "ProdutoModal.handleSubmit", "custo unitário inválido");
       setError("Custo unitario deve ser um numero maior ou igual a zero.");
       return;
     }
 
+    vlog(F, "ProdutoModal.handleSubmit", "marcando envio em andamento");
     setSubmitting(true);
     try {
+      vlog(F, "ProdutoModal.handleSubmit", "enviando produto, modo:", mode);
       await onSubmit({
         sku: sku.trim(),
         descricao: descricao.trim(),
@@ -118,10 +174,13 @@ export function ProdutoModal({
         data_lancamento: dataLancamento || undefined,
       });
     } catch (err) {
+      vlog(F, "ProdutoModal.handleSubmit", "falha ao salvar produto: montando mensagem de erro");
       const message =
         err instanceof Error ? err.message : "Erro ao salvar produto.";
+      vlog(F, "ProdutoModal.handleSubmit", "exibindo erro");
       setError(message);
     } finally {
+      vlog(F, "ProdutoModal.handleSubmit", "finalizando envio");
       setSubmitting(false);
     }
   };

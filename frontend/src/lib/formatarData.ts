@@ -11,6 +11,9 @@
  *    deslocar um dia por fuso (new Date("AAAA-MM-DD") seria meia-noite UTC,
  *    que no Brasil vira o dia anterior).
  */
+import { vlog } from "./vlog";
+
+const F = "formatarData.ts";
 
 const SOMENTE_DATA = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -28,10 +31,15 @@ const OPCOES_DATA_HORA: Intl.DateTimeFormatOptions = {
  * data zero do Go) e undefined para texto invalido.
  */
 function interpretar(valor: string): Date | null | undefined {
+  vlog(F, "interpretar", "verificando se o valor é somente data (AAAA-MM-DD)");
   const somenteData = SOMENTE_DATA.test(valor);
+  vlog(F, "interpretar", "criando Date (meia-noite local se somente data):", somenteData);
   const d = new Date(somenteData ? `${valor}T00:00:00` : valor);
+  vlog(F, "interpretar", "verificando se a data é válida");
   if (Number.isNaN(d.getTime())) return undefined;
+  vlog(F, "interpretar", "obtendo ano da data");
   const ano = somenteData ? d.getFullYear() : d.getUTCFullYear();
+  vlog(F, "interpretar", "verificando se é data zero do Go:", ano <= 1);
   if (ano <= 1) return null;
   return d;
 }
@@ -40,9 +48,13 @@ function formatar(
   valor: string | null | undefined,
   render: (d: Date) => string
 ): string {
+  vlog(F, "formatar", "verificando se há valor de data:", !!valor);
   if (!valor) return "-";
+  vlog(F, "formatar", "interpretando valor de data");
   const d = interpretar(valor);
+  vlog(F, "formatar", "verificando ausência de data");
   if (d === null) return "-";
+  vlog(F, "formatar", "verificando texto inválido");
   if (d === undefined) return valor;
   return render(d);
 }

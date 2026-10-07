@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { vlog } from "./vlog";
+
+const F = "useResetOnOpen.ts";
 
 /**
  * Padrao "ajustar estado quando a prop muda"
@@ -15,15 +18,20 @@ import { useState } from "react";
  * efeitos colaterais externos (requisicoes ficam no useEffect).
  */
 export function useAjustarAoMudar(deps: readonly unknown[], ajustar: () => void): void {
+  vlog(F, "useAjustarAoMudar", "criando estado das dependências anteriores");
   const [anterior, setAnterior] = useState<readonly unknown[] | null>(null);
 
+  vlog(F, "useAjustarAoMudar", "comparando dependências com as anteriores");
   const mudou =
     anterior === null ||
     anterior.length !== deps.length ||
     anterior.some((d, i) => !Object.is(d, deps[i]));
 
+  vlog(F, "useAjustarAoMudar", "verificando se as dependências mudaram:", mudou);
   if (mudou) {
+    vlog(F, "useAjustarAoMudar", "guardando novas dependências");
     setAnterior(deps);
+    vlog(F, "useAjustarAoMudar", "executando ajuste do estado");
     ajustar();
   }
 }
@@ -39,7 +47,9 @@ export function useResetOnOpen(
   deps: readonly unknown[],
   reset: () => void
 ): void {
+  vlog(F, "useResetOnOpen", "registrando ajuste de reset ao abrir, open:", open);
   useAjustarAoMudar([open, ...deps], () => {
+    vlog(F, "useResetOnOpen.func", "verificando se o modal está aberto para resetar:", open);
     if (open) reset();
   });
 }

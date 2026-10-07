@@ -1,6 +1,7 @@
 "use client";
 
 import { InputHTMLAttributes, forwardRef, ReactNode, useId } from "react";
+import { vlog } from "@/lib/vlog";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -11,7 +12,9 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, icon, helperText, className = "", id, ...rest }, ref) => {
+    vlog("Input.tsx", "Input", "gerando id do input");
     const generatedId = useId();
+    vlog("Input.tsx", "Input", "resolvendo id do input, id informado:", !!id);
     const inputId = id || generatedId;
     return (
       <div className="w-full">

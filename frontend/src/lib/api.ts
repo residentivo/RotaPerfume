@@ -39,6 +39,11 @@ import {
   ListEstoqueFilters,
 } from "./types";
 import { fetchEnvelopeWithAuth, fetchWithAuth } from "./apiClient";
+import { vlog } from "./vlog";
+
+// LOG-02: logs verbose daqui nunca recebem senha, captcha, tokens, corpo de
+// request/response nem valores de filtros digitados pelo usuario.
+const F = "api.ts";
 
 export interface CreateUserRequest {
   nome: string;
@@ -101,11 +106,16 @@ async function listarPaginado<L extends unknown[]>(
   page: number,
   limit: number
 ): Promise<Paginado<L>> {
+  vlog(F, "listarPaginado", "buscando listagem paginada, página/limite:", page, limit);
   const parsed = await fetchEnvelopeWithAuth<unknown>(path, { method: "GET" });
 
+  vlog(F, "listarPaginado", "verificando se a resposta é um objeto (envelope)");
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    vlog(F, "listarPaginado", "convertendo envelope para Record");
     const d = parsed as Record<string, unknown>;
+    vlog(F, "listarPaginado", "verificando se o envelope tem array data");
     if ("data" in d && Array.isArray(d.data)) {
+      vlog(F, "listarPaginado", "lendo paginação do envelope, linhas:", (d.data as unknown[]).length);
       const pag = (d.pagination && typeof d.pagination === "object"
         ? (d.pagination as Record<string, unknown>)
         : d) as Record<string, unknown>;
@@ -119,6 +129,7 @@ async function listarPaginado<L extends unknown[]>(
     }
   }
 
+  vlog(F, "listarPaginado", "verificando se a resposta é array puro");
   if (Array.isArray(parsed)) {
     return { data: parsed as L, page, limit, total: parsed.length, pages: 1 };
   }
@@ -130,6 +141,7 @@ export async function apiLogin(
   password: string,
   captchaToken?: string
 ): Promise<LoginResponse> {
+  vlog(F, "apiLogin", "montando corpo do login (credenciais não logadas)");
   const body: LoginRequest = { email, password, captchaToken };
   return fetchWithAuth<LoginResponse>("/api/auth/login", {
     method: "POST",
@@ -163,11 +175,14 @@ export async function apiResetPassword(
   novaSenha: string,
   senhaAtual?: string
 ): Promise<{ message: string }> {
+  vlog(F, "apiResetPassword", "montando corpo do reset de senha, usuario_id:", usuarioId);
   const body: ResetPasswordRequest = {
     usuario_id: usuarioId,
     nova_senha: novaSenha,
   };
+  vlog(F, "apiResetPassword", "verificando se senha atual foi informada:", !!senhaAtual);
   if (senhaAtual) {
+    vlog(F, "apiResetPassword", "incluindo senha atual no corpo");
     body.senha_atual = senhaAtual;
   }
   return fetchWithAuth<{ message: string }>("/api/auth/reset-password", {
@@ -198,8 +213,11 @@ export async function apiListUsers(
   orderBy?: string,
   orderDir?: "asc" | "desc"
 ): Promise<ListUsersResponse> {
+  vlog(F, "apiListUsers", "montando query string");
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  vlog(F, "apiListUsers", "adicionando order_by na query se informado");
   if (orderBy) qs.set("order_by", orderBy);
+  vlog(F, "apiListUsers", "adicionando order_dir na query se informado");
   if (orderDir) qs.set("order_dir", orderDir);
 
   return listarPaginado<User[]>(`/api/usuarios?${qs.toString()}`, page, limit);
@@ -261,6 +279,7 @@ export async function apiAdminResetPassword(
 export async function apiDashboardMetrics(
   periodo: DashboardPeriodo = "month"
 ): Promise<DashboardMetrics> {
+  vlog(F, "apiDashboardMetrics", "montando query string");
   const qs = new URLSearchParams({ periodo });
   return fetchWithAuth<DashboardMetrics>(
     `/api/dashboard/metrics?${qs.toString()}`,
@@ -271,6 +290,7 @@ export async function apiDashboardMetrics(
 }
 
 export async function apiDashboardVendas(dias = 30): Promise<VendasSeries> {
+  vlog(F, "apiDashboardVendas", "montando query string");
   const qs = new URLSearchParams({ dias: String(dias) });
   return fetchWithAuth<VendasSeries>(
     `/api/dashboard/vendas?${qs.toString()}`,
@@ -292,6 +312,7 @@ export async function apiDashboardVendedores(
   page = 1,
   limit = 10
 ): Promise<VendedoresRankingResponse> {
+  vlog(F, "apiDashboardVendedores", "montando query string");
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
 
   return listarPaginado<VendedorRanking[]>(`/api/dashboard/vendedores?${qs.toString()}`, page, limit);
@@ -307,15 +328,21 @@ export async function apiListSenhaHistorico(
   orderBy?: string,
   orderDir?: "asc" | "desc"
 ): Promise<SenhaHistoricoResponse> {
+  vlog(F, "apiListSenhaHistorico", "montando query string");
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
   });
+  vlog(F, "apiListSenhaHistorico", "adicionando usuario_id na query se informado");
   if (usuarioId) params.set("usuario_id", String(usuarioId));
+  vlog(F, "apiListSenhaHistorico", "adicionando tipo na query se informado");
   if (tipo) params.set("tipo", tipo);
+  vlog(F, "apiListSenhaHistorico", "adicionando order_by na query se informado");
   if (orderBy) params.set("order_by", orderBy);
+  vlog(F, "apiListSenhaHistorico", "adicionando order_dir na query se informado");
   if (orderDir) params.set("order_dir", orderDir);
 
+  vlog(F, "apiListSenhaHistorico", "montando rota do histórico de senhas");
   const path = `/api/senha-historico${usuarioId ? `/${usuarioId}` : ""}`;
   return listarPaginado<SenhaHistoricoResponse["data"]>(`${path}?${params.toString()}`, page, limit);
 }
@@ -397,6 +424,7 @@ export async function apiDesvincularCliente(
   vendedorId: number,
   clienteId: number
 ): Promise<void> {
+  vlog(F, "apiDesvincularCliente", "chamando API (sem corpo de resposta)");
   await fetchWithAuth<null>(
     `/api/vendedores/${vendedorId}/clientes/${clienteId}`,
     {
@@ -446,12 +474,19 @@ export async function apiListClientes(
   orderBy?: string,
   orderDir?: "asc" | "desc"
 ): Promise<ListClientesResponse> {
+  vlog(F, "apiListClientes", "montando query string");
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  vlog(F, "apiListClientes", "adicionando uf na query se informado");
   if (filters.uf) qs.set("uf", filters.uf);
+  vlog(F, "apiListClientes", "adicionando segmento na query se informado");
   if (filters.segmento) qs.set("segmento", filters.segmento);
+  vlog(F, "apiListClientes", "adicionando ativo na query se informado");
   if (filters.ativo !== undefined) qs.set("ativo", String(filters.ativo));
+  vlog(F, "apiListClientes", "adicionando q na query se informado");
   if (filters.q) qs.set("q", filters.q);
+  vlog(F, "apiListClientes", "adicionando order_by na query se informado");
   if (orderBy) qs.set("order_by", orderBy);
+  vlog(F, "apiListClientes", "adicionando order_dir na query se informado");
   if (orderDir) qs.set("order_dir", orderDir);
 
   return listarPaginado<Cliente[]>(`/api/clientes?${qs.toString()}`, page, limit);
@@ -500,6 +535,7 @@ export async function apiToggleClienteStatus(
 export async function apiDashboardClientes(
   periodo: DashboardPeriodo = "month"
 ): Promise<ClienteDashboardMetrics> {
+  vlog(F, "apiDashboardClientes", "montando query string");
   const qs = new URLSearchParams({ periodo });
   return fetchWithAuth<ClienteDashboardMetrics>(
     `/api/dashboard/clientes?${qs.toString()}`,
@@ -535,12 +571,19 @@ export async function apiListProdutos(
   orderBy?: string,
   orderDir?: "asc" | "desc"
 ): Promise<ListProdutosResponse> {
+  vlog(F, "apiListProdutos", "montando query string");
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  vlog(F, "apiListProdutos", "adicionando categoria na query se informado");
   if (filters.categoria) qs.set("categoria", filters.categoria);
+  vlog(F, "apiListProdutos", "adicionando marca na query se informado");
   if (filters.marca) qs.set("marca", filters.marca);
+  vlog(F, "apiListProdutos", "adicionando ativo na query se informado");
   if (filters.ativo !== undefined) qs.set("ativo", String(filters.ativo));
+  vlog(F, "apiListProdutos", "adicionando q na query se informado");
   if (filters.q) qs.set("q", filters.q);
+  vlog(F, "apiListProdutos", "adicionando order_by na query se informado");
   if (orderBy) qs.set("order_by", orderBy);
+  vlog(F, "apiListProdutos", "adicionando order_dir na query se informado");
   if (orderDir) qs.set("order_dir", orderDir);
 
   return listarPaginado<Produto[]>(`/api/produtos?${qs.toString()}`, page, limit);
@@ -613,15 +656,25 @@ export async function apiListPedidos(
   orderBy?: string,
   orderDir?: "asc" | "desc"
 ): Promise<ListPedidosResponse> {
+  vlog(F, "apiListPedidos", "montando query string");
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  vlog(F, "apiListPedidos", "adicionando status na query se informado");
   if (filters.status) qs.set("status", filters.status);
+  vlog(F, "apiListPedidos", "adicionando canal na query se informado");
   if (filters.canal) qs.set("canal", filters.canal);
+  vlog(F, "apiListPedidos", "adicionando cliente_id na query se informado");
   if (filters.cliente_id) qs.set("cliente_id", String(filters.cliente_id));
+  vlog(F, "apiListPedidos", "adicionando vendedor_id na query se informado");
   if (filters.vendedor_id) qs.set("vendedor_id", String(filters.vendedor_id));
+  vlog(F, "apiListPedidos", "adicionando data_inicio na query se informado");
   if (filters.data_inicio) qs.set("data_inicio", filters.data_inicio);
+  vlog(F, "apiListPedidos", "adicionando data_fim na query se informado");
   if (filters.data_fim) qs.set("data_fim", filters.data_fim);
+  vlog(F, "apiListPedidos", "adicionando q na query se informado");
   if (filters.q) qs.set("q", filters.q);
+  vlog(F, "apiListPedidos", "adicionando order_by na query se informado");
   if (orderBy) qs.set("order_by", orderBy);
+  vlog(F, "apiListPedidos", "adicionando order_dir na query se informado");
   if (orderDir) qs.set("order_dir", orderDir);
 
   return listarPaginado<Pedido[]>(`/api/pedidos?${qs.toString()}`, page, limit);
@@ -661,6 +714,7 @@ export async function apiUpdatePedido(
 // DELETE /api/pedidos/{id} — exclui um pedido. Backend retorna 409 se o
 // pedido possuir pagamentos vinculados ou estiver faturado.
 export async function apiDeletePedido(id: number): Promise<void> {
+  vlog(F, "apiDeletePedido", "chamando API (sem corpo de resposta)");
   await fetchWithAuth<null>(`/api/pedidos/${id}`, {
     method: "DELETE",
   });
@@ -688,13 +742,21 @@ export async function apiListPagamentos(
   orderBy?: string,
   orderDir?: "asc" | "desc"
 ): Promise<ListPagamentosResponse> {
+  vlog(F, "apiListPagamentos", "montando query string");
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  vlog(F, "apiListPagamentos", "adicionando status_pagamento na query se informado");
   if (filters.status_pagamento) qs.set("status_pagamento", filters.status_pagamento);
+  vlog(F, "apiListPagamentos", "adicionando forma_pagamento na query se informado");
   if (filters.forma_pagamento) qs.set("forma_pagamento", filters.forma_pagamento);
+  vlog(F, "apiListPagamentos", "adicionando pedido_id na query se informado");
   if (filters.pedido_id) qs.set("pedido_id", String(filters.pedido_id));
+  vlog(F, "apiListPagamentos", "adicionando vencimento_de na query se informado");
   if (filters.vencimento_de) qs.set("vencimento_de", filters.vencimento_de);
+  vlog(F, "apiListPagamentos", "adicionando vencimento_ate na query se informado");
   if (filters.vencimento_ate) qs.set("vencimento_ate", filters.vencimento_ate);
+  vlog(F, "apiListPagamentos", "adicionando order_by na query se informado");
   if (orderBy) qs.set("order_by", orderBy);
+  vlog(F, "apiListPagamentos", "adicionando order_dir na query se informado");
   if (orderDir) qs.set("order_dir", orderDir);
 
   return listarPaginado<Pagamento[]>(`/api/pagamentos?${qs.toString()}`, page, limit);
@@ -734,6 +796,7 @@ export async function apiUpdatePagamento(
 // DELETE /api/pagamentos/{id} — exclui um pagamento. Backend retorna 409 se
 // o pagamento ja estiver quitado.
 export async function apiDeletePagamento(id: number): Promise<void> {
+  vlog(F, "apiDeletePagamento", "chamando API (sem corpo de resposta)");
   await fetchWithAuth<null>(`/api/pagamentos/${id}`, {
     method: "DELETE",
   });
@@ -760,15 +823,25 @@ export async function apiListOportunidades(
   orderBy?: string,
   orderDir?: "asc" | "desc"
 ): Promise<ListOportunidadesResponse> {
+  vlog(F, "apiListOportunidades", "montando query string");
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  vlog(F, "apiListOportunidades", "adicionando cliente_id na query se informado");
   if (filters.cliente_id) qs.set("cliente_id", String(filters.cliente_id));
+  vlog(F, "apiListOportunidades", "adicionando vendedor_id na query se informado");
   if (filters.vendedor_id) qs.set("vendedor_id", String(filters.vendedor_id));
+  vlog(F, "apiListOportunidades", "adicionando etapa na query se informado");
   if (filters.etapa) qs.set("etapa", filters.etapa);
+  vlog(F, "apiListOportunidades", "adicionando origem na query se informado");
   if (filters.origem) qs.set("origem", filters.origem);
+  vlog(F, "apiListOportunidades", "adicionando data_abertura_de na query se informado");
   if (filters.data_abertura_de) qs.set("data_abertura_de", filters.data_abertura_de);
+  vlog(F, "apiListOportunidades", "adicionando data_abertura_ate na query se informado");
   if (filters.data_abertura_ate) qs.set("data_abertura_ate", filters.data_abertura_ate);
+  vlog(F, "apiListOportunidades", "adicionando q na query se informado");
   if (filters.q) qs.set("q", filters.q);
+  vlog(F, "apiListOportunidades", "adicionando order_by na query se informado");
   if (orderBy) qs.set("order_by", orderBy);
+  vlog(F, "apiListOportunidades", "adicionando order_dir na query se informado");
   if (orderDir) qs.set("order_dir", orderDir);
 
   return listarPaginado<Oportunidade[]>(`/api/oportunidades?${qs.toString()}`, page, limit);
@@ -804,6 +877,7 @@ export async function apiUpdateOportunidade(
 
 // DELETE /api/oportunidades/{id} — admin exclui uma oportunidade existente.
 export async function apiDeleteOportunidade(id: number): Promise<void> {
+  vlog(F, "apiDeleteOportunidade", "chamando API (sem corpo de resposta)");
   await fetchWithAuth<null>(`/api/oportunidades/${id}`, {
     method: "DELETE",
   });
@@ -830,14 +904,23 @@ export async function apiListVisitas(
   orderBy?: string,
   orderDir?: "asc" | "desc"
 ): Promise<ListVisitasResponse> {
+  vlog(F, "apiListVisitas", "montando query string");
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  vlog(F, "apiListVisitas", "adicionando cliente_id na query se informado");
   if (filters.cliente_id) qs.set("cliente_id", String(filters.cliente_id));
+  vlog(F, "apiListVisitas", "adicionando vendedor_id na query se informado");
   if (filters.vendedor_id) qs.set("vendedor_id", String(filters.vendedor_id));
+  vlog(F, "apiListVisitas", "adicionando resultado na query se informado");
   if (filters.resultado) qs.set("resultado", filters.resultado);
+  vlog(F, "apiListVisitas", "adicionando data_visita_de na query se informado");
   if (filters.data_visita_de) qs.set("data_visita_de", filters.data_visita_de);
+  vlog(F, "apiListVisitas", "adicionando data_visita_ate na query se informado");
   if (filters.data_visita_ate) qs.set("data_visita_ate", filters.data_visita_ate);
+  vlog(F, "apiListVisitas", "adicionando q na query se informado");
   if (filters.q) qs.set("q", filters.q);
+  vlog(F, "apiListVisitas", "adicionando order_by na query se informado");
   if (orderBy) qs.set("order_by", orderBy);
+  vlog(F, "apiListVisitas", "adicionando order_dir na query se informado");
   if (orderDir) qs.set("order_dir", orderDir);
 
   return listarPaginado<Visita[]>(`/api/visitas?${qs.toString()}`, page, limit);
@@ -871,6 +954,7 @@ export async function apiUpdateVisita(
 
 // DELETE /api/visitas/{id} — admin exclui uma visita existente.
 export async function apiDeleteVisita(id: number): Promise<void> {
+  vlog(F, "apiDeleteVisita", "chamando API (sem corpo de resposta)");
   await fetchWithAuth<null>(`/api/visitas/${id}`, {
     method: "DELETE",
   });
@@ -901,12 +985,19 @@ export async function apiListEstoque(
   orderBy?: string,
   orderDir?: "asc" | "desc"
 ): Promise<ListEstoqueResponse> {
+  vlog(F, "apiListEstoque", "montando query string");
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  vlog(F, "apiListEstoque", "adicionando sku na query se informado");
   if (filters.sku) qs.set("sku", filters.sku);
+  vlog(F, "apiListEstoque", "adicionando data_de na query se informado");
   if (filters.data_de) qs.set("data_de", filters.data_de);
+  vlog(F, "apiListEstoque", "adicionando data_ate na query se informado");
   if (filters.data_ate) qs.set("data_ate", filters.data_ate);
+  vlog(F, "apiListEstoque", "adicionando ruptura na query se informado");
   if (filters.ruptura !== undefined) qs.set("ruptura", String(filters.ruptura));
+  vlog(F, "apiListEstoque", "adicionando order_by na query se informado");
   if (orderBy) qs.set("order_by", orderBy);
+  vlog(F, "apiListEstoque", "adicionando order_dir na query se informado");
   if (orderDir) qs.set("order_dir", orderDir);
 
   return listarPaginado<Estoque[]>(`/api/estoque?${qs.toString()}`, page, limit);

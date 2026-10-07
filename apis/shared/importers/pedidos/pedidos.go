@@ -53,6 +53,7 @@ import (
 
 	"github.com/rotaperfumes/shared/cmdutil"
 	"github.com/rotaperfumes/shared/importers/clientesdedup"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Tag prefixa os logs e as mensagens de erro do importador.
@@ -109,11 +110,15 @@ type Options struct {
 // abrindo o banco via open só se não for dry-run. Erros fatais são
 // devolvidos sem o prefixo Tag.
 func Run(opts Options, open cmdutil.Opener) error {
+	vlog.Printf("pedidos.go", "Run", "declarando pedidosCSVPath, err com resultado de ResolveCSVPath()")
 	pedidosCSVPath, err := ResolveCSVPath(opts.PedidosCSVFlag, EnvPedidosCSVPath, "pedidos.csv")
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("pedidos.go", "Run", "declarando itensCSVPath, err com resultado de ResolveCSVPath()")
 	itensCSVPath, err := ResolveCSVPath(opts.ItensCSVFlag, EnvItensCSVPath, "itens_pedido.csv")
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
@@ -122,15 +127,20 @@ func Run(opts Options, open cmdutil.Opener) error {
 	// FASE 1: pedidos.csv
 	// -----------------------------------------------------------
 	log.Printf("importpedidos: [fase 1/2] lendo CSV de pedidos: %s", pedidosCSVPath)
+	vlog.Printf("pedidos.go", "Run", "declarando pedidoRows, pedidoParseErrs, err com resultado de ReadPedidosCSVFile()")
 	pedidoRows, pedidoParseErrs, err := ReadPedidosCSVFile(pedidosCSVPath)
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("falha ao ler CSV de pedidos: %w", err)
 	}
 	log.Printf("importpedidos: [fase 1/2] %d linhas válidas lidas, %d linhas com erro de parsing", len(pedidoRows), pedidoParseErrs)
 
+	vlog.Printf("pedidos.go", "Run", "verificando se opts.DryRun")
 	if opts.DryRun {
 		log.Printf("importpedidos: [fase 2/2] lendo CSV de itens de pedido: %s", itensCSVPath)
+		vlog.Printf("pedidos.go", "Run", "declarando itemRows, itemParseErrs, err com resultado de ReadItensPedidoCSVFile()")
 		itemRows, itemParseErrs, err := ReadItensPedidoCSVFile(itensCSVPath)
+		vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 		if err != nil {
 			return fmt.Errorf("falha ao ler CSV de itens de pedido: %w", err)
 		}
@@ -139,26 +149,36 @@ func Run(opts Options, open cmdutil.Opener) error {
 		return nil
 	}
 
+	vlog.Printf("pedidos.go", "Run", "declarando db, err com resultado de open()")
 	db, err := open()
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("pedidos.go", "Run", "agendando defer de db.Close()")
 	defer db.Close()
 
+	vlog.Printf("pedidos.go", "Run", "chamando db.Ping() e verificando se err != nil")
 	if err := db.Ping(); err != nil {
 		return fmt.Errorf("ping no banco falhou: %w", err)
 	}
 
+	vlog.Printf("pedidos.go", "Run", "declarando clienteIDs, err com resultado de LoadClienteIDsByOrigem()")
 	clienteIDs, err := LoadClienteIDsByOrigem(db)
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("falha ao carregar clientes: %w", err)
 	}
 	log.Printf("importpedidos: %d clientes carregados para lookup", len(clienteIDs))
 	// NEG-01: cópias de CNPJ duplicado no clientes.csv apontam para o sobrevivente.
+	vlog.Printf("pedidos.go", "Run", "declarando projectRoot, _ com resultado de cmdutil.FindProjectRoot()")
 	projectRoot, _ := cmdutil.FindProjectRoot()
+	vlog.Printf("pedidos.go", "Run", "chamando clientesdedup.Redirecionar()")
 	clientesdedup.Redirecionar(Tag, projectRoot, clienteIDs)
 
+	vlog.Printf("pedidos.go", "Run", "declarando pInserted, pUpdated, pFailed, err com resultado de UpsertPedidos()")
 	pInserted, pUpdated, pFailed, err := UpsertPedidos(db, pedidoRows, clienteIDs)
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
@@ -169,25 +189,33 @@ func Run(opts Options, open cmdutil.Opener) error {
 	// FASE 2: itens_pedido.csv
 	// -----------------------------------------------------------
 	log.Printf("importpedidos: [fase 2/2] lendo CSV de itens de pedido: %s", itensCSVPath)
+	vlog.Printf("pedidos.go", "Run", "declarando itemRows, itemParseErrs, err com resultado de ReadItensPedidoCSVFile()")
 	itemRows, itemParseErrs, err := ReadItensPedidoCSVFile(itensCSVPath)
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("falha ao ler CSV de itens de pedido: %w", err)
 	}
 	log.Printf("importpedidos: [fase 2/2] %d linhas válidas lidas, %d linhas com erro de parsing", len(itemRows), itemParseErrs)
 
+	vlog.Printf("pedidos.go", "Run", "declarando pedidoIDs, err com resultado de LoadPedidoIDsByOrigem()")
 	pedidoIDs, err := LoadPedidoIDsByOrigem(db)
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("falha ao carregar pedidos: %w", err)
 	}
 	log.Printf("importpedidos: %d pedidos carregados para lookup", len(pedidoIDs))
 
+	vlog.Printf("pedidos.go", "Run", "declarando produtoIDs, err com resultado de LoadProdutoIDsBySKU()")
 	produtoIDs, err := LoadProdutoIDsBySKU(db)
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("falha ao carregar produtos: %w", err)
 	}
 	log.Printf("importpedidos: %d produtos carregados para lookup", len(produtoIDs))
 
+	vlog.Printf("pedidos.go", "Run", "declarando iInserted, iUpdated, iFailed, err com resultado de UpsertItensPedido()")
 	iInserted, iUpdated, iFailed, err := UpsertItensPedido(db, itemRows, pedidoIDs, produtoIDs)
+	vlog.Printf("pedidos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
@@ -202,13 +230,17 @@ func Run(opts Options, open cmdutil.Opener) error {
 // ResolveCSVPath decide o caminho final do CSV, na ordem:
 // flag > env > default (dados/erp/<fileName> na raiz do projeto).
 func ResolveCSVPath(flagValue, envVar, fileName string) (string, error) {
+	vlog.Printf("pedidos.go", "ResolveCSVPath", "verificando condição do if")
 	if flagValue != "" {
 		return flagValue, nil
 	}
+	vlog.Printf("pedidos.go", "ResolveCSVPath", "chamando os.Getenv() e verificando condição do if")
 	if v := os.Getenv(envVar); v != "" {
 		return v, nil
 	}
+	vlog.Printf("pedidos.go", "ResolveCSVPath", "declarando root, err com resultado de cmdutil.FindProjectRoot()")
 	root, err := cmdutil.FindProjectRoot()
+	vlog.Printf("pedidos.go", "ResolveCSVPath", "verificando se err != nil")
 	if err != nil {
 		return "", fmt.Errorf("não foi possível localizar a raiz do projeto: %w", err)
 	}
@@ -221,10 +253,13 @@ func ResolveCSVPath(flagValue, envVar, fileName string) (string, error) {
 
 // ReadPedidosCSVFile abre o arquivo em path e delega para ReadPedidosCSV.
 func ReadPedidosCSVFile(path string) (rows []PedidoRow, parseErrs int, err error) {
+	vlog.Printf("pedidos.go", "ReadPedidosCSVFile", "declarando f, err com resultado de os.Open()")
 	f, err := os.Open(path)
+	vlog.Printf("pedidos.go", "ReadPedidosCSVFile", "verificando se err != nil")
 	if err != nil {
 		return nil, 0, fmt.Errorf("abrindo arquivo: %w", err)
 	}
+	vlog.Printf("pedidos.go", "ReadPedidosCSVFile", "agendando defer de f.Close()")
 	defer f.Close()
 	return ReadPedidosCSV(f)
 }
@@ -232,14 +267,19 @@ func ReadPedidosCSVFile(path string) (rows []PedidoRow, parseErrs int, err error
 // ReadPedidosCSV lê e normaliza pedidos.csv (com cabeçalho). Linhas
 // malformadas são contadas em parseErrs e puladas.
 func ReadPedidosCSV(rd io.Reader) (rows []PedidoRow, parseErrs int, err error) {
+	vlog.Printf("pedidos.go", "ReadPedidosCSV", "declarando r com resultado de csv.NewReader()")
 	r := csv.NewReader(rd)
+	vlog.Printf("pedidos.go", "ReadPedidosCSV", "atribuindo a r.FieldsPerRecord o valor de valor literal")
 	r.FieldsPerRecord = 7
 
+	vlog.Printf("pedidos.go", "ReadPedidosCSV", "chamando r.Read() e verificando se err != nil")
 	if _, err := r.Read(); err != nil {
 		return nil, 0, fmt.Errorf("lendo cabeçalho: %w", err)
 	}
 
+	vlog.Printf("pedidos.go", "ReadPedidosCSV", "declarando lineNum com valor literal")
 	lineNum := 1
+	vlog.Printf("pedidos.go", "ReadPedidosCSV", "iniciando loop for sem condição (até break)")
 	for {
 		record, err := r.Read()
 		if err == io.EOF {
@@ -260,6 +300,7 @@ func ReadPedidosCSV(rd io.Reader) (rows []PedidoRow, parseErrs int, err error) {
 		}
 		rows = append(rows, row)
 	}
+	vlog.Printf("pedidos.go", "ReadPedidosCSV", "loop concluído; linhas válidas: %d, erros de parsing: %d", len(rows), parseErrs)
 	return rows, parseErrs, nil
 }
 
@@ -352,10 +393,13 @@ func IsValidStatus(v string) bool {
 
 // ReadItensPedidoCSVFile abre o arquivo em path e delega para ReadItensPedidoCSV.
 func ReadItensPedidoCSVFile(path string) (rows []ItemPedidoRow, parseErrs int, err error) {
+	vlog.Printf("pedidos.go", "ReadItensPedidoCSVFile", "declarando f, err com resultado de os.Open()")
 	f, err := os.Open(path)
+	vlog.Printf("pedidos.go", "ReadItensPedidoCSVFile", "verificando se err != nil")
 	if err != nil {
 		return nil, 0, fmt.Errorf("abrindo arquivo: %w", err)
 	}
+	vlog.Printf("pedidos.go", "ReadItensPedidoCSVFile", "agendando defer de f.Close()")
 	defer f.Close()
 	return ReadItensPedidoCSV(f)
 }
@@ -363,14 +407,19 @@ func ReadItensPedidoCSVFile(path string) (rows []ItemPedidoRow, parseErrs int, e
 // ReadItensPedidoCSV lê e normaliza itens_pedido.csv (com cabeçalho). Linhas
 // malformadas são contadas em parseErrs e puladas.
 func ReadItensPedidoCSV(rd io.Reader) (rows []ItemPedidoRow, parseErrs int, err error) {
+	vlog.Printf("pedidos.go", "ReadItensPedidoCSV", "declarando r com resultado de csv.NewReader()")
 	r := csv.NewReader(rd)
+	vlog.Printf("pedidos.go", "ReadItensPedidoCSV", "atribuindo a r.FieldsPerRecord o valor de valor literal")
 	r.FieldsPerRecord = 7
 
+	vlog.Printf("pedidos.go", "ReadItensPedidoCSV", "chamando r.Read() e verificando se err != nil")
 	if _, err := r.Read(); err != nil {
 		return nil, 0, fmt.Errorf("lendo cabeçalho: %w", err)
 	}
 
+	vlog.Printf("pedidos.go", "ReadItensPedidoCSV", "declarando lineNum com valor literal")
 	lineNum := 1
+	vlog.Printf("pedidos.go", "ReadItensPedidoCSV", "iniciando loop for sem condição (até break)")
 	for {
 		record, err := r.Read()
 		if err == io.EOF {
@@ -391,6 +440,7 @@ func ReadItensPedidoCSV(rd io.Reader) (rows []ItemPedidoRow, parseErrs int, err 
 		}
 		rows = append(rows, row)
 	}
+	vlog.Printf("pedidos.go", "ReadItensPedidoCSV", "loop concluído; linhas válidas: %d, erros de parsing: %d", len(rows), parseErrs)
 	return rows, parseErrs, nil
 }
 
@@ -458,13 +508,18 @@ func ParseItemPedidoRow(record []string) (ItemPedidoRow, error) {
 // é o próprio cliente_id_origem — o mapa é usado apenas para validar
 // existência (identidade origem -> origem).
 func LoadClienteIDsByOrigem(db cmdutil.DB) (map[int64]int64, error) {
+	vlog.Printf("pedidos.go", "LoadClienteIDsByOrigem", "declarando rows, err com resultado de db.Query()")
 	rows, err := db.Query("SELECT cliente_id_origem FROM clientes")
+	vlog.Printf("pedidos.go", "LoadClienteIDsByOrigem", "verificando se err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("pedidos.go", "LoadClienteIDsByOrigem", "agendando defer de rows.Close()")
 	defer rows.Close()
 
+	vlog.Printf("pedidos.go", "LoadClienteIDsByOrigem", "declarando m com resultado de make()")
 	m := make(map[int64]int64)
+	vlog.Printf("pedidos.go", "LoadClienteIDsByOrigem", "iniciando loop for enquanto rows.Next()")
 	for rows.Next() {
 		var origem int64
 		if err := rows.Scan(&origem); err != nil {
@@ -472,6 +527,7 @@ func LoadClienteIDsByOrigem(db cmdutil.DB) (map[int64]int64, error) {
 		}
 		m[origem] = origem
 	}
+	vlog.Printf("pedidos.go", "LoadClienteIDsByOrigem", "loop concluído; registros carregados: %d", len(m))
 	return m, rows.Err()
 }
 
@@ -481,13 +537,18 @@ func LoadClienteIDsByOrigem(db cmdutil.DB) (map[int64]int64, error) {
 // o próprio pedido_id_origem — o mapa é usado apenas para validar existência
 // (identidade origem -> origem).
 func LoadPedidoIDsByOrigem(db cmdutil.DB) (map[int64]int64, error) {
+	vlog.Printf("pedidos.go", "LoadPedidoIDsByOrigem", "declarando rows, err com resultado de db.Query()")
 	rows, err := db.Query("SELECT pedido_id_origem FROM pedidos")
+	vlog.Printf("pedidos.go", "LoadPedidoIDsByOrigem", "verificando se err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("pedidos.go", "LoadPedidoIDsByOrigem", "agendando defer de rows.Close()")
 	defer rows.Close()
 
+	vlog.Printf("pedidos.go", "LoadPedidoIDsByOrigem", "declarando m com resultado de make()")
 	m := make(map[int64]int64)
+	vlog.Printf("pedidos.go", "LoadPedidoIDsByOrigem", "iniciando loop for enquanto rows.Next()")
 	for rows.Next() {
 		var origem int64
 		if err := rows.Scan(&origem); err != nil {
@@ -495,18 +556,24 @@ func LoadPedidoIDsByOrigem(db cmdutil.DB) (map[int64]int64, error) {
 		}
 		m[origem] = origem
 	}
+	vlog.Printf("pedidos.go", "LoadPedidoIDsByOrigem", "loop concluído; registros carregados: %d", len(m))
 	return m, rows.Err()
 }
 
 // LoadProdutoIDsBySKU carrega sku → produtos.id para o lookup dos itens.
 func LoadProdutoIDsBySKU(db cmdutil.DB) (map[string]int64, error) {
+	vlog.Printf("pedidos.go", "LoadProdutoIDsBySKU", "declarando rows, err com resultado de db.Query()")
 	rows, err := db.Query("SELECT id, sku FROM produtos")
+	vlog.Printf("pedidos.go", "LoadProdutoIDsBySKU", "verificando se err != nil")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("pedidos.go", "LoadProdutoIDsBySKU", "agendando defer de rows.Close()")
 	defer rows.Close()
 
+	vlog.Printf("pedidos.go", "LoadProdutoIDsBySKU", "declarando m com resultado de make()")
 	m := make(map[string]int64)
+	vlog.Printf("pedidos.go", "LoadProdutoIDsBySKU", "iniciando loop for enquanto rows.Next()")
 	for rows.Next() {
 		var id int64
 		var sku string
@@ -515,6 +582,7 @@ func LoadProdutoIDsBySKU(db cmdutil.DB) (map[string]int64, error) {
 		}
 		m[sku] = id
 	}
+	vlog.Printf("pedidos.go", "LoadProdutoIDsBySKU", "loop concluído; registros carregados: %d", len(m))
 	return m, rows.Err()
 }
 
@@ -528,6 +596,7 @@ func LoadProdutoIDsBySKU(db cmdutil.DB) (map[string]int64, error) {
 // e puladas (não abortam a importação). Só devolve err se
 // o prepare falhar.
 func UpsertPedidos(db cmdutil.DB, rows []PedidoRow, clienteIDs map[int64]int64) (inserted, updated, failed int, err error) {
+	vlog.Printf("pedidos.go", "UpsertPedidos", "declarando constante query")
 	const query = `
 		INSERT INTO pedidos
 			(pedido_id_origem, cliente_id, vendedor_id, data_pedido, canal, status, valor_total)
@@ -542,12 +611,16 @@ func UpsertPedidos(db cmdutil.DB, rows []PedidoRow, clienteIDs map[int64]int64) 
 			valor_total = VALUES(valor_total)
 	`
 
+	vlog.Printf("pedidos.go", "UpsertPedidos", "declarando stmt, err com resultado de db.Prepare()")
 	stmt, err := db.Prepare(query)
+	vlog.Printf("pedidos.go", "UpsertPedidos", "verificando se err != nil")
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("prepare (pedidos) falhou: %w", err)
 	}
+	vlog.Printf("pedidos.go", "UpsertPedidos", "agendando defer de stmt.Close()")
 	defer stmt.Close()
 
+	vlog.Printf("pedidos.go", "UpsertPedidos", "iniciando loop range sobre rows")
 	for _, row := range rows {
 		clienteID, ok := clienteIDs[row.ClienteIDOrigem]
 		if !ok {
@@ -580,6 +653,7 @@ func UpsertPedidos(db cmdutil.DB, rows []PedidoRow, clienteIDs map[int64]int64) 
 			updated++
 		}
 	}
+	vlog.Printf("pedidos.go", "UpsertPedidos", "loop concluído; itens: %d", len(rows))
 	return inserted, updated, failed, nil
 }
 
@@ -589,6 +663,7 @@ func UpsertPedidos(db cmdutil.DB, rows []PedidoRow, clienteIDs map[int64]int64) 
 // são contadas como erro e puladas (não abortam a importação). Só devolve err se
 // o prepare falhar.
 func UpsertItensPedido(db cmdutil.DB, rows []ItemPedidoRow, pedidoIDs map[int64]int64, produtoIDs map[string]int64) (inserted, updated, failed int, err error) {
+	vlog.Printf("pedidos.go", "UpsertItensPedido", "declarando constante query")
 	const query = `
 		INSERT INTO itens_pedido
 			(item_id_origem, pedido_id, produto_id, quantidade, preco_praticado, desconto_pct, valor_bruto)
@@ -603,12 +678,16 @@ func UpsertItensPedido(db cmdutil.DB, rows []ItemPedidoRow, pedidoIDs map[int64]
 			valor_bruto = VALUES(valor_bruto)
 	`
 
+	vlog.Printf("pedidos.go", "UpsertItensPedido", "declarando stmt, err com resultado de db.Prepare()")
 	stmt, err := db.Prepare(query)
+	vlog.Printf("pedidos.go", "UpsertItensPedido", "verificando se err != nil")
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("prepare (itens_pedido) falhou: %w", err)
 	}
+	vlog.Printf("pedidos.go", "UpsertItensPedido", "agendando defer de stmt.Close()")
 	defer stmt.Close()
 
+	vlog.Printf("pedidos.go", "UpsertItensPedido", "iniciando loop range sobre rows")
 	for _, row := range rows {
 		pedidoID, ok := pedidoIDs[row.PedidoIDOrigem]
 		if !ok {
@@ -649,5 +728,6 @@ func UpsertItensPedido(db cmdutil.DB, rows []ItemPedidoRow, pedidoIDs map[int64]
 			updated++
 		}
 	}
+	vlog.Printf("pedidos.go", "UpsertItensPedido", "loop concluído; itens: %d", len(rows))
 	return inserted, updated, failed, nil
 }

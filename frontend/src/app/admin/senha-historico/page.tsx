@@ -16,6 +16,9 @@ import { Select } from "@/components/ui/Select";
 import { apiListSenhaHistorico } from "@/lib/api";
 import { SenhaHistoricoItem, TipoReset } from "@/lib/types";
 import { formatarDataHora } from "@/lib/formatarData";
+import { vlog } from "@/lib/vlog";
+
+const FILE = "admin/senha-historico/page.tsx";
 
 type SortKey = "id" | "created_at" | "usuario_nome" | "tipo_reset" | "resetado_por_nome" | "ip_origem";
 type SortDir = "asc" | "desc";
@@ -83,36 +86,52 @@ function tipoLabel(tipo: TipoReset): string {
 }
 
 export default function SenhaHistoricoPage() {
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado da lista de registros");
   const [items, setItems] = useState<SenhaHistoricoItem[]>([]);
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado de loading");
   const [loading, setLoading] = useState(true);
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado de erro");
   const [error, setError] = useState<string | null>(null);
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado de erro de carga");
   const [erroCarga, setErroCarga] = useState(false);
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado da busca textual");
   const [search, setSearch] = useState("");
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado do filtro de tipo");
   const [tipo, setTipo] = useState<"" | TipoReset>("");
 
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado da pagina atual");
   const [page, setPage] = useState(1);
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado do limite por pagina");
   const [limit, setLimit] = useState(20);
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado do total de registros");
   const [total, setTotal] = useState(0);
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado do total de paginas");
   const [pages, setPages] = useState(0);
   // FE-10: pagina/limite exibidos (a pedida, ou a ultima carregada se a
   // ultima carga falhou).
+  vlog(FILE, "SenhaHistoricoPage", "obtendo pagina exibida (page=%d, limit=%d, erroCarga=%s)", page, limit, erroCarga);
   const { exibida, registrar: registrarCarregada } = usePaginaCarregada(
     page,
     limit,
     erroCarga
   );
 
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado da coluna de ordenacao");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado da direcao de ordenacao");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   // FE-04: so a busca mais recente aplica o resultado (respostas obsoletas
   // sao descartadas), inclusive entre o efeito e as recargas imperativas.
+  vlog(FILE, "SenhaHistoricoPage", "obtendo executor de busca com descarte de respostas obsoletas");
   const executarBusca = useUltimaResposta();
 
   // Busca separada em requisicao pura + aplicacao do resultado no callback
   // assincrono (.then): o efeito nunca chama setState de forma sincrona.
-  const buscar = () =>
-    apiListSenhaHistorico(
+  vlog(FILE, "SenhaHistoricoPage", "definindo funcao buscar");
+  const buscar = () => {
+    vlog(FILE, "SenhaHistoricoPage.buscar", "chamando apiListSenhaHistorico (page=%d, limit=%d, tipo=%s, sortKey=%s, sortDir=%s)", page, limit, tipo, sortKey, sortDir);
+    return apiListSenhaHistorico(
       page,
       limit,
       undefined,
@@ -120,85 +139,129 @@ export default function SenhaHistoricoPage() {
       ORDER_BY_MAP[sortKey],
       sortDir
     );
+  };
 
+  vlog(FILE, "SenhaHistoricoPage", "definindo funcao aplicar");
   const aplicar = (res: Awaited<ReturnType<typeof apiListSenhaHistorico>>) => {
+    vlog(FILE, "SenhaHistoricoPage.aplicar", "aplicando lista de registros (qtd=%d)", res.data.length);
     setItems(res.data);
+    vlog(FILE, "SenhaHistoricoPage.aplicar", "atualizando total (total=%d)", res.total);
     setTotal(res.total);
+    vlog(FILE, "SenhaHistoricoPage.aplicar", "atualizando total de paginas (pages=%d)", res.pages);
     setPages(res.pages);
+    vlog(FILE, "SenhaHistoricoPage.aplicar", "registrando pagina carregada (page=%d, limit=%d)", page, limit);
     registrarCarregada(page, limit);
+    vlog(FILE, "SenhaHistoricoPage.aplicar", "limpando erro de carga");
     setErroCarga(false);
+    vlog(FILE, "SenhaHistoricoPage.aplicar", "desativando loading");
     setLoading(false);
   };
 
   // FE-09: erro de carga mantem a ultima lista carregada (nao zera) e marca
   // erroCarga para a tabela nao exibir o estado vazio junto do alerta.
+  vlog(FILE, "SenhaHistoricoPage", "definindo funcao aplicarErro");
   const aplicarErro = (err: unknown) => {
+    vlog(FILE, "SenhaHistoricoPage.aplicarErro", "extraindo mensagem do erro de carga");
     const message =
       err instanceof Error
         ? err.message
         : "Erro ao carregar historico de senhas. O endpoint /api/senha-historico pode nao existir no backend.";
+    vlog(FILE, "SenhaHistoricoPage.aplicarErro", "exibindo mensagem de erro");
     setError(message);
+    vlog(FILE, "SenhaHistoricoPage.aplicarErro", "marcando erro de carga");
     setErroCarga(true);
+    vlog(FILE, "SenhaHistoricoPage.aplicarErro", "desativando loading");
     setLoading(false);
   };
 
   // Recarga imperativa (botao "Atualizar").
+  vlog(FILE, "SenhaHistoricoPage", "definindo funcao load");
   const load = async () => {
+    vlog(FILE, "SenhaHistoricoPage.load", "ativando loading");
     setLoading(true);
+    vlog(FILE, "SenhaHistoricoPage.load", "limpando erro");
     setError(null);
+    vlog(FILE, "SenhaHistoricoPage.load", "executando busca do historico");
     await executarBusca(buscar(), aplicar, aplicarErro);
   };
 
   // Reset para pagina 1 quando filtros mudam — ajustado durante o render
   // (padrao "ajustar estado quando a entrada muda"), sem efeito.
+  vlog(FILE, "SenhaHistoricoPage", "montando chave dos filtros");
   const chaveFiltros = `${search}|${tipo}`;
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado dos filtros anteriores");
   const [filtrosAnteriores, setFiltrosAnteriores] = useState(chaveFiltros);
+  vlog(FILE, "SenhaHistoricoPage", "verificando se os filtros mudaram");
   if (filtrosAnteriores !== chaveFiltros) {
+    vlog(FILE, "SenhaHistoricoPage", "atualizando filtros anteriores");
     setFiltrosAnteriores(chaveFiltros);
+    vlog(FILE, "SenhaHistoricoPage", "voltando para a pagina 1");
     setPage(1);
   }
 
   // Paginacao/ordenacao/tipo mudou: liga o loading durante o render e o
   // efeito so faz a busca.
+  vlog(FILE, "SenhaHistoricoPage", "montando chave de paginacao/ordenacao/tipo");
   const chaveLista = `${page}|${limit}|${tipo}|${sortKey}|${sortDir}`;
+  vlog(FILE, "SenhaHistoricoPage", "inicializando estado da chave anterior");
   const [chaveAnterior, setChaveAnterior] = useState(chaveLista);
+  vlog(FILE, "SenhaHistoricoPage", "verificando se a chave de paginacao/ordenacao mudou");
   if (chaveAnterior !== chaveLista) {
+    vlog(FILE, "SenhaHistoricoPage", "atualizando chave anterior");
     setChaveAnterior(chaveLista);
+    vlog(FILE, "SenhaHistoricoPage", "ativando loading");
     setLoading(true);
+    vlog(FILE, "SenhaHistoricoPage", "limpando erro");
     setError(null);
   }
 
+  vlog(FILE, "SenhaHistoricoPage", "registrando efeito de busca por paginacao/ordenacao/tipo");
   useEffect(() => {
+    vlog(FILE, "SenhaHistoricoPage.useEffect", "executando busca do historico");
     executarBusca(buscar(), aplicar, aplicarErro);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, tipo, sortKey, sortDir]);
 
+  vlog(FILE, "SenhaHistoricoPage", "definindo handler handleSort");
   const handleSort = (key: SortKey) => {
+    vlog(FILE, "SenhaHistoricoPage.handleSort", "verificando se coluna ja e a ordenada (key=%s)", key);
     if (sortKey === key) {
+      vlog(FILE, "SenhaHistoricoPage.handleSort", "invertendo direcao da ordenacao");
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
+      vlog(FILE, "SenhaHistoricoPage.handleSort", "definindo nova coluna de ordenacao");
       setSortKey(key);
+      vlog(FILE, "SenhaHistoricoPage.handleSort", "definindo direcao asc");
       setSortDir("asc");
     }
   };
 
   // FE-10: navegacao a partir da pagina exibida. Se o destino ja e a pagina
   // pedida (a troca anterior falhou), repete a busca em vez de nao fazer nada.
+  vlog(FILE, "SenhaHistoricoPage", "definindo funcao irParaPagina");
   const irParaPagina = (n: number) => {
+    vlog(FILE, "SenhaHistoricoPage.irParaPagina", "verificando se destino e a pagina atual (destino=%d, atual=%d)", n, page);
     if (n === page) load();
     else setPage(n);
   };
 
+  vlog(FILE, "SenhaHistoricoPage", "definindo handler handleRefresh");
   const handleRefresh = () => {
+    vlog(FILE, "SenhaHistoricoPage.handleRefresh", "recarregando historico");
     load();
   };
 
   // Busca continua client-side (aplicada sobre os itens da pagina atual);
   // a ordenacao e feita pela API para todas as colunas (ver ORDER_BY_MAP).
+  vlog(FILE, "SenhaHistoricoPage", "memorizando lista filtrada client-side");
   const filtered = useMemo(() => {
+    vlog(FILE, "SenhaHistoricoPage.filtered", "normalizando termo de busca (tamanho=%d)", search.trim().length);
     const term = search.trim().toLowerCase();
+    vlog(FILE, "SenhaHistoricoPage.filtered", "iniciando lista com itens da pagina (qtd=%d)", items.length);
     let list = items;
+    vlog(FILE, "SenhaHistoricoPage.filtered", "verificando se ha termo de busca");
     if (term) {
+      vlog(FILE, "SenhaHistoricoPage.filtered", "filtrando itens pelo termo");
       list = list.filter((it) => {
         const usuario = (it.usuario_nome || "").toLowerCase();
         const resetador = (it.resetado_por_nome || "").toLowerCase();
@@ -210,10 +273,12 @@ export default function SenhaHistoricoPage() {
           String(it.usuario_id).includes(term)
         );
       });
+      vlog(FILE, "SenhaHistoricoPage.filtered", "filtro aplicado (qtd=%d)", list.length);
     }
     return list;
   }, [items, search]);
 
+  vlog(FILE, "SenhaHistoricoPage", "montando definicao das colunas da tabela");
   const columns: Column<SenhaHistoricoItem>[] = [
     {
       key: "id",
@@ -288,11 +353,13 @@ export default function SenhaHistoricoPage() {
 
   // FE-10: contador baseado na pagina exibida; oculto se nada foi carregado
   // (a primeira carga falhou), para nao afirmar "0 registros".
+  vlog(FILE, "SenhaHistoricoPage", "calculando faixa exibida (pagina=%d, limite=%d, total=%d)", exibida.pagina, exibida.limite, total);
   const { inicio: startItem, fim: endItem } = faixaExibida(
     exibida.pagina,
     exibida.limite,
     total
   );
+  vlog(FILE, "SenhaHistoricoPage", "calculando se oculta o contador (qtd=%d)", items.length);
   const ocultarContador = erroCarga && items.length === 0;
 
   return (

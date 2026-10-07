@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, ReactNode } from "react";
+import { vlog } from "@/lib/vlog";
 
 /**
  * FE-12: a Table nao ordena nada — so exibe o indicador e chama `onSort`.
@@ -56,6 +57,7 @@ export function Table<T>({
   renderExpanded,
   erroCarga = false,
 }: TableProps<T>) {
+  vlog("Table.tsx", "Table", "verificando estado de carregamento:", loading);
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -64,7 +66,9 @@ export function Table<T>({
     );
   }
 
+  vlog("Table.tsx", "Table", "verificando se há linhas, qtd:", data.length);
   if (data.length === 0) {
+    vlog("Table.tsx", "Table", "verificando se a carga falhou (oculta estado vazio):", erroCarga);
     if (erroCarga) return null;
     return (
       <div className="py-12 text-center text-sm text-slate-500">
@@ -159,6 +163,7 @@ export function Badge({
   children: ReactNode;
   color?: "gray" | "blue" | "green" | "red" | "yellow" | "purple";
 }) {
+  vlog("Table.tsx", "Badge", "montando mapa de cores, cor:", color);
   const colorMap: Record<string, string> = {
     gray: "bg-slate-100 text-slate-700",
     blue: "bg-blue-100 text-blue-700",

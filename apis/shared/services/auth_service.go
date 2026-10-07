@@ -16,6 +16,7 @@ import (
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Erros semânticos para a camada de auth.
@@ -65,12 +66,15 @@ func (s *AuthService) NeedsRehash(cfg *config.Config, hash string) bool {
 // O login chama quando o e-mail não existe, para que o tempo de resposta não
 // revele quais contas existem.
 func (s *AuthService) VerifyDummyPassword(cfg *config.Config, password string) {
+	vlog.Printf("auth_service.go", "AuthService.VerifyDummyPassword", "gerando hash Argon2id descartável para equalizar tempo de resposta")
 	_, _ = GerarHashSenha(cfg.HashSenha, password)
 }
 
 // GenerateJWT gera um token JWT assinado com HS256.
 func (s *AuthService) GenerateJWT(cfg *config.Config, userID int64, role string) (string, error) {
+	vlog.Printf("auth_service.go", "AuthService.GenerateJWT", "obtendo horário atual para os claims (usuario_id=%d, papel=%s)", userID, role)
 	now := time.Now()
+	vlog.Printf("auth_service.go", "AuthService.GenerateJWT", "montando claims JWT com TTL=%s", cfg.JWTTTL)
 	claims := AuthClaims{
 		UserID: userID,
 		Role:   role,
@@ -82,17 +86,22 @@ func (s *AuthService) GenerateJWT(cfg *config.Config, userID int64, role string)
 			Subject:   fmt.Sprintf("%d", userID),
 		},
 	}
+	vlog.Printf("auth_service.go", "AuthService.GenerateJWT", "criando token HS256 com os claims")
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(cfg.JWTSecret))
 }
 
 // ValidateJWT valida um token e retorna os claims como *AuthClaims.
 func (s *AuthService) ValidateJWT(tokenString, secret string) (*AuthClaims, error) {
+	vlog.Printf("auth_service.go", "AuthService.ValidateJWT", "alocando claims vazios para o parse")
 	claims := &AuthClaims{}
+	vlog.Printf("auth_service.go", "AuthService.ValidateJWT", "criando parser JWT restrito a HS256")
 	parser := jwt.NewParser(jwt.WithValidMethods([]string{"HS256"}))
+	vlog.Printf("auth_service.go", "AuthService.ValidateJWT", "fazendo parse e verificação de assinatura do token (token não logado)")
 	tok, err := parser.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
 		return []byte(secret), nil
 	})
+	vlog.Printf("auth_service.go", "AuthService.ValidateJWT", "verificando se houve erro de parse ou token inválido")
 	if err != nil || !tok.Valid {
 		return nil, ErrInvalidToken
 	}
@@ -114,7 +123,9 @@ func (s *AuthService) RehashPassword(ctx context.Context, db *sql.DB, userID int
 
 // HashPassword gera o hash Argon2id (com pepper) da senha. Ver GerarHashSenha.
 func (s *AuthService) HashPassword(cfg *config.Config, password string) (string, error) {
+	vlog.Printf("auth_service.go", "AuthService.HashPassword", "gerando hash Argon2id da senha (senha e hash não logados)")
 	hash, err := GerarHashSenha(cfg.HashSenha, password)
+	vlog.Printf("auth_service.go", "AuthService.HashPassword", "verificando se err != nil após GerarHashSenha")
 	if err != nil {
 		return "", fmt.Errorf("auth: hash falhou: %w", err)
 	}

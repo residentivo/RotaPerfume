@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/rotaperfumes/shared/cnpj"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // ErrCNPJInvalido indica CNPJ fora do formato (≠ 14 caracteres, caracteres
@@ -25,7 +26,9 @@ const cnpjMascara = "./-"
 // formato (14 caracteres, 12 em [0-9A-Z] + 2 DVs numéricos). ok=false se o
 // valor tiver caractere inválido ou formato errado. Não valida o DV.
 func normalizarCNPJ(raw string) (normalizado string, ok bool) {
+	vlog.Printf("cnpj.go", "normalizarCNPJ", "chamando cnpj.Normalizar e atribuindo a normalizado, ok")
 	normalizado, ok = cnpj.Normalizar(raw)
+	vlog.Printf("cnpj.go", "normalizarCNPJ", "verificando condição !ok || !cnpj.FormatoValido(normalizado)")
 	if !ok || !cnpj.FormatoValido(normalizado) {
 		return "", false
 	}
@@ -44,10 +47,13 @@ func cnpjDigitosValidos(normalizado string) bool {
 // q não tem máscara ou tem caracteres que não pertencem a um CNPJ — nesse caso
 // a busca por cnpj usa o próprio q (a collation do banco ignora caixa).
 func termoBuscaCNPJ(q string) string {
+	vlog.Printf("cnpj.go", "termoBuscaCNPJ", "verificando condição !strings.ContainsAny(q, cnpjMascara)")
 	if !strings.ContainsAny(q, cnpjMascara) {
 		return ""
 	}
+	vlog.Printf("cnpj.go", "termoBuscaCNPJ", "chamando cnpj.Normalizar e declarando normalizado, ok")
 	normalizado, ok := cnpj.Normalizar(q)
+	vlog.Printf("cnpj.go", "termoBuscaCNPJ", "verificando condição !ok")
 	if !ok {
 		return ""
 	}

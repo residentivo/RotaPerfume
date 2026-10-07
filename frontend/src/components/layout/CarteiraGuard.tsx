@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Alert } from "@/components/ui/Alert";
 import { useVendedorDesligado } from "@/lib/session";
 import { AVISO_VENDEDOR_DESLIGADO } from "@/lib/vendedorDesligado";
+import { vlog } from "@/lib/vlog";
 
 /** Aviso padrao de carteira bloqueada, com link para o Dashboard. */
 export function VendedorDesligadoAviso() {
@@ -31,8 +32,10 @@ export function VendedorDesligadoAviso() {
  * automatico das requisicoes.
  */
 export function CarteiraGuard({ title, children }: { title: string; children: ReactNode }) {
+  vlog("CarteiraGuard.tsx", "CarteiraGuard", "lendo bloqueio de vendedor desligado");
   const bloqueado = useVendedorDesligado();
 
+  vlog("CarteiraGuard.tsx", "CarteiraGuard", "verificando se a carteira está bloqueada:", bloqueado);
   if (bloqueado) {
     return (
       <div>

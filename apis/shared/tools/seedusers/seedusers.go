@@ -35,6 +35,7 @@ import (
 	"github.com/rotaperfumes/shared/cmdutil"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Tag prefixa os logs e as mensagens de erro do comando.
@@ -76,31 +77,44 @@ type Deps struct {
 // NoExec/DryRun) executa as cópias, apagando-as ao final. Erros fatais são
 // devolvidos sem o prefixo Tag.
 func Run(cfg *config.Config, opts Options, deps Deps) error {
+	vlog.Printf("seedusers.go", "Run", "declarando out com deps.Out")
 	out := deps.Out
+	vlog.Printf("seedusers.go", "Run", "declarando vaiExecutar com expressão !opts.NoExec && !opts.DryRun")
 	vaiExecutar := !opts.NoExec && !opts.DryRun
+	vlog.Printf("seedusers.go", "Run", "verificando se vaiExecutar")
 	if vaiExecutar {
 		// Falha cedo, antes do hash: sem credenciais explícitas o mysql
 		// rodaria com um usuário/senha padrão (SEC-10).
+		vlog.Printf("seedusers.go", "Run", "chamando exigirCredenciaisDB() e verificando se err != nil")
 		if err := exigirCredenciaisDB(); err != nil {
 			return err
 		}
 	}
 
+	vlog.Printf("seedusers.go", "Run", "declarando adminPwd, err com resultado de ResolveSeedPassword()")
 	adminPwd, err := ResolveSeedPassword("SEED_ADMIN_PASSWORD")
+	vlog.Printf("seedusers.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("seedusers.go", "Run", "declarando userPwd, err com resultado de ResolveSeedPassword()")
 	userPwd, err := ResolveSeedPassword("SEED_USER_PASSWORD")
+	vlog.Printf("seedusers.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
 
+	vlog.Printf("seedusers.go", "Run", "declarando auth com resultado de services.NewAuthService()")
 	auth := services.NewAuthService()
+	vlog.Printf("seedusers.go", "Run", "declarando adminHash, err com resultado de auth.HashPassword()")
 	adminHash, err := auth.HashPassword(cfg, adminPwd)
+	vlog.Printf("seedusers.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("hash admin falhou: %w", err)
 	}
+	vlog.Printf("seedusers.go", "Run", "declarando userHash, err com resultado de auth.HashPassword()")
 	userHash, err := auth.HashPassword(cfg, userPwd)
+	vlog.Printf("seedusers.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("hash user falhou: %w", err)
 	}
@@ -108,8 +122,10 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 	log.Printf("seedusers: argon2id m=%d t=%d p=%d, admin_hash=%s..., user_hash=%s...",
 		cfg.HashSenha.MemoriaKiB, cfg.HashSenha.Iteracoes, cfg.HashSenha.Paralelismo, ShortHash(adminHash), ShortHash(userHash))
 
+	vlog.Printf("seedusers.go", "Run", "chamando imprimirCredenciais()")
 	imprimirCredenciais(out, opts.ShowPassword, adminPwd, userPwd)
 
+	vlog.Printf("seedusers.go", "Run", "verificando se opts.DryRun")
 	if opts.DryRun {
 		fmt.Fprintln(out, "=== DRY-RUN ===")
 		fmt.Fprintln(out, "ADMIN:", adminHash)
@@ -118,20 +134,29 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 	}
 
 	// Localiza a raiz do projeto (pasta que contém apis/shared/go.mod).
+	vlog.Printf("seedusers.go", "Run", "declarando projectRoot, err com resultado de deps.ProjectRoot()")
 	projectRoot, err := deps.ProjectRoot()
+	vlog.Printf("seedusers.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return err
 	}
 
+	vlog.Printf("seedusers.go", "Run", "declarando repl com literal map[string]string")
 	repl := map[string]string{PlaceholderAdmin: adminHash, PlaceholderUser: userHash}
+	vlog.Printf("seedusers.go", "Run", "declarando seedDir com resultado de filepath.Join()")
 	seedDir := filepath.Join(projectRoot, "tmp", "seed")
+	vlog.Printf("seedusers.go", "Run", "declarando variável renderizados")
 	var renderizados []string
+	vlog.Printf("seedusers.go", "Run", "verificando se vaiExecutar")
 	if vaiExecutar {
 		// As cópias contêm hashes reais: apaga sempre, inclusive em erro.
+		vlog.Printf("seedusers.go", "Run", "agendando defer de função anônima()")
 		defer func() { apagarRenderizados(renderizados) }()
 	}
 
+	vlog.Printf("seedusers.go", "Run", "declarando total com valor literal")
 	total := 0
+	vlog.Printf("seedusers.go", "Run", "iniciando loop range sobre resultado de SeedFiles()")
 	for _, src := range SeedFiles(projectRoot) {
 		dst, n, err := RenderSeedFile(src, seedDir, repl)
 		if err != nil {
@@ -141,19 +166,24 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 		log.Printf("seedusers: %s → %d substituições (%s)", filepath.Base(src), n, dst)
 		total += n
 	}
+	vlog.Printf("seedusers.go", "Run", "loop concluído; placeholders substituídos: %d", total)
 	log.Printf("seedusers: total de placeholders substituídos: %d", total)
 
+	vlog.Printf("seedusers.go", "Run", "verificando se opts.NoExec")
 	if opts.NoExec {
+		vlog.Printf("seedusers.go", "Run", "chamando avisarNoExec()")
 		avisarNoExec(out, renderizados)
 		return nil
 	}
 
+	vlog.Printf("seedusers.go", "Run", "iniciando loop range sobre renderizados")
 	for _, f := range renderizados {
 		log.Printf("seedusers: executando %s", filepath.Base(f))
 		if err := deps.RunSQL(cfg, f); err != nil {
 			return fmt.Errorf("mysql falhou em %s: %w", f, err)
 		}
 	}
+	vlog.Printf("seedusers.go", "Run", "loop concluído; itens: %d", len(renderizados))
 
 	log.Printf("seedusers: OK — %d arquivos SQL aplicados", len(renderizados))
 	return nil
@@ -169,11 +199,13 @@ func SeedFiles(projectRoot string) []string {
 
 // exigirCredenciaisDB exige DB_USUARIO e DB_SENHA presentes e não vazios.
 func exigirCredenciaisDB() error {
+	vlog.Printf("seedusers.go", "exigirCredenciaisDB", "iniciando loop range sobre literal []string")
 	for _, k := range []string{"DB_USUARIO", "DB_SENHA"} {
 		if v, ok := os.LookupEnv(k); !ok || v == "" {
 			return ErrCredenciaisDB
 		}
 	}
+	vlog.Printf("seedusers.go", "exigirCredenciaisDB", "loop concluído")
 	return nil
 }
 
@@ -181,6 +213,7 @@ func exigirCredenciaisDB() error {
 // evita vazamento acidental em logs de CI/terminal compartilhado.
 func imprimirCredenciais(out io.Writer, mostrar bool, adminPwd, userPwd string) {
 	fmt.Fprintln(out)
+	vlog.Printf("seedusers.go", "imprimirCredenciais", "verificando se mostrar")
 	if mostrar {
 		fmt.Fprintln(out, "=== CREDENCIAIS DE SEED ===")
 		fmt.Fprintf(out, "ADMIN_PASSWORD=%s\n", adminPwd)
@@ -197,19 +230,23 @@ func imprimirCredenciais(out io.Writer, mostrar bool, adminPwd, userPwd string) 
 func avisarNoExec(out io.Writer, arquivos []string) {
 	log.Printf("seedusers: --no-exec informado, SQLs NÃO foram executados")
 	fmt.Fprintln(out, "SQLs renderizados (NÃO executados):")
+	vlog.Printf("seedusers.go", "avisarNoExec", "iniciando loop range sobre arquivos")
 	for _, f := range arquivos {
 		fmt.Fprintf(out, "  %s\n", f)
 	}
+	vlog.Printf("seedusers.go", "avisarNoExec", "loop concluído; itens: %d", len(arquivos))
 	fmt.Fprintln(out, "ATENÇÃO: esses arquivos contêm hashes Argon2id das senhas de seed; apague-os após o uso.")
 }
 
 // apagarRenderizados remove as cópias renderizadas; falha só gera log.
 func apagarRenderizados(arquivos []string) {
+	vlog.Printf("seedusers.go", "apagarRenderizados", "iniciando loop range sobre arquivos")
 	for _, f := range arquivos {
 		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
 			log.Printf("seedusers: não foi possível apagar %s: %v (apague manualmente)", f, err)
 		}
 	}
+	vlog.Printf("seedusers.go", "apagarRenderizados", "loop concluído; itens: %d", len(arquivos))
 }
 
 // GenerateRandomPassword retorna uma senha aleatória de n caracteres
@@ -226,6 +263,7 @@ func GenerateRandomPassword(n int) (string, error) {
 // SEED_ADMIN_PASSWORD e SEED_USER_PASSWORD no .env (ou rode com
 // -show-password para ver as geradas; sem isso, o dev não tem como logar).
 func ResolveSeedPassword(envKey string) (string, error) {
+	vlog.Printf("seedusers.go", "ResolveSeedPassword", "chamando os.Getenv() e verificando condição do if")
 	if v := os.Getenv(envKey); v != "" {
 		return v, nil
 	}
@@ -235,6 +273,7 @@ func ResolveSeedPassword(envKey string) (string, error) {
 
 // ShortHash devolve os 20 primeiros caracteres do hash (para log).
 func ShortHash(h string) string {
+	vlog.Printf("seedusers.go", "ShortHash", "verificando se len(h) > 20")
 	if len(h) > 20 {
 		return h[:20]
 	}
@@ -292,14 +331,21 @@ func RenderSeedFile(src, dstDir string, repl map[string]string) (dst string, n i
 // (-p senha), que ficaria visível para outros processos/usuários do sistema
 // via `ps`/Task Manager e no histórico de shell.
 func RunMySQL(cfg *config.Config, file string) error {
+	vlog.Printf("seedusers.go", "RunMySQL", "declarando sqlBytes, err com resultado de os.ReadFile()")
 	sqlBytes, err := os.ReadFile(file)
+	vlog.Printf("seedusers.go", "RunMySQL", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("leitura de %s: %w", file, err)
 	}
+	vlog.Printf("seedusers.go", "RunMySQL", "declarando cmd com resultado de exec.Command()")
 	cmd := exec.Command("mysql", MySQLArgs(cfg)...)
+	vlog.Printf("seedusers.go", "RunMySQL", "atribuindo a cmd.Env o valor de resultado de append()")
 	cmd.Env = append(os.Environ(), fmt.Sprintf("MYSQL_PWD=%s", cfg.DBSenha))
+	vlog.Printf("seedusers.go", "RunMySQL", "atribuindo a cmd.Stdin o valor de resultado de strings.NewReader()")
 	cmd.Stdin = strings.NewReader(string(sqlBytes))
+	vlog.Printf("seedusers.go", "RunMySQL", "atribuindo a cmd.Stdout o valor de os.Stdout")
 	cmd.Stdout = os.Stdout
+	vlog.Printf("seedusers.go", "RunMySQL", "atribuindo a cmd.Stderr o valor de os.Stderr")
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }

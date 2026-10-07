@@ -9,63 +9,100 @@ import { Alert } from "@/components/ui/Alert";
 import { Turnstile, TurnstileHandle, isTurnstileEnabled } from "@/components/ui/Turnstile";
 import { apiLogin } from "@/lib/api";
 import { saveUser, getUser, isAdmin } from "@/lib/auth";
+import { vlog } from "@/lib/vlog";
+
+const FILE = "login/page.tsx";
 
 export default function LoginPage() {
+  vlog(FILE, "LoginPage", "obtendo router de navegacao");
   const router = useRouter();
+  vlog(FILE, "LoginPage", "inicializando estado do campo email");
   const [email, setEmail] = useState("");
+  vlog(FILE, "LoginPage", "inicializando estado do campo senha");
   const [senha, setSenha] = useState("");
+  vlog(FILE, "LoginPage", "inicializando estado de loading");
   const [loading, setLoading] = useState(false);
+  vlog(FILE, "LoginPage", "inicializando estado de erro geral");
   const [error, setError] = useState<string | null>(null);
+  vlog(FILE, "LoginPage", "inicializando estado de erros por campo");
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; senha?: string }>({});
+  vlog(FILE, "LoginPage", "inicializando estado do token do captcha");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  vlog(FILE, "LoginPage", "criando ref do widget Turnstile");
   const turnstileRef = useRef<TurnstileHandle>(null);
 
+  vlog(FILE, "LoginPage", "registrando efeito de redirecionamento se ja autenticado");
   useEffect(() => {
+    vlog(FILE, "LoginPage.useEffect", "verificando se ha usuario salvo na sessao");
     if (getUser()) {
+      vlog(FILE, "LoginPage.useEffect", "usuario ja autenticado; redirecionando (admin=%s)", isAdmin());
       router.replace(isAdmin() ? "/dashboard" : "/pagamentos");
     }
   }, [router]);
 
+  vlog(FILE, "LoginPage", "definindo funcao validate");
   const validate = (): boolean => {
+    vlog(FILE, "LoginPage.validate", "criando objeto de erros por campo");
     const errs: { email?: string; senha?: string } = {};
+    vlog(FILE, "LoginPage.validate", "definindo regex de formato de email");
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    vlog(FILE, "LoginPage.validate", "verificando se email esta vazio ou com formato invalido");
     if (!email) {
+      vlog(FILE, "LoginPage.validate", "email vazio; registrando erro de obrigatoriedade");
       errs.email = "Email e obrigatorio";
     } else if (!emailRegex.test(email)) {
+      vlog(FILE, "LoginPage.validate", "email com formato invalido; registrando erro");
       errs.email = "Email invalido";
     }
+    vlog(FILE, "LoginPage.validate", "verificando se senha esta vazia");
     if (!senha) {
+      vlog(FILE, "LoginPage.validate", "senha vazia; registrando erro de obrigatoriedade");
       errs.senha = "Senha e obrigatoria";
     }
+    vlog(FILE, "LoginPage.validate", "atualizando erros por campo (qtd=%d)", Object.keys(errs).length);
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
+  vlog(FILE, "LoginPage", "definindo handler handleSubmit");
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    vlog(FILE, "LoginPage.handleSubmit", "prevenindo submit padrao do formulario");
     e.preventDefault();
+    vlog(FILE, "LoginPage.handleSubmit", "limpando erro geral");
     setError(null);
+    vlog(FILE, "LoginPage.handleSubmit", "validando campos do formulario");
     if (!validate()) return;
 
+    vlog(FILE, "LoginPage.handleSubmit", "ativando loading");
     setLoading(true);
+    vlog(FILE, "LoginPage.handleSubmit", "iniciando chamada de login");
     try {
+      vlog(FILE, "LoginPage.handleSubmit", "chamando apiLogin (captcha presente=%s)", captchaToken !== null);
       const res = await apiLogin(email, senha, captchaToken ?? undefined);
 
       // Tokens sao definidos pelo backend via Set-Cookie HttpOnly (nao acessiveis via JS).
       // Apenas o usuario e persistido no client para controle de UI.
+      vlog(FILE, "LoginPage.handleSubmit", "salvando usuario autenticado na sessao local");
       saveUser(res.user);
 
       // Verificar se precisa trocar a senha
+      vlog(FILE, "LoginPage.handleSubmit", "verificando se precisa trocar senha (trocar_senha=%s)", !!res.trocar_senha);
       if (res.trocar_senha) {
+        vlog(FILE, "LoginPage.handleSubmit", "redirecionando para /trocar-senha");
         router.replace("/trocar-senha");
       } else {
+        vlog(FILE, "LoginPage.handleSubmit", "redirecionando conforme papel (admin=%s)", isAdmin());
         router.replace(isAdmin() ? "/dashboard" : "/pagamentos");
       }
     } catch (err) {
+      vlog(FILE, "LoginPage.handleSubmit", "falha no login; extraindo mensagem do erro");
       const rawMessage = err instanceof Error ? err.message : "";
+      vlog(FILE, "LoginPage.handleSubmit", "verificando se a falha foi de captcha");
       const isCaptchaFailure = /captcha|turnstile/i.test(rawMessage);
       // Falha de captcha: mensagem genérica, sem expor detalhes técnicos do
       // motivo. Demais falhas (ex: credenciais inválidas) mantêm a mensagem
       // retornada pela API.
+      vlog(FILE, "LoginPage.handleSubmit", "exibindo mensagem de erro (falha de captcha=%s)", isCaptchaFailure);
       setError(
         isCaptchaFailure
           ? "Nao foi possivel validar o captcha. Tente novamente."
@@ -73,9 +110,12 @@ export default function LoginPage() {
       );
       // Token do Turnstile e de uso unico: apos qualquer falha, reseta o
       // widget para forcar um novo desafio antes de reenviar.
+      vlog(FILE, "LoginPage.handleSubmit", "descartando token do captcha usado");
       setCaptchaToken(null);
+      vlog(FILE, "LoginPage.handleSubmit", "resetando widget Turnstile");
       turnstileRef.current?.reset();
     } finally {
+      vlog(FILE, "LoginPage.handleSubmit", "desativando loading");
       setLoading(false);
     }
   };

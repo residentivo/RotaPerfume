@@ -18,6 +18,7 @@ import (
 	// sql.Open — ver pacote tz (RISCO-01). Todo binário que usa config.DSN()
 	// herda o fuso por este import.
 	_ "github.com/rotaperfumes/shared/tz"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // Config agrega todas as configurações da aplicação.
@@ -146,6 +147,7 @@ func LoadSemCredenciaisDB() (*Config, error) {
 }
 
 func load(exigirDB bool) (*Config, error) {
+	vlog.Printf("config.go", "load", "montando Config a partir das variáveis de ambiente (exigirDB=%t)", exigirDB)
 	cfg := &Config{
 		DBHost:    getEnv("DB_HOST", "localhost"),
 		DBPort:    getEnv("DB_PORT", "3306"),
@@ -156,40 +158,59 @@ func load(exigirDB bool) (*Config, error) {
 		JWTIssuer: getEnv("JWT_ISSUER", "rotaperfumes"),
 	}
 
+	vlog.Printf("config.go", "load", "verificando se JWT_SECRET está vazio")
 	if cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("config: JWT_SECRET é obrigatório")
 	}
 
+	vlog.Printf("config.go", "load", "lendo JWT_TTL (padrão 24h)")
 	ttlStr := getEnv("JWT_TTL", "24h")
+	vlog.Printf("config.go", "load", "convertendo JWT_TTL para time.Duration")
 	ttl, err := time.ParseDuration(ttlStr)
+	vlog.Printf("config.go", "load", "verificando se err != nil após ParseDuration de JWT_TTL")
 	if err != nil {
 		return nil, fmt.Errorf("config: JWT_TTL inválido (%q): %w", ttlStr, err)
 	}
+	vlog.Printf("config.go", "load", "atribuindo JWTTTL=%s", ttl)
 	cfg.JWTTTL = ttl
 
+	vlog.Printf("config.go", "load", "carregando parâmetros de hash de senha (LoadHashSenha)")
 	hs, err := LoadHashSenha()
+	vlog.Printf("config.go", "load", "verificando se err != nil após LoadHashSenha")
 	if err != nil {
 		return nil, err
 	}
+	vlog.Printf("config.go", "load", "atribuindo HashSenha à Config")
 	cfg.HashSenha = hs
 
+	vlog.Printf("config.go", "load", "calculando Verbose a partir de VERBOSE/LOG_LEVEL")
 	cfg.Verbose = getEnv("VERBOSE", "false") == "true" ||
 		getEnv("LOG_LEVEL", "info") == "debug"
 
 	// SMTP: sem defaults para user/password/from — quando ausentes, a
 	// aplicação usa um EmailService "noop" (log-only). Host/porta têm
 	// defaults compatíveis com Gmail.
+	vlog.Printf("config.go", "load", "lendo SMTP_HOST (padrão smtp.gmail.com)")
 	cfg.SMTPHost = getEnv("SMTP_HOST", "smtp.gmail.com")
+	vlog.Printf("config.go", "load", "lendo SMTP_PORT (padrão 587)")
 	cfg.SMTPPort = getEnv("SMTP_PORT", "587")
+	vlog.Printf("config.go", "load", "lendo SMTP_USER")
 	cfg.SMTPUser = os.Getenv("SMTP_USER")
+	vlog.Printf("config.go", "load", "lendo SMTP_PASSWORD")
 	cfg.SMTPPassword = os.Getenv("SMTP_PASSWORD")
+	vlog.Printf("config.go", "load", "lendo SMTP_FROM")
 	cfg.SMTPFrom = os.Getenv("SMTP_FROM")
 
+	vlog.Printf("config.go", "load", "montando lista de origens CORS permitidas")
 	cfg.CORSAllowedOrigins = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	vlog.Printf("config.go", "load", "lendo TRUST_PROXY_HEADERS")
 	cfg.TrustProxyHeaders = getEnv("TRUST_PROXY_HEADERS", "false") == "true"
+	vlog.Printf("config.go", "load", "lendo TURNSTILE_SECRET_KEY")
 	cfg.TurnstileSecretKey = os.Getenv("TURNSTILE_SECRET_KEY")
+	vlog.Printf("config.go", "load", "lendo destinatários de alertas de segurança")
 	cfg.SecurityAlertEmails = ParseSecurityAlertEmails(os.Getenv("SECURITY_ALERT_EMAILS"))
 
+	vlog.Printf("config.go", "load", "carregando durações de refresh token e verificando erro")
 	if err := carregarDuracoesRefresh(cfg); err != nil {
 		return nil, err
 	}
@@ -197,6 +218,7 @@ func load(exigirDB bool) (*Config, error) {
 	// SEC-11: checagem no fim, depois das demais validações, para que os
 	// erros já existentes (JWT_SECRET, JWT_TTL, PASSWORD_PEPPER/ARGON2_*) tenham prioridade.
 	// A mensagem nunca inclui os valores.
+	vlog.Printf("config.go", "load", "verificando presença das credenciais do banco (exigirDB=%t)", exigirDB)
 	if exigirDB && (strings.TrimSpace(cfg.DBUsuario) == "" || cfg.DBSenha == "") {
 		return nil, ErrCredenciaisDB
 	}
@@ -208,22 +230,31 @@ func load(exigirDB bool) (*Config, error) {
 // ARGON2_PARALELISMO. Exposto à parte para ferramentas que não carregam a
 // Config inteira (ex.: cmd/resetpassword). As mensagens nunca incluem o pepper.
 func LoadHashSenha() (HashSenha, error) {
+	vlog.Printf("config.go", "LoadHashSenha", "lendo PASSWORD_PEPPER do ambiente")
 	hs := HashSenha{Pepper: os.Getenv("PASSWORD_PEPPER")}
+	vlog.Printf("config.go", "LoadHashSenha", "verificando se o pepper tem o tamanho mínimo de %d bytes", PepperMinBytes)
 	if len(hs.Pepper) < PepperMinBytes {
 		return HashSenha{}, ErrPepperAusente
 	}
+	vlog.Printf("config.go", "LoadHashSenha", "lendo ARGON2_MEMORIA_KIB na faixa permitida")
 	m, err := parseUintNaFaixa("ARGON2_MEMORIA_KIB", argon2MemoriaPadrao, argon2MemoriaMin, argon2MemoriaMax)
+	vlog.Printf("config.go", "LoadHashSenha", "verificando se err != nil após ARGON2_MEMORIA_KIB")
 	if err != nil {
 		return HashSenha{}, err
 	}
+	vlog.Printf("config.go", "LoadHashSenha", "lendo ARGON2_ITERACOES na faixa permitida")
 	t, err := parseUintNaFaixa("ARGON2_ITERACOES", argon2IteracoesPadrao, 1, argon2IteracoesMax)
+	vlog.Printf("config.go", "LoadHashSenha", "verificando se err != nil após ARGON2_ITERACOES")
 	if err != nil {
 		return HashSenha{}, err
 	}
+	vlog.Printf("config.go", "LoadHashSenha", "lendo ARGON2_PARALELISMO na faixa permitida")
 	p, err := parseUintNaFaixa("ARGON2_PARALELISMO", argon2ParalelismoPadrao, 1, argon2ParalelismoMax)
+	vlog.Printf("config.go", "LoadHashSenha", "verificando se err != nil após ARGON2_PARALELISMO")
 	if err != nil {
 		return HashSenha{}, err
 	}
+	vlog.Printf("config.go", "LoadHashSenha", "atribuindo parâmetros Argon2id (memoria=%d KiB, iteracoes=%d, paralelismo=%d)", m, t, p)
 	hs.MemoriaKiB, hs.Iteracoes, hs.Paralelismo = uint32(m), uint32(t), uint8(p)
 	return hs, nil
 }
@@ -231,11 +262,15 @@ func LoadHashSenha() (HashSenha, error) {
 // parseUintNaFaixa lê a env chave como inteiro (padrão se vazia) e exige
 // minimo <= valor <= maximo.
 func parseUintNaFaixa(chave string, padrao, minimo, maximo uint64) (uint64, error) {
+	vlog.Printf("config.go", "parseUintNaFaixa", "lendo env %s com trim", chave)
 	raw := strings.TrimSpace(os.Getenv(chave))
+	vlog.Printf("config.go", "parseUintNaFaixa", "verificando se %s está vazia (usa padrão)", chave)
 	if raw == "" {
 		return padrao, nil
 	}
+	vlog.Printf("config.go", "parseUintNaFaixa", "convertendo %s para inteiro sem sinal", chave)
 	v, err := strconv.ParseUint(raw, 10, 32)
+	vlog.Printf("config.go", "parseUintNaFaixa", "verificando erro de conversão ou valor fora da faixa [%d, %d]", minimo, maximo)
 	if err != nil || v < minimo || v > maximo {
 		return 0, fmt.Errorf("config: %s inválido (%q): esperado inteiro entre %d e %d", chave, raw, minimo, maximo)
 	}
@@ -245,22 +280,31 @@ func parseUintNaFaixa(chave string, padrao, minimo, maximo uint64) (uint64, erro
 // carregarDuracoesRefresh lê as durações de refresh token (SEC-12 e CHORE-02)
 // e valida as faixas; valor inválido vira erro do Load (estilo JWT_TTL).
 func carregarDuracoesRefresh(cfg *Config) error {
+	vlog.Printf("config.go", "carregarDuracoesRefresh", "lendo REFRESH_REUSE_SUPPRESS_WINDOW na faixa permitida")
 	janela, err := parseDuracaoNaFaixa("REFRESH_REUSE_SUPPRESS_WINDOW", refreshReuseWindowPadrao, refreshReuseWindowMin, refreshReuseWindowMax)
+	vlog.Printf("config.go", "carregarDuracoesRefresh", "verificando se err != nil após REFRESH_REUSE_SUPPRESS_WINDOW")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("config.go", "carregarDuracoesRefresh", "atribuindo RefreshReuseSuppressWindow=%s", janela)
 	cfg.RefreshReuseSuppressWindow = janela
 
+	vlog.Printf("config.go", "carregarDuracoesRefresh", "lendo intervalo de limpeza de refresh tokens")
 	intervalo, err := parseIntervaloLimpeza()
+	vlog.Printf("config.go", "carregarDuracoesRefresh", "verificando se err != nil após parseIntervaloLimpeza")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("config.go", "carregarDuracoesRefresh", "atribuindo RefreshCleanupInterval=%s", intervalo)
 	cfg.RefreshCleanupInterval = intervalo
 
+	vlog.Printf("config.go", "carregarDuracoesRefresh", "lendo REFRESH_TOKEN_RETENCAO na faixa permitida")
 	retencao, err := parseDuracaoNaFaixa("REFRESH_TOKEN_RETENCAO", refreshRetencaoPadrao, refreshRetencaoMin, refreshRetencaoMax)
+	vlog.Printf("config.go", "carregarDuracoesRefresh", "verificando se err != nil após REFRESH_TOKEN_RETENCAO")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("config.go", "carregarDuracoesRefresh", "atribuindo RefreshTokenRetencao=%s", retencao)
 	cfg.RefreshTokenRetencao = retencao
 	return nil
 }
@@ -269,20 +313,27 @@ func carregarDuracoesRefresh(cfg *Config) error {
 // limpeza; qualquer outro valor precisa ser >= 1m.
 func parseIntervaloLimpeza() (time.Duration, error) {
 	const chave = "REFRESH_CLEANUP_INTERVAL"
+	vlog.Printf("config.go", "parseIntervaloLimpeza", "lendo env %s com trim", chave)
 	raw := strings.TrimSpace(os.Getenv(chave))
+	vlog.Printf("config.go", "parseIntervaloLimpeza", "verificando se %s está vazia (usa padrão)", chave)
 	if raw == "" {
 		return refreshCleanupIntervalPadrao, nil
 	}
+	vlog.Printf("config.go", "parseIntervaloLimpeza", "verificando se %s é zero literal (limpeza desativada)", chave)
 	if raw == "0" {
 		return 0, nil
 	}
+	vlog.Printf("config.go", "parseIntervaloLimpeza", "convertendo %s para time.Duration", chave)
 	d, err := time.ParseDuration(raw)
+	vlog.Printf("config.go", "parseIntervaloLimpeza", "verificando se err != nil após ParseDuration")
 	if err != nil {
 		return 0, fmt.Errorf("config: %s inválido (%q): %w", chave, raw, err)
 	}
+	vlog.Printf("config.go", "parseIntervaloLimpeza", "verificando se a duração é zero (limpeza desativada)")
 	if d == 0 {
 		return 0, nil
 	}
+	vlog.Printf("config.go", "parseIntervaloLimpeza", "verificando se a duração é menor que o mínimo %s", refreshCleanupIntervalMin)
 	if d < refreshCleanupIntervalMin {
 		return 0, fmt.Errorf("config: %s inválido (%q): esperado 0 (desativa) ou >= %s", chave, raw, refreshCleanupIntervalMin)
 	}
@@ -292,14 +343,19 @@ func parseIntervaloLimpeza() (time.Duration, error) {
 // parseDuracaoNaFaixa lê a env chave como time.Duration (padrão se vazia) e
 // exige minimo <= valor <= maximo.
 func parseDuracaoNaFaixa(chave string, padrao, minimo, maximo time.Duration) (time.Duration, error) {
+	vlog.Printf("config.go", "parseDuracaoNaFaixa", "lendo env %s com trim", chave)
 	raw := strings.TrimSpace(os.Getenv(chave))
+	vlog.Printf("config.go", "parseDuracaoNaFaixa", "verificando se %s está vazia (usa padrão %s)", chave, padrao)
 	if raw == "" {
 		return padrao, nil
 	}
+	vlog.Printf("config.go", "parseDuracaoNaFaixa", "convertendo %s para time.Duration", chave)
 	d, err := time.ParseDuration(raw)
+	vlog.Printf("config.go", "parseDuracaoNaFaixa", "verificando se err != nil após ParseDuration")
 	if err != nil {
 		return 0, fmt.Errorf("config: %s inválido (%q): %w", chave, raw, err)
 	}
+	vlog.Printf("config.go", "parseDuracaoNaFaixa", "verificando se a duração está fora da faixa [%s, %s]", minimo, maximo)
 	if d < minimo || d > maximo {
 		return 0, fmt.Errorf("config: %s inválido (%q): esperado entre %s e %s", chave, raw, minimo, maximo)
 	}
@@ -310,7 +366,9 @@ func parseDuracaoNaFaixa(chave string, padrao, minimo, maximo time.Duration) (ti
 // vírgula, aplica trim e descarta entradas vazias, sem "@" ou contendo CR/LF
 // (evita injeção de cabeçalho no envio SMTP).
 func ParseSecurityAlertEmails(raw string) []string {
+	vlog.Printf("config.go", "ParseSecurityAlertEmails", "declarando lista de e-mails de alerta")
 	var emails []string
+	vlog.Printf("config.go", "ParseSecurityAlertEmails", "iterando entradas separadas por vírgula e filtrando inválidas")
 	for _, e := range strings.Split(raw, ",") {
 		e = strings.TrimSpace(e)
 		if e == "" || !strings.Contains(e, "@") || strings.ContainsAny(e, "\r\n") {
@@ -318,6 +376,7 @@ func ParseSecurityAlertEmails(raw string) []string {
 		}
 		emails = append(emails, e)
 	}
+	vlog.Printf("config.go", "ParseSecurityAlertEmails", "e-mails de alerta válidos: %d", len(emails))
 	return emails
 }
 
@@ -332,9 +391,12 @@ var defaultDevOrigins = []string{
 // dev local padrão mais o que vier em CORS_ALLOWED_ORIGINS (separadas por
 // vírgula). Comparação é sempre exata — sem prefix-match.
 func parseAllowedOrigins(raw string) []string {
+	vlog.Printf("config.go", "parseAllowedOrigins", "alocando slice de origens com capacidade inicial")
 	origins := make([]string, 0, len(defaultDevOrigins)+2)
+	vlog.Printf("config.go", "parseAllowedOrigins", "adicionando %d origens padrão de dev", len(defaultDevOrigins))
 	origins = append(origins, defaultDevOrigins...)
 
+	vlog.Printf("config.go", "parseAllowedOrigins", "iterando origens de CORS_ALLOWED_ORIGINS")
 	for _, o := range strings.Split(raw, ",") {
 		o = strings.TrimSpace(o)
 		if o == "" {
@@ -342,6 +404,7 @@ func parseAllowedOrigins(raw string) []string {
 		}
 		origins = append(origins, o)
 	}
+	vlog.Printf("config.go", "parseAllowedOrigins", "total de origens permitidas: %d", len(origins))
 	return origins
 }
 
@@ -370,6 +433,7 @@ func (c *Config) DSN() string {
 }
 
 func getEnv(key, fallback string) string {
+	vlog.Printf("config.go", "getEnv", "lendo env %s e verificando se está preenchida", key)
 	if v := os.Getenv(key); v != "" {
 		return v
 	}

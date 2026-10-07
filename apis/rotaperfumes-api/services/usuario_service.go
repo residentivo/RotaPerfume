@@ -17,6 +17,7 @@ import (
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 // tamanhoSenhaGerada é o tamanho da senha aleatória gerada para novos
@@ -66,11 +67,15 @@ func NewUsuarioService(db *sql.DB, cfg *config.Config, emailSvc sharedsvc.EmailS
 // persistência). O chamador é responsável por nunca logar/retornar a senha
 // em texto claro — apenas usá-la imediatamente para envio de email.
 func (s *UsuarioService) gerarSenhaEHash() (senha, hash string, err error) {
+	vlog.Printf("usuario_service.go", "UsuarioService.gerarSenhaEHash", "chamando sharedsvc.GerarSenhaAleatoria e atribuindo a senha, err")
 	senha, err = sharedsvc.GerarSenhaAleatoria(tamanhoSenhaGerada)
+	vlog.Printf("usuario_service.go", "UsuarioService.gerarSenhaEHash", "verificando condição err != nil")
 	if err != nil {
 		return "", "", fmt.Errorf("gerar senha aleatória: %w", err)
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.gerarSenhaEHash", "chamando s.auth.HashPassword e atribuindo a hash, err")
 	hash, err = s.auth.HashPassword(s.Cfg, senha)
+	vlog.Printf("usuario_service.go", "UsuarioService.gerarSenhaEHash", "verificando condição err != nil")
 	if err != nil {
 		return "", "", err
 	}
@@ -81,6 +86,7 @@ func (s *UsuarioService) gerarSenhaEHash() (senha, hash string, err error) {
 // de envio nunca é fatal para o fluxo que a chamou, apenas é logada e
 // refletida no retorno emailEnviado).
 func (s *UsuarioService) enviarSenhaInicial(ctx context.Context, destinatario, nomeUsuario, senha string) (emailEnviado bool) {
+	vlog.Printf("usuario_service.go", "UsuarioService.enviarSenhaInicial", "chamando s.email.EnviarSenhaInicial e declarando err e verificando condição err != nil")
 	if err := s.email.EnviarSenhaInicial(ctx, destinatario, nomeUsuario, senha); err != nil {
 		log.Printf("[usuarios] falha ao enviar email de senha inicial para %s: %v", destinatario, err)
 		return false
@@ -91,13 +97,17 @@ func (s *UsuarioService) enviarSenhaInicial(ctx context.Context, destinatario, n
 // validarVendedor confere se idVendedor (quando informado) existe na base.
 // idVendedor nil é válido (usuário sem vendedor vinculado).
 func (s *UsuarioService) validarVendedor(ctx context.Context, db *sql.DB, idVendedor *int64) error {
+	vlog.Printf("usuario_service.go", "UsuarioService.validarVendedor", "verificando condição idVendedor == nil")
 	if idVendedor == nil {
 		return nil
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.validarVendedor", "chamando s.vendedorRepo.ExistsByID e declarando existe, err")
 	existe, err := s.vendedorRepo.ExistsByID(ctx, db, *idVendedor)
+	vlog.Printf("usuario_service.go", "UsuarioService.validarVendedor", "verificando condição err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.validarVendedor", "verificando condição !existe")
 	if !existe {
 		return ErrVendedorNaoEncontrado
 	}
@@ -106,8 +116,11 @@ func (s *UsuarioService) validarVendedor(ctx context.Context, db *sql.DB, idVend
 
 // GetUsuarioByEmail busca por email. Retorna ErrUsuarioNaoEncontrado se não existir.
 func (s *UsuarioService) GetUsuarioByEmail(ctx context.Context, db *sql.DB, email string) (*models.Usuario, error) {
+	vlog.Printf("usuario_service.go", "UsuarioService.GetUsuarioByEmail", "chamando s.repo.GetByEmail e declarando u, err")
 	u, err := s.repo.GetByEmail(ctx, db, email)
+	vlog.Printf("usuario_service.go", "UsuarioService.GetUsuarioByEmail", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.GetUsuarioByEmail", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrUsuarioNaoEncontrado
 		}
@@ -118,8 +131,11 @@ func (s *UsuarioService) GetUsuarioByEmail(ctx context.Context, db *sql.DB, emai
 
 // GetUsuarioByID busca por id.
 func (s *UsuarioService) GetUsuarioByID(ctx context.Context, db *sql.DB, id int64) (*models.Usuario, error) {
+	vlog.Printf("usuario_service.go", "UsuarioService.GetUsuarioByID", "chamando s.repo.GetByID e declarando u, err")
 	u, err := s.repo.GetByID(ctx, db, id)
+	vlog.Printf("usuario_service.go", "UsuarioService.GetUsuarioByID", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.GetUsuarioByID", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrUsuarioNaoEncontrado
 		}
@@ -141,11 +157,15 @@ func (s *UsuarioService) ListUsuarios(ctx context.Context, db *sql.DB, page, lim
 // ResetSenha redefine a senha de um usuário para um valor explícito (uso
 // interno/testes). Retorna ErrUsuarioNaoEncontrado se não existir.
 func (s *UsuarioService) ResetSenha(ctx context.Context, db *sql.DB, id int64, novaSenha string) error {
+	vlog.Printf("usuario_service.go", "UsuarioService.ResetSenha", "chamando s.auth.HashPassword e declarando hash, err")
 	hash, err := s.auth.HashPassword(s.Cfg, novaSenha)
+	vlog.Printf("usuario_service.go", "UsuarioService.ResetSenha", "verificando condição err != nil")
 	if err != nil {
 		return err
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.ResetSenha", "chamando s.repo.UpdatePasswordHash e declarando err e verificando condição err != nil")
 	if err := s.repo.UpdatePasswordHash(ctx, db, id, hash, false); err != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.ResetSenha", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ErrUsuarioNaoEncontrado
 		}
@@ -167,8 +187,11 @@ func (s *UsuarioService) ResetSenha(ctx context.Context, db *sql.DB, id int64, n
 // cabe ao handler avisar o admin que o email não chegou.
 // Retorna ErrUsuarioNaoEncontrado se o usuário não existir.
 func (s *UsuarioService) AdminResetPassword(ctx context.Context, db *sql.DB, id int64, email, nome string) (emailEnviado bool, err error) {
+	vlog.Printf("usuario_service.go", "UsuarioService.AdminResetPassword", "chamando s.repo.GetByID e declarando targetUser, err")
 	targetUser, err := s.repo.GetByID(ctx, db, id)
+	vlog.Printf("usuario_service.go", "UsuarioService.AdminResetPassword", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.AdminResetPassword", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return false, ErrUsuarioNaoEncontrado
 		}
@@ -181,7 +204,9 @@ func (s *UsuarioService) AdminResetPassword(ctx context.Context, db *sql.DB, id 
 	// regenera em vez de expor erro ao admin. Não comparamos contra o
 	// histórico de últimas senhas aqui — seria custo de Argon2id
 	// desnecessário para uma senha aleatória forte.
+	vlog.Printf("usuario_service.go", "UsuarioService.AdminResetPassword", "declarando senha, hash")
 	var senha, hash string
+	vlog.Printf("usuario_service.go", "UsuarioService.AdminResetPassword", "iniciando loop enquanto tentativa <= maxTentativasSenhaGerada")
 	for tentativa := 1; tentativa <= maxTentativasSenhaGerada; tentativa++ {
 		senha, hash, err = s.gerarSenhaEHash()
 		if err != nil {
@@ -192,10 +217,13 @@ func (s *UsuarioService) AdminResetPassword(ctx context.Context, db *sql.DB, id 
 		}
 		log.Printf("[usuarios] admin reset: senha gerada colidiu com a atual, regenerando: id=%d tentativa=%d", id, tentativa)
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.AdminResetPassword", "loop concluído (enquanto tentativa <= maxTentativasSenhaGerada)")
 
 	// Senha gerada pelo sistema (não escolhida pelo admin ou pelo usuário) —
 	// força a troca no próximo login.
+	vlog.Printf("usuario_service.go", "UsuarioService.AdminResetPassword", "chamando s.repo.UpdatePasswordHash e declarando err e verificando condição err != nil")
 	if err := s.repo.UpdatePasswordHash(ctx, db, id, hash, true); err != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.AdminResetPassword", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return false, ErrUsuarioNaoEncontrado
 		}
@@ -204,6 +232,7 @@ func (s *UsuarioService) AdminResetPassword(ctx context.Context, db *sql.DB, id 
 
 	// Senha já foi persistida com sucesso — falha no envio de email não desfaz
 	// o reset, apenas é refletida em emailEnviado para o handler avisar o admin.
+	vlog.Printf("usuario_service.go", "UsuarioService.AdminResetPassword", "chamando s.enviarSenhaInicial e atribuindo a emailEnviado")
 	emailEnviado = s.enviarSenhaInicial(ctx, email, nome, senha)
 
 	log.Printf("[usuarios] admin reset: senha redefinida: id=%d email_enviado=%t", id, emailEnviado)
@@ -223,26 +252,34 @@ func (s *UsuarioService) CreateUsuario(ctx context.Context, db *sql.DB, input st
 	Role       string
 	IDVendedor *int64
 }) (usuario *models.Usuario, emailEnviado bool, err error) {
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "verificando condição input.Nome == \"\"")
 	if input.Nome == "" {
 		return nil, false, ErrNomeObrigatorio
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "verificando condição input.Email == \"\"")
 	if input.Email == "" {
 		return nil, false, ErrEmailInvalido
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "verificando condição input.Role != models.RoleAdmin && input.Role != models.RoleNormal")
 	if input.Role != models.RoleAdmin && input.Role != models.RoleNormal {
 		return nil, false, ErrRoleInvalido
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "chamando s.validarVendedor e declarando err e verificando condição err != nil")
 	if err := s.validarVendedor(ctx, db, input.IDVendedor); err != nil {
 		return nil, false, err
 	}
 
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "chamando strings.TrimSpace e declarando emailNormalizado")
 	emailNormalizado := strings.TrimSpace(strings.ToLower(input.Email))
 
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "chamando s.gerarSenhaEHash e declarando senha, hash, err")
 	senha, hash, err := s.gerarSenhaEHash()
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "verificando condição err != nil")
 	if err != nil {
 		return nil, false, err
 	}
 
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "montando &models.Usuario e declarando u")
 	u := &models.Usuario{
 		Nome:            input.Nome,
 		Email:           emailNormalizado,
@@ -252,7 +289,9 @@ func (s *UsuarioService) CreateUsuario(ctx context.Context, db *sql.DB, input st
 		Ativo:           true,
 		DeveTrocarSenha: true, // senha aleatória gerada pelo sistema — força troca no primeiro acesso
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "chamando s.repo.Create e declarando err e verificando condição err != nil")
 	if err := s.repo.Create(ctx, db, u); err != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "verificando condição errors.Is(err, repositories.ErrEmailDuplicado)")
 		if errors.Is(err, repositories.ErrEmailDuplicado) {
 			return nil, false, ErrEmailDuplicado
 		}
@@ -263,6 +302,7 @@ func (s *UsuarioService) CreateUsuario(ctx context.Context, db *sql.DB, input st
 	// a criação, apenas é refletida em emailEnviado para o handler avisar o admin.
 	// Usa os dados em memória (não os relidos): o e-mail sai mesmo que a
 	// releitura abaixo falhe (BUG-11).
+	vlog.Printf("usuario_service.go", "UsuarioService.CreateUsuario", "chamando s.enviarSenhaInicial e atribuindo a emailEnviado")
 	emailEnviado = s.enviarSenhaInicial(ctx, u.Email, u.Nome, senha)
 
 	if s.Cfg.Verbose {
@@ -277,7 +317,9 @@ func (s *UsuarioService) CreateUsuario(ctx context.Context, db *sql.DB, input st
 // devolve o objeto em memória (timestamps zerados, sem vendedor_nome) em vez
 // de responder erro para uma gravação que deu certo.
 func (s *UsuarioService) relerUsuarioCriado(ctx context.Context, db *sql.DB, u *models.Usuario) *models.Usuario {
+	vlog.Printf("usuario_service.go", "UsuarioService.relerUsuarioCriado", "chamando s.repo.GetByID e declarando gravado, err")
 	gravado, err := s.repo.GetByID(ctx, db, u.ID)
+	vlog.Printf("usuario_service.go", "UsuarioService.relerUsuarioCriado", "verificando condição err != nil")
 	if err != nil {
 		log.Printf("[usuarios] criado, mas falhou a releitura: id=%d: %v", u.ID, err)
 		return u
@@ -288,22 +330,29 @@ func (s *UsuarioService) relerUsuarioCriado(ctx context.Context, db *sql.DB, u *
 // UpdateUsuario atualiza nome, role e vendedor vinculado.
 // Retorna ErrUsuarioNaoEncontrado se não existir.
 func (s *UsuarioService) UpdateUsuario(ctx context.Context, db *sql.DB, id int64, nome, role string, idVendedor *int64) (*models.Usuario, error) {
+	vlog.Printf("usuario_service.go", "UsuarioService.UpdateUsuario", "verificando condição nome == \"\"")
 	if nome == "" {
 		return nil, ErrNomeObrigatorio
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.UpdateUsuario", "verificando condição role != models.RoleAdmin && role != models.RoleNormal")
 	if role != models.RoleAdmin && role != models.RoleNormal {
 		return nil, ErrRoleInvalido
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.UpdateUsuario", "chamando s.validarVendedor e declarando err e verificando condição err != nil")
 	if err := s.validarVendedor(ctx, db, idVendedor); err != nil {
 		return nil, err
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.UpdateUsuario", "chamando s.repo.Update e declarando err e verificando condição err != nil")
 	if err := s.repo.Update(ctx, db, id, nome, role, idVendedor); err != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.UpdateUsuario", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrUsuarioNaoEncontrado
 		}
 		return nil, err
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.UpdateUsuario", "chamando s.repo.GetByID e declarando u, err")
 	u, err := s.repo.GetByID(ctx, db, id)
+	vlog.Printf("usuario_service.go", "UsuarioService.UpdateUsuario", "verificando condição err != nil")
 	if err != nil {
 		return nil, err
 	}
@@ -317,23 +366,32 @@ func (s *UsuarioService) UpdateUsuario(ctx context.Context, db *sql.DB, id int64
 func (s *UsuarioService) ToggleAtivoUsuario(ctx context.Context, db *sql.DB, id int64, ativo *bool) (*models.Usuario, error) {
 	// Se ativo é nil, inverte o status atual (toggle).
 	// Busca usuário para inverter.
+	vlog.Printf("usuario_service.go", "UsuarioService.ToggleAtivoUsuario", "chamando s.repo.GetByID e declarando u, err")
 	u, err := s.repo.GetByID(ctx, db, id)
+	vlog.Printf("usuario_service.go", "UsuarioService.ToggleAtivoUsuario", "verificando condição err != nil")
 	if err != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.ToggleAtivoUsuario", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrUsuarioNaoEncontrado
 		}
 		return nil, err
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.ToggleAtivoUsuario", "declarando newAtivo com !u.Ativo")
 	newAtivo := !u.Ativo
+	vlog.Printf("usuario_service.go", "UsuarioService.ToggleAtivoUsuario", "verificando condição ativo != nil")
 	if ativo != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.ToggleAtivoUsuario", "atribuindo *ativo a newAtivo")
 		newAtivo = *ativo
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.ToggleAtivoUsuario", "chamando s.repo.SetAtivo e declarando err e verificando condição err != nil")
 	if err := s.repo.SetAtivo(ctx, db, id, newAtivo); err != nil {
+		vlog.Printf("usuario_service.go", "UsuarioService.ToggleAtivoUsuario", "verificando condição errors.Is(err, repositories.ErrNotFound)")
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrUsuarioNaoEncontrado
 		}
 		return nil, err
 	}
+	vlog.Printf("usuario_service.go", "UsuarioService.ToggleAtivoUsuario", "atribuindo newAtivo a u.Ativo")
 	u.Ativo = newAtivo
 	if s.Cfg.Verbose {
 		log.Printf("[usuarios] ativo toggle: id=%d ativo=%t", id, newAtivo)
@@ -343,15 +401,23 @@ func (s *UsuarioService) ToggleAtivoUsuario(ctx context.Context, db *sql.DB, id 
 
 // ParsePagination lê ?page= e ?limit= da query string, com defaults e validação.
 func ParsePagination(pageStr, limitStr string) (page, limit int) {
+	vlog.Printf("usuario_service.go", "ParsePagination", "chamando strconv.Atoi e atribuindo a page, _")
 	page, _ = strconv.Atoi(pageStr)
+	vlog.Printf("usuario_service.go", "ParsePagination", "verificando condição page < 1")
 	if page < 1 {
+		vlog.Printf("usuario_service.go", "ParsePagination", "atribuindo 1 a page")
 		page = 1
 	}
+	vlog.Printf("usuario_service.go", "ParsePagination", "chamando strconv.Atoi e atribuindo a limit, _")
 	limit, _ = strconv.Atoi(limitStr)
+	vlog.Printf("usuario_service.go", "ParsePagination", "verificando condição limit < 1")
 	if limit < 1 {
+		vlog.Printf("usuario_service.go", "ParsePagination", "atribuindo 20 a limit")
 		limit = 20
 	}
+	vlog.Printf("usuario_service.go", "ParsePagination", "verificando condição limit > 100")
 	if limit > 100 {
+		vlog.Printf("usuario_service.go", "ParsePagination", "atribuindo 100 a limit")
 		limit = 100
 	}
 	return
