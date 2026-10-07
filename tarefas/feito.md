@@ -3,6 +3,72 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 15 de 2026-10-07: 1 card concluído (de 1)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "faça o processo de reset de senha para todos os usuários ativos para que atualizemos as senhas atuais. A senha enviada já deve ser criada no banco no método novo com argon2id".
+>
+> **Fluxo:** 🟣 SecBrain (salvaguardas) → 🟡 BackBrain → 🔴 TestBrain → simulação → **usuário** confirmou "Executar para todos" → execução real → 🔵 SubBrain.
+
+## OPS-01: reset em massa das senhas dos usuários ativos (Argon2id + e-mail) — 2026-10-07
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído e executado no banco local em 2026-10-07.
+
+**Camadas:** Segurança, Backend, Testes
+
+**Decisões (🟣 SecBrain):** mesmo fluxo do `POST /api/admin/reset-password` por usuário (senha aleatória de 16 caracteres, Argon2id com pepper, `deve_trocar_senha = 1`, corte de sessão, e-mail, `senha_historico` com `tipo_reset = 'admin'`, `ip_origem = 127.0.0.1` e `user_agent = 'cmd/resetsenhas (OPS-01)'`, revogação dos refresh tokens). Simulação por padrão; grava só com `-executar`. Recusa rodar sem SMTP (a senha nunca é logada). Para no primeiro e-mail que falhar.
+
+**Entregue:**
+- `apis/shared/repositories/usuario_repository.go`: `ListAtivos`.
+- `apis/rotaperfumes-api/services/reset_senhas_ativos_service.go` (novo): `ResetSenhasAtivosService.Executar`, `ErrEmailResetFalhou`.
+- `apis/rotaperfumes-api/cmd/resetsenhas/main.go` (novo) e alvos `make reset-senhas-simular` / `make reset-senhas-ativos`.
+
+**Testes (🔴 TestBrain):** `tests/services/ops01_reset_senhas_ativos_test.go` (simulação sem SQL de escrita nem e-mail; a senha enviada valida contra o hash Argon2id gravado e a antiga deixa de valer; senhas diferentes por usuário; para no 1º e-mail com falha; erros de listagem/gravação; histórico e revogação só logam) e `TestListAtivos` (shared). `go vet` e `go test ./...` verdes nos dois módulos.
+
+**Execução (banco local `localhost/rotaperfumes`):** 43 usuários ativos resetados, 43 e-mails aceitos pelo SMTP (Gmail), 0 falhas. Conferido no MySQL: os 43 ativos com `$argon2id$v=19$m=65536,t=3,p=2` e `deve_trocar_senha = 1`; 43 linhas em `senha_historico`; 0 refresh tokens válidos de usuários ativos. O único inativo (id 2) ficou como estava (bcrypt).
+
+**Observação:** os destinos são `@rotaperfumes.com.br` e `qa.semvendedor@rotaperfumes.test`. O SMTP aceitar a mensagem não garante a entrega: se a caixa não existir, o Gmail devolve depois. Quem não receber pode ser redefinido pelo admin na tela de usuários ou com `resetpassword -email=... -password-prompt`.
+
+## Lote 14 de 2026-10-07: 1 card concluído (de 1)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "refatorar o sistema de criptografia para argon2 e adicionar um valor extra na senha que será configurado no .env".
+>
+> **Fluxo:** 🟣 SecBrain (spec) → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain. 🌸 DataBrain dispensado: `password_hash VARCHAR(255)` comporta o hash PHC (~100 caracteres); só o COMMENT do DDL mudou. 🟢 FrontBrain dispensado: a API não mudou.
+
+## SEC-13: hash de senha bcrypt → Argon2id com pepper (`PASSWORD_PEPPER`) — 2026-10-07
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-07.
+
+**Camadas:** Segurança, Backend, Testes, Documentação
+
+**Decisões (🟣 SecBrain):**
+- Argon2id (`golang.org/x/crypto/argon2`), formato PHC `$argon2id$v=19$m=..,t=..,p=..$salt$hash`, salt 16 bytes, chave 32 bytes. Parâmetros `ARGON2_MEMORIA_KIB` (padrão 65536, faixa 19456–1048576), `ARGON2_ITERACOES` (3, faixa 1–10), `ARGON2_PARALELISMO` (2, faixa 1–16). Cada hash guarda os próprios parâmetros, então mudar `ARGON2_*` não quebra hashes antigos.
+- `PASSWORD_PEPPER` obrigatório (≥ 32 bytes, sem default, nunca logado). Entra como chave de HMAC-SHA256 sobre a senha antes do Argon2id: equivale a acrescentar o pepper a toda senha, sem ambiguidade de concatenação. Trocar o pepper invalida todas as senhas Argon2id.
+- Hashes bcrypt existentes continuam aceitos (sem pepper) e migram para Argon2id no próximo login válido (`RehashPassword`: `UPDATE ... WHERE id = ? AND password_hash = <antigo>`, sem mexer em `deve_trocar_senha` nem no corte de sessão; falha só gera log).
+- Login de e-mail inexistente roda um Argon2id fictício, para o tempo de resposta não revelar quais contas existem.
+- O limite de 72 bytes da política de senha foi mantido (não muda a regra nem a mensagem do frontend).
+
+**Entregue:**
+- `apis/shared/config/config.go`: `HashSenha` (`Pepper`, `MemoriaKiB`, `Iteracoes`, `Paralelismo`), `LoadHashSenha()`, `ErrPepperAusente`; sai `BCryptCost`/`BCRYPT_COST`.
+- `apis/shared/services/password_hash.go` (novo): `GerarHashSenha`, `VerificarSenha`, `PrecisaRehash`.
+- `apis/shared/services/auth_service.go`: `VerifyPassword(cfg, hash, senha)`, `NeedsRehash`, `RehashPassword`, `VerifyDummyPassword`; `HashPassword` usa Argon2id.
+- `apis/shared/repositories/usuario_repository.go`: `RehashPassword`.
+- `apis/rotaperfumes-api/handlers/auth_handler.go`: re-hash no login, verificação fictícia para e-mail inexistente; `reset-password` e `usuario_service` passam o `cfg`.
+- `tools/resetpassword` e `cmd/resetpassword`: Argon2id via `Options.HashSenha` (`-list` dispensa o pepper); `-list` mostra `OK` (argon2id) / `BCRYPT_LEGADO` / `PLACEHOLDER`. `tools/seedusers` usa os parâmetros novos no log.
+- `go.mod`/`go.sum` da API: `golang.org/x/sys` (dependência do `argon2`).
+- `.env`, `.env.example`, `deploy/api.env.example`: `PASSWORD_PEPPER` + `ARGON2_*` no lugar de `BCRYPT_COST` (o `.env` local recebeu um pepper aleatório de 64 caracteres).
+
+**Testes (🔴 TestBrain):** novos `shared/tests/services/password_hash_test.go` (formato PHC, pepper, parâmetros, bcrypt legado, 11 hashes malformados), `rotaperfumes-api/tests/handlers/sec13_argon2_rehash_test.go` (re-hash de bcrypt e de parâmetros antigos, falha do UPDATE, senha errada, hash atual sem UPDATE, pepper diferente), `TestRehashPassword` (repositório), `TestAuthService_RehashPassword`/`VerifyDummyPassword`; `config_test`/SEC-11/SEC-09 com `PASSWORD_PEPPER` e faixas `ARGON2_*`; `resetpassword`/`seedusers` conferem Argon2id; a guarda do SEC-10 também barra hash argon2 real em `sql/`. `go vet` e `go test ./...` verdes nos dois módulos; `shared` 92.8%. Linha não coberta: erro de `crypto/rand` em `GerarHashSenha` (inalcançável, ver INFO-01).
+
+**Verificação no banco local:** `resetpassword -list` → 44 usuários `BCRYPT_LEGADO`, que migram no próximo login.
+
+**Documentação (🔵 SubBrain):** `docs/manual-base-de-dados.md` (colunas `password_hash`/`senha_hash_anterior`, fluxo do seed), `docs/deploy-servidor.md` (`PASSWORD_PEPPER` no Secret file, mesmo pepper do dump), comentários de `sql/01`, `02` e `03`, `Makefile`.
+
+**Pendências para o usuário:**
+- **Produção:** o Secret file `rotaperfumes-api-env` do Jenkins precisa de `PASSWORD_PEPPER`, ou a API não sobe. Use o mesmo pepper do `.env` local se for importar um dump que já tenha hashes argon2id.
+- O `.env` local tem duas linhas com nome inválido (`rotaperfumes-api-env=`, `rotaperfumes-admin=`). Por causa delas o `godotenv` rejeita o arquivo inteiro e os comandos `go run` (`resetpassword`, `seedusers`) não leem o `.env`; os alvos do `make` funcionam porque usam `-include .env`. Problema anterior a este card.
+
 
 ## Lote 11 de 2026-09-26: 4 cards concluídos (de 4)
 

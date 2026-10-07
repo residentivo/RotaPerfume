@@ -8,11 +8,11 @@
 --   role = 'normal'
 --   email = <nome>.<sobrenome>@rotaperfumes.com.br (minúsculas, sem acento;
 --           homônimos recebem o sufixo da UF, ex.: henrique.oliveira.pr@)
---   password_hash = placeholder (não é um bcrypt válido; ninguém loga com ele)
+--   password_hash = placeholder (não é um hash válido; ninguém loga com ele)
 --
 -- ATENÇÃO: a senha real NÃO é definida neste arquivo. O `make db-seed`, logo
 -- depois deste script, roda `go run ./cmd/resetpassword -all-users`
--- (apis/shared), que troca todos os placeholders pelo bcrypt de:
+-- (apis/shared), que troca todos os placeholders pelo Argon2id (com PASSWORD_PEPPER) de:
 --   1) SEED_USER_PASSWORD do .env, se estiver definida; ou
 --   2) uma senha aleatória de 16 caracteres, impressa no console
 --      (USER_PASSWORD=...), a mesma para todos os usuários com placeholder.

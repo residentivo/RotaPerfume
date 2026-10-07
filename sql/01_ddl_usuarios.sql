@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS `usuarios` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID interno do usuário',
     `nome` VARCHAR(120) NOT NULL COMMENT 'Nome completo do usuário',
     `email` VARCHAR(120) NOT NULL COMMENT 'E-mail de login (único)',
-    `password_hash` VARCHAR(255) NOT NULL COMMENT 'Hash bcrypt (cost 12) da senha',
+    `password_hash` VARCHAR(255) NOT NULL COMMENT 'Hash Argon2id (PHC, com pepper) da senha; bcrypt legado migra no login',
     `role` ENUM('admin','normal') NOT NULL DEFAULT 'normal' COMMENT 'Papel do usuário no sistema',
     `id_vendedor` BIGINT NULL COMMENT 'FK opcional para vendedor vinculado',
     `ativo` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '0 = inativo, 1 = ativo',

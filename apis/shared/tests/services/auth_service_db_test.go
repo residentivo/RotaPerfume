@@ -132,19 +132,42 @@ func TestAuthService_ResetPassword(t *testing.T) {
 
 func TestAuthService_HashPassword_Erros(t *testing.T) {
 	casos := []struct {
-		nome  string
-		cost  int
-		senha string
+		nome string
+		hs   config.HashSenha
 	}{
-		{"cost acima do máximo do bcrypt", 99, "senha"},
-		{"senha acima de 72 bytes", 4, string(make([]byte, 73))},
+		{"sem pepper", config.HashSenha{MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}},
+		{"memória zerada", config.HashSenha{Pepper: "p", Iteracoes: 1, Paralelismo: 1}},
+		{"iterações zeradas", config.HashSenha{Pepper: "p", MemoriaKiB: 64, Paralelismo: 1}},
+		{"paralelismo zerado", config.HashSenha{Pepper: "p", MemoriaKiB: 64, Iteracoes: 1}},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			hash, err := services.NewAuthService().HashPassword(&config.Config{BCryptCost: c.cost}, c.senha)
+			hash, err := services.NewAuthService().HashPassword(&config.Config{HashSenha: c.hs}, "senha")
 			require.Error(t, err)
 			assert.Empty(t, hash)
 			assert.Contains(t, err.Error(), "auth: hash falhou")
 		})
 	}
+}
+
+// SEC-13: RehashPassword delega ao repositório (UPDATE condicionado ao hash antigo).
+func TestAuthService_RehashPassword(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \? WHERE id = \? AND password_hash = \?`).
+		WithArgs("$argon2id$novo", int64(3), "$2a$12$antigo").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = services.NewAuthService().RehashPassword(context.Background(), db, 3, "$2a$12$antigo", "$argon2id$novo")
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// SEC-13: a verificação fictícia (login de e-mail inexistente) não pode
+// entrar em pânico, nem mesmo sem pepper.
+func TestAuthService_VerifyDummyPassword(t *testing.T) {
+	auth := services.NewAuthService()
+	assert.NotPanics(t, func() { auth.VerifyDummyPassword(newTestConfig(), "qualquer") })
+	assert.NotPanics(t, func() { auth.VerifyDummyPassword(&config.Config{}, "qualquer") })
 }

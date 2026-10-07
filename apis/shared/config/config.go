@@ -34,8 +34,8 @@ type Config struct {
 	JWTTTL    time.Duration
 	JWTIssuer string
 
-	// Bcrypt
-	BCryptCost int
+	// HashSenha: Argon2id + pepper das senhas (SEC-13).
+	HashSenha HashSenha
 
 	// Logging / Debug
 	Verbose bool
@@ -85,6 +85,34 @@ type Config struct {
 	// REFRESH_TOKEN_RETENCAO. Padrão 720h (30 dias), faixa [24h, 8760h].
 	RefreshTokenRetencao time.Duration
 }
+
+// HashSenha são os parâmetros do hash de senha (SEC-13): Argon2id sobre o
+// HMAC-SHA256(Pepper, senha). Pepper vem de PASSWORD_PEPPER e nunca é logado;
+// trocá-lo invalida todas as senhas Argon2id já gravadas.
+type HashSenha struct {
+	Pepper      string
+	MemoriaKiB  uint32
+	Iteracoes   uint32
+	Paralelismo uint8
+}
+
+// PepperMinBytes é o tamanho mínimo aceito para PASSWORD_PEPPER.
+const PepperMinBytes = 32
+
+// ErrPepperAusente: PASSWORD_PEPPER ausente ou curto demais (SEC-13).
+var ErrPepperAusente = fmt.Errorf("config: PASSWORD_PEPPER é obrigatório (mínimo de %d bytes)", PepperMinBytes)
+
+// Faixas e padrões do Argon2id (SEC-13). O mínimo de memória segue a
+// recomendação da OWASP (19 MiB).
+const (
+	argon2MemoriaPadrao     = 64 * 1024
+	argon2MemoriaMin        = 19 * 1024
+	argon2MemoriaMax        = 1024 * 1024
+	argon2IteracoesPadrao   = 3
+	argon2IteracoesMax      = 10
+	argon2ParalelismoPadrao = 2
+	argon2ParalelismoMax    = 16
+)
 
 // ErrCredenciaisDB: DB_USUARIO/DB_SENHA ausentes ou vazios (SEC-11).
 var ErrCredenciaisDB = errors.New("config: defina DB_USUARIO/DB_SENHA no .env")
@@ -139,12 +167,11 @@ func load(exigirDB bool) (*Config, error) {
 	}
 	cfg.JWTTTL = ttl
 
-	costStr := getEnv("BCRYPT_COST", "12")
-	cost, err := strconv.Atoi(costStr)
-	if err != nil || cost < 4 || cost > 31 {
-		return nil, fmt.Errorf("config: BCRYPT_COST inválido (%q): esperado inteiro entre 4 e 31", costStr)
+	hs, err := LoadHashSenha()
+	if err != nil {
+		return nil, err
 	}
-	cfg.BCryptCost = cost
+	cfg.HashSenha = hs
 
 	cfg.Verbose = getEnv("VERBOSE", "false") == "true" ||
 		getEnv("LOG_LEVEL", "info") == "debug"
@@ -168,13 +195,51 @@ func load(exigirDB bool) (*Config, error) {
 	}
 
 	// SEC-11: checagem no fim, depois das demais validações, para que os
-	// erros já existentes (JWT_SECRET, JWT_TTL, BCRYPT_COST) tenham prioridade.
+	// erros já existentes (JWT_SECRET, JWT_TTL, PASSWORD_PEPPER/ARGON2_*) tenham prioridade.
 	// A mensagem nunca inclui os valores.
 	if exigirDB && (strings.TrimSpace(cfg.DBUsuario) == "" || cfg.DBSenha == "") {
 		return nil, ErrCredenciaisDB
 	}
 
 	return cfg, nil
+}
+
+// LoadHashSenha lê PASSWORD_PEPPER e ARGON2_MEMORIA_KIB / ARGON2_ITERACOES /
+// ARGON2_PARALELISMO. Exposto à parte para ferramentas que não carregam a
+// Config inteira (ex.: cmd/resetpassword). As mensagens nunca incluem o pepper.
+func LoadHashSenha() (HashSenha, error) {
+	hs := HashSenha{Pepper: os.Getenv("PASSWORD_PEPPER")}
+	if len(hs.Pepper) < PepperMinBytes {
+		return HashSenha{}, ErrPepperAusente
+	}
+	m, err := parseUintNaFaixa("ARGON2_MEMORIA_KIB", argon2MemoriaPadrao, argon2MemoriaMin, argon2MemoriaMax)
+	if err != nil {
+		return HashSenha{}, err
+	}
+	t, err := parseUintNaFaixa("ARGON2_ITERACOES", argon2IteracoesPadrao, 1, argon2IteracoesMax)
+	if err != nil {
+		return HashSenha{}, err
+	}
+	p, err := parseUintNaFaixa("ARGON2_PARALELISMO", argon2ParalelismoPadrao, 1, argon2ParalelismoMax)
+	if err != nil {
+		return HashSenha{}, err
+	}
+	hs.MemoriaKiB, hs.Iteracoes, hs.Paralelismo = uint32(m), uint32(t), uint8(p)
+	return hs, nil
+}
+
+// parseUintNaFaixa lê a env chave como inteiro (padrão se vazia) e exige
+// minimo <= valor <= maximo.
+func parseUintNaFaixa(chave string, padrao, minimo, maximo uint64) (uint64, error) {
+	raw := strings.TrimSpace(os.Getenv(chave))
+	if raw == "" {
+		return padrao, nil
+	}
+	v, err := strconv.ParseUint(raw, 10, 32)
+	if err != nil || v < minimo || v > maximo {
+		return 0, fmt.Errorf("config: %s inválido (%q): esperado inteiro entre %d e %d", chave, raw, minimo, maximo)
+	}
+	return v, nil
 }
 
 // carregarDuracoesRefresh lê as durações de refresh token (SEC-12 e CHORE-02)

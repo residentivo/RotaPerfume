@@ -55,6 +55,9 @@ func TestDSN(t *testing.T) {
 	assert.NotContains(t, dsn, "time_zone", "fuso vem do pacote tz, não do DSN")
 }
 
+// pepperTeste tem exatamente config.PepperMinBytes (32) bytes.
+const pepperTeste = "pepper-de-teste-com-exatos-32-by"
+
 func TestLoad(t *testing.T) {
 	casos := []struct {
 		nome    string
@@ -73,24 +76,55 @@ func TestLoad(t *testing.T) {
 			wantErr: "JWT_TTL",
 		},
 		{
-			nome:    "BCRYPT_COST nao numerico",
-			env:     map[string]string{"JWT_SECRET": "s", "BCRYPT_COST": "x"},
-			wantErr: "BCRYPT_COST",
+			nome:    "sem PASSWORD_PEPPER",
+			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": ""},
+			wantErr: "PASSWORD_PEPPER",
 		},
 		{
-			nome:    "BCRYPT_COST abaixo do minimo",
-			env:     map[string]string{"JWT_SECRET": "s", "BCRYPT_COST": "3"},
-			wantErr: "BCRYPT_COST",
+			nome:    "PASSWORD_PEPPER curto (31 bytes)",
+			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": strings.Repeat("p", 31)},
+			wantErr: "PASSWORD_PEPPER",
 		},
 		{
-			nome:    "BCRYPT_COST acima do maximo",
-			env:     map[string]string{"JWT_SECRET": "s", "BCRYPT_COST": "32"},
-			wantErr: "BCRYPT_COST",
+			nome:    "ARGON2_MEMORIA_KIB nao numerico",
+			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "x"},
+			wantErr: "ARGON2_MEMORIA_KIB",
+		},
+		{
+			nome:    "ARGON2_MEMORIA_KIB abaixo do minimo",
+			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "19455"},
+			wantErr: "ARGON2_MEMORIA_KIB",
+		},
+		{
+			nome:    "ARGON2_MEMORIA_KIB acima do maximo",
+			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "1048577"},
+			wantErr: "ARGON2_MEMORIA_KIB",
+		},
+		{
+			nome:    "ARGON2_ITERACOES zero",
+			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_ITERACOES": "0"},
+			wantErr: "ARGON2_ITERACOES",
+		},
+		{
+			nome:    "ARGON2_ITERACOES acima do maximo",
+			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_ITERACOES": "11"},
+			wantErr: "ARGON2_ITERACOES",
+		},
+		{
+			nome:    "ARGON2_PARALELISMO negativo",
+			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_PARALELISMO": "-1"},
+			wantErr: "ARGON2_PARALELISMO",
+		},
+		{
+			nome:    "ARGON2_PARALELISMO acima do maximo",
+			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_PARALELISMO": "17"},
+			wantErr: "ARGON2_PARALELISMO",
 		},
 		{
 			nome: "defaults",
 			env: map[string]string{
-				"JWT_SECRET": "s", "JWT_TTL": "", "BCRYPT_COST": "", "DB_HOST": "", "DB_PORT": "",
+				"JWT_SECRET": "s", "JWT_TTL": "", "PASSWORD_PEPPER": pepperTeste, "DB_HOST": "", "DB_PORT": "",
+				"ARGON2_MEMORIA_KIB": "", "ARGON2_ITERACOES": "", "ARGON2_PARALELISMO": "",
 				"DB_NAME": "", "DB_USUARIO": "u", "DB_SENHA": "s", "VERBOSE": "", "LOG_LEVEL": "",
 				"CORS_ALLOWED_ORIGINS": "", "TRUST_PROXY_HEADERS": "", "JWT_ISSUER": "",
 				"REFRESH_REUSE_SUPPRESS_WINDOW": "", "REFRESH_CLEANUP_INTERVAL": "", "REFRESH_TOKEN_RETENCAO": "",
@@ -101,7 +135,7 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, "rotaperfumes", c.DBName)
 				assert.Equal(t, "rotaperfumes", c.JWTIssuer)
 				assert.Equal(t, 24*time.Hour, c.JWTTTL)
-				assert.Equal(t, 12, c.BCryptCost)
+				assert.Equal(t, config.HashSenha{Pepper: pepperTeste, MemoriaKiB: 65536, Iteracoes: 3, Paralelismo: 2}, c.HashSenha)
 				assert.False(t, c.Verbose)
 				assert.False(t, c.TrustProxyHeaders)
 				assert.Equal(t, []string{"http://localhost:3000", "http://127.0.0.1:3000"}, c.CORSAllowedOrigins)
@@ -110,13 +144,14 @@ func TestLoad(t *testing.T) {
 		{
 			nome: "valores customizados",
 			env: map[string]string{
-				"JWT_SECRET": "s", "JWT_TTL": "2h", "BCRYPT_COST": "4", "LOG_LEVEL": "debug", "VERBOSE": "",
+				"JWT_SECRET": "s", "JWT_TTL": "2h", "LOG_LEVEL": "debug", "VERBOSE": "",
+				"PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "19456", "ARGON2_ITERACOES": "2", "ARGON2_PARALELISMO": "1",
 				"DB_USUARIO": "u", "DB_SENHA": "s",
 				"CORS_ALLOWED_ORIGINS": " https://a.com , ,https://b.com", "TRUST_PROXY_HEADERS": "true",
 			},
 			check: func(t *testing.T, c *config.Config) {
 				assert.Equal(t, 2*time.Hour, c.JWTTTL)
-				assert.Equal(t, 4, c.BCryptCost)
+				assert.Equal(t, config.HashSenha{Pepper: pepperTeste, MemoriaKiB: 19456, Iteracoes: 2, Paralelismo: 1}, c.HashSenha)
 				assert.True(t, c.Verbose)
 				assert.True(t, c.TrustProxyHeaders)
 				assert.Equal(t, []string{"http://localhost:3000", "http://127.0.0.1:3000", "https://a.com", "https://b.com"}, c.CORSAllowedOrigins)

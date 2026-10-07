@@ -193,6 +193,32 @@ func (r *UsuarioRepository) List(ctx context.Context, db *sql.DB, page, limit in
 	return out, total, nil
 }
 
+// ListAtivos devolve todos os usuários ativos, em ordem de id (sem
+// paginação: uso administrativo, ex.: reset de senha em massa, OPS-01).
+func (r *UsuarioRepository) ListAtivos(ctx context.Context, db *sql.DB) ([]models.Usuario, error) {
+	q := usuarioSelectComVendedor + `
+		WHERE u.ativo = 1
+		ORDER BY u.id ASC`
+	rows, err := db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("repositories: list ativos falhou: %w", err)
+	}
+	defer rows.Close()
+
+	var out []models.Usuario
+	for rows.Next() {
+		u, err := scanUsuario(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("repositories: list ativos iteração: %w", err)
+	}
+	return out, nil
+}
+
 // UpdatePasswordHash atualiza o password_hash e a flag deve_trocar_senha de
 // um usuário na mesma query, evitando estado inconsistente entre as duas
 // colunas caso uma segunda escrita separada falhe.
@@ -208,6 +234,18 @@ func (r *UsuarioRepository) UpdatePasswordHash(ctx context.Context, db *sql.DB, 
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// RehashPassword regrava password_hash com newHash apenas se o valor atual
+// ainda for oldHash (condição no WHERE, ver config.DSN). Não altera
+// deve_trocar_senha nem tokens_validos_desde: a senha é a mesma, só muda o
+// algoritmo (SEC-13). Se a senha mudou no meio do caminho, não faz nada.
+func (r *UsuarioRepository) RehashPassword(ctx context.Context, db *sql.DB, id int64, oldHash, newHash string) error {
+	const q = `UPDATE usuarios SET password_hash = ? WHERE id = ? AND password_hash = ?`
+	if _, err := db.ExecContext(ctx, q, newHash, id, oldHash); err != nil {
+		return fmt.Errorf("repositories: rehash password: %w", err)
 	}
 	return nil
 }

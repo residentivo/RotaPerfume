@@ -63,10 +63,10 @@ func validCaptchaBody(body map[string]any) map[string]any {
 // config de teste.
 func testCfg() *config.Config {
 	return &config.Config{
-		JWTSecret:  "test-secret-auth-handler",
-		JWTIssuer:  "rotaperfumes-test",
-		JWTTTL:     24 * time.Hour,
-		BCryptCost: 4,
+		JWTSecret: "test-secret-auth-handler",
+		JWTIssuer: "rotaperfumes-test",
+		JWTTTL:    24 * time.Hour,
+		HashSenha: config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}, // Argon2id mínimo para acelerar os testes
 	}
 }
 

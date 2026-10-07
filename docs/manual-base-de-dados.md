@@ -169,7 +169,7 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 
 - As migrações de alteração (08, 13, 18 a 23) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
 - Todos os alvos que chamam o `mysql` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed`/`db-reset` herdam via `db-create`) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h ...`, sem `-p` no argv.
-- Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`apis/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por bcrypt real.
+- Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`apis/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por Argon2id real (com o `PASSWORD_PEPPER` do `.env`).
 - Importadores (`db-import-*`, `apis/shared/cmd/import*`): upsert idempotente a partir de `dados/crm/*.csv` e `dados/erp/*.csv`. Ordem de dependência: clientes e produtos, depois pedidos (e itens), pagamentos, carteiras, oportunidades, visitas e estoque.
 
 ---
@@ -210,7 +210,7 @@ Usuários de login do sistema, com papel (`admin`/`normal`) e vínculo opcional 
 | `id` | BIGINT AUTO_INCREMENT | não | - | PK. É o `sub` do JWT. O admin principal do seed é o id 1. |
 | `nome` | VARCHAR(120) | não | - | Nome completo. |
 | `email` | VARCHAR(120) | não | - | E-mail de login. **Único** (`uk_usuarios_email`). A API grava em minúsculas e sem espaços nas pontas. |
-| `password_hash` | VARCHAR(255) | não | - | Hash bcrypt (cost 12). Os seeds gravam um placeholder que o `resetpassword` troca. |
+| `password_hash` | VARCHAR(255) | não | - | Hash Argon2id com pepper, formato PHC `$argon2id$v=19$m=..,t=..,p=..$salt$hash` (SEC-13); hashes bcrypt antigos (`$2a$`/`$2b$`) ainda são aceitos e migram no próximo login. Os seeds gravam um placeholder que o `resetpassword` troca. |
 | `role` | ENUM('admin','normal') | não | 'normal' | Papel. `admin` acessa as rotas de administração. |
 | `id_vendedor` | BIGINT | sim | NULL | FK `fk_usuarios_vendedor` → `vendedores.id` (`ON DELETE SET NULL`, `ON UPDATE CASCADE`). Define o escopo de dados do usuário `normal`. |
 | `ativo` | TINYINT(1) | não | 1 | 1 = ativo, 0 = inativo (exclusão lógica). |
@@ -405,7 +405,7 @@ Auditoria das trocas de senha. Cada linha guarda o hash **anterior** e quem fez 
 | `id` | BIGINT AUTO_INCREMENT | não | - | PK. |
 | `usuario_id` | BIGINT | não | - | Usuário cuja senha mudou. FK → `usuarios.id` (`ON DELETE CASCADE`). |
 | `resetado_por_id` | BIGINT | sim | NULL | Admin que fez o reset. `NULL` quando o próprio usuário trocou ou quando o admin foi apagado. FK → `usuarios.id` (`ON DELETE SET NULL`). |
-| `senha_hash_anterior` | VARCHAR(255) | não | - | Hash bcrypt da senha substituída. |
+| `senha_hash_anterior` | VARCHAR(255) | não | - | Hash da senha substituída (Argon2id ou bcrypt legado). |
 | `ip_origem` | VARCHAR(45) | **sim** | NULL | IP de quem fez a troca. |
 | `user_agent` | TEXT | **sim** | NULL | User-Agent de quem fez a troca. |
 | `tipo_reset` | ENUM('usuario','admin','primeiro_acesso','esquecimento') | não | - | Tipo da troca (ver abaixo). |

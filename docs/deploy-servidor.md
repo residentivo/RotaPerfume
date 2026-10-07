@@ -26,7 +26,7 @@ O script `deploy/setup-servidor.sh` faz, no servidor, tudo o que as seções 2, 
    4. **ufw:** se estiver ativo, libera a porta do banco só para `172.16.0.0/12`, nega o resto e libera a 8443. Se estiver inativo, **só avisa** e sugere os comandos. O script nunca ativa o ufw.
    5. **Banco e usuários:** cria o banco `rotaperfumes` e os usuários `rotaperfumes_app` e `rotaperfumes_admin`. A senha do app é gerada automaticamente. A senha do admin é **você** que escolhe, com no mínimo 12 caracteres, e a digita depois no Jenkins. Se os usuários já existirem, o script pergunta se deve redefinir as senhas.
    6. Instala o dump em `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` (dono `root:jenkins`, modo 640).
-   7. Gera `~/rotaperfumes-api.env` (modo 600) a partir do seu `.env`. Substitui `DB_*`, gera um `JWT_SECRET` novo e define `CORS_ALLOWED_ORIGINS` e `TRUST_PROXY_HEADERS=true`. Se algum valor tiver `$` sem aspas simples, o script avisa (mostra só o nome da chave).
+   7. Gera `~/rotaperfumes-api.env` (modo 600) a partir do seu `.env`. Substitui `DB_*`, gera um `JWT_SECRET` novo e define `CORS_ALLOWED_ORIGINS` e `TRUST_PROXY_HEADERS=true`. As demais chaves, inclusive `PASSWORD_PEPPER`, vêm do seu `.env`: o pepper precisa ser o mesmo que gerou os hashes do dump. Se algum valor tiver `$` sem aspas simples, o script avisa (mostra só o nome da chave).
    8. Pede seu usuário e um **API token** do Jenkins (Jenkins → seu usuário → Security → API Token), confere os plugins e cria ou atualiza o job `rotaperfumes-deploy`.
    9. **Pausa para as credenciais manuais.** Siga as instruções que aparecem na tela:
       1. No Windows: `scp SEU_USUARIO@ivo-inspiron-15-3530:rotaperfumes-api.env .`
@@ -177,6 +177,7 @@ Caminho: **Gerenciar Jenkins → Credentials → System → Global credentials (
      openssl rand -base64 48
      ```
    - `TURNSTILE_SECRET_KEY` = secret key do Turnstile.
+   - `PASSWORD_PEPPER` = pepper das senhas (SEC-13). Use **o mesmo do `.env` que gerou os hashes do dump importado**: com outro valor, nenhuma senha Argon2id do dump funciona (hashes bcrypt antigos continuam valendo e migram no próximo login). Num banco novo, gere com `openssl rand -base64 48`. Sem ele, ou com menos de 32 bytes, a API não sobe. Depois de definido, **não troque**.
    - `SMTP_*` e `SECURITY_ALERT_EMAILS`, se for enviar e-mails. Se ficarem vazios, os e-mails vão só para o log.
    - Se mudar `SITE_HOST`/`HTTPS_PORT`, ajuste também o `CORS_ALLOWED_ORIGINS`.
    - Se algum valor tiver `$`, coloque-o entre aspas **simples**.

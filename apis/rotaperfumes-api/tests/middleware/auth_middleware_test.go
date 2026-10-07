@@ -22,10 +22,10 @@ import (
 // config de teste com segredo fixo.
 func testCfg() *config.Config {
 	return &config.Config{
-		JWTSecret:  "middleware-test-secret-abc123",
-		JWTIssuer:  "rotaperfumes-test",
-		JWTTTL:     1 * time.Hour,
-		BCryptCost: 4,
+		JWTSecret: "middleware-test-secret-abc123",
+		JWTIssuer: "rotaperfumes-test",
+		JWTTTL:    1 * time.Hour,
+		HashSenha: config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}, // Argon2id mínimo para acelerar os testes
 	}
 }
 

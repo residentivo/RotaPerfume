@@ -1,5 +1,6 @@
 // Package resetpassword implementa o comando cmd/resetpassword: cria ou
-// atualiza usuários no banco, com hash bcrypt válido. Garante que o admin
+// atualiza usuários no banco, com hash Argon2id válido (com o pepper
+// PASSWORD_PEPPER do .env, SEC-13). Garante que o admin
 // sempre existe (cria se faltar) e que todos os placeholders são
 // substituídos por hashes reais.
 //
@@ -21,7 +22,7 @@
 //     (-create-admin / -all-users) ou senha aleatória impressa no console.
 //
 // Comportamento:
-//   - -list: lista usuários com status do hash (PLACEHOLDER / OK / MISSING_ADMIN).
+//   - -list: lista usuários com status do hash (PLACEHOLDER / OK / BCRYPT_LEGADO / MISSING_ADMIN).
 //   - -create-admin: garante que o admin existe (INSERT se não existe, UPDATE se existe).
 //   - -email=...: UPSERT do usuário (cria se não existe, atualiza se existe).
 //   - -all-users: substitui todos os hashes PLACEHOLDER pela senha informada.
@@ -40,13 +41,9 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
+	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/services"
 )
-
-// BcryptCost é o custo bcrypt dos hashes gravados pelo comando.
-const BcryptCost = 12
 
 // AdminEmail é o e-mail do admin principal garantido pelo comando.
 const AdminEmail = "admin@rotaperfumes.com.br"
@@ -72,6 +69,10 @@ type Options struct {
 
 	PasswordStdin  bool // -password-stdin: lê a senha da 1ª linha do stdin
 	PasswordPrompt bool // -password-prompt: lê a senha do terminal, sem eco
+
+	// HashSenha são o pepper e os parâmetros Argon2id (config.LoadHashSenha no
+	// comando). Não é flag; só é exigido pelas ações que gravam senha.
+	HashSenha config.HashSenha
 }
 
 // PasswordGenerator gera uma senha aleatória de n caracteres.
@@ -211,7 +212,7 @@ func Run(ctx context.Context, db DB, opts Options, out io.Writer, gen PasswordGe
 		if err != nil {
 			return err
 		}
-		if err := UpsertAdmin(ctx, db, password); err != nil {
+		if err := UpsertAdmin(ctx, db, opts.HashSenha, password); err != nil {
 			return fmt.Errorf("resetpassword: create-admin: %w", err)
 		}
 		listarFinal(ctx, db, out)
@@ -223,7 +224,7 @@ func Run(ctx context.Context, db DB, opts Options, out io.Writer, gen PasswordGe
 		if err != nil {
 			return err
 		}
-		if err := UpdateAllPlaceholders(ctx, db, password); err != nil {
+		if err := UpdateAllPlaceholders(ctx, db, opts.HashSenha, password); err != nil {
 			return fmt.Errorf("resetpassword: update all: %w", err)
 		}
 		listarFinal(ctx, db, out)
@@ -237,7 +238,7 @@ func Run(ctx context.Context, db DB, opts Options, out io.Writer, gen PasswordGe
 			}
 			password = pwd
 		}
-		if err := UpsertByEmail(ctx, db, opts.Email, password, opts.Role, opts.Nome, opts.IDVendedor); err != nil {
+		if err := UpsertByEmail(ctx, db, opts.HashSenha, opts.Email, password, opts.Role, opts.Nome, opts.IDVendedor); err != nil {
 			return fmt.Errorf("resetpassword: upsert: %w", err)
 		}
 		listarFinal(ctx, db, out)
@@ -282,12 +283,11 @@ func listarFinal(ctx context.Context, db DB, out io.Writer) {
 }
 
 // UpsertAdmin garante que admin@rotaperfumes.com.br existe e tem hash válido.
-func UpsertAdmin(ctx context.Context, db DB, password string) error {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
+func UpsertAdmin(ctx context.Context, db DB, hs config.HashSenha, password string) error {
+	hashStr, err := services.GerarHashSenha(hs, password)
 	if err != nil {
-		return fmt.Errorf("bcrypt: %w", err)
+		return fmt.Errorf("argon2id: %w", err)
 	}
-	hashStr := string(hash)
 
 	// Tenta UPDATE primeiro; se afetou 0 linhas, faz INSERT. SEC-08: grava
 	// também o corte de sessão (tokens_validos_desde), derrubando os access
@@ -319,12 +319,11 @@ func UpsertAdmin(ctx context.Context, db DB, password string) error {
 }
 
 // UpsertByEmail cria ou atualiza um usuário.
-func UpsertByEmail(ctx context.Context, db DB, email, password, role, nome string, idVendedor int64) error {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
+func UpsertByEmail(ctx context.Context, db DB, hs config.HashSenha, email, password, role, nome string, idVendedor int64) error {
+	hashStr, err := services.GerarHashSenha(hs, password)
 	if err != nil {
-		return fmt.Errorf("bcrypt: %w", err)
+		return fmt.Errorf("argon2id: %w", err)
 	}
-	hashStr := string(hash)
 
 	// UPDATE primeiro (SEC-08: com corte de sessão, ver corteDeSessaoAgora).
 	res, err := db.ExecContext(ctx,
@@ -361,12 +360,11 @@ func UpsertByEmail(ctx context.Context, db DB, email, password, role, nome strin
 }
 
 // UpdateAllPlaceholders substitui todos os hashes com placeholder.
-func UpdateAllPlaceholders(ctx context.Context, db DB, password string) error {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
+func UpdateAllPlaceholders(ctx context.Context, db DB, hs config.HashSenha, password string) error {
+	hashStr, err := services.GerarHashSenha(hs, password)
 	if err != nil {
-		return fmt.Errorf("bcrypt: %w", err)
+		return fmt.Errorf("argon2id: %w", err)
 	}
-	hashStr := string(hash)
 
 	res, err := db.ExecContext(ctx,
 		`UPDATE usuarios SET password_hash = ? WHERE password_hash LIKE '%PLACEHOLDER%'`,
@@ -412,7 +410,8 @@ func ListUsers(ctx context.Context, db DB, out io.Writer) error {
 		       LEFT(password_hash, 25) AS preview,
 		       CASE
 		           WHEN password_hash LIKE '%PLACEHOLDER%' THEN 'PLACEHOLDER'
-		           WHEN password_hash LIKE '$2a$12$%' OR password_hash LIKE '$2b$12$%' THEN 'OK'
+		           WHEN password_hash LIKE '$argon2id$%' THEN 'OK'
+		           WHEN password_hash LIKE '$2_$%' THEN 'BCRYPT_LEGADO'
 		           ELSE 'UNKNOWN'
 		       END AS status
 		FROM usuarios
@@ -429,6 +428,7 @@ func ListUsers(ctx context.Context, db DB, out io.Writer) error {
 	placeholderCount := 0
 	adminFound := false
 	okCount := 0
+	legadoCount := 0
 	for rows.Next() {
 		var id int64
 		var nome, email, role, preview, status string
@@ -443,6 +443,8 @@ func ListUsers(ctx context.Context, db DB, out io.Writer) error {
 			placeholderCount++
 		case "OK":
 			okCount++
+		case "BCRYPT_LEGADO":
+			legadoCount++
 		}
 		if email == AdminEmail {
 			adminFound = true
@@ -452,7 +454,10 @@ func ListUsers(ctx context.Context, db DB, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintln(out, strings.Repeat("-", 120))
-	fmt.Fprintf(out, "Total: %d usuarios | %d OK | %d PLACEHOLDER | admin existe: %v\n", count, okCount, placeholderCount, adminFound)
+	fmt.Fprintf(out, "Total: %d usuarios | %d OK | %d BCRYPT_LEGADO | %d PLACEHOLDER | admin existe: %v\n", count, okCount, legadoCount, placeholderCount, adminFound)
+	if legadoCount > 0 {
+		fmt.Fprintln(out, "ℹ️  BCRYPT_LEGADO: migra para argon2id no próximo login do usuário.")
+	}
 	if !adminFound {
 		fmt.Fprintln(out, "⚠️  ATENÇÃO: admin@rotaperfumes.com.br NÃO EXISTE — rode: make fix-hash")
 	}

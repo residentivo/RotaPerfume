@@ -304,6 +304,42 @@ func TestUpdatePasswordHash_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// SEC-13: o rehash só troca o hash se ainda for o antigo e não mexe em
+// deve_trocar_senha nem em tokens_validos_desde.
+func TestRehashPassword(t *testing.T) {
+	const q = `UPDATE usuarios SET password_hash = \? WHERE id = \? AND password_hash = \?`
+	casos := []struct {
+		nome    string
+		result  driver.Result
+		err     error
+		wantErr bool
+	}{
+		{"regravado", sqlmock.NewResult(0, 1), nil, false},
+		{"hash mudou no meio do caminho (0 linhas) não é erro", sqlmock.NewResult(0, 0), nil, false},
+		{"erro do banco", nil, sql.ErrConnDone, true},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			db, mock := newMock(t)
+			defer db.Close()
+			exp := mock.ExpectExec(q).WithArgs("$argon2id$novo", int64(7), "$2a$12$antigo")
+			if c.err != nil {
+				exp.WillReturnError(c.err)
+			} else {
+				exp.WillReturnResult(c.result)
+			}
+
+			err := repositories.NewUsuarioRepository().RehashPassword(context.Background(), db, 7, "$2a$12$antigo", "$argon2id$novo")
+			if c.wantErr {
+				assert.ErrorIs(t, err, sql.ErrConnDone)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestUpdatePasswordHash_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
@@ -537,4 +573,63 @@ func TestInativarByVendedorID_DentroDeTransacao(t *testing.T) {
 	assert.Equal(t, int64(1), n)
 	require.NoError(t, tx.Commit())
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// OPS-01: ListAtivos filtra ativo = 1, ordena por id e propaga erros.
+func TestListAtivos(t *testing.T) {
+	const q = `WHERE u\.ativo = 1\s+ORDER BY u\.id ASC`
+	repo := repositories.NewUsuarioRepository()
+	ctx := context.Background()
+
+	t.Run("sucesso", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		now := time.Now()
+		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows(baseColumns).
+			AddRow(baseRow(1, "Admin", "admin@test.com", "h1", "admin", nil, true, now, now, nil)...).
+			AddRow(baseRow(2, "Ana", "ana@test.com", "h2", "normal", nil, true, now, now, nil)...))
+
+		us, err := repo.ListAtivos(ctx, db)
+		require.NoError(t, err)
+		require.Len(t, us, 2)
+		assert.Equal(t, "admin@test.com", us[0].Email)
+		assert.Equal(t, "h2", us[1].PasswordHash)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("vazio", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows(baseColumns))
+		us, err := repo.ListAtivos(ctx, db)
+		require.NoError(t, err)
+		assert.Empty(t, us)
+	})
+
+	t.Run("erro na query", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		mock.ExpectQuery(q).WillReturnError(sql.ErrConnDone)
+		_, err := repo.ListAtivos(ctx, db)
+		assert.ErrorIs(t, err, sql.ErrConnDone)
+	})
+
+	t.Run("erro no scan", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+		_, err := repo.ListAtivos(ctx, db)
+		assert.Error(t, err)
+	})
+
+	t.Run("erro na iteração", func(t *testing.T) {
+		db, mock := newMock(t)
+		defer db.Close()
+		now := time.Now()
+		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows(baseColumns).
+			AddRow(baseRow(1, "Admin", "admin@test.com", "h1", "admin", nil, true, now, now, nil)...).
+			RowError(0, sql.ErrConnDone))
+		_, err := repo.ListAtivos(ctx, db)
+		assert.ErrorIs(t, err, sql.ErrConnDone)
+	})
 }

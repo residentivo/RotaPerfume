@@ -310,12 +310,12 @@ func TestSEC10_SeedFiles(t *testing.T) {
 }
 
 // TestSEC10_SQLsReaisTemPlaceholders: guarda de regressão. Os SQLs versionados
-// em sql/ devem conter os placeholders e nenhum hash bcrypt real (ex.: um
-// seedusers antigo que tenha gravado por cima, ou commit acidental).
+// em sql/ devem conter os placeholders e nenhum hash real, bcrypt ou argon2id
+// (ex.: um seedusers antigo que tenha gravado por cima, ou commit acidental).
 func TestSEC10_SQLsReaisTemPlaceholders(t *testing.T) {
 	root, err := cmdutil.FindProjectRoot()
 	require.NoError(t, err)
-	reBcrypt := regexp.MustCompile(`\$2[abxy]\$`)
+	reHashReal := regexp.MustCompile(`\$2[abxy]\$|\$argon2(id|i|d)\$`)
 	casos := []struct {
 		arquivo     string
 		placeholder string
@@ -330,7 +330,7 @@ func TestSEC10_SQLsReaisTemPlaceholders(t *testing.T) {
 			conteudo := ler(t, p)
 			assert.Contains(t, conteudo, c.placeholder)
 			semPlaceholders := strings.NewReplacer(seedusers.PlaceholderAdmin, "", seedusers.PlaceholderUser, "").Replace(conteudo)
-			assert.Empty(t, reBcrypt.FindAllString(semPlaceholders, -1), "há hash bcrypt real (não placeholder) em %s", p)
+			assert.Empty(t, reHashReal.FindAllString(semPlaceholders, -1), "há hash real (não placeholder) em %s", p)
 		})
 	}
 }

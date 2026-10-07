@@ -221,6 +221,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if err == repositories.ErrNotFound {
 			log.Printf("[auth] login: usuário não encontrado: %s", maskedEmail)
+			// Mesmo custo de um login real: não revela pelo tempo se a conta existe.
+			h.auth.VerifyDummyPassword(h.cfg, req.Password)
 			h.loginLimiter.RegisterFailure(ipKey)
 			h.loginLimiter.RegisterFailure(acctKey)
 			writeJSON(w, http.StatusUnauthorized, nil, "credenciais inválidas")
@@ -239,7 +241,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.auth.VerifyPassword(u.PasswordHash, req.Password) {
+	if !h.auth.VerifyPassword(h.cfg, u.PasswordHash, req.Password) {
 		log.Printf("[auth] login: senha incorreta para: %s", maskedEmail)
 		h.loginLimiter.RegisterFailure(ipKey)
 		h.loginLimiter.RegisterFailure(acctKey)
@@ -250,6 +252,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Login bem-sucedido: limpa os contadores de falhas.
 	h.loginLimiter.RegisterSuccess(ipKey)
 	h.loginLimiter.RegisterSuccess(acctKey)
+
+	h.rehashSeNecessario(ctx, u, req.Password)
 
 	// Gera access token JWT.
 	token, err := h.auth.GenerateJWT(h.cfg, u.ID, u.Role)
@@ -564,7 +568,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.auth.VerifyPassword(u.PasswordHash, req.SenhaAtual) {
+	if !h.auth.VerifyPassword(h.cfg, u.PasswordHash, req.SenhaAtual) {
 		log.Printf("[auth] reset-password: senha atual incorreta: user_id=%d", uid)
 		h.resetPasswordLimiter.RegisterFailure(resetKey)
 		// 400 (e não 401): o usuário está autenticado. 401 fica reservado para
@@ -596,7 +600,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Bloqueio de reuso das últimas 3 senhas: hash atual + os 2 registros
-	// mais recentes do histórico. Rodamos as 3 comparações bcrypt até o
+	// mais recentes do histórico. Rodamos as 3 comparações de hash até o
 	// fim, sem short-circuit, para não criar um side-channel de timing que
 	// revele qual das 3 senhas anteriores foi reutilizada.
 	historico, _, err := h.senhaSvc.ListarPorUsuario(ctx, h.db, uid, 1, 2, "id", "desc")
@@ -612,7 +616,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	reutilizada := false
 	for _, hashCandidato := range hashesCandidatos {
-		if h.auth.VerifyPassword(hashCandidato, req.NovaSenha) {
+		if h.auth.VerifyPassword(h.cfg, hashCandidato, req.NovaSenha) {
 			reutilizada = true
 		}
 	}
@@ -816,4 +820,24 @@ func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration) {
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(seconds))
 	writeJSON(w, http.StatusTooManyRequests, nil, "muitas tentativas — tente novamente mais tarde")
+}
+
+// rehashSeNecessario migra o hash do usuário para Argon2id com pepper (SEC-13)
+// logo após um login válido, enquanto a senha em claro está disponível: hashes
+// bcrypt legados ou Argon2id com parâmetros antigos. Best-effort: falha só gera
+// log e não afeta o login.
+func (h *AuthHandler) rehashSeNecessario(ctx context.Context, u *models.Usuario, senha string) {
+	if !h.auth.NeedsRehash(h.cfg, u.PasswordHash) {
+		return
+	}
+	novo, err := h.auth.HashPassword(h.cfg, senha)
+	if err != nil {
+		log.Printf("[auth] login: rehash: HashPassword: %v", err)
+		return
+	}
+	if err := h.auth.RehashPassword(ctx, h.db, u.ID, u.PasswordHash, novo); err != nil {
+		log.Printf("[auth] login: rehash user_id=%d: %v", u.ID, err)
+		return
+	}
+	log.Printf("[auth] login: hash de senha migrado para argon2id: user_id=%d", u.ID)
 }

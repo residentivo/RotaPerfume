@@ -1,4 +1,4 @@
-.PHONY: help db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
+.PHONY: help reset-senhas-simular reset-senhas-ativos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared gen-hash fix-hash \
 	frontend-deps \
@@ -82,7 +82,7 @@ db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: usuarios dos 42 vendedores ==="
 	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/03_seed_vendedores.sql
 	@echo ""
-	@echo "=== Corrigindo hashes (placeholder -> bcrypt real) + criando admin ==="
+	@echo "=== Corrigindo hashes (placeholder -> argon2id real) + criando admin ==="
 	cd apis/shared && go run ./cmd/resetpassword -list
 	cd apis/shared && go run ./cmd/resetpassword -create-admin
 	cd apis/shared && go run ./cmd/resetpassword -all-users
@@ -239,10 +239,16 @@ deps: ## Instala dependências Go
 	cd apis/rotaperfumes-api && go get ./... && go mod tidy
 
 # =============================================================================
-# Seed de usuários (gera bcrypt hash)
+# Seed de usuários (gera hash argon2id com PASSWORD_PEPPER)
 # =============================================================================
 gen-hash: ## aplica os seeds com hash gerado (sem alterar sql/)
 	cd apis/shared && go run ./cmd/seedusers
+
+reset-senhas-simular: ## OPS-01: lista os usuários ativos que o reset em massa atingiria (não grava)
+	cd apis/rotaperfumes-api && go run ./cmd/resetsenhas
+
+reset-senhas-ativos: ## OPS-01: nova senha Argon2id + e-mail para TODOS os usuários ativos (exige SMTP)
+	cd apis/rotaperfumes-api && go run ./cmd/resetsenhas -executar
 
 fix-hash: ## Lista usuários e corrige TODOS os PLACEHOLDER + cria admin (se faltar)
 	cd apis/shared && go run ./cmd/resetpassword -list

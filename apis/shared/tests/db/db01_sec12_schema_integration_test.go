@@ -27,6 +27,7 @@ func abrirSchemaIT(t *testing.T) *sql.DB {
 		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
 	}
 	t.Setenv("JWT_SECRET", "integracao")
+	t.Setenv("PASSWORD_PEPPER", "pepper-de-integracao-com-32-bytes-ou-mais")
 	cfg, err := config.Load()
 	require.NoError(t, err)
 	conn, err := db.Open(cfg.DSN())

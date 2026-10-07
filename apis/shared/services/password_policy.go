@@ -15,8 +15,8 @@ var (
 	// caracteres multi-byte que "parecem" mais longos que realmente são).
 	ErrSenhaCurta = errors.New("senha deve ter pelo menos 8 caracteres")
 
-	// ErrSenhaMuitoLonga indica que a senha excede o limite de bytes do
-	// bcrypt. Nunca truncamos a senha silenciosamente — rejeitamos com erro
+	// ErrSenhaMuitoLonga indica que a senha excede o limite de bytes da
+	// política. Nunca truncamos a senha silenciosamente — rejeitamos com erro
 	// claro para o usuário escolher uma senha mais curta.
 	ErrSenhaMuitoLonga = errors.New("senha excede o tamanho máximo permitido (72 bytes)")
 
@@ -30,9 +30,10 @@ const (
 	// política de senha forte.
 	senhaForteMinLen = 8
 
-	// senhaForteMaxBytes é o limite de bytes aceito pelo bcrypt
-	// (golang.org/x/crypto/bcrypt trunca silenciosamente acima disso —
-	// por isso rejeitamos explicitamente antes de chegar lá).
+	// senhaForteMaxBytes é o limite de bytes da senha. Vem do bcrypt (que
+	// trunca acima disso); o Argon2id (SEC-13) não tem esse limite, mas o
+	// valor foi mantido para não mudar a política nem a mensagem já
+	// exibida no frontend.
 	senhaForteMaxBytes = 72
 
 	// senhaForteMinClasses é o número mínimo de classes de caractere
@@ -44,7 +45,7 @@ const (
 //
 //   - mínimo de senhaForteMinLen caracteres, contados por rune (não por
 //     byte, para não permitir bypass usando caracteres multi-byte);
-//   - máximo de senhaForteMaxBytes bytes (limite do bcrypt) — senhas mais
+//   - máximo de senhaForteMaxBytes bytes — senhas mais
 //     longas são rejeitadas explicitamente, nunca truncadas em silêncio;
 //   - pelo menos senhaForteMinClasses das 4 classes de caractere:
 //     minúscula, maiúscula, dígito, símbolo. O conjunto de símbolos

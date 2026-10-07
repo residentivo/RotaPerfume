@@ -6,10 +6,10 @@
 --
 -- ATENÇÃO: o hash abaixo é um PLACEHOLDER e DEVE continuar placeholder
 -- neste arquivo (nunca commite um hash real aqui).
--- Placeholder usado porque não temos bcrypt em SQL puro:
+-- Placeholder usado porque não temos Argon2id (nem o pepper) em SQL puro:
 --   $2a$12$XXXXPLACEHOLDER_ADMIN_PRECISA_SER_GERADO_PELO_GOXXXX
 --
--- Para aplicar o seed com hash real (bcrypt, cost BCRYPT_COST):
+-- Para aplicar o seed com hash real (Argon2id com PASSWORD_PEPPER do .env):
 --   make gen-hash   (= cd apis/shared && go run ./cmd/seedusers)
 -- A senha vem de SEED_ADMIN_PASSWORD do .env (ou é aleatória; veja
 -- -show-password). O comando grava uma cópia com o hash em tmp/seed/,

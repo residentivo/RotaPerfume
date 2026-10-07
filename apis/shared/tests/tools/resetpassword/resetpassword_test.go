@@ -2,7 +2,8 @@ package resetpassword_test
 
 // TST-03 (Lote 7): tools/resetpassword com o banco em sqlmock, a saída em
 // bytes.Buffer e o gerador de senha injetado. Os hashes gravados são
-// conferidos com bcrypt (senha certa e custo 12), não só com AnyArg.
+// conferidos com Argon2id + pepper (senha certa e parâmetros de hsTeste),
+// não só com AnyArg (SEC-13).
 
 import (
 	"bytes"
@@ -16,11 +17,11 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/tools/resetpassword"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/bcrypt"
-
-	"github.com/rotaperfumes/shared/tools/resetpassword"
 )
 
 var (
@@ -31,29 +32,27 @@ var (
 
 const senhaGerada = "GeradaXYZ0123456"
 
+// hsTeste: pepper e Argon2id mínimo, para os testes rodarem rápido.
+var hsTeste = config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}
+
 var (
-	reUpdateAdmin   = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, ativo = 1, tokens_validos_desde = ? WHERE email = ?")
-	reUpdateEmail   = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, tokens_validos_desde = ? WHERE email = ?")
-	reUpdateAll     = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ? WHERE password_hash LIKE '%PLACEHOLDER%'")
-	reInsert        = "INSERT INTO usuarios"
-	reExisteAdmin   = regexp.QuoteMeta("SELECT EXISTS(SELECT 1 FROM usuarios WHERE email = 'admin@rotaperfumes.com.br')")
-	reListar        = "SELECT id, nome, email, role, ativo"
-	senhaMuitoLonga = strings.Repeat("x", 73) // bcrypt recusa > 72 bytes
+	reUpdateAdmin = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, ativo = 1, tokens_validos_desde = ? WHERE email = ?")
+	reUpdateEmail = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, tokens_validos_desde = ? WHERE email = ?")
+	reUpdateAll   = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ? WHERE password_hash LIKE '%PLACEHOLDER%'")
+	reInsert      = "INSERT INTO usuarios"
+	reExisteAdmin = regexp.QuoteMeta("SELECT EXISTS(SELECT 1 FROM usuarios WHERE email = 'admin@rotaperfumes.com.br')")
+	reListar      = "SELECT id, nome, email, role, ativo"
 )
 
 var colunasLista = []string{"id", "nome", "email", "role", "ativo", "preview", "status"}
 
-// hashDe é um sqlmock.Argument que só casa com um hash bcrypt de custo
-// BcryptCost da senha informada.
+// hashDe é um sqlmock.Argument que só casa com um hash Argon2id da senha
+// informada, gerado com o pepper e os parâmetros de hsTeste.
 type hashDe string
 
 func (s hashDe) Match(v driver.Value) bool {
 	h, ok := v.(string)
-	if !ok || bcrypt.CompareHashAndPassword([]byte(h), []byte(s)) != nil {
-		return false
-	}
-	custo, err := bcrypt.Cost([]byte(h))
-	return err == nil && custo == resetpassword.BcryptCost
+	return ok && strings.HasPrefix(h, "$argon2id$v=19$m=64,t=1,p=1$") && services.VerificarSenha(hsTeste, h, string(s))
 }
 
 func novoMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
@@ -92,8 +91,9 @@ func geradorProibido(t *testing.T) resetpassword.PasswordGenerator {
 
 func listaComAdmin() *sqlmock.Rows {
 	return sqlmock.NewRows(colunasLista).
-		AddRow(1, "Admin", resetpassword.AdminEmail, "admin", 1, "$2a$12$abc", "OK").
-		AddRow(2, "Vendedor", "vend@x.com", "normal", 1, "$2a$12$XXXXPLACEHOLDER", "PLACEHOLDER")
+		AddRow(1, "Admin", resetpassword.AdminEmail, "admin", 1, "$argon2id$v=19$m=65536", "OK").
+		AddRow(2, "Vendedor", "vend@x.com", "normal", 1, "$2a$12$XXXXPLACEHOLDER", "PLACEHOLDER").
+		AddRow(3, "Antigo", "antigo@x.com", "normal", 1, "$2a$12$abc", "BCRYPT_LEGADO")
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +110,8 @@ func TestListUsers(t *testing.T) {
 		assert.Contains(t, s, "EMAIL")
 		assert.Contains(t, s, resetpassword.AdminEmail)
 		assert.Contains(t, s, "vend@x.com")
-		assert.Contains(t, s, "Total: 2 usuarios | 1 OK | 1 PLACEHOLDER | admin existe: true")
+		assert.Contains(t, s, "Total: 3 usuarios | 1 OK | 1 BCRYPT_LEGADO | 1 PLACEHOLDER | admin existe: true")
+		assert.Contains(t, s, "migra para argon2id no próximo login")
 		assert.NotContains(t, s, "ATENÇÃO")
 	})
 	t.Run("sem admin avisa", func(t *testing.T) {
@@ -123,7 +124,8 @@ func TestListUsers(t *testing.T) {
 		s := out.String()
 		assert.Contains(t, s, resetpassword.Truncate(longo, 50), "e-mail longo é truncado")
 		assert.NotContains(t, s, longo)
-		assert.Contains(t, s, "Total: 1 usuarios | 0 OK | 0 PLACEHOLDER | admin existe: false")
+		assert.Contains(t, s, "Total: 1 usuarios | 0 OK | 0 BCRYPT_LEGADO | 0 PLACEHOLDER | admin existe: false")
+		assert.NotContains(t, s, "BCRYPT_LEGADO:")
 		assert.Contains(t, s, "NÃO EXISTE")
 	})
 	casos := []struct {
@@ -170,7 +172,7 @@ func TestRun_List(t *testing.T) {
 
 func TestRun_SemAcao(t *testing.T) {
 	db, _ := novoMock(t)
-	err := resetpassword.Run(ctx, db, resetpassword.Options{Password: "x"}, &bytes.Buffer{}, geradorProibido(t))
+	err := resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, Password: "x"}, &bytes.Buffer{}, geradorProibido(t))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "informe uma ação")
 }
@@ -183,7 +185,7 @@ func TestRun_CreateAdmin(t *testing.T) {
 		mock.ExpectExec(reUpdateAdmin).WithArgs(hashDe("Flag@123"), sqlmock.AnyArg(), resetpassword.AdminEmail).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
 		var out bytes.Buffer
-		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{CreateAdmin: true, Password: "Flag@123"}, &out, geradorProibido(t)))
+		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, CreateAdmin: true, Password: "Flag@123"}, &out, geradorProibido(t)))
 		require.NoError(t, mock.ExpectationsWereMet())
 		assert.NotContains(t, out.String(), "Senha gerada")
 	})
@@ -194,7 +196,7 @@ func TestRun_CreateAdmin(t *testing.T) {
 		mock.ExpectExec(reUpdateAdmin).WithArgs(hashDe("Env@123"), sqlmock.AnyArg(), resetpassword.AdminEmail).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec(reInsert).WithArgs("Administrador Principal", resetpassword.AdminEmail, hashDe("Env@123")).WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
-		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{CreateAdmin: true}, &bytes.Buffer{}, geradorProibido(t)))
+		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, CreateAdmin: true}, &bytes.Buffer{}, geradorProibido(t)))
 		require.NoError(t, mock.ExpectationsWereMet())
 		assert.Contains(t, logs.String(), "usando SEED_ADMIN_PASSWORD do .env")
 		assert.Contains(t, logs.String(), "admin criado (INSERT)")
@@ -206,21 +208,21 @@ func TestRun_CreateAdmin(t *testing.T) {
 		mock.ExpectExec(reUpdateAdmin).WithArgs(hashDe(senhaGerada), sqlmock.AnyArg(), resetpassword.AdminEmail).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(reListar).WillReturnError(errBanco) // lista final só loga
 		var out bytes.Buffer
-		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{CreateAdmin: true}, &out, gerador(t)))
+		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, CreateAdmin: true}, &out, gerador(t)))
 		require.NoError(t, mock.ExpectationsWereMet())
 		assert.Contains(t, out.String(), "ADMIN_PASSWORD="+senhaGerada)
 	})
 	t.Run("gerador falha", func(t *testing.T) {
 		t.Setenv("SEED_ADMIN_PASSWORD", "")
 		db, _ := novoMock(t)
-		err := resetpassword.Run(ctx, db, resetpassword.Options{CreateAdmin: true}, &bytes.Buffer{}, geradorQuebrado)
+		err := resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, CreateAdmin: true}, &bytes.Buffer{}, geradorQuebrado)
 		require.ErrorIs(t, err, errRandom)
 		assert.Contains(t, err.Error(), "gerar senha")
 	})
 	t.Run("UPDATE falha", func(t *testing.T) {
 		db, mock := novoMock(t)
 		mock.ExpectExec(reUpdateAdmin).WillReturnError(errBanco)
-		err := resetpassword.Run(ctx, db, resetpassword.Options{CreateAdmin: true, Password: "x"}, &bytes.Buffer{}, geradorProibido(t))
+		err := resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, CreateAdmin: true, Password: "x"}, &bytes.Buffer{}, geradorProibido(t))
 		require.ErrorIs(t, err, errBanco)
 		assert.Contains(t, err.Error(), "resetpassword: create-admin: update admin")
 	})
@@ -233,7 +235,7 @@ func TestRun_AllUsers(t *testing.T) {
 		mock.ExpectExec(reUpdateAll).WithArgs(hashDe("Todos@123")).WillReturnResult(sqlmock.NewResult(0, 3))
 		mock.ExpectQuery(reExisteAdmin).WillReturnRows(sqlmock.NewRows([]string{"e"}).AddRow(true))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
-		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{AllUsers: true, Password: "Todos@123"}, &bytes.Buffer{}, geradorProibido(t)))
+		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, AllUsers: true, Password: "Todos@123"}, &bytes.Buffer{}, geradorProibido(t)))
 		require.NoError(t, mock.ExpectationsWereMet())
 		assert.Contains(t, logs.String(), "3 linha(s) com placeholder atualizada(s)")
 	})
@@ -245,7 +247,7 @@ func TestRun_AllUsers(t *testing.T) {
 		mock.ExpectQuery(reExisteAdmin).WillReturnRows(sqlmock.NewRows([]string{"e"}).AddRow(false))
 		mock.ExpectExec(`INSERT INTO usuarios .*NEEDS_RESET.*'admin', NULL, 0\)`).WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
-		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{AllUsers: true}, &bytes.Buffer{}, geradorProibido(t)))
+		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, AllUsers: true}, &bytes.Buffer{}, geradorProibido(t)))
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 	t.Run("senha gerada", func(t *testing.T) {
@@ -256,20 +258,20 @@ func TestRun_AllUsers(t *testing.T) {
 		mock.ExpectQuery(reExisteAdmin).WillReturnError(errBanco) // ensure-admin só loga
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
 		var out bytes.Buffer
-		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{AllUsers: true}, &out, gerador(t)))
+		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, AllUsers: true}, &out, gerador(t)))
 		assert.Contains(t, out.String(), "USER_PASSWORD="+senhaGerada)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 	t.Run("gerador falha", func(t *testing.T) {
 		t.Setenv("SEED_USER_PASSWORD", "")
 		db, _ := novoMock(t)
-		err := resetpassword.Run(ctx, db, resetpassword.Options{AllUsers: true}, &bytes.Buffer{}, geradorQuebrado)
+		err := resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, AllUsers: true}, &bytes.Buffer{}, geradorQuebrado)
 		require.ErrorIs(t, err, errRandom)
 	})
 	t.Run("UPDATE falha", func(t *testing.T) {
 		db, mock := novoMock(t)
 		mock.ExpectExec(reUpdateAll).WillReturnError(errBanco)
-		err := resetpassword.Run(ctx, db, resetpassword.Options{AllUsers: true, Password: "x"}, &bytes.Buffer{}, geradorProibido(t))
+		err := resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, AllUsers: true, Password: "x"}, &bytes.Buffer{}, geradorProibido(t))
 		require.ErrorIs(t, err, errBanco)
 		assert.Contains(t, err.Error(), "resetpassword: update all:")
 	})
@@ -282,7 +284,7 @@ func TestRun_Email(t *testing.T) {
 		db, mock := novoMock(t)
 		mock.ExpectExec(reUpdateEmail).WithArgs(hashDe("Nova@123"), sqlmock.AnyArg(), email).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
-		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{Email: email, Password: "Nova@123"}, &bytes.Buffer{}, geradorProibido(t)))
+		require.NoError(t, resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, Email: email, Password: "Nova@123"}, &bytes.Buffer{}, geradorProibido(t)))
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 	t.Run("novo sem nome nem vendedor -> INSERT com defaults", func(t *testing.T) {
@@ -292,7 +294,7 @@ func TestRun_Email(t *testing.T) {
 		mock.ExpectExec(reInsert).WithArgs("Usuário "+email, email, hashDe(senhaGerada), "normal", nil).WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
 		var out bytes.Buffer
-		opts := resetpassword.Options{Email: email, Role: "normal"}
+		opts := resetpassword.Options{HashSenha: hsTeste, Email: email, Role: "normal"}
 		require.NoError(t, resetpassword.Run(ctx, db, opts, &out, gerador(t)))
 		require.NoError(t, mock.ExpectationsWereMet())
 		assert.Contains(t, out.String(), "PASSWORD="+senhaGerada)
@@ -303,13 +305,13 @@ func TestRun_Email(t *testing.T) {
 		mock.ExpectExec(reUpdateEmail).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec(reInsert).WithArgs("Maria", email, hashDe("M@ria123"), "admin", int64(5)).WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectQuery(reListar).WillReturnRows(listaComAdmin())
-		opts := resetpassword.Options{Email: email, Password: "M@ria123", Role: "admin", Nome: "Maria", IDVendedor: 5}
+		opts := resetpassword.Options{HashSenha: hsTeste, Email: email, Password: "M@ria123", Role: "admin", Nome: "Maria", IDVendedor: 5}
 		require.NoError(t, resetpassword.Run(ctx, db, opts, &bytes.Buffer{}, geradorProibido(t)))
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 	t.Run("gerador falha", func(t *testing.T) {
 		db, _ := novoMock(t)
-		err := resetpassword.Run(ctx, db, resetpassword.Options{Email: email}, &bytes.Buffer{}, geradorQuebrado)
+		err := resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, Email: email}, &bytes.Buffer{}, geradorQuebrado)
 		require.ErrorIs(t, err, errRandom)
 	})
 	t.Run("INSERT falha", func(t *testing.T) {
@@ -317,7 +319,7 @@ func TestRun_Email(t *testing.T) {
 		db, mock := novoMock(t)
 		mock.ExpectExec(reUpdateEmail).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec(reInsert).WillReturnError(errBanco)
-		err := resetpassword.Run(ctx, db, resetpassword.Options{Email: email, Password: "x"}, &bytes.Buffer{}, geradorProibido(t))
+		err := resetpassword.Run(ctx, db, resetpassword.Options{HashSenha: hsTeste, Email: email, Password: "x"}, &bytes.Buffer{}, geradorProibido(t))
 		require.ErrorIs(t, err, errBanco)
 		assert.Contains(t, err.Error(), "resetpassword: upsert: insert")
 	})
@@ -327,18 +329,22 @@ func TestRun_Email(t *testing.T) {
 // Funções de gravação: erros diretos
 // ---------------------------------------------------------------------------
 
-func TestGravacao_SenhaAcimaDe72BytesNaoToca(t *testing.T) {
+// Sem PASSWORD_PEPPER (HashSenha zerada) nada é gravado.
+func TestGravacao_SemPepperNaoToca(t *testing.T) {
 	db, mock := novoMock(t) // nenhuma expectativa: não pode haver SQL
+	semPepper := config.HashSenha{}
 	casos := map[string]func() error{
-		"UpsertAdmin":           func() error { return resetpassword.UpsertAdmin(ctx, db, senhaMuitoLonga) },
-		"UpsertByEmail":         func() error { return resetpassword.UpsertByEmail(ctx, db, "a@b", senhaMuitoLonga, "normal", "", 0) },
-		"UpdateAllPlaceholders": func() error { return resetpassword.UpdateAllPlaceholders(ctx, db, senhaMuitoLonga) },
+		"UpsertAdmin": func() error { return resetpassword.UpsertAdmin(ctx, db, semPepper, "Senha@123") },
+		"UpsertByEmail": func() error {
+			return resetpassword.UpsertByEmail(ctx, db, semPepper, "a@b", "Senha@123", "normal", "", 0)
+		},
+		"UpdateAllPlaceholders": func() error { return resetpassword.UpdateAllPlaceholders(ctx, db, semPepper, "Senha@123") },
 	}
 	for nome, fn := range casos {
 		t.Run(nome, func(t *testing.T) {
 			err := fn()
-			require.ErrorIs(t, err, bcrypt.ErrPasswordTooLong)
-			assert.Contains(t, err.Error(), "bcrypt")
+			require.ErrorIs(t, err, services.ErrPepperNaoConfigurado)
+			assert.Contains(t, err.Error(), "argon2id")
 		})
 	}
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -349,7 +355,7 @@ func TestUpsertAdmin_InsertFalha(t *testing.T) {
 	db, mock := novoMock(t)
 	mock.ExpectExec(reUpdateAdmin).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(reInsert).WillReturnError(errBanco)
-	err := resetpassword.UpsertAdmin(ctx, db, "x")
+	err := resetpassword.UpsertAdmin(ctx, db, hsTeste, "x")
 	require.ErrorIs(t, err, errBanco)
 	assert.Contains(t, err.Error(), "insert admin")
 }
@@ -357,7 +363,7 @@ func TestUpsertAdmin_InsertFalha(t *testing.T) {
 func TestUpsertByEmail_UpdateFalha(t *testing.T) {
 	db, mock := novoMock(t)
 	mock.ExpectExec(reUpdateEmail).WillReturnError(errBanco)
-	err := resetpassword.UpsertByEmail(ctx, db, "a@b", "x", "normal", "", 0)
+	err := resetpassword.UpsertByEmail(ctx, db, hsTeste, "a@b", "x", "normal", "", 0)
 	require.ErrorIs(t, err, errBanco)
 	assert.Contains(t, err.Error(), "update:")
 }

@@ -15,9 +15,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/services"
 	"github.com/rotaperfumes/shared/tools/seedusers"
 )
 
@@ -86,9 +86,11 @@ func (e *execucoes) runner(falharEm string) seedusers.SQLRunner {
 	}
 }
 
-func cfgRapida() *config.Config { return &config.Config{BCryptCost: bcrypt.MinCost} }
+var hsRapida = config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}
 
-var reHash = regexp.MustCompile(`\$2a\$04\$[./A-Za-z0-9]{53}`)
+func cfgRapida() *config.Config { return &config.Config{HashSenha: hsRapida} }
+
+var reHash = regexp.MustCompile(`\$argon2id\$v=19\$m=64,t=1,p=1\$[A-Za-z0-9+/]{22}\$[A-Za-z0-9+/]{43}`)
 
 func TestRun_SubstituiEExecuta(t *testing.T) {
 	logs := silenciarLog(t)
@@ -117,8 +119,8 @@ func TestRun_SubstituiEExecuta(t *testing.T) {
 	require.NotEmpty(t, hAdmin)
 	require.Len(t, hVend, 2)
 	assert.Equal(t, hVend[0], hVend[1], "os vendedores recebem o mesmo hash")
-	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(hAdmin), []byte("Admin@Env1")))
-	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(hVend[0]), []byte("User@Env1")))
+	assert.True(t, services.VerificarSenha(hsRapida, hAdmin, "Admin@Env1"))
+	assert.True(t, services.VerificarSenha(hsRapida, hVend[0], "User@Env1"))
 
 	assert.Equal(t, []string{"02_seed_admin.sql", "03_seed_vendedores.sql"}, ex.arquivos, "executa na ordem")
 	assert.Contains(t, logs.String(), "total de placeholders substituídos: 3")
@@ -183,8 +185,8 @@ func TestRun_Erros(t *testing.T) {
 		errIs  error
 	}{
 		{
-			nome:   "custo bcrypt inválido",
-			cfg:    &config.Config{BCryptCost: bcrypt.MaxCost + 1},
+			nome:   "sem PASSWORD_PEPPER",
+			cfg:    &config.Config{HashSenha: config.HashSenha{MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}},
 			errSub: "hash admin falhou",
 		},
 		{

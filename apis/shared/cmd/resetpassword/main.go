@@ -1,5 +1,5 @@
-// Command resetpassword cria ou atualiza usuários no banco, com hash bcrypt
-// válido. A lógica fica em tools/resetpassword.
+// Command resetpassword cria ou atualiza usuários no banco, com hash Argon2id
+// válido (pepper PASSWORD_PEPPER do .env). A lógica fica em tools/resetpassword.
 //
 // Uso:
 //
@@ -8,7 +8,7 @@
 //	printf '%s\n' "$NOVA_SENHA" | go run ./cmd/resetpassword -all-users -password-stdin
 //	cd apis/shared && go run ./cmd/resetpassword -create-admin   # SEED_ADMIN_PASSWORD do .env ou aleatória
 //
-// Exige DB_USUARIO e DB_SENHA no .env. -password=... ainda funciona, mas é
+// Exige DB_USUARIO e DB_SENHA no .env (e PASSWORD_PEPPER, salvo em -list). -password=... ainda funciona, mas é
 // depreciada (fica no histórico do shell) e gera aviso no stderr. No Git Bash
 // (mintty), -password-prompt precisa de `winpty go run ...`.
 package main
@@ -25,6 +25,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/rotaperfumes/shared/cmdutil"
+	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/tools/resetpassword"
 	// Este binário não usa config.DSN(); importa tz diretamente para fixar
 	// time.Local em -03:00 antes do sql.Open (RISCO-01).
@@ -58,6 +59,15 @@ func main() {
 	opts.Password = senha
 
 	cmdutil.LoadEnvFromCwd()
+
+	// -list não grava senha: dispensa PASSWORD_PEPPER.
+	if !opts.List {
+		hs, err := config.LoadHashSenha()
+		if err != nil {
+			log.Fatalf("resetpassword: %v", err)
+		}
+		opts.HashSenha = hs
+	}
 
 	dsn, err := resetpassword.DSN()
 	if err != nil {

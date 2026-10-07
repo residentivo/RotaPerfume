@@ -18,63 +18,64 @@ import (
 // newTestConfig retorna uma Config válida para uso em testes.
 func newTestConfig() *config.Config {
 	return &config.Config{
-		JWTSecret:  "test-secret-super-seguro-para-testes-unitarios",
-		JWTIssuer:  "rotaperfumes-test",
-		JWTTTL:     1 * time.Hour,
-		BCryptCost: 4, // cost baixo para acelerar os testes
+		JWTSecret: "test-secret-super-seguro-para-testes-unitarios",
+		JWTIssuer: "rotaperfumes-test",
+		JWTTTL:    1 * time.Hour,
+		HashSenha: config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}, // Argon2id mínimo para acelerar os testes
 	}
 }
 
-// TestVerifyPassword verifica que o bcrypt compare funciona corretamente:
-// senha correta → true, senha errada → false, hash inválido → panic tratado como false.
+// TestVerifyPassword confere o caminho Argon2id (com pepper) e o bcrypt legado:
+// senha correta → true, senha errada → false, hash inválido → false sem panic.
 func TestVerifyPassword(t *testing.T) {
+	cfg := newTestConfig()
 	auth := services.NewAuthService()
-	hash, err := bcrypt.GenerateFromPassword([]byte("senha-correta"), 4)
-	require.NoError(t, err, "falha ao gerar hash para o teste")
+	argon, err := auth.HashPassword(cfg, "senha-correta")
+	require.NoError(t, err, "falha ao gerar hash argon2id para o teste")
+	legado, err := bcrypt.GenerateFromPassword([]byte("senha-correta"), 4)
+	require.NoError(t, err, "falha ao gerar hash bcrypt para o teste")
 
-	t.Run("senha correta retorna true", func(t *testing.T) {
-		assert.True(t, auth.VerifyPassword(string(hash), "senha-correta"))
-	})
-
-	t.Run("senha incorreta retorna false", func(t *testing.T) {
-		assert.False(t, auth.VerifyPassword(string(hash), "senha-errada"))
-	})
+	hashes := map[string]string{"argon2id": argon, "bcrypt legado": string(legado)}
+	for nome, hash := range hashes {
+		t.Run(nome, func(t *testing.T) {
+			cases := []struct {
+				name     string
+				password string
+				match    bool
+			}{
+				{"senha correta", "senha-correta", true},
+				{"senha incorreta", "senha-errada", false},
+				{"vazia", "", false},
+				{"com espaços", " senha-correta ", false},
+				{"case sensitive", "SENHA-CORRETA", false},
+			}
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					assert.Equal(t, c.match, auth.VerifyPassword(cfg, hash, c.password))
+				})
+			}
+		})
+	}
 
 	t.Run("hash inválido retorna false (sem panic)", func(t *testing.T) {
 		assert.NotPanics(t, func() {
-			assert.False(t, auth.VerifyPassword("hash-invalido", "qualquer"))
+			assert.False(t, auth.VerifyPassword(cfg, "hash-invalido", "qualquer"))
 		})
-	})
-
-	t.Run("parametrizado: múltiplas senhas", func(t *testing.T) {
-		cases := []struct {
-			name     string
-			password string
-			match    bool
-		}{
-			{"vazia vs hash-de-vazia", "", bcrypt.CompareHashAndPassword(hash, []byte("")) == nil},
-			{"com espaços", " senha-correta ", false},
-			{"case sensitive", "SENHA-CORRETA", false},
-		}
-		for _, c := range cases {
-			t.Run(c.name, func(t *testing.T) {
-				assert.Equal(t, c.match, auth.VerifyPassword(string(hash), c.password))
-			})
-		}
 	})
 }
 
-// TestHashPassword garante que HashPassword gera hash válido e reproduzível
-// em par com VerifyPassword.
+// TestHashPassword garante que HashPassword gera Argon2id válido em par com
+// VerifyPassword.
 func TestHashPassword(t *testing.T) {
 	cfg := newTestConfig()
 	auth := services.NewAuthService()
 
-	t.Run("gera hash que valida com VerifyPassword", func(t *testing.T) {
+	t.Run("gera hash argon2id que valida com VerifyPassword", func(t *testing.T) {
 		hash, err := auth.HashPassword(cfg, "minha-senha-123")
 		require.NoError(t, err)
-		assert.NotEmpty(t, hash)
-		assert.True(t, auth.VerifyPassword(hash, "minha-senha-123"))
+		assert.True(t, strings.HasPrefix(hash, "$argon2id$v=19$m=64,t=1,p=1$"), hash)
+		assert.True(t, auth.VerifyPassword(cfg, hash, "minha-senha-123"))
+		assert.False(t, auth.NeedsRehash(cfg, hash))
 	})
 
 	t.Run("hashes diferentes para a mesma senha (salt aleatório)", func(t *testing.T) {
@@ -82,18 +83,18 @@ func TestHashPassword(t *testing.T) {
 		require.NoError(t, err)
 		h2, err := auth.HashPassword(cfg, "mesma-senha")
 		require.NoError(t, err)
-		assert.NotEqual(t, h1, h2, "bcrypt deve gerar salt aleatório")
-		assert.True(t, auth.VerifyPassword(h1, "mesma-senha"))
-		assert.True(t, auth.VerifyPassword(h2, "mesma-senha"))
+		assert.NotEqual(t, h1, h2, "argon2id deve gerar salt aleatório")
+		assert.True(t, auth.VerifyPassword(cfg, h1, "mesma-senha"))
+		assert.True(t, auth.VerifyPassword(cfg, h2, "mesma-senha"))
 	})
 
 	t.Run("parametrizado: senhas diversas", func(t *testing.T) {
-		senhas := []string{"a", "abc123", "uma senha com espaços e acentos áéíóú", "🔐🔑"}
+		senhas := []string{"a", "abc123", "uma senha com espaços e acentos áéíóú", "🔐🔑", strings.Repeat("x", 200)}
 		for _, s := range senhas {
 			t.Run(s, func(t *testing.T) {
 				hash, err := auth.HashPassword(cfg, s)
 				require.NoError(t, err)
-				assert.True(t, auth.VerifyPassword(hash, s))
+				assert.True(t, auth.VerifyPassword(cfg, hash, s))
 			})
 		}
 	})

@@ -35,11 +35,11 @@ func TestSEC08_Upserts_GravamCorte(t *testing.T) {
 			func(c corteAgora) []driver.Value {
 				return []driver.Value{hashDe("Adm@1234"), c, resetpassword.AdminEmail}
 			},
-			func(db resetpassword.DB) error { return resetpassword.UpsertAdmin(ctx, db, "Adm@1234") }},
+			func(db resetpassword.DB) error { return resetpassword.UpsertAdmin(ctx, db, hsTeste, "Adm@1234") }},
 		{"UpsertByEmail", reUpdateEmail,
 			func(c corteAgora) []driver.Value { return []driver.Value{hashDe("Nova@123"), c, "a@x.com"} },
 			func(db resetpassword.DB) error {
-				return resetpassword.UpsertByEmail(ctx, db, "a@x.com", "Nova@123", "normal", "A", 0)
+				return resetpassword.UpsertByEmail(ctx, db, hsTeste, "a@x.com", "Nova@123", "normal", "A", 0)
 			}},
 	}
 	for _, tc := range casos {

@@ -17,7 +17,7 @@ import (
 )
 
 func usuarioTestCfg(verbose bool) *config.Config {
-	return &config.Config{Verbose: verbose, BCryptCost: 4}
+	return &config.Config{Verbose: verbose, HashSenha: config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}}
 }
 
 func newUsuarioTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {

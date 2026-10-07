@@ -63,7 +63,7 @@ func (h *SenhaHistoricoHandler) ListarTodos(w http.ResponseWriter, r *http.Reque
 
 	out := make([]map[string]any, 0, len(historicos))
 	for _, h := range historicos {
-		// Nota: senha_hash_anterior (bcrypt) é mantido no model para uso
+		// Nota: senha_hash_anterior (Argon2id ou bcrypt legado) é mantido no model para uso
 		// interno/auditoria em banco, mas NUNCA deve ser serializado na
 		// resposta HTTP — mesmo sendo um hash, sua exposição facilita
 		// ataques offline (ex. em caso de vazamento de logs/rede).

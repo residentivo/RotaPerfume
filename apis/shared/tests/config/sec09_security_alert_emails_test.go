@@ -55,7 +55,7 @@ func TestSEC09_Load_SecurityAlertEmails(t *testing.T) {
 		t.Run(c.nome, func(t *testing.T) {
 			t.Setenv("JWT_SECRET", "segredo")
 			t.Setenv("JWT_TTL", "24h")
-			t.Setenv("BCRYPT_COST", "12")
+			t.Setenv("PASSWORD_PEPPER", "pepper-de-teste-com-pelo-menos-32-bytes")
 			t.Setenv("DB_USUARIO", "u")
 			t.Setenv("DB_SENHA", "s")
 			t.Setenv("SECURITY_ALERT_EMAILS", c.raw)

@@ -1,4 +1,4 @@
-// Package seedusers implementa o comando cmd/seedusers: gera hashes bcrypt
+// Package seedusers implementa o comando cmd/seedusers: gera hashes Argon2id (com pepper)
 // para os placeholders dos SQLs de seed, grava cópias renderizadas em
 // <raiz>/tmp/seed e executa essas cópias contra o MySQL. Os arquivos de sql/
 // nunca são alterados (SEC-10).
@@ -13,7 +13,8 @@
 //  1. Lê as senhas de SEED_ADMIN_PASSWORD e SEED_USER_PASSWORD; a que não
 //     estiver definida vira uma senha aleatória de 16 caracteres (modo dev).
 //     Não há senha padrão fixa.
-//  2. Gera 2 hashes bcrypt com o custo de BCRYPT_COST (default 12).
+//  2. Gera 2 hashes Argon2id com o pepper PASSWORD_PEPPER e os parâmetros
+//     ARGON2_* do .env (o pepper do servidor precisa ser o mesmo).
 //  3. Lê sql/02_seed_admin.sql e sql/03_seed_vendedores.sql, substitui os
 //     placeholders e grava as cópias em <raiz>/tmp/seed (perm 0600).
 //  4. Executa as cópias (exige DB_USUARIO e DB_SENHA no .env) e as apaga ao
@@ -78,7 +79,7 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 	out := deps.Out
 	vaiExecutar := !opts.NoExec && !opts.DryRun
 	if vaiExecutar {
-		// Falha cedo, antes do bcrypt: sem credenciais explícitas o mysql
+		// Falha cedo, antes do hash: sem credenciais explícitas o mysql
 		// rodaria com um usuário/senha padrão (SEC-10).
 		if err := exigirCredenciaisDB(); err != nil {
 			return err
@@ -104,8 +105,8 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 		return fmt.Errorf("hash user falhou: %w", err)
 	}
 
-	log.Printf("seedusers: cost=%d, admin_hash=%s..., user_hash=%s...",
-		cfg.BCryptCost, ShortHash(adminHash), ShortHash(userHash))
+	log.Printf("seedusers: argon2id m=%d t=%d p=%d, admin_hash=%s..., user_hash=%s...",
+		cfg.HashSenha.MemoriaKiB, cfg.HashSenha.Iteracoes, cfg.HashSenha.Paralelismo, ShortHash(adminHash), ShortHash(userHash))
 
 	imprimirCredenciais(out, opts.ShowPassword, adminPwd, userPwd)
 
@@ -192,14 +193,14 @@ func imprimirCredenciais(out io.Writer, mostrar bool, adminPwd, userPwd string) 
 }
 
 // avisarNoExec lista os SQLs renderizados mantidos em disco e pede que sejam
-// apagados após o uso (contêm hashes bcrypt das senhas de seed).
+// apagados após o uso (contêm hashes Argon2id das senhas de seed).
 func avisarNoExec(out io.Writer, arquivos []string) {
 	log.Printf("seedusers: --no-exec informado, SQLs NÃO foram executados")
 	fmt.Fprintln(out, "SQLs renderizados (NÃO executados):")
 	for _, f := range arquivos {
 		fmt.Fprintf(out, "  %s\n", f)
 	}
-	fmt.Fprintln(out, "ATENÇÃO: esses arquivos contêm hashes bcrypt das senhas de seed; apague-os após o uso.")
+	fmt.Fprintln(out, "ATENÇÃO: esses arquivos contêm hashes Argon2id das senhas de seed; apague-os após o uso.")
 }
 
 // apagarRenderizados remove as cópias renderizadas; falha só gera log.

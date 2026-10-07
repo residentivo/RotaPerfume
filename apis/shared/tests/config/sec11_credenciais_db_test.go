@@ -4,7 +4,7 @@ package config_test
 //   - Load() devolve config.ErrCredenciaisDB (erro, não panic; cfg nil) se
 //     algum dos dois estiver ausente/vazio ou o usuário for só espaços.
 //   - A mensagem nunca carrega os valores.
-//   - A checagem roda no fim: os erros de JWT_SECRET/JWT_TTL/BCRYPT_COST e
+//   - A checagem roda no fim: os erros de JWT_SECRET/JWT_TTL/PASSWORD_PEPPER e
 //     das durações de refresh têm prioridade.
 //   - LoadSemCredenciaisDB() (seedusers -dry-run/-no-exec) não exige DB, mas
 //     mantém as demais validações.
@@ -47,10 +47,13 @@ func sec11Base() map[string]*string {
 	return map[string]*string{
 		"JWT_SECRET":                    sp("segredo-sec11"),
 		"JWT_TTL":                       sp("24h"),
-		"BCRYPT_COST":                   sp("12"),
+		"PASSWORD_PEPPER":               sp("pepper-de-teste-com-pelo-menos-32-bytes"),
 		"REFRESH_REUSE_SUPPRESS_WINDOW": nil,
 		"REFRESH_CLEANUP_INTERVAL":      nil,
 		"REFRESH_TOKEN_RETENCAO":        nil,
+		"ARGON2_MEMORIA_KIB":            nil,
+		"ARGON2_ITERACOES":              nil,
+		"ARGON2_PARALELISMO":            nil,
 	}
 }
 
@@ -144,7 +147,7 @@ func TestSEC11_LoadSemCredenciaisDB(t *testing.T) {
 			env:  map[string]*string{"DB_USUARIO": nil, "DB_SENHA": nil},
 			check: func(t *testing.T, c *config.Config) {
 				assert.Equal(t, "segredo-sec11", c.JWTSecret)
-				assert.Equal(t, 12, c.BCryptCost)
+				assert.Equal(t, uint32(65536), c.HashSenha.MemoriaKiB)
 			},
 		},
 		{
@@ -157,7 +160,8 @@ func TestSEC11_LoadSemCredenciaisDB(t *testing.T) {
 		},
 		{nome: "mantém a validação de JWT_SECRET", env: map[string]*string{"JWT_SECRET": nil}, wantErr: "JWT_SECRET"},
 		{nome: "mantém a validação de JWT_TTL", env: map[string]*string{"JWT_TTL": sp("abc")}, wantErr: "JWT_TTL"},
-		{nome: "mantém a validação de BCRYPT_COST", env: map[string]*string{"BCRYPT_COST": sp("99")}, wantErr: "BCRYPT_COST"},
+		{nome: "mantém a validação de PASSWORD_PEPPER", env: map[string]*string{"PASSWORD_PEPPER": sp("curto")}, wantErr: "PASSWORD_PEPPER"},
+		{nome: "mantém a validação de ARGON2_MEMORIA_KIB", env: map[string]*string{"ARGON2_MEMORIA_KIB": sp("99")}, wantErr: "ARGON2_MEMORIA_KIB"},
 		{nome: "mantém a validação de REFRESH_REUSE_SUPPRESS_WINDOW", env: map[string]*string{"REFRESH_REUSE_SUPPRESS_WINDOW": sp("10s")}, wantErr: "REFRESH_REUSE_SUPPRESS_WINDOW"},
 		{nome: "mantém a validação de REFRESH_CLEANUP_INTERVAL", env: map[string]*string{"REFRESH_CLEANUP_INTERVAL": sp("30s")}, wantErr: "REFRESH_CLEANUP_INTERVAL"},
 		{nome: "mantém a validação de REFRESH_TOKEN_RETENCAO", env: map[string]*string{"REFRESH_TOKEN_RETENCAO": sp("1h")}, wantErr: "REFRESH_TOKEN_RETENCAO"},
@@ -198,7 +202,7 @@ func TestSEC11_Load_OrdemDosErros(t *testing.T) {
 		{"sem JWT_SECRET e sem DB → JWT_SECRET", map[string]*string{"JWT_SECRET": nil}, "JWT_SECRET"},
 		{"JWT_SECRET vazio e sem DB → JWT_SECRET", map[string]*string{"JWT_SECRET": sp("")}, "JWT_SECRET"},
 		{"JWT_TTL inválido e sem DB → JWT_TTL", map[string]*string{"JWT_TTL": sp("xyz")}, "JWT_TTL"},
-		{"BCRYPT_COST inválido e sem DB → BCRYPT_COST", map[string]*string{"BCRYPT_COST": sp("3")}, "BCRYPT_COST"},
+		{"sem PASSWORD_PEPPER e sem DB → PASSWORD_PEPPER", map[string]*string{"PASSWORD_PEPPER": nil}, "PASSWORD_PEPPER"},
 		{"janela de reuso inválida e sem DB → REFRESH_REUSE_SUPPRESS_WINDOW", map[string]*string{"REFRESH_REUSE_SUPPRESS_WINDOW": sp("abc")}, "REFRESH_REUSE_SUPPRESS_WINDOW"},
 		{"retenção inválida e sem DB → REFRESH_TOKEN_RETENCAO", map[string]*string{"REFRESH_TOKEN_RETENCAO": sp("1h")}, "REFRESH_TOKEN_RETENCAO"},
 	}

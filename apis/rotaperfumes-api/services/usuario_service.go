@@ -62,7 +62,7 @@ func NewUsuarioService(db *sql.DB, cfg *config.Config, emailSvc sharedsvc.EmailS
 }
 
 // gerarSenhaEHash gera uma senha aleatória e retorna a senha em texto claro
-// (para envio por email logo em seguida) junto com seu hash bcrypt (para
+// (para envio por email logo em seguida) junto com seu hash Argon2id (para
 // persistência). O chamador é responsável por nunca logar/retornar a senha
 // em texto claro — apenas usá-la imediatamente para envio de email.
 func (s *UsuarioService) gerarSenhaEHash() (senha, hash string, err error) {
@@ -179,7 +179,7 @@ func (s *UsuarioService) AdminResetPassword(ctx context.Context, db *sql.DB, id 
 	// colida com a senha atual do usuário-alvo (extremamente improvável,
 	// dado que é gerada por crypto/rand com 16 caracteres). Se colidir,
 	// regenera em vez de expor erro ao admin. Não comparamos contra o
-	// histórico de últimas senhas aqui — seria custo de bcrypt
+	// histórico de últimas senhas aqui — seria custo de Argon2id
 	// desnecessário para uma senha aleatória forte.
 	var senha, hash string
 	for tentativa := 1; tentativa <= maxTentativasSenhaGerada; tentativa++ {
@@ -187,7 +187,7 @@ func (s *UsuarioService) AdminResetPassword(ctx context.Context, db *sql.DB, id 
 		if err != nil {
 			return false, err
 		}
-		if !s.auth.VerifyPassword(targetUser.PasswordHash, senha) {
+		if !s.auth.VerifyPassword(s.Cfg, targetUser.PasswordHash, senha) {
 			break
 		}
 		log.Printf("[usuarios] admin reset: senha gerada colidiu com a atual, regenerando: id=%d tentativa=%d", id, tentativa)
