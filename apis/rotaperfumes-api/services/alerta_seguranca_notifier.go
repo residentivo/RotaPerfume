@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -176,32 +177,64 @@ func (n *AlertaSegurancaNotifier) enviar(a sharedsvc.AlertaReuso) {
 		a.EmailUsuario = strings.TrimSpace(u.Email)
 	}
 
-	destinos := make([]string, 0, 2)
+	var enviados, pulados resultadoEnvio
+	registrar := func(destino string, paraAdmin bool) {
+		err := n.sender.EnviarAlertaReusoToken(ctx, destino, nome, a, paraAdmin)
+		switch {
+		case err == nil:
+			enviados.contar(paraAdmin)
+		case errors.Is(err, sharedsvc.ErrSMTPNaoConfigurado):
+			pulados.contar(paraAdmin)
+		default:
+			log.Printf("[auth][seguranca] falha ao enviar alerta: user_id=%d: %s", a.UsuarioID, ocultarEmail(err, a.EmailUsuario))
+		}
+	}
+
 	if a.EmailUsuario != "" {
-		if err := n.sender.EnviarAlertaReusoToken(ctx, a.EmailUsuario, nome, a, false); err != nil {
-			log.Printf("[auth][seguranca] falha ao enviar alerta: user_id=%d: %s", a.UsuarioID, ocultarEmail(err, a.EmailUsuario))
-		} else {
-			destinos = append(destinos, "usuario")
-		}
+		registrar(a.EmailUsuario, false)
 	}
-
-	adminsOK := 0
 	for _, admin := range n.admins {
-		if err := n.sender.EnviarAlertaReusoToken(ctx, admin, nome, a, true); err != nil {
-			log.Printf("[auth][seguranca] falha ao enviar alerta: user_id=%d: %s", a.UsuarioID, ocultarEmail(err, a.EmailUsuario))
-			continue
-		}
-		adminsOK++
-	}
-	if adminsOK > 0 {
-		destinos = append(destinos, fmt.Sprintf("admin(%d)", adminsOK))
+		registrar(admin, true)
 	}
 
-	if len(destinos) == 0 {
+	if enviados.vazio() && pulados.vazio() {
 		log.Printf("[auth][seguranca] alerta sem destinatários entregues: user_id=%d", a.UsuarioID)
 		return
 	}
-	log.Printf("[auth][seguranca] alerta enviado: user_id=%d destinos=%s", a.UsuarioID, strings.Join(destinos, ","))
+	if !enviados.vazio() {
+		log.Printf("[auth][seguranca] alerta enviado: user_id=%d destinos=%s", a.UsuarioID, enviados)
+	}
+	if !pulados.vazio() {
+		log.Printf("[auth][seguranca] alerta pulado (SMTP não configurado): user_id=%d destinos=%s", a.UsuarioID, pulados)
+	}
+}
+
+// resultadoEnvio conta destinos de um alerta (usuário e admins) para o log.
+type resultadoEnvio struct {
+	usuario bool
+	admins  int
+}
+
+func (r *resultadoEnvio) contar(paraAdmin bool) {
+	if paraAdmin {
+		r.admins++
+		return
+	}
+	r.usuario = true
+}
+
+func (r resultadoEnvio) vazio() bool { return !r.usuario && r.admins == 0 }
+
+// String formata os destinos sem endereços: "usuario", "admin(N)" ou ambos.
+func (r resultadoEnvio) String() string {
+	destinos := make([]string, 0, 2)
+	if r.usuario {
+		destinos = append(destinos, "usuario")
+	}
+	if r.admins > 0 {
+		destinos = append(destinos, fmt.Sprintf("admin(%d)", r.admins))
+	}
+	return strings.Join(destinos, ",")
 }
 
 // ocultarEmail remove o e-mail do usuário da mensagem de erro (servidores SMTP

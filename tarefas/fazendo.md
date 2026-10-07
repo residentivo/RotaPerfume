@@ -13,7 +13,7 @@
 ## DEPLOY-01: implantar o sistema no servidor `ivo-inspiron-15-3530` via Docker + Jenkins — prioridade ALTA
 
 **Status:** em execução (Lote 13, 2026-09-30)
-**Passo atual:** ver linha 9.
+**Passo atual:** ver o "Passo atual" do bloco do Lote 13, acima.
 **Camadas:** Segurança, Backend (infra), Frontend (infra), Documentação
 **Origem:** pedido do usuário, "implementar o projeto no servidor ivo-inspiron-15-3530 com Docker".
 

@@ -16,8 +16,10 @@ import (
 	"github.com/rotaperfumes/shared/tz"
 )
 
-// ErrSMTPNaoConfigurado é retornado (ou apenas logado, conforme a implementação)
-// quando as credenciais SMTP não estão presentes no ambiente.
+// ErrSMTPNaoConfigurado é retornado quando as credenciais SMTP não estão
+// presentes no ambiente: por NewSMTPEmailService e pelo
+// NoopEmailService.EnviarAlertaReusoToken (envio pulado). EnviarSenhaInicial
+// do Noop apenas loga e devolve nil.
 var ErrSMTPNaoConfigurado = errors.New("services: SMTP não configurado")
 
 // EmailService abstrai o envio de emails transacionais do sistema.
@@ -295,9 +297,10 @@ func (n *NoopEmailService) EnviarSenhaInicial(ctx context.Context, destinatario,
 	return nil
 }
 
-// EnviarAlertaReusoToken não envia e-mail; apenas registra que o alerta foi
-// pulado (sem e-mail do usuário no log).
+// EnviarAlertaReusoToken não envia e-mail; registra que o alerta foi pulado
+// (sem e-mail do usuário no log) e devolve ErrSMTPNaoConfigurado, para que o
+// chamador não registre o alerta como "enviado" (LOG-01).
 func (n *NoopEmailService) EnviarAlertaReusoToken(ctx context.Context, destinatario, nomeUsuario string, a AlertaReuso, paraAdmin bool) error {
 	log.Printf("[email] alerta de seguranca pulado: SMTP não configurado user_id=%d para_admin=%v", a.UsuarioID, paraAdmin)
-	return nil
+	return ErrSMTPNaoConfigurado
 }

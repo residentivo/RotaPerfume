@@ -284,6 +284,23 @@ func TestSEC11_Makefile_HelpContinuaAlvoPadrao(t *testing.T) {
 	assert.Greater(t, mk.regras["db-check-env"].linha, mk.regras["help"].linha, "db-check-env fica depois do help")
 }
 
+// BUG-13: com o "-include .env", $(MAKEFILE_LIST) vale "Makefile .env"; o grep
+// do help com vários arquivos prefixa cada linha com "Makefile:" e o awk
+// mostra o nome do arquivo no lugar do alvo. A receita do help deve ler só o
+// Makefile ($(firstword $(MAKEFILE_LIST))) ou usar grep -h.
+func TestBUG13_Makefile_HelpNaoPrefixaNomeDoArquivo(t *testing.T) {
+	mk := lerMakefile(t)
+	require.Contains(t, mk.regras, "help")
+	receita := strings.Join(mk.regras["help"].receita, "\n")
+	require.Contains(t, receita, "grep", "help lista os alvos via grep")
+
+	reGrepH := regexp.MustCompile(`grep\s+(-[A-Za-z]*h[A-Za-z]*\s+|--no-filename\s+)`)
+	semListaPura := strings.ReplaceAll(receita, "$(firstword $(MAKEFILE_LIST))", "")
+	usaListaPura := strings.Contains(semListaPura, "$(MAKEFILE_LIST)")
+	assert.False(t, usaListaPura && !reGrepH.MatchString(receita),
+		"help não pode passar $(MAKEFILE_LIST) puro ao grep sem -h (com .env vira \"Makefile .env\"): %s", receita)
+}
+
 // Nenhuma receita expande a senha no texto do comando ($(DB_SENHA) ou
 // $(MYSQL_PWD)); só o db-check-env consulta $$MYSQL_PWD (variável do
 // ambiente do shell, fora do argv).

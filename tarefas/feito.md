@@ -3,6 +3,69 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 16 de 2026-10-07: 3 cards concluídos (de 3)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário "Pode seguir com esses a fazer". Os cards vieram dos achados do roteiro manual do Lote 12 (divergências D1, D2 e D3). O TST-04 ficou em `afazer.md`, bloqueado até o usuário liberar `make db-*` ou rodar os alvos.
+>
+> **Fluxo:** 🟡 BackBrain (BUG-13, LOG-01) ∥ 🔵 SubBrain (DOC-05) → 🔴 TestBrain → 🔵 SubBrain. 🟣 SecBrain e 🌸 DataBrain dispensados: não há mudança de segurança nem de schema.
+>
+> **Validação (🔴 TestBrain, 2026-10-07):** `go vet` e `go test ./... -count=1` verdes nos dois módulos. Cobertura: `rotaperfumes-api/services` 97,0%, `shared/services` 96,1%, `rotaperfumes-api` total 89,1%. `make -n db-up DB_SENHA=SENHA_FICTICIA_L16 | grep -c SENHA_FICTICIA_L16` = 0. O corpo real do 401 confere com o roteiro revisado. **Sem mudança de contrato HTTP.**
+
+## BUG-13: `make help` mostrava `Makefile` no lugar do nome do alvo — 2026-10-07
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-07.
+
+**Camada:** Repositório/Makefile
+**Origem:** 🔴 TestBrain, roteiro manual do Lote 12 (2026-10-07): item 1.3, divergência D1.
+
+**Causa:** com o `-include .env` do SEC-11, `$(MAKEFILE_LIST)` passou a valer `Makefile .env`. O `grep` da receita `help` prefixava cada linha com `Makefile:`, e o `awk` pegava esse prefixo como nome do alvo.
+
+**Entregue:** a receita `help` do `Makefile` usa `$(firstword $(MAKEFILE_LIST))`. `make help` lista os 52 alvos sem `Makefile`.
+
+**Testes (🔴 TestBrain):** `TestBUG13_Makefile_HelpNaoPrefixaNomeDoArquivo` em `apis/shared/tests/config/sec11_makefile_sql_test.go`. O item 1.3 do roteiro do Lote 12 foi reverificado e passou a aprovado.
+
+---
+
+## LOG-01: log de alerta de segurança dizia "enviado" quando o envio era pulado — 2026-10-07
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-07.
+
+**Camada:** Backend
+**Origem:** 🔴 TestBrain, roteiro manual do Lote 12 (2026-10-07): item 5.4, divergência D3.
+
+**Entregue:**
+- `apis/shared/services/email_service.go`: `NoopEmailService.EnviarAlertaReusoToken` devolve `ErrSMTPNaoConfigurado` em vez de `nil`. `EnviarSenhaInicial` do Noop continua devolvendo `nil`.
+- `apis/rotaperfumes-api/services/alerta_seguranca_notifier.go`: separa enviado, pulado e falha com `errors.Is`. Logs:
+  - enviado: `[auth][seguranca] alerta enviado: user_id=%d destinos=usuario,admin(N)`;
+  - pulado: `[auth][seguranca] alerta pulado (SMTP não configurado): user_id=%d destinos=...`;
+  - misto: uma linha de cada.
+- Dedup, teto e fila do SEC-09 não mudaram. Nenhum endereço de e-mail vai ao log.
+- Chamadores conferidos: `cmd/server`, `cmd/resetsenhas` (só usa SMTP real) e `usuario_service` (`EnviarSenhaInicial`, comportamento inalterado).
+
+**Testes (🔴 TestBrain), em `apis/rotaperfumes-api/tests/services/sec09_notifier_test.go`:**
+- `TestSEC09_Noop_EnviarAlertaReusoToken` ajustado para `ErrorIs`;
+- novos `TestLOG01_Notifier_EnviadoVsPulado` (5 casos), `TestLOG01_Notifier_ComNoopReal` e `TestLOG01_Notifier_CombinacoesAdmin` (4 casos).
+
+---
+
+## DOC-05: roteiro do Lote 12 dependia da ordem das chaves do JSON e tinha aviso desatualizado no 1.5 — 2026-10-07
+**Agentes:** 🔵 SubBrain → 🔴 TestBrain
+
+**Status:** concluído em 2026-10-07.
+
+**Camada:** Documentação
+**Origem:** 🔴 TestBrain, roteiro manual do Lote 12 (2026-10-07): itens 5.1/5.5 (divergência D2) e 1.5.
+
+**Entregue em `docs/roteiro-teste-manual-lote12.md`:**
+- **5.1:** confere o conteúdo do 401 (`success` = `false`, `error` = `"refresh token revogado"`) sem depender da ordem das chaves, citando a resposta real `{"error":"refresh token revogado","success":false}`.
+- **5.5:** pede o mesmo conteúdo do 5.1, sem chaves a mais e sem `Set-Cookie`.
+- **1.5:** "contagem esperada 0; qualquer outro valor é falha", com a nota de que o `db-check-env` testa `$$DB_USUARIO`/`$$MYSQL_PWD` do ambiente.
+- **Fechamento:** item 1.3 marcado como aprovado, e a seção "Execução" ganhou uma nota de que D1, D2 e D3 foram resolvidas no Lote 16. O histórico original foi mantido.
+
+---
+
 ## INFO-01: linhas não alcançáveis aceitas como fora da meta de cobertura — 2026-10-07
 **Agentes:** 🔴 TestBrain (registro) → aceito pelo 🤍 MegaBrain → encerrado pelo 🔵 SubBrain
 
@@ -99,7 +162,7 @@
 >
 > **Documentação (🔵 SubBrain) do lote:** `docs/manual-base-de-dados.md` (seções 7.1, 7.2, 17, 22 itens 1–4 e 11 marcados como resolvidos, e nova seção 23 "Credenciais do banco e uso do `mysql`"), `postman/README.md` (o `db-up` cria `estoque`), `docs/roteiro-teste-manual-lote12.md` (novo).
 >
-> **Pendência do usuário:** executar o roteiro manual `docs/roteiro-teste-manual-lote12.md` (seções 1 a 6, ~35–50 min; a seção 3 apaga e recria o banco de dev). Nenhum checkbox foi marcado até o fechamento: SEC-11 (1.1–1.10), CHORE-02 (2.1–2.6), DB-01 (3.1–3.7), migração 23 (4.1–4.3), SEC-12 (5.1–5.9) e limpeza (6.1–6.3). Divergências voltam ao 🔵 SubBrain.
+> **Roteiro manual:** executado pelo 🔴 TestBrain em 2026-10-07 (24 aprovados, 1 falhou, 13 não verificáveis de 38; detalhes no fim de `docs/roteiro-teste-manual-lote12.md`). Os achados viraram os cards BUG-13, LOG-01 e DOC-05, concluídos no Lote 16 (2026-10-07; o item 1.3 passou a aprovado), e o TST-04. Os itens não verificados (1.1, 1.2, 1.7, 3.1–3.7, 4.1–4.3) seguem no TST-04, em `afazer.md`, bloqueado até o usuário.
 >
 > **Pendências registradas para lotes futuros** (`docs/manual-base-de-dados.md`, seção 23.4): `fix-hash`/`fix-admin` com `-password=Admin@123` no argv; `db-seed` imprime `Admin@123`; usuário MySQL local ainda `golang/golang`; `MYSQL_PWD` obsoleto no cliente MySQL (migrar para `--login-path`); `cmd/cleanuprefresh` opcional. Por decisão do 🤍 MegaBrain (2026-10-07), esses itens não viram cards por enquanto. O item 6 (senha no argv do `test` do `db-check-env`) está resolvido: o Makefile testa `$$DB_USUARIO`/`$$MYSQL_PWD` do ambiente (linha 48), e a seção 23.4 do manual foi marcada como resolvida em 2026-10-07.
 

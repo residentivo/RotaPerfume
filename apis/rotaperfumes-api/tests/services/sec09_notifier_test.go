@@ -517,6 +517,187 @@ func TestSEC09_Notifier_FalhaDoSender(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// LOG-01: envio pulado (SMTP não configurado) não é logado como "enviado"
+// ---------------------------------------------------------------------------
+
+func TestLOG01_Notifier_EnviadoVsPulado(t *testing.T) {
+	errSkipEmbrulhado := fmt.Errorf("noop: %w", sharedsvc.ErrSMTPNaoConfigurado)
+	casos := []struct {
+		nome       string
+		admins     []string
+		errPor     map[string]error
+		wantLog    []string
+		wantSemLog []string
+	}{
+		{
+			nome:       "todos enviados → só \"enviado\"",
+			admins:     sec09Admins,
+			wantLog:    []string{"[auth][seguranca] alerta enviado: user_id=5 destinos=usuario,admin(2)\n"},
+			wantSemLog: []string{"pulado", "falha", "sem destinatários"},
+		},
+		{
+			nome:   "todos pulados → só \"pulado\" com os destinos",
+			admins: sec09Admins,
+			errPor: map[string]error{sec09Email: sharedsvc.ErrSMTPNaoConfigurado,
+				sec09Admin1: sharedsvc.ErrSMTPNaoConfigurado, sec09Admin2: sharedsvc.ErrSMTPNaoConfigurado},
+			wantLog:    []string{"[auth][seguranca] alerta pulado (SMTP não configurado): user_id=5 destinos=usuario,admin(2)\n"},
+			wantSemLog: []string{"alerta enviado", "falha", "sem destinatários"},
+		},
+		{
+			nome:       "pulado só do usuário, sem admins (erro embrulhado com %w)",
+			admins:     nil,
+			errPor:     map[string]error{sec09Email: errSkipEmbrulhado},
+			wantLog:    []string{"alerta pulado (SMTP não configurado): user_id=5 destinos=usuario\n"},
+			wantSemLog: []string{"alerta enviado", "falha", "admin("},
+		},
+		{
+			nome:   "misto: usuário pulado, admins enviados → cada destino no seu log",
+			admins: sec09Admins,
+			errPor: map[string]error{sec09Email: sharedsvc.ErrSMTPNaoConfigurado},
+			wantLog: []string{"alerta enviado: user_id=5 destinos=admin(2)\n",
+				"alerta pulado (SMTP não configurado): user_id=5 destinos=usuario\n"},
+			wantSemLog: []string{"falha", "destinos=usuario,admin"},
+		},
+		{
+			nome:   "pulado + falha real → falha logada e pulado, sem \"enviado\"",
+			admins: []string{sec09Admin1},
+			errPor: map[string]error{sec09Email: sharedsvc.ErrSMTPNaoConfigurado,
+				sec09Admin1: errors.New("smtp dial: timeout")},
+			wantLog: []string{"falha ao enviar alerta: user_id=5: smtp dial: timeout",
+				"alerta pulado (SMTP não configurado): user_id=5 destinos=usuario\n"},
+			wantSemLog: []string{"alerta enviado", "sem destinatários"},
+		},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			logs := sec09CapturarLog(t)
+			n, s, _, r := sec09Notifier(t, c.admins)
+			s.errPor = c.errPor
+
+			n.Notificar(5, sec09TokenID, sec09IP, sec09UA)
+			assert.Len(t, s.chamadas(), 1+len(c.admins))
+
+			out := logs.String()
+			for _, w := range c.wantLog {
+				assert.Contains(t, out, w)
+			}
+			for _, w := range c.wantSemLog {
+				assert.NotContains(t, out, w)
+			}
+			assert.NotContains(t, out, sec09Email, "log nunca contém o e-mail do usuário")
+			assert.NotContains(t, out, sec09Admin1, "log não contém endereços de admin")
+
+			// Dedup do SEC-09 mantido também quando o envio foi pulado.
+			r.avancar(time.Minute)
+			s.reset()
+			n.Notificar(5, sec09TokenID+1, sec09IP, sec09UA)
+			assert.Empty(t, s.chamadas())
+			assert.Contains(t, logs.String(), "alerta suprimido (dedup): user_id=5")
+		})
+	}
+}
+
+// Com o NoopEmailService real (SMTP desligado), a sequência de log é a do
+// item 5.4 do roteiro do Lote 12, agora sem a contradição "enviado".
+func TestLOG01_Notifier_ComNoopReal(t *testing.T) {
+	logs := sec09CapturarLog(t)
+	r := &sec09Relogio{t: sec09T0}
+	n := services.NewAlertaSegurancaNotifier(nil, sharedsvc.NewNoopEmailService(), sec09Admins)
+	n.SetNow(r.now)
+	n.SetRun(func(f func()) { f() })
+	n.SetUsuarioLookup(&sec09Lookup{users: map[int64]*models.Usuario{5: {ID: 5, Nome: "Maria", Email: sec09Email}}})
+
+	n.Notificar(5, sec09TokenID, sec09IP, sec09UA)
+
+	out := logs.String()
+	assert.Contains(t, out, "[email] alerta de seguranca pulado: SMTP não configurado user_id=5 para_admin=false")
+	assert.Contains(t, out, "[email] alerta de seguranca pulado: SMTP não configurado user_id=5 para_admin=true")
+	assert.Contains(t, out, "[auth][seguranca] alerta pulado (SMTP não configurado): user_id=5 destinos=usuario,admin(2)")
+	assert.NotContains(t, out, "alerta enviado")
+	assert.NotContains(t, out, "falha ao enviar")
+	assert.NotContains(t, out, sec09Email)
+
+	n.Notificar(5, sec09TokenID+1, sec09IP, sec09UA)
+	assert.Contains(t, logs.String(), "alerta suprimido (dedup): user_id=5")
+}
+
+// LOG-01 (TestBrain): combinações complementares — admins pulados com o
+// usuário entregue, usuário sem e-mail conhecido e admins divididos entre
+// enviado e pulado.
+func TestLOG01_Notifier_CombinacoesAdmin(t *testing.T) {
+	casos := []struct {
+		nome           string
+		admins         []string
+		usuarioSemMail bool
+		errPor         map[string]error
+		wantChamadas   int
+		wantLog        []string
+		wantSemLog     []string
+	}{
+		{
+			nome:         "usuário enviado, admins pulados",
+			admins:       sec09Admins,
+			errPor:       map[string]error{sec09Admin1: sharedsvc.ErrSMTPNaoConfigurado, sec09Admin2: sharedsvc.ErrSMTPNaoConfigurado},
+			wantChamadas: 3,
+			wantLog: []string{"alerta enviado: user_id=5 destinos=usuario\n",
+				"alerta pulado (SMTP não configurado): user_id=5 destinos=admin(2)\n"},
+			wantSemLog: []string{"falha", "sem destinatários"},
+		},
+		{
+			nome:           "usuário não carregado, admins pulados → só admin(N) pulado",
+			admins:         sec09Admins,
+			usuarioSemMail: true,
+			errPor:         map[string]error{sec09Admin1: sharedsvc.ErrSMTPNaoConfigurado, sec09Admin2: sharedsvc.ErrSMTPNaoConfigurado},
+			wantChamadas:   2,
+			wantLog:        []string{"alerta pulado (SMTP não configurado): user_id=5 destinos=admin(2)\n"},
+			wantSemLog:     []string{"alerta enviado", "falha", "sem destinatários", "usuario"},
+		},
+		{
+			nome:         "admins divididos: 1 enviado, 1 pulado; usuário enviado",
+			admins:       sec09Admins,
+			errPor:       map[string]error{sec09Admin2: sharedsvc.ErrSMTPNaoConfigurado},
+			wantChamadas: 3,
+			wantLog: []string{"alerta enviado: user_id=5 destinos=usuario,admin(1)\n",
+				"alerta pulado (SMTP não configurado): user_id=5 destinos=admin(1)\n"},
+			wantSemLog: []string{"falha", "sem destinatários"},
+		},
+		{
+			nome:           "usuário não carregado, admin com falha real → sem destinatários",
+			admins:         []string{sec09Admin1},
+			usuarioSemMail: true,
+			errPor:         map[string]error{sec09Admin1: errors.New("smtp: 421")},
+			wantChamadas:   1,
+			wantLog:        []string{"alerta sem destinatários entregues: user_id=5"},
+			wantSemLog:     []string{"alerta enviado", "pulado"},
+		},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			logs := sec09CapturarLog(t)
+			n, s, l, _ := sec09Notifier(t, c.admins)
+			if c.usuarioSemMail {
+				l.err = repositories.ErrNotFound
+			}
+			s.errPor = c.errPor
+
+			n.Notificar(5, sec09TokenID, sec09IP, sec09UA)
+			assert.Len(t, s.chamadas(), c.wantChamadas)
+
+			out := logs.String()
+			for _, w := range c.wantLog {
+				assert.Contains(t, out, w)
+			}
+			for _, w := range c.wantSemLog {
+				assert.NotContains(t, out, w)
+			}
+			for _, addr := range []string{sec09Email, sec09Admin1, sec09Admin2} {
+				assert.NotContains(t, out, addr, "log não contém endereços de e-mail")
+			}
+		})
+	}
+}
+
 // Usuário não carregado (sem e-mail conhecido) e falha no admin: o erro é
 // logado como veio (nada a ocultar) e o alerta fica sem destinatários.
 func TestSEC09_Notifier_FalhaAdmin_UsuarioNaoCarregado(t *testing.T) {

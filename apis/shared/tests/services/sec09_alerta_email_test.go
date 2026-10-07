@@ -278,7 +278,8 @@ func TestSEC09_Noop_EnviarAlertaReusoToken(t *testing.T) {
 			t.Cleanup(func() { log.SetOutput(anterior) })
 
 			err := svc.EnviarAlertaReusoToken(context.Background(), c.dest, "Maria", sec09Alerta(), c.paraAdmin)
-			require.NoError(t, err)
+			// LOG-01: o skip é sinalizado ao chamador pelo erro sentinela.
+			require.ErrorIs(t, err, services.ErrSMTPNaoConfigurado)
 
 			out := buf.String()
 			assert.Contains(t, out, "[email] alerta de seguranca pulado: SMTP não configurado user_id=777 "+c.wantLog)
