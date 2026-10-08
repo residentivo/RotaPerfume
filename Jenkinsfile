@@ -21,11 +21,18 @@ pipeline {
         timeout(time: 60, unit: 'MINUTES')
     }
 
+    // O Jenkins da LAN nao e alcancavel pelo GitHub (sem webhook): consulta a
+    // main a cada ~2 min e so roda quando ha commit novo. Builds disparados
+    // assim usam os defaultValue dos parametros abaixo.
+    triggers {
+        pollSCM('H/2 * * * *')
+    }
+
     parameters {
         string(name: 'SITE_HOST', defaultValue: 'ivo-inspiron-15-3530', description: 'Hostname de acesso na LAN')
         string(name: 'SITE_IP', defaultValue: '192.168.168.106', description: 'IP do servidor na LAN (tambem aceito pelo Caddy)')
         string(name: 'HTTPS_PORT', defaultValue: '8443', description: 'Porta HTTPS publicada pelo Caddy')
-        string(name: 'TURNSTILE_SITE_KEY', defaultValue: '', description: 'Site key PUBLICA do Cloudflare Turnstile (embutida no bundle do frontend)')
+        string(name: 'TURNSTILE_SITE_KEY', defaultValue: '0x4AAAAAAFACjc-LtM9NWlvP', description: 'Site key PUBLICA do Cloudflare Turnstile (embutida no bundle do frontend)')
         booleanParam(name: 'IMPORTAR_DUMP', defaultValue: false, description: 'Importa o dump (.sql.gz) no MySQL do servidor - SOBRESCREVE as tabelas')
         string(name: 'DUMP_PATH', defaultValue: '/opt/rotaperfumes/dumps/rotaperfumes.sql.gz', description: 'Caminho do dump no servidor (visivel para o agente Jenkins)')
     }

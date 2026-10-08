@@ -70,7 +70,7 @@ Navegador (LAN)
 | `SITE_HOST` | `ivo-inspiron-15-3530` | Hostname de acesso (Caddy e `PUBLIC_URL`) |
 | `SITE_IP` | `192.168.168.106` | IP da LAN (o Caddy também aceita esse IP; usado no smoke test) |
 | `HTTPS_PORT` | `8443` | Porta publicada pelo Caddy |
-| `TURNSTILE_SITE_KEY` | *(vazio)* | Site key **pública** do Turnstile, embutida no bundle |
+| `TURNSTILE_SITE_KEY` | `0x4AAAAAAFACjc-LtM9NWlvP` | Site key **pública** do Turnstile, embutida no bundle |
 | `IMPORTAR_DUMP` | `false` | Importa o dump no MySQL. **Sobrescreve as tabelas** |
 | `DUMP_PATH` | `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` | Caminho do dump no servidor |
 
@@ -308,8 +308,10 @@ cd /var/lib/jenkins/workspace/rotaperfumes-deploy/deploy
 ### Atualizar
 
 1. Faça commit e push no `main`.
-2. Jenkins → `rotaperfumes-deploy` → **Construir com parâmetros**, com `IMPORTAR_DUMP` desmarcado e a mesma `TURNSTILE_SITE_KEY`.
+2. Em até ~2 minutos o Jenkins detecta o commit novo (`pollSCM('H/2 * * * *')` no `Jenkinsfile`) e roda o job sozinho, com os valores padrão dos parâmetros (`IMPORTAR_DUMP` desmarcado, `TURNSTILE_SITE_KEY` já preenchida). Para rodar na hora, use **Construir com parâmetros**.
 3. O pipeline testa, reconstrói as imagens, recria os containers e roda o smoke test.
+
+O gatilho só passa a valer depois que o job roda uma vez com o `Jenkinsfile` que contém o bloco `triggers`. Confira em `rotaperfumes-deploy` → **Configurar** que "Consultar periodicamente o SCM" aparece marcado.
 
 Para mudar só segredos (ex.: senha SMTP): atualize a credencial `rotaperfumes-api-env` no Jenkins e rode o job.
 
