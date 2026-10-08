@@ -137,14 +137,14 @@ pipeline {
 
         stage('Smoke test') {
             steps {
-                // --resolve: acessa pelo hostname real (SNI/Host corretos) no IP da LAN.
+                // Acessa direto pelo IP da LAN (o Caddy aceita {$SITE_IP} e usa
+                // default_sni para o IP): o hostname fica bloqueado no smoke test.
                 sh '''#!/bin/bash
                     set -uo pipefail
-                    BASE="https://${SITE_HOST}:${HTTPS_PORT}"
-                    RESOLVE="${SITE_HOST}:${HTTPS_PORT}:${SITE_IP}"
+                    BASE="https://${SITE_IP}:${HTTPS_PORT}"
 
                     check() {
-                      curl -fsSk --max-time 5 --resolve "$RESOLVE" -o /dev/null -w "%{http_code}" "$BASE$1"
+                      curl -fsSk --max-time 5 -o /dev/null -w "%{http_code}" "$BASE$1"
                     }
 
                     for i in $(seq 1 30); do

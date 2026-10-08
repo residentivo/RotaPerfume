@@ -58,7 +58,7 @@ Navegador (LAN)
                  MySQL do HOST (fora do Docker), banco rotaperfumes
 ```
 
-- O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `golang:1.26-alpine`) → `Build` (imagens do compose) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy).
+- O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `golang:1.26-alpine`) → `Build` (imagens do compose) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy, acessando direto `https://SITE_IP:HTTPS_PORT`).
 - A API e o frontend **não** publicam porta no host. Só o Caddy publica.
 - **HTTPS é obrigatório:** os cookies de autenticação são `Secure`. Por HTTP o login "funciona", mas a sessão não se mantém.
 - O frontend e a API ficam na **mesma origem** (`https://ivo-inspiron-15-3530:8443`). O frontend chama `${PUBLIC_URL}/api/...`, e o `PUBLIC_URL` é embutido no bundle **no build**.
