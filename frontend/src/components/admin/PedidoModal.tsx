@@ -640,7 +640,7 @@ export function PedidoModal({
           </Alert>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Select
             label="Vendedor"
             value={vendedorId}
@@ -659,7 +659,7 @@ export function PedidoModal({
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Input
             label="Data do pedido"
             type="date"
@@ -684,7 +684,7 @@ export function PedidoModal({
         </div>
 
         <div>
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-slate-700">Itens</h3>
             <Button
               type="button"
@@ -701,9 +701,9 @@ export function PedidoModal({
             {itens.map((row) => (
               <div
                 key={row.localId}
-                className="grid grid-cols-12 gap-2 rounded-md border border-slate-100 bg-slate-50 p-2"
+                className="grid grid-cols-2 gap-2 sm:grid-cols-12 rounded-md border border-slate-100 bg-slate-50 p-2"
               >
-                <div className="col-span-4">
+                <div className="col-span-2 sm:col-span-4">
                   <Select
                     label="Produto"
                     value={row.produto_id}
@@ -712,7 +712,7 @@ export function PedidoModal({
                     disabled={loadingAux}
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <Input
                     label="Qtd"
                     type="number"
@@ -724,7 +724,7 @@ export function PedidoModal({
                     }
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <Input
                     label="Preco"
                     type="number"
@@ -736,7 +736,7 @@ export function PedidoModal({
                     }
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <Input
                     label="Desc. %"
                     type="number"
@@ -749,10 +749,10 @@ export function PedidoModal({
                     }
                   />
                 </div>
-                <div className="col-span-1 flex items-end justify-end pb-2 text-xs font-medium text-slate-600">
+                <div className="col-span-1 flex items-end justify-end pb-3 sm:pb-2 text-xs font-medium text-slate-600">
                   {currencyFmt.format(calcValorBruto(row))}
                 </div>
-                <div className="col-span-1 flex items-end justify-end pb-1">
+                <div className="col-span-2 flex items-end justify-end sm:col-span-1 sm:pb-1">
                   <Button
                     type="button"
                     variant="ghost"
@@ -773,7 +773,7 @@ export function PedidoModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>

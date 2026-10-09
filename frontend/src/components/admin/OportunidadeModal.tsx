@@ -460,7 +460,7 @@ export function OportunidadeModal({
           </Alert>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Select
             label="Vendedor"
             value={vendedorId}
@@ -479,7 +479,7 @@ export function OportunidadeModal({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Select
             label="Origem"
             value={origem}
@@ -496,7 +496,7 @@ export function OportunidadeModal({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Data de abertura"
             type="date"
@@ -512,7 +512,7 @@ export function OportunidadeModal({
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Input
             label="Probabilidade (%)"
             type="number"
@@ -552,7 +552,7 @@ export function OportunidadeModal({
           />
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>

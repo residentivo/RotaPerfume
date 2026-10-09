@@ -215,7 +215,7 @@ export function ProdutoModal({
           autoFocus={mode === "edit"}
         />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Categoria"
             value={categoria}
@@ -239,7 +239,7 @@ export function ProdutoModal({
           placeholder="Ex: Amadeirado"
         />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Preco de tabela"
             type="number"
@@ -262,7 +262,7 @@ export function ProdutoModal({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Unidade"
             value={unidade}
@@ -279,7 +279,7 @@ export function ProdutoModal({
           />
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>

@@ -3,6 +3,30 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 18 de 2026-10-09: 1 card concluído (de 1)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "Testei o site no celular e não aparece o menu, precisa criar um menu de hambúrguer [...] revisar todas as páginas e tornar todas navegáveis por celular. Pode commitar e pushar se passar pelos testes."
+>
+> **Fluxo:** 🟢 FrontBrain → 🔴 TestBrain → commit/push → 🔵 SubBrain. 🟣 SecBrain, 🌸 DataBrain e 🟡 BackBrain dispensados: mudança só de layout do frontend.
+>
+> **Validação (2026-10-09):** `tsc` e `eslint` verdes; vitest com 1495 testes verdes (36 arquivos); `next build` verde. Sem teste em navegador real a 360px (só jsdom).
+
+## UX-01: menu hambúrguer e navegação mobile em todas as páginas — 2026-10-09
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-09.
+
+**Entregue (🟢 FrontBrain):**
+- `Navbar.tsx`: hambúrguer abaixo de `lg` (1024px; o menu desktop precisa de ~830px), painel com os mesmos itens do desktop (mesmas regras de papel e vendedor desligado), alvos de 44px, `aria-expanded`/`aria-controls`, fecha ao clicar em link, com Esc (devolve o foco) e ao mudar de rota. Desktop igual ao anterior.
+- `app/layout.tsx`: `export const viewport` (`device-width`, escala 1, zoom liberado).
+- `Modal`: `max-h-[90vh]` com corpo rolável; `Paginador` e `CardHeader` com `flex-wrap`.
+- Modais admin e `PagamentoModal`: grids `grid-cols-1 sm:grid-cols-N`; `PedidoModal` com itens em 2 colunas no mobile; `PedidoItensDetalhe` fixo à esquerda ao rolar a tabela.
+- `/admin/usuarios` (filtros com wrap), `/dashboard` (filtro de período), `/login` e `/trocar-senha` (padding menor para caber o Turnstile de 300px em 360px).
+- Testes: 13 novos do hambúrguer em `Navbar.test.tsx` e 1 do `viewport` em `layout.test.tsx`.
+
+**Limitações conhecidas:** tabelas largas rolam na horizontal dentro da tabela (sem layout de cards); rótulos do eixo Y do gráfico do dashboard podem sobrepor barras com valores muito grandes; dropdowns desktop abrem só por hover (tablets ≥1024px).
+
+---
 ## Lote 17 de 2026-10-07: 1 card concluído (de 1)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário "Log de todas as linhas de código que já não sejam um log e que não será um retorno da api. A linha deve conter o nome do arquivo entre colchetes e o nome da função entre colchetes e depois a descrição da linha". O card foi aberto direto em `fazendo.md`, sem passar por `afazer.md`.

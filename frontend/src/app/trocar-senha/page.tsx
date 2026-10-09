@@ -157,7 +157,7 @@ export default function TrocarSenhaPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 px-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 px-3 py-8 sm:px-4">
       {/* Decorative blobs */}
       <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-blue-500/30 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-sky-500/20 blur-3xl" />
@@ -175,7 +175,7 @@ export default function TrocarSenhaPage() {
           </p>
         </div>
 
-        <Card className="border-slate-200/20 bg-white/95 shadow-2xl backdrop-blur">
+        <Card padded={false} className="border-slate-200/20 bg-white/95 p-4 shadow-2xl backdrop-blur sm:p-6">
           <div className="mb-1 flex items-center gap-2">
             <svg
               className="h-6 w-6 text-primary-600"

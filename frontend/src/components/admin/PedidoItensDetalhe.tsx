@@ -35,10 +35,10 @@ export function PedidoItensDetalhe({
 }: PedidoItensDetalheProps) {
   return (
     <div
-      className="rounded-md border border-slate-200 bg-white p-4 shadow-sm"
+      className="sticky left-0 max-w-[calc(100vw-6rem)] rounded-md border border-slate-200 bg-white p-4 shadow-sm sm:max-w-none"
       data-testid={`pedido-itens-${pedidoId}`}
     >
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-800">
           Itens do pedido #{pedidoId}
         </h2>

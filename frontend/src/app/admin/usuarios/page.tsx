@@ -604,7 +604,7 @@ function UsuariosPageContent() {
       <Card padded={false}>
         <div className="border-b border-slate-200 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
               <div className="flex-1 sm:max-w-xs">
                 <Input
                   label="Buscar"

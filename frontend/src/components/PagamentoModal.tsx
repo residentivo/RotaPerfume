@@ -311,7 +311,7 @@ export function PagamentoModal({
         {error && <Alert variant="error">{error}</Alert>}
 
         {mode === "edit" && pagamento && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Input
               label="ID do pagamento"
               value={String(pagamento.pagamento_id)}
@@ -360,7 +360,7 @@ export function PagamentoModal({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Select
             label="Forma de pagamento"
             options={FORMA_PAGAMENTO_OPTIONS}
@@ -375,7 +375,7 @@ export function PagamentoModal({
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Input
             label="Parcelas"
             type="number"
@@ -419,7 +419,7 @@ export function PagamentoModal({
           required
         />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Data de vencimento"
             type="date"
@@ -436,7 +436,7 @@ export function PagamentoModal({
           />
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>

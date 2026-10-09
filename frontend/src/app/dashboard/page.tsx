@@ -758,7 +758,7 @@ function DashboardContent() {
           </div>
 
           {/* Period Filter */}
-          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+          <div className="flex items-center gap-1 self-start rounded-lg border border-slate-200 bg-white p-1 sm:self-auto">
             {(["today", "week", "month"] as PeriodFilter[]).map((p) => (
               <button
                 key={p}

@@ -38,7 +38,7 @@ export function Modal({ open, onClose, title, children, size = "md" }: ModalProp
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
       aria-modal="true"
       role="dialog"
     >
@@ -52,17 +52,17 @@ export function Modal({ open, onClose, title, children, size = "md" }: ModalProp
       {/* Panel */}
       <div
         className={[
-          "relative w-full rounded-xl bg-white shadow-2xl",
+          "relative flex max-h-[90vh] w-full flex-col rounded-xl bg-white shadow-2xl",
           sizeClasses[size],
         ].join(" ")}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-6">
+          <h2 className="min-w-0 text-lg font-semibold text-slate-900">{title}</h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+            className="-my-2 -mr-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
             aria-label="Fechar"
           >
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -76,7 +76,7 @@ export function Modal({ open, onClose, title, children, size = "md" }: ModalProp
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5">{children}</div>
+        <div className="overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
       </div>
     </div>
   );

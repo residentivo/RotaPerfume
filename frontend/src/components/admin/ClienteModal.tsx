@@ -211,8 +211,8 @@ export function ClienteModal({
           required
         />
 
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="sm:col-span-2">
             <Input
               label="Cidade"
               value={cidade}
@@ -251,7 +251,7 @@ export function ClienteModal({
           }
         />
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>

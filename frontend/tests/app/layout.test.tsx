@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const replaceMock = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: replaceMock }) }));
 
-import RootLayout, { metadata } from "@/app/layout";
+import RootLayout, { metadata, viewport } from "@/app/layout";
 import Home from "@/app/page";
 
 beforeEach(() => {
@@ -20,6 +20,10 @@ describe("RootLayout", () => {
   it("define titulo e descricao da aplicacao", () => {
     expect(metadata.title).toBe("RotaPerfumes - Sistema de Gestao");
     expect(metadata.description).toBe("Sistema de gestao de clientes, estoque e pedidos");
+  });
+
+  it("define viewport para celular (UX-01) sem bloquear o zoom", () => {
+    expect(viewport).toEqual({ width: "device-width", initialScale: 1 });
   });
 
   it("renderiza <html lang=pt-BR> com o conteudo dentro do <body>", () => {

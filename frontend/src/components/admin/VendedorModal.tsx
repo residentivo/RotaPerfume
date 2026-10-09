@@ -550,8 +550,8 @@ export function VendedorModal({
             autoFocus
           />
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="sm:col-span-2">
               <Input
                 label="Regiao"
                 value={regiao}
@@ -570,7 +570,7 @@ export function VendedorModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Input
               label="Data de admissao"
               type="date"
@@ -608,8 +608,8 @@ export function VendedorModal({
             {vincularError && <Alert variant="error">{vincularError}</Alert>}
             {removerError && <Alert variant="error">{removerError}</Alert>}
 
-            <div className="mb-3 flex items-end gap-2">
-              <div className="flex-1">
+            <div className="mb-3 flex flex-wrap items-end gap-2">
+              <div className="min-w-0 flex-1">
                 <Select
                   label="Vincular cliente"
                   options={clienteOptions}
@@ -641,7 +641,7 @@ export function VendedorModal({
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>

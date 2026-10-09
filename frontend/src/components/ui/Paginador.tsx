@@ -29,7 +29,7 @@ export function Paginador({ pagina, paginas, onIrPara }: PaginadorProps) {
       <div className="text-sm text-slate-500">
         Pagina <strong>{pagina}</strong> de <strong>{paginas}</strong>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
         <Button
           size="sm"
           variant="secondary"

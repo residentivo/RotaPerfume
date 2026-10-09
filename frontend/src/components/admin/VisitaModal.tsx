@@ -374,7 +374,7 @@ export function VisitaModal({
           </Alert>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Select
             label="Vendedor"
             value={vendedorId}
@@ -393,7 +393,7 @@ export function VisitaModal({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Data da visita"
             type="date"
@@ -410,7 +410,7 @@ export function VisitaModal({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Duracao (min)"
             type="number"
@@ -422,7 +422,7 @@ export function VisitaModal({
           />
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>
