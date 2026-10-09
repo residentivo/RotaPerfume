@@ -154,27 +154,13 @@ pipeline {
                       curl -fsSk --max-time 5 -o /dev/null -w "%{http_code}" "$BASE$1"
                     }
 
-                    # Como o cloudflared acessa: loopback do host com o Host do
-                    # dominio publico (cai no site curinga do Caddy). 127.0.0.1
-                    # explicito: "localhost" pode resolver para ::1, que o
-                    # docker-proxy nao escuta quando o IPv6 do Docker esta off.
-                    TUNNEL_BASE="https://127.0.0.1:${HTTPS_PORT}"
+                    # Como o cloudflared acessa (visto nos logs do Caddy): IP da
+                    # LAN, sem SNI, com o Host do dominio publico -> site curinga.
+                    # Nao use localhost: o Jenkins roda em container e o
+                    # loopback dele nao e o do servidor.
                     tunnel() {
                       curl -fsSk --max-time 5 -o /dev/null -w "%{http_code}" \
-                        -H "Host: smoke-tunnel.invalid" "$TUNNEL_BASE$1"
-                    }
-
-                    diagnostico_loopback() {
-                      echo "--- Diagnostico do loopback (origem do cloudflared) ---" >&2
-                      echo "Agente: $(id -un)@$(hostname)" >&2
-                      for url in "https://127.0.0.1:${HTTPS_PORT}" "https://[::1]:${HTTPS_PORT}" "https://localhost:${HTTPS_PORT}"; do
-                        printf '%s -> ' "$url" >&2
-                        curl -sSk --max-time 5 -o /dev/null -w "%{http_code}\\n" \
-                          -H "Host: smoke-tunnel.invalid" "$url/api/health" 2>&1 >&2 || true
-                      done
-                      getent ahosts localhost >&2 || true
-                      ss -ltn "sport = :${HTTPS_PORT}" >&2 || true
-                      (cd deploy && API_ENV_FILE=/dev/null docker compose -p "$COMPOSE_PROJECT_NAME" port caddy 443 >&2) || true
+                        -H "Host: smoke-tunnel.invalid" "$BASE$1"
                     }
 
                     for i in $(seq 1 30); do
@@ -182,16 +168,15 @@ pipeline {
                       front=$(check /login || true)
                       tun=$(tunnel /api/health || true)
                       if [ "$api" = "200" ] && [ "$front" = "200" ] && [ "$tun" = "200" ]; then
-                        echo "Smoke test OK: /api/health=$api /login=$front localhost/tunnel=$tun"
+                        echo "Smoke test OK: /api/health=$api /login=$front tunnel=$tun"
                         exit 0
                       fi
-                      echo "Aguardando servicos (tentativa $i/30): /api/health=${api:-erro} /login=${front:-erro} localhost/tunnel=${tun:-erro}"
+                      echo "Aguardando servicos (tentativa $i/30): /api/health=${api:-erro} /login=${front:-erro} tunnel=${tun:-erro}"
                       sleep 3
                     done
 
-                    [ "$tun" = "200" ] || diagnostico_loopback
                     echo "Smoke test FALHOU. Ultimos logs:" >&2
-                    cd deploy && API_ENV_FILE=/dev/null docker compose -p "$COMPOSE_PROJECT_NAME" logs --tail 80 api frontend caddy >&2 || true
+                    cd deploy && API_ENV_FILE=/dev/null docker compose -p "$COMPOSE_PROJECT_NAME" logs --tail 40 api frontend caddy >&2 || true
                     exit 1
                 '''
             }

@@ -6,8 +6,8 @@
 # - Certificados para localhost, 127.0.0.1, {$SITE_HOST} e {$SITE_IP}.
 #   Navegadores nao mandam SNI para IP, por isso default_sni aponta para o IP.
 # - Qualquer outro Host (ex.: dominio publico do Cloudflare Tunnel) cai no
-#   site curinga "https://" com as mesmas rotas. O cloudflared roda no host e
-#   aponta para https://localhost:${HTTPS_PORT} (noTLSVerify, CA interna).
+#   site curinga "https://" com as mesmas rotas. O cloudflared roda no
+#   servidor e aponta para a porta ${HTTPS_PORT} (noTLSVerify, CA interna).
 # - As rotas da API ja comecam com /api/... -> "handle" (SEM strip do prefixo).
 # - Dentro do container o Caddy escuta 443; o host publica ${HTTPS_PORT}:443.
 #   O matcher de host ignora a porta do header Host, entao host:8443 casa.
@@ -17,11 +17,12 @@
 	auto_https disable_redirects
 	servers {
 		protocols h1 h2
-		# Conexoes vindas do proprio host (cloudflared -> localhost:8443) chegam
-		# pelo gateway da rede docker (172.16.0.0/12). So delas o Caddy aceita
-		# o CF-Connecting-IP (IP real do visitante, sempre sobrescrito pela
-		# Cloudflare). Clientes da LAN chegam com o IP real e nao podem forjar.
-		trusted_proxies static 172.16.0.0/12 127.0.0.0/8
+		# Conexoes vindas do proprio servidor: pelo IP da LAN ({$SITE_IP}, como o
+		# cloudflared acessa hoje) ou pelo gateway da rede docker (172.16.0.0/12,
+		# quando a origem e localhost). So delas o Caddy aceita o
+		# CF-Connecting-IP (IP real do visitante, sempre sobrescrito pela
+		# Cloudflare). Os demais clientes da LAN tem outro IP e nao podem forjar.
+		trusted_proxies static {$SITE_IP} 172.16.0.0/12 127.0.0.0/8
 		client_ip_headers CF-Connecting-IP
 	}
 }
