@@ -154,11 +154,27 @@ pipeline {
                       curl -fsSk --max-time 5 -o /dev/null -w "%{http_code}" "$BASE$1"
                     }
 
-                    # Como o cloudflared acessa: https://localhost com o Host do
-                    # dominio publico (cai no site curinga do Caddy).
+                    # Como o cloudflared acessa: loopback do host com o Host do
+                    # dominio publico (cai no site curinga do Caddy). 127.0.0.1
+                    # explicito: "localhost" pode resolver para ::1, que o
+                    # docker-proxy nao escuta quando o IPv6 do Docker esta off.
+                    TUNNEL_BASE="https://127.0.0.1:${HTTPS_PORT}"
                     tunnel() {
                       curl -fsSk --max-time 5 -o /dev/null -w "%{http_code}" \
-                        -H "Host: smoke-tunnel.invalid" "https://localhost:${HTTPS_PORT}$1"
+                        -H "Host: smoke-tunnel.invalid" "$TUNNEL_BASE$1"
+                    }
+
+                    diagnostico_loopback() {
+                      echo "--- Diagnostico do loopback (origem do cloudflared) ---" >&2
+                      echo "Agente: $(id -un)@$(hostname)" >&2
+                      for url in "https://127.0.0.1:${HTTPS_PORT}" "https://[::1]:${HTTPS_PORT}" "https://localhost:${HTTPS_PORT}"; do
+                        printf '%s -> ' "$url" >&2
+                        curl -sSk --max-time 5 -o /dev/null -w "%{http_code}\\n" \
+                          -H "Host: smoke-tunnel.invalid" "$url/api/health" 2>&1 >&2 || true
+                      done
+                      getent ahosts localhost >&2 || true
+                      ss -ltn "sport = :${HTTPS_PORT}" >&2 || true
+                      (cd deploy && API_ENV_FILE=/dev/null docker compose -p "$COMPOSE_PROJECT_NAME" port caddy 443 >&2) || true
                     }
 
                     for i in $(seq 1 30); do
@@ -173,6 +189,7 @@ pipeline {
                       sleep 3
                     done
 
+                    [ "$tun" = "200" ] || diagnostico_loopback
                     echo "Smoke test FALHOU. Ultimos logs:" >&2
                     cd deploy && API_ENV_FILE=/dev/null docker compose -p "$COMPOSE_PROJECT_NAME" logs --tail 80 api frontend caddy >&2 || true
                     exit 1
