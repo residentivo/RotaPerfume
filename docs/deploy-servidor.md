@@ -44,11 +44,15 @@ As seções abaixo descrevem o mesmo processo **manualmente**, como alternativa 
 ## 1. Visão geral
 
 ```
-Navegador (LAN)
-   │  https://ivo-inspiron-15-3530:8443     (única porta publicada no host)
-   ▼
+Navegador (LAN)                          Navegador (internet)
+   │  https://ivo-inspiron-15-3530:8443       │ https://<dominio do tunnel>
+   │                                          ▼
+   │                                 cloudflared (no host)
+   │                                          │ http://localhost:8080 (só loopback)
+   ▼                                          ▼
 ┌──────────── docker compose -p rotaperfumes ────────────┐
-│  caddy (tls internal, 443 no container → 8443 no host) │
+│  caddy  443 (tls internal) → 8443 em todas as IFs      │
+│         80  (HTTP)         → 127.0.0.1:8080            │
 │     ├── /api/health → api:8080/health                  │
 │     ├── /api/*      → api:8080       (API Go)          │
 │     └── resto       → frontend:3000  (Next standalone) │
@@ -58,18 +62,20 @@ Navegador (LAN)
                  MySQL do HOST (fora do Docker), banco rotaperfumes
 ```
 
-- O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `golang:1.26-alpine`) → `Build` (imagens do compose) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy, acessando direto `https://SITE_IP:HTTPS_PORT`).
-- A API e o frontend **não** publicam porta no host. Só o Caddy publica.
-- **HTTPS é obrigatório:** os cookies de autenticação são `Secure`. Por HTTP o login "funciona", mas a sessão não se mantém.
-- O frontend e a API ficam na **mesma origem** (`https://ivo-inspiron-15-3530:8443`). O frontend chama `${PUBLIC_URL}/api/...`, e o `PUBLIC_URL` é embutido no bundle **no build**.
+- O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `golang:1.26-alpine`) → `Build` (imagens do compose) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy, acessando direto `https://SITE_IP:HTTPS_PORT`, e `/api/health` em `http://127.0.0.1:TUNNEL_PORT`).
+- A API e o frontend **não** publicam porta no host. Só o Caddy publica: `HTTPS_PORT` (8443) para a LAN e `127.0.0.1:TUNNEL_PORT` (8080, HTTP) para o **Cloudflare Tunnel**.
+- **Cloudflare Tunnel:** no `cloudflared` do host, aponte o hostname público para `http://localhost:8080`. O TLS termina na borda da Cloudflare; o Caddy usa o header `CF-Connecting-IP` como IP do cliente. Cadastre também o domínio do tunnel no Turnstile.
+- **HTTPS é obrigatório:** os cookies de autenticação são `Secure`. Por HTTP o login "funciona", mas a sessão não se mantém. (Pelo tunnel o navegador fala HTTPS com a Cloudflare, então funciona.)
+- O frontend e a API ficam na **mesma origem**. O frontend chama `/api/...` com URL relativa (`PUBLIC_URL` padrão `/`, embutido no bundle **no build**), então o mesmo build serve a LAN e o domínio do tunnel.
 
 ### Parâmetros do job (definidos no `Jenkinsfile`)
 
 | Parâmetro | Padrão | Uso |
 |---|---|---|
-| `SITE_HOST` | `ivo-inspiron-15-3530` | Hostname de acesso (Caddy e `PUBLIC_URL`) |
+| `SITE_HOST` | `ivo-inspiron-15-3530` | Hostname de acesso na LAN (Caddy) |
 | `SITE_IP` | `192.168.168.106` | IP da LAN (o Caddy também aceita esse IP; usado no smoke test) |
-| `HTTPS_PORT` | `8443` | Porta publicada pelo Caddy |
+| `HTTPS_PORT` | `8443` | Porta HTTPS publicada pelo Caddy |
+| `TUNNEL_PORT` | `8080` | Porta HTTP do Caddy publicada só em `127.0.0.1` (origem do Cloudflare Tunnel) |
 | `TURNSTILE_SITE_KEY` | `0x4AAAAAAFACjc-LtM9NWlvP` | Site key **pública** do Turnstile, embutida no bundle |
 | `IMPORTAR_DUMP` | `false` | Importa o dump no MySQL. **Sobrescreve as tabelas** |
 | `DUMP_PATH` | `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` | Caminho do dump no servidor |
@@ -332,7 +338,8 @@ As imagens são sempre `:latest`, sem tag por versão. Para voltar:
 | Login aceita a senha, mas volta para a tela de login ou perde a sessão ao recarregar | Acesso por HTTP, ou certificado não confiável (cookie `Secure` descartado) | Acesse **https://ivo-inspiron-15-3530:8443** e instale a CA do Caddy (seção 8) |
 | Aviso "Sua conexão não é particular" | CA do Caddy não instalada no cliente, ou CA regenerada (volume apagado) | Reexporte e reinstale o `root.crt` (seção 8) |
 | Widget do Turnstile não aparece ou dá erro, ou o login recusa o captcha | Hostname não cadastrado no Cloudflare; acesso pelo IP; site key vazia/errada no build; secret errada no `api.env` | Cadastre o hostname, acesse pelo hostname e rode o job com `TURNSTILE_SITE_KEY` correta (ela é embutida no **build**). Confira `TURNSTILE_SECRET_KEY` na credencial |
-| Frontend chama URL errada da API | `SITE_HOST`/`HTTPS_PORT` diferentes do acesso real (o `PUBLIC_URL` é fixado no build) | Rode o job com os parâmetros certos |
+| Frontend chama URL errada da API | `PUBLIC_URL` definido no ambiente do build (o padrão `/` usa a mesma origem) | Remova `PUBLIC_URL` e rode o job de novo |
+| Site não abre pelo Cloudflare Tunnel | `cloudflared` apontando para outra porta/HTTPS | Origem do tunnel deve ser `http://localhost:8080` (`TUNNEL_PORT`); teste no host com `curl http://127.0.0.1:8080/api/health` |
 | API não conecta no MySQL (logs com `connection refused`/`timeout`) | `bind-address` em 127.0.0.1; ufw bloqueando a faixa docker | Seção 3.1 e 3.4, depois `sudo systemctl restart mysql` |
 | API: `Access denied for user 'rotaperfumes_app'` | Senha diferente entre o MySQL e o `DB_SENHA`; usuário criado com outro host | Confira o `mysql-setup.sql` aplicado (host `172.16.0.0/255.240.0.0`) e a credencial `rotaperfumes-api-env` |
 | Estágio **Importar dump** falha com "Dump nao encontrado/legivel" | Arquivo fora do `DUMP_PATH` ou sem permissão para o usuário `jenkins` | Seção 7.2/7.3 (`chown`/`chmod`) |

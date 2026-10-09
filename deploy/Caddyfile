@@ -1,13 +1,22 @@
-# Proxy reverso unico do rotaperfumes (unica porta publicada no host).
+# Proxy reverso unico do rotaperfumes.
 #
-# - HTTPS com CA interna do Caddy (tls internal): o navegador mostra aviso de
-#   certificado ate a raiz da CA ser instalada nos clientes. A raiz fica no
-#   volume caddy_data: /data/caddy/pki/authorities/local/root.crt
-# - Acesso por hostname ({$SITE_HOST}) e por IP ({$SITE_IP}). Navegadores nao
-#   mandam SNI para IP, por isso default_sni aponta para o IP.
-# - As rotas da API ja comecam com /api/... -> "handle" (SEM strip do prefixo).
-# - Dentro do container o Caddy escuta 443; o host publica ${HTTPS_PORT}:443.
-#   O matcher de host ignora a porta do header Host, entao host:8443 casa.
+# Dois listeners (sites):
+#
+# 1. LAN - https://{$SITE_HOST} e https://{$SITE_IP}, publicado em
+#    ${HTTPS_PORT}:443 em todas as interfaces do host.
+#    - HTTPS com CA interna do Caddy (tls internal): o navegador mostra aviso de
+#      certificado ate a raiz da CA ser instalada nos clientes. A raiz fica no
+#      volume caddy_data: /data/caddy/pki/authorities/local/root.crt
+#    - Navegadores nao mandam SNI para IP, por isso default_sni aponta para o IP.
+#    - O matcher de host ignora a porta do header Host, entao host:8443 casa.
+#
+# 2. Cloudflare Tunnel - http://:80 (qualquer Host), publicado SO no loopback
+#    do host (127.0.0.1:${TUNNEL_PORT}:80). O cloudflared roda no host e aponta
+#    para http://localhost:${TUNNEL_PORT}; o TLS termina na borda da Cloudflare.
+#    Como so o proprio host alcanca essa porta, o header CF-Connecting-IP (que a
+#    Cloudflare sempre sobrescreve) e confiavel e vira o X-Forwarded-For da API.
+#
+# As rotas da API ja comecam com /api/... -> "handle" (SEM strip do prefixo).
 
 {
 	default_sni {$SITE_IP}
@@ -18,9 +27,7 @@
 	}
 }
 
-https://{$SITE_HOST}, https://{$SITE_IP} {
-	tls internal
-
+(comum) {
 	encode gzip zstd
 
 	header {
@@ -28,6 +35,16 @@ https://{$SITE_HOST}, https://{$SITE_IP} {
 		Referrer-Policy strict-origin-when-cross-origin
 		-Server
 	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+https://{$SITE_HOST}, https://{$SITE_IP} {
+	tls internal
+	import comum
 
 	# Healthcheck da API exposto como /api/health (a API responde em /health).
 	handle /api/health {
@@ -50,9 +67,29 @@ https://{$SITE_HOST}, https://{$SITE_IP} {
 			header_up -X-Real-IP
 		}
 	}
+}
 
-	log {
-		output stdout
-		format console
+http://:80 {
+	import comum
+
+	handle /api/health {
+		rewrite * /health
+		reverse_proxy api:8080
+	}
+
+	handle /api/* {
+		reverse_proxy api:8080 {
+			# IP real do visitante (definido pela borda da Cloudflare). Sem o
+			# header (acesso local direto), fica vazio e a API usa o RemoteAddr.
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+			header_up -X-Real-IP
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:3000 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+			header_up -X-Real-IP
+		}
 	}
 }
