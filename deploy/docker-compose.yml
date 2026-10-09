@@ -6,10 +6,10 @@
 # Variaveis de interpolacao (shell do Jenkins ou deploy/.env):
 #   SITE_HOST          hostname da LAN          (default ivo-inspiron-15-3530)
 #   SITE_IP            IP da LAN                (default 192.168.168.106)
-#   HTTPS_PORT         porta HTTPS publicada em todas as interfaces (default 8443)
-#   TUNNEL_PORT        porta HTTP publicada SO em 127.0.0.1, origem do
-#                      Cloudflare Tunnel (default 8080)
-#   PUBLIC_URL         origem da API embutida no bundle. Default "/" = mesma
+#   HTTPS_PORT         porta HTTPS publicada no host (default 8443). Atende LAN,
+#                      https://localhost e o Cloudflare Tunnel (cloudflared no
+#                      host -> https://localhost:8443, noTLSVerify)
+#   PUBLIC_URL        origem da API embutida no bundle. Default "/" = mesma
 #                      origem (URLs relativas): serve a LAN e o dominio do tunnel.
 #   TURNSTILE_SITE_KEY chave PUBLICA do Turnstile (embutida no bundle)
 #
@@ -84,9 +84,6 @@ services:
       - frontend
     ports:
       - "${HTTPS_PORT:-8443}:443"
-      # Origem do Cloudflare Tunnel: cloudflared no host -> http://localhost:8080.
-      # Presa ao loopback para o HTTP puro nao ficar acessivel pela rede.
-      - "127.0.0.1:${TUNNEL_PORT:-8080}:80"
     environment:
       SITE_HOST: ${SITE_HOST:-ivo-inspiron-15-3530}
       SITE_IP: ${SITE_IP:-192.168.168.106}

@@ -32,7 +32,6 @@ pipeline {
         string(name: 'SITE_HOST', defaultValue: 'ivo-inspiron-15-3530', description: 'Hostname de acesso na LAN')
         string(name: 'SITE_IP', defaultValue: '192.168.168.106', description: 'IP do servidor na LAN (tambem aceito pelo Caddy)')
         string(name: 'HTTPS_PORT', defaultValue: '8443', description: 'Porta HTTPS publicada pelo Caddy')
-        string(name: 'TUNNEL_PORT', defaultValue: '8080', description: 'Porta HTTP do Caddy publicada SO em 127.0.0.1 (origem do Cloudflare Tunnel)')
         string(name: 'TURNSTILE_SITE_KEY', defaultValue: '0x4AAAAAAFACjc-LtM9NWlvP', description: 'Site key PUBLICA do Cloudflare Turnstile (embutida no bundle do frontend)')
         booleanParam(name: 'IMPORTAR_DUMP', defaultValue: false, description: 'Importa o dump (.sql.gz) no MySQL do servidor - SOBRESCREVE as tabelas')
         string(name: 'DUMP_PATH', defaultValue: '/opt/rotaperfumes/dumps/rotaperfumes.sql.gz', description: 'Caminho do dump no servidor (visivel para o agente Jenkins)')
@@ -155,9 +154,11 @@ pipeline {
                       curl -fsSk --max-time 5 -o /dev/null -w "%{http_code}" "$BASE$1"
                     }
 
-                    # Origem do Cloudflare Tunnel (HTTP so no loopback do host).
+                    # Como o cloudflared acessa: https://localhost com o Host do
+                    # dominio publico (cai no site curinga do Caddy).
                     tunnel() {
-                      curl -fsS --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${TUNNEL_PORT}$1"
+                      curl -fsSk --max-time 5 -o /dev/null -w "%{http_code}" \
+                        -H "Host: smoke-tunnel.invalid" "https://localhost:${HTTPS_PORT}$1"
                     }
 
                     for i in $(seq 1 30); do
@@ -165,10 +166,10 @@ pipeline {
                       front=$(check /login || true)
                       tun=$(tunnel /api/health || true)
                       if [ "$api" = "200" ] && [ "$front" = "200" ] && [ "$tun" = "200" ]; then
-                        echo "Smoke test OK: /api/health=$api /login=$front tunnel=$tun"
+                        echo "Smoke test OK: /api/health=$api /login=$front localhost/tunnel=$tun"
                         exit 0
                       fi
-                      echo "Aguardando servicos (tentativa $i/30): /api/health=${api:-erro} /login=${front:-erro} tunnel=${tun:-erro}"
+                      echo "Aguardando servicos (tentativa $i/30): /api/health=${api:-erro} /login=${front:-erro} localhost/tunnel=${tun:-erro}"
                       sleep 3
                     done
 
