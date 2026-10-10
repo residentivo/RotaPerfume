@@ -1,5 +1,18 @@
 # Fazendo
 
+## MAIL-01: programa de diagnóstico de envio de e-mail (`cmd/testeemail`) — prioridade ALTA
+
+**Status:** em execução (2026-10-09)
+**Camada:** Backend (ferramenta CLI)
+**Responsável:** 🟡 BackBrain
+**Origem:** pedido do usuário: "o envio de email não está funcionando". Pediu um programa que só envie um e-mail de `henrique.rodrigues@rotaperfumes.com.br` para `admin@rotaperfumes.com.br`, com texto padrão, logando todos os passos e erros e usando o `.env` da raiz.
+
+**Suspeitas levantadas (🤍 MegaBrain):** no `.env` da raiz, `SMTP_PORT=465` (TLS implícito/SMTPS). Mas `services/email_service.go` (`enviar`) abre TCP puro e exige STARTTLS, e na 465 o servidor espera o handshake TLS antes do banner, então trava ou falha. Além disso, `SMTP_HOST` é um IP (`192.168.168.106`) e o `ServerName` do TLS recebe o host, então a verificação do certificado falha se o certificado não tiver SAN de IP.
+
+**Passo atual:** 🟡 BackBrain entregou `apis/shared/cmd/testeemail` e `apis/shared/tools/testeemail` (build, vet e 6 testes OK). Aguardando o usuário rodar o diagnóstico contra o SMTP real e trazer o log. Depois disso, corrigir `services/email_service.go`: suporte a TLS implícito na 465, AUTH silenciosamente pulado e ServerName com IP.
+
+---
+
 ## Lote 13 (2026-09-30): DEPLOY-01
 
 > Aberto pelo 🤍 MegaBrain a partir do pedido "implementar o projeto no servidor ivo-inspiron-15-3530 com Docker". Vindo de `afazer.md`.

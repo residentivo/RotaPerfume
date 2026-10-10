@@ -71,6 +71,14 @@ https://localhost, https://127.0.0.1, https://{$SITE_HOST}, https://{$SITE_IP} {
 	import rotas
 }
 
+# Certificado publico (Let's Encrypt, ACME) para o servidor de e-mail usar
+# no SMTP. Nao ha site real: so um placeholder. O Caddy salva o certificado no
+# volume caddy_data, em
+# /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.rotaperfumes.com.br/
+mail.rotaperfumes.com.br {
+	respond "Mail server certificate placeholder"
+}
+
 https:// {
 	tls internal
 	import rotas
