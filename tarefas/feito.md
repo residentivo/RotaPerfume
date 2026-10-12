@@ -3,6 +3,35 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 19 de 2026-10-11: 1 card concluído (de 1)
+
+> Lote aberto pelo 🤍 MegaBrain para fechar o item 13 do `FalhasEncontradas.md` ("Dependências recentes sem política de atualização documentada").
+>
+> **Fluxo:** 🟡 BackBrain ∥ 🟢 FrontBrain → 🔵 SubBrain. 🟣 SecBrain, 🌸 DataBrain e 🔴 TestBrain dispensados: a validação foi a própria auditoria (`make deps-audit`) mais as suítes existentes, sem mudança de schema nem de contrato HTTP.
+>
+> **Validação (2026-10-11):** Go: shared 2226 pass / 0 fail / 8 skip; rotaperfumes-api 2412 pass / 0 fail / 28 skip; build e vet ok. Frontend: `tsc` e `eslint` ok; vitest 1495/1495 (36 arquivos); `next build` ok; `npm audit --omit=dev` com 0 vulnerabilidades.
+
+## DEP-00: política e auditoria de dependências (item 13 do `FalhasEncontradas.md`) — 2026-10-11
+**Agentes:** 🟡 BackBrain ∥ 🟢 FrontBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-11.
+
+**Camadas:** Repositório/Makefile, Backend, Frontend, Documentação
+**Origem:** item 13 do `FalhasEncontradas.md` (auditoria do 🟣 SecBrain).
+
+**Entregue:**
+- 🟡 **BackBrain:**
+  - `Makefile`: alvos `deps-audit` (roda os dois), `deps-audit-go` (`go list -m -u all` filtrado + `govulncheck ./...` do PATH; sem o govulncheck, imprime aviso apontando para o `CLAUDE.md` e falha) e `deps-audit-frontend` (`npm outdated` informativo + `npm audit --omit=dev --audit-level=high`, falha em high ou acima). O comando de instalação fica no `CLAUDE.md` porque o `Makefile` não pode conter o texto "golang" (teste do SEC-11).
+  - GO-2025-3553: `github.com/golang-jwt/jwt/v5` v5.2.1 → v5.3.1 em `apis/shared/go.mod` e `apis/rotaperfumes-api/go.mod` (`x/crypto` passou a dependência direta no rotaperfumes-api, mesma versão).
+  - 15 vulnerabilidades da stdlib (go1.26.4 local), corrigidas em go1.26.9: `apis/Dockerfile` com `ARG GO_VERSION=1.26.9`.
+- 🟢 **FrontBrain:** `npm audit fix` sem `--force` (só `package-lock.json`): sharp 0.35.4→0.35.5, source-map-js 1.2.1→1.2.2, eslint-config-next / @next/eslint-plugin-next 16.3.5→16.4.0. 0 vulnerabilidades de produção.
+- 🔵 **SubBrain:** seção "Auditoria de dependências" e `make deps-audit` no `CLAUDE.md` (mensal e antes de cada deploy, pré-requisito govulncheck, achados viram card, `npm audit fix --force` só com card próprio, `make -k deps-audit`); item 13 marcado como corrigido no `FalhasEncontradas.md`, com as pendências operacionais revisadas.
+
+**Residual aceito:** 9 vulnerabilidades só de dev (7 altas: `braces` sem versão corrigida e dependentes, incluindo tailwindcss 3; 2 moderadas: `postcss-selector-parser`/`postcss-nested` via tailwind 3). Só saem com o upgrade major Tailwind 3→4: virou o card **DEP-01** (BAIXA). Os módulos Go desatualizados sem CVE viraram o card **DEP-02** (BAIXA).
+
+**Pendências do usuário:** atualizar o Go local para ≥ 1.26.9 (as vulns da stdlib só somem localmente assim) e reconstruir a imagem Docker da API; instalar o govulncheck (`go install golang.org/x/vuln/cmd/govulncheck@latest`, com `$(go env GOPATH)/bin` no `PATH`).
+
+---
 ## Lote 18 de 2026-10-09: 1 card concluído (de 1)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido "Testei o site no celular e não aparece o menu, precisa criar um menu de hambúrguer [...] revisar todas as páginas e tornar todas navegáveis por celular. Pode commitar e pushar se passar pelos testes."

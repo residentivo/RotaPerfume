@@ -12,7 +12,7 @@
 # /usr/share/zoneinfo. O fuso do processo e fixado em -03:00 pelo pacote
 # shared/tz (time.FixedZone), que nao depende de base tz.
 
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.26.9
 
 # ---------- build ----------
 FROM golang:${GO_VERSION}-alpine AS build

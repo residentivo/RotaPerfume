@@ -57,4 +57,13 @@ make dev-api       # subir API Go
 make dev-frontend  # subir frontend Next.js
 make test          # rodar testes Go
 make test-frontend # rodar testes frontend
+make deps-audit    # auditar dependências Go + frontend (vulns e pacotes desatualizados)
 ```
+
+## Auditoria de dependências
+
+- **Quando:** rodar `make deps-audit` **mensalmente** e **antes de cada deploy**.
+- **Pré-requisito (Go):** `go install golang.org/x/vuln/cmd/govulncheck@latest` e garantir que `$(go env GOPATH)/bin` está no `PATH`. Sem o govulncheck, `make deps-audit-go` imprime um aviso e falha.
+- **Alvos:** `deps-audit-go` (`go list -m -u all` + `govulncheck ./...`) e `deps-audit-frontend` (`npm outdated` informativo + `npm audit --omit=dev --audit-level=high`, falha em high ou acima).
+- **Rodar ambos mesmo se um falhar:** `make -k deps-audit`.
+- **Achados:** abrir um card no Kanban (`tarefas/afazer.md`) para cada correção necessária. **Não** usar `npm audit fix --force` (upgrades major) sem um card próprio; `npm audit fix` sem `--force` é permitido se build, lint e testes continuarem passando.

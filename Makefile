@@ -2,7 +2,7 @@
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared gen-hash fix-hash \
 	frontend-deps \
-	audit
+	audit deps-audit deps-audit-go deps-audit-frontend
 
 # =============================================================================
 # Helpers
@@ -237,6 +237,31 @@ lint: ## Vet em todos os módulos
 deps: ## Instala dependências Go
 	cd apis/shared && go get ./... && go mod tidy
 	cd apis/rotaperfumes-api && go get ./... && go mod tidy
+
+# SEC-13: política de atualização — rodar "make deps-audit" periodicamente
+# (ex.: mensalmente e antes de cada deploy). Só reporta; não atualiza nada.
+GO_MODULES = apis/shared apis/rotaperfumes-api
+
+deps-audit: deps-audit-go deps-audit-frontend ## SEC-13: audita dependências Go + npm (vulnerabilidades e desatualizadas)
+
+deps-audit-go: ## SEC-13: lista módulos Go desatualizados e roda govulncheck (falha se houver vulnerabilidade alcançável)
+	@status=0; for m in $(GO_MODULES); do \
+		echo "=== $$m: módulos com atualização disponível ==="; \
+		(cd $$m && go list -m -u all | grep '\[' || echo "(nenhum)"); \
+		echo "=== $$m: govulncheck ==="; \
+		if command -v govulncheck >/dev/null 2>&1; then \
+			(cd $$m && govulncheck ./...) || status=1; \
+		else \
+			echo "govulncheck não encontrado: veja a seção de auditoria de dependências no CLAUDE.md"; \
+			status=1; \
+		fi; \
+	done; exit $$status
+
+deps-audit-frontend: ## SEC-13: npm audit (falha em severidade high+) e npm outdated (só informativo)
+	@echo "=== frontend: npm outdated ==="
+	cd frontend && npm outdated || true
+	@echo "=== frontend: npm audit --omit=dev --audit-level=high ==="
+	cd frontend && npm audit --omit=dev --audit-level=high
 
 # =============================================================================
 # Seed de usuários (gera hash argon2id com PASSWORD_PEPPER)
