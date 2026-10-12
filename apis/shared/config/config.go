@@ -47,6 +47,15 @@ type Config struct {
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string
+	// SMTPTLSMode (SMTP_TLS_MODE): "implicit" (SMTPS, TLS desde o connect) ou
+	// "starttls". Vazio = inferir pela porta (465 → implicit; demais → starttls).
+	SMTPTLSMode string
+	// SMTPTLSServerName (SMTP_TLS_SERVER_NAME): nome esperado no certificado
+	// do servidor. Vazio = SMTP_HOST. Útil quando SMTP_HOST é um IP.
+	SMTPTLSServerName string
+	// SMTPTLSCAFile (SMTP_TLS_CA_FILE): PEM com CA/certificado extra a
+	// confiar (além das raízes do sistema), ex.: servidor com cert próprio.
+	SMTPTLSCAFile string
 
 	// CORSAllowedOrigins é a lista explícita de origens permitidas (comparação
 	// exata, sem prefix-match), configurável via CORS_ALLOWED_ORIGINS
@@ -200,6 +209,12 @@ func load(exigirDB bool) (*Config, error) {
 	cfg.SMTPPassword = os.Getenv("SMTP_PASSWORD")
 	vlog.Printf("config.go", "load", "lendo SMTP_FROM")
 	cfg.SMTPFrom = os.Getenv("SMTP_FROM")
+	vlog.Printf("config.go", "load", "lendo SMTP_TLS_MODE (vazio = inferir pela porta)")
+	cfg.SMTPTLSMode = os.Getenv("SMTP_TLS_MODE")
+	vlog.Printf("config.go", "load", "lendo SMTP_TLS_SERVER_NAME (vazio = SMTP_HOST)")
+	cfg.SMTPTLSServerName = os.Getenv("SMTP_TLS_SERVER_NAME")
+	vlog.Printf("config.go", "load", "lendo SMTP_TLS_CA_FILE (vazio = só raízes do sistema)")
+	cfg.SMTPTLSCAFile = os.Getenv("SMTP_TLS_CA_FILE")
 
 	vlog.Printf("config.go", "load", "montando lista de origens CORS permitidas")
 	cfg.CORSAllowedOrigins = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))

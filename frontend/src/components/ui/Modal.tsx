@@ -44,7 +44,7 @@ export function Modal({ open, onClose, title, children, size = "md" }: ModalProp
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/50 backdrop-blur-xs"
         onClick={onClose}
         aria-hidden="true"
       />

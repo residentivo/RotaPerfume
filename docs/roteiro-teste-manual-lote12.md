@@ -240,3 +240,33 @@ Use um usuário de teste (`<QA>`), por exemplo o do roteiro do Lote 11 (se fez `
 > - **D3 → LOG-01:** com SMTP desligado, o log mostra `[auth][seguranca] alerta pulado (SMTP não configurado): ...` em vez de `alerta enviado`.
 >
 > Os itens não verificáveis seguem pendentes no card TST-04 (`tarefas/afazer.md`).
+
+### Execução complementar do TST-04 (2026-10-11, 🔴 TestBrain, Lote 20)
+
+**Resultado:** dos 13 itens pendentes, 10 aprovados por execução equivalente (SQL aplicado com o `mysql.exe` no banco descartável) e 3 não verificáveis sem o `make` (1.1, 1.2 e 1.7). Nenhuma falha.
+
+**Ambiente e método:**
+
+- Sem `make` (fora do PATH do agente). Cada alvo `db-*` foi lido no `Makefile` e reproduzido com o mesmo comando: `mysql --local-infile=1 -u golang -h localhost -P 3306 --default-character-set=utf8mb4 rotaperfumes_l12 < sql/<arquivo>.sql`, senha pelo ambiente (`MYSQL_PWD`), nunca `-p`. MySQL CLI 8.0.46 do Workbench.
+- Todos os comandos passaram por um script auxiliar com o banco `rotaperfumes_l12` fixo, que abortava qualquer comando de servidor sem esse nome ou com referência ao `rotaperfumes`. Antes, conferi que nenhum dos SQLs usados tem `USE` ou nome de banco fixo (os `18_*`/`23_*` usam `TABLE_SCHEMA = DATABASE()`).
+- **Banco de dev intocado:** antes e depois, `information_schema.columns` do `rotaperfumes` deu 150 colunas e o mesmo MD5 (`345d917e...`), e `rotaperfumes.estoque` ficou com 8401 linhas. No fim, `DROP DATABASE IF EXISTS rotaperfumes_l12` e `SHOW DATABASES LIKE 'rotaperfumes%'` mostrou só `rotaperfumes`.
+- **`db-reset` reproduzido como `db-create` + `db-up`, sem o `db-seed`:** o `db-seed` roda `go run ./cmd/resetpassword`, que lê o `.env` (`DB_NAME=rotaperfumes`). Fora do `make`, que exporta o `DB_NAME` da linha de comando, isso poderia atingir o banco de dev, então não rodei. Os itens 3.x verificam só o schema, que vem do `db-up`. Também não houve `db-rebuild`.
+- **Massa mínima para o 3.6:** com o banco vazio, o `GROUP BY origem` não teria linhas. Inseri 1 produto (`L12-SKU`) e 2 linhas de `estoque` no `rotaperfumes_l12` antes da migração 18.
+
+| Item | Resultado | Equivalência / evidência |
+| ---- | --------- | ------------------------ |
+| 1.1 | não verificável | Testa o comportamento do próprio `make` (o `db-check-env` como pré-requisito, parando antes do `mysql`). Sem o `make` não há equivalente. Revisão estática: `db-create`, `db-down` e todos os `db-fix-*`/`db-revert-*` dependem de `db-check-env`, cuja receita é `test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD" \|\| { echo "SEC-11: defina DB_USUARIO/DB_SENHA no .env"; exit 1; }`. |
+| 1.2 | não verificável | Mesmo motivo do 1.1 (`db-fix-reuso-detectado` e `db-down`). |
+| 1.7 | não verificável | Testa a precedência de variáveis do `make` (`.env` sobre o shell, linha de comando sobre tudo). Não existe sem o `make`. |
+| 3.1 | aprovado (equivalente) | Os 12 DDLs do `db-up` foram aplicados na ordem do `Makefile` (01, 06, 07, 09, 10, 04, 11, 12, 14, 15, 16, 17), todos com exit 0. O `17_ddl_estoque.sql` foi depois do `16_ddl_visitas.sql`, sem erro. A linha de eco `=== Aplicando DDL de estoque ...` é do `make` e não foi vista. |
+| 3.2 | aprovado | `SHOW TABLES LIKE 'estoque'` devolveu `estoque`. `SHOW COLUMNS FROM estoque LIKE 'origem'` veio vazio. |
+| 3.3 | aprovado | `reuso_detectado_em datetime YES NULL`, vinda do `06_ddl_refresh_tokens.sql`. |
+| 3.4 | não se aplica | Só vale com `db-rebuild` (não usado, pelo mesmo motivo do `db-seed`). |
+| 3.5 | aprovado (equivalente a `db-fix-estoque-origem` x2) | `18_alter_estoque_drop_origem.sql` duas vezes, exit 0 nas duas, sem `1091`. Nas duas a coluna já não existia (schema novo), então só o ramo no-op foi exercitado. O ramo que remove a coluna foi exercitado no 3.7. |
+| 3.6 | aprovado (equivalente a `db-revert-estoque-origem` x2) | `18_revert_estoque_drop_origem.sql` duas vezes, exit 0 nas duas (a 1ª criou a coluna, a 2ª foi no-op). `origem enum('import_csv','faturamento','manual') NO import_csv`. `GROUP BY origem` trouxe só `import_csv 2`. |
+| 3.7 | aprovado (equivalente) | `18_alter_estoque_drop_origem.sql` de novo, exit 0: a coluna saiu (ramo do DROP exercitado) e `estoque` voltou às 7 colunas do schema atual. |
+| 4.1 | aprovado (equivalente a `db-fix-reuso-detectado` x2) | `23_alter_...sql` duas vezes, exit 0, sem `1060`. Nas duas a coluna já existia (vem do 06), então só o ramo no-op foi exercitado. O ramo que adiciona a coluna foi exercitado no 4.3. |
+| 4.2 | aprovado (equivalente a `db-revert-reuso-detectado` x2) | `23_revert_...sql` duas vezes, exit 0 (a 1ª removeu, a 2ª foi no-op). Depois disso, `SHOW COLUMNS ... LIKE 'reuso_detectado_em'` veio vazio. |
+| 4.3 | aprovado (equivalente) | `23_alter_...sql` de novo, exit 0: a coluna voltou como `datetime`, `NULL`, default `NULL`. |
+
+**Pendentes:** 1.1, 1.2 e 1.7 só podem ser verificados rodando o `make` (pelo usuário ou com permissão para o agente). Os demais itens do TST-04 ficam fechados por execução equivalente.

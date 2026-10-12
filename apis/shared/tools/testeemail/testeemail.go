@@ -5,6 +5,7 @@ package testeemail
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -43,6 +44,32 @@ func EscolherModo(modo, porta string) (string, error) {
 	default:
 		return "", fmt.Errorf("modo inválido %q (use auto|ssl|starttls|plain)", modo)
 	}
+}
+
+// ModoDaVariavelAPI converte SMTP_TLS_MODE (implicit|starttls|auto, usado
+// pela API) para o modo do diagnóstico (ssl|starttls|auto).
+func ModoDaVariavelAPI(smtpTLSMode string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(smtpTLSMode)) {
+	case "implicit":
+		return ModoSSL, nil
+	case "starttls":
+		return ModoStartTLS, nil
+	case "", ModoAuto:
+		return ModoAuto, nil
+	default:
+		return "", fmt.Errorf("SMTP_TLS_MODE inválido %q (use implicit|starttls)", smtpTLSMode)
+	}
+}
+
+// FingerprintSHA256 formata o SHA-256 de um certificado DER como
+// "AB:CD:...", o formato exibido por navegadores e pelo openssl.
+func FingerprintSHA256(der []byte) string {
+	soma := sha256.Sum256(der)
+	partes := make([]string, len(soma))
+	for i, b := range soma {
+		partes[i] = fmt.Sprintf("%02X", b)
+	}
+	return strings.Join(partes, ":")
 }
 
 // ValidarEndereco rejeita CR/LF e valida o endereço com net/mail, devolvendo

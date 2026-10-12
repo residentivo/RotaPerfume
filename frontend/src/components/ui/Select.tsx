@@ -34,7 +34,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           id={selectId}
           className={[
             "w-full rounded-md border bg-white text-slate-900",
-            "focus:outline-none focus:ring-2 focus:ring-offset-0",
+            "focus:outline-hidden focus:ring-2 focus:ring-offset-0",
             "transition-colors py-2.5 px-3 text-sm",
             "disabled:bg-slate-50 disabled:text-slate-500",
             error

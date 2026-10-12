@@ -125,3 +125,32 @@ func TestCorpoPadrao(t *testing.T) {
 		}
 	}
 }
+
+func TestModoDaVariavelAPI(t *testing.T) {
+	casos := map[string]string{
+		"implicit":   ModoSSL,
+		" IMPLICIT ": ModoSSL,
+		"starttls":   ModoStartTLS,
+		"":           ModoAuto,
+		"auto":       ModoAuto,
+	}
+	for entrada, esperado := range casos {
+		obtido, err := ModoDaVariavelAPI(entrada)
+		if err != nil || obtido != esperado {
+			t.Errorf("ModoDaVariavelAPI(%q) = %q, %v; esperado %q", entrada, obtido, err, esperado)
+		}
+	}
+	for _, invalido := range []string{"ssl", "plain", "tls"} {
+		if _, err := ModoDaVariavelAPI(invalido); err == nil {
+			t.Errorf("ModoDaVariavelAPI(%q) deveria falhar", invalido)
+		}
+	}
+}
+
+func TestFingerprintSHA256(t *testing.T) {
+	// SHA-256 de "abc" (vetor de teste do FIPS 180-2).
+	esperado := "BA:78:16:BF:8F:01:CF:EA:41:41:40:DE:5D:AE:22:23:B0:03:61:A3:96:17:7A:9C:B4:10:FF:61:F2:00:15:AD"
+	if obtido := FingerprintSHA256([]byte("abc")); obtido != esperado {
+		t.Errorf("FingerprintSHA256 = %s, esperado %s", obtido, esperado)
+	}
+}

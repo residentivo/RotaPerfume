@@ -24,7 +24,8 @@ import (
 	"github.com/rotaperfumes/shared/services"
 )
 
-// servidorTLSVersao é um SMTP mínimo (sem AUTH) cujo STARTTLS usa srvTLS.
+// servidorTLSVersao é um SMTP mínimo (AUTH PLAIN aceita qualquer credencial)
+// cujo STARTTLS usa srvTLS.
 // Registra a versão TLS negociada e o erro de handshake do lado servidor.
 type servidorTLSVersao struct {
 	srvTLS *tls.Config
@@ -70,7 +71,7 @@ func (s *servidorTLSVersao) serve(conn net.Conn) {
 		switch {
 		case strings.HasPrefix(cmd, "EHLO"), strings.HasPrefix(cmd, "HELO"):
 			if emTLS {
-				reply("250 fake")
+				reply("250-fake\r\n250 AUTH PLAIN") // MAIL-01: AUTH é obrigatório
 			} else {
 				reply("250-fake\r\n250 STARTTLS")
 			}
@@ -108,6 +109,8 @@ func (s *servidorTLSVersao) serve(conn net.Conn) {
 		case cmd == "QUIT":
 			reply("221 tchau")
 			return
+		case strings.HasPrefix(cmd, "AUTH"):
+			reply("235 autenticado")
 		default:
 			reply("250 ok")
 		}

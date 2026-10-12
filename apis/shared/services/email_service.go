@@ -3,11 +3,11 @@ package services
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log"
-	"net"
-	"net/smtp"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -65,21 +65,33 @@ const assuntoAlertaSeguranca = "Alerta de segurança — RotaPerfumes"
 const maxUserAgentAlerta = 120
 
 // ---------------------------------------------------------------------------
-// Implementação SMTP (Gmail com STARTTLS)
+// Implementação SMTP (TLS implícito na 465 ou STARTTLS na 587/25)
 // ---------------------------------------------------------------------------
 
-// SMTPEmailService envia emails via SMTP com STARTTLS (compatível com Gmail
-// usando uma "senha de app" — myaccount.google.com/apppasswords).
+// SMTPEmailService envia emails via SMTP sempre cifrado: TLS implícito
+// (SMTPS) ou STARTTLS, conforme SMTP_TLS_MODE ou a porta. A autenticação é
+// obrigatória e só acontece sobre TLS (ver email_smtp.go).
 type SMTPEmailService struct {
 	host string
 	port string
 	user string
 	pass string
 	from string
-	// tlsConfig é usado no STARTTLS. ServerName é sempre o host configurado
-	// (validação do certificado nunca é desligada por aqui).
+	// modoTLS é SMTPModoTLSImplicito ou SMTPModoSTARTTLS.
+	modoTLS string
+	// serverName é o nome verificado no certificado e usado no AUTH
+	// (SMTP_TLS_SERVER_NAME ou, se vazio, o host).
+	serverName string
+	// tlsConfig é usado no handshake (implícito ou STARTTLS). A validação do
+	// certificado nunca é desligada por aqui.
 	tlsConfig *tls.Config
 }
+
+// ModoTLS devolve o modo TLS efetivo (SMTPModoTLSImplicito ou SMTPModoSTARTTLS).
+func (s *SMTPEmailService) ModoTLS() string { return s.modoTLS }
+
+// ServerNameTLS devolve o nome verificado no certificado do servidor SMTP.
+func (s *SMTPEmailService) ServerNameTLS() string { return s.serverName }
 
 // NewSMTPEmailService cria um EmailService real a partir da configuração.
 // Retorna erro se host/user/password/from não estiverem preenchidos —
@@ -89,42 +101,90 @@ func NewSMTPEmailService(cfg *config.Config) (*SMTPEmailService, error) {
 }
 
 // NewSMTPEmailServiceWithTLSConfig é NewSMTPEmailService com a configuração
-// TLS do STARTTLS injetável (ex.: RootCAs de uma CA própria, ou a CA de um
-// servidor SMTP de teste). tlsCfg nil usa as raízes do sistema. A config é
-// clonada e, sobre o clone, o comando impõe (SEC-10): InsecureSkipVerify
-// sempre false (o certificado do servidor é sempre verificado, mesmo que o
-// chamador tenha desligado), MinVersion mínima TLS 1.2 (só sobe; uma config
-// que já exige TLS 1.3 é mantida) e ServerName = cfg.SMTPHost.
+// TLS injetável (ex.: RootCAs de uma CA própria, ou a CA de um servidor SMTP
+// de teste). tlsCfg nil usa as raízes do sistema. A config é clonada e, sobre
+// o clone, o construtor impõe (SEC-10): InsecureSkipVerify sempre false (o
+// certificado do servidor é sempre verificado, mesmo que o chamador tenha
+// desligado), MinVersion mínima TLS 1.2 (só sobe; TLS 1.3 é mantido) e
+// ServerName = SMTP_TLS_SERVER_NAME ou, se vazio, SMTP_HOST (MAIL-01).
+// SMTP_TLS_CA_FILE, se definido, acrescenta CAs confiáveis às raízes.
+//
+// Erros além de ErrSMTPNaoConfigurado (modo TLS inválido, CA ilegível) são
+// de configuração e devem impedir a subida, não cair no noop.
 func NewSMTPEmailServiceWithTLSConfig(cfg *config.Config, tlsCfg *tls.Config) (*SMTPEmailService, error) {
 	vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "verificando se host/usuário/senha/remetente SMTP estão preenchidos (valores não logados)")
 	if cfg.SMTPHost == "" || cfg.SMTPUser == "" || cfg.SMTPPassword == "" || cfg.SMTPFrom == "" {
 		return nil, ErrSMTPNaoConfigurado
 	}
-	vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "verificando se foi injetada config TLS (injetada=%t)", tlsCfg != nil)
-	if tlsCfg == nil {
-		vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "criando config TLS padrão")
-		tlsCfg = &tls.Config{}
-	} else {
-		vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "clonando config TLS injetada")
-		tlsCfg = tlsCfg.Clone()
+	vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "resolvendo modo TLS (SMTP_TLS_MODE=%q, porta=%s)", cfg.SMTPTLSMode, cfg.SMTPPort)
+	modo, err := ResolverModoTLSSMTP(cfg.SMTPTLSMode, cfg.SMTPPort)
+	if err != nil {
+		return nil, err
 	}
-	vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "forçando verificação de certificado (InsecureSkipVerify=false)")
+	serverName := ResolverServerNameTLSSMTP(cfg.SMTPHost, cfg.SMTPTLSServerName)
+	vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "modo TLS=%s, ServerName=%q", modo, serverName)
+	tlsCfg, err = montarConfigTLSSMTP(tlsCfg, serverName, cfg.SMTPTLSCAFile)
+	if err != nil {
+		return nil, err
+	}
+	return &SMTPEmailService{
+		host:       cfg.SMTPHost,
+		port:       cfg.SMTPPort,
+		user:       cfg.SMTPUser,
+		pass:       cfg.SMTPPassword,
+		from:       cfg.SMTPFrom,
+		modoTLS:    modo,
+		serverName: serverName,
+		tlsConfig:  tlsCfg,
+	}, nil
+}
+
+// montarConfigTLSSMTP clona (ou cria) a config TLS e aplica as regras de
+// segurança do SEC-10 e do MAIL-01.
+func montarConfigTLSSMTP(base *tls.Config, serverName, caFile string) (*tls.Config, error) {
+	vlog.Printf("email_service.go", "montarConfigTLSSMTP", "verificando se foi injetada config TLS (injetada=%t)", base != nil)
+	tlsCfg := &tls.Config{}
+	if base != nil {
+		vlog.Printf("email_service.go", "montarConfigTLSSMTP", "clonando config TLS injetada")
+		tlsCfg = base.Clone()
+	}
+	vlog.Printf("email_service.go", "montarConfigTLSSMTP", "forçando verificação de certificado (InsecureSkipVerify=false)")
 	tlsCfg.InsecureSkipVerify = false
-	vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "verificando se MinVersion é inferior a TLS 1.2")
 	if tlsCfg.MinVersion < tls.VersionTLS12 {
-		vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "elevando MinVersion para TLS 1.2")
+		vlog.Printf("email_service.go", "montarConfigTLSSMTP", "elevando MinVersion para TLS 1.2")
 		tlsCfg.MinVersion = tls.VersionTLS12
 	}
-	vlog.Printf("email_service.go", "NewSMTPEmailServiceWithTLSConfig", "definindo ServerName do TLS com o host SMTP")
-	tlsCfg.ServerName = cfg.SMTPHost
-	return &SMTPEmailService{
-		host:      cfg.SMTPHost,
-		port:      cfg.SMTPPort,
-		user:      cfg.SMTPUser,
-		pass:      cfg.SMTPPassword,
-		from:      cfg.SMTPFrom,
-		tlsConfig: tlsCfg,
-	}, nil
+	tlsCfg.ServerName = serverName
+	if caFile == "" {
+		return tlsCfg, nil
+	}
+	vlog.Printf("email_service.go", "montarConfigTLSSMTP", "carregando CAs extras de SMTP_TLS_CA_FILE")
+	pool, err := carregarCAsSMTP(caFile, tlsCfg.RootCAs)
+	if err != nil {
+		return nil, err
+	}
+	tlsCfg.RootCAs = pool
+	return tlsCfg, nil
+}
+
+// carregarCAsSMTP acrescenta os certificados PEM de caminho a uma cópia de
+// base (ou às raízes do sistema, se base for nil).
+func carregarCAsSMTP(caminho string, base *x509.CertPool) (*x509.CertPool, error) {
+	pemBytes, err := os.ReadFile(caminho)
+	if err != nil {
+		return nil, fmt.Errorf("services: SMTP_TLS_CA_FILE: %w", err)
+	}
+	var pool *x509.CertPool
+	if base != nil {
+		pool = base.Clone()
+	} else if pool, err = x509.SystemCertPool(); err != nil {
+		vlog.Printf("email_service.go", "carregarCAsSMTP", "raízes do sistema indisponíveis (%v); usando só o arquivo", err)
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, fmt.Errorf("services: SMTP_TLS_CA_FILE %q: nenhum certificado PEM válido", caminho)
+	}
+	return pool, nil
 }
 
 // EnviarSenhaInicial envia a senha gerada para o email cadastrado do usuário.
@@ -233,90 +293,6 @@ func truncarRunes(s string, max int) string {
 // escreve o cabeçalho To: sem escape.
 func destinatarioValido(to string) bool {
 	return strings.TrimSpace(to) != "" && !strings.ContainsAny(to, "\r\n")
-}
-
-// enviar executa o handshake SMTP manual com STARTTLS (necessário para Gmail
-// na porta 587 — net/smtp.SendMail não faz STARTTLS explícito).
-func (s *SMTPEmailService) enviar(ctx context.Context, to, subject, body string) error {
-	// CR/LF é checado no valor cru (TrimSpace esconderia um "\r\n" final);
-	// depois apara — o mesmo valor aparado vai para RCPT TO e para To:.
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "validando destinatário %s (sem CR/LF, não vazio)", vlog.MaskEmail(to))
-	if !destinatarioValido(to) {
-		return ErrDestinatarioInvalido
-	}
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "aparando espaços do destinatário")
-	to = strings.TrimSpace(to)
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "montando endereço host:porta do servidor SMTP")
-	addr := net.JoinHostPort(s.host, s.port)
-
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "declarando dialer TCP")
-	var d net.Dialer
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "abrindo conexão TCP com o servidor SMTP")
-	conn, err := d.DialContext(ctx, "tcp", addr)
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "verificando se err != nil após DialContext")
-	if err != nil {
-		return fmt.Errorf("services: smtp dial: %w", err)
-	}
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "agendando fechamento da conexão TCP")
-	defer conn.Close()
-
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "criando cliente SMTP sobre a conexão")
-	client, err := smtp.NewClient(conn, s.host)
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "verificando se err != nil após smtp.NewClient")
-	if err != nil {
-		return fmt.Errorf("services: smtp client: %w", err)
-	}
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "agendando fechamento do cliente SMTP")
-	defer client.Close()
-
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "verificando se o servidor suporta STARTTLS")
-	if ok, _ := client.Extension("STARTTLS"); ok {
-		vlog.Printf("email_service.go", "SMTPEmailService.enviar", "iniciando STARTTLS e verificando erro")
-		if err := client.StartTLS(s.tlsConfig); err != nil {
-			return fmt.Errorf("services: smtp starttls: %w", err)
-		}
-	} else {
-		return fmt.Errorf("services: smtp starttls: not supported by server")
-	}
-
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "preparando autenticação PLAIN (credenciais não logadas)")
-	auth := smtp.PlainAuth("", s.user, s.pass, s.host)
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "verificando se o servidor suporta AUTH")
-	if ok, _ := client.Extension("AUTH"); ok {
-		vlog.Printf("email_service.go", "SMTPEmailService.enviar", "autenticando no servidor SMTP e verificando erro")
-		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("services: smtp auth: %w", err)
-		}
-	}
-
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "enviando MAIL FROM e verificando erro")
-	if err := client.Mail(s.from); err != nil {
-		return fmt.Errorf("services: smtp mail from: %w", err)
-	}
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "enviando RCPT TO para %s e verificando erro", vlog.MaskEmail(to))
-	if err := client.Rcpt(to); err != nil {
-		return fmt.Errorf("services: smtp rcpt to: %w", err)
-	}
-
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "abrindo writer DATA")
-	w, err := client.Data()
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "verificando se err != nil após client.Data")
-	if err != nil {
-		return fmt.Errorf("services: smtp data: %w", err)
-	}
-
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "montando mensagem RFC 5322 (conteúdo não logado)")
-	msg := buildMessage(s.from, to, subject, body)
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "escrevendo %d bytes da mensagem e verificando erro", len(msg))
-	if _, err := w.Write([]byte(msg)); err != nil {
-		return fmt.Errorf("services: smtp write: %w", err)
-	}
-	vlog.Printf("email_service.go", "SMTPEmailService.enviar", "fechando writer DATA e verificando erro")
-	if err := w.Close(); err != nil {
-		return fmt.Errorf("services: smtp close: %w", err)
-	}
-
-	return client.Quit()
 }
 
 // buildMessage monta o payload RFC 5322 mínimo (headers + corpo em texto puro).

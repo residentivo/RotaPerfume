@@ -35,7 +35,7 @@ export function PedidoItensDetalhe({
 }: PedidoItensDetalheProps) {
   return (
     <div
-      className="sticky left-0 max-w-[calc(100vw-6rem)] rounded-md border border-slate-200 bg-white p-4 shadow-sm sm:max-w-none"
+      className="sticky left-0 max-w-[calc(100vw-6rem)] rounded-md border border-slate-200 bg-white p-4 shadow-xs sm:max-w-none"
       data-testid={`pedido-itens-${pedidoId}`}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

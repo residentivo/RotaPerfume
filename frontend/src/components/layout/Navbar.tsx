@@ -39,7 +39,7 @@ function NavDropdown({ label, items }: { label: string; items: NavDropdownItem[]
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-      <div className="invisible absolute left-0 top-full z-20 min-w-[10rem] rounded-lg border border-slate-200 bg-white py-1 opacity-0 shadow-lg transition-opacity duration-150 group-hover:visible group-hover:opacity-100">
+      <div className="invisible absolute left-0 top-full z-20 min-w-40 rounded-lg border border-slate-200 bg-white py-1 opacity-0 shadow-lg transition-opacity duration-150 group-hover:visible group-hover:opacity-100">
         {items.map((item) => (
           <Link
             key={item.href}
@@ -156,7 +156,7 @@ export function Navbar() {
   const inicial = user?.nome?.charAt(0).toUpperCase() || "?";
 
   return (
-    <nav className="border-b border-slate-200 bg-white shadow-sm">
+    <nav className="border-b border-slate-200 bg-white shadow-xs">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white">
@@ -213,7 +213,7 @@ export function Navbar() {
           aria-label={menuAberto ? "Fechar menu" : "Abrir menu"}
           aria-expanded={menuAberto}
           aria-controls={MENU_MOBILE_ID}
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-500 lg:hidden"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-primary-500 lg:hidden"
         >
           {menuAberto ? (
             <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

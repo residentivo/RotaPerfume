@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -179,6 +180,12 @@ func newEmailService(cfg *config.Config) (sharedsvc.EmailService, sharedsvc.Aler
 	vlog.Printf("main.go", "newEmailService", "chamando sharedsvc.NewSMTPEmailService e declarando svc, err")
 	svc, err := sharedsvc.NewSMTPEmailService(cfg)
 	vlog.Printf("main.go", "newEmailService", "verificando condição err != nil")
+	vlog.Printf("main.go", "newEmailService", "verificando se o erro é de configuração SMTP inválida (não só ausente)")
+	if err != nil && !errors.Is(err, sharedsvc.ErrSMTPNaoConfigurado) {
+		// SMTP_TLS_MODE inválido, SMTP_TLS_CA_FILE ilegível etc.: não cair em
+		// silêncio no noop com o SMTP meio configurado (MAIL-01).
+		log.Fatalf("[server] configuração SMTP inválida: %v", err)
+	}
 	if err != nil {
 		log.Printf("[server] SMTP não configurado — emails de senha inicial/reset serão apenas logados (%v)", err)
 		log.Printf("[server] SMTP não configurado — alertas de segurança só no log")
@@ -186,7 +193,8 @@ func newEmailService(cfg *config.Config) (sharedsvc.EmailService, sharedsvc.Aler
 		noop := sharedsvc.NewNoopEmailService()
 		return noop, noop
 	}
-	log.Printf("[server] EmailService SMTP configurado: host=%s port=%s from=%s", cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
+	log.Printf("[server] EmailService SMTP configurado: host=%s port=%s tls=%s server_name=%s from=%s",
+		cfg.SMTPHost, cfg.SMTPPort, svc.ModoTLS(), svc.ServerNameTLS(), vlog.MaskEmail(cfg.SMTPFrom))
 	return svc, svc
 }
 

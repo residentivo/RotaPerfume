@@ -43,13 +43,19 @@ func smtpTLS(t *testing.T) (tls.Certificate, *x509.CertPool) {
 type fakeSMTP struct {
 	falha string
 	cert  tls.Certificate
+	// implicito: TLS desde o connect (SMTPS), sem STARTTLS (MAIL-01).
+	implicito bool
+	// mecanismos anunciados em AUTH (padrão "PLAIN").
+	mecanismos string
 
-	mu       sync.Mutex
-	authResp string
-	mailFrom string
-	rcptTo   string
-	data     string
-	usouTLS  bool
+	mu        sync.Mutex
+	authResp  string
+	loginUser string
+	loginPass string
+	mailFrom  string
+	rcptTo    string
+	data      string
+	usouTLS   bool
 }
 
 func (f *fakeSMTP) start(t *testing.T) (host, port string) {
@@ -85,9 +91,19 @@ func (f *fakeSMTP) serve(conn net.Conn) {
 		reply("554 servico indisponivel")
 		return
 	}
+	emTLS := false
+	if f.implicito {
+		tc := tls.Server(conn, &tls.Config{Certificates: []tls.Certificate{f.cert}})
+		if err := tc.Handshake(); err != nil {
+			return
+		}
+		conn, r, w, emTLS = tc, bufio.NewReader(tc), bufio.NewWriter(tc), true
+		f.mu.Lock()
+		f.usouTLS = true
+		f.mu.Unlock()
+	}
 	reply("220 fake ESMTP")
 
-	emTLS := false
 	for {
 		linha, err := r.ReadString('\n')
 		if err != nil {
@@ -102,7 +118,11 @@ func (f *fakeSMTP) serve(conn net.Conn) {
 				ext = append(ext, "250-STARTTLS")
 			}
 			if emTLS && f.falha != "sem-auth" {
-				ext = append(ext, "250-AUTH PLAIN")
+				mecs := f.mecanismos
+				if mecs == "" {
+					mecs = "PLAIN"
+				}
+				ext = append(ext, "250-AUTH "+mecs)
 			}
 			ext = append(ext, "250 8BITMIME")
 			reply(strings.Join(ext, "\r\n"))
@@ -123,6 +143,15 @@ func (f *fakeSMTP) serve(conn net.Conn) {
 			f.mu.Lock()
 			f.usouTLS = true
 			f.mu.Unlock()
+		case cmd == "AUTH LOGIN":
+			user, pass, ok := lerAuthLogin(r, reply)
+			if !ok {
+				return
+			}
+			f.mu.Lock()
+			f.loginUser, f.loginPass = user, pass
+			f.mu.Unlock()
+			reply("235 autenticado")
 		case strings.HasPrefix(cmd, "AUTH"):
 			partes := strings.Fields(linha)
 			f.mu.Lock()
@@ -206,20 +235,22 @@ func smtpCfg(host, port string) *config.Config {
 func TestSMTPEmailService_EnviarSenhaInicial_Sucesso(t *testing.T) {
 	cert, pool := smtpTLS(t)
 
+	// MAIL-01: servidor sem AUTH deixou de ser "pula a autenticação" e virou
+	// erro (ver TestMAIL01_SemAuth_FalhaSemEnviar).
 	casos := []struct {
 		nome     string
 		falha    string
 		wantAuth bool
 	}{
 		{"com AUTH anunciado", "", true},
-		{"servidor sem AUTH (pula autenticação)", "sem-auth", false},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
 			f := &fakeSMTP{falha: c.falha, cert: cert}
 			host, port := f.start(t)
 
-			// ServerName errado de propósito: o construtor força o host configurado.
+			// ServerName errado de propósito: o construtor força o host configurado
+			// (SMTP_TLS_SERVER_NAME vazio).
 			svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), &tls.Config{RootCAs: pool, ServerName: "host-errado.invalid"})
 			require.NoError(t, err)
 
@@ -265,6 +296,7 @@ func TestSMTPEmailService_EnviarSenhaInicial_Erros(t *testing.T) {
 		{"STARTTLS recusado", "starttls", false, "smtp starttls"},
 		{"certificado não confiável", "", true, "smtp starttls"},
 		{"AUTH recusado", "auth", false, "smtp auth"},
+		{"servidor sem AUTH", "sem-auth", false, "não anunciou AUTH"},
 		{"MAIL FROM recusado", "mail", false, "smtp mail from"},
 		{"RCPT TO recusado", "rcpt", false, "smtp rcpt to"},
 		{"DATA recusado", "data", false, "smtp data"},

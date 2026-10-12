@@ -91,14 +91,14 @@ export function Alert({
         className,
       ].join(" ")}
     >
-      <span className={["flex-shrink-0", styles.icon].join(" ")}>
+      <span className={["shrink-0", styles.icon].join(" ")}>
         {Icons[variant]}
       </span>
       <div className={["flex-1 text-sm", styles.text].join(" ")}>{children}</div>
       {onClose && (
         <button
           onClick={onClose}
-          className={["flex-shrink-0", styles.text, "hover:opacity-70"].join(" ")}
+          className={["shrink-0", styles.text, "hover:opacity-70"].join(" ")}
           aria-label="Fechar alerta"
         >
           <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

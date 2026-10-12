@@ -3,6 +3,74 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 20 de 2026-10-11: 3 cards concluídos (de 3)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "seguir com as tarefas a fazer e fazendo". DEP-01, DEP-02 e TST-05 vieram de `afazer.md`. Fora da contagem: o **MAIL-01** avançou (diagnóstico real e correção TLS/AUTH no envio SMTP), mas continua em `fazendo.md` até um envio real bem-sucedido; o **TST-04** avançou parcialmente (3.x e 4.x executados) e continua em `afazer.md` só com 1.1, 1.2 e 1.7; o DEPLOY-01 não mudou (aguardando o usuário).
+>
+> **Fluxo:** 🟡 BackBrain (DEP-02 → MAIL-01) ∥ 🟢 FrontBrain (DEP-01) ∥ 🔴 TestBrain (TST-05 e TST-04 parcial) → 🔵 SubBrain. 🟣 SecBrain e 🌸 DataBrain dispensados: upgrades de dependências e testes, sem mudança de schema nem de contrato HTTP.
+>
+> **Validação (2026-10-11):** Go: shared 2252 aprovados e rotaperfumes-api 2429 aprovados (com subtestes; 28 pulados), 0 falhas; cobertura do rotaperfumes-api 91,1%. Frontend: `tsc` e `eslint` ok; vitest 1495/1495 (36 arquivos); `next build` ok; `npm audit --omit=dev` = 0.
+
+## DEP-02: atualizar módulos Go desatualizados — 2026-10-11
+**Agentes:** 🟡 BackBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-11.
+
+**Camada:** Backend
+**Origem:** saída do `go list -m -u all` no `make deps-audit-go` (Lote 19).
+
+**Entregue (🟡 BackBrain):** mesmas versões em `apis/shared` e `apis/rotaperfumes-api`:
+- `golang.org/x/crypto` v0.24.0 → v0.58.0; `golang.org/x/sys` v0.21.0 → v0.49.0; `golang.org/x/term` (só shared) v0.21.0 → v0.47.0;
+- `github.com/go-sql-driver/mysql` v1.8.1 → v1.10.1; `github.com/stretchr/testify` v1.9.0 → v1.12.1; `filippo.io/edwards25519` v1.1.0 → v1.2.0;
+- diretiva `go` 1.22 → 1.26.0 (exigida pelos `x/*`; compatível com go1.26.4 local, `apis/Dockerfile` 1.26.9 e `golang:1.26-alpine` no Jenkins);
+- `x/net` e `x/text` não são usados e saíram com o `go mod tidy`.
+
+**Revisão:** changelog do driver MySQL sem impacto em DSN/`parseTime`/`loc`; Argon2/bcrypt com a mesma API, testes de hash passando.
+
+**Pendência:** o govulncheck não está instalado, então o `make deps-audit-go` não rodou (mesma pendência do usuário do Lote 19).
+
+---
+
+## DEP-01: migrar Tailwind 3→4 — 2026-10-11
+**Agentes:** 🟢 FrontBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-11.
+
+**Camada:** Frontend
+**Origem:** residual do item 13 do `FalhasEncontradas.md` (Lote 19).
+
+**Entregue (🟢 FrontBrain):**
+- `tailwindcss` 3.4.19 → 4.3.3, mais `@tailwindcss/postcss` 4.3.3 (`postcss.config.js`); `autoprefixer` removido;
+- `tailwind.config.ts` apagado; paleta `primary` convertida para `@theme` em `globals.css`;
+- camada de compatibilidade v3 em `globals.css`: borda padrão `gray-200`, placeholder `gray-400`, `cursor: pointer` em botões, `@custom-variant hover` para manter o `group-hover` dos dropdowns em touch;
+- 20 classes renomeadas em 11 arquivos (`shadow-sm`→`shadow-xs`, `focus:outline-none`→`focus:outline-hidden`, `bg-gradient-to-br`→`bg-linear-to-br`, `backdrop-blur`→`backdrop-blur-sm`, `backdrop-blur-sm`→`backdrop-blur-xs`, `flex-shrink-0`→`shrink-0`, `rounded`→`rounded-sm`, `min-w-[10rem]`→`min-w-40`).
+
+**Validação:** `tsc`, `eslint`, vitest 1495/1495 (36 arquivos) e `next build` ok; comparação dos seletores do CSS gerado sem perda de classes usadas. `npm audit` completo de 9 para 5 (5 altas); `--omit=dev` = 0.
+
+**Residual:** as 5 altas vêm de `braces` → `micromatch` → `fast-glob@3.3.1` → `@next/eslint-plugin-next` → `eslint-config-next@16.4.0` (só lint, dev). O `braces` não tem versão corrigida e o `--force` rebaixaria o `eslint-config-next` para 14.2.35 (rejeitado). Virou o card **DEP-03** (BAIXA) em `afazer.md`.
+
+**Pendência do usuário:** conferência visual no navegador: menu hambúrguer e foco por teclado, dropdowns do Navbar, `space-y`/`divide-y` em tabelas, bordas sem cor, sombras e cantos, desfoque do Modal/login/trocar-senha, gradientes (agora em oklab), ring/placeholder de Input/Select, paleta em oklch.
+
+---
+
+## TST-05: teste de runtime do vlog com `VERBOSE` ligado nos handlers de login/reset — 2026-10-11
+**Agentes:** 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-11.
+
+**Camada:** Testes
+**Origem:** pendência do LOG-02 (Lote 17).
+
+**Entregue (🔴 TestBrain):** `apis/rotaperfumes-api/tests/handlers/tst05_vlog_runtime_auth_test.go`:
+- `TestTST05_VlogRuntime_LoginReset_NaoVazaSensiveis`, com 11 casos, router real, sqlmock, `fakeCaptchaVerifier` e log capturado em buffer:
+  - login: sucesso, senha incorreta, usuário inexistente, inativo, erro de DB, captcha inválido;
+  - reset: sucesso, senha atual incorreta, senha reutilizada, senha fraca, captcha inválido;
+- verifica que não aparecem senhas, hashes (inteiros e segmentos), JWT/Bearer, cookies, hash do refresh token, captcha, User-Agent, segredo JWT, pepper e e-mail sem máscara, e que o `vlog.MaskEmail` aparece;
+- verificações anti-vacuidade e controle negativo (`TestTST05_DetectorDeVazamento_ControleNegativo`).
+
+**Resultado:** nenhum vazamento. rotaperfumes-api: 2429 aprovados (com subtestes), 0 falhas, 28 pulados; cobertura 91,1%.
+
+---
 ## Lote 19 de 2026-10-11: 1 card concluído (de 1)
 
 > Lote aberto pelo 🤍 MegaBrain para fechar o item 13 do `FalhasEncontradas.md` ("Dependências recentes sem política de atualização documentada").

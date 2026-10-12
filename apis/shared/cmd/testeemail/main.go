@@ -19,7 +19,14 @@
 // (-to admin@x.com.br) ou aspas ("-to=admin@x.com.br").
 //
 // Flags: -from, -to, -modo auto|ssl|starttls|plain, -tls-server-name,
-// -inseguro, -timeout, -ehlo. Sai com código 1 em caso de falha.
+// -tls-ca-file, -salvar-cert, -inseguro, -timeout, -ehlo. Sai com código 1 em
+// caso de falha. Sem flags, -modo/-tls-server-name/-tls-ca-file seguem
+// SMTP_TLS_MODE/SMTP_TLS_SERVER_NAME/SMTP_TLS_CA_FILE (as mesmas da API).
+//
+// Servidor com certificado próprio (autoassinado): grave o certificado com
+// -salvar-cert smtp-ca.pem, confira o SHA-256 logado com o administrador do
+// servidor e só então use SMTP_TLS_CA_FILE=smtp-ca.pem e
+// SMTP_TLS_SERVER_NAME=<nome do SAN do certificado>.
 package main
 
 import (
@@ -27,6 +34,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -57,7 +65,8 @@ const (
 )
 
 // variaveisSMTP são as variáveis lidas pela API (config.go).
-var variaveisSMTP = []string{"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM"}
+var variaveisSMTP = []string{"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
+	"SMTP_TLS_MODE", "SMTP_TLS_SERVER_NAME", "SMTP_TLS_CA_FILE"}
 
 // opcoes reúne as flags da linha de comando.
 type opcoes struct {
@@ -65,6 +74,8 @@ type opcoes struct {
 	para          string
 	modo          string
 	tlsServerName string
+	tlsCAFile     string
+	salvarCert    string
 	inseguro      bool
 	timeout       time.Duration
 	ehlo          string
@@ -83,6 +94,7 @@ type diagnostico struct {
 	descricao  string
 	modo       string
 	serverName string
+	raizes     *x509.CertPool // nil = raízes do sistema
 	de, para   string
 	tcp        net.Conn
 	transcrito *conexaoLogada
@@ -116,7 +128,9 @@ func lerFlags() opcoes {
 	flag.StringVar(&o.de, "from", remetentePadrao, "remetente (cabeçalho From e MAIL FROM)")
 	flag.StringVar(&o.para, "to", destinatarioPadrao, "destinatário (cabeçalho To e RCPT TO)")
 	flag.StringVar(&o.modo, "modo", testeemail.ModoAuto, "conexão: auto (465=ssl, demais=starttls) | ssl | starttls | plain")
-	flag.StringVar(&o.tlsServerName, "tls-server-name", "", "nome esperado no certificado TLS (padrão: SMTP_HOST), ex.: mail.rotaperfumes.com.br")
+	flag.StringVar(&o.tlsServerName, "tls-server-name", "", "nome esperado no certificado TLS (padrão: SMTP_TLS_SERVER_NAME ou SMTP_HOST), ex.: mail.rotaperfumes.com.br")
+	flag.StringVar(&o.tlsCAFile, "tls-ca-file", "", "PEM com CA/certificado extra a confiar (padrão: SMTP_TLS_CA_FILE)")
+	flag.StringVar(&o.salvarCert, "salvar-cert", "", "grava em PEM o certificado apresentado pelo servidor (para conferir o fingerprint e usar em SMTP_TLS_CA_FILE)")
 	flag.BoolVar(&o.inseguro, "inseguro", false, "NÃO valida o certificado TLS (InsecureSkipVerify) — SÓ para diagnóstico")
 	flag.DurationVar(&o.timeout, "timeout", 20*time.Second, "prazo máximo de cada etapa de rede (ex.: 20s, 1m)")
 	flag.StringVar(&o.ehlo, "ehlo", "localhost", "nome enviado no EHLO (net/smtp e a API usam localhost)")
@@ -328,7 +342,16 @@ func (d *diagnostico) validarEnderecos() error {
 
 func (d *diagnostico) decidirModo() error {
 	d.iniciar("escolher modo de conexão")
-	modo, err := testeemail.EscolherModo(d.opts.modo, d.cfg.porta)
+	modoPedido := d.opts.modo
+	if envModo := os.Getenv("SMTP_TLS_MODE"); strings.EqualFold(strings.TrimSpace(modoPedido), testeemail.ModoAuto) && envModo != "" {
+		convertido, err := testeemail.ModoDaVariavelAPI(envModo)
+		if err != nil {
+			return d.falha("SMTP_TLS_MODE", err)
+		}
+		d.logf("-modo auto e SMTP_TLS_MODE=%q: usando modo %s (o mesmo da API)", envModo, convertido)
+		modoPedido = convertido
+	}
+	modo, err := testeemail.EscolherModo(modoPedido, d.cfg.porta)
 	if err != nil {
 		return d.falha("flag -modo", err)
 	}
@@ -336,18 +359,50 @@ func (d *diagnostico) decidirModo() error {
 	d.logf("flag -modo=%q, porta=%s => modo efetivo: %s", d.opts.modo, d.cfg.porta, modo)
 	switch {
 	case modo == testeemail.ModoStartTLS && d.cfg.porta == testeemail.PortaSMTPS:
-		d.logf("AVISO: porta 465 costuma ser TLS implícito (ssl). Em starttls o cliente espera o banner em texto puro e tende a dar TIMEOUT. É exatamente o que o email_service.go faz hoje.")
+		d.logf("AVISO: porta 465 costuma ser TLS implícito (ssl). Em starttls o cliente espera o banner em texto puro e tende a dar TIMEOUT. A API (email_service) infere implicit na 465; force com SMTP_TLS_MODE.")
 	case modo == testeemail.ModoSSL && d.cfg.porta != testeemail.PortaSMTPS:
 		d.logf("AVISO: modo ssl em porta %s (não 465): se o servidor falar texto puro, o handshake TLS falha", d.cfg.porta)
 	case modo == testeemail.ModoPlain:
 		d.logf("AVISO: modo plain = SEM TLS. O net/smtp (PlainAuth) recusa enviar senha sem TLS fora de localhost.")
 	}
 	d.serverName = d.cfg.host
-	if d.opts.tlsServerName != "" {
+	switch {
+	case d.opts.tlsServerName != "":
 		d.serverName = d.opts.tlsServerName
 		d.logf("ServerName TLS sobrescrito por -tls-server-name: %s", d.serverName)
+	case strings.TrimSpace(os.Getenv("SMTP_TLS_SERVER_NAME")) != "":
+		d.serverName = strings.TrimSpace(os.Getenv("SMTP_TLS_SERVER_NAME"))
+		d.logf("ServerName TLS vindo de SMTP_TLS_SERVER_NAME: %s", d.serverName)
 	}
 	d.logf("ServerName (TLS e host do PlainAuth): %s", d.serverName)
+	return d.carregarCA()
+}
+
+// carregarCA monta as raízes confiáveis: sistema + PEM de -tls-ca-file ou
+// SMTP_TLS_CA_FILE (mesma regra da API).
+func (d *diagnostico) carregarCA() error {
+	caminho := d.opts.tlsCAFile
+	if caminho == "" {
+		caminho = os.Getenv("SMTP_TLS_CA_FILE")
+	}
+	if caminho == "" {
+		d.logf("sem SMTP_TLS_CA_FILE/-tls-ca-file: confiando só nas raízes do sistema")
+		return nil
+	}
+	pemBytes, err := os.ReadFile(caminho)
+	if err != nil {
+		return d.falha("leitura da CA extra", err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		d.logf("raízes do sistema indisponíveis (%v); usando só o arquivo", err)
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return d.falha("leitura da CA extra", fmt.Errorf("%s: nenhum certificado PEM válido", caminho))
+	}
+	d.raizes = pool
+	d.logf("CA extra carregada de %s (além das raízes do sistema)", caminho)
 	return nil
 }
 
@@ -451,7 +506,7 @@ func (d *diagnostico) comandoStartTLS(c *smtp.Client) error {
 		if d.cfg.porta == testeemail.PortaSMTPS {
 			d.dica("porta 465 normalmente é TLS implícito: tente -modo ssl")
 		}
-		d.dica("o email_service.go exige STARTTLS e falharia aqui; para testar sem TLS use -modo plain")
+		d.dica("a API em modo starttls exige STARTTLS e falharia aqui; para testar sem TLS use -modo plain")
 		return d.falha("STARTTLS", errors.New("servidor não anunciou STARTTLS no EHLO"))
 	}
 	d.prazo()
@@ -537,6 +592,7 @@ func (d *diagnostico) verificarCertificado(cs tls.ConnectionState) error {
 	for i, cert := range cs.PeerCertificates {
 		d.logarCertificado(i, cert)
 	}
+	d.salvarCertificado(cs)
 	err := d.validarCadeia(cs)
 	if err == nil {
 		d.logf("verificação do certificado: OK (válido para %q)", d.serverName)
@@ -562,6 +618,7 @@ func (d *diagnostico) validarCadeia(cs tls.ConnectionState) error {
 	_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{
 		DNSName:       d.serverName,
 		Intermediates: intermediarios,
+		Roots:         d.raizes,
 	})
 	return err
 }
@@ -576,6 +633,22 @@ func (d *diagnostico) logarCertificado(i int, cert *x509.Certificate) {
 		cert.NotBefore.Format(time.RFC3339), cert.NotAfter.Format(time.RFC3339),
 		agora.After(cert.NotAfter), agora.Before(cert.NotBefore))
 	d.logf("cert[%d] autoassinado (Subject==Issuer)? %t", i, bytes.Equal(cert.RawSubject, cert.RawIssuer))
+	d.logf("cert[%d] SHA-256: %s", i, testeemail.FingerprintSHA256(cert.Raw))
+}
+
+// salvarCertificado grava o certificado folha em PEM quando -salvar-cert é
+// usado. Confira o SHA-256 com o administrador do servidor ANTES de usar o
+// arquivo em SMTP_TLS_CA_FILE (confiar sem conferir aceita um MITM).
+func (d *diagnostico) salvarCertificado(cs tls.ConnectionState) {
+	if d.opts.salvarCert == "" || len(cs.PeerCertificates) == 0 {
+		return
+	}
+	bloco := &pem.Block{Type: "CERTIFICATE", Bytes: cs.PeerCertificates[0].Raw}
+	if err := os.WriteFile(d.opts.salvarCert, pem.EncodeToMemory(bloco), 0o644); err != nil {
+		d.logf("ERRO ao salvar o certificado em %s: %v", d.opts.salvarCert, err)
+		return
+	}
+	d.logf("certificado do servidor salvo em %s (confira o SHA-256 acima antes de confiar nele)", d.opts.salvarCert)
 }
 
 func (d *diagnostico) dicaCertificado(err error, cs tls.ConnectionState) {
@@ -630,7 +703,7 @@ func (d *diagnostico) autenticar(c *smtp.Client) error {
 	ok, mecanismos := c.Extension("AUTH")
 	d.logf("servidor anunciou AUTH? %t mecanismos=%q", ok, mecanismos)
 	if !ok {
-		d.logf("AVISO: AUTH não anunciado — PULANDO a autenticação (o email_service.go também pula em silêncio nesse caso; o servidor pode recusar o RCPT depois)")
+		d.logf("AVISO: AUTH não anunciado — PULANDO a autenticação (a API, desde o MAIL-01, ABORTA o envio nesse caso; o diagnóstico segue só para observar o servidor)")
 		if !d.usaTLS {
 			d.dica("muitos servidores só anunciam AUTH depois do TLS")
 		}
@@ -670,7 +743,7 @@ func (d *diagnostico) escolherAuth(mecanismos string) (smtp.Auth, string, error)
 		base := smtp.PlainAuth("", d.cfg.usuario, d.cfg.senha, d.serverName)
 		return &authComEstadoTLS{Auth: base, tls: d.usaTLS, d: d}, "PLAIN", nil
 	case tem("LOGIN"):
-		d.logf("AVISO: servidor NÃO oferece PLAIN (o único que o email_service.go usa); testando LOGIN")
+		d.logf("AVISO: servidor NÃO oferece PLAIN; testando LOGIN (a API também cai para LOGIN)")
 		return &authLogin{usuario: d.cfg.usuario, senha: d.cfg.senha, tls: d.usaTLS}, "LOGIN", nil
 	default:
 		return nil, "", fmt.Errorf("nenhum mecanismo suportado (PLAIN/LOGIN) em %q", mecanismos)

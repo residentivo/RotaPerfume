@@ -79,9 +79,9 @@ function KpiCard({
   return (
     <div
       className={[
-        "relative overflow-hidden rounded-xl border bg-white p-5 shadow-sm transition-shadow hover:shadow-md",
+        "relative overflow-hidden rounded-xl border bg-white p-5 shadow-xs transition-shadow hover:shadow-md",
         accent
-          ? "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white"
+          ? "border-emerald-200 bg-linear-to-br from-emerald-50 to-white"
           : "border-slate-200",
       ]
         .filter(Boolean)
@@ -180,7 +180,7 @@ function BarChart({
                   style={{ height: `${Math.max(1, pct)}%` }}
                 />
                 {/* Tooltip */}
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded-sm bg-slate-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100">
                   <span className="font-medium">{fmtDate(pt.dia)}:</span>{" "}
                   {fmtCurrency(pt.total_vendas)}
                 </div>
@@ -766,7 +766,7 @@ function DashboardContent() {
                 className={[
                   "rounded-md px-4 py-1.5 text-sm font-medium transition-all",
                   periodo === p
-                    ? "bg-primary-600 text-white shadow-sm"
+                    ? "bg-primary-600 text-white shadow-xs"
                     : "text-slate-600 hover:bg-slate-100",
                 ]
                   .filter(Boolean)
@@ -865,7 +865,7 @@ function DashboardContent() {
               subtitle={`Total: ${fmtCurrency(displayVendas.pontos.reduce((s, p) => s + p.total_vendas, 0))}`}
               action={
                 <select
-                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 focus:border-primary-500 focus:outline-hidden focus:ring-1 focus:ring-primary-500"
                   value={chartsDias}
                   onChange={(e) => setChartsDias(Number(e.target.value))}
                 >

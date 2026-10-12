@@ -2,14 +2,30 @@
 
 ## MAIL-01: programa de diagnóstico de envio de e-mail (`cmd/testeemail`) — prioridade ALTA
 
-**Status:** em execução (2026-10-09)
+**Status:** em execução (2026-10-09; avançou no Lote 20, 2026-10-11)
 **Camada:** Backend (ferramenta CLI)
 **Responsável:** 🟡 BackBrain
 **Origem:** pedido do usuário: "o envio de email não está funcionando". Pediu um programa que só envie um e-mail de `henrique.rodrigues@rotaperfumes.com.br` para `admin@rotaperfumes.com.br`, com texto padrão, logando todos os passos e erros e usando o `.env` da raiz.
 
 **Suspeitas levantadas (🤍 MegaBrain):** no `.env` da raiz, `SMTP_PORT=465` (TLS implícito/SMTPS). Mas `services/email_service.go` (`enviar`) abre TCP puro e exige STARTTLS, e na 465 o servidor espera o handshake TLS antes do banner, então trava ou falha. Além disso, `SMTP_HOST` é um IP (`192.168.168.106`) e o `ServerName` do TLS recebe o host, então a verificação do certificado falha se o certificado não tiver SAN de IP.
 
-**Passo atual:** 🟡 BackBrain entregou `apis/shared/cmd/testeemail` e `apis/shared/tools/testeemail` (build, vet e 6 testes OK). Aguardando o usuário rodar o diagnóstico contra o SMTP real e trazer o log. Depois disso, corrigir `services/email_service.go`: suporte a TLS implícito na 465, AUTH silenciosamente pulado e ServerName com IP.
+**Histórico:**
+- 2026-10-09: 🟡 BackBrain entregou `apis/shared/cmd/testeemail` e `apis/shared/tools/testeemail` (build, vet e 6 testes OK).
+- 2026-10-11 (Lote 20): o diagnóstico real rodou uma vez. A porta 465 em `192.168.168.106` está acessível (a 587 recusa). O certificado é autoassinado ("rcgen self signed cert", SAN DNS só `localhost`, sem SAN de IP), SHA-256 `C2:A9:4D:46:D2:D2:4C:92:0A:A2:B9:EC:59:D4:5E:66:47:9F:CA:23:BB:24:87:29:52:C1:1C:2A:17:10:10:E0`. Falhou no handshake TLS (x509 sem IP SAN) e nenhum e-mail foi enviado. Aviso: o remetente `henrique.rodrigues@` é diferente do `SMTP_USER` (`admin@`).
+- 2026-10-11 (Lote 20): correção no código (🟡 BackBrain):
+  - novo `apis/shared/services/email_smtp.go`: TLS implícito na 465 e STARTTLS nas outras portas; AUTH obrigatório (`ErrSMTPSemAuth`; PLAIN ou LOGIN); credenciais nunca trafegam sem TLS; timeouts de 10s/30s; verificação de certificado sempre ligada; TLS ≥ 1.2;
+  - variáveis novas opcionais `SMTP_TLS_MODE`, `SMTP_TLS_SERVER_NAME` e `SMTP_TLS_CA_FILE` (em `.env.example` e `deploy/api.env.example`);
+  - configuração SMTP inválida agora impede a API de subir;
+  - `testeemail` ganhou `-tls-ca-file` e `-salvar-cert`;
+  - testes: 9 `TestMAIL01_*` novos (`apis/shared/tests/services/mail01_smtp_tls_test.go`); shared 2252 e api 2429 aprovados, 0 falhas.
+
+**Passo atual:** aguardando o usuário:
+1. confirmar o fingerprint acima com o admin do servidor de e-mail, salvar o PEM **fora do repositório** e definir no `.env` `SMTP_TLS_SERVER_NAME=localhost` e `SMTP_TLS_CA_FILE=<caminho>`;
+2. rodar de novo `go run ./cmd/testeemail` em `apis/shared` (usar `-from admin@rotaperfumes.com.br` se o servidor recusar o remetente);
+3. solução definitiva recomendada: certificado real no servidor de e-mail;
+4. no deploy: montar o PEM no `deploy/docker-compose.yml` (o container da API é `read_only`) e definir as variáveis no `api.env`.
+
+**Fechamento:** só após um envio real bem-sucedido.
 
 ---
 
