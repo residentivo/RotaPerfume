@@ -1,5 +1,54 @@
 # Fazendo
 
+## Lote 21 (2026-10-13): reestruturação DDD + Clean Code + Design Patterns da API
+
+> Aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API".
+
+**Decisões do usuário:** estratégia **incremental por bounded context**: cada lote termina com build e testes verdes e um commit na branch `refactor/ddd`. Escopo: API (`apis/rotaperfumes-api`) + módulo `apis/shared` (repositories, models, services, importers e CLIs).
+
+**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (ARQ-03 com 🟣 SecBrain antes). ARQ-01 a ARQ-08 estão em `afazer.md`, na ordem de execução.
+
+**Passo atual:** ARQ-00. Invariantes (🟣), matriz de rotas + linha de base (🔴) e blueprint (🟡) entregues. 🟣 SecBrain aprovou o blueprint com ressalvas (O1 a O9); 🟡 BackBrain aplicando os ajustes; depois o ARQ-00 é fechado com commit.
+
+---
+
+## ARQ-00: blueprint arquitetural DDD + Clean Code + Design Patterns — prioridade ALTA
+
+**Status:** em execução (Lote 21, 2026-10-13)
+**Camadas:** Segurança, Backend (arquitetura), Documentação
+**Responsável:** 🟣 SecBrain + 🟡 BackBrain
+**Origem:** pedido do usuário (Lote 21).
+
+**Descrição:** produzir `docs/arquitetura-ddd.md` com:
+- estrutura de pastas DDD (`domain`, `application`, `infrastructure`, `interfaces`);
+- bounded contexts: Catálogo, Identidade e Acesso, Comercial, Vendas, Analytics, Notificação;
+- regras de dependência entre camadas e entre contextos;
+- catálogo de Design Patterns por local (onde aplicar cada um e por quê);
+- estratégia de migração das ~52k linhas de testes em `tests/`;
+- invariantes de segurança que a refatoração não pode quebrar (🟣 SecBrain).
+
+**Histórico:**
+- 2026-10-13: 🟣 SecBrain concluiu o levantamento das invariantes de segurança (regras globais R1 a R4 e invariantes por card ARQ-01 a ARQ-07), versionado em `docs/arq-00-invariantes-seguranca.md`, referência obrigatória dos cards ARQ-01 a ARQ-07. Os GAPs 1 a 11 viraram os cards SEC-14 a SEC-24 em `afazer.md` (fora do escopo do Lote 21); o GAP 12 (teste de matriz de rotas, regra R2) é feito agora, dentro do ARQ-00.
+- 2026-10-13: 🔴 TestBrain entregou `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 rotas, 868 subtestes; regra R2). Linha de base (regra R1): API 720 testes de topo / 91,5% de cobertura; shared 593 / 85,6%. Tudo verde. Achado: `apis/shared/tools/testeemail/testeemail_test.go` é teste interno ao pacote de produção (8 testes); anotado no ARQ-07.
+- 2026-10-13: 🟡 BackBrain entregou o blueprint `docs/arquitetura-ddd.md`. Estrutura: domínio/aplicação/infra em `apis/shared/<contexto>/` (pacotes `<ctx>`, `<ctx>app`, `<ctx>mysql`), shared kernel em `apis/shared/kernel`, HTTP em `apis/rotaperfumes-api/internal/` (`httpx`, `<ctx>http`, `bootstrap`); migração strangler por contexto.
+- 2026-10-13: decisões:
+  - **P1 (usuário):** `vlog` em 4 níveis (rota automática no router, caso de uso via `defer`, pontos de decisão, 1 linha por query; ~600 chamadas no lugar de ~3.726), mesmo formato, TST-05 preservado. **Altera a regra LOG-02**, documentada em `apis/shared/vlog/vlog.go` (comentário), `docs/logs-verbose.md` e `tarefas/feito.md`. Atualização: no código pelo 🟡 BackBrain (durante ARQ-01..07) e na documentação pelo 🔵 SubBrain no ARQ-08. O critério "logs `vlog` preservados" passa a significar "formato e TST-05 preservados, cobertura pelos 4 níveis".
+  - **X1 (usuário):** as 13 rotas hoje sem restrição de método passam a aceitar só o método documentado (405 caso contrário) e `/api/senha-historico/2/extra` passa de 200 para 400 (rota `{user_id...}`). É a única exceção ao "contrato HTTP inalterado" (aplicada no ARQ-01; Postman conferido no ARQ-08).
+  - **P3 (🤍 MegaBrain):** `Dinheiro` permanece `float64` encapsulado no ARQ-05; migração para centavos (`int64`) virou o card ARQ-09 em `afazer.md`.
+  - **P4 (🤍 MegaBrain):** `VendedorService.VincularCliente` sem transação virou o card BUG-14 em `afazer.md` (fora do escopo da refatoração).
+- 2026-10-13: 🟣 SecBrain revisou o blueprint: **aprovado com ressalvas**, 9 ajustes obrigatórios (O1 a O9). O1 é crítico: no exemplo de repositório, `SemAcesso` virava consulta global. Na ressalva R-a, decidiu-se preservar o comportamento atual (role desconhecido = acesso restrito). Da revisão saiu o card BUG-15 em `afazer.md` (troca/reset de senha sem transação; após o ARQ-03).
+
+**Passo atual:** 🟡 BackBrain aplicando os ajustes O1 a O9 no blueprint `docs/arquitetura-ddd.md`; depois o ARQ-00 é fechado com commit na branch `refactor/ddd`.
+
+**Critério de aceite:**
+- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
+- `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
+- sem perda de cobertura;
+- logs `vlog` preservados;
+- commit do lote na branch `refactor/ddd`.
+
+---
+
 ## MAIL-01: programa de diagnóstico de envio de e-mail (`cmd/testeemail`) — prioridade ALTA
 
 **Status:** em execução (2026-10-09; avançou no Lote 20, 2026-10-11)
