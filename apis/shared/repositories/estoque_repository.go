@@ -1,19 +1,22 @@
 // Package repositories contém funções puras de acesso a dados (stateless).
 // Estoque queries - cada função executa sua própria query (sem cache L1).
+//
+// ARQ-02: a leitura e o ajuste manual de estoque migraram para
+// shared/catalogo/catalogomysql. Ficam aqui só as escritas usadas fora do
+// Catálogo: a baixa por faturamento (chamada por PedidoRepository, dentro da
+// tx do pedido; migra com Vendas no ARQ-05) e o upsert absoluto do ERP.
 package repositories
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
-// EstoqueRepository agrupa queries da tabela estoque.
+// EstoqueRepository agrupa as escritas de estoque que ainda são legadas.
 type EstoqueRepository struct{}
 
 // NewEstoqueRepository cria um repositório stateless.
@@ -21,304 +24,18 @@ func NewEstoqueRepository() *EstoqueRepository {
 	return &EstoqueRepository{}
 }
 
-// estoqueColunas seleciona os campos de estoque mais a descrição do produto
-// (via LEFT JOIN com produtos), usado por List/UltimaPosicaoPorSku/GetByID.
-// LEFT JOIN para não esconder um snapshot cujo sku não exista mais em
-// produtos (não deveria acontecer, dada a FK, mas evita que uma
-// inconsistência de dados faça o registro sumir da listagem).
-const estoqueColunas = `e.id, e.data_snapshot, e.sku, COALESCE(p.descricao, '') AS produto_descricao, e.saldo, e.ruptura, e.created_at, e.updated_at`
-const estoqueFrom = ` FROM estoque e LEFT JOIN produtos p ON p.sku = e.sku`
-
 // estoqueDataLayout é o formato usado para comparar/gravar data_snapshot.
 const estoqueDataLayout = "2006-01-02"
-
-// EstoqueFiltro agrupa os filtros opcionais aceitos por List e
-// UltimaPosicaoPorSku. Campos vazios/nil são ignorados (não filtram).
-type EstoqueFiltro struct {
-	SKU      string
-	DataDe   *time.Time
-	DataAte  *time.Time
-	Ruptura  *bool
-	OrderBy  string // campo de ordenação (whitelist: ver estoqueOrderWhitelist); default "data_snapshot"
-	OrderDir string // "asc" ou "desc" (case-insensitive); default "desc"
-}
-
-// estoqueOrderWhitelist mapeia os campos de ordenação aceitos pela API para
-// as colunas SQL reais (qualificadas com o alias `e` da tabela estoque, já
-// que as queries sempre fazem LEFT JOIN com produtos). Usado para sanitizar
-// ORDER BY dinâmico (proteção contra SQL injection via order_by).
-var estoqueOrderWhitelist = map[string]string{
-	"id":            "e.id",
-	"data_snapshot": "e.data_snapshot",
-	"sku":           "e.sku",
-	"saldo":         "e.saldo",
-	"ruptura":       "e.ruptura",
-	"created_at":    "e.created_at",
-	"updated_at":    "e.updated_at",
-}
-
-// estoqueOrderWhitelistRanked é a variante usada para ordenar o resultado
-// FINAL de UltimaPosicaoPorSku, que seleciona a partir de uma tabela
-// derivada ("ranked") sem alias `e`/`p` — os nomes de coluna aí são os
-// aliases definidos em estoqueColunas (id, data_snapshot, sku, saldo, ...).
-var estoqueOrderWhitelistRanked = map[string]string{
-	"id":            "id",
-	"data_snapshot": "data_snapshot",
-	"sku":           "sku",
-	"saldo":         "saldo",
-	"ruptura":       "ruptura",
-	"created_at":    "created_at",
-	"updated_at":    "updated_at",
-}
-
-// orderBy monta a cláusula ORDER BY a partir de OrderBy/OrderDir, com
-// default "data_snapshot DESC" (última posição primeiro).
-func (f EstoqueFiltro) orderBy() string {
-	return buildOrderByClause(estoqueOrderWhitelist, f.OrderBy, f.OrderDir, "e.data_snapshot", "DESC")
-}
-
-// orderByRanked é o equivalente a orderBy() para uso sobre a tabela derivada
-// "ranked" de UltimaPosicaoPorSku (ver estoqueOrderWhitelistRanked).
-func (f EstoqueFiltro) orderByRanked() string {
-	return buildOrderByClause(estoqueOrderWhitelistRanked, f.OrderBy, f.OrderDir, "data_snapshot", "DESC")
-}
-
-// where monta a cláusula WHERE (sem a palavra "WHERE") e os args
-// correspondentes, com colunas qualificadas pelo alias `e` (tabela estoque),
-// já que todas as queries que a utilizam fazem LEFT JOIN com produtos.
-// Retorna string vazia quando não há filtros.
-func (f EstoqueFiltro) where() (string, []any) {
-	vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "declarando variável conds")
-	var conds []string
-	vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "declarando variável args")
-	var args []any
-
-	vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "verificando se f.SKU != \"\"")
-	if f.SKU != "" {
-		vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "adicionando cláusula de filtro/SQL [e.sku = ?] em conds")
-		conds = append(conds, "e.sku = ?")
-		vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
-		args = append(args, f.SKU)
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "verificando se f.DataDe != nil")
-	if f.DataDe != nil {
-		vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "adicionando cláusula de filtro/SQL [e.data_snapshot >= ?] em conds")
-		conds = append(conds, "e.data_snapshot >= ?")
-		vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
-		args = append(args, f.DataDe.Format(estoqueDataLayout))
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "verificando se f.DataAte != nil")
-	if f.DataAte != nil {
-		vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "adicionando cláusula de filtro/SQL [e.data_snapshot <= ?] em conds")
-		conds = append(conds, "e.data_snapshot <= ?")
-		vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
-		args = append(args, f.DataAte.Format(estoqueDataLayout))
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "verificando se f.Ruptura != nil")
-	if f.Ruptura != nil {
-		vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "adicionando cláusula de filtro/SQL [e.ruptura = ?] em conds")
-		conds = append(conds, "e.ruptura = ?")
-		vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "adicionando 1 parâmetro(s) de placeholder em args (valores omitidos)")
-		args = append(args, *f.Ruptura)
-	}
-
-	vlog.Printf("estoque_repository.go", "EstoqueFiltro.where", "verificando se len(conds) == 0")
-	if len(conds) == 0 {
-		return "", nil
-	}
-	return " WHERE " + strings.Join(conds, " AND "), args
-}
-
-// List retorna registros de estoque paginados conforme o filtro informado,
-// mais o total para meta-dados de paginação.
-func (r *EstoqueRepository) List(ctx context.Context, db *sql.DB, page, limit int, filtro EstoqueFiltro) ([]models.Estoque, int, error) {
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "atribuindo page, limit com resultado de chamada a normalizePagination")
-	page, limit = normalizePagination(page, limit)
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "definindo offset = (page - 1) * limit")
-	offset := (page - 1) * limit
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "definindo whereClause, args com resultado de chamada a filtro.where")
-	whereClause, args := filtro.where()
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "declarando variável total")
-	var total int
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "montando texto da query SQL SELECT em countQ")
-	countQ := "SELECT COUNT(*)" + estoqueFrom + whereClause
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query countQ, args omitidos) com leitura do resultado e verificando se err != nil")
-	if err := db.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("repositories: count estoque: %w", err)
-	}
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "montando texto da query SQL SELECT em q")
-	q := "SELECT " + estoqueColunas + estoqueFrom + whereClause + filtro.orderBy() + " LIMIT ? OFFSET ?"
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "adicionando 2 parâmetro(s) de placeholder em queryArgs (valores omitidos)")
-	queryArgs := append(append([]any{}, args...), limit, offset)
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
-	rows, err := db.QueryContext(ctx, q, queryArgs...)
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "verificando se err != nil")
-	if err != nil {
-		return nil, 0, fmt.Errorf("repositories: list estoque: %w", err)
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "agendando defer de chamada a rows.Close")
-	defer rows.Close()
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "declarando variável out")
-	var out []models.Estoque
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "iniciando loop enquanto rows.Next() (sem log por iteração)")
-	for rows.Next() {
-		e, err := scanEstoque(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		out = append(out, *e)
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "loop concluído; itens acumulados em out: %d", len(out))
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.List", "definindo err com resultado de chamada a rows.Err e verificando se err != nil")
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("repositories: list estoque iteração: %w", err)
-	}
-	return out, total, nil
-}
-
-// UltimaPosicaoPorSku retorna, para cada sku (respeitando o filtro), apenas
-// o registro de data_snapshot mais recente — usado pela listagem padrão do
-// frontend, que sempre mostra a última posição de estoque por produto. Com
-// filtro.DataAte informado, retorna a última posição de cada sku até
-// (inclusive) aquela data — histórico "como estava naquele dia".
-//
-// Implementado com window function ROW_NUMBER() OVER (PARTITION BY sku
-// ORDER BY data_snapshot DESC), suportada desde MySQL 8.0 (dialeto usado
-// no projeto).
-func (r *EstoqueRepository) UltimaPosicaoPorSku(ctx context.Context, db *sql.DB, page, limit int, filtro EstoqueFiltro) ([]models.Estoque, int, error) {
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "atribuindo page, limit com resultado de chamada a normalizePagination")
-	page, limit = normalizePagination(page, limit)
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "definindo offset = (page - 1) * limit")
-	offset := (page - 1) * limit
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "definindo whereClause, args com resultado de chamada a filtro.where")
-	whereClause, args := filtro.where()
-
-	const rankedCTE = `
-		SELECT ` + estoqueColunas + `,
-			ROW_NUMBER() OVER (PARTITION BY e.sku ORDER BY e.data_snapshot DESC, e.id DESC) AS rn
-		` + estoqueFrom
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "declarando variável total")
-	var total int
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "montando texto da query SQL SELECT em countQ")
-	countQ := "SELECT COUNT(*) FROM (" + rankedCTE + whereClause + ") ranked WHERE rn = 1"
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "definindo err com resultado de execução SQL via db.QueryRowContext(...).Scan (query countQ, args omitidos) com leitura do resultado e verificando se err != nil")
-	if err := db.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("repositories: count estoque última posição: %w", err)
-	}
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "montando texto da query SQL SELECT em q")
-	q := "SELECT id, data_snapshot, sku, produto_descricao, saldo, ruptura, created_at, updated_at FROM (" + rankedCTE + whereClause + ") ranked WHERE rn = 1" + filtro.orderByRanked() + " LIMIT ? OFFSET ?"
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "adicionando 2 parâmetro(s) de placeholder em queryArgs (valores omitidos)")
-	queryArgs := append(append([]any{}, args...), limit, offset)
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "definindo rows, err com resultado de execução SQL via db.QueryContext (query q, args omitidos)")
-	rows, err := db.QueryContext(ctx, q, queryArgs...)
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "verificando se err != nil")
-	if err != nil {
-		return nil, 0, fmt.Errorf("repositories: list estoque última posição: %w", err)
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "agendando defer de chamada a rows.Close")
-	defer rows.Close()
-
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "declarando variável out")
-	var out []models.Estoque
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "iniciando loop enquanto rows.Next() (sem log por iteração)")
-	for rows.Next() {
-		e, err := scanEstoque(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		out = append(out, *e)
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "loop concluído; itens acumulados em out: %d", len(out))
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.UltimaPosicaoPorSku", "definindo err com resultado de chamada a rows.Err e verificando se err != nil")
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("repositories: list estoque última posição iteração: %w", err)
-	}
-	return out, total, nil
-}
-
-// GetByID busca um registro de estoque pelo ID. Retorna ErrNotFound se não existir.
-func (r *EstoqueRepository) GetByID(ctx context.Context, db *sql.DB, id int64) (*models.Estoque, error) {
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.GetByID", "montando texto da query SQL SELECT em q")
-	q := "SELECT " + estoqueColunas + estoqueFrom + " WHERE e.id = ? LIMIT 1"
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.GetByID", "definindo row com resultado de execução SQL via db.QueryRowContext (query q, args omitidos)")
-	row := db.QueryRowContext(ctx, q, id)
-	return scanEstoque(row)
-}
-
-// Create insere um novo registro de estoque e preenche e.ID com o id gerado.
-func (r *EstoqueRepository) Create(ctx context.Context, db *sql.DB, e *models.Estoque) error {
-	const q = `
-		INSERT INTO estoque (data_snapshot, sku, saldo, ruptura)
-		VALUES (?, ?, ?, ?)`
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Create", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
-	res, err := db.ExecContext(ctx, q,
-		e.DataSnapshot.Format(estoqueDataLayout),
-		e.SKU,
-		e.Saldo,
-		e.Ruptura,
-	)
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Create", "verificando se err != nil")
-	if err != nil {
-		return fmt.Errorf("repositories: create estoque: %w", err)
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Create", "definindo id, err com resultado de chamada a res.LastInsertId")
-	id, err := res.LastInsertId()
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Create", "verificando se err != nil")
-	if err != nil {
-		return fmt.Errorf("repositories: create estoque lastInsertId: %w", err)
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Create", "atribuindo e.ID = id")
-	e.ID = id
-	return nil
-}
-
-// Update atualiza os campos editáveis de um registro de estoque (data_snapshot
-// e sku não são alterados por aqui — para mudar a chave de negócio, crie um
-// novo registro). Retorna ErrNotFound se não existir.
-func (r *EstoqueRepository) Update(ctx context.Context, db *sql.DB, id int64, e *models.Estoque) error {
-	const q = `
-		UPDATE estoque
-		SET saldo = ?, ruptura = ?
-		WHERE id = ?`
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Update", "definindo res, err com resultado de execução SQL via db.ExecContext (query q, args omitidos)")
-	res, err := db.ExecContext(ctx, q,
-		e.Saldo,
-		e.Ruptura,
-		id,
-	)
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Update", "verificando se err != nil")
-	if err != nil {
-		return fmt.Errorf("repositories: update estoque: %w", err)
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Update", "definindo n, err com resultado de chamada a res.RowsAffected")
-	n, err := res.RowsAffected()
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Update", "verificando se err != nil")
-	if err != nil {
-		return fmt.Errorf("repositories: update estoque rowsAffected: %w", err)
-	}
-	vlog.Printf("estoque_repository.go", "EstoqueRepository.Update", "verificando se n == 0")
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
 
 // UpsertPorDataSku faz upsert do saldo/ruptura ABSOLUTO de um sku numa data:
 // se já existir registro para aquele par (data_snapshot, sku) — UNIQUE KEY
 // uk_estoque_data_sku —, sobrescreve saldo/ruptura; senão cria um novo
 // registro.
 //
-// Uso: importador de CSV (dados/erp/estoque.csv traz saldo absoluto do
-// ERP). NÃO usar para baixa de estoque por faturamento de pedidos — nesse
+// Sem chamador de produção hoje (o importador de estoque grava com SQL
+// próprio); fica até o ARQ-05 junto com AjustarSaldoPorFaturamento. Grava o
+// saldo absoluto (como o CSV do ERP). NÃO usar para baixa de estoque por
+// faturamento de pedidos — nesse
 // caso, use AjustarSaldoPorFaturamento (delta relativo, seguro sob
 // concorrência e dentro da mesma transação do faturamento).
 func (r *EstoqueRepository) UpsertPorDataSku(ctx context.Context, db *sql.DB, sku string, data time.Time, saldo int, ruptura bool) error {
@@ -356,7 +73,7 @@ func (r *EstoqueRepository) UpsertPorDataSku(ctx context.Context, db *sql.DB, sk
 // para dar entrada de saldo positivo, delta pode ser negativo). Chamadores
 // que precisem partir do saldo do dia anterior devem resolver esse valor
 // antes de chamar (ex: consultar a última posição via
-// EstoqueRepository.UltimaPosicaoPorSku) — este método não faz esse
+// catalogomysql.Estoques.UltimaPosicao) — este método não faz esse
 // carry-over sozinho, para manter a query atômica e simples.
 //
 // ruptura é recalculada automaticamente: true se o saldo resultante for <= 0.
@@ -408,52 +125,4 @@ func (r *EstoqueRepository) AjustarSaldoPorFaturamento(ctx context.Context, tx *
 		return fmt.Errorf("repositories: ajustar saldo estoque por faturamento: %w", err)
 	}
 	return nil
-}
-
-// normalizePagination aplica os limites padrão de paginação do projeto
-// (page mínimo 1, limit entre 1 e 100, default 20).
-func normalizePagination(page, limit int) (int, int) {
-	vlog.Printf("estoque_repository.go", "normalizePagination", "verificando se page < 1")
-	if page < 1 {
-		vlog.Printf("estoque_repository.go", "normalizePagination", "atribuindo page = 1")
-		page = 1
-	}
-	vlog.Printf("estoque_repository.go", "normalizePagination", "verificando se limit < 1")
-	if limit < 1 {
-		vlog.Printf("estoque_repository.go", "normalizePagination", "atribuindo limit = 20")
-		limit = 20
-	}
-	vlog.Printf("estoque_repository.go", "normalizePagination", "verificando se limit > 100")
-	if limit > 100 {
-		vlog.Printf("estoque_repository.go", "normalizePagination", "atribuindo limit = 100")
-		limit = 100
-	}
-	return page, limit
-}
-
-func scanEstoque(s rowScanner) (*models.Estoque, error) {
-	vlog.Printf("estoque_repository.go", "scanEstoque", "declarando variável e")
-	var e models.Estoque
-	vlog.Printf("estoque_repository.go", "scanEstoque", "declarando variável dataSnapshot")
-	var dataSnapshot time.Time
-	vlog.Printf("estoque_repository.go", "scanEstoque", "definindo err com resultado de leitura das colunas via s.Scan e verificando se err != nil")
-	if err := s.Scan(
-		&e.ID,
-		&dataSnapshot,
-		&e.SKU,
-		&e.ProdutoDescricao,
-		&e.Saldo,
-		&e.Ruptura,
-		&e.CreatedAt,
-		&e.UpdatedAt,
-	); err != nil {
-		vlog.Printf("estoque_repository.go", "scanEstoque", "verificando se err == sql.ErrNoRows")
-		if err == sql.ErrNoRows {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("repositories: scan estoque: %w", err)
-	}
-	vlog.Printf("estoque_repository.go", "scanEstoque", "atribuindo e.DataSnapshot = dataSnapshot")
-	e.DataSnapshot = dataSnapshot
-	return &e, nil
 }

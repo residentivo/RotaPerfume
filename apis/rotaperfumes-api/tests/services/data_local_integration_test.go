@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/services"
+	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/config"
 	shareddb "github.com/rotaperfumes/shared/db"
 	"github.com/rotaperfumes/shared/repositories"
@@ -140,12 +141,12 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 				})
 
 				t.Run("produto.data_lancamento", func(t *testing.T) {
-					svc := services.NewProdutoService(db, cfg)
-					in := services.ProdutoInput{
+					casos := novosCasosCatalogo(db)
+					in := catalogo.DadosProduto{
 						SKU: "ZZ-TEST-BUG01-" + sufixo, Descricao: "Produto teste BUG-01", Categoria: "Teste",
 						Marca: "Teste", Unidade: "UN", PrecoTabela: 1, CustoUnitario: 1, DataLancamento: data,
 					}
-					p, err := svc.CreateProduto(ctx, db, in)
+					p, err := casos.CriarProduto(ctx, in)
 					require.NoError(t, err)
 					require.NotZero(t, p.ID)
 					t.Cleanup(func() {
@@ -156,14 +157,14 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 					assert.Equal(t, data, dataNoBanco(t, db, "produtos", "data_lancamento", p.ID), "gravação")
 
 					for ciclo := 1; ciclo <= 3; ciclo++ {
-						lido, err := svc.GetProdutoByID(ctx, db, p.ID)
+						lido, err := casos.ObterProduto(ctx, p.ID)
 						require.NoError(t, err)
 						require.NotNil(t, lido.DataLancamento)
 						assert.Equal(t, data, dataComoAPI(t, *lido.DataLancamento), "JSON ciclo %d", ciclo)
 
 						in.DataLancamento = dataComoAPI(t, *lido.DataLancamento)
 						in.PrecoTabela = float64(ciclo + 1) // idem: força linha alterada
-						_, err = svc.UpdateProduto(ctx, db, p.ID, in)
+						_, err = casos.AtualizarProduto(ctx, p.ID, in)
 						require.NoError(t, err)
 						assert.Equal(t, data, dataNoBanco(t, db, "produtos", "data_lancamento", p.ID), "re-save ciclo %d", ciclo)
 					}
@@ -205,19 +206,19 @@ func TestIntegracao_UpdateSemAlteracao(t *testing.T) {
 	})
 
 	t.Run("produto", func(t *testing.T) {
-		svc := services.NewProdutoService(db, cfg)
-		in := services.ProdutoInput{
+		casos := novosCasosCatalogo(db)
+		in := catalogo.DadosProduto{
 			SKU: "ZZ-TEST-BUG01-" + sufixo, Descricao: "Produto teste", Categoria: "Teste",
 			Marca: "Teste", Unidade: "UN", PrecoTabela: 1, CustoUnitario: 1, DataLancamento: "2024-01-01",
 		}
-		p, err := svc.CreateProduto(ctx, db, in)
+		p, err := casos.CriarProduto(ctx, in)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			_, err := db.Exec("DELETE FROM produtos WHERE id = ? AND sku LIKE 'ZZ-TEST-BUG01-%'", p.ID)
 			assert.NoError(t, err)
 		})
 
-		_, err = svc.UpdateProduto(ctx, db, p.ID, in)
+		_, err = casos.AtualizarProduto(ctx, p.ID, in)
 		assert.NoError(t, err)
 	})
 }

@@ -1,30 +1,12 @@
 # A Fazer
 
-> Atualizado em 2026-10-13. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint) foi concluído (commit `cd12d47`, ver `feito.md`), o ARQ-01 está em `fazendo.md` e os cards ARQ-02 a ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08.
+> Atualizado em 2026-10-13. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint, commit `cd12d47`) e o ARQ-01 (fundação, commit `0e7e757`) foram concluídos (ver `feito.md`), o ARQ-02 está em `fazendo.md` e os cards ARQ-03 a ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08.
 >
 > **Regras do Lote 21 válidas para ARQ-01 a ARQ-07 (decisões de 2026-10-13, ver ARQ-00 em `fazendo.md`):**
 > - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. O 🟡 BackBrain atualiza a regra no código (comentário de `apis/shared/vlog/vlog.go`); o 🔵 SubBrain atualiza a documentação no ARQ-08.
 > - **X1, contrato HTTP:** a única exceção ao "contrato HTTP inalterado" é a do ARQ-01 (métodos das 13 rotas, `/api/senha-historico/2/extra` e, pelo parse estrito de `{user_id...}` (R-f), `/api/senha-historico/0` e `/-1` passando a 400).
 >
 > Histórico anterior (2026-10-11): o 🔴 TestBrain executou `docs/roteiro-teste-manual-lote12.md` (24 aprovados, 1 falhou, 13 não verificáveis de 38; ver a seção "Execução (2026-10-07, 🔴 TestBrain)" no fim do roteiro). Daí saíram os cards BUG-13, LOG-01, DOC-05 e TST-04. BUG-13, LOG-01 e DOC-05 foram concluídos no Lote 16 (2026-10-07; ver `feito.md`). O LOG-02 (Lote 17) gerou o TST-05, e o DEP-00 (Lote 19) gerou o DEP-01 e o DEP-02. No Lote 20 (2026-10-11; ver `feito.md`) foram concluídos DEP-01, DEP-02 e TST-05; o TST-04 avançou parcialmente (só faltam 1.1, 1.2 e 1.7, que dependem do usuário rodar o `make`) e do DEP-01 saiu o card DEP-03 (BAIXA). O MAIL-01 e o DEPLOY-01 seguem em `fazendo.md`, aguardando o usuário.
-
----
-
-## ARQ-02: contexto Catálogo (Produto, Estoque), piloto — prioridade ALTA
-
-**Status:** pendente (Lote 21; depende do ARQ-01, em execução)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
-
-**Descrição:** migrar Produto e Estoque para a estrutura `domain`/`application`/`infrastructure`/`interfaces`. É o piloto que valida o blueprint e o shared kernel antes dos demais contextos.
-
-**Critério de aceite:**
-- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
-- `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
-- sem perda de cobertura;
-- logs `vlog` preservados;
-- commit do lote na branch `refactor/ddd`.
 
 ---
 
@@ -69,6 +51,15 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 
 **Nota N-8 (🟣 SecBrain, ARQ-01, 2026-10-13):** `httpx.interno` loga o erro com `%v`; um erro 1062 cru do MySQL traz o valor duplicado (CNPJ) para o log. Garantir a O6-iv: o adapter traduz o 1062 para erro de domínio sem embrulhar o erro do driver.
 
+**Lições do piloto ARQ-02 (🤍 MegaBrain, 2026-10-14), valem também para o ARQ-05:**
+- promover `kernel.ParseDataLocal` para os 6 campos de data (BUG-01);
+- promover `consultar[T]`, `paginada` e `where` para `shared/db`, e `relerCriado`/`relerAtualizado` (BUG-08/09) para um pacote comum, em vez de duplicar por contexto;
+- separar os DTOs de create e update;
+- usar `httpx.IDDoPathPermissivo` onde o legado aceita id ≤ 0 e responde 404 (não mudar o contrato; ver CHORE-03);
+- métrica de tamanho: "código novo ≤ lógica legada sem vlog; handlers ≤ 30 linhas; código novo 100% coberto" (substitui a meta de −40%).
+
+**NB-3 (🟣 SecBrain, revisão ARQ-02, 2026-10-14):** no Catálogo, SKU duplicado e `(data_snapshot, sku)` duplicado também viram 500 e deixam `Duplicate entry '<valor>'` no log (`apis/shared/catalogo/catalogomysql/produtos.go:109` e `estoques.go:114`). Junto com o `mysql_errors` deste card, traduzir o 1062 para uma sentinela `KindConflito`, sem embrulhar o erro do driver (O6-iv, mesma linha da N-8). **ATENÇÃO:** trocar 500 por 409 é mudança de contrato e precisa de decisão do usuário. Até lá, só a tradução que tira o valor do log é segura sem mudar o status.
+
 **Critério de aceite:**
 - contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
 - `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
@@ -86,6 +77,12 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 **Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
 
 **Descrição:** migrar Pedido como aggregate root (com ItemPedido) e Pagamento.
+
+**Pendência herdada do ARQ-02 (🤍 MegaBrain, 2026-10-14):** `apis/shared/repositories/estoque_repository.go` ficou encolhido (126 linhas) porque `AjustarSaldoPorFaturamento` depende da tx de `PedidoRepository.UpdateComItens`. Neste card: migrar `AjustarSaldoPorFaturamento` para o adapter de catálogo/vendas e **apagar o arquivo**. (`UpsertPorDataSku`: ver ARQ-07.)
+
+**NB-5 (🟣 SecBrain, revisão ARQ-02, 2026-10-14):** há lost update no PUT de estoque e no toggle de ativo do produto, porque o código lê e depois grava sem lock. Avaliar `SELECT … FOR UPDATE` dentro do Transactor. Não é correção de carona: decidir neste card se entra ou vira card próprio.
+
+**Lições do piloto ARQ-02:** aplicar as mesmas do ARQ-04 (`ParseDataLocal`, `shared/db`, `relerCriado`/`relerAtualizado`, DTO create/update separados, `httpx.IDDoPathPermissivo`, métrica de tamanho).
 
 **Critério de aceite:**
 - contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
@@ -125,6 +122,8 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 - migrar Notificação/SMTP para a nova estrutura, preservando o comportamento do MAIL-01;
 - migrar os importadores e CLIs (`apis/shared/cmd`, `importers` e `tools`);
 - remover os pacotes legados (`handlers`, `services`, `repositories` e os `models` antigos).
+
+**Pendência herdada do ARQ-02 (🤍 MegaBrain, 2026-10-14):** `EstoqueRepository.UpsertPorDataSku` não tem chamador de produção. Avaliar a remoção (se o ARQ-05 ainda não tiver apagado o `estoque_repository.go`), conferindo importadores/CLIs e testes que o usem.
 
 **Achado do 🔴 TestBrain (ARQ-00):** `apis/shared/tools/testeemail/testeemail_test.go` é teste interno ao pacote de produção (8 testes), fora de `tests/`. Decidir na migração: mover para a suíte de testes ou manter, sem perder os 8 testes da linha de base.
 
@@ -261,6 +260,8 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 
 **Nota N-3 (🟣 SecBrain, ARQ-01, 2026-10-13):** `kernel.Pagina.Offset()` (`apis/shared/kernel/pagina.go:37`) herda o problema: `(n-1)*limit` com `page` gigante estoura `int` e vira negativo, e o MySQL responde com erro (500). Tratar quando o adapter de Catálogo (ARQ-02) passar a usar `Offset()`, sem correção de carona.
 
+**NB-6 (🟣 SecBrain, revisão ARQ-02, 2026-10-14), consolida a N-3:** o adapter de Catálogo já usa `Offset()`, então o overflow de `kernel/pagina.go:37` agora também chega a `/api/produtos` e `/api/estoque`. É o mesmo ponto da N-3; corrigir uma vez só no VO `Pagina`, e a correção vale para todos os contextos.
+
 **Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
 
 ---
@@ -396,6 +397,8 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 
 **Ação esperada:** criar um helper único de escape (`\` → `\\`, `%` → `\%`, `_` → `\_`) e usá-lo em todas as buscas LIKE, com `ESCAPE '\\'` explícito no SQL. Depois do ARQ-02, colocar o helper na infraestrutura compartilhada. Testes: busca por `%` e `_` encontra só os registros que têm esses caracteres literalmente.
 
+**NB-7 (🟣 SecBrain, revisão ARQ-02, 2026-10-14), amplia o escopo:** além do escape, impor um limite de comprimento ao parâmetro `q`, com truncamento ou 400 de mensagem fixa (a decidir). Também avaliar o custo do `LIKE '%…%'` em 2 colunas, que não usa índice (full scan).
+
 **Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
 
 ---
@@ -430,3 +433,49 @@ Registrar o resultado na seção "Execução" do roteiro.
 **Descrição:** após a migração para Tailwind 4, o `npm audit` completo caiu de 9 para 5 vulnerabilidades (5 altas); `npm audit --omit=dev` = 0. As 5 vêm da cadeia `braces` → `micromatch` → `fast-glob@3.3.1` → `@next/eslint-plugin-next` → `eslint-config-next@16.4.0`, que só é usada pela ferramenta de lint (dev). O `braces` não tem versão corrigida, e o `npm audit fix --force` rebaixaria o `eslint-config-next` para 14.2.35 (rejeitado).
 
 **Ação esperada:** acompanhar o upstream (`eslint-config-next`/`@next/eslint-plugin-next`, `fast-glob`, `micromatch`, `braces`). Quando houver correção, atualizar ou usar `overrides` de `fast-glob`/`micromatch` no `package.json` e validar com `tsc`, `eslint`, vitest, `next build` e `npm audit`. Não usar `npm audit fix --force`.
+
+---
+
+## CHORE-03: parse estrito de id de path na API inteira — prioridade BAIXA
+
+**Status:** pendente (fora do escopo do Lote 21; **exige ciência/aprovação do usuário**, pois muda o contrato HTTP)
+**Camada:** Backend (Frontend/Postman se algum consumidor depender do 404)
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain (Postman)
+**Origem:** piloto ARQ-02 (Lote 21, 2026-10-14), decisão do 🤍 MegaBrain.
+
+**Descrição:** hoje ids de path `-1`/`0` chegam ao repositório e o legado responde 404. No Lote 21 isso é preservado com `httpx.IDDoPathPermissivo`. Este card padroniza a API inteira para responder **400** com `httpx.IDDoPath` (parse estrito, id > 0) e remove o `IDDoPathPermissivo`.
+
+**Critério de aceite:** todas as rotas com `{id}` respondem 400 para id ≤ 0 ou não numérico; testes por rota; Postman e docs atualizados; usuário ciente da mudança de contrato.
+
+---
+
+## CHORE-04: normalizar formatação (gofmt/CRLF) de 3 testes SEC12 de integração — prioridade BAIXA
+
+**Status:** pendente (fora do escopo do Lote 21)
+**Camada:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** piloto ARQ-02 (Lote 21, 2026-10-14), achado do 🟡 BackBrain.
+
+**Descrição:** os arquivos abaixo não passam no `gofmt` (formatação/finais de linha CRLF):
+- `apis/shared/tests/repositories/sec12_chore02_refresh_integration_test.go`
+- `apis/rotaperfumes-api/tests/handlers/sec12_http_integration_test.go`
+- `apis/rotaperfumes-api/tests/services/sec12_chore02_integration_test.go`
+
+**Ação esperada:** rodar `gofmt -w` e normalizar para LF (conferir `.gitattributes`), sem alterar a lógica, em commit separado.
+
+**Critério de aceite:** `gofmt -l` vazio nos 3 arquivos; mesmos testes passando.
+
+---
+
+## CHORE-05: logs de auditoria de escrita registram só o role, não o id do usuário — prioridade BAIXA
+
+**Status:** pendente (fora do escopo do Lote 21; executar **após o ARQ-03**, quando o Principal estiver disponível em todos os contextos)
+**Camada:** Backend
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** NB-4 do 🟣 SecBrain, revisão do ARQ-02 (Lote 21, 2026-10-14).
+
+**Descrição:** os logs de auditoria de escrita registram só o role de quem fez a ação, por exemplo `[produtos] criado: id=%d por usuario role=%s`. Sem o id do usuário, não dá para saber quem alterou o registro.
+
+**Ação esperada:** incluir o id do Principal em todos os logs de auditoria de escrita (create, update, delete e toggle) de todos os contextos, mantendo o role. Não registrar PII (e-mail ou nome).
+
+**Critério de aceite:** todos os logs de escrita trazem o id e o role do usuário; testes de log por contexto; contrato HTTP inalterado.

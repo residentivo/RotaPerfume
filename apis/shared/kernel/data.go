@@ -53,6 +53,19 @@ func (d Data) IsZero() bool { return d.t.IsZero() }
 // Time devolve a data à meia-noite UTC.
 func (d Data) Time() time.Time { return d.t }
 
+// MeiaNoiteEm devolve a meia-noite da data no fuso loc (zero para data
+// ausente). É o instante que vai ao banco e ao JSON: com o DSN loc=Local, a
+// data AAAA-MM-DD precisa ser a meia-noite em time.Local, nunca a meia-noite
+// UTC, senão o driver grava o dia anterior (BUG-01). Mesmo resultado de
+// time.ParseInLocation(LayoutData, s, loc).
+func (d Data) MeiaNoiteEm(loc *time.Location) time.Time {
+	if d.IsZero() {
+		return time.Time{}
+	}
+	a, m, dia := d.t.Date()
+	return time.Date(a, m, dia, 0, 0, 0, 0, loc)
+}
+
 // String devolve AAAA-MM-DD ("" para data ausente).
 func (d Data) String() string {
 	if d.IsZero() {

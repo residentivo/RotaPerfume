@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/vlog"
@@ -336,4 +337,14 @@ func scanPagamento(s rowScanner) (*models.Pagamento, error) {
 		p.DataPagamento = &dataPagamento.Time
 	}
 	return &p, nil
+}
+
+// nullTimeFrom converte um *time.Time em sql.NullTime, para gravar NULL em
+// colunas NULLable (ex: data_pagamento). ARQ-02: veio de
+// produto_repository.go (removido); sai com Vendas no ARQ-05.
+func nullTimeFrom(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: *t, Valid: true}
 }

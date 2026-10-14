@@ -3,9 +3,38 @@
 > Histórico de tarefas finalizadas.
 
 ---
-## Lote 21 de 2026-10-13: 1 card concluído até agora (lote em andamento)
+## Lote 21 de 2026-10-13: 2 cards concluídos até agora (lote em andamento)
 
-> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-01 está em `fazendo.md` e os cards ARQ-02 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-02 está em `fazendo.md` e os cards ARQ-03 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+
+## ARQ-01: fundação / shared kernel — 2026-10-13
+**Agentes:** 🟡 BackBrain → 🟣 SecBrain (checklist ARQ-01) → 🔴 TestBrain → 🟡 BackBrain (ressalvas) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-13. **Commit:** `0e7e757` (branch `refactor/ddd`).
+
+**Camada:** Backend
+
+**Entregue:**
+- `apis/shared/kernel`: shared kernel (paginação e ordenação, erros de domínio, interfaces de repositório).
+- `apis/shared/db/tx.go`: `db.Transactor` (Unit of Work / transação).
+- `apis/rotaperfumes-api/internal/httpx`: router com política tipada por rota, cadeia de middlewares, CORS, mapper de erros de domínio para HTTP, envelope de resposta e Autenticador delegando ao legado.
+- `apis/rotaperfumes-api/internal/bootstrap`: composition root usado por `cmd/server/main.go`.
+- Testes de arquitetura, matriz de rotas do ARQ-00 adaptada à X1, `tests/routes/arq01_ordem_cors_test.go` e `apis/shared/tests/db/tx_rollback_test.go`.
+- Log automático de rota no router (nível 1 da regra P1/LOG-02).
+
+**Patterns aplicados:** Value Object, Unit of Work, Builder de rotas com política tipada, Chain of Responsibility (middlewares), Decorator de logging/trace, Error mapper, Adapter de transição (Autenticador sobre o legado), Composition Root, Strangler, Null Object.
+
+**Mudanças de comportamento:**
+- **X1 (aprovada pelo usuário):** as 13 rotas sem método passam a aceitar só o método documentado (405 nos demais); `/api/senha-historico/2/extra`, `/0` e `/-1` passam a 400.
+- Muda a ordem das chaves no JSON do `writeError`; os valores continuam os mesmos.
+- Principal inválido no contexto agora gera 500 e a requisição não segue (fail-closed).
+
+**Validação:**
+- 🟣 SecBrain aprovou, sem bloqueantes. As ressalvas N-2, N-4, N-5 e N-6 foram aplicadas pelo 🟡 BackBrain. N-3, N-8 e N-9 foram anotadas em SEC-16, ARQ-04 e ARQ-09.
+- 🔴 TestBrain aprovou, com mutações pegas e nenhum teste removido.
+- 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos. Testes de topo: API 720 → 783 e shared 593 → 627.
+- Cobertura combinada de 88,48% para 89,00%.
+- O race detector não roda nesta máquina porque falta gcc.
 
 ## ARQ-00: blueprint arquitetural DDD + Clean Code + Design Patterns — 2026-10-13
 **Agentes:** 🟣 SecBrain → 🔴 TestBrain → 🟡 BackBrain → 🟣 SecBrain (revisão) → 🟡 BackBrain (ajustes) → 🔵 SubBrain

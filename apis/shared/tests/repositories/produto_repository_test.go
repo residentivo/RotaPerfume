@@ -11,9 +11,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/catalogo"
+	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
+	"github.com/rotaperfumes/shared/kernel"
 )
+
+// ARQ-02: os testes de ProdutoRepository exercitam catalogomysql.Produtos (o
+// SQL é o mesmo do legado); os nomes de teste são mantidos (R1).
+
+// listarProdutos chama Listar na página 1 com limite 10 e devolve no formato
+// do legado (itens, total, erro).
+func listarProdutos(repo *catalogomysql.Produtos, ctx context.Context, f catalogo.FiltroProduto) ([]catalogo.Produto, int, error) {
+	res, err := repo.Listar(ctx, f, kernel.NovaPagina(1, 10))
+	return res.Itens, res.Total, err
+}
+
+// ordenacaoProduto faz o parse de order_by/order_dir como o catalogohttp.
+func ordenacaoProduto(orderBy, orderDir string) kernel.Ordenacao[catalogo.CampoProduto] {
+	return kernel.ParseOrdenacao(orderBy, orderDir, catalogo.CamposOrdenacaoProduto(), catalogo.OrdenacaoProdutoPadrao())
+}
 
 var produtoColumns = []string{
 	"id", "sku", "descricao", "categoria", "marca", "nota_olfativa",
@@ -44,45 +60,45 @@ func TestProdutoList_SemFiltro(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	produtos, total, err := repo.List(ctx, db, 1, 10, repositories.ProdutoFiltro{})
+	produtos, total, err := listarProdutos(repo, ctx, catalogo.FiltroProduto{})
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
 	assert.Len(t, produtos, 2)
-	assert.Equal(t, "SKU1", produtos[0].SKU)
+	assert.Equal(t, catalogo.SKU("SKU1"), produtos[0].SKU)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestProdutoList_ComFiltros(t *testing.T) {
 	testes := []struct {
 		nome        string
-		filtro      repositories.ProdutoFiltro
+		filtro      catalogo.FiltroProduto
 		whereRegexp string
 		args        []driver.Value
 	}{
 		{
 			nome:        "filtro por categoria",
-			filtro:      repositories.ProdutoFiltro{Categoria: "Perfumaria"},
+			filtro:      catalogo.FiltroProduto{Categoria: "Perfumaria"},
 			whereRegexp: "WHERE categoria = \\?",
 			args:        []driver.Value{"Perfumaria"},
 		},
 		{
 			nome:        "filtro por marca",
-			filtro:      repositories.ProdutoFiltro{Marca: "Marca A"},
+			filtro:      catalogo.FiltroProduto{Marca: "Marca A"},
 			whereRegexp: "WHERE marca = \\?",
 			args:        []driver.Value{"Marca A"},
 		},
 		{
 			nome:        "filtro por ativo",
-			filtro:      repositories.ProdutoFiltro{Ativo: boolPtr(false)},
+			filtro:      catalogo.FiltroProduto{Ativo: boolPtr(false)},
 			whereRegexp: "WHERE ativo = \\?",
 			args:        []driver.Value{false},
 		},
 		{
 			nome:        "filtro por busca textual",
-			filtro:      repositories.ProdutoFiltro{Q: "Perfume"},
+			filtro:      catalogo.FiltroProduto{Busca: "Perfume"},
 			whereRegexp: "WHERE \\(descricao LIKE \\? OR sku LIKE \\?\\)",
 			args:        []driver.Value{"%Perfume%", "%Perfume%"},
 		},
@@ -102,9 +118,9 @@ func TestProdutoList_ComFiltros(t *testing.T) {
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(produtoColumns))
 
-			repo := repositories.NewProdutoRepository()
+			repo := catalogomysql.NovoProdutos(db)
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, tt.filtro)
+			_, _, err := listarProdutos(repo, ctx, tt.filtro)
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -168,9 +184,9 @@ func TestProdutoList_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(produtoColumns))
 
-			repo := repositories.NewProdutoRepository()
+			repo := catalogomysql.NovoProdutos(db)
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, repositories.ProdutoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+			_, _, err := listarProdutos(repo, ctx, catalogo.FiltroProduto{Ordenacao: ordenacaoProduto(tt.orderBy, tt.orderDir)})
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -185,9 +201,9 @@ func TestProdutoList_CountError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM produtos").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.ProdutoFiltro{})
+	_, _, err := listarProdutos(repo, ctx, catalogo.FiltroProduto{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -203,9 +219,9 @@ func TestProdutoList_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.ProdutoFiltro{})
+	_, _, err := listarProdutos(repo, ctx, catalogo.FiltroProduto{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -224,9 +240,9 @@ func TestProdutoList_IterError(t *testing.T) {
 			AddRow(produtoRow(1, "SKU1", "Perfume A", "Perfumaria", "Marca A", "Floral", 100.0, 50.0, "un", nil, true, now, now)...).
 			RowError(0, sql.ErrConnDone))
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.ProdutoFiltro{})
+	_, _, err := listarProdutos(repo, ctx, catalogo.FiltroProduto{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -245,12 +261,12 @@ func TestProdutoGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 1)
+	p, err := repo.PorID(ctx, 1)
 
 	require.NoError(t, err)
-	assert.Equal(t, "SKU1", p.SKU)
+	assert.Equal(t, catalogo.SKU("SKU1"), p.SKU)
 	require.NotNil(t, p.DataLancamento)
 	assert.Equal(t, lancamento.Unix(), p.DataLancamento.Unix())
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -264,12 +280,12 @@ func TestProdutoGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 999)
+	p, err := repo.PorID(ctx, 999)
 
 	assert.Nil(t, p)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, catalogo.ErrProdutoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -281,13 +297,13 @@ func TestProdutoGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 1)
+	p, err := repo.PorID(ctx, 1)
 
 	assert.Nil(t, p)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, catalogo.ErrProdutoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -299,9 +315,9 @@ func TestProdutoSetAtivo_Success(t *testing.T) {
 		WithArgs(false, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	err := repo.SetAtivo(ctx, db, 1, false)
+	err := repo.DefinirAtivo(ctx, 1, false)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -315,11 +331,11 @@ func TestProdutoSetAtivo_NotFound(t *testing.T) {
 		WithArgs(true, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	err := repo.SetAtivo(ctx, db, 999, true)
+	err := repo.DefinirAtivo(ctx, 999, true)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, catalogo.ErrProdutoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -331,9 +347,9 @@ func TestProdutoSetAtivo_DBError(t *testing.T) {
 		WithArgs(true, int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	err := repo.SetAtivo(ctx, db, 1, true)
+	err := repo.DefinirAtivo(ctx, 1, true)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -346,9 +362,9 @@ func TestProdutoCountTotal(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM produtos$").
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(15))
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	total, err := repo.CountTotal(ctx, db)
+	total, err := repo.ContarTotal(ctx)
 
 	require.NoError(t, err)
 	assert.Equal(t, 15, total)
@@ -362,9 +378,9 @@ func TestProdutoCountTotal_DBError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM produtos$").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	_, err := repo.CountTotal(ctx, db)
+	_, err := repo.ContarTotal(ctx)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -389,9 +405,9 @@ func TestProdutoCountPorAtivo(t *testing.T) {
 				WithArgs(tt.ativo).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(tt.total))
 
-			repo := repositories.NewProdutoRepository()
+			repo := catalogomysql.NovoProdutos(db)
 			ctx := context.Background()
-			total, err := repo.CountPorAtivo(ctx, db, tt.ativo)
+			total, err := repo.ContarPorAtivo(ctx, tt.ativo)
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.total, total)
@@ -408,9 +424,9 @@ func TestProdutoCountPorAtivo_DBError(t *testing.T) {
 		WithArgs(true).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	_, err := repo.CountPorAtivo(ctx, db, true)
+	_, err := repo.ContarPorAtivo(ctx, true)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -420,25 +436,27 @@ func TestProdutoCreate_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Produto{
-		SKU:           "SKU1",
-		Descricao:     "Perfume A",
-		Categoria:     "Perfumaria",
-		Marca:         "Marca A",
-		NotaOlfativa:  "Floral",
-		PrecoTabela:   100.0,
-		CustoUnitario: 50.0,
-		Unidade:       "un",
-		Ativo:         true,
+	p := &catalogo.Produto{
+		SKU: "SKU1",
+		CamposProduto: catalogo.CamposProduto{
+			Descricao:     "Perfume A",
+			Categoria:     "Perfumaria",
+			Marca:         "Marca A",
+			NotaOlfativa:  "Floral",
+			PrecoTabela:   100.0,
+			CustoUnitario: 50.0,
+			Unidade:       "un",
+		},
+		Ativo: true,
 	}
 
 	mock.ExpectExec("INSERT INTO produtos").
-		WithArgs(p.SKU, p.Descricao, p.Categoria, p.Marca, "Floral", p.PrecoTabela, p.CustoUnitario, p.Unidade, nil, p.Ativo).
+		WithArgs(p.SKU.String(), p.Descricao, p.Categoria, p.Marca, "Floral", p.PrecoTabela, p.CustoUnitario, p.Unidade, nil, p.Ativo).
 		WillReturnResult(sqlmock.NewResult(7, 1))
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	err := repo.Create(ctx, db, p)
+	err := repo.Inserir(ctx, p)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), p.ID)
@@ -449,15 +467,15 @@ func TestProdutoCreate_NotaOlfativaVazia(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Produto{SKU: "SKU2", Descricao: "Perfume B"}
+	p := &catalogo.Produto{SKU: "SKU2", CamposProduto: catalogo.CamposProduto{Descricao: "Perfume B"}}
 
 	mock.ExpectExec("INSERT INTO produtos").
-		WithArgs(p.SKU, p.Descricao, p.Categoria, p.Marca, nil, p.PrecoTabela, p.CustoUnitario, p.Unidade, nil, p.Ativo).
+		WithArgs(p.SKU.String(), p.Descricao, p.Categoria, p.Marca, nil, p.PrecoTabela, p.CustoUnitario, p.Unidade, nil, p.Ativo).
 		WillReturnResult(sqlmock.NewResult(8, 1))
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	err := repo.Create(ctx, db, p)
+	err := repo.Inserir(ctx, p)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(8), p.ID)
@@ -468,13 +486,13 @@ func TestProdutoCreate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Produto{}
+	p := &catalogo.Produto{}
 	mock.ExpectExec("INSERT INTO produtos").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	err := repo.Create(ctx, db, p)
+	err := repo.Inserir(ctx, p)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -484,7 +502,7 @@ func TestProdutoUpdate_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Produto{
+	p := &catalogo.Produto{CamposProduto: catalogo.CamposProduto{
 		Descricao:     "Perfume A Atualizado",
 		Categoria:     "Perfumaria",
 		Marca:         "Marca A",
@@ -492,15 +510,15 @@ func TestProdutoUpdate_Success(t *testing.T) {
 		PrecoTabela:   150.0,
 		CustoUnitario: 60.0,
 		Unidade:       "un",
-	}
+	}}
 
 	mock.ExpectExec("UPDATE produtos").
 		WithArgs(p.Descricao, p.Categoria, p.Marca, "Cítrico", p.PrecoTabela, p.CustoUnitario, p.Unidade, nil, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, p)
+	err := repo.Atualizar(ctx, 1, p.CamposProduto)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -510,15 +528,15 @@ func TestProdutoUpdate_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Produto{}
+	p := &catalogo.Produto{}
 	mock.ExpectExec("UPDATE produtos").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 999, p)
+	err := repo.Atualizar(ctx, 999, p.CamposProduto)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, catalogo.ErrProdutoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -526,13 +544,13 @@ func TestProdutoUpdate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Produto{}
+	p := &catalogo.Produto{}
 	mock.ExpectExec("UPDATE produtos").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewProdutoRepository()
+	repo := catalogomysql.NovoProdutos(db)
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, p)
+	err := repo.Atualizar(ctx, 1, p.CamposProduto)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

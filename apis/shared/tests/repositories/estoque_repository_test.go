@@ -11,9 +11,38 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/models"
+	"github.com/rotaperfumes/shared/catalogo"
+	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"github.com/rotaperfumes/shared/repositories"
 )
+
+// ARQ-02: List/UltimaPosicaoPorSku/GetByID/Create/Update de EstoqueRepository
+// migraram para catalogomysql.Estoques (Historico/UltimaPosicao/PorID/
+// Inserir/AtualizarSaldo, mesmo SQL); os nomes de teste são mantidos (R1).
+// UpsertPorDataSku e AjustarSaldoPorFaturamento continuam no legado (baixa
+// por faturamento do pedido, ARQ-05).
+
+// listarEstoque chama a listagem na página 1 com limite 10 e devolve no
+// formato do legado (itens, total, erro).
+func listarEstoque(listar func(context.Context, catalogo.FiltroEstoque, kernel.Pagina) (kernel.Resultado[catalogo.RegistroEstoque], error),
+	ctx context.Context, f catalogo.FiltroEstoque) ([]catalogo.RegistroEstoque, int, error) {
+	res, err := listar(ctx, f, kernel.NovaPagina(1, 10))
+	return res.Itens, res.Total, err
+}
+
+// ordenacaoEstoque faz o parse de order_by/order_dir como o catalogohttp.
+func ordenacaoEstoque(orderBy, orderDir string) kernel.Ordenacao[catalogo.CampoEstoque] {
+	return kernel.ParseOrdenacao(orderBy, orderDir, catalogo.CamposOrdenacaoEstoque(), catalogo.OrdenacaoEstoquePadrao())
+}
+
+// dataFiltro lê AAAA-MM-DD para os filtros data_de/data_ate.
+func dataFiltro(t *testing.T, s string) *kernel.Data {
+	t.Helper()
+	d, err := kernel.ParseData(s, catalogo.ErrEstoqueDataInvalida)
+	require.NoError(t, err)
+	return &d
+}
 
 var estoqueColumns = []string{
 	"id", "data_snapshot", "sku", "produto_descricao", "saldo", "ruptura", "created_at", "updated_at",
@@ -43,55 +72,55 @@ func TestEstoqueList_SemFiltro(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	registros, total, err := repo.List(ctx, db, 1, 10, repositories.EstoqueFiltro{})
+	registros, total, err := listarEstoque(repo.Historico, ctx, catalogo.FiltroEstoque{})
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
 	assert.Len(t, registros, 2)
-	assert.Equal(t, "SKU1", registros[0].SKU)
+	assert.Equal(t, catalogo.SKU("SKU1"), registros[0].SKU)
 	assert.Equal(t, "Perfume 1", registros[0].ProdutoDescricao)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestEstoqueList_ComFiltros(t *testing.T) {
-	dataDe := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	dataAte := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	dataDe := dataFiltro(t, "2024-01-01")
+	dataAte := dataFiltro(t, "2024-01-31")
 
 	testes := []struct {
 		nome        string
-		filtro      repositories.EstoqueFiltro
+		filtro      catalogo.FiltroEstoque
 		whereRegexp string
 		args        []driver.Value
 	}{
 		{
 			nome:        "filtro por sku",
-			filtro:      repositories.EstoqueFiltro{SKU: "SKU1"},
+			filtro:      catalogo.FiltroEstoque{SKU: "SKU1"},
 			whereRegexp: "WHERE e\\.sku = \\?",
 			args:        []driver.Value{"SKU1"},
 		},
 		{
 			nome:        "filtro por data_de",
-			filtro:      repositories.EstoqueFiltro{DataDe: &dataDe},
+			filtro:      catalogo.FiltroEstoque{De: dataDe},
 			whereRegexp: "WHERE e\\.data_snapshot >= \\?",
 			args:        []driver.Value{"2024-01-01"},
 		},
 		{
 			nome:        "filtro por data_ate",
-			filtro:      repositories.EstoqueFiltro{DataAte: &dataAte},
+			filtro:      catalogo.FiltroEstoque{Ate: dataAte},
 			whereRegexp: "WHERE e\\.data_snapshot <= \\?",
 			args:        []driver.Value{"2024-01-31"},
 		},
 		{
 			nome:        "filtro por ruptura",
-			filtro:      repositories.EstoqueFiltro{Ruptura: boolPtr(true)},
+			filtro:      catalogo.FiltroEstoque{Ruptura: boolPtr(true)},
 			whereRegexp: "WHERE e\\.ruptura = \\?",
 			args:        []driver.Value{true},
 		},
 		{
 			nome:        "filtro por sku + intervalo de datas",
-			filtro:      repositories.EstoqueFiltro{SKU: "SKU1", DataDe: &dataDe, DataAte: &dataAte},
+			filtro:      catalogo.FiltroEstoque{SKU: "SKU1", De: dataDe, Ate: dataAte},
 			whereRegexp: "WHERE e\\.sku = \\? AND e\\.data_snapshot >= \\? AND e\\.data_snapshot <= \\?",
 			args:        []driver.Value{"SKU1", "2024-01-01", "2024-01-31"},
 		},
@@ -111,9 +140,9 @@ func TestEstoqueList_ComFiltros(t *testing.T) {
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(estoqueColumns))
 
-			repo := repositories.NewEstoqueRepository()
+			repo := catalogomysql.NovoEstoques(db)
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, tt.filtro)
+			_, _, err := listarEstoque(repo.Historico, ctx, tt.filtro)
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -171,9 +200,9 @@ func TestEstoqueList_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(estoqueColumns))
 
-			repo := repositories.NewEstoqueRepository()
+			repo := catalogomysql.NovoEstoques(db)
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, repositories.EstoqueFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+			_, _, err := listarEstoque(repo.Historico, ctx, catalogo.FiltroEstoque{Ordenacao: ordenacaoEstoque(tt.orderBy, tt.orderDir)})
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -188,9 +217,9 @@ func TestEstoqueList_CountError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM estoque").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.EstoqueFiltro{})
+	_, _, err := listarEstoque(repo.Historico, ctx, catalogo.FiltroEstoque{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -206,9 +235,9 @@ func TestEstoqueList_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.EstoqueFiltro{})
+	_, _, err := listarEstoque(repo.Historico, ctx, catalogo.FiltroEstoque{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -227,9 +256,9 @@ func TestEstoqueList_IterError(t *testing.T) {
 			AddRow(estoqueRow(1, now, "SKU1", "Perfume 1", 10, false, now, now)...).
 			RowError(0, sql.ErrConnDone))
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.EstoqueFiltro{})
+	_, _, err := listarEstoque(repo.Historico, ctx, catalogo.FiltroEstoque{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -256,9 +285,9 @@ func TestEstoqueUltimaPosicaoPorSku_RetornaApenasUltimoPorSku(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	registros, total, err := repo.UltimaPosicaoPorSku(ctx, db, 1, 10, repositories.EstoqueFiltro{})
+	registros, total, err := listarEstoque(repo.UltimaPosicao, ctx, catalogo.FiltroEstoque{})
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
@@ -269,8 +298,8 @@ func TestEstoqueUltimaPosicaoPorSku_RetornaApenasUltimoPorSku(t *testing.T) {
 }
 
 func TestEstoqueUltimaPosicaoPorSku_RespeitaFiltroDeData(t *testing.T) {
-	dataDe := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	dataAte := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	dataDe := dataFiltro(t, "2024-01-01")
+	dataAte := dataFiltro(t, "2024-01-31")
 
 	db, mock := newMock(t)
 	defer db.Close()
@@ -283,15 +312,15 @@ func TestEstoqueUltimaPosicaoPorSku_RespeitaFiltroDeData(t *testing.T) {
 
 	now := time.Now()
 	rows := sqlmock.NewRows(estoqueColumns).
-		AddRow(estoqueRow(5, dataAte, "SKU1", "Perfume 1", 3, false, now, now)...)
+		AddRow(estoqueRow(5, dataAte.Time(), "SKU1", "Perfume 1", 3, false, now, now)...)
 
 	mock.ExpectQuery("SELECT .+ FROM \\(.+"+whereRegexp+"\\) ranked WHERE rn = 1 ORDER BY data_snapshot DESC LIMIT \\? OFFSET \\?").
 		WithArgs("2024-01-01", "2024-01-31", 10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	registros, total, err := repo.UltimaPosicaoPorSku(ctx, db, 1, 10, repositories.EstoqueFiltro{DataDe: &dataDe, DataAte: &dataAte})
+	registros, total, err := listarEstoque(repo.UltimaPosicao, ctx, catalogo.FiltroEstoque{De: dataDe, Ate: dataAte})
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
@@ -306,9 +335,9 @@ func TestEstoqueUltimaPosicaoPorSku_CountError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM \\(.+\\) ranked WHERE rn = 1").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	_, _, err := repo.UltimaPosicaoPorSku(ctx, db, 1, 10, repositories.EstoqueFiltro{})
+	_, _, err := listarEstoque(repo.UltimaPosicao, ctx, catalogo.FiltroEstoque{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -324,9 +353,9 @@ func TestEstoqueUltimaPosicaoPorSku_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	_, _, err := repo.UltimaPosicaoPorSku(ctx, db, 1, 10, repositories.EstoqueFiltro{})
+	_, _, err := listarEstoque(repo.UltimaPosicao, ctx, catalogo.FiltroEstoque{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -348,12 +377,12 @@ func TestEstoqueGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	e, err := repo.GetByID(ctx, db, 1)
+	e, err := repo.PorID(ctx, 1)
 
 	require.NoError(t, err)
-	assert.Equal(t, "SKU1", e.SKU)
+	assert.Equal(t, catalogo.SKU("SKU1"), e.SKU)
 	assert.Equal(t, "Perfume 1", e.ProdutoDescricao)
 	assert.Equal(t, 10, e.Saldo)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -367,12 +396,12 @@ func TestEstoqueGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	e, err := repo.GetByID(ctx, db, 999)
+	e, err := repo.PorID(ctx, 999)
 
 	assert.Nil(t, e)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, catalogo.ErrEstoqueNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -384,13 +413,13 @@ func TestEstoqueGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	e, err := repo.GetByID(ctx, db, 1)
+	e, err := repo.PorID(ctx, 1)
 
 	assert.Nil(t, e)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, catalogo.ErrEstoqueNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -403,7 +432,7 @@ func TestEstoqueCreate_Success(t *testing.T) {
 	defer db.Close()
 
 	data := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
-	e := &models.Estoque{
+	e := &catalogo.RegistroEstoque{
 		DataSnapshot: data,
 		SKU:          "SKU1",
 		Saldo:        10,
@@ -414,9 +443,9 @@ func TestEstoqueCreate_Success(t *testing.T) {
 		WithArgs("2024-06-01", "SKU1", 10, false).
 		WillReturnResult(sqlmock.NewResult(7, 1))
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	err := repo.Create(ctx, db, e)
+	err := repo.Inserir(ctx, e)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), e.ID)
@@ -427,13 +456,13 @@ func TestEstoqueCreate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	e := &models.Estoque{}
+	e := &catalogo.RegistroEstoque{}
 	mock.ExpectExec("INSERT INTO estoque").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	err := repo.Create(ctx, db, e)
+	err := repo.Inserir(ctx, e)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -447,15 +476,15 @@ func TestEstoqueUpdate_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	e := &models.Estoque{Saldo: 20, Ruptura: false}
+	e := &catalogo.RegistroEstoque{Saldo: 20, Ruptura: false}
 
 	mock.ExpectExec("UPDATE estoque").
 		WithArgs(20, false, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, e)
+	err := repo.AtualizarSaldo(ctx, 1, e.Saldo, e.Ruptura)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -465,15 +494,15 @@ func TestEstoqueUpdate_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	e := &models.Estoque{}
+	e := &catalogo.RegistroEstoque{}
 	mock.ExpectExec("UPDATE estoque").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 999, e)
+	err := repo.AtualizarSaldo(ctx, 999, e.Saldo, e.Ruptura)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, catalogo.ErrEstoqueNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -481,13 +510,13 @@ func TestEstoqueUpdate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	e := &models.Estoque{}
+	e := &catalogo.RegistroEstoque{}
 	mock.ExpectExec("UPDATE estoque").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := catalogomysql.NovoEstoques(db)
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, e)
+	err := repo.AtualizarSaldo(ctx, 1, e.Saldo, e.Ruptura)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

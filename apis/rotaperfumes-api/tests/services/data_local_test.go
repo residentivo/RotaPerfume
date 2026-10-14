@@ -29,6 +29,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/services"
+	"github.com/rotaperfumes/shared/catalogo"
+	"github.com/rotaperfumes/shared/catalogo/catalogoapp"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/tz"
 )
@@ -187,8 +189,8 @@ func dlParsers() []dlParserCaso {
 			mock.ExpectExec(`INSERT INTO estoque`).
 				WithArgs(dlCapturaTexto{&gravado}, "SKU-1", 5, false).
 				WillReturnResult(sqlmock.NewResult(4, 1))
-			e, err := services.NewEstoqueService(db, cfg).CreateEstoque(ctx, db,
-				services.EstoqueInput{SKU: "SKU-1", DataSnapshot: data, Saldo: 5})
+			e, err := novosCasosCatalogo(db).AjustarEstoque(ctx,
+				catalogo.DadosEstoque{SKU: "SKU-1", DataSnapshot: data, Saldo: 5})
 			require.NoError(t, err)
 			require.NoError(t, mock.ExpectationsWereMet())
 			assert.Equal(t, strings.TrimSpace(data), gravado, "data gravada no banco")
@@ -228,7 +230,7 @@ func dlParsers() []dlParserCaso {
 		{"produto.data_lancamento", func(t *testing.T, data string) time.Time {
 			db, mock := dlNewDB(t)
 			mock.ExpectExec(`INSERT INTO produtos`).WillReturnResult(sqlmock.NewResult(6, 1))
-			p, err := services.NewProdutoService(db, cfg).CreateProduto(ctx, db, services.ProdutoInput{
+			p, err := novosCasosCatalogo(db).CriarProduto(ctx, catalogo.DadosProduto{
 				SKU: "SKU-1", Descricao: "Perfume", Categoria: "EDP", Marca: "M", Unidade: "UN",
 				DataLancamento: data,
 			})
@@ -309,8 +311,8 @@ func TestBUG01_FiltroDataEstoque(t *testing.T) {
 					mock.ExpectQuery(`SELECT COUNT`).
 						WithArgs(dlCapturaTexto{&de}, dlCapturaTexto{&ate}).
 						WillReturnError(errDLParar)
-					_, _, err := services.NewEstoqueService(db, &config.Config{}).ListEstoque(context.Background(), db, 1, 10,
-						services.EstoqueFiltro{DataDe: d.s, DataAte: d.s, Historico: historico})
+					_, _, err := listarEstoque(novosCasosCatalogo(db), 1, 10,
+						catalogoapp.ConsultaEstoque{DataDe: d.s, DataAte: d.s, Historico: historico})
 					require.ErrorIs(t, err, errDLParar)
 					require.NoError(t, mock.ExpectationsWereMet())
 					assert.Equal(t, strings.TrimSpace(d.s), de)
@@ -357,21 +359,21 @@ func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 			})
 			assert.ErrorIs(t, err, services.ErrDataCadastroInvalida)
 
-			_, _, err = services.NewEstoqueService(db, cfg).ListEstoque(ctx, db, 1, 10, services.EstoqueFiltro{DataDe: s})
-			assert.ErrorIs(t, err, services.ErrEstoqueDataInvalida)
-			_, _, err = services.NewEstoqueService(db, cfg).ListEstoque(ctx, db, 1, 10, services.EstoqueFiltro{DataAte: s})
-			assert.ErrorIs(t, err, services.ErrEstoqueDataInvalida)
+			_, _, err = listarEstoque(novosCasosCatalogo(db), 1, 10, catalogoapp.ConsultaEstoque{DataDe: s})
+			assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
+			_, _, err = listarEstoque(novosCasosCatalogo(db), 1, 10, catalogoapp.ConsultaEstoque{DataAte: s})
+			assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
 
-			_, err = services.NewEstoqueService(db, cfg).CreateEstoque(ctx, db, services.EstoqueInput{SKU: "SKU-1", DataSnapshot: s})
-			assert.ErrorIs(t, err, services.ErrEstoqueDataInvalida)
+			_, err = novosCasosCatalogo(db).AjustarEstoque(ctx, catalogo.DadosEstoque{SKU: "SKU-1", DataSnapshot: s})
+			assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
 
 			_, err = services.NewPedidoService(db, cfg).CreatePedido(ctx, db, services.PedidoInput{ClienteID: 1, VendedorID: 1, DataPedido: s})
 			assert.ErrorIs(t, err, services.ErrDataPedidoInvalida)
 
-			_, err = services.NewProdutoService(db, cfg).CreateProduto(ctx, db, services.ProdutoInput{
+			_, err = novosCasosCatalogo(db).CriarProduto(ctx, catalogo.DadosProduto{
 				SKU: "S", Descricao: "D", Categoria: "C", Marca: "M", Unidade: "UN", DataLancamento: s,
 			})
-			assert.ErrorIs(t, err, services.ErrDataLancamentoInvalida)
+			assert.ErrorIs(t, err, catalogo.ErrDataLancamentoInvalida)
 
 			_, err = services.NewVendedorService(db, cfg).CreateVendedor(ctx, db, services.VendedorInput{Nome: "N", Regiao: "R", UF: "PR", DataAdmissao: s})
 			assert.ErrorIs(t, err, services.ErrVendedorDataAdmissaoInvalida)

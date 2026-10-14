@@ -88,8 +88,8 @@ func bug09Casos() []bug09Caso {
 						99.90, 45.00, "UN", criado, true, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				p, err := services.NewProdutoService(db, produtoTestCfg(verbose)).
-					CreateProduto(context.Background(), db, validProdutoInput())
+				// ARQ-02: catalogoapp.CriarProduto (verbose vira vlog, sem cfg).
+				p, err := novosCasosCatalogo(db).CriarProduto(context.Background(), validProdutoInput())
 				if err != nil || p == nil {
 					return nil, err
 				}
@@ -208,8 +208,8 @@ func bug09Casos() []bug09Caso {
 					AddRow(id, criado, "SKU-001", "Perfume Teste", 10, false, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				e, err := services.NewEstoqueService(db, estoqueTestCfg(verbose)).
-					CreateEstoque(context.Background(), db, validEstoqueInput())
+				// ARQ-02: catalogoapp.AjustarEstoque (verbose vira vlog, sem cfg).
+				e, err := novosCasosCatalogo(db).AjustarEstoque(context.Background(), validEstoqueInput())
 				if err != nil || e == nil {
 					return nil, err
 				}

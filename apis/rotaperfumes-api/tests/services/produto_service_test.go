@@ -10,13 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
-	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/catalogo"
 )
 
-func produtoTestCfg(verbose bool) *config.Config {
-	return &config.Config{Verbose: verbose}
-}
+// ARQ-02: TestProdutoService_* exercitam catalogoapp (ListarProdutos,
+// ObterProduto, AlternarAtivoProduto, CriarProduto, AtualizarProduto) com o
+// adapter real sobre sqlmock; os nomes são identificadores históricos (R1).
 
 func newProdutoTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
@@ -52,7 +51,7 @@ func emptyProdutoRows() *sqlmock.Rows {
 func TestProdutoService_ListProdutos(t *testing.T) {
 	testCases := []struct {
 		nome    string
-		filtro  services.ProdutoFiltro
+		filtro  catalogo.FiltroProduto
 		page    int
 		limit   int
 		mock    func(mock sqlmock.Sqlmock)
@@ -62,7 +61,7 @@ func TestProdutoService_ListProdutos(t *testing.T) {
 	}{
 		{
 			nome:   "sem filtros - sucesso",
-			filtro: services.ProdutoFiltro{},
+			filtro: catalogo.FiltroProduto{},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -77,7 +76,7 @@ func TestProdutoService_ListProdutos(t *testing.T) {
 		},
 		{
 			nome:   "com filtros categoria/marca/ativo/q - repassa args ao repo",
-			filtro: services.ProdutoFiltro{Categoria: "Perfumaria", Marca: "Marca X", Ativo: boolPtr(true), Q: "Teste"},
+			filtro: catalogo.FiltroProduto{Categoria: "Perfumaria", Marca: "Marca X", Ativo: boolPtr(true), Busca: "Teste"},
 			page:   2,
 			limit:  10,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -93,7 +92,7 @@ func TestProdutoService_ListProdutos(t *testing.T) {
 		},
 		{
 			nome:   "erro no count do repo é propagado",
-			filtro: services.ProdutoFiltro{},
+			filtro: catalogo.FiltroProduto{},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -109,8 +108,8 @@ func TestProdutoService_ListProdutos(t *testing.T) {
 			db, mock := newProdutoTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewProdutoService(db, produtoTestCfg(true))
-			produtos, total, err := svc.ListProdutos(context.Background(), db, tc.page, tc.limit, tc.filtro)
+			casos := novosCasosCatalogo(db)
+			produtos, total, err := listarProdutos(casos, tc.page, tc.limit, tc.filtro)
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -135,8 +134,8 @@ func TestProdutoService_GetProdutoByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnRows(produtoRows())
 
-		svc := services.NewProdutoService(db, produtoTestCfg(false))
-		p, err := svc.GetProdutoByID(context.Background(), db, 1)
+		casos := novosCasosCatalogo(db)
+		p, err := casos.ObterProduto(context.Background(), 1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), p.ID)
 		assert.Equal(t, "Perfume Teste", p.Descricao)
@@ -149,10 +148,10 @@ func TestProdutoService_GetProdutoByID(t *testing.T) {
 			WithArgs(int64(999)).
 			WillReturnRows(emptyProdutoRows())
 
-		svc := services.NewProdutoService(db, produtoTestCfg(false))
-		p, err := svc.GetProdutoByID(context.Background(), db, 999)
+		casos := novosCasosCatalogo(db)
+		p, err := casos.ObterProduto(context.Background(), 999)
 		assert.Nil(t, p)
-		assert.ErrorIs(t, err, services.ErrProdutoNaoEncontrado)
+		assert.ErrorIs(t, err, catalogo.ErrProdutoNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -162,11 +161,11 @@ func TestProdutoService_GetProdutoByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewProdutoService(db, produtoTestCfg(false))
-		p, err := svc.GetProdutoByID(context.Background(), db, 1)
+		casos := novosCasosCatalogo(db)
+		p, err := casos.ObterProduto(context.Background(), 1)
 		assert.Nil(t, p)
 		assert.Error(t, err)
-		assert.False(t, err == services.ErrProdutoNaoEncontrado)
+		assert.False(t, err == catalogo.ErrProdutoNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -186,8 +185,8 @@ func TestProdutoService_ToggleAtivoProduto(t *testing.T) {
 			WithArgs(false, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		svc := services.NewProdutoService(db, produtoTestCfg(true))
-		p, err := svc.ToggleAtivoProduto(context.Background(), db, 1, nil)
+		casos := novosCasosCatalogo(db)
+		p, err := casos.AlternarAtivoProduto(context.Background(), 1, nil)
 		require.NoError(t, err)
 		assert.False(t, p.Ativo)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -202,9 +201,9 @@ func TestProdutoService_ToggleAtivoProduto(t *testing.T) {
 			WithArgs(true, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		svc := services.NewProdutoService(db, produtoTestCfg(false))
+		casos := novosCasosCatalogo(db)
 		ativo := true
-		p, err := svc.ToggleAtivoProduto(context.Background(), db, 1, &ativo)
+		p, err := casos.AlternarAtivoProduto(context.Background(), 1, &ativo)
 		require.NoError(t, err)
 		assert.True(t, p.Ativo)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -216,10 +215,10 @@ func TestProdutoService_ToggleAtivoProduto(t *testing.T) {
 			WithArgs(int64(999)).
 			WillReturnRows(emptyProdutoRows())
 
-		svc := services.NewProdutoService(db, produtoTestCfg(false))
-		p, err := svc.ToggleAtivoProduto(context.Background(), db, 999, nil)
+		casos := novosCasosCatalogo(db)
+		p, err := casos.AlternarAtivoProduto(context.Background(), 999, nil)
 		assert.Nil(t, p)
-		assert.ErrorIs(t, err, services.ErrProdutoNaoEncontrado)
+		assert.ErrorIs(t, err, catalogo.ErrProdutoNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -232,10 +231,10 @@ func TestProdutoService_ToggleAtivoProduto(t *testing.T) {
 			WithArgs(false, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		svc := services.NewProdutoService(db, produtoTestCfg(false))
-		p, err := svc.ToggleAtivoProduto(context.Background(), db, 1, nil)
+		casos := novosCasosCatalogo(db)
+		p, err := casos.AlternarAtivoProduto(context.Background(), 1, nil)
 		assert.Nil(t, p)
-		assert.ErrorIs(t, err, services.ErrProdutoNaoEncontrado)
+		assert.ErrorIs(t, err, catalogo.ErrProdutoNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -244,8 +243,8 @@ func TestProdutoService_ToggleAtivoProduto(t *testing.T) {
 // CreateProduto
 // ---------------------------------------------------------------------------
 
-func validProdutoInput() services.ProdutoInput {
-	return services.ProdutoInput{
+func validProdutoInput() catalogo.DadosProduto {
+	return catalogo.DadosProduto{
 		SKU:            "SKU-001",
 		Descricao:      "Perfume Teste",
 		Categoria:      "Perfumaria",
@@ -261,7 +260,7 @@ func validProdutoInput() services.ProdutoInput {
 func TestProdutoService_CreateProduto(t *testing.T) {
 	testCases := []struct {
 		nome      string
-		input     func() services.ProdutoInput
+		input     func() catalogo.DadosProduto
 		mock      func(mock sqlmock.Sqlmock)
 		wantErr   error
 		wantErrIs bool
@@ -277,95 +276,95 @@ func TestProdutoService_CreateProduto(t *testing.T) {
 		},
 		{
 			nome: "sku vazio",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.SKU = "   "
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrSKUObrigatorio,
+			wantErr:   catalogo.ErrSKUObrigatorio,
 			wantErrIs: true,
 		},
 		{
 			nome: "descricao vazia",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.Descricao = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrDescricaoObrigatoria,
+			wantErr:   catalogo.ErrDescricaoObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "categoria vazia",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.Categoria = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrCategoriaObrigatoria,
+			wantErr:   catalogo.ErrCategoriaObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "marca vazia",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.Marca = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrMarcaObrigatoria,
+			wantErr:   catalogo.ErrMarcaObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "unidade vazia",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.Unidade = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrUnidadeObrigatoria,
+			wantErr:   catalogo.ErrUnidadeObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "preco_tabela negativo",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.PrecoTabela = -1
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrPrecoTabelaInvalido,
+			wantErr:   catalogo.ErrPrecoTabelaInvalido,
 			wantErrIs: true,
 		},
 		{
 			nome: "custo_unitario negativo",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.CustoUnitario = -1
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrCustoUnitarioInvalido,
+			wantErr:   catalogo.ErrCustoUnitarioInvalido,
 			wantErrIs: true,
 		},
 		{
 			nome: "data_lancamento inválida",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.DataLancamento = "15/01/2024"
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrDataLancamentoInvalida,
+			wantErr:   catalogo.ErrDataLancamentoInvalida,
 			wantErrIs: true,
 		},
 		{
 			nome: "data_lancamento vazia é opcional (sucesso)",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.DataLancamento = ""
 				return in
@@ -392,8 +391,8 @@ func TestProdutoService_CreateProduto(t *testing.T) {
 			db, mock := newProdutoTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewProdutoService(db, produtoTestCfg(true))
-			p, err := svc.CreateProduto(context.Background(), db, tc.input())
+			casos := novosCasosCatalogo(db)
+			p, err := casos.CriarProduto(context.Background(), tc.input())
 
 			if tc.wantErr != nil {
 				assert.Nil(t, p)
@@ -420,7 +419,7 @@ func TestProdutoService_CreateProduto(t *testing.T) {
 func TestProdutoService_UpdateProduto(t *testing.T) {
 	testCases := []struct {
 		nome      string
-		input     func() services.ProdutoInput
+		input     func() catalogo.DadosProduto
 		mock      func(mock sqlmock.Sqlmock)
 		wantErr   error
 		wantErrIs bool
@@ -439,79 +438,79 @@ func TestProdutoService_UpdateProduto(t *testing.T) {
 		},
 		{
 			nome: "descricao vazia",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.Descricao = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrDescricaoObrigatoria,
+			wantErr:   catalogo.ErrDescricaoObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "categoria vazia",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.Categoria = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrCategoriaObrigatoria,
+			wantErr:   catalogo.ErrCategoriaObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "marca vazia",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.Marca = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrMarcaObrigatoria,
+			wantErr:   catalogo.ErrMarcaObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "unidade vazia",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.Unidade = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrUnidadeObrigatoria,
+			wantErr:   catalogo.ErrUnidadeObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "preco_tabela negativo",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.PrecoTabela = -0.01
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrPrecoTabelaInvalido,
+			wantErr:   catalogo.ErrPrecoTabelaInvalido,
 			wantErrIs: true,
 		},
 		{
 			nome: "custo_unitario negativo",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.CustoUnitario = -0.01
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrCustoUnitarioInvalido,
+			wantErr:   catalogo.ErrCustoUnitarioInvalido,
 			wantErrIs: true,
 		},
 		{
 			nome: "data_lancamento inválida",
-			input: func() services.ProdutoInput {
+			input: func() catalogo.DadosProduto {
 				in := validProdutoInput()
 				in.DataLancamento = "2024-31-01"
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrDataLancamentoInvalida,
+			wantErr:   catalogo.ErrDataLancamentoInvalida,
 			wantErrIs: true,
 		},
 		{
@@ -522,7 +521,7 @@ func TestProdutoService_UpdateProduto(t *testing.T) {
 					WithArgs("Perfume Teste", "Perfumaria", "Marca X", "Cítrico", 99.90, 45.00, "UN", sqlmock.AnyArg(), int64(999)).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			},
-			wantErr:   services.ErrProdutoNaoEncontrado,
+			wantErr:   catalogo.ErrProdutoNaoEncontrado,
 			wantErrIs: true,
 		},
 		{
@@ -559,8 +558,8 @@ func TestProdutoService_UpdateProduto(t *testing.T) {
 				id = 999
 			}
 
-			svc := services.NewProdutoService(db, produtoTestCfg(true))
-			p, err := svc.UpdateProduto(context.Background(), db, id, tc.input())
+			casos := novosCasosCatalogo(db)
+			p, err := casos.AtualizarProduto(context.Background(), id, tc.input())
 
 			if tc.wantErr != nil {
 				assert.Nil(t, p)

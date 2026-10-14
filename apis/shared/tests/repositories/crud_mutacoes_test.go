@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 )
@@ -197,7 +198,8 @@ func TestRepositorios_Exists(t *testing.T) {
 			}},
 		{"ProdutoRepository.ExistsBySKU", `SELECT 1 FROM produtos WHERE sku = \? LIMIT 1`, "SKU-9",
 			func(db *sql.DB) (bool, error) {
-				return repositories.NewProdutoRepository().ExistsBySKU(ctx, db, "SKU-9")
+				// ARQ-02: exercita catalogomysql.Produtos.ExisteSKU (mesmo SQL).
+				return catalogomysql.NovoProdutos(db).ExisteSKU(ctx, "SKU-9")
 			}},
 	}
 	errBanco := errors.New("timeout")

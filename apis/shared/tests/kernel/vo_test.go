@@ -62,6 +62,33 @@ func TestData_ZeroValue(t *testing.T) {
 	var d kernel.Data
 	assert.True(t, d.IsZero())
 	assert.Equal(t, "", d.String())
+	assert.True(t, d.MeiaNoiteEm(time.UTC).IsZero(), "data ausente não vira instante")
+}
+
+// TestData_MeiaNoiteEm: mesma data de calendário, à meia-noite do fuso pedido
+// (equivalente a time.ParseInLocation), em fusos dos dois lados de UTC.
+func TestData_MeiaNoiteEm(t *testing.T) {
+	fusos := []*time.Location{
+		time.UTC,
+		time.FixedZone("UTC-3", -3*3600),
+		time.FixedZone("UTC+14", 14*3600),
+		time.FixedZone("UTC-12", -12*3600),
+	}
+	for _, loc := range fusos {
+		for _, s := range []string{"2024-01-01", "2024-02-29", "2022-12-31"} {
+			t.Run(loc.String()+"/"+s, func(t *testing.T) {
+				d, err := kernel.ParseData(s, errDataTeste)
+				require.NoError(t, err)
+				want, err := time.ParseInLocation(kernel.LayoutData, s, loc)
+				require.NoError(t, err)
+
+				got := d.MeiaNoiteEm(loc)
+				assert.True(t, got.Equal(want), "got %s want %s", got, want)
+				assert.Equal(t, loc, got.Location())
+				assert.Equal(t, s, got.Format(kernel.LayoutData))
+			})
+		}
+	}
 }
 
 func TestNovoEmail(t *testing.T) {

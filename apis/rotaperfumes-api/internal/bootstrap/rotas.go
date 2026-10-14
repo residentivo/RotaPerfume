@@ -105,7 +105,7 @@ func rotas(h Handlers) []httpx.Rota {
 		{Metodo: put, Padrao: "/api/clientes/{id}", Policy: autent, Arquivo: fCli, Funcao: "ClienteHandler.UpdateCliente", Handler: h.Cliente.UpdateCliente},
 		{Metodo: patch, Padrao: "/api/clientes/{id}/inativar", Policy: autent, Arquivo: fCli, Funcao: "ClienteHandler.ToggleAtivoCliente", Handler: h.Cliente.ToggleAtivoCliente},
 
-		// Produtos (leitura comum; escrita admin, C-01).
+		// Produtos (catalogohttp, ARQ-02; leitura comum, escrita admin, C-01).
 		{Metodo: get, Padrao: "/api/produtos", Policy: autent, Arquivo: fProd, Funcao: "ProdutoHandler.ListProdutos", Handler: h.Produto.ListProdutos},
 		{Metodo: post, Padrao: "/api/produtos", Policy: admin, Arquivo: fProd, Funcao: "ProdutoHandler.CreateProduto", Handler: h.Produto.CreateProduto},
 		{Metodo: get, Padrao: "/api/produtos/{id}", Policy: autent, Arquivo: fProd, Funcao: "ProdutoHandler.GetProduto", Handler: h.Produto.GetProduto},
@@ -140,7 +140,7 @@ func rotas(h Handlers) []httpx.Rota {
 		{Metodo: put, Padrao: "/api/visitas/{id}", Policy: autent, Arquivo: fVisita, Funcao: "VisitaHandler.UpdateVisita", Handler: h.Visita.UpdateVisita},
 		{Metodo: del, Padrao: "/api/visitas/{id}", Policy: autent, Arquivo: fVisita, Funcao: "VisitaHandler.DeleteVisita", Handler: h.Visita.DeleteVisita},
 
-		// Estoque (tudo admin, C-01).
+		// Estoque (catalogohttp, ARQ-02; tudo admin, C-01).
 		{Metodo: get, Padrao: "/api/estoque", Policy: admin, Arquivo: fEstq, Funcao: "EstoqueHandler.ListEstoque", Handler: h.Estoque.ListEstoque},
 		{Metodo: post, Padrao: "/api/estoque", Policy: admin, Arquivo: fEstq, Funcao: "EstoqueHandler.CreateEstoque", Handler: h.Estoque.CreateEstoque},
 		{Metodo: get, Padrao: "/api/estoque/{id}", Policy: admin, Arquivo: fEstq, Funcao: "EstoqueHandler.GetEstoque", Handler: h.Estoque.GetEstoque},

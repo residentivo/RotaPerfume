@@ -15,6 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rotaperfumes/shared/catalogo"
+	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"github.com/rotaperfumes/shared/repositories"
 )
 
@@ -60,8 +63,11 @@ func TestOrdenacao_ProdutoList(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-			_, _, err := repositories.NewProdutoRepository().List(context.Background(), db, 1, 10,
-				repositories.ProdutoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+			// ARQ-02: order_by/order_dir viram o enum CampoProduto no parse
+			// (kernel.ParseOrdenacao, como o catalogohttp) e a coluna sai do
+			// switch do adapter. A asserção sobre o SQL é a mesma.
+			_, _, err := listarProdutos(catalogomysql.NovoProdutos(db), context.Background(),
+				catalogo.FiltroProduto{Ordenacao: ordenacaoProduto(tt.orderBy, tt.orderDir)})
 			require.NoError(t, err)
 			require.NoError(t, mock.ExpectationsWereMet())
 
@@ -106,4 +112,109 @@ func TestOrdenacao_SenhaHistoricoFindAll(t *testing.T) {
 			assert.NotContains(t, lista, "DELETE")
 		})
 	}
+}
+
+// casosOrdenacaoEstoque: as mesmas classes de entrada do produto (default,
+// válidos, maiúsculas, espaços, fora da whitelist e injection) contra a
+// whitelist de estoque. col é a coluna SEM alias; o default é
+// "data_snapshot DESC".
+var casosOrdenacaoEstoque = []struct {
+	nome     string
+	orderBy  string
+	orderDir string
+	col, dir string
+}{
+	{"tudo vazio usa default", "", "", "data_snapshot", "DESC"},
+	{"campo válido asc", "saldo", "asc", "saldo", "ASC"},
+	{"campo válido desc", "sku", "desc", "sku", "DESC"},
+	{"id", "id", "asc", "id", "ASC"},
+	{"ruptura", "ruptura", "", "ruptura", "DESC"},
+	{"created_at", "created_at", "asc", "created_at", "ASC"},
+	{"updated_at", "UPDATED_AT", "asc", "updated_at", "ASC"},
+	{"espaços em volta", "  data_snapshot  ", "  asc  ", "data_snapshot", "ASC"},
+	{"campo de produtos não vale em estoque", "preco_tabela", "asc", "data_snapshot", "ASC"},
+	{"coluna com alias não é aceita", "e.saldo", "asc", "data_snapshot", "ASC"},
+	{"dir inválida cai no default", "saldo", "sideways", "saldo", "DESC"},
+	{"SQL injection em order_by", "1; DROP TABLE estoque;--", "asc", "data_snapshot", "ASC"},
+	{"subquery em order_by", "(SELECT 1)", "", "data_snapshot", "DESC"},
+	{"SQL injection em order_dir", "saldo", "asc; DROP TABLE x;--", "saldo", "DESC"},
+	{"injection nos dois", "1); DROP TABLE x;--", "desc; DROP TABLE x;--", "data_snapshot", "DESC"},
+}
+
+// TestOrdenacao_EstoqueHistorico: whitelist da série histórica (colunas com
+// o alias "e." da tabela estoque, C-02).
+func TestOrdenacao_EstoqueHistorico(t *testing.T) {
+	for _, tt := range casosOrdenacaoEstoque {
+		t.Run(tt.nome, func(t *testing.T) {
+			lista := capturarListagemEstoque(t, true, ordenacaoEstoque(tt.orderBy, tt.orderDir))
+			assert.Equal(t, "ORDER BY e."+tt.col+" "+tt.dir, orderByDe(t, lista))
+			assert.NotContains(t, lista, "DROP")
+			assert.NotContains(t, lista, "SELECT 1")
+		})
+	}
+}
+
+// TestOrdenacao_EstoqueUltimaPosicao: segunda whitelist, sobre a tabela
+// derivada "ranked" (colunas sem alias). O ORDER BY interno da window
+// function é fixo e não depende do order_by.
+func TestOrdenacao_EstoqueUltimaPosicao(t *testing.T) {
+	for _, tt := range casosOrdenacaoEstoque {
+		t.Run(tt.nome, func(t *testing.T) {
+			lista := capturarListagemEstoque(t, false, ordenacaoEstoque(tt.orderBy, tt.orderDir))
+			fim := strings.Index(lista, "ranked WHERE rn = 1 ")
+			require.GreaterOrEqual(t, fim, 0, lista)
+			assert.Equal(t, "ORDER BY "+tt.col+" "+tt.dir, orderByDe(t, lista[fim:]))
+			assert.Contains(t, lista, "PARTITION BY e.sku ORDER BY e.data_snapshot DESC, e.id DESC")
+			assert.NotContains(t, lista, "DROP")
+			assert.NotContains(t, lista, "SELECT 1")
+		})
+	}
+}
+
+// TestOrdenacao_EnumForaDaWhitelist: um valor do enum fabricado fora do parse
+// (conversão direta de string) e a ordenação zero value não chegam ao SQL:
+// o switch do adapter cai no default de cada entidade (defesa em
+// profundidade da C-02).
+func TestOrdenacao_EnumForaDaWhitelist(t *testing.T) {
+	t.Run("produto", func(t *testing.T) {
+		for _, c := range []struct {
+			o    kernel.Ordenacao[catalogo.CampoProduto]
+			want string
+		}{
+			{kernel.NovaOrdenacao(catalogo.CampoProduto("id; DROP TABLE produtos"), kernel.Desc), "ORDER BY id DESC"},
+			{kernel.Ordenacao[catalogo.CampoProduto]{}, "ORDER BY id ASC"}, // zero value: padrão da entidade
+		} {
+			db, mock, captured := newCapturingMock(t)
+			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos`).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(0))
+			mock.ExpectQuery(`FROM produtos`).WithArgs(10, 0).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+			_, _, err := listarProdutos(catalogomysql.NovoProdutos(db), context.Background(), catalogo.FiltroProduto{Ordenacao: c.o})
+			require.NoError(t, err)
+			lista := (*captured)[len(*captured)-1]
+			assert.Equal(t, c.want, orderByDe(t, lista))
+			assert.NotContains(t, lista, "DROP")
+		}
+	})
+	t.Run("estoque", func(t *testing.T) {
+		o := kernel.NovaOrdenacao(catalogo.CampoEstoque("saldo; DROP TABLE estoque"), kernel.Asc)
+		assert.Equal(t, "ORDER BY e.data_snapshot ASC", orderByDe(t, capturarListagemEstoque(t, true, o)))
+		assert.Equal(t, "ORDER BY e.data_snapshot DESC", orderByDe(t, capturarListagemEstoque(t, true, kernel.Ordenacao[catalogo.CampoEstoque]{})))
+	})
+}
+
+// capturarListagemEstoque roda Historico (historico=true) ou UltimaPosicao e
+// devolve o SQL da listagem enviado ao banco.
+func capturarListagemEstoque(t *testing.T, historico bool, o kernel.Ordenacao[catalogo.CampoEstoque]) string {
+	t.Helper()
+	db, mock, captured := newCapturingMock(t)
+	mock.ExpectQuery(`SELECT COUNT\(\*\)`).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(0))
+	mock.ExpectQuery(`FROM`).WithArgs(10, 0).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	repo := catalogomysql.NovoEstoques(db)
+	listar := repo.UltimaPosicao
+	if historico {
+		listar = repo.Historico
+	}
+	_, _, err := listarEstoque(listar, context.Background(), catalogo.FiltroEstoque{Ordenacao: o})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+	return (*captured)[len(*captured)-1]
 }
