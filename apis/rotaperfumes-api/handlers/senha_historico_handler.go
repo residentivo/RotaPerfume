@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/models"
@@ -119,31 +119,17 @@ func (h *SenhaHistoricoHandler) ListarPorUsuario(w http.ResponseWriter, r *http.
 		return
 	}
 
-	vlog.Printf("senha_historico_handler.go", "SenhaHistoricoHandler.ListarPorUsuario", "definindo path := r.URL.Path")
-	// Extrai usuario_id da path.
-	path := r.URL.Path
-	vlog.Printf("senha_historico_handler.go", "SenhaHistoricoHandler.ListarPorUsuario", "chamando strings.Split e atribuindo resultado a parts")
-	parts := strings.Split(path, "/")
-	vlog.Printf("senha_historico_handler.go", "SenhaHistoricoHandler.ListarPorUsuario", "declarando variável usuarioIDStr")
-	var usuarioIDStr string
-	vlog.Printf("senha_historico_handler.go", "SenhaHistoricoHandler.ListarPorUsuario", "iniciando loop sobre parts")
-	for i, p := range parts {
-		if p == "senha-historico" && i+1 < len(parts) {
-			usuarioIDStr = parts[i+1]
-			break
-		}
-	}
-	vlog.Printf("senha_historico_handler.go", "SenhaHistoricoHandler.ListarPorUsuario", "loop sobre parts concluído: %d itens", len(parts))
-	vlog.Printf("senha_historico_handler.go", "SenhaHistoricoHandler.ListarPorUsuario", "verificando se usuarioIDStr == \"\"")
+	// Exceção X1 / R-f: o padrão é GET /api/senha-historico/{user_id...}.
+	// Vazio continua 400 "obrigatório"; o resto do caminho é o valor inteiro
+	// (ex.: "2/extra"), e o parse é estrito: decimal, > 0 e sem "/".
+	usuarioIDStr := r.PathValue("user_id")
 	if usuarioIDStr == "" {
 		writeJSON(w, http.StatusBadRequest, nil, "usuario_id é obrigatório na URL")
 		return
 	}
-
-	vlog.Printf("senha_historico_handler.go", "SenhaHistoricoHandler.ListarPorUsuario", "chamando strconv.ParseInt e atribuindo resultado a usuarioID, err")
-	usuarioID, err := strconv.ParseInt(usuarioIDStr, 10, 64)
-	vlog.Printf("senha_historico_handler.go", "SenhaHistoricoHandler.ListarPorUsuario", "verificando se err != nil")
+	usuarioID, err := httpx.ParseID(usuarioIDStr)
 	if err != nil {
+		vlog.Printf("senha_historico_handler.go", "SenhaHistoricoHandler.ListarPorUsuario", "usuario_id recusado no parse estrito")
 		writeJSON(w, http.StatusBadRequest, nil, "usuario_id inválido")
 		return
 	}

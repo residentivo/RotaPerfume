@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 )
 
 var securityHeadersDummyHandler http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +21,7 @@ var securityHeadersDummyHandler http.HandlerFunc = func(w http.ResponseWriter, r
 // ------------------------------------------------------------------
 
 func TestSecurityHeadersMiddleware_HeadersPresentes(t *testing.T) {
-	m := middleware.SecurityHeadersMiddleware()
+	m := httpx.SecurityHeaders
 
 	req := httptest.NewRequest("GET", "/api/produtos", nil)
 	req.Host = "api.rotaperfumes.com"
@@ -36,7 +36,7 @@ func TestSecurityHeadersMiddleware_HeadersPresentes(t *testing.T) {
 }
 
 func TestSecurityHeadersMiddleware_ChamaHandlerDownstream(t *testing.T) {
-	m := middleware.SecurityHeadersMiddleware()
+	m := httpx.SecurityHeaders
 
 	req := httptest.NewRequest("GET", "/api/produtos", nil)
 	w := httptest.NewRecorder()
@@ -51,7 +51,7 @@ func TestSecurityHeadersMiddleware_ChamaHandlerDownstream(t *testing.T) {
 // ------------------------------------------------------------------
 
 func TestSecurityHeadersMiddleware_HSTS_Parametrizado(t *testing.T) {
-	m := middleware.SecurityHeadersMiddleware()
+	m := httpx.SecurityHeaders
 
 	cases := []struct {
 		nome     string

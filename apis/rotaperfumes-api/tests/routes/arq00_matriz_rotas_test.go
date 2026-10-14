@@ -2,23 +2,23 @@ package routes_test
 
 // ARQ-00 / R2 (SecBrain): matriz de rotas — pré-requisito da refatoração DDD.
 //
-// Cada padrão registrado em routes/routes.go aparece aqui com a política de
-// acesso esperada (Public / Authenticated / AdminOnly). Os testes exercitam o
-// handler devolvido por routes.NewMux, que já é a cadeia
-// CORS → SecurityHeaders → mux → JWT por rota → handler (só o withLogging de
-// cmd/server/main.go fica de fora, por estar em package main; ele apenas loga
-// e não altera status/headers).
+// Cada rota registrada no router (bootstrap.NovoRouter) aparece aqui com o
+// método e a política de acesso esperada (Public / Authenticated / AdminOnly).
+// Os testes exercitam o handler devolvido por bootstrap.HandlerHTTP, que é a
+// cadeia CORS → SecurityHeaders → mux → Exigir(policy) → Trace → handler (só o
+// httpx.Logging de bootstrap.Montar fica de fora; ele apenas loga e não altera
+// status/headers).
 //
-// Se routes.go ganhar (ou perder) uma rota, TestARQ00_Matriz_CobreTodasAsRotas
-// falha até a matriz ser atualizada — rota nova nunca nasce sem política.
+// ARQ-01: a fonte é router.Rotas() (padrão E política registrados em runtime).
+// Se o router ganhar (ou perder) uma rota, ou registrar uma política diferente
+// da matriz, TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo falha — rota nova
+// nunca nasce sem política. Exceção X1: os 13 padrões sem método passaram ao
+// método documentado; método errado → 405 sem consultar o checker.
 
 import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -27,9 +27,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
-	"github.com/rotaperfumes/rotaperfumes-api/routes"
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
@@ -53,13 +53,26 @@ func (p politicaRota) String() string {
 	return "INDEFINIDA"
 }
 
-// todosMetodos é usado para padrões registrados sem método (ex.:
-// "/api/auth/login"): o ServeMux entrega QUALQUER método para a mesma cadeia,
-// então a política tem de valer para todos eles.
+// politicaDe traduz a política registrada no router para a da matriz.
+func politicaDe(p httpx.Policy) politicaRota {
+	switch p {
+	case httpx.Public:
+		return politicaPublic
+	case httpx.Authenticated:
+		return politicaAuthenticated
+	case httpx.AdminOnly:
+		return politicaAdminOnly
+	}
+	return 0
+}
+
+// todosMetodos é o universo de métodos que o router aceita registrar. Desde o
+// ARQ-01 (X1) todo padrão fixa o método; os demais métodos do mesmo path
+// recebem 405 do ServeMux (TestARQ00_MetodoNaoRegistrado_405SemChecker).
 var todosMetodos = []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
 
 type rotaMatriz struct {
-	// padrao é exatamente a string passada a mux.Handle/HandleFunc.
+	// padrao é "MÉTODO /caminho", exatamente Rota.Metodo+" "+Rota.Padrao.
 	padrao   string
 	politica politicaRota
 	// paths concretos usados nos requests (path params preenchidos).
@@ -78,26 +91,26 @@ func (r rotaMatriz) metodos() []string {
 func p(paths ...string) []string { return paths }
 
 var matrizRotas = []rotaMatriz{
-	// Auth
-	{"/api/auth/login", politicaPublic, p("/api/auth/login")},
-	{"/api/auth/refresh", politicaPublic, p("/api/auth/refresh")},
-	{"/api/auth/logout", politicaPublic, p("/api/auth/logout")},
-	{"/api/auth/reset-password", politicaAuthenticated, p("/api/auth/reset-password")},
-	{"/api/auth/me", politicaAuthenticated, p("/api/auth/me")},
+	// Auth (X1: método fixo)
+	{"POST /api/auth/login", politicaPublic, p("/api/auth/login")},
+	{"POST /api/auth/refresh", politicaPublic, p("/api/auth/refresh")},
+	{"POST /api/auth/logout", politicaPublic, p("/api/auth/logout")},
+	{"POST /api/auth/reset-password", politicaAuthenticated, p("/api/auth/reset-password")},
+	{"GET /api/auth/me", politicaAuthenticated, p("/api/auth/me")},
 	// Usuários / admin
 	{"GET /api/usuarios", politicaAdminOnly, p("/api/usuarios")},
 	{"POST /api/usuarios", politicaAdminOnly, p("/api/usuarios")},
 	{"PUT /api/usuarios/{id}", politicaAdminOnly, p("/api/usuarios/2")},
 	{"PATCH /api/usuarios/{id}/inativar", politicaAdminOnly, p("/api/usuarios/2/inativar")},
 	{"POST /api/admin/reset-password", politicaAdminOnly, p("/api/admin/reset-password")},
-	// Histórico de senhas (prefixo continua admin)
-	{"/api/senha-historico/", politicaAdminOnly, p("/api/senha-historico/2", "/api/senha-historico/", "/api/senha-historico/2/extra")},
-	{"/api/senha-historico", politicaAdminOnly, p("/api/senha-historico")},
-	// Dashboard
-	{"/api/dashboard/metrics", politicaAuthenticated, p("/api/dashboard/metrics")},
-	{"/api/dashboard/vendas", politicaAuthenticated, p("/api/dashboard/vendas")},
-	{"/api/dashboard/vendedores", politicaAuthenticated, p("/api/dashboard/vendedores")},
-	{"/api/dashboard/clientes", politicaAuthenticated, p("/api/dashboard/clientes")},
+	// Histórico de senhas (wildcard de resto continua admin; X1/R-f)
+	{"GET /api/senha-historico/{user_id...}", politicaAdminOnly, p("/api/senha-historico/2", "/api/senha-historico/", "/api/senha-historico/2/extra")},
+	{"GET /api/senha-historico", politicaAdminOnly, p("/api/senha-historico")},
+	// Dashboard (X1: método fixo)
+	{"GET /api/dashboard/metrics", politicaAuthenticated, p("/api/dashboard/metrics")},
+	{"GET /api/dashboard/vendas", politicaAuthenticated, p("/api/dashboard/vendas")},
+	{"GET /api/dashboard/vendedores", politicaAuthenticated, p("/api/dashboard/vendedores")},
+	{"GET /api/dashboard/clientes", politicaAuthenticated, p("/api/dashboard/clientes")},
 	// Vendedores
 	{"GET /api/vendedores", politicaAuthenticated, p("/api/vendedores")},
 	{"POST /api/vendedores", politicaAdminOnly, p("/api/vendedores")},
@@ -149,8 +162,8 @@ var matrizRotas = []rotaMatriz{
 	{"POST /api/estoque", politicaAdminOnly, p("/api/estoque")},
 	{"GET /api/estoque/{id}", politicaAdminOnly, p("/api/estoque/1")},
 	{"PUT /api/estoque/{id}", politicaAdminOnly, p("/api/estoque/1")},
-	// Healthcheck
-	{"/health", politicaPublic, p("/health")},
+	// Healthcheck (X1: GET, que também atende HEAD)
+	{"GET /health", politicaPublic, p("/health")},
 }
 
 const (
@@ -159,7 +172,7 @@ const (
 	msgAdminRestrito     = "acesso restrito a administradores"
 )
 
-// arq00Router monta o router real (CORS→SecurityHeaders→mux→JWT→handler)
+// arq00Router monta o router real (CORS→SecurityHeaders→mux→Exigir→Trace→handler)
 // sobre um DB sqlmock sem expectativas: o que chega ao handler falha no banco
 // (nunca com as mensagens do middleware) e o mock permite provar que um
 // request barrado no middleware não tocou o banco.
@@ -170,21 +183,18 @@ func arq00Router(t *testing.T, checker middleware.UserStatusChecker) (http.Handl
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	h := routes.NewMux(cfg, checker,
-		handlers.NewAuthHandler(db, cfg),
-		handlers.NewUsuarioHandler(db, cfg, sharedsvc.NewNoopEmailService()),
-		handlers.NewDashboardHandler(db, cfg),
-		handlers.NewSenhaHistoricoHandler(db),
-		handlers.NewVendedorHandler(db, cfg),
-		handlers.NewClienteHandler(db, cfg),
-		handlers.NewProdutoHandler(db, cfg),
-		handlers.NewPedidoHandler(db, cfg),
-		handlers.NewPagamentoHandler(db, cfg),
-		handlers.NewOportunidadeHandler(db, cfg),
-		handlers.NewVisitaHandler(db, cfg),
-		handlers.NewEstoqueHandler(db, cfg),
-	)
+	h := bootstrap.HandlerHTTP(cfg, checker, bootstrap.NovosHandlers(db, cfg, sharedsvc.NewNoopEmailService()))
 	return h, mock
+}
+
+// arq00RotasRegistradas devolve a tabela registrada em runtime (ARQ-01).
+func arq00RotasRegistradas(t *testing.T) []httpx.Rota {
+	t.Helper()
+	cfg := testCfg()
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	return bootstrap.NovoRouter(cfg, fakeUserStatusChecker{}, bootstrap.NovosHandlers(db, cfg, sharedsvc.NewNoopEmailService())).Rotas()
 }
 
 func arq00Serve(h http.Handler, method, path, tok, origin string) *httptest.ResponseRecorder {
@@ -251,49 +261,54 @@ func assertSecurityHeaders(t *testing.T, w *httptest.ResponseRecorder) {
 // Integridade da matriz
 // ---------------------------------------------------------------------------
 
-var reRegistroRota = regexp.MustCompile(`mux\.Handle(?:Func)?\(\s*"([^"]+)"`)
-
-func padroesRegistradosEmRoutesGo(t *testing.T) []string {
-	t.Helper()
-	// Os testes rodam com cwd = tests/routes.
-	src, err := os.ReadFile(filepath.Join("..", "..", "routes", "routes.go"))
-	require.NoError(t, err, "não foi possível ler routes/routes.go")
-	var out []string
-	for _, m := range reRegistroRota.FindAllStringSubmatch(string(src), -1) {
-		out = append(out, m[1])
-	}
-	require.NotEmpty(t, out, "nenhum mux.Handle encontrado em routes.go — a varredura quebrou?")
-	return out
-}
-
+// ARQ-01: fonte = router.Rotas() (padrão "MÉTODO /caminho" e política
+// registrados em runtime). Mais forte que a regex sobre routes.go: confere
+// também que a política registrada é a da matriz.
 func TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo(t *testing.T) {
-	registrados := padroesRegistradosEmRoutesGo(t)
+	registradas := arq00RotasRegistradas(t)
+	require.NotEmpty(t, registradas, "router sem rotas — a montagem quebrou?")
 
-	naMatriz := make(map[string]bool, len(matrizRotas))
+	naMatriz := make(map[string]politicaRota, len(matrizRotas))
 	for _, r := range matrizRotas {
-		naMatriz[r.padrao] = true
+		naMatriz[r.padrao] = r.politica
 	}
-	emRoutes := make(map[string]bool, len(registrados))
-	for _, pd := range registrados {
-		assert.False(t, emRoutes[pd], "padrão registrado em duplicidade em routes.go: %q", pd)
-		emRoutes[pd] = true
+	emRoutes := make(map[string]politicaRota, len(registradas))
+	for _, rt := range registradas {
+		pd := rt.Metodo + " " + rt.Padrao
+		_, dup := emRoutes[pd]
+		assert.False(t, dup, "padrão registrado em duplicidade no router: %q", pd)
+		emRoutes[pd] = politicaDe(rt.Policy)
 	}
 
-	var faltando, sobrando []string
-	for pd := range emRoutes {
-		if !naMatriz[pd] {
+	var faltando, sobrando, divergentes []string
+	for pd, pol := range emRoutes {
+		esperada, ok := naMatriz[pd]
+		if !ok {
 			faltando = append(faltando, pd)
+			continue
+		}
+		if pol != esperada {
+			divergentes = append(divergentes, pd+": registrada "+pol.String()+", matriz "+esperada.String())
 		}
 	}
 	for pd := range naMatriz {
-		if !emRoutes[pd] {
+		if _, ok := emRoutes[pd]; !ok {
 			sobrando = append(sobrando, pd)
 		}
 	}
 	sort.Strings(faltando)
 	sort.Strings(sobrando)
-	assert.Empty(t, faltando, "rotas registradas em routes.go SEM política na matriz ARQ-00 — adicione-as a matrizRotas")
-	assert.Empty(t, sobrando, "rotas na matriz ARQ-00 que NÃO estão mais em routes.go — remova-as ou corrija o padrão")
+	sort.Strings(divergentes)
+	assert.Empty(t, faltando, "rotas registradas no router SEM política na matriz ARQ-00 — adicione-as a matrizRotas")
+	assert.Empty(t, sobrando, "rotas na matriz ARQ-00 que NÃO estão mais no router — remova-as ou corrija o padrão")
+	assert.Empty(t, divergentes, "política registrada no router diverge da matriz ARQ-00")
+	assert.Len(t, registradas, 60, "a API registra 60 padrões (4 Public, 35 Authenticated, 21 AdminOnly)")
+	porPolitica := map[politicaRota]int{}
+	for _, rt := range registradas {
+		porPolitica[politicaDe(rt.Policy)]++
+	}
+	assert.Equal(t, map[politicaRota]int{politicaPublic: 4, politicaAuthenticated: 35, politicaAdminOnly: 21}, porPolitica,
+		"contagem por política registrada no router")
 }
 
 func TestARQ00_Matriz_Sanidade(t *testing.T) {
@@ -304,6 +319,9 @@ func TestARQ00_Matriz_Sanidade(t *testing.T) {
 		assert.Contains(t, []politicaRota{politicaPublic, politicaAuthenticated, politicaAdminOnly}, r.politica,
 			"%q sem política válida", r.padrao)
 		assert.NotEmpty(t, r.paths, "%q sem path de exemplo", r.padrao)
+		metodo, caminho, ok := strings.Cut(r.padrao, " ")
+		assert.True(t, ok && strings.HasPrefix(caminho, "/"), "%q sem método fixo (exceção X1)", r.padrao)
+		assert.Contains(t, todosMetodos, metodo, "%q com método fora de GET/POST/PUT/PATCH/DELETE", r.padrao)
 	}
 	// Só estas rotas podem ser públicas; qualquer nova rota pública exige
 	// revisão do SecBrain e atualização explícita desta lista.
@@ -314,7 +332,7 @@ func TestARQ00_Matriz_Sanidade(t *testing.T) {
 		}
 	}
 	sort.Strings(publicas)
-	assert.Equal(t, []string{"/api/auth/login", "/api/auth/logout", "/api/auth/refresh", "/health"}, publicas)
+	assert.Equal(t, []string{"GET /health", "POST /api/auth/login", "POST /api/auth/logout", "POST /api/auth/refresh"}, publicas)
 }
 
 // ---------------------------------------------------------------------------

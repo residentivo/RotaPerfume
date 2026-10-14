@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -277,9 +278,11 @@ func RequireAdmin() func(http.Handler) http.Handler {
 	}
 }
 
+// writeError escreve o envelope de erro {"error":…, "success":false} pelo
+// encoder JSON (F-05/C12: sem concatenar a mensagem). Mesmo formato do
+// httpx.JSON, que este pacote não pode importar (httpx importa middleware).
 func writeError(w http.ResponseWriter, status int, msg string) {
-	vlog.Printf("auth_middleware.go", "writeError", "chamando w.Header().Set")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write([]byte(`{"success":false,"error":"` + msg + `"}` + "\n"))
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": msg})
 }

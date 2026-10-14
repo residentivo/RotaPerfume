@@ -4,7 +4,7 @@
 > **Escopo:** `apis/rotaperfumes-api` (handlers, services, middleware, routes, cmd) e `apis/shared` (repositories, models, services, config, db, cnpj, tz, vlog, importers, cmd, tools, cmdutil).
 > **Referências obrigatórias:**
 > - invariantes de segurança do 🟣 SecBrain: `docs/arq-00-invariantes-seguranca.md` (IDs R-, F-, C-, I-, E-, V-, D-, M-);
-> - matriz de rotas do 🔴 TestBrain: `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 31 Authenticated, 25 AdminOnly);
+> - matriz de rotas do 🔴 TestBrain: `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 35 Authenticated, 21 AdminOnly; corrigido no ARQ-01, N-6);
 > - linha de base de testes e cobertura (2026-10-13): API **720** testes de topo, cobertura **91,5%**; shared **593** testes de topo, cobertura **85,6%** (ver §7.1).
 >
 > Este documento é **só desenho**: nenhum código foi movido no ARQ-00.
@@ -230,7 +230,7 @@ Regras entre contextos:
 | `Pagina`, `Resultado[T]` | page ≥ 1; limit < 1 vira 20; limit > 100 vira 100 (F-10). `Offset()`, `Paginas()`. | `ParsePagination` (`usuario_service.go:403`), clamps nos repositórios, `pages := …` x10 |
 | `Ordenacao[C ~string]` + `Direcao` | Enum por entidade; o valor inválido cai no default (C-02). | `OrderBy/OrderDir string` em filtros |
 | `Data` | Layout `2006-01-02`; `ParseData` devolve o erro do campo. | B6 |
-| `Email` | Normaliza (trim/lower); valida o formato básico; recusa CR/LF (M-01). `Mascarado()` chama `vlog.MaskEmail`. | strings soltas |
+| `Email` | Normaliza (trim/lower); valida o formato básico; recusa CR/LF (M-01). `Mascarado()` **reimplementa** o algoritmo de `vlog.MaskEmail` (o kernel não importa vlog, §4.1); a equivalência é coberta por `TestEmail_Mascarado_IgualAoVlog` (ARQ-01). | strings soltas |
 | `Dinheiro` | ≥ 0; aritmética centralizada (P3). | `float64` soltos |
 | `Kind` + `Erro` | `KindInterno`, `KindInvalido`, `KindNaoEncontrado`, `KindConflito`, `KindProibido`, `KindNaoAutenticado`, `KindBloqueado` (a mesma lista do enum do §5.17). Mensagem fixa e literal. | erros `errors.New` + mapas por handler |
 
@@ -441,7 +441,7 @@ func (p Principal) EhAdmin() bool { return p.Valido() && p.role.EhAdmin() }
 | `<ctx>app` | `kernel`, `<ctx>`, `vlog`, `context`, `time` | `database/sql`, `net/http`, `config`**, qualquer `*mysql`, `adapters/*`, `rotaperfumes-api/...` |
 | `<ctx>mysql`, `identidadecrypto`, `notificacaosmtp`, `adapters/*` | `kernel`, `<ctx>`, `db`, `vlog`, `config`, drivers | `<ctx>app`*** , `net/http` (exceto o Turnstile), `rotaperfumes-api/...` |
 | `rotaperfumes-api/internal/<ctx>http` | `httpx`, `<ctx>app`, `<ctx>`, `kernel`, `vlog` | `<ctx>mysql`, `database/sql`, `repositories`, `config` |
-| `rotaperfumes-api/internal/httpx` | `kernel`, `vlog`, `net/http` | `<ctx>mysql`, `database/sql` |
+| `rotaperfumes-api/internal/httpx` | `kernel`, `vlog`, `net/http`; **transitório até o ARQ-03:** `shared/config` e `rotaperfumes-api/middleware` (o `Autenticador` delega ao legado) — `handlers`, `services` e `repositories` continuam proibidos | `<ctx>mysql`, `database/sql` |
 | `rotaperfumes-api/internal/bootstrap` | tudo (é a composition root) | — |
 
 \* O domínio não carrega tags JSON; o DTO HTTP é que serializa (§5.16). Exceção: os VOs sensíveis (`Senha`, `TokenOpaco`, `HashSenha`) **implementam** `MarshalJSON` devolvendo erro, como defesa extra (I-12).
@@ -449,6 +449,8 @@ func (p Principal) EhAdmin() bool { return p.Valido() && p.role.EhAdmin() }
 \*\*\* A infraestrutura satisfaz as interfaces de `<ctx>app` **implicitamente** (Go structural typing), sem importá-las. Se um tipo de retorno precisar ser compartilhado, ele mora no domínio.
 
 ### 4.2 Verificação automática
+
+**Implementação (ARQ-01):** em vez de `exec go list`, os testes leem os pacotes com `go/build` (`build.ImportDir`: respeita build tags e ignora `_test.go`) e `go/parser`, sem depender do binário `go` no PATH. Cada regra tem também um teste com pacote/fonte sintética provando que detecta a violação. O código abaixo fica como ilustração da regra.
 
 Um teste de arquitetura em cada módulo, criado no ARQ-01 e válido desde o primeiro lote (os pacotes que ainda não existem são simplesmente ignorados):
 
@@ -1176,7 +1178,7 @@ func interno(w http.ResponseWriter, tag string, err error) {
 
 ### 5.18 Outros padrões pontuais
 
-- **Envelope genérico:** `httpx.JSON(w, status, data, errMsg)` e `httpx.JSONPaginado[T](w, kernel.Resultado[T])` substituem `writeJSON`, `writeJSONWithPagination` e `writeError` (que concatena a string, C12). O `writeError` do middleware passa a usar o mesmo encoder: o corpo continua `{"success":false,"error":"…"}`, e os testes usam `JSONEq`/`Contains`.
+- **Envelope genérico:** `httpx.JSON(w, status, data, errMsg)` e `httpx.JSONPaginado[T](w, kernel.Resultado[T])` substituem `writeJSON`, `writeJSONWithPagination` e `writeError` (que concatena a string, C12). O `writeError` do middleware passa a usar o encoder JSON sobre um map (ARQ-01): as chaves saem em ordem alfabética, `{"error":"…","success":false}` (antes `success` vinha primeiro); os testes usam `JSONEq`/`Contains`. O envelope do `httpx` é uma struct com campos em ordem alfabética para sair byte a byte igual ao `map[string]any` legado.
 - **Clock como dependência** (`identidadeapp.Relogio`) no lugar de `var timeNow` (C10) e de `SetNow`.
 
 ### 5.19 Onde NÃO aplicar (overengineering)
@@ -1266,7 +1268,7 @@ func Trace(arquivo, funcao, format string, args ...any) func(errp *error) {
   1. `go build ./... && go vet ./... && go test ./...` nos dois módulos;
   2. **R1:** `go test -list . ./...` por módulo ≥ linha de base, **nenhum nome de teste some** (diff de nomes, não só da contagem), sem `t.Skip` novo;
   3. as suítes `SEC*`, `TST05*`, `Escopo*`, `MAIL01*` e `SEC10_TLS*` passam **sem diff de asserção** (`git diff` dos arquivos mostra só imports e construtores);
-  4. **cobertura combinada ≥ linha de base.** Como o código vai migrar da API para `shared`, a medição passa a ser `go test ./... -coverpkg=./...,github.com/rotaperfumes/shared/...` no módulo da API, somada à do módulo shared (blocos mesclados). Sem isso, a cobertura de shared cairia artificialmente (o código migrado é exercitado pelos testes da API, em outro módulo). O script do TestBrain ganha esse modo no ARQ-01;
+  4. **cobertura — portão oficial (decisão 🤍 MegaBrain, ARQ-01): a cobertura combinada API+shared não cai E o número absoluto de statements descobertos não sobe.** O percentual por pacote **não** é critério quando o código só mudou de lugar (no ARQ-01, `middleware` foi de 89,7% para 86,7% com os mesmos 30 statements descobertos, porque CORS e headers, cobertos, foram para o `httpx`). Alvo: `make cover-combinada`. Como o código vai migrar da API para `shared`, a medição passa a ser `go test ./... -coverpkg=./...,github.com/rotaperfumes/shared/...` no módulo da API, somada à do módulo shared (blocos mesclados). Sem isso, a cobertura de shared cairia artificialmente (o código migrado é exercitado pelos testes da API, em outro módulo). O script do TestBrain ganha esse modo no ARQ-01;
   5. testes de arquitetura e allowlists (§4.2, §4.3) verdes;
   6. matriz de rotas ARQ-00 verde;
   7. o 🟣 SecBrain confere o checklist do lote (§8);
@@ -1304,7 +1306,7 @@ O builder de rotas exige método. As 13 rotas registradas hoje sem método passa
   - `/api/senha-historico/` (id vazio) **continua** chegando ao handler e respondendo 400 "usuario_id é obrigatório na URL". Com `{user_id}`, viraria 404 e quebraria `tests/handlers/senha_historico_handler_test.go:300-309`;
   - `/api/senha-historico/2/extra` deixa de devolver o histórico do usuário 2 (o loop atual em `senha_historico_handler.go:126-135` pega o segmento após `senha-historico` e ignora o resto) e passa a **400 "usuario_id inválido"**, porque `PathValue` devolve `2/extra`. Essa é a parte da exceção X1 para este padrão;
   - o handler deixa de cortar o path à mão e passa a usar `r.PathValue("user_id")`;
-  - **parse estrito (R-f):** vazio → 400 "usuario_id é obrigatório na URL" (como hoje); depois, `strconv.ParseInt(v, 10, 64)`, exigindo resultado `> 0` e ausência de `/`. Qualquer falha → 400 "usuario_id inválido". Novidade dentro da X1: `0` e negativos, que hoje passam do `ParseInt`, também viram 400. Testes novos: `/api/senha-historico/2/extra`, `/api/senha-historico/0`, `/api/senha-historico/-1`, `/api/senha-historico/..%2F2` e `/api/senha-historico/2%2F3` → 400 (ou 404, se o próprio `ServeMux` recusar ou limpar o caminho antes do handler; o teste aceita só esses dois status e verifica que o checker de escopo/repositório **não** foi chamado);
+  - **parse estrito (R-f):** vazio → 400 "usuario_id é obrigatório na URL" (como hoje); depois, **só dígitos ASCII** (sem sinal, espaço ou `/`; decisão 🤍 MegaBrain no ARQ-01: `+2` e `%202` também viram 400), `strconv.ParseInt(v, 10, 64)` e resultado `> 0` (`httpx.ParseID`). Qualquer falha → 400 "usuario_id inválido". Novidade dentro da X1: `0` e negativos, que hoje passam do `ParseInt`, também viram 400. Testes novos: `/api/senha-historico/2/extra`, `/api/senha-historico/0`, `/api/senha-historico/-1`, `/api/senha-historico/..%2F2` e `/api/senha-historico/2%2F3` → 400 (ou 404, se o próprio `ServeMux` recusar ou limpar o caminho antes do handler; o teste aceita só esses dois status e verifica que o checker de escopo/repositório **não** foi chamado);
   - a matriz ARQ-00 já exercita `/2`, `/` e `/2/extra` (`arq00_matriz_rotas_test.go:94`); as asserções de política (401/403) não mudam.
 - **Frontend conferido** (`frontend/src/lib/api.ts`, `apiClient.ts`): login `POST` (api.ts:146), refresh `POST` (api.ts:160, apiClient.ts:175), me `GET` (api.ts:168), reset-password `POST` (api.ts:188,199), logout `POST` (apiClient.ts:679), dashboard `GET` (api.ts:285,296,318,541 via `listarPaginado`/GET), senha-historico `GET /api/senha-historico[/id]` (api.ts:346). `/health` é chamado pelo Caddy (`deploy/Caddyfile:40`, rewrite de `/api/health`) e pelo smoke do Jenkins (`Jenkinsfile:167`) com GET. **Nenhuma chamada usa outro método.**
 - **Interação com CORS e com a cadeia:**
@@ -1319,11 +1321,11 @@ O builder de rotas exige método. As 13 rotas registradas hoje sem método passa
 
 Hoje `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` lê `routes/routes.go` com a regex `mux\.Handle(?:Func)?\("…"` (`arq00_matriz_rotas_test.go:259`). Com o builder, o registro deixa de ser `mux.Handle` literal. A troca, **sem enfraquecer** o teste:
 
-1. o router expõe `Rotas() []httpx.Rota` (§5.9), e o bootstrap expõe `bootstrap.Rotas(cfg, checker)` montando o router com dependências de teste;
+1. o router expõe `Rotas() []httpx.Rota` (§5.9), e o bootstrap expõe (ARQ-01): `bootstrap.NovoRouter(cfg, checker, Handlers) *httpx.Router` (fonte de `Rotas()`); `bootstrap.HandlerHTTP(cfg, checker, Handlers)` (CORS → SecurityHeaders → mux, **sem** Logging: substitui o `routes.NewMux` nos testes, para não injetar linhas `[http]` em quem captura o log); `bootstrap.Montar(cfg, pool)` (= `HandlerHTTP` + `httpx.Logging`, produção); `bootstrap.NovosHandlers(pool, cfg, email)` cria os handlers legados;
 2. o teste de cobertura passa a comparar `matrizRotas` com a **tabela registrada em runtime** (padrão `Metodo+" "+Padrao` **e** `Policy`). Isso é mais forte que a regex, porque também confere que a política registrada é a da matriz, e não só que a rota existe;
 3. continua a falha bidirecional: rota registrada fora da matriz e rota na matriz fora do registro;
 4. continua a detecção de duplicidade (o próprio `ServeMux` dá panic em padrão duplicado; o teste também verifica a lista);
-5. o nome `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` é mantido (R1) com um comentário `// ARQ-01: fonte = router.Rotas()`. Os testes de política (sem token → 401; normal em admin → 403; rota pública não consulta o checker) passam a chamar `bootstrap.Montar` em vez de `routes.NewMux`, sem mudar asserção;
+5. o nome `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` é mantido (R1) com um comentário `// ARQ-01: fonte = router.Rotas()`. Os testes de política (sem token → 401; normal em admin → 403; rota pública não consulta o checker) passam a chamar `bootstrap.HandlerHTTP` em vez de `routes.NewMux`, sem mudar asserção;
 6. durante a transição (ARQ-01 a ARQ-06), **todas** as rotas já são registradas pelo builder novo, inclusive as dos contextos ainda legados (§7.5), então a matriz tem uma única fonte desde o ARQ-01;
 7. **R-b:** a matriz ganha dois casos por rota protegida: `HEAD` sem token → 401 (só nas rotas `GET`, já que o `ServeMux` casa HEAD com GET) e um método não registrado → 405 **sem consultar o checker** (o checker fake conta as chamadas e o teste exige zero).
 
@@ -1350,6 +1352,29 @@ Hoje `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` lê `routes/routes.go` com a
 - **Testes:** `tests/routes/*` passam a usar `bootstrap`; os de CORS e headers trocam o import; mais os novos (Chain, Policy, X1, kernel, arquitetura).
 - **Aceite:** portões do §7.1; matriz verde com fonte `Rotas()`; `HEAD /health` 200; preflight 204.
 - **Riscos:** ordem da cadeia invertida (mitigado pelos testes F-01); rota esquecida (impossível com a matriz bidirecional); 405 inesperado (frontend conferido, §7.3).
+
+- **Registro do ARQ-01 (o que foi feito diferente do desenho, revisado pelo 🤍 MegaBrain):**
+  - **`Email.Mascarado`** reimplementa o algoritmo de `vlog.MaskEmail`, porque o kernel não importa vlog (§4.1). A equivalência é coberta por `TestEmail_Mascarado_IgualAoVlog`.
+  - **Testes de arquitetura** usam `go/build` + `go/parser`, sem `exec go list` (§4.2). Cada regra tem um teste com fonte sintética que prova a detecção.
+  - **API do bootstrap:** `NovoRouter`, `HandlerHTTP` (sem Logging, usado pelos testes) e `Montar` (com Logging, produção), no lugar de `bootstrap.Rotas(cfg, checker)` (§7.4).
+  - **`httpx` importa `shared/config` e o `middleware` legado** até o ARQ-03 (§4.1). `handlers`, `services` e `repositories` continuam proibidos e verificados.
+  - **`writeError` do middleware:** usa o encoder; as chaves saem em ordem alfabética (`{"error":…,"success":false}`).
+  - **`derivarPrincipal` falha fechado:** se o legado aprovou mas o Principal é inválido (role vazio no banco ou `user_id <= 0` no token), responde 500 "erro interno" sem chamar o handler. Antes o handler rodava; o schema atual torna o caso irreal.
+  - **Zero value de `kernel.Pagina`** equivale a `NovaPagina(0, 0)`: página 1, limite 20.
+  - **`kernel.Data`** guarda a data de calendário à meia-noite UTC. `DataDe(t)` usa a data no fuso de `t`. `ParseData(s, errCampo)` devolve o sentinela do campo em qualquer falha, inclusive vazio.
+  - **Contrato de erro do `db.Transactor.WithTx`:** o erro da `fn` volta **sem embrulho** (o mapper decide pelo sentinela); falhas de begin/commit voltam como `db: begin: %w` / `db: commit: %w`. `NewTransactor` dá panic com pool ou bind nil.
+  - **`TestARQ_SprintfSQLSoConstantes`** foi adiado para o ARQ-06, quando nasce o `analyticsmysql`.
+  - **Regra O7 (`TestARQ_VlogSemConteudoSensivel`)** é aplicada aos **dois módulos inteiros**, não só aos pacotes novos. Tem 6 exceções revisadas do legado, todas benignas: nome de variável de ambiente em `config.go`, constantes numéricas da política de senha e `%v` de erro/booleano em `email_service.go` e `resetpassword.go`. O teste falha se uma exceção ficar obsoleta, e os pacotes novos não têm exceção.
+  - **`make` indisponível** na máquina de desenvolvimento: os alvos novos `arch-check` e `cover-combinada` foram validados rodando os mesmos comandos à mão. A mescla de perfis usa `awk`, com o máximo por bloco.
+  - **Ressalvas da revisão do 🟣 SecBrain** (aprovado sem bloqueantes):
+    - **N-1:** role **vazio** → 500 no `derivarPrincipal` é uma **exceção consciente a R-a**. Role vazio é diferente de role desconhecido: o desconhecido continua restrito, sem 401/500 novo. O caso é inalcançável com `usuarios.role` ENUM NOT NULL.
+    - **N-2:** `kernel.ParseData`/`ParseDataOuHoje` dão panic com `errCampo == nil` (erro de programação que engoliria data inválida).
+    - **N-4/N-5:** as allowlists de AST marcam qualquer referência qualificada, chamada ou não (`f := kernel.NovoPrincipal`). `middleware.JWTMiddleware`, `JWTMiddlewareWithUserCheck` e `RequireAdmin` só podem ser referenciados em `internal/httpx/auth.go` (fora os `_test.go`) — `TestARQ_MiddlewareAuthLegado_SoAutenticador`.
+    - **N-6:** a matriz confere a contagem por política: 4 Public, 35 Authenticated, 21 AdminOnly. A soma 4/31/25 que constava no topo deste documento estava errada e foi corrigida.
+    - **N-7:** checker nil **tipado** (interface não nula guardando ponteiro nil) não dá panic na montagem, igual ao legado `JWTMiddlewareWithUserCheck`. A proteção é o bootstrap montar sempre o checker real.
+    - **N-8:** `httpx.interno` loga `%v` do erro, que pode conter o valor cru de um 1062 (`Duplicate entry '<valor>'`). Isso se resolve no ARQ-04 pela regra O6-iv: o adapter traduz o 1062 para o sentinela sem embrulhar o erro do driver.
+    - **N-9:** `Dinheiro.Somar` não verifica overflow nem infinito. Revalidar no ARQ-05 (uso real) e no ARQ-09 (centavos).
+  - **Race detector indisponível** nesta máquina (sem gcc para `-race`). Os testes rodaram sem `-race`; rodar com `-race` no CI (Linux) quando disponível.
 
 #### ARQ-02: Catálogo (piloto)
 

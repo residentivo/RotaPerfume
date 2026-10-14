@@ -13,9 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
-	"github.com/rotaperfumes/rotaperfumes-api/routes"
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
@@ -50,20 +49,7 @@ func newRouterWithChecker(t *testing.T, checker middleware.UserStatusChecker) ht
 	db, _, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	return routes.NewMux(cfg, checker,
-		handlers.NewAuthHandler(db, cfg),
-		handlers.NewUsuarioHandler(db, cfg, sharedsvc.NewNoopEmailService()),
-		handlers.NewDashboardHandler(db, cfg),
-		handlers.NewSenhaHistoricoHandler(db),
-		handlers.NewVendedorHandler(db, cfg),
-		handlers.NewClienteHandler(db, cfg),
-		handlers.NewProdutoHandler(db, cfg),
-		handlers.NewPedidoHandler(db, cfg),
-		handlers.NewPagamentoHandler(db, cfg),
-		handlers.NewOportunidadeHandler(db, cfg),
-		handlers.NewVisitaHandler(db, cfg),
-		handlers.NewEstoqueHandler(db, cfg),
-	)
+	return bootstrap.HandlerHTTP(cfg, checker, bootstrap.NovosHandlers(db, cfg, sharedsvc.NewNoopEmailService()))
 }
 
 func TestSEC06_Router_UsuarioInativo_401(t *testing.T) {

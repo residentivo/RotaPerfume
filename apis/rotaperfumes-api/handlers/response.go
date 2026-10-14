@@ -2,65 +2,37 @@
 package handlers
 
 import (
-	"encoding/json"
-	"github.com/rotaperfumes/shared/vlog"
 	"net/http"
-	"strings"
+
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
+	"github.com/rotaperfumes/shared/kernel"
 )
+
+// ARQ-01: os helpers de resposta do legado delegam ao httpx (regra única do
+// envelope). Somem quando o último handler legado for migrado (ARQ-07).
 
 // parseOrderDirQuery lê o query param "order_dir" ("asc"/"desc",
 // case-insensitive). Qualquer outro valor (incluindo ausente/vazio) é
 // tratado como "sem valor" (string vazia), deixando o default de cada
 // entidade prevalecer no repositório.
 func parseOrderDirQuery(v string) string {
-	vlog.Printf("response.go", "parseOrderDirQuery", "avaliando switch sobre strings.ToLower(...)")
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "asc":
-		return "asc"
-	case "desc":
-		return "desc"
-	default:
-		return ""
+	if d, ok := kernel.ParseDirecao(v); ok {
+		return d.String()
 	}
+	return ""
 }
 
 // writeJSON escreve uma resposta JSON padronizada.
 func writeJSON(w http.ResponseWriter, status int, data any, errMsg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	resp := map[string]any{
-		"success": errMsg == "",
-	}
-	if data != nil {
-		resp["data"] = data
-	}
-	if errMsg != "" {
-		resp["error"] = errMsg
-	}
-	_ = json.NewEncoder(w).Encode(resp)
+	httpx.JSON(w, status, data, errMsg)
 }
 
-// writeNoContent escreve uma resposta 204 sem corpo, usada pelos endpoints de
-// exclusão (DELETE) bem-sucedida. Diferente de writeJSON: um corpo em uma
-// resposta 204 violaria a semântica HTTP (RFC 9110 §15.3.5 — 204 não deve ter
-// corpo de mensagem).
+// writeNoContent escreve uma resposta 204 sem corpo (DELETE bem-sucedido).
 func writeNoContent(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusNoContent)
+	httpx.SemConteudo(w)
 }
 
 // writeJSONWithPagination é igual a writeJSON + bloco pagination.
 func writeJSONWithPagination(w http.ResponseWriter, status int, data any, page, limit, total, pages int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	resp := map[string]any{
-		"success": true,
-		"data":    data,
-		"pagination": map[string]int{
-			"page":  page,
-			"limit": limit,
-			"total": total,
-			"pages": pages,
-		},
-	}
-	_ = json.NewEncoder(w).Encode(resp)
+	httpx.JSONComPaginacao(w, status, data, httpx.Paginacao{Limit: limit, Page: page, Pages: pages, Total: total})
 }

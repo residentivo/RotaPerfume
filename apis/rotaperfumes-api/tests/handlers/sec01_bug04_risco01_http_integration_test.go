@@ -1,6 +1,6 @@
 package handlers_test
 
-// Integração HTTP ponta a ponta (router real routes.NewMux + handlers reais +
+// Integração HTTP ponta a ponta (router real bootstrap.HandlerHTTP + handlers reais +
 // MySQL local) dos cards SEC-01, BUG-04 e RISCO-01.
 //
 // Só roda com INTEGRATION=1. Credenciais via DB_HOST/DB_PORT/DB_NAME/
@@ -31,8 +31,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
-	"github.com/rotaperfumes/rotaperfumes-api/routes"
 	apisvc "github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
 	shareddb "github.com/rotaperfumes/shared/db"
@@ -84,19 +84,9 @@ func novoItCtx(t *testing.T) *itCtx {
 	cfg := testCfg()
 	authH := handlers.NewAuthHandler(db, cfg)
 	authH.SetCaptchaVerifier(&fakeCaptchaVerifier{})
-	mux := routes.NewMux(cfg, middleware.NewDBUserStatusChecker(db), authH,
-		handlers.NewUsuarioHandler(db, cfg, &fakeEmailService{}),
-		handlers.NewDashboardHandler(db, cfg),
-		handlers.NewSenhaHistoricoHandler(db),
-		handlers.NewVendedorHandler(db, cfg),
-		handlers.NewClienteHandler(db, cfg),
-		handlers.NewProdutoHandler(db, cfg),
-		handlers.NewPedidoHandler(db, cfg),
-		handlers.NewPagamentoHandler(db, cfg),
-		handlers.NewOportunidadeHandler(db, cfg),
-		handlers.NewVisitaHandler(db, cfg),
-		handlers.NewEstoqueHandler(db, cfg),
-	)
+	hs := bootstrap.NovosHandlers(db, cfg, &fakeEmailService{})
+	hs.Auth = authH
+	mux := bootstrap.HandlerHTTP(cfg, middleware.NewDBUserStatusChecker(db), hs)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 

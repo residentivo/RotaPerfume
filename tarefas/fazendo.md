@@ -6,42 +6,43 @@
 
 **Decisões do usuário:** estratégia **incremental por bounded context**: cada lote termina com build e testes verdes e um commit na branch `refactor/ddd`. Escopo: API (`apis/rotaperfumes-api`) + módulo `apis/shared` (repositories, models, services, importers e CLIs).
 
-**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (ARQ-03 com 🟣 SecBrain antes). ARQ-01 a ARQ-08 estão em `afazer.md`, na ordem de execução.
+**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (ARQ-03 com 🟣 SecBrain antes). ARQ-00 concluído (commit `cd12d47`, ver `feito.md`); ARQ-02 a ARQ-08 estão em `afazer.md`, na ordem de execução.
 
-**Passo atual:** ARQ-00. Invariantes (🟣), matriz de rotas + linha de base (🔴) e blueprint (🟡) entregues. 🟣 SecBrain aprovou o blueprint com ressalvas (O1 a O9); 🟡 BackBrain aplicando os ajustes; depois o ARQ-00 é fechado com commit.
+**Passo atual:** ARQ-01 (fundação / shared kernel), ver card abaixo.
+
+**Pendência opcional (não é card):** o race detector (`go test -race`) está indisponível nesta máquina porque falta gcc/MinGW (cgo). Sugestão ao usuário: instalar o MinGW-w64 localmente ou rodar `go test -race ./...` no Jenkins (Linux).
 
 ---
 
-## ARQ-00: blueprint arquitetural DDD + Clean Code + Design Patterns — prioridade ALTA
+## ARQ-01: fundação / shared kernel — prioridade ALTA
 
-**Status:** em execução (Lote 21, 2026-10-13)
-**Camadas:** Segurança, Backend (arquitetura), Documentação
-**Responsável:** 🟣 SecBrain + 🟡 BackBrain
-**Origem:** pedido do usuário (Lote 21).
+**Status:** em execução (Lote 21, desde 2026-10-13)
+**Camada:** Backend
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain → 🟣 SecBrain (checklist ARQ-01)
+**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API. Referências: `docs/arquitetura-ddd.md` e `docs/arq-00-invariantes-seguranca.md` (seção ARQ-01).
 
-**Descrição:** produzir `docs/arquitetura-ddd.md` com:
-- estrutura de pastas DDD (`domain`, `application`, `infrastructure`, `interfaces`);
-- bounded contexts: Catálogo, Identidade e Acesso, Comercial, Vendas, Analytics, Notificação;
-- regras de dependência entre camadas e entre contextos;
-- catálogo de Design Patterns por local (onde aplicar cada um e por quê);
-- estratégia de migração das ~52k linhas de testes em `tests/`;
-- invariantes de segurança que a refatoração não pode quebrar (🟣 SecBrain).
+**Descrição:** criar a base comum a todos os contextos:
+- paginação e ordenação;
+- erros de domínio e o mapeamento deles para HTTP;
+- envelope de resposta;
+- interfaces de repositório;
+- Unit of Work / transação;
+- composition root em `cmd/server/main.go`;
+- builder de rotas e cadeia de middlewares.
+
+**Mudança de contrato aprovada (X1, usuário, 2026-10-13):** as 13 rotas hoje registradas sem método passam a aceitar só o método documentado (405 para os demais), e `/api/senha-historico/2/extra` passa de 200 para 400 (rota `{user_id...}`). Pelo parse estrito de `{user_id...}` (R-f, registrado pelo 🟡 BackBrain), `/api/senha-historico/0` e `/-1` também passam a 400, incluídos na X1 (o 🤍 MegaBrain informa o usuário). Atualizar a matriz de rotas do ARQ-00 (`tests/routes/arq00_matriz_rotas_test.go`) para refletir isso.
+
+**Logs (P1):** o router passa a gerar o log automático de rota (nível 1 da nova regra LOG-02).
 
 **Histórico:**
-- 2026-10-13: 🟣 SecBrain concluiu o levantamento das invariantes de segurança (regras globais R1 a R4 e invariantes por card ARQ-01 a ARQ-07), versionado em `docs/arq-00-invariantes-seguranca.md`, referência obrigatória dos cards ARQ-01 a ARQ-07. Os GAPs 1 a 11 viraram os cards SEC-14 a SEC-24 em `afazer.md` (fora do escopo do Lote 21); o GAP 12 (teste de matriz de rotas, regra R2) é feito agora, dentro do ARQ-00.
-- 2026-10-13: 🔴 TestBrain entregou `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 rotas, 868 subtestes; regra R2). Linha de base (regra R1): API 720 testes de topo / 91,5% de cobertura; shared 593 / 85,6%. Tudo verde. Achado: `apis/shared/tools/testeemail/testeemail_test.go` é teste interno ao pacote de produção (8 testes); anotado no ARQ-07.
-- 2026-10-13: 🟡 BackBrain entregou o blueprint `docs/arquitetura-ddd.md`. Estrutura: domínio/aplicação/infra em `apis/shared/<contexto>/` (pacotes `<ctx>`, `<ctx>app`, `<ctx>mysql`), shared kernel em `apis/shared/kernel`, HTTP em `apis/rotaperfumes-api/internal/` (`httpx`, `<ctx>http`, `bootstrap`); migração strangler por contexto.
-- 2026-10-13: decisões:
-  - **P1 (usuário):** `vlog` em 4 níveis (rota automática no router, caso de uso via `defer`, pontos de decisão, 1 linha por query; ~600 chamadas no lugar de ~3.726), mesmo formato, TST-05 preservado. **Altera a regra LOG-02**, documentada em `apis/shared/vlog/vlog.go` (comentário), `docs/logs-verbose.md` e `tarefas/feito.md`. Atualização: no código pelo 🟡 BackBrain (durante ARQ-01..07) e na documentação pelo 🔵 SubBrain no ARQ-08. O critério "logs `vlog` preservados" passa a significar "formato e TST-05 preservados, cobertura pelos 4 níveis".
-  - **X1 (usuário):** as 13 rotas hoje sem restrição de método passam a aceitar só o método documentado (405 caso contrário) e `/api/senha-historico/2/extra` passa de 200 para 400 (rota `{user_id...}`). É a única exceção ao "contrato HTTP inalterado" (aplicada no ARQ-01; Postman conferido no ARQ-08).
-  - **P3 (🤍 MegaBrain):** `Dinheiro` permanece `float64` encapsulado no ARQ-05; migração para centavos (`int64`) virou o card ARQ-09 em `afazer.md`.
-  - **P4 (🤍 MegaBrain):** `VendedorService.VincularCliente` sem transação virou o card BUG-14 em `afazer.md` (fora do escopo da refatoração).
-- 2026-10-13: 🟣 SecBrain revisou o blueprint: **aprovado com ressalvas**, 9 ajustes obrigatórios (O1 a O9). O1 é crítico: no exemplo de repositório, `SemAcesso` virava consulta global. Na ressalva R-a, decidiu-se preservar o comportamento atual (role desconhecido = acesso restrito). Da revisão saiu o card BUG-15 em `afazer.md` (troca/reset de senha sem transação; após o ARQ-03).
+- 2026-10-13: 🟡 BackBrain entregou o shared kernel (`apis/shared/kernel`), o `db.Transactor` (`apis/shared/db/tx.go`), o `internal/httpx` (router com política tipada, chain, CORS, mapper de erros, Autenticador delegando ao legado), o `internal/bootstrap`, os testes de arquitetura e a adaptação da matriz de rotas.
+- 🟣 SecBrain: checklist ARQ-01 **aprovado**, sem bloqueantes, com ressalvas N-1 a N-9. N-3, N-8 e N-9 foram anotadas em SEC-16, ARQ-04 e ARQ-09 (`afazer.md`); N-2, N-4, N-5 e N-6 serão aplicadas neste card.
+- 🔴 TestBrain: **aprovado**. R1 ok: API 720→781 testes, shared 593→626, nenhum teste sumiu. Cobertura combinada 88,48%→89,00% (descobertos 1.368→1.297). Mutações pegas. Lacunas fechadas com `tests/routes/arq01_ordem_cors_test.go` e `apis/shared/tests/db/tx_rollback_test.go`. Race detector indisponível (sem gcc), ver nota do Lote 21.
 
-**Passo atual:** 🟡 BackBrain aplicando os ajustes O1 a O9 no blueprint `docs/arquitetura-ddd.md`; depois o ARQ-00 é fechado com commit na branch `refactor/ddd`.
+**Passo atual:** 🟡 BackBrain aplicando ressalvas N-2/N-4/N-5/N-6; em seguida commit (🤍 MegaBrain).
 
 **Critério de aceite:**
-- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
+- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro), exceto a mudança X1 acima;
 - `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
 - sem perda de cobertura;
 - logs `vlog` preservados;

@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
-	"github.com/rotaperfumes/rotaperfumes-api/routes"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/services"
 )
@@ -97,7 +97,7 @@ func readBody(t *testing.T, resp *http.Response) []byte {
 	return buf.Bytes()
 }
 
-// setupTestServer cria um httptest.Server com o router real (routes.NewMux)
+// setupTestServer cria um httptest.Server com o router real (bootstrap.HandlerHTTP)
 // e handlers reais, injetando um DB mockado via sqlmock. Usado pela maioria
 // dos testes de handlers deste pacote, que não precisam manipular o
 // CaptchaVerifier do AuthHandler diretamente.
@@ -138,7 +138,11 @@ func setupTestServerWithAuthHandler(t *testing.T) (*httptest.Server, *sql.DB, sq
 	estoqueHandler := handlers.NewEstoqueHandler(db, cfg)
 
 	// Router real com middlewares corretos
-	mux := routes.NewMux(cfg, fakeUserStatusChecker{}, authHandler, userHandler, dashboardHandler, senhaHandler, vendedorHandler, clienteHandler, produtoHandler, pedidoHandler, pagamentoHandler, oportunidadeHandler, visitaHandler, estoqueHandler)
+	mux := bootstrap.HandlerHTTP(cfg, fakeUserStatusChecker{}, bootstrap.Handlers{
+		Auth: authHandler, Usuario: userHandler, Dashboard: dashboardHandler, SenhaHistorico: senhaHandler,
+		Vendedor: vendedorHandler, Cliente: clienteHandler, Produto: produtoHandler, Pedido: pedidoHandler,
+		Pagamento: pagamentoHandler, Oportunidade: oportunidadeHandler, Visita: visitaHandler, Estoque: estoqueHandler,
+	})
 
 	server := httptest.NewServer(mux)
 	return server, db, mock, authHandler

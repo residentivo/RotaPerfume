@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/kernel"
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 	sharedsvc "github.com/rotaperfumes/shared/services"
@@ -400,25 +401,12 @@ func (s *UsuarioService) ToggleAtivoUsuario(ctx context.Context, db *sql.DB, id 
 }
 
 // ParsePagination lê ?page= e ?limit= da query string, com defaults e validação.
+//
+// ARQ-01: delega à regra única kernel.NovaPagina (F-10); valor não numérico
+// conta como ausente.
 func ParsePagination(pageStr, limitStr string) (page, limit int) {
-	vlog.Printf("usuario_service.go", "ParsePagination", "chamando strconv.Atoi e atribuindo a page, _")
-	page, _ = strconv.Atoi(pageStr)
-	vlog.Printf("usuario_service.go", "ParsePagination", "verificando condição page < 1")
-	if page < 1 {
-		vlog.Printf("usuario_service.go", "ParsePagination", "atribuindo 1 a page")
-		page = 1
-	}
-	vlog.Printf("usuario_service.go", "ParsePagination", "chamando strconv.Atoi e atribuindo a limit, _")
-	limit, _ = strconv.Atoi(limitStr)
-	vlog.Printf("usuario_service.go", "ParsePagination", "verificando condição limit < 1")
-	if limit < 1 {
-		vlog.Printf("usuario_service.go", "ParsePagination", "atribuindo 20 a limit")
-		limit = 20
-	}
-	vlog.Printf("usuario_service.go", "ParsePagination", "verificando condição limit > 100")
-	if limit > 100 {
-		vlog.Printf("usuario_service.go", "ParsePagination", "atribuindo 100 a limit")
-		limit = 100
-	}
-	return
+	numero, _ := strconv.Atoi(pageStr)
+	limite, _ := strconv.Atoi(limitStr)
+	p := kernel.NovaPagina(numero, limite)
+	return p.Numero(), p.Limite()
 }

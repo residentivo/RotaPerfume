@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
@@ -37,19 +38,7 @@ func NewClienteHandler(db *sql.DB, cfg *config.Config) *ClienteHandler {
 // parseAtivoQuery lê o query param "ativo" ("true"/"false"). Qualquer outro
 // valor (incluindo ausente/vazio) é tratado como "sem filtro" (nil).
 func parseAtivoQuery(v string) *bool {
-	vlog.Printf("cliente_handler.go", "parseAtivoQuery", "avaliando switch sobre strings.ToLower(...)")
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "true":
-		vlog.Printf("cliente_handler.go", "parseAtivoQuery", "definindo b := true")
-		b := true
-		return &b
-	case "false":
-		vlog.Printf("cliente_handler.go", "parseAtivoQuery", "definindo b := false")
-		b := false
-		return &b
-	default:
-		return nil
-	}
+	return httpx.ParseBoolOpcional(v)
 }
 
 // ListClientes GET /api/clientes

@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 )
 
 var corsDummyHandler http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
@@ -22,7 +22,7 @@ var corsDummyHandler http.HandlerFunc = func(w http.ResponseWriter, r *http.Requ
 
 func TestCORSMiddleware_AllowedOrigin(t *testing.T) {
 	allowed := []string{"http://localhost:3000", "https://app.rotaperfumes.com"}
-	m := middleware.CORSMiddleware(allowed)
+	m := httpx.CORS(allowed)
 
 	req := httptest.NewRequest("GET", "/api/produtos", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -40,7 +40,7 @@ func TestCORSMiddleware_AllowedOrigin(t *testing.T) {
 
 func TestCORSMiddleware_RejectedOrigin(t *testing.T) {
 	allowed := []string{"http://localhost:3000"}
-	m := middleware.CORSMiddleware(allowed)
+	m := httpx.CORS(allowed)
 
 	testCases := []string{
 		"http://localhost:4000", // porta diferente — não deve dar prefix-match
@@ -71,7 +71,7 @@ func TestCORSMiddleware_RejectedOrigin(t *testing.T) {
 // ------------------------------------------------------------------
 
 func TestCORSMiddleware_NoOriginHeader(t *testing.T) {
-	m := middleware.CORSMiddleware([]string{"http://localhost:3000"})
+	m := httpx.CORS([]string{"http://localhost:3000"})
 
 	req := httptest.NewRequest("GET", "/api/produtos", nil)
 	w := httptest.NewRecorder()
@@ -86,7 +86,7 @@ func TestCORSMiddleware_NoOriginHeader(t *testing.T) {
 // ------------------------------------------------------------------
 
 func TestCORSMiddleware_Preflight(t *testing.T) {
-	m := middleware.CORSMiddleware([]string{"http://localhost:3000"})
+	m := httpx.CORS([]string{"http://localhost:3000"})
 
 	req := httptest.NewRequest("OPTIONS", "/api/produtos", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -103,7 +103,7 @@ func TestCORSMiddleware_Preflight(t *testing.T) {
 // ------------------------------------------------------------------
 
 func TestCORSMiddleware_VaryHeader(t *testing.T) {
-	m := middleware.CORSMiddleware([]string{"http://localhost:3000"})
+	m := httpx.CORS([]string{"http://localhost:3000"})
 
 	req := httptest.NewRequest("GET", "/api/produtos", nil)
 	w := httptest.NewRecorder()
@@ -117,7 +117,7 @@ func TestCORSMiddleware_VaryHeader(t *testing.T) {
 // ------------------------------------------------------------------
 
 func TestCORSMiddleware_Wildcard(t *testing.T) {
-	m := middleware.CORSMiddleware([]string{"*"})
+	m := httpx.CORS([]string{"*"})
 
 	req := httptest.NewRequest("GET", "/api/produtos", nil)
 	req.Header.Set("Origin", "http://qualquer-coisa.com")
@@ -133,7 +133,7 @@ func TestCORSMiddleware_Wildcard(t *testing.T) {
 
 func TestCORSMiddleware_Parametrizado(t *testing.T) {
 	allowed := []string{"http://localhost:3000", "https://app.rotaperfumes.com"}
-	m := middleware.CORSMiddleware(allowed)
+	m := httpx.CORS(allowed)
 
 	cases := []struct {
 		nome        string

@@ -3,6 +3,30 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 21 de 2026-10-13: 1 card concluído até agora (lote em andamento)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-01 está em `fazendo.md` e os cards ARQ-02 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+
+## ARQ-00: blueprint arquitetural DDD + Clean Code + Design Patterns — 2026-10-13
+**Agentes:** 🟣 SecBrain → 🔴 TestBrain → 🟡 BackBrain → 🟣 SecBrain (revisão) → 🟡 BackBrain (ajustes) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-13. **Commit:** `cd12d47` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend (arquitetura), Documentação
+
+**Entregue:**
+- `docs/arquitetura-ddd.md` (🟡 BackBrain), versão final: domínio/aplicação/infra em `apis/shared/<contexto>/` (pacotes `<ctx>`, `<ctx>app`, `<ctx>mysql`), shared kernel em `apis/shared/kernel`, HTTP em `apis/rotaperfumes-api/internal/` (`httpx`, `<ctx>http`, `bootstrap`), bounded contexts (Catálogo, Identidade e Acesso, Comercial, Vendas, Analytics, Notificação), regras de dependência, catálogo de Design Patterns e migração strangler por contexto. Incorpora os ajustes obrigatórios O1 a O9 e as ressalvas R-a a R-g do 🟣 SecBrain e as decisões P1 a P4.
+- `docs/arq-00-invariantes-seguranca.md` (🟣 SecBrain): regras globais R1 a R4 e invariantes por card ARQ-01 a ARQ-07; GAPs 1 a 11 viraram os cards SEC-14 a SEC-24 (e SEC-25) em `afazer.md`.
+- `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (🔴 TestBrain): 60 rotas, 868 subtestes (regra R2). Linha de base (R1): API 720 testes de topo / 91,5%; shared 593 / 85,6%.
+
+**Decisões:**
+- **P1 (usuário):** `vlog` em 4 níveis (altera a regra LOG-02; documentação no ARQ-08).
+- **X1 (usuário):** 13 rotas passam a aceitar só o método documentado (405) e `/api/senha-historico/2/extra` passa a 400. Pelo parse estrito de `{user_id...}` (R-f), `/api/senha-historico/0` e `/-1` também passam a 400 (incluídos na X1; o 🤍 MegaBrain informa o usuário). Aplicado no ARQ-01.
+- **P3:** `Dinheiro` segue `float64` encapsulado; centavos viraram o card ARQ-09.
+- **P4:** `VincularCliente` sem transação virou o BUG-14; da revisão saiu também o BUG-15 (troca/reset de senha sem transação).
+- **R-a:** role desconhecido continua com acesso restrito (O1 crítico corrigido: `SemAcesso` não vira consulta global).
+
+---
 ## Lote 20 de 2026-10-11: 3 cards concluídos (de 3)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido "seguir com as tarefas a fazer e fazendo". DEP-01, DEP-02 e TST-05 vieram de `afazer.md`. Fora da contagem: o **MAIL-01** avançou (diagnóstico real e correção TLS/AUTH no envio SMTP), mas continua em `fazendo.md` até um envio real bem-sucedido; o **TST-04** avançou parcialmente (3.x e 4.x executados) e continua em `afazer.md` só com 1.1, 1.2 e 1.7; o DEPLOY-01 não mudou (aguardando o usuário).

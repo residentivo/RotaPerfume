@@ -1,47 +1,18 @@
 # A Fazer
 
-> Atualizado em 2026-10-13. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint) está em `fazendo.md` e os cards ARQ-01 a ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08.
+> Atualizado em 2026-10-13. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint) foi concluído (commit `cd12d47`, ver `feito.md`), o ARQ-01 está em `fazendo.md` e os cards ARQ-02 a ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08.
 >
 > **Regras do Lote 21 válidas para ARQ-01 a ARQ-07 (decisões de 2026-10-13, ver ARQ-00 em `fazendo.md`):**
 > - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. O 🟡 BackBrain atualiza a regra no código (comentário de `apis/shared/vlog/vlog.go`); o 🔵 SubBrain atualiza a documentação no ARQ-08.
-> - **X1, contrato HTTP:** a única exceção ao "contrato HTTP inalterado" é a do ARQ-01 (métodos das 13 rotas e `/api/senha-historico/2/extra`).
+> - **X1, contrato HTTP:** a única exceção ao "contrato HTTP inalterado" é a do ARQ-01 (métodos das 13 rotas, `/api/senha-historico/2/extra` e, pelo parse estrito de `{user_id...}` (R-f), `/api/senha-historico/0` e `/-1` passando a 400).
 >
 > Histórico anterior (2026-10-11): o 🔴 TestBrain executou `docs/roteiro-teste-manual-lote12.md` (24 aprovados, 1 falhou, 13 não verificáveis de 38; ver a seção "Execução (2026-10-07, 🔴 TestBrain)" no fim do roteiro). Daí saíram os cards BUG-13, LOG-01, DOC-05 e TST-04. BUG-13, LOG-01 e DOC-05 foram concluídos no Lote 16 (2026-10-07; ver `feito.md`). O LOG-02 (Lote 17) gerou o TST-05, e o DEP-00 (Lote 19) gerou o DEP-01 e o DEP-02. No Lote 20 (2026-10-11; ver `feito.md`) foram concluídos DEP-01, DEP-02 e TST-05; o TST-04 avançou parcialmente (só faltam 1.1, 1.2 e 1.7, que dependem do usuário rodar o `make`) e do DEP-01 saiu o card DEP-03 (BAIXA). O MAIL-01 e o DEPLOY-01 seguem em `fazendo.md`, aguardando o usuário.
 
 ---
 
-## ARQ-01: fundação / shared kernel — prioridade ALTA
-
-**Status:** pendente (Lote 21; depende do ARQ-00)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
-
-**Descrição:** criar a base comum a todos os contextos:
-- paginação e ordenação;
-- erros de domínio e o mapeamento deles para HTTP;
-- envelope de resposta;
-- interfaces de repositório;
-- Unit of Work / transação;
-- composition root em `cmd/server/main.go`;
-- builder de rotas e cadeia de middlewares.
-
-**Mudança de contrato aprovada (X1, usuário, 2026-10-13):** as 13 rotas hoje registradas sem método passam a aceitar só o método documentado (405 para os demais), e `/api/senha-historico/2/extra` passa de 200 para 400 (rota `{user_id...}`). Atualizar a matriz de rotas do ARQ-00 (`tests/routes/arq00_matriz_rotas_test.go`) para refletir isso.
-
-**Logs (P1):** o router passa a gerar o log automático de rota (nível 1 da nova regra LOG-02; ver bloco do lote no topo).
-
-**Critério de aceite:**
-- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro), exceto a mudança X1 acima;
-- `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
-- sem perda de cobertura;
-- logs `vlog` preservados;
-- commit do lote na branch `refactor/ddd`.
-
----
-
 ## ARQ-02: contexto Catálogo (Produto, Estoque), piloto — prioridade ALTA
 
-**Status:** pendente (Lote 21; depende do ARQ-01)
+**Status:** pendente (Lote 21; depende do ARQ-01, em execução)
 **Camada:** Backend
 **Responsável:** 🟡 BackBrain → 🔴 TestBrain
 **Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
@@ -95,6 +66,8 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 - Cliente, com CNPJ como value object;
 - Visita e Oportunidade;
 - escopo de acesso por carteira.
+
+**Nota N-8 (🟣 SecBrain, ARQ-01, 2026-10-13):** `httpx.interno` loga o erro com `%v`; um erro 1062 cru do MySQL traz o valor duplicado (CNPJ) para o log. Garantir a O6-iv: o adapter traduz o 1062 para erro de domínio sem embrulhar o erro do driver.
 
 **Critério de aceite:**
 - contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
@@ -199,6 +172,8 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 
 **Risco:** arredondamento em `valor_total` (soma de itens, descontos e pagamentos). Os valores calculados podem divergir em centavos dos já gravados; é preciso um teste de regressão comparando os totais antigos com os novos e uma regra de arredondamento explícita.
 
+**Nota N-9 (🟣 SecBrain, ARQ-01, 2026-10-13):** `kernel.Dinheiro.Somar` pode resultar em `+Inf` em overflow do `float64`. Revalidar neste card (com `int64`, checar overflow na soma).
+
 **Critério de aceite:** cálculos monetários sem `float64`; totais existentes reproduzidos sem diferença; contrato JSON inalterado (ou mudança aprovada pelo usuário); testes verdes sem perda de cobertura.
 
 ---
@@ -283,6 +258,8 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 **Descrição:** a paginação limita `limit` (default 20, máx. 100) e exige `page ≥ 1` (`API/services/usuario_service.go:403-424`), mas não impõe teto a `page`. Valores enormes geram `OFFSET` gigantes (consulta cara no MySQL) e podem estourar a multiplicação `(page-1)*limit`.
 
 **Ação esperada:** definir teto para `page` (ou para o OFFSET resultante) no VO `Pagina` do shared kernel criado no ARQ-01, com clamp ou 400 de mensagem fixa (decisão do 🟣 SecBrain, mantendo o contrato documentado); teste com `page` muito grande e com overflow.
+
+**Nota N-3 (🟣 SecBrain, ARQ-01, 2026-10-13):** `kernel.Pagina.Offset()` (`apis/shared/kernel/pagina.go:37`) herda o problema: `(n-1)*limit` com `page` gigante estoura `int` e vira negativo, e o MySQL responde com erro (500). Tratar quando o adapter de Catálogo (ARQ-02) passar a usar `Offset()`, sem correção de carona.
 
 **Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
 
