@@ -42,7 +42,8 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
@@ -331,8 +332,7 @@ func listarFinal(ctx context.Context, db DB, out io.Writer) {
 
 // UpsertAdmin garante que admin@rotaperfumes.com.br existe e tem hash válido.
 func UpsertAdmin(ctx context.Context, db DB, hs config.HashSenha, password string) error {
-	vlog.Printf("resetpassword.go", "UpsertAdmin", "declarando hashStr, err com resultado de services.GerarHashSenha()")
-	hashStr, err := services.GerarHashSenha(hs, password)
+	hashStr, err := gerarHash(hs, password)
 	vlog.Printf("resetpassword.go", "UpsertAdmin", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("argon2id: %w", err)
@@ -375,8 +375,7 @@ func UpsertAdmin(ctx context.Context, db DB, hs config.HashSenha, password strin
 
 // UpsertByEmail cria ou atualiza um usuário.
 func UpsertByEmail(ctx context.Context, db DB, hs config.HashSenha, email, password, role, nome string, idVendedor int64) error {
-	vlog.Printf("resetpassword.go", "UpsertByEmail", "declarando hashStr, err com resultado de services.GerarHashSenha()")
-	hashStr, err := services.GerarHashSenha(hs, password)
+	hashStr, err := gerarHash(hs, password)
 	vlog.Printf("resetpassword.go", "UpsertByEmail", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("argon2id: %w", err)
@@ -429,8 +428,7 @@ func UpsertByEmail(ctx context.Context, db DB, hs config.HashSenha, email, passw
 
 // UpdateAllPlaceholders substitui todos os hashes com placeholder.
 func UpdateAllPlaceholders(ctx context.Context, db DB, hs config.HashSenha, password string) error {
-	vlog.Printf("resetpassword.go", "UpdateAllPlaceholders", "declarando hashStr, err com resultado de services.GerarHashSenha()")
-	hashStr, err := services.GerarHashSenha(hs, password)
+	hashStr, err := gerarHash(hs, password)
 	vlog.Printf("resetpassword.go", "UpdateAllPlaceholders", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("argon2id: %w", err)
@@ -565,9 +563,9 @@ func Truncate(s string, n int) string {
 }
 
 // GenerateRandomPassword devolve uma senha aleatória de n caracteres
-// [a-zA-Z0-9], uniforme (delega a services.SenhaAlfanumerica).
+// [a-zA-Z0-9], uniforme (delega a identidadecrypto.SenhaAlfanumerica).
 func GenerateRandomPassword(n int) (string, error) {
-	return services.SenhaAlfanumerica(n)
+	return identidadecrypto.SenhaAlfanumerica(n)
 }
 
 // GetEnv devolve a env key ou fallback se estiver vazia.
@@ -585,4 +583,12 @@ func GetEnv(key, fallback string) string {
 // truncado em segundos, mesma precisão do iat do JWT.
 func corteDeSessaoAgora() time.Time {
 	return time.Now().Truncate(time.Second)
+}
+
+// gerarHash gera o Argon2id com pepper pela mesma Strategy da API
+// (identidadecrypto, ARQ-03). O SQL de upsert desta CLI continua o seu
+// (migração para identidadeapp no ARQ-07, M-03).
+func gerarHash(hs config.HashSenha, senha string) (string, error) {
+	h, err := identidadecrypto.NovoHasher(hs).Gerar(identidade.NovaSenha(senha))
+	return h.Revelar(), err
 }

@@ -29,7 +29,7 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
+	"github.com/rotaperfumes/shared/identidade"
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
@@ -176,7 +176,7 @@ const (
 // sobre um DB sqlmock sem expectativas: o que chega ao handler falha no banco
 // (nunca com as mensagens do middleware) e o mock permite provar que um
 // request barrado no middleware não tocou o banco.
-func arq00Router(t *testing.T, checker middleware.UserStatusChecker) (http.Handler, sqlmock.Sqlmock) {
+func arq00Router(t *testing.T, checker httpx.ConsultaStatus) (http.Handler, sqlmock.Sqlmock) {
 	t.Helper()
 	cfg := testCfg()
 	cfg.CORSAllowedOrigins = []string{arq00OrigemPermitida}
@@ -397,7 +397,7 @@ func TestARQ00_RotaAdminOnly_TokenAdminRoleBancoNormal_403(t *testing.T) {
 	for _, c := range casosDaMatriz(func(p politicaRota) bool { return p == politicaAdminOnly }) {
 		t.Run(c.nome, func(t *testing.T) {
 			h, _ := arq00Router(t, fakeUserStatusChecker{
-				status: map[int64]middleware.UserStatus{1: {Ativo: true, Role: "normal"}},
+				status: map[int64]identidade.StatusAcesso{1: {Ativo: true, Role: "normal"}},
 			})
 			w := arq00Serve(h, c.method, c.path, token(t, 1, "admin"), "")
 			assert.Equal(t, http.StatusForbidden, w.Code)
@@ -442,7 +442,7 @@ func TestARQ00_RotaProtegida_UsuarioInativo_401(t *testing.T) {
 	for _, c := range casosDaMatriz(protegida) {
 		t.Run(c.nome, func(t *testing.T) {
 			h, mock := arq00Router(t, fakeUserStatusChecker{
-				status: map[int64]middleware.UserStatus{2: {Ativo: false, Role: "normal"}},
+				status: map[int64]identidade.StatusAcesso{2: {Ativo: false, Role: "normal"}},
 			})
 			w := arq00Serve(h, c.method, c.path, token(t, 2, "normal"), "")
 			assert.Equal(t, http.StatusUnauthorized, w.Code)

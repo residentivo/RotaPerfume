@@ -17,7 +17,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
 )
 
 const reRehash = `UPDATE usuarios SET password_hash = \? WHERE id = \? AND password_hash = \?`
@@ -28,7 +27,7 @@ type argon2idDe string
 func (s argon2idDe) Match(v driver.Value) bool {
 	h, ok := v.(string)
 	cfg := testCfg()
-	auth := services.NewAuthService()
+	auth := novoAuthCrypto()
 	return ok && auth.VerifyPassword(cfg, h, string(s)) && !auth.NeedsRehash(cfg, h)
 }
 
@@ -60,7 +59,7 @@ func hashArgon2Antigo(t *testing.T, senha string) string {
 	t.Helper()
 	antigo := testCfg().HashSenha
 	antigo.MemoriaKiB = 128
-	h, err := services.GerarHashSenha(antigo, senha)
+	h, err := gerarHashSenha(antigo, senha)
 	require.NoError(t, err)
 	return h
 }
@@ -126,7 +125,7 @@ func TestSEC13_Login_HashAtualNaoRegrava(t *testing.T) {
 	defer server.Close()
 	defer db.Close()
 
-	hash, err := services.GerarHashSenha(testCfg().HashSenha, "senha-correta")
+	hash, err := gerarHashSenha(testCfg().HashSenha, "senha-correta")
 	require.NoError(t, err)
 	esperarUsuarioLogin(mock, hash)
 	esperarRestoDoLogin(mock)
@@ -142,7 +141,7 @@ func TestSEC13_Login_PepperDiferenteRecusa(t *testing.T) {
 	defer db.Close()
 
 	outro := config.HashSenha{Pepper: "um-pepper-de-outro-ambiente-32-bytes!!", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}
-	hash, err := services.GerarHashSenha(outro, "senha-correta")
+	hash, err := gerarHashSenha(outro, "senha-correta")
 	require.NoError(t, err)
 	esperarUsuarioLogin(mock, hash)
 

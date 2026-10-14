@@ -19,25 +19,23 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 type fe13Metodo struct {
 	nome     string
 	count    string
 	listArgs []any
-	chamar   func(db *sql.DB, orderBy, orderDir string) ([]repositories.SenhaHistorico, int, error)
+	chamar   func(db *sql.DB, orderBy, orderDir string) ([]senhaHistorico, int, error)
 }
 
 func fe13Metodos() []fe13Metodo {
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	return []fe13Metodo{
 		{
 			nome:     "FindAll",
 			count:    `SELECT COUNT\(\*\) FROM senha_historico$`,
 			listArgs: []any{20, 0},
-			chamar: func(db *sql.DB, orderBy, orderDir string) ([]repositories.SenhaHistorico, int, error) {
+			chamar: func(db *sql.DB, orderBy, orderDir string) ([]senhaHistorico, int, error) {
 				return repo.FindAll(context.Background(), db, 1, 20, orderBy, orderDir)
 			},
 		},
@@ -45,7 +43,7 @@ func fe13Metodos() []fe13Metodo {
 			nome:     "FindByUsuario",
 			count:    `SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`,
 			listArgs: []any{int64(9), 20, 0},
-			chamar: func(db *sql.DB, orderBy, orderDir string) ([]repositories.SenhaHistorico, int, error) {
+			chamar: func(db *sql.DB, orderBy, orderDir string) ([]senhaHistorico, int, error) {
 				return repo.FindByUsuario(context.Background(), db, 9, 1, 20, orderBy, orderDir)
 			},
 		},
@@ -163,7 +161,7 @@ func TestFE13_SenhaHistorico_ForaDaWhitelist_SemDesempateDuplicado(t *testing.T)
 func TestIntegracaoFE13_OrdenacaoReal(t *testing.T) {
 	db := abrirDBSEC08(t)
 	ctx := context.Background()
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	sufixo := time.Now().UnixNano()
 
 	criarUsuario := func(tag string) int64 {
@@ -198,7 +196,7 @@ func TestIntegracaoFE13_OrdenacaoReal(t *testing.T) {
 	}
 	ids := make([]int64, len(linhas))
 	for i, l := range linhas {
-		h := &repositories.SenhaHistorico{UsuarioID: alvo, SenhaHashAnterior: "x", IPOrigem: l.ip, UserAgent: "fe13", TipoReset: "usuario"}
+		h := &senhaHistorico{UsuarioID: alvo, SenhaHashAnterior: "x", IPOrigem: l.ip, UserAgent: "fe13", TipoReset: "usuario"}
 		if l.resetadoPor != nil {
 			h.ResetadoPorID = sql.NullInt64{Int64: *l.resetadoPor, Valid: true}
 			h.TipoReset = "admin"
@@ -224,7 +222,7 @@ func TestIntegracaoFE13_OrdenacaoReal(t *testing.T) {
 		{"invalida", "asc", []int64{r1, r2, r3, r4, r5}},
 	}
 
-	idsDe := func(hs []repositories.SenhaHistorico) []int64 {
+	idsDe := func(hs []senhaHistorico) []int64 {
 		out := make([]int64, 0, len(hs))
 		for _, h := range hs {
 			out = append(out, h.ID)

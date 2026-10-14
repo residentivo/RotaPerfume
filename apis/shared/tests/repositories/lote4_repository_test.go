@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rotaperfumes/shared/identidade"
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 )
@@ -106,7 +107,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 }
 
 // TestRefreshTokenRevoke_Condicional_EmTx: o UPDATE só afeta token ainda não
-// revogado e aceita *sql.Tx; 0 linhas → ErrNotFound (já revogado).
+// revogado e aceita *sql.Tx; 0 linhas → identidade.ErrRefreshRevogado (já revogado).
 func TestRefreshTokenRevoke_Condicional_EmTx(t *testing.T) {
 	cases := []struct {
 		nome    string
@@ -114,7 +115,7 @@ func TestRefreshTokenRevoke_Condicional_EmTx(t *testing.T) {
 		wantErr error
 	}{
 		{"revoga", 1, nil},
-		{"já revogado", 0, repositories.ErrNotFound},
+		{"já revogado", 0, identidade.ErrRefreshRevogado},
 	}
 	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
@@ -127,7 +128,7 @@ func TestRefreshTokenRevoke_Condicional_EmTx(t *testing.T) {
 
 			tx, err := db.Begin()
 			require.NoError(t, err)
-			err = repositories.NewRefreshTokenRepository().Revoke(context.Background(), tx, 3, repositories.RevokeReasonRotacao)
+			err = novoRefreshRepo().Revoke(context.Background(), tx, 3, repositories.RevokeReasonRotacao)
 			_ = tx.Rollback()
 			if tc.wantErr != nil {
 				assert.ErrorIs(t, err, tc.wantErr)
@@ -144,8 +145,8 @@ func TestRefreshTokenRevoke_RowsAffectedErro(t *testing.T) {
 	defer db.Close()
 	mock.ExpectExec(`UPDATE refresh_tokens`).WillReturnResult(sqlmock.NewErrorResult(errors.New("sem rows affected")))
 
-	err := repositories.NewRefreshTokenRepository().Revoke(context.Background(), db, 3, repositories.RevokeReasonRotacao)
+	err := novoRefreshRepo().Revoke(context.Background(), db, 3, repositories.RevokeReasonRotacao)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, identidade.ErrRefreshRevogado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

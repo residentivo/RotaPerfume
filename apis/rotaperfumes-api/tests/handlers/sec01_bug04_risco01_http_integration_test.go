@@ -30,12 +30,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
-	apisvc "github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
 	shareddb "github.com/rotaperfumes/shared/db"
+	"github.com/rotaperfumes/shared/identidade"
 )
 
 // ---------------------------------------------------------------------------
@@ -82,11 +80,11 @@ func novoItCtx(t *testing.T) *itCtx {
 	t.Cleanup(func() { db.Close() })
 
 	cfg := testCfg()
-	authH := handlers.NewAuthHandler(db, cfg)
+	authH := novoAuthHandler(db, cfg)
 	authH.SetCaptchaVerifier(&fakeCaptchaVerifier{})
 	hs := bootstrap.NovosHandlers(db, cfg, &fakeEmailService{})
-	hs.Auth = authH
-	mux := bootstrap.HandlerHTTP(cfg, middleware.NewDBUserStatusChecker(db), hs)
+	hs.Auth = authH.AuthHandler
+	mux := bootstrap.HandlerHTTP(cfg, bootstrap.NovoVerificadorStatus(db), hs)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -736,7 +734,7 @@ func TestIntegracaoHTTP_RISCO01_Data20181104(t *testing.T) {
 func TestIntegracaoHTTP_RISCO01_RefreshToken(t *testing.T) {
 	c := novoItCtx(t)
 	usu := c.usuario("UREFRESH", 0, true)
-	svc := apisvc.NewRefreshTokenService()
+	svc := novoRefreshSvc()
 	ctx := context.Background()
 
 	novoToken := func(t *testing.T, expira time.Time) string {
@@ -755,8 +753,8 @@ func TestIntegracaoHTTP_RISCO01_RefreshToken(t *testing.T) {
 		var gravado string
 		require.NoError(t, c.db.QueryRow("SELECT DATE_FORMAT(expires_at,'%Y-%m-%d %H:%i') FROM refresh_tokens WHERE token_hash = ?",
 			hashRefresh(tok)).Scan(&gravado))
-		esperado := antes.Add(apisvc.RefreshTokenTTL).In(time.FixedZone("-03", -10800))
-		depois := time.Now().Add(apisvc.RefreshTokenTTL).In(time.FixedZone("-03", -10800))
+		esperado := antes.Add(identidade.TTLRefresh).In(time.FixedZone("-03", -10800))
+		depois := time.Now().Add(identidade.TTLRefresh).In(time.FixedZone("-03", -10800))
 		assert.Contains(t, []string{esperado.Format("2006-01-02 15:04"), depois.Format("2006-01-02 15:04")}, gravado)
 	})
 
@@ -770,7 +768,7 @@ func TestIntegracaoHTTP_RISCO01_RefreshToken(t *testing.T) {
 		{"expirado ha 2 horas -> 401", -2 * time.Hour, http.StatusUnauthorized, "refresh token expirado"},
 		{"expirado ha 4 horas -> 401", -4 * time.Hour, http.StatusUnauthorized, "refresh token expirado"},
 		{"valido por mais 2 minutos -> 200", 2 * time.Minute, http.StatusOK, ""},
-		{"valido por mais 7 dias -> 200", apisvc.RefreshTokenTTL, http.StatusOK, ""},
+		{"valido por mais 7 dias -> 200", identidade.TTLRefresh, http.StatusOK, ""},
 	}
 	for _, tc := range casos {
 		t.Run(tc.nome, func(t *testing.T) {

@@ -29,8 +29,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/services"
 )
 
 const (
@@ -372,7 +370,7 @@ func TestResetPassword_VendedorDesligado_Acessivel(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	hash, _ := services.NewAuthService().HashPassword(cfg, "senha-atual")
+	hash, _ := novoAuthCrypto().HashPassword(cfg, "senha-atual")
 	now := time.Now()
 	mock.ExpectQuery(reUsuarioMe).
 		WithArgs(desligUserID).

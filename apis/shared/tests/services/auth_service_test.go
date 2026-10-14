@@ -12,7 +12,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
 
 // newTestConfig retorna uma Config válida para uso em testes.
@@ -29,7 +29,7 @@ func newTestConfig() *config.Config {
 // senha correta → true, senha errada → false, hash inválido → false sem panic.
 func TestVerifyPassword(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
+	auth := novoAuth()
 	argon, err := auth.HashPassword(cfg, "senha-correta")
 	require.NoError(t, err, "falha ao gerar hash argon2id para o teste")
 	legado, err := bcrypt.GenerateFromPassword([]byte("senha-correta"), 4)
@@ -68,7 +68,7 @@ func TestVerifyPassword(t *testing.T) {
 // VerifyPassword.
 func TestHashPassword(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
+	auth := novoAuth()
 
 	t.Run("gera hash argon2id que valida com VerifyPassword", func(t *testing.T) {
 		hash, err := auth.HashPassword(cfg, "minha-senha-123")
@@ -104,7 +104,7 @@ func TestHashPassword(t *testing.T) {
 // e é assinado com HS256.
 func TestGenerateJWT(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
+	auth := novoAuth()
 
 	t.Run("gera token com claims corretos", func(t *testing.T) {
 		tok, err := auth.GenerateJWT(cfg, 42, "admin")
@@ -149,7 +149,7 @@ func TestGenerateJWT(t *testing.T) {
 // método de assinatura errado, claims inválidos e segredo errado.
 func TestValidateJWT(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
+	auth := novoAuth()
 
 	t.Run("token válido retorna claims", func(t *testing.T) {
 		tok, err := auth.GenerateJWT(cfg, 7, "normal")
@@ -190,7 +190,7 @@ func TestValidateJWT(t *testing.T) {
 					require.NoError(t, err)
 					_, err = auth.ValidateJWT(manipular(t, tok, c.parte), cfg.JWTSecret)
 					require.Error(t, err, "token com %s manipulado deve ser rejeitado", c.nome)
-					assert.ErrorIs(t, err, services.ErrInvalidToken)
+					assert.ErrorIs(t, err, identidadecrypto.ErrTokenInvalido)
 				}
 			})
 		}
@@ -226,7 +226,7 @@ func TestValidateJWT(t *testing.T) {
 // TestAuthClaims verifica a extração de UID e Role a partir dos claims.
 func TestAuthClaims(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
+	auth := novoAuth()
 
 	t.Run("extração via claims corretos", func(t *testing.T) {
 		tok, err := auth.GenerateJWT(cfg, 123, "admin")

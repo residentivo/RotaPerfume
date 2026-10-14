@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 )
 
 const (
@@ -661,7 +660,7 @@ func TestDashboardEscopo_Verbose_SemVendedor(t *testing.T) {
 			mock.ExpectQuery(reUsuarioVendedor).WithArgs(escopoUsuarioNormal).
 				WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
 
-			handler := middleware.JWTMiddleware(cfg, true, false)(c.h)
+			handler := jwtMiddleware(cfg, true, false)(c.h)
 			req := httptest.NewRequest("GET", c.path, nil)
 			req.Header.Set("Authorization", "Bearer "+token)
 			rec := httptest.NewRecorder()

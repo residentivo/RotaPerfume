@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade"
 )
 
 // TestValidarForcaSenha cobre a política de senha forte (services.ValidarForcaSenha)
@@ -36,12 +36,12 @@ func TestValidarForcaSenha(t *testing.T) {
 		{
 			nome:    "senha curta (menos de 8 caracteres) é rejeitada",
 			senha:   "Abc123!",
-			wantErr: services.ErrSenhaCurta,
+			wantErr: identidade.ErrSenhaCurta,
 		},
 		{
 			nome:    "senha vazia é rejeitada como curta",
 			senha:   "",
-			wantErr: services.ErrSenhaCurta,
+			wantErr: identidade.ErrSenhaCurta,
 		},
 		{
 			nome:    "senha com 8 runes multi-byte (mais de 8 bytes) não é penalizada por ser contada por rune",
@@ -51,12 +51,12 @@ func TestValidarForcaSenha(t *testing.T) {
 		{
 			nome:    "senha curta com caracteres multi-byte (menos de 8 runes) é rejeitada",
 			senha:   "áéí1A!", // 6 runes (mais de 8 bytes por conta do multi-byte, mas menos de 8 runes)
-			wantErr: services.ErrSenhaCurta,
+			wantErr: identidade.ErrSenhaCurta,
 		},
 		{
 			nome:    "senha muito longa (>72 bytes) é rejeitada",
 			senha:   strings.Repeat("Aa1!", 20), // 80 bytes
-			wantErr: services.ErrSenhaMuitoLonga,
+			wantErr: identidade.ErrSenhaMuitoLonga,
 		},
 		{
 			nome:    "senha no limite exato de 72 bytes com 3 classes passa",
@@ -66,22 +66,22 @@ func TestValidarForcaSenha(t *testing.T) {
 		{
 			nome:    "senha com apenas 1 classe (só minúscula) é fraca",
 			senha:   "abcdefghij",
-			wantErr: services.ErrSenhaFraca,
+			wantErr: identidade.ErrSenhaFraca,
 		},
 		{
 			nome:    "senha com apenas 1 classe (só dígitos) é fraca",
 			senha:   "12345678",
-			wantErr: services.ErrSenhaFraca,
+			wantErr: identidade.ErrSenhaFraca,
 		},
 		{
 			nome:    "senha com exatamente 2 classes (minúscula+dígito) é fraca",
 			senha:   "abcdefgh123",
-			wantErr: services.ErrSenhaFraca,
+			wantErr: identidade.ErrSenhaFraca,
 		},
 		{
 			nome:    "senha com exatamente 2 classes (maiúscula+símbolo) é fraca",
 			senha:   "ABCDEFGH!!!!",
-			wantErr: services.ErrSenhaFraca,
+			wantErr: identidade.ErrSenhaFraca,
 		},
 		{
 			nome:    "senha com exatamente 3 classes (minúscula+maiúscula+símbolo, sem dígito) passa",
@@ -91,13 +91,13 @@ func TestValidarForcaSenha(t *testing.T) {
 		{
 			nome:    "símbolo fora do conjunto reconhecido não conta como classe símbolo",
 			senha:   "abcdefgh123_", // '_' não está em simbolos ("!@#$%&*+-=?")
-			wantErr: services.ErrSenhaFraca,
+			wantErr: identidade.ErrSenhaFraca,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.nome, func(t *testing.T) {
-			err := services.ValidarForcaSenha(tc.senha)
+			err := validarForcaSenha(tc.senha)
 			if tc.wantErr == nil {
 				if err != nil {
 					t.Fatalf("esperava nil, obteve: %v", err)

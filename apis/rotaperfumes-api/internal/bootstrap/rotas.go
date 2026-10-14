@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
 
 // HandlerHTTP monta a cadeia CORS → SecurityHeaders → mux → Exigir(policy) →
@@ -14,7 +14,7 @@ import (
 //
 // checker (obrigatório) consulta ativo/role/corte no banco a cada request
 // protegido (SEC-06); nil dá panic na montagem.
-func HandlerHTTP(cfg *config.Config, checker middleware.UserStatusChecker, h Handlers) http.Handler {
+func HandlerHTTP(cfg *config.Config, checker httpx.ConsultaStatus, h Handlers) http.Handler {
 	return httpx.Chain(NovoRouter(cfg, checker, h).Mux(),
 		httpx.CORS(cfg.CORSAllowedOrigins), // OPTIONS → 204 antes do mux (O3)
 		httpx.SecurityHeaders,
@@ -23,8 +23,8 @@ func HandlerHTTP(cfg *config.Config, checker middleware.UserStatusChecker, h Han
 
 // NovoRouter registra as 60 rotas da API com método e política obrigatórios.
 // Rotas() do router devolvido é a fonte da matriz ARQ-00.
-func NovoRouter(cfg *config.Config, checker middleware.UserStatusChecker, h Handlers) *httpx.Router {
-	r := httpx.NovoRouter(httpx.NovoAutenticador(cfg, checker))
+func NovoRouter(cfg *config.Config, checker httpx.ConsultaStatus, h Handlers) *httpx.Router {
+	r := httpx.NovoRouter(httpx.NovoAutenticador(identidadecrypto.NovoJWT(cfg), checker))
 	for _, rt := range rotas(h) {
 		r.Handle(rt)
 	}

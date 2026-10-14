@@ -18,7 +18,6 @@ import (
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
 	"github.com/rotaperfumes/shared/kernel"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // orderByDe extrai o trecho "ORDER BY ... " (até antes de LIMIT) do SQL.
@@ -103,7 +102,7 @@ func TestOrdenacao_SenhaHistoricoFindAll(t *testing.T) {
 				WithArgs(20, 0).
 				WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-			_, _, err := repositories.NewSenhaHistoricoRepository().FindAll(context.Background(), db, 1, 20, tt.orderBy, tt.orderDir)
+			_, _, err := novoHistoricoRepo().FindAll(context.Background(), db, 1, 20, tt.orderBy, tt.orderDir)
 			require.NoError(t, err)
 			require.NoError(t, mock.ExpectationsWereMet())
 

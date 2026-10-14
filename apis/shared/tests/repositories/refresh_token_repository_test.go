@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rotaperfumes/shared/identidade"
 	"github.com/rotaperfumes/shared/repositories"
 )
 
@@ -42,7 +43,7 @@ func TestRefreshTokenCreate_Success(t *testing.T) {
 		WithArgs(rt.UsuarioID, rt.TokenHash, rt.ExpiresAt, rt.IPOrigem, rt.UserAgent).
 		WillReturnResult(sqlmock.NewResult(5, 1))
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, rt)
 
@@ -59,7 +60,7 @@ func TestRefreshTokenCreate_DBError(t *testing.T) {
 	mock.ExpectExec("INSERT INTO refresh_tokens").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, rt)
 
@@ -79,7 +80,7 @@ func TestRefreshTokenFindByTokenHash_Success(t *testing.T) {
 		WithArgs("hash-abc").
 		WillReturnRows(rows)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	rt, err := repo.FindByTokenHash(ctx, db, "hash-abc")
 
@@ -102,7 +103,7 @@ func TestRefreshTokenFindByTokenHash_ComRevoked(t *testing.T) {
 		WithArgs("hash-def").
 		WillReturnRows(rows)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	rt, err := repo.FindByTokenHash(ctx, db, "hash-def")
 
@@ -119,12 +120,12 @@ func TestRefreshTokenFindByTokenHash_NotFound(t *testing.T) {
 		WithArgs("naoexiste").
 		WillReturnError(sql.ErrNoRows)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	rt, err := repo.FindByTokenHash(ctx, db, "naoexiste")
 
 	assert.Nil(t, rt)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, identidade.ErrRefreshInvalido)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -136,13 +137,13 @@ func TestRefreshTokenFindByTokenHash_DBError(t *testing.T) {
 		WithArgs("hash").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	rt, err := repo.FindByTokenHash(ctx, db, "hash")
 
 	assert.Nil(t, rt)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, identidade.ErrRefreshInvalido)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -154,7 +155,7 @@ func TestRefreshTokenRevoke_Success(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "rotacao", int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	err := repo.Revoke(ctx, db, 1, repositories.RevokeReasonRotacao)
 
@@ -170,11 +171,11 @@ func TestRefreshTokenRevoke_NotFound(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "rotacao", int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	err := repo.Revoke(ctx, db, 999, repositories.RevokeReasonRotacao)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, identidade.ErrRefreshRevogado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -186,7 +187,7 @@ func TestRefreshTokenRevoke_DBError(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "rotacao", int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	err := repo.Revoke(ctx, db, 1, repositories.RevokeReasonRotacao)
 
@@ -202,7 +203,7 @@ func TestRefreshTokenRevokeAllByUser_Success(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 3))
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	err := repo.RevokeAllByUser(ctx, db, 1, repositories.RevokeReasonRevogacaoMassa)
 
@@ -218,7 +219,7 @@ func TestRefreshTokenRevokeAllByUser_DBError(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	err := repo.RevokeAllByUser(ctx, db, 1, repositories.RevokeReasonRevogacaoMassa)
 
@@ -235,7 +236,7 @@ func TestRefreshTokenDeleteExpired_Success(t *testing.T) {
 		WithArgs(corte, 1000).
 		WillReturnResult(sqlmock.NewResult(0, 4))
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	n, err := repo.DeleteExpired(ctx, db, corte, 1000)
 
@@ -251,7 +252,7 @@ func TestRefreshTokenDeleteExpired_DBError(t *testing.T) {
 	mock.ExpectExec(`DELETE FROM refresh_tokens`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	_, err := repo.DeleteExpired(ctx, db, time.Now(), 1000)
 
@@ -276,7 +277,7 @@ func TestRefreshTokenFindByUsuario_Success(t *testing.T) {
 		WithArgs(int64(1), 10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	tokens, total, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
 
@@ -297,7 +298,7 @@ func TestRefreshTokenFindByUsuario_Defaults(t *testing.T) {
 		WithArgs(int64(1), 20, 0).
 		WillReturnRows(sqlmock.NewRows(refreshTokenColumns))
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindByUsuario(ctx, db, 1, 0, 0)
 
@@ -316,7 +317,7 @@ func TestRefreshTokenFindByUsuario_LimitCap(t *testing.T) {
 		WithArgs(int64(1), 100, 0).
 		WillReturnRows(sqlmock.NewRows(refreshTokenColumns))
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 200)
 
@@ -332,7 +333,7 @@ func TestRefreshTokenFindByUsuario_CountError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
 
@@ -351,7 +352,7 @@ func TestRefreshTokenFindByUsuario_QueryError(t *testing.T) {
 		WithArgs(int64(1), 10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
 

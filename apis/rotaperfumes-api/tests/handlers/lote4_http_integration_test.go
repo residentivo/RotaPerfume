@@ -20,8 +20,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	apisvc "github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // ---------------------------------------------------------------------------
@@ -31,7 +29,7 @@ import (
 func TestIntegracaoHTTP_SEC02_RefreshConcorrente(t *testing.T) {
 	c := novoItCtx(t)
 	usu := c.usuario("USEC02", 0, true)
-	svc := apisvc.NewRefreshTokenService()
+	svc := novoRefreshSvc()
 	ctx := context.Background()
 
 	// SEC-04: 15 refreshes paralelos com o mesmo token (abas concorrentes)

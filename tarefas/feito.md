@@ -3,9 +3,36 @@
 > Histórico de tarefas finalizadas.
 
 ---
-## Lote 21 de 2026-10-13: 2 cards concluídos até agora (lote em andamento)
+## Lote 21 de 2026-10-13: 3 cards concluídos até agora (lote em andamento)
 
-> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-02 está em `fazendo.md` e os cards ARQ-03 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-03 está em `fazendo.md` e os cards ARQ-04 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+
+## ARQ-02: contexto Catálogo (Produto, Estoque), piloto — 2026-10-14
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → 🟣 SecBrain (checklist ARQ-02, C-01..C-03) → 🟡 BackBrain (NB-1/NB-2/NB-8 e teste de ordenação apertado) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-14. **Commit:** `17502da` (branch `refactor/ddd`).
+
+**Camada:** Backend
+
+**Entregue:**
+- Produto e Estoque migrados para `apis/shared/catalogo` (domínio), `apis/shared/catalogoapp` (casos de uso), `apis/shared/catalogomysql` (adapter MySQL) e `apis/rotaperfumes-api/internal/catalogohttp` (handlers), mais `internal/httpx/body.go`.
+- Legado do contexto removido: `handlers/produto_handler.go`, `handlers/estoque_handler.go`, `services/produto_service.go`, `services/estoque_service.go`, `shared/models/produto.go`, `shared/models/estoque.go` e `shared/repositories/produto_repository.go`.
+- `apis/shared/repositories/estoque_repository.go` fica encolhido (126 linhas) até o ARQ-05/ARQ-07.
+- Ajustes finais: NB-1 (`%q` no SKU nos logs), NB-2 (§6.3), NB-8 (comentários do `estoque_repository.go`) e teste de ordenação apertado.
+
+**Patterns aplicados:** Repository (porta no domínio + adapter MySQL), Factory com validação, Value Object `SKU`, Strategy/enum de ordenação com `switch` (sem texto livre no SQL), Query object de filtros, Mapper/DTO com create e update separados, vlog P1 via `defer vlog.Trace` nos casos de uso.
+
+**Métricas:**
+- Testes de topo: API 781 → 793; shared 626 → 652.
+- Cobertura combinada 89,00% → 89,07% (linhas descobertas 1.297 → 1.248); pacotes novos 100% cobertos.
+- Mutações: 11/11 pegas.
+- Código: −21% de linhas físicas (−24% sem comentários/brancos). Contrato HTTP conferido byte a byte.
+
+**Decisões do 🤍 MegaBrain:**
+- A meta de −40% de linhas foi substituída, para ARQ-03..ARQ-07, por: "código novo ≤ lógica legada sem vlog; handlers ≤ 30 linhas; código novo 100% coberto".
+- NB-3 → ARQ-04, NB-5 → ARQ-05, NB-6 → SEC-16 (com N-3), NB-7 → SEC-25, NB-4 → CHORE-05; cards novos CHORE-03 e CHORE-04 (todos em `afazer.md`).
+
+**Validação:** 🟣 SecBrain e 🔴 TestBrain aprovaram (sem bloqueantes). 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos (652 testes de topo no shared, 793 na API). Race detector indisponível nesta máquina (sem gcc).
 
 ## ARQ-01: fundação / shared kernel — 2026-10-13
 **Agentes:** 🟡 BackBrain → 🟣 SecBrain (checklist ARQ-01) → 🔴 TestBrain → 🟡 BackBrain (ressalvas) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain

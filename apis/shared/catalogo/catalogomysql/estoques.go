@@ -61,7 +61,7 @@ func (r *Estoques) listar(ctx context.Context, op, funcao, countQ, q string, arg
 	if err := r.q.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
 		return kernel.Resultado[catalogo.RegistroEstoque]{}, fmt.Errorf("catalogomysql: contar (%s): %w", op, err)
 	}
-	itens, err := consultar(ctx, r.q, op, q, paginada(args, p), scanEstoque)
+	itens, err := db.Consultar(ctx, r.q, "catalogomysql: "+op, q, db.Paginada(args, p), scanEstoque)
 	if err != nil {
 		return kernel.Resultado[catalogo.RegistroEstoque]{}, err
 	}
@@ -90,7 +90,7 @@ func whereEstoque(f catalogo.FiltroEstoque) (string, []any) {
 		conds = append(conds, "e.ruptura = ?")
 		args = append(args, *f.Ruptura)
 	}
-	return where(conds), args
+	return db.Where(conds), args
 }
 
 // PorID busca um registro; catalogo.ErrEstoqueNaoEncontrado se não existir.

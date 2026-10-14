@@ -1,38 +1,12 @@
 # A Fazer
 
-> Atualizado em 2026-10-13. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint, commit `cd12d47`) e o ARQ-01 (fundação, commit `0e7e757`) foram concluídos (ver `feito.md`), o ARQ-02 está em `fazendo.md` e os cards ARQ-03 a ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08.
+> Atualizado em 2026-10-14. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint, commit `cd12d47`), o ARQ-01 (fundação, commit `0e7e757`) e o ARQ-02 (Catálogo, commit `17502da`) foram concluídos (ver `feito.md`), o ARQ-03 está em `fazendo.md` e os cards ARQ-04 a ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08.
 >
 > **Regras do Lote 21 válidas para ARQ-01 a ARQ-07 (decisões de 2026-10-13, ver ARQ-00 em `fazendo.md`):**
 > - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. O 🟡 BackBrain atualiza a regra no código (comentário de `apis/shared/vlog/vlog.go`); o 🔵 SubBrain atualiza a documentação no ARQ-08.
 > - **X1, contrato HTTP:** a única exceção ao "contrato HTTP inalterado" é a do ARQ-01 (métodos das 13 rotas, `/api/senha-historico/2/extra` e, pelo parse estrito de `{user_id...}` (R-f), `/api/senha-historico/0` e `/-1` passando a 400).
 >
 > Histórico anterior (2026-10-11): o 🔴 TestBrain executou `docs/roteiro-teste-manual-lote12.md` (24 aprovados, 1 falhou, 13 não verificáveis de 38; ver a seção "Execução (2026-10-07, 🔴 TestBrain)" no fim do roteiro). Daí saíram os cards BUG-13, LOG-01, DOC-05 e TST-04. BUG-13, LOG-01 e DOC-05 foram concluídos no Lote 16 (2026-10-07; ver `feito.md`). O LOG-02 (Lote 17) gerou o TST-05, e o DEP-00 (Lote 19) gerou o DEP-01 e o DEP-02. No Lote 20 (2026-10-11; ver `feito.md`) foram concluídos DEP-01, DEP-02 e TST-05; o TST-04 avançou parcialmente (só faltam 1.1, 1.2 e 1.7, que dependem do usuário rodar o `make`) e do DEP-01 saiu o card DEP-03 (BAIXA). O MAIL-01 e o DEPLOY-01 seguem em `fazendo.md`, aguardando o usuário.
-
----
-
-## ARQ-03: contexto Identidade e Acesso — prioridade ALTA (sensível a segurança)
-
-**Status:** pendente (Lote 21; depende do ARQ-02)
-**Camadas:** Segurança, Backend
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
-
-**Descrição:** migrar:
-- Auth/JWT e Usuário;
-- RefreshToken com rotação e detecção de reuso;
-- SenhaHistórico;
-- hash Argon2, política de senha e gerador de senha;
-- Turnstile e alerta de segurança;
-- middlewares auth, user_status e ratelimit.
-
-O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do ARQ-00.
-
-**Critério de aceite:**
-- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
-- `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
-- sem perda de cobertura;
-- logs `vlog` preservados;
-- commit do lote na branch `refactor/ddd`.
 
 ---
 
@@ -50,6 +24,8 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 - escopo de acesso por carteira.
 
 **Nota N-8 (🟣 SecBrain, ARQ-01, 2026-10-13):** `httpx.interno` loga o erro com `%v`; um erro 1062 cru do MySQL traz o valor duplicado (CNPJ) para o log. Garantir a O6-iv: o adapter traduz o 1062 para erro de domínio sem embrulhar o erro do driver.
+
+**Pendência herdada do ARQ-03 (2026-10-14):** trocar o adapter `vendedoresLegado` do bootstrap (marcado `TODO(ARQ-04)`) pela implementação de `comercialmysql`.
 
 **Lições do piloto ARQ-02 (🤍 MegaBrain, 2026-10-14), valem também para o ARQ-05:**
 - promover `kernel.ParseDataLocal` para os 6 campos de data (BUG-01);
@@ -124,6 +100,13 @@ O 🟣 SecBrain revisa antes e depois, contra as invariantes de segurança do AR
 - remover os pacotes legados (`handlers`, `services`, `repositories` e os `models` antigos).
 
 **Pendência herdada do ARQ-02 (🤍 MegaBrain, 2026-10-14):** `EstoqueRepository.UpsertPorDataSku` não tem chamador de produção. Avaliar a remoção (se o ARQ-05 ainda não tiver apagado o `estoque_repository.go`), conferindo importadores/CLIs e testes que o usem.
+
+**Pendências herdadas do ARQ-03 (2026-10-14):**
+- **(a) Shims de teste (🔴 TestBrain):** reescrever sobre a API nova os testes que passam pelos shims `helpers_*_test.go` e depois remover os shims. Os shims tornaram tautológicos `TestUserCheck_RotaPublica_*` e `TestSEC08_CorteDeSessao_RotaPublicaIgnoraCorte`, e o `refresh_rotation_test` monta a tx no próprio teste.
+- **(b) Pontes de legado:** remover `middleware/principal_legado.go` e o legado encolhido de usuário/refresh token (`GetByID`, `GetIDVendedorByUsuarioID`, `InativarByVendedorID`, `RevokeAllByVendedorID`, `FindByUsuario`).
+- **(c) NB-1 (🟣 SecBrain):** em `apis/shared/identidade/identidadeapp/senha.go:217`, o erro de envio SMTP é logado com `%v` e pode conter o e-mail (respostas 550 ecoam o RCPT). Aplicar `ocultarEmail`.
+- **(d) NB-6 (🟣 SecBrain):** `Run` não espera os alertas de segurança em andamento antes do `pool.Close`.
+- **(e) NB-7 (🟣 SecBrain, pré-existente):** `cmd/resetsenhas` imprime e-mails sem máscara no stdout; `apis/shared/tools/seedusers/seedusers.go` loga o prefixo do hash e o dry-run imprime o hash inteiro.
 
 **Achado do 🔴 TestBrain (ARQ-00):** `apis/shared/tools/testeemail/testeemail_test.go` é teste interno ao pacote de produção (8 testes), fora de `tests/`. Decidir na migração: mover para a suíte de testes ou manter, sem perder os 8 testes da linha de base.
 
@@ -477,5 +460,7 @@ Registrar o resultado na seção "Execução" do roteiro.
 **Descrição:** os logs de auditoria de escrita registram só o role de quem fez a ação, por exemplo `[produtos] criado: id=%d por usuario role=%s`. Sem o id do usuário, não dá para saber quem alterou o registro.
 
 **Ação esperada:** incluir o id do Principal em todos os logs de auditoria de escrita (create, update, delete e toggle) de todos os contextos, mantendo o role. Não registrar PII (e-mail ou nome).
+
+**Pontos acrescentados no ARQ-03 (2026-10-14):** `apis/shared/identidade/identidadeapp/senha.go:169` e `apis/rotaperfumes-api/internal/identidadehttp/usuario_handler.go:59,82,106` registram `por admin=<role>` em vez do id.
 
 **Critério de aceite:** todos os logs de escrita trazem o id e o role do usuário; testes de log por contexto; contrato HTTP inalterado.

@@ -27,8 +27,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 )
 
 const (
@@ -332,7 +330,7 @@ func TestSEC12_NewAuthHandler_JanelaDaConfig(t *testing.T) {
 			capturarLog(t)
 			cfg := testCfg()
 			cfg.RefreshReuseSuppressWindow = c.janela
-			h := handlers.NewAuthHandler(db, cfg)
+			h := novoAuthHandler(db, cfg)
 
 			var mu sync.Mutex
 			var agora, limite time.Time

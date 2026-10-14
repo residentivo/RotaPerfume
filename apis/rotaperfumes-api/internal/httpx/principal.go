@@ -20,7 +20,14 @@ func comPrincipal(ctx context.Context, p kernel.Principal) context.Context {
 // Public ou se algo falhou; em handler protegido, !ok → 500 "erro interno"
 // (use kernel.ErrPrincipalInvalido com ResponderErro).
 func PrincipalFrom(r *http.Request) (kernel.Principal, bool) {
-	p, ok := r.Context().Value(chavePrincipal{}).(kernel.Principal)
+	return PrincipalDoContexto(r.Context())
+}
+
+// PrincipalDoContexto é PrincipalFrom a partir do contexto (ponte de leitura
+// para os handlers legados via middleware.GetUserID/GetRole até o ARQ-07).
+// Só leitura: não existe setter exportado.
+func PrincipalDoContexto(ctx context.Context) (kernel.Principal, bool) {
+	p, ok := ctx.Value(chavePrincipal{}).(kernel.Principal)
 	if !ok || !p.Valido() {
 		return kernel.Principal{}, false
 	}

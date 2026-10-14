@@ -6,45 +6,60 @@
 
 **Decisões do usuário:** estratégia **incremental por bounded context**: cada lote termina com build e testes verdes e um commit na branch `refactor/ddd`. Escopo: API (`apis/rotaperfumes-api`) + módulo `apis/shared` (repositories, models, services, importers e CLIs).
 
-**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (ARQ-03 com 🟣 SecBrain antes). ARQ-00 (commit `cd12d47`) e ARQ-01 (commit `0e7e757`) concluídos, ver `feito.md`; ARQ-03 a ARQ-08 estão em `afazer.md`, na ordem de execução.
+**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (no ARQ-03, o 🟣 SecBrain revisa depois, junto com o 🔴 TestBrain; ver decisão no card). ARQ-00 (commit `cd12d47`), ARQ-01 (commit `0e7e757`) e ARQ-02 (commit `17502da`) concluídos, ver `feito.md`; ARQ-04 a ARQ-08 estão em `afazer.md`, na ordem de execução.
 
-**Passo atual:** ARQ-02 (Catálogo, piloto): aprovado pelo 🔴 TestBrain e pelo 🟣 SecBrain; ajustes finais (NB-1/2/8) e commit, ver card abaixo.
+**Passo atual:** ARQ-03 (Identidade e Acesso): implementado e aprovado com ressalvas pelo 🟣 SecBrain e pelo 🔴 TestBrain; 🟡 BackBrain aplicando os ajustes finais, depois vem o commit. Ver card abaixo.
 
 **Pendência opcional (não é card):** o race detector (`go test -race`) está indisponível nesta máquina porque falta gcc/MinGW (cgo). Sugestão ao usuário: instalar o MinGW-w64 localmente ou rodar `go test -race ./...` no Jenkins (Linux).
 
 ---
 
-## ARQ-02: contexto Catálogo (Produto, Estoque), piloto — prioridade ALTA
+## ARQ-03: contexto Identidade e Acesso — prioridade ALTA (sensível a segurança)
 
-**Status:** em execução (Lote 21, desde 2026-10-13; ARQ-01 concluído em `0e7e757`)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain → 🟣 SecBrain (checklist ARQ-02, C-01..C-03)
-**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API. Referências: `docs/arquitetura-ddd.md` e `docs/arq-00-invariantes-seguranca.md` (seção ARQ-02).
+**Status:** em execução (Lote 21, desde 2026-10-14; ARQ-02 concluído em `17502da`)
+**Camadas:** Segurança, Backend
+**Responsável:** 🟡 BackBrain → 🟣 SecBrain (revisão aprofundada) + 🔴 TestBrain
+**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API. Referências: `docs/arquitetura-ddd.md` e `docs/arq-00-invariantes-seguranca.md` (I-01..I-16).
 
-**Descrição:** migrar Produto e Estoque para a estrutura `domain`/`application`/`infrastructure`/`interfaces`. É o piloto que valida o blueprint e o shared kernel antes dos demais contextos.
+**Descrição:** migrar:
+- Auth/JWT e Usuário;
+- RefreshToken com rotação e detecção de reuso;
+- SenhaHistórico;
+- hash Argon2, política de senha e gerador de senha;
+- Turnstile e alerta de segurança;
+- middlewares auth, user_status e ratelimit.
 
-**Pendências ligadas a este card (em `afazer.md`):**
-- N-3: overflow de `kernel.Pagina.Offset()`, a tratar quando o adapter de Catálogo passar a usar `Offset()`.
-- Apontar os testes de `order_by` e o helper de escape LIKE para o enum de ordenação e a infra compartilhada depois deste card.
+**Decisão do 🤍 MegaBrain (2026-10-14):** a especificação prévia do 🟣 SecBrain foi **dispensada**, porque `docs/arq-00-invariantes-seguranca.md` (I-01..I-16) já a cobre. Em compensação, o 🟣 SecBrain fará **revisão aprofundada pós-implementação**, junto com o 🔴 TestBrain.
 
-**Histórico:**
-- 2026-10-14: 🟡 BackBrain concluiu a implementação. Produto/Estoque migrados para `apis/shared/catalogo{,app,mysql}` + `apis/rotaperfumes-api/internal/catalogohttp` (+ `internal/httpx/body.go`); legado do contexto removido (`handlers/produto_handler.go`, `handlers/estoque_handler.go`, `services/produto_service.go`, `services/estoque_service.go`, `shared/models/produto.go`, `shared/models/estoque.go`, `shared/repositories/produto_repository.go`). Portões verdes (build, vet, test). Testes: API 781→793, shared 626→652. Cobertura combinada 89,00%→89,07% (linhas descobertas 1.297→1.248). Contrato HTTP conferido byte a byte. Redução de código: −21% físico, −24% sem comentários/brancos.
+**Regras herdadas do piloto:** métrica "código novo ≤ lógica legada sem vlog; handlers ≤ 30 linhas; código novo 100% coberto"; vlog P1 via `defer vlog.Trace`.
 
-**Decisões do 🤍 MegaBrain (2026-10-14):**
-- A meta de −40% de linhas do blueprint foi **substituída** pela métrica proposta pelo 🟡 BackBrain, válida para ARQ-03..ARQ-07: "código novo ≤ lógica legada sem vlog; handlers ≤ 30 linhas; código novo 100% coberto".
-- `apis/shared/repositories/estoque_repository.go` fica encolhido (126 linhas: `AjustarSaldoPorFaturamento` + `UpsertPorDataSku`) até o ARQ-05, porque depende da tx de `PedidoRepository.UpdateComItens`. Pendências anotadas no ARQ-05 e no ARQ-07 (`afazer.md`).
-- Lições do piloto anotadas no ARQ-04/ARQ-05; cards novos fora do lote: CHORE-03 (parse estrito de id de path) e CHORE-04 (gofmt/CRLF dos testes SEC12), em `afazer.md`.
+**Implementação (🟡 BackBrain, 2026-10-14):** Identidade e Acesso migrado para `apis/shared/identidade{,app,mysql,crypto}` + `apis/rotaperfumes-api/internal/identidadehttp`: Autenticador nativo (role lida do banco, substituindo o adapter de transição do ARQ-01), singletons de rate limit/notifier/Turnstile, fronteiras transacionais idênticas às atuais e testes SEC portados. Legado removido: `handlers/{auth,senha_historico,usuario}_handler.go`, `middleware/{auth_middleware,ratelimit_middleware,user_status}.go` e `services/{refresh_cleanup,refresh_token_service,reset_senhas_ativos_service,senha_historico_service,usuario_service}.go`. Ficaram pontes para o ARQ-04/ARQ-07 (ver notas nesses cards).
 
-- 2026-10-14: 🟣 SecBrain **aprovou** (sem bloqueantes; não bloqueantes NB-1..NB-8). NB-1, NB-2 e NB-8 serão corrigidos agora pelo 🟡 BackBrain. Os demais foram anotados em `afazer.md`: NB-3 no ARQ-04, NB-5 no ARQ-05, NB-6 no SEC-16 (consolidado com a N-3), NB-7 no SEC-25 e NB-4 no card novo CHORE-05.
-- 2026-10-14: 🔴 TestBrain **aprovou** (R1 ok). Testes de topo: API 793, shared 652. Cobertura 89,07% (1.248 linhas descobertas). 11/11 mutações pegas. Pacotes novos 100% cobertos.
+**Histórico de validação:**
+- 2026-10-14, 🟣 SecBrain: **APROVADO COM RESSALVAS**, sem bloqueantes. I-01..I-16 e O4/O5/O7 conferidos; GAPs SEC-18, SEC-20, SEC-21 e SEC-22 preservados (nem piorados nem corrigidos). Ressalva #2 (restringir quem chama `ResetarSenhasAtivos`, `RegistrarReuso` e `DesfazerReuso`) vai para o ajuste final do 🟡 BackBrain; NB-1, NB-6 e NB-7 anotados no ARQ-07.
+- 2026-10-14, 🤍 MegaBrain: confirmou por `git show` que três comportamentos são idênticos ao legado: login de usuário inativo conta no rate limit, Bearer comparado com EqualFold e, no reset, campos obrigatórios validados antes do captcha.
+- 2026-10-14, 🔴 TestBrain: **APROVADO COM RESSALVAS**. R1 ok (testes API 793→806, shared 652→687); cobertura combinada 89,07%→89,35% (linhas descobertas 1.248→1.110). Das 18 mutações de segurança, 6 sobreviviam e passaram a ser mortas pelos testes `TestARQ03_*` que ele adicionou. As 285 linhas de asserção alteradas foram classificadas, quase todas troca de identificador. Ressalvas: a asserção do `bug11` não-verbose ficou vazia e a de `HashPassword_Erros` ficou genérica.
 
-**Passo atual:** 🟡 BackBrain aplica os ajustes finais: NB-1 (`%q` no SKU nos logs), NB-2 (§6.3) e NB-8 (comentários do `estoque_repository.go`). Depois, commit do lote na branch `refactor/ddd`.
+**Decisões:**
+- especificação prévia do 🟣 SecBrain dispensada, com revisão aprofundada pós-implementação (ver acima);
+- fronteiras transacionais conforme a seção abaixo (troca de senha fora da UoW → BUG-15);
+- GAPs de segurança pré-existentes não são corrigidos neste card (regra "não piorar");
+- pontes de transição (shims de teste, `middleware/principal_legado.go`, legado encolhido de usuário/refresh token, adapter `vendedoresLegado`) ficam até o ARQ-04/ARQ-07;
+- logs de auditoria com `por admin=<role>` seguem para o CHORE-05.
+
+**Passo atual:** 🟡 BackBrain aplicando os ajustes finais: (1) corrigir as 2 asserções (`bug11` não-verbose e `HashPassword_Erros`); (2) teste de arquitetura restringindo os chamadores de `ResetarSenhasAtivos`, `RegistrarReuso` e `DesfazerReuso` (ressalva #2 do 🟣 SecBrain); (3) registro no blueprint. Depois: build e testes verdes e commit do ARQ-03 na branch `refactor/ddd`.
+
+**Fronteiras transacionais (🤍 MegaBrain, 2026-10-14):**
+- **Troca de senha** (histórico + hash + corte + revogação): fica **fora** da Unit of Work neste card e vai para o BUG-15 (O8-iii).
+- **Rotação de refresh token** (UPDATE condicional + insert na mesma tx, I-06): **continua transacional** no ARQ-03, via `db.Transactor`.
+- **Detecção de reuso:** mantém a fronteira atual, com `RegistrarReuso` atômico + `DesfazerReuso` compensatório (O8-iv).
 
 **Critério de aceite:**
 - contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
 - `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
 - sem perda de cobertura;
 - logs `vlog` preservados;
+- invariantes I-01..I-16 preservadas (revisão do 🟣 SecBrain);
 - commit do lote na branch `refactor/ddd`.
 
 ---

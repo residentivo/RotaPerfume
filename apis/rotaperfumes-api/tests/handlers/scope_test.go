@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 )
 
 const (
@@ -51,7 +50,7 @@ func scRequisitar(t *testing.T, role, path string, fn http.HandlerFunc) (int, ma
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/vendedores", fn)
 	mux.Handle("GET /api/vendedores/{id}/clientes", fn)
-	middleware.JWTMiddleware(cfg, true, false)(mux).ServeHTTP(rec, req)
+	jwtMiddleware(cfg, true, false)(mux).ServeHTTP(rec, req)
 
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body), "body: %s", rec.Body.String())

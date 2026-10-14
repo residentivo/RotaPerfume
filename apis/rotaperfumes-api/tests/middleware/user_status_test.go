@@ -13,21 +13,22 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
+	"github.com/rotaperfumes/shared/identidade"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 )
 
 // mockChecker registra as chamadas e devolve o status/erro configurado.
 type mockChecker struct {
-	status middleware.UserStatus
+	status identidade.StatusAcesso
 	err    error
 	calls  int
 	lastID int64
 }
 
-func (m *mockChecker) CheckUserStatus(_ context.Context, userID int64) (middleware.UserStatus, error) {
+func (m *mockChecker) StatusParaAutenticacao(_ context.Context, userID int64) (identidade.StatusAcesso, error) {
 	m.calls++
 	m.lastID = userID
 	return m.status, m.err
@@ -35,7 +36,7 @@ func (m *mockChecker) CheckUserStatus(_ context.Context, userID int64) (middlewa
 
 // serveWithCheck executa o middleware com checagem e informa se o handler
 // downstream foi chamado.
-func serveWithCheck(t *testing.T, checker middleware.UserStatusChecker, protected, requireAdmin bool, token string) (*httptest.ResponseRecorder, bool) {
+func serveWithCheck(t *testing.T, checker httpx.ConsultaStatus, protected, requireAdmin bool, token string) (*httptest.ResponseRecorder, bool) {
 	t.Helper()
 	called := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,13 +48,13 @@ func serveWithCheck(t *testing.T, checker middleware.UserStatusChecker, protecte
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	w := httptest.NewRecorder()
-	middleware.JWTMiddlewareWithUserCheck(testCfg(), checker, protected, requireAdmin)(next).ServeHTTP(w, req)
+	jwtMiddlewareWithUserCheck(testCfg(), checker, protected, requireAdmin)(next).ServeHTTP(w, req)
 	return w, called
 }
 
 func TestUserCheck_UsuarioAtivo_200ComRoleDoBanco(t *testing.T) {
 	cfg := testCfg()
-	chk := &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "normal"}}
+	chk := &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "normal"}}
 	w, called := serveWithCheck(t, chk, true, false, generateToken(t, cfg, 7, "normal", time.Hour, ""))
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -66,7 +67,7 @@ func TestUserCheck_UsuarioAtivo_200ComRoleDoBanco(t *testing.T) {
 
 func TestUserCheck_UsuarioInativo_401(t *testing.T) {
 	cfg := testCfg()
-	chk := &mockChecker{status: middleware.UserStatus{Ativo: false, Role: "normal"}}
+	chk := &mockChecker{status: identidade.StatusAcesso{Ativo: false, Role: "normal"}}
 	w, called := serveWithCheck(t, chk, true, false, generateToken(t, cfg, 7, "normal", time.Hour, ""))
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
@@ -76,7 +77,7 @@ func TestUserCheck_UsuarioInativo_401(t *testing.T) {
 
 func TestUserCheck_UsuarioInexistente_401(t *testing.T) {
 	cfg := testCfg()
-	chk := &mockChecker{err: middleware.ErrUserNotFound}
+	chk := &mockChecker{err: identidade.ErrUsuarioNaoEncontrado}
 	w, called := serveWithCheck(t, chk, true, false, generateToken(t, cfg, 99, "admin", time.Hour, ""))
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
@@ -96,7 +97,7 @@ func TestUserCheck_ErroDeBanco_500SemChamarHandler(t *testing.T) {
 
 func TestUserCheck_AdminRebaixado_403EmRotaAdmin(t *testing.T) {
 	cfg := testCfg()
-	chk := &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "normal"}}
+	chk := &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "normal"}}
 	w, called := serveWithCheck(t, chk, true, true, generateToken(t, cfg, 1, "admin", time.Hour, ""))
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
@@ -106,7 +107,7 @@ func TestUserCheck_AdminRebaixado_403EmRotaAdmin(t *testing.T) {
 
 func TestUserCheck_AdminRebaixado_RotaComum_ContextoComRoleDoBanco(t *testing.T) {
 	cfg := testCfg()
-	chk := &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "normal"}}
+	chk := &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "normal"}}
 	w, called := serveWithCheck(t, chk, true, false, generateToken(t, cfg, 1, "admin", time.Hour, ""))
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -116,7 +117,7 @@ func TestUserCheck_AdminRebaixado_RotaComum_ContextoComRoleDoBanco(t *testing.T)
 
 func TestUserCheck_PromovidoNoBanco_PassaEmRotaAdmin(t *testing.T) {
 	cfg := testCfg()
-	chk := &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "admin"}}
+	chk := &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "admin"}}
 	w, called := serveWithCheck(t, chk, true, true, generateToken(t, cfg, 5, "normal", time.Hour, ""))
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -134,7 +135,7 @@ func TestUserCheck_JWTInvalidoOuAusente_401SemConsultarBanco(t *testing.T) {
 	}
 	for nome, tok := range casos {
 		t.Run(nome, func(t *testing.T) {
-			chk := &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "admin"}}
+			chk := &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "admin"}}
 			w, called := serveWithCheck(t, chk, true, false, tok)
 
 			assert.Equal(t, http.StatusUnauthorized, w.Code)
@@ -156,7 +157,7 @@ func TestUserCheck_RotaPublica_NaoConsultaBanco(t *testing.T) {
 
 func TestUserCheck_SemCache_ConsultaACadaRequest(t *testing.T) {
 	cfg := testCfg()
-	chk := &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "normal"}}
+	chk := &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "normal"}}
 	tok := generateToken(t, cfg, 7, "normal", time.Hour, "")
 
 	w1, _ := serveWithCheck(t, chk, true, false, tok)
@@ -171,7 +172,7 @@ func TestUserCheck_SemCache_ConsultaACadaRequest(t *testing.T) {
 
 func TestUserCheck_CheckerNil_Panica(t *testing.T) {
 	assert.Panics(t, func() {
-		middleware.JWTMiddlewareWithUserCheck(testCfg(), nil, true, false)
+		jwtMiddlewareWithUserCheck(testCfg(), nil, true, false)
 	})
 }
 
@@ -194,10 +195,10 @@ func TestDBUserStatusChecker_Encontrado(t *testing.T) {
 	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
 		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(false, "normal", nil))
 
-	st, err := middleware.NewDBUserStatusChecker(db).CheckUserStatus(context.Background(), 3)
+	st, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
 
 	require.NoError(t, err)
-	assert.Equal(t, middleware.UserStatus{Ativo: false, Role: "normal"}, st)
+	assert.Equal(t, identidade.StatusAcesso{Ativo: false, Role: "normal"}, st)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -206,9 +207,9 @@ func TestDBUserStatusChecker_Inexistente_ErrUserNotFound(t *testing.T) {
 	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
 		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}))
 
-	_, err := middleware.NewDBUserStatusChecker(db).CheckUserStatus(context.Background(), 3)
+	_, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
 
-	assert.ErrorIs(t, err, middleware.ErrUserNotFound)
+	assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -216,9 +217,9 @@ func TestDBUserStatusChecker_ErroDeBanco_Repassado(t *testing.T) {
 	db, mock := newCheckerDB(t)
 	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).WillReturnError(sql.ErrConnDone)
 
-	_, err := middleware.NewDBUserStatusChecker(db).CheckUserStatus(context.Background(), 3)
+	_, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
 
 	assert.ErrorIs(t, err, sql.ErrConnDone)
-	assert.NotErrorIs(t, err, middleware.ErrUserNotFound)
+	assert.NotErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

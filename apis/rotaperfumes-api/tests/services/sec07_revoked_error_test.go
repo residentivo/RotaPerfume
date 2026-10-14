@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/repositories"
 )
 
@@ -48,11 +47,11 @@ func TestSEC07_ValidateRefreshToken_RevokedTokenError(t *testing.T) {
 				WillReturnRows(sqlmock.NewRows(refreshTokenColunas()).
 					AddRow(int64(44), int64(9), hashOf(token), agora.Add(time.Hour), c.revokedAt, "ip", "ua", c.motivo))
 
-			svc := services.NewRefreshTokenServiceWithClock(func() time.Time { return agora })
+			svc := NewRefreshTokenServiceWithClock(func() time.Time { return agora })
 			rt, err := svc.ValidateRefreshToken(context.Background(), db, token)
 
 			assert.Nil(t, rt)
-			var rev *services.RevokedTokenError
+			var rev *RevokedTokenError
 			require.True(t, errors.As(err, &rev), "deve devolver *RevokedTokenError")
 			assert.Equal(t, int64(44), rev.TokenID)
 			assert.Equal(t, int64(9), rev.UsuarioID)
@@ -61,11 +60,11 @@ func TestSEC07_ValidateRefreshToken_RevokedTokenError(t *testing.T) {
 			assert.Equal(t, c.wantRecent, rev.Recent)
 			assert.Equal(t, c.wantReuso, rev.IsRotationReuse())
 
-			assert.ErrorIs(t, err, services.ErrRefreshTokenRevoked)
+			assert.ErrorIs(t, err, ErrRefreshTokenRevoked)
 			if c.wantRecent {
-				assert.ErrorIs(t, err, services.ErrRefreshTokenRevokedRecently)
+				assert.ErrorIs(t, err, ErrRefreshTokenRevokedRecently)
 			} else {
-				assert.NotErrorIs(t, err, services.ErrRefreshTokenRevokedRecently)
+				assert.NotErrorIs(t, err, ErrRefreshTokenRevokedRecently)
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
@@ -82,7 +81,7 @@ func TestSEC07_BeginRotation_GravaMotivoRotacao(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "rotacao", int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectRollback()
 
-	rot, err := services.NewRefreshTokenService().BeginRotation(context.Background(), db, 7)
+	rot, err := NewRefreshTokenService().BeginRotation(context.Background(), db, 7)
 	require.NoError(t, err)
 	rot.Rollback()
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -102,7 +101,7 @@ func TestSEC07_RevokeAllUserTokens_GravaMotivoInformado(t *testing.T) {
 			mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
 				WithArgs(sqlmock.AnyArg(), string(motivo), int64(3)).WillReturnResult(sqlmock.NewResult(0, 1))
 
-			err = services.NewRefreshTokenService().RevokeAllUserTokens(context.Background(), db, 3, motivo)
+			err = NewRefreshTokenService().RevokeAllUserTokens(context.Background(), db, 3, motivo)
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})

@@ -18,11 +18,11 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
-	"github.com/rotaperfumes/shared/services"
 )
 
 const msgSessaoEncerradaEsperada = "sessão encerrada — faça login novamente"
@@ -41,7 +41,7 @@ func tokenComIat(t *testing.T, uid int64, role string, iat *time.Time) string {
 	if iat != nil {
 		rc.IssuedAt = jwt.NewNumericDate(*iat)
 	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, services.AuthClaims{UserID: uid, Role: role, RegisteredClaims: rc})
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, identidadecrypto.Claims{UserID: uid, Role: role, RegisteredClaims: rc})
 	s, err := tok.SignedString([]byte(cfg.JWTSecret))
 	require.NoError(t, err)
 	return s
@@ -60,7 +60,7 @@ func serveSemChecker(t *testing.T, token string, called *bool) int {
 	req := httptest.NewRequest("GET", "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
-	middleware.JWTMiddleware(testCfg(), true, false)(next).ServeHTTP(w, req)
+	jwtMiddleware(testCfg(), true, false)(next).ServeHTTP(w, req)
 	return w.Code
 }
 
@@ -89,7 +89,7 @@ func TestSEC08_CorteDeSessao_Middleware(t *testing.T) {
 	}
 	for _, tc := range casos {
 		t.Run(tc.nome, func(t *testing.T) {
-			chk := &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "normal", TokensValidosDesde: tc.corte}}
+			chk := &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "normal", TokensValidosDesde: tc.corte}}
 			w, called := serveWithCheck(t, chk, true, false, tokenComIat(t, 7, "normal", tc.iat))
 
 			assert.Equal(t, tc.wantStatus, w.Code, w.Body.String())
@@ -117,13 +117,13 @@ func TestSEC08_CorteDeSessao_Precedencia(t *testing.T) {
 		wantMsg      string
 	}{
 		{"erro do checker -> 500 mesmo com corte", &mockChecker{err: errors.New("db down"),
-			status: middleware.UserStatus{TokensValidosDesde: &corte}}, false, 500, "erro interno"},
-		{"usuário inexistente -> 401 usuário inativo", &mockChecker{err: middleware.ErrUserNotFound}, false, 401, "usuário inativo"},
-		{"inativo com corte -> mensagem de inativo", &mockChecker{status: middleware.UserStatus{Ativo: false, Role: "normal",
+			status: identidade.StatusAcesso{TokensValidosDesde: &corte}}, false, 500, "erro interno"},
+		{"usuário inexistente -> 401 usuário inativo", &mockChecker{err: identidade.ErrUsuarioNaoEncontrado}, false, 401, "usuário inativo"},
+		{"inativo com corte -> mensagem de inativo", &mockChecker{status: identidade.StatusAcesso{Ativo: false, Role: "normal",
 			TokensValidosDesde: &corte}}, false, 401, "usuário inativo"},
-		{"token antigo em rota admin -> 401 (não 403)", &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "normal",
+		{"token antigo em rota admin -> 401 (não 403)", &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "normal",
 			TokensValidosDesde: &corte}}, true, 401, msgSessaoEncerradaEsperada},
-		{"admin com token antigo em rota admin -> 401", &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "admin",
+		{"admin com token antigo em rota admin -> 401", &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "admin",
 			TokensValidosDesde: &corte}}, true, 401, msgSessaoEncerradaEsperada},
 	}
 	for _, tc := range casos {
@@ -141,7 +141,7 @@ func TestSEC08_CorteDeSessao_Precedencia(t *testing.T) {
 func TestSEC08_CorteDeSessao_RotaPublicaIgnoraCorte(t *testing.T) {
 	corte := time.Now().Add(time.Hour)
 	antigo := time.Now().Add(-time.Hour)
-	chk := &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "normal", TokensValidosDesde: &corte}}
+	chk := &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "normal", TokensValidosDesde: &corte}}
 	w, called := serveWithCheck(t, chk, false, false, tokenComIat(t, 7, "normal", &antigo))
 	assert.Equal(t, 200, w.Code)
 	assert.True(t, called)
@@ -174,10 +174,10 @@ func TestSEC08_DBUserStatusChecker_RepassaCorte(t *testing.T) {
 			mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
 				WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(true, "admin", tc.valor))
 
-			st, err := middleware.NewDBUserStatusChecker(db).CheckUserStatus(context.Background(), 3)
+			st, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
 			require.NoError(t, err)
 			assert.True(t, st.Ativo)
-			assert.Equal(t, "admin", st.Role)
+			assert.Equal(t, "admin", st.Role.String())
 			if tc.want == nil {
 				assert.Nil(t, st.TokensValidosDesde)
 			} else {
@@ -195,8 +195,8 @@ func TestSEC08_DBUserStatusChecker_CorteInvalido_Erro(t *testing.T) {
 	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
 		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(true, "admin", "nao-e-data"))
 
-	_, err := middleware.NewDBUserStatusChecker(db).CheckUserStatus(context.Background(), 3)
+	_, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
 	require.Error(t, err)
-	assert.NotErrorIs(t, err, middleware.ErrUserNotFound)
+	assert.NotErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 	assert.NotErrorIs(t, err, sql.ErrNoRows)
 }

@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
+	"github.com/rotaperfumes/shared/adapters/turnstile"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/db"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 )
 
 // Timeouts do servidor e do shutdown (F-04, valores inalterados).
@@ -28,9 +29,11 @@ const (
 	timeoutTarefasFund = 10 * time.Second
 )
 
-// App é a API montada: o handler HTTP completo (com o log de acesso).
+// App é a API montada: o handler HTTP completo (com o log de acesso) e os
+// casos de uso de Identidade (a limpeza de refresh tokens roda sobre eles).
 type App struct {
-	Handler http.Handler
+	Handler    http.Handler
+	Identidade *identidadeapp.Casos
 }
 
 // Montar liga as dependências sobre o pool: e-mail (SMTP ou noop), notifier
@@ -38,13 +41,17 @@ type App struct {
 // Logging → CORS → SecurityHeaders → mux. Singletons por processo.
 func Montar(cfg *config.Config, pool *sql.DB) *App {
 	emailSvc, alertaSender := novoEmail(cfg)
-
-	hs := NovosHandlers(pool, cfg, emailSvc)
-	hs.Auth.SetAlertaSeguranca(services.NewAlertaSegurancaNotifier(pool, alertaSender, cfg.SecurityAlertEmails))
+	notifier := services.NewAlertaSegurancaNotifier(pool, alertaSender, cfg.SecurityAlertEmails)
 	log.Printf("[server] alertas de segurança: admins=%d", len(cfg.SecurityAlertEmails))
 
-	checker := middleware.NewDBUserStatusChecker(pool)
-	return &App{Handler: httpx.Chain(HandlerHTTP(cfg, checker, hs), httpx.Logging)}
+	identidade := NovaIdentidade(pool, cfg, ExtIdentidade{
+		Captcha:    turnstile.Novo(cfg.TurnstileSecretKey),
+		Publicador: identidadeapp.NovoPublicadorLocal(assinanteAlerta(notifier)),
+		Email:      emailSvc,
+	})
+	hs := NovosHandlersCom(pool, cfg, identidade)
+	// SEC-06: o checker é o próprio caso de uso (consulta o banco a cada request).
+	return &App{Handler: httpx.Chain(HandlerHTTP(cfg, identidade, hs), httpx.Logging), Identidade: identidade}
 }
 
 // Run abre o banco, sobe a limpeza de refresh tokens (CHORE-02) e o servidor,
@@ -55,11 +62,12 @@ func Run(cfg *config.Config) {
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	defer bgCancel()
-	limpezaDone := iniciarLimpezaRefresh(bgCtx, pool, cfg)
+	app := Montar(cfg, pool)
+	limpezaDone := identidadeapp.IniciarLimpezaPeriodica(bgCtx, app.Identidade, cfg.RefreshCleanupInterval)
 
 	srv := &http.Server{
 		Addr:         enderecoHTTP,
-		Handler:      Montar(cfg, pool).Handler,
+		Handler:      app.Handler,
 		ReadTimeout:  timeoutLeitura,
 		WriteTimeout: timeoutEscrita,
 		IdleTimeout:  timeoutOcioso,

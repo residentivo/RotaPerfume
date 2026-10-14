@@ -25,7 +25,7 @@ import (
 
 	"github.com/rotaperfumes/shared/config"
 	shareddb "github.com/rotaperfumes/shared/db"
-	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/identidade"
 )
 
 // argCorte casa com um time.Time sem fração de segundo, dentro de
@@ -69,7 +69,7 @@ const (
 
 func TestSEC08_SetAtivo(t *testing.T) {
 	ctx := context.Background()
-	repo := repositories.NewUsuarioRepository()
+	repo := novoUsuarioRepo()
 
 	t.Run("inativar grava corte truncado em segundos", func(t *testing.T) {
 		db, mock := newMock(t)
@@ -95,7 +95,7 @@ func TestSEC08_SetAtivo(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 			mock.ExpectExec(re).WillReturnResult(sqlmock.NewResult(0, 0))
-			assert.ErrorIs(t, repo.SetAtivo(ctx, db, 5, ativo), repositories.ErrNotFound)
+			assert.ErrorIs(t, repo.SetAtivo(ctx, db, 5, ativo), identidade.ErrUsuarioNaoEncontrado)
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 		t.Run(fmt.Sprintf("ativo=%v: erro de banco embrulhado", ativo), func(t *testing.T) {
@@ -114,7 +114,7 @@ func TestSEC08_InativarByVendedorID_GravaCorte(t *testing.T) {
 	defer db.Close()
 	corte := novoArgCorte()
 	mock.ExpectExec(reInativarVendedor).WithArgs(corte, int64(3)).WillReturnResult(sqlmock.NewResult(0, 2))
-	n, err := repositories.NewUsuarioRepository().InativarByVendedorID(context.Background(), db, 3)
+	n, err := novoUsuarioRepo().InativarByVendedorID(context.Background(), db, 3)
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, n)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -127,7 +127,7 @@ func TestSEC08_UpdatePasswordHash_GravaCorte(t *testing.T) {
 			defer db.Close()
 			corte := novoArgCorte()
 			mock.ExpectExec(reUpdateSenha).WithArgs("h", deveTrocar, corte, int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
-			require.NoError(t, repositories.NewUsuarioRepository().UpdatePasswordHash(context.Background(), db, 9, "h", deveTrocar))
+			require.NoError(t, novoUsuarioRepo().UpdatePasswordHash(context.Background(), db, 9, "h", deveTrocar))
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -143,7 +143,7 @@ func TestSEC08_InvalidarSessoes(t *testing.T) {
 		wantMsg string
 	}{
 		{"sucesso", sqlmock.NewResult(0, 1), nil, nil, ""},
-		{"0 linhas -> ErrNotFound", sqlmock.NewResult(0, 0), nil, repositories.ErrNotFound, ""},
+		{"0 linhas -> ErrNotFound", sqlmock.NewResult(0, 0), nil, identidade.ErrUsuarioNaoEncontrado, ""},
 		{"erro de banco embrulhado", nil, sql.ErrConnDone, sql.ErrConnDone, "invalidar sessoes"},
 	}
 	for _, tc := range casos {
@@ -156,7 +156,7 @@ func TestSEC08_InvalidarSessoes(t *testing.T) {
 			} else {
 				exp.WillReturnResult(tc.result)
 			}
-			err := repositories.NewUsuarioRepository().InvalidarSessoes(context.Background(), db, 4, corte)
+			err := novoUsuarioRepo().InvalidarSessoes(context.Background(), db, 4, corte)
 			if tc.wantErr == nil {
 				assert.NoError(t, err)
 			} else {
@@ -176,7 +176,7 @@ func TestSEC08_InvalidarSessoes(t *testing.T) {
 		mock.ExpectCommit()
 		tx, err := db.Begin()
 		require.NoError(t, err)
-		require.NoError(t, repositories.NewUsuarioRepository().InvalidarSessoes(context.Background(), tx, 4, corte))
+		require.NoError(t, novoUsuarioRepo().InvalidarSessoes(context.Background(), tx, 4, corte))
 		require.NoError(t, tx.Commit())
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -200,10 +200,10 @@ func TestSEC08_GetStatusByID_Corte(t *testing.T) {
 			defer db.Close()
 			mock.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
 				WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(true, "normal", tc.valor))
-			st, err := repositories.NewUsuarioRepository().GetStatusByID(context.Background(), db, 4)
+			st, err := novoUsuarioRepo().GetStatusByID(context.Background(), db, 4)
 			if tc.wantErr {
 				require.Error(t, err)
-				assert.False(t, errors.Is(err, repositories.ErrNotFound))
+				assert.False(t, errors.Is(err, identidade.ErrUsuarioNaoEncontrado))
 				assert.Contains(t, err.Error(), "get status usuario")
 				return
 			}
@@ -257,7 +257,7 @@ func abrirDBSEC08(t *testing.T) *sql.DB {
 func TestIntegracaoSEC08_CorteDeSessao_Repositorio(t *testing.T) {
 	db := abrirDBSEC08(t)
 	ctx := context.Background()
-	repo := repositories.NewUsuarioRepository()
+	repo := novoUsuarioRepo()
 
 	email := fmt.Sprintf("zz-test-sec08-%d@teste.local", time.Now().UnixNano())
 	res, err := db.Exec(`INSERT INTO usuarios (nome, email, password_hash, role, ativo) VALUES ('ZZ-TEST-SEC08', ?, 'x', 'normal', 1)`, email)
@@ -332,7 +332,7 @@ func TestIntegracaoSEC08_CorteDeSessao_Repositorio(t *testing.T) {
 	t.Run("InvalidarSessoes em id inexistente -> ErrNotFound", func(t *testing.T) {
 		var maxID int64
 		require.NoError(t, db.QueryRow(`SELECT IFNULL(MAX(id),0) FROM usuarios`).Scan(&maxID))
-		assert.ErrorIs(t, repo.InvalidarSessoes(ctx, db, maxID+100000, time.Now().Truncate(time.Second)), repositories.ErrNotFound)
+		assert.ErrorIs(t, repo.InvalidarSessoes(ctx, db, maxID+100000, time.Now().Truncate(time.Second)), identidade.ErrUsuarioNaoEncontrado)
 	})
 	t.Run("InativarByVendedorID grava corte", func(t *testing.T) {
 		vres, err := db.Exec(`INSERT INTO vendedores (nome, regiao, uf, data_admissao, meta_mensal) VALUES ('ZZ-TEST-SEC08-V', 'Teste', 'PR', '2024-01-01', 1)`)

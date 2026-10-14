@@ -17,7 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/rotaperfumes/shared/tools/seedusers"
 )
 
@@ -119,8 +120,8 @@ func TestRun_SubstituiEExecuta(t *testing.T) {
 	require.NotEmpty(t, hAdmin)
 	require.Len(t, hVend, 2)
 	assert.Equal(t, hVend[0], hVend[1], "os vendedores recebem o mesmo hash")
-	assert.True(t, services.VerificarSenha(hsRapida, hAdmin, "Admin@Env1"))
-	assert.True(t, services.VerificarSenha(hsRapida, hVend[0], "User@Env1"))
+	assert.True(t, verificarSenha(hsRapida, hAdmin, "Admin@Env1"))
+	assert.True(t, verificarSenha(hsRapida, hVend[0], "User@Env1"))
 
 	assert.Equal(t, []string{"02_seed_admin.sql", "03_seed_vendedores.sql"}, ex.arquivos, "executa na ordem")
 	assert.Contains(t, logs.String(), "total de placeholders substituídos: 3")
@@ -370,4 +371,9 @@ func assertMesmoDir(t *testing.T, want, got string) {
 	g, err := filepath.EvalSymlinks(got)
 	require.NoError(t, err)
 	assert.Equal(t, w, g)
+}
+
+// verificarSenha confere com a Strategy de hash da API (ARQ-03).
+func verificarSenha(hs config.HashSenha, hash, senha string) bool {
+	return identidadecrypto.NovoHasher(hs).Verificar(identidade.NovoHashSenha(hash), identidade.NovaSenha(senha))
 }

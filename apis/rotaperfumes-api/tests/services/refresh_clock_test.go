@@ -8,8 +8,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // TestNewRefreshTokenServiceWithClock: o relógio injetado decide a
@@ -26,7 +24,7 @@ func TestNewRefreshTokenServiceWithClock(t *testing.T) {
 	}{
 		{"nil usa time.Now (ainda válido)", nil, nil},
 		{"relógio antes da expiração", func() time.Time { return expira.Add(-time.Minute) }, nil},
-		{"relógio depois da expiração", func() time.Time { return expira.Add(time.Minute) }, services.ErrRefreshTokenExpired},
+		{"relógio depois da expiração", func() time.Time { return expira.Add(time.Minute) }, ErrRefreshTokenExpired},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -35,7 +33,7 @@ func TestNewRefreshTokenServiceWithClock(t *testing.T) {
 				WillReturnRows(sqlmock.NewRows(refreshTokenColunas()).
 					AddRow(int64(1), int64(10), hashOf(token), expira, nil, "ip", "ua", nil))
 
-			rt, err := services.NewRefreshTokenServiceWithClock(c.now).ValidateRefreshToken(context.Background(), db, token)
+			rt, err := NewRefreshTokenServiceWithClock(c.now).ValidateRefreshToken(context.Background(), db, token)
 			if c.wantErr != nil {
 				assert.ErrorIs(t, err, c.wantErr)
 				assert.Nil(t, rt)

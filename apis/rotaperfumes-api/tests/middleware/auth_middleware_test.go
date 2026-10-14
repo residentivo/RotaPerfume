@@ -16,7 +16,7 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
 
 // config de teste com segredo fixo.
@@ -36,7 +36,7 @@ func generateToken(t *testing.T, cfg *config.Config, uid int64, role string, ttl
 	}
 	// Cria token manualmente para controlar ExpiresAt.
 	now := time.Now()
-	claims := services.AuthClaims{
+	claims := identidadecrypto.Claims{
 		UserID: uid,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -76,7 +76,7 @@ var dummyHandler http.HandlerFunc = func(w http.ResponseWriter, r *http.Request)
 
 func TestJWTMiddleware_ValidToken(t *testing.T) {
 	cfg := testCfg()
-	m := middleware.JWTMiddleware(cfg, true, false)
+	m := jwtMiddleware(cfg, true, false)
 
 	token := generateToken(t, cfg, 42, "admin", 1*time.Hour, "")
 
@@ -92,7 +92,7 @@ func TestJWTMiddleware_ValidToken(t *testing.T) {
 
 func TestJWTMiddleware_ValidToken_NormalRole(t *testing.T) {
 	cfg := testCfg()
-	m := middleware.JWTMiddleware(cfg, true, false)
+	m := jwtMiddleware(cfg, true, false)
 
 	token := generateToken(t, cfg, 7, "normal", 1*time.Hour, "")
 
@@ -111,7 +111,7 @@ func TestJWTMiddleware_ValidToken_NormalRole(t *testing.T) {
 
 func TestJWTMiddleware_MissingToken(t *testing.T) {
 	cfg := testCfg()
-	m := middleware.JWTMiddleware(cfg, true, false)
+	m := jwtMiddleware(cfg, true, false)
 
 	t.Run("sem header authorization", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/protected", nil)
@@ -150,7 +150,7 @@ func TestJWTMiddleware_MissingToken(t *testing.T) {
 	})
 
 	t.Run("rota pública (protected=false) não exige token", func(t *testing.T) {
-		pub := middleware.JWTMiddleware(cfg, false, false)
+		pub := jwtMiddleware(cfg, false, false)
 		req := httptest.NewRequest("GET", "/public", nil)
 		w := httptest.NewRecorder()
 		pub(dummyHandler).ServeHTTP(w, req)
@@ -165,7 +165,7 @@ func TestJWTMiddleware_MissingToken(t *testing.T) {
 
 func TestJWTMiddleware_InvalidToken(t *testing.T) {
 	cfg := testCfg()
-	m := middleware.JWTMiddleware(cfg, true, false)
+	m := jwtMiddleware(cfg, true, false)
 
 	t.Run("string aleatória", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/protected", nil)
@@ -211,7 +211,7 @@ func TestJWTMiddleware_InvalidToken(t *testing.T) {
 
 func TestJWTMiddleware_ExpiredToken(t *testing.T) {
 	cfg := testCfg()
-	m := middleware.JWTMiddleware(cfg, true, false)
+	m := jwtMiddleware(cfg, true, false)
 
 	// Token com TTL negativo = expirado no momento da geração.
 	token := generateToken(t, cfg, 1, "admin", -1*time.Hour, "")
@@ -232,7 +232,7 @@ func TestJWTMiddleware_ExpiredToken(t *testing.T) {
 func TestJWTMiddleware_RequireAdmin_Success(t *testing.T) {
 	cfg := testCfg()
 	// protected=true, requireAdmin=true.
-	m := middleware.JWTMiddleware(cfg, true, true)
+	m := jwtMiddleware(cfg, true, true)
 
 	token := generateToken(t, cfg, 1, "admin", 1*time.Hour, "")
 
@@ -247,7 +247,7 @@ func TestJWTMiddleware_RequireAdmin_Success(t *testing.T) {
 
 func TestJWTMiddleware_RequireAdmin_Forbidden(t *testing.T) {
 	cfg := testCfg()
-	m := middleware.JWTMiddleware(cfg, true, true)
+	m := jwtMiddleware(cfg, true, true)
 
 	t.Run("role normal é bloqueado", func(t *testing.T) {
 		token := generateToken(t, cfg, 2, "normal", 1*time.Hour, "")
@@ -340,7 +340,7 @@ func TestJWTMiddleware_Combinatorial(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			m := middleware.JWTMiddleware(cfg, c.protected, c.requireAdmin)
+			m := jwtMiddleware(cfg, c.protected, c.requireAdmin)
 			req := httptest.NewRequest("GET", "/test", nil)
 			if c.token != "" {
 				req.Header.Set("Authorization", "Bearer "+c.token)
@@ -355,7 +355,7 @@ func TestJWTMiddleware_Combinatorial(t *testing.T) {
 
 func TestJWTMiddleware_ResponseFormat(t *testing.T) {
 	cfg := testCfg()
-	m := middleware.JWTMiddleware(cfg, true, false)
+	m := jwtMiddleware(cfg, true, false)
 
 	req := httptest.NewRequest("GET", "/protected", nil)
 	w := httptest.NewRecorder()
@@ -373,7 +373,7 @@ func TestJWTMiddleware_ResponseFormat(t *testing.T) {
 
 func TestJWTMiddleware_Context(t *testing.T) {
 	cfg := testCfg()
-	m := middleware.JWTMiddleware(cfg, true, false)
+	m := jwtMiddleware(cfg, true, false)
 	token := generateToken(t, cfg, 99, "normal", 1*time.Hour, "")
 
 	req := httptest.NewRequest("GET", "/protected", nil)

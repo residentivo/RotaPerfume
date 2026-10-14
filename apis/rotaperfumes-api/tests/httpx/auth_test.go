@@ -11,12 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
+	"github.com/rotaperfumes/shared/identidade"
 	"github.com/rotaperfumes/shared/kernel"
 )
 
 // capturaPrincipal registra uma rota que guarda o Principal visto pelo handler.
-func capturaPrincipal(t *testing.T, policy httpx.Policy, checker middleware.UserStatusChecker) (http.Handler, *kernel.Principal, *bool) {
+func capturaPrincipal(t *testing.T, policy httpx.Policy, checker httpx.ConsultaStatus) (http.Handler, *kernel.Principal, *bool) {
 	t.Helper()
 	var p kernel.Principal
 	var ok bool
@@ -37,7 +37,7 @@ func TestAutenticador_DerivaPrincipalComRoleDoBanco(t *testing.T) {
 		policy    httpx.Policy
 		uid       int64
 		roleToken string
-		status    map[int64]middleware.UserStatus
+		status    map[int64]identidade.StatusAcesso
 		wantCode  int
 		wantRole  kernel.Role
 		wantAdmin bool
@@ -45,11 +45,11 @@ func TestAutenticador_DerivaPrincipalComRoleDoBanco(t *testing.T) {
 		{"normal autenticado", httpx.Authenticated, 2, "normal", nil, 200, kernel.RoleNormal, false},
 		{"admin em AdminOnly", httpx.AdminOnly, 1, "admin", nil, 200, kernel.RoleAdmin, true},
 		{"token admin, banco normal: role do banco", httpx.Authenticated, 1, "admin",
-			map[int64]middleware.UserStatus{1: {Ativo: true, Role: "normal"}}, 200, kernel.RoleNormal, false},
+			map[int64]identidade.StatusAcesso{1: {Ativo: true, Role: "normal"}}, 200, kernel.RoleNormal, false},
 		{"token normal, banco admin: role do banco", httpx.AdminOnly, 2, "normal",
-			map[int64]middleware.UserStatus{2: {Ativo: true, Role: "admin"}}, 200, kernel.RoleAdmin, true},
+			map[int64]identidade.StatusAcesso{2: {Ativo: true, Role: "admin"}}, 200, kernel.RoleAdmin, true},
 		{"role desconhecido é restrito (R-a)", httpx.Authenticated, 3, "normal",
-			map[int64]middleware.UserStatus{3: {Ativo: true, Role: "gerente"}}, 200, kernel.RoleDoBanco("gerente"), false},
+			map[int64]identidade.StatusAcesso{3: {Ativo: true, Role: "gerente"}}, 200, kernel.RoleDoBanco("gerente"), false},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -67,7 +67,7 @@ func TestAutenticador_DerivaPrincipalComRoleDoBanco(t *testing.T) {
 // R-a: role desconhecido não ganha AdminOnly e gera o log operacional.
 func TestAutenticador_RoleDesconhecido_LogERestrito(t *testing.T) {
 	out := capturarLog(t, false)
-	st := map[int64]middleware.UserStatus{3: {Ativo: true, Role: "gerente"}}
+	st := map[int64]identidade.StatusAcesso{3: {Ativo: true, Role: "gerente"}}
 
 	h, _, _ := capturaPrincipal(t, httpx.Authenticated, checkerFake{status: st})
 	w := servir(h, "GET", "/api/x", token(t, 3, "admin"))
@@ -83,7 +83,7 @@ func TestAutenticador_RoleDesconhecido_LogERestrito(t *testing.T) {
 func TestAutenticador_PrincipalInvalido_500SemHandler(t *testing.T) {
 	out := capturarLog(t, false)
 	chamado := false
-	r := novoRouter(checkerFake{status: map[int64]middleware.UserStatus{2: {Ativo: true, Role: ""}}})
+	r := novoRouter(checkerFake{status: map[int64]identidade.StatusAcesso{2: {Ativo: true, Role: ""}}})
 	rt := rotaValida()
 	rt.Handler = func(http.ResponseWriter, *http.Request) { chamado = true }
 	r.Handle(rt)

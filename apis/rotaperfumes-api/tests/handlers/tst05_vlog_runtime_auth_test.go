@@ -27,8 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/adapters/turnstile"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
@@ -104,7 +103,7 @@ func (c tst05ArgCaptor) Match(v driver.Value) bool {
 type tst05Ctx struct {
 	t        *testing.T
 	mock     sqlmock.Sqlmock
-	auth     *handlers.AuthHandler
+	auth     *authHandlerTeste
 	url      string
 	mu       sync.Mutex
 	dbArgs   []string
@@ -125,7 +124,7 @@ func (c *tst05Ctx) anyArgs(n int) []driver.Value {
 // hash gera um hash Argon2id e o registra (inteiro e por segmento: salt e
 // digest) como valor proibido no log.
 func (c *tst05Ctx) hash(senha string) string {
-	h, err := services.NewAuthService().HashPassword(testCfg(), senha)
+	h, err := novoAuthCrypto().HashPassword(testCfg(), senha)
 	require.NoError(c.t, err)
 	c.addHash(h)
 	return h
@@ -240,7 +239,7 @@ func tst05Casos() []tst05Caso {
 			return c.post("/api/auth/login", login(tst05Senha), "")
 		}},
 		{"login captcha invalido", "AuthHandler.Login", http.StatusBadRequest, true, 0, 0, func(c *tst05Ctx) *http.Response {
-			c.auth.SetCaptchaVerifier(&fakeCaptchaVerifier{err: services.ErrCaptchaInvalido})
+			c.auth.SetCaptchaVerifier(&fakeCaptchaVerifier{err: turnstile.ErrCaptchaInvalido})
 			return c.post("/api/auth/login", login(tst05Senha), "")
 		}},
 		{"reset sucesso", "AuthHandler.ResetPassword", http.StatusOK, false, 0, 4, func(c *tst05Ctx) *http.Response {
@@ -267,7 +266,7 @@ func tst05Casos() []tst05Caso {
 			return c.post("/api/auth/reset-password", reset(tst05Senha, "fraquinha"), jwtUsuario(c))
 		}},
 		{"reset captcha invalido", "AuthHandler.ResetPassword", http.StatusBadRequest, false, 0, 0, func(c *tst05Ctx) *http.Response {
-			c.auth.SetCaptchaVerifier(&fakeCaptchaVerifier{err: services.ErrCaptchaInvalido})
+			c.auth.SetCaptchaVerifier(&fakeCaptchaVerifier{err: turnstile.ErrCaptchaInvalido})
 			return c.post("/api/auth/reset-password", reset(tst05Senha, tst05NovaSenha), jwtUsuario(c))
 		}},
 	}

@@ -10,13 +10,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
 
 var hsTeste = config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}
 
 func TestGerarHashSenha_FormatoPHC(t *testing.T) {
-	hash, err := services.GerarHashSenha(hsTeste, "Senha@123")
+	hash, err := gerarHashSenha(hsTeste, "Senha@123")
 	require.NoError(t, err)
 
 	partes := strings.Split(hash, "$")
@@ -33,14 +33,14 @@ func TestGerarHashSenha_FormatoPHC(t *testing.T) {
 func TestGerarHashSenha_ErroSemPepper(t *testing.T) {
 	hs := hsTeste
 	hs.Pepper = ""
-	hash, err := services.GerarHashSenha(hs, "Senha@123")
-	assert.ErrorIs(t, err, services.ErrPepperNaoConfigurado)
+	hash, err := gerarHashSenha(hs, "Senha@123")
+	assert.ErrorIs(t, err, identidadecrypto.ErrPepperNaoConfigurado)
 	assert.Empty(t, hash)
 }
 
 // O pepper entra no hash: outro pepper (ou nenhum) não valida a mesma senha.
 func TestVerificarSenha_Pepper(t *testing.T) {
-	hash, err := services.GerarHashSenha(hsTeste, "Senha@123")
+	hash, err := gerarHashSenha(hsTeste, "Senha@123")
 	require.NoError(t, err)
 
 	outro := hsTeste
@@ -48,35 +48,35 @@ func TestVerificarSenha_Pepper(t *testing.T) {
 	semPepper := hsTeste
 	semPepper.Pepper = ""
 
-	assert.True(t, services.VerificarSenha(hsTeste, hash, "Senha@123"))
-	assert.False(t, services.VerificarSenha(outro, hash, "Senha@123"), "pepper diferente")
-	assert.False(t, services.VerificarSenha(semPepper, hash, "Senha@123"), "sem pepper")
-	assert.False(t, services.VerificarSenha(hsTeste, hash, "Senha@123"+hsTeste.Pepper), "pepper não é texto da senha")
+	assert.True(t, verificarSenha(hsTeste, hash, "Senha@123"))
+	assert.False(t, verificarSenha(outro, hash, "Senha@123"), "pepper diferente")
+	assert.False(t, verificarSenha(semPepper, hash, "Senha@123"), "sem pepper")
+	assert.False(t, verificarSenha(hsTeste, hash, "Senha@123"+hsTeste.Pepper), "pepper não é texto da senha")
 }
 
 // O hash guarda os próprios parâmetros: mudar ARGON2_* não quebra hashes antigos.
 func TestVerificarSenha_ParametrosDoHash(t *testing.T) {
-	antigo, err := services.GerarHashSenha(hsTeste, "Senha@123")
+	antigo, err := gerarHashSenha(hsTeste, "Senha@123")
 	require.NoError(t, err)
 	novo := hsTeste
 	novo.MemoriaKiB, novo.Iteracoes, novo.Paralelismo = 128, 2, 2
 
-	assert.True(t, services.VerificarSenha(novo, antigo, "Senha@123"))
-	assert.True(t, services.PrecisaRehash(novo, antigo))
-	assert.False(t, services.PrecisaRehash(hsTeste, antigo))
+	assert.True(t, verificarSenha(novo, antigo, "Senha@123"))
+	assert.True(t, precisaRehash(novo, antigo))
+	assert.False(t, precisaRehash(hsTeste, antigo))
 }
 
 func TestVerificarSenha_BcryptLegado(t *testing.T) {
 	legado, err := bcrypt.GenerateFromPassword([]byte("Senha@123"), bcrypt.MinCost)
 	require.NoError(t, err)
 
-	assert.True(t, services.VerificarSenha(hsTeste, string(legado), "Senha@123"), "bcrypt é verificado sem pepper")
-	assert.False(t, services.VerificarSenha(hsTeste, string(legado), "errada"))
-	assert.True(t, services.PrecisaRehash(hsTeste, string(legado)))
+	assert.True(t, verificarSenha(hsTeste, string(legado), "Senha@123"), "bcrypt é verificado sem pepper")
+	assert.False(t, verificarSenha(hsTeste, string(legado), "errada"))
+	assert.True(t, precisaRehash(hsTeste, string(legado)))
 }
 
 func TestVerificarSenha_HashesMalformados(t *testing.T) {
-	valido, err := services.GerarHashSenha(hsTeste, "Senha@123")
+	valido, err := gerarHashSenha(hsTeste, "Senha@123")
 	require.NoError(t, err)
 	p := strings.Split(valido, "$")
 
@@ -96,9 +96,9 @@ func TestVerificarSenha_HashesMalformados(t *testing.T) {
 	for nome, hash := range casos {
 		t.Run(nome, func(t *testing.T) {
 			assert.NotPanics(t, func() {
-				assert.False(t, services.VerificarSenha(hsTeste, hash, "Senha@123"))
+				assert.False(t, verificarSenha(hsTeste, hash, "Senha@123"))
 			})
-			assert.False(t, services.PrecisaRehash(hsTeste, hash), "malformado não é caso de re-hash")
+			assert.False(t, precisaRehash(hsTeste, hash), "malformado não é caso de re-hash")
 		})
 	}
 }

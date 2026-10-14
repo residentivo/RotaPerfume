@@ -34,7 +34,8 @@ import (
 
 	"github.com/rotaperfumes/shared/cmdutil"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
@@ -104,16 +105,14 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 		return err
 	}
 
-	vlog.Printf("seedusers.go", "Run", "declarando auth com resultado de services.NewAuthService()")
-	auth := services.NewAuthService()
-	vlog.Printf("seedusers.go", "Run", "declarando adminHash, err com resultado de auth.HashPassword()")
-	adminHash, err := auth.HashPassword(cfg, adminPwd)
+	vlog.Printf("seedusers.go", "Run", "declarando adminHash, err com resultado de hashSenha()")
+	adminHash, err := hashSenha(cfg, adminPwd)
 	vlog.Printf("seedusers.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("hash admin falhou: %w", err)
 	}
-	vlog.Printf("seedusers.go", "Run", "declarando userHash, err com resultado de auth.HashPassword()")
-	userHash, err := auth.HashPassword(cfg, userPwd)
+	vlog.Printf("seedusers.go", "Run", "declarando userHash, err com resultado de hashSenha()")
+	userHash, err := hashSenha(cfg, userPwd)
 	vlog.Printf("seedusers.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("hash user falhou: %w", err)
@@ -250,11 +249,11 @@ func apagarRenderizados(arquivos []string) {
 }
 
 // GenerateRandomPassword retorna uma senha aleatória de n caracteres
-// [a-zA-Z0-9], uniforme (delega a services.SenhaAlfanumerica). Usada quando o
+// [a-zA-Z0-9], uniforme (delega a identidadecrypto.SenhaAlfanumerica). Usada quando o
 // seed roda em modo dev sem credenciais definidas — em produção
 // SEED_ADMIN_PASSWORD e SEED_USER_PASSWORD devem ser sempre fornecidos.
 func GenerateRandomPassword(n int) (string, error) {
-	return services.SenhaAlfanumerica(n)
+	return identidadecrypto.SenhaAlfanumerica(n)
 }
 
 // ResolveSeedPassword retorna a senha de seed da env envKey. Se ela não
@@ -361,4 +360,14 @@ func MySQLArgs(cfg *config.Config) []string {
 		"--local-infile=1",
 		cfg.DBName,
 	}
+}
+
+// hashSenha gera o Argon2id com pepper pela Strategy da API
+// (identidadecrypto, ARQ-03).
+func hashSenha(cfg *config.Config, senha string) (string, error) {
+	h, err := identidadecrypto.NovoHasher(cfg.HashSenha).Gerar(identidade.NovaSenha(senha))
+	if err != nil {
+		return "", fmt.Errorf("auth: hash falhou: %w", err)
+	}
+	return h.Revelar(), nil
 }

@@ -18,8 +18,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 const (
@@ -40,23 +38,23 @@ func (m tempoIgual) Match(v driver.Value) bool {
 var sec12T0 = time.Date(2026, 9, 27, 14, 5, 9, 870_000_000, time.Local)
 
 func TestSEC12_RefreshReuseSuppressWindowPadrao(t *testing.T) {
-	assert.Equal(t, 30*time.Minute, services.RefreshReuseSuppressWindowPadrao)
+	assert.Equal(t, 30*time.Minute, RefreshReuseSuppressWindowPadrao)
 }
 
 func TestSEC12_RegistrarReuso_JanelaELimite(t *testing.T) {
 	agora := sec12T0.Truncate(time.Second)
 	casos := []struct {
 		nome       string
-		configurar func(s *services.RefreshTokenService)
+		configurar func(s *RefreshTokenService)
 		janela     time.Duration
 	}{
-		{"padrão (sem Set) → 30m", func(*services.RefreshTokenService) {}, 30 * time.Minute},
-		{"Set(10m)", func(s *services.RefreshTokenService) { s.SetReuseSuppressWindow(10 * time.Minute) }, 10 * time.Minute},
-		{"Set(1m)", func(s *services.RefreshTokenService) { s.SetReuseSuppressWindow(time.Minute) }, time.Minute},
-		{"Set(24h)", func(s *services.RefreshTokenService) { s.SetReuseSuppressWindow(24 * time.Hour) }, 24 * time.Hour},
-		{"Set(0) mantém o padrão", func(s *services.RefreshTokenService) { s.SetReuseSuppressWindow(0) }, 30 * time.Minute},
-		{"Set(negativo) mantém o padrão", func(s *services.RefreshTokenService) { s.SetReuseSuppressWindow(-time.Hour) }, 30 * time.Minute},
-		{"Set(10m) e depois Set(0) volta ao padrão", func(s *services.RefreshTokenService) {
+		{"padrão (sem Set) → 30m", func(*RefreshTokenService) {}, 30 * time.Minute},
+		{"Set(10m)", func(s *RefreshTokenService) { s.SetReuseSuppressWindow(10 * time.Minute) }, 10 * time.Minute},
+		{"Set(1m)", func(s *RefreshTokenService) { s.SetReuseSuppressWindow(time.Minute) }, time.Minute},
+		{"Set(24h)", func(s *RefreshTokenService) { s.SetReuseSuppressWindow(24 * time.Hour) }, 24 * time.Hour},
+		{"Set(0) mantém o padrão", func(s *RefreshTokenService) { s.SetReuseSuppressWindow(0) }, 30 * time.Minute},
+		{"Set(negativo) mantém o padrão", func(s *RefreshTokenService) { s.SetReuseSuppressWindow(-time.Hour) }, 30 * time.Minute},
+		{"Set(10m) e depois Set(0) volta ao padrão", func(s *RefreshTokenService) {
 			s.SetReuseSuppressWindow(10 * time.Minute)
 			s.SetReuseSuppressWindow(0)
 		}, 30 * time.Minute},
@@ -68,7 +66,7 @@ func TestSEC12_RegistrarReuso_JanelaELimite(t *testing.T) {
 				WithArgs(tempoIgual{agora}, int64(42), tempoIgual{agora.Add(-c.janela)}).
 				WillReturnResult(sqlmock.NewResult(0, 1))
 
-			svc := services.NewRefreshTokenServiceWithClock(func() time.Time { return sec12T0 })
+			svc := NewRefreshTokenServiceWithClock(func() time.Time { return sec12T0 })
 			c.configurar(svc)
 			cortar, marca, err := svc.RegistrarReuso(context.Background(), db, 42)
 			require.NoError(t, err)
@@ -100,7 +98,7 @@ func TestSEC12_RegistrarReuso_Resultados(t *testing.T) {
 			db, mock := newRefreshTokenTestDB(t)
 			c.setup(mock.ExpectExec(sec12MarcarSQL).WithArgs(tempoIgual{agora}, int64(10), tempoIgual{agora.Add(-30 * time.Minute)}))
 
-			svc := services.NewRefreshTokenServiceWithClock(func() time.Time { return sec12T0 })
+			svc := NewRefreshTokenServiceWithClock(func() time.Time { return sec12T0 })
 			cortar, marca, err := svc.RegistrarReuso(context.Background(), db, 10)
 			assert.Equal(t, c.wantCortar, cortar)
 			assert.True(t, marca.Equal(c.wantMarca), "marca=%s", marca)
@@ -120,7 +118,7 @@ func TestSEC12_RegistrarReuso_UsaRelogioACadaChamada(t *testing.T) {
 	db, mock := newRefreshTokenTestDB(t)
 	instantes := []time.Time{sec12T0, sec12T0.Add(31 * time.Minute)}
 	i := 0
-	svc := services.NewRefreshTokenServiceWithClock(func() time.Time { v := instantes[i]; return v })
+	svc := NewRefreshTokenServiceWithClock(func() time.Time { v := instantes[i]; return v })
 	for _, ins := range instantes {
 		a := ins.Truncate(time.Second)
 		mock.ExpectExec(sec12MarcarSQL).WithArgs(tempoIgual{a}, int64(10), tempoIgual{a.Add(-30 * time.Minute)}).
@@ -151,7 +149,7 @@ func TestSEC12_DesfazerReuso(t *testing.T) {
 			db, mock := newRefreshTokenTestDB(t)
 			c.setup(mock.ExpectExec(sec12DesfazerSQL).WithArgs(int64(10), tempoIgual{marca}))
 
-			err := services.NewRefreshTokenService().DesfazerReuso(context.Background(), db, 10, marca)
+			err := NewRefreshTokenService().DesfazerReuso(context.Background(), db, 10, marca)
 			if c.wantErr {
 				assert.Error(t, err)
 			} else {

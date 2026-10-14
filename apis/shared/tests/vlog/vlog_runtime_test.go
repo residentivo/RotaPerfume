@@ -2,25 +2,30 @@ package vlog_test
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"log"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/DATA-DOG/go-sqlmock"
+
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
-// LOG-02: valida em runtime que os logs verbose instrumentados seguem o
-// formato "[arquivo.go] [Funcao] descrição" e nunca expõem senha, hash ou
-// pepper; e que com a flag desligada nada é emitido.
+// LOG-02: valida em runtime que os logs verbose seguem o formato
+// "[arquivo.go] [Funcao] descrição" e nunca expõem senha, hash, token, IP ou
+// User-Agent; e que com a flag desligada nada é emitido. ARQ-03: o hash, a
+// política e o gerador de senha viraram código puro (identidadecrypto e
+// domínio, sem vlog); os casos passaram aos adapters de identidademysql, que
+// leem e gravam esses segredos (vlog nível 4: só operação e contagens).
 
-var linhaVlog = regexp.MustCompile(`^\[(password_generator|password_policy|password_hash)\.go\] \[[A-Za-z][A-Za-z0-9_.]*\] \S.*$`)
-
-const pepperTeste = "pepper-de-teste-com-mais-de-32-bytes-0123456789"
-
-var hashParams = config.HashSenha{Pepper: pepperTeste, MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}
+var linhaVlog = regexp.MustCompile(`^\[(usuarios|historico|refresh_tokens)\.go\] \[[A-Za-z][A-Za-z0-9_.]*\] \S.*$`)
 
 func capturar(t *testing.T, ligado bool, fn func()) string {
 	t.Helper()
@@ -47,47 +52,62 @@ type caso struct {
 }
 
 func casos() []caso {
+	const hash = "$argon2id$v=19$m=64,t=1,p=1$c2FsdHNhbHRzYWx0$ZGlnZXN0ZGlnZXN0ZGlnZXN0"
+	const email = "fulano.segredo@empresa.com"
+	linhaUsuario := func(m sqlmock.Sqlmock) {
+		m.ExpectQuery("FROM usuarios u").WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo",
+			"deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
+			AddRow(int64(1), "Fulano", email, hash, "normal", nil, true, false, time.Now(), time.Now(), nil, nil))
+	}
 	return []caso{
-		{"GerarSenhaAleatoria", "password_generator.go", func(t *testing.T) []string {
-			s, err := services.GerarSenhaAleatoria(16)
-			if err != nil {
-				t.Fatalf("GerarSenhaAleatoria: %v", err)
+		{"Usuarios.PorEmail", "usuarios.go", func(t *testing.T) []string {
+			db, m := novoMock(t)
+			linhaUsuario(m)
+			if _, err := identidademysql.NovoUsuarios(db).PorEmail(context.Background(), email); err != nil {
+				t.Fatalf("PorEmail: %v", err)
 			}
-			return []string{s}
+			return []string{email, hash}
 		}},
-		{"SenhaAlfanumerica", "password_generator.go", func(t *testing.T) []string {
-			s, err := services.SenhaAlfanumerica(20)
-			if err != nil {
-				t.Fatalf("SenhaAlfanumerica: %v", err)
+		{"Usuarios.AtualizarSenha", "usuarios.go", func(t *testing.T) []string {
+			db, m := novoMock(t)
+			m.ExpectExec("UPDATE usuarios SET password_hash").WillReturnResult(sqlmock.NewResult(0, 1))
+			if err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 1, identidade.NovoHashSenha(hash), false); err != nil {
+				t.Fatalf("AtualizarSenha: %v", err)
 			}
-			return []string{s}
+			return []string{hash}
 		}},
-		{"ValidarForcaSenha forte", "password_policy.go", func(t *testing.T) []string {
-			senha := "Zq9!Segredo#Forte77"
-			if err := services.ValidarForcaSenha(senha); err != nil {
-				t.Fatalf("ValidarForcaSenha: %v", err)
+		{"HistoricoSenhas.DoUsuario", "historico.go", func(t *testing.T) []string {
+			db, m := novoMock(t)
+			m.ExpectQuery("SELECT COUNT").WillReturnRows(sqlmock.NewRows([]string{"n"}).AddRow(1))
+			m.ExpectQuery("FROM senha_historico sh").WillReturnRows(sqlmock.NewRows([]string{"id", "usuario_id", "resetado_por_id", "senha_hash_anterior",
+				"ip_origem", "user_agent", "tipo_reset", "created_at", "usuario_nome", "resetado_por_nome"}).
+				AddRow(int64(1), int64(1), nil, hash, "10.9.8.7", "UA-Segredo/1", "usuario", time.Now(), "Fulano", nil))
+			if _, err := identidademysql.NovoHistoricoSenhas(db).DoUsuario(context.Background(), 1, identidade.OrdenacaoHistoricoPadrao(), kernel.NovaPagina(1, 2)); err != nil {
+				t.Fatalf("DoUsuario: %v", err)
 			}
-			return []string{senha}
+			return []string{hash, "10.9.8.7", "UA-Segredo/1"}
 		}},
-		{"ValidarForcaSenha fraca", "password_policy.go", func(t *testing.T) []string {
-			senha := "abcfraca"
-			_ = services.ValidarForcaSenha(senha)
-			return []string{senha}
-		}},
-		{"GerarHashSenha + VerificarSenha", "password_hash.go", func(t *testing.T) []string {
-			senha := "Kx7$SenhaParaHash"
-			h, err := services.GerarHashSenha(hashParams, senha)
-			if err != nil {
-				t.Fatalf("GerarHashSenha: %v", err)
+		{"RefreshTokens.PorHash", "refresh_tokens.go", func(t *testing.T) []string {
+			db, m := novoMock(t)
+			tokenHash := "abc123hashdotokenmuitosecreto456"
+			m.ExpectQuery("FROM refresh_tokens").WillReturnRows(sqlmock.NewRows([]string{"id", "usuario_id", "token_hash", "expires_at", "revoked_at",
+				"ip_origem", "user_agent", "revoked_reason"}).AddRow(int64(9), int64(1), tokenHash, time.Now(), nil, "10.9.8.7", "UA-Segredo/1", nil))
+			if _, err := identidademysql.NovoRefreshTokens(db).PorHash(context.Background(), tokenHash); err != nil {
+				t.Fatalf("PorHash: %v", err)
 			}
-			if !services.VerificarSenha(hashParams, h, senha) {
-				t.Fatal("VerificarSenha deveria aceitar a senha")
-			}
-			_ = services.PrecisaRehash(hashParams, h)
-			partes := strings.Split(h, "$")
-			return []string{senha, h, pepperTeste, partes[len(partes)-1], partes[len(partes)-2]}
+			return []string{tokenHash, "10.9.8.7", "UA-Segredo/1"}
 		}},
 	}
+}
+
+func novoMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
+	t.Helper()
+	db, m, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db, m
 }
 
 func TestVlogRuntimeLigadoFormatoESemVazamento(t *testing.T) {

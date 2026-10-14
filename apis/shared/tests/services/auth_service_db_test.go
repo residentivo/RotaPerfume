@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/repositories"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
 
 var usuarioCols = []string{
@@ -66,7 +66,7 @@ func TestAuthService_GetUsuarioByEmail(t *testing.T) {
 				m.ExpectQuery(`WHERE u.email = \?`).WithArgs("ana@rp.com").
 					WillReturnRows(sqlmock.NewRows(usuarioCols))
 			},
-			wantErrIs: repositories.ErrNotFound,
+			wantErrIs: identidade.ErrUsuarioNaoEncontrado,
 		},
 		{
 			nome: "erro do banco",
@@ -83,7 +83,7 @@ func TestAuthService_GetUsuarioByEmail(t *testing.T) {
 			defer db.Close()
 			c.prepara(mock)
 
-			u, err := services.NewAuthService().GetUsuarioByEmail(context.Background(), db, "ana@rp.com")
+			u, err := novoAuth().GetUsuarioByEmail(context.Background(), db, "ana@rp.com")
 			if c.wantErrIs != nil {
 				assert.ErrorIs(t, err, c.wantErrIs)
 				assert.Nil(t, u)
@@ -108,7 +108,7 @@ func TestAuthService_ResetPassword(t *testing.T) {
 	}{
 		{"sucesso forçando troca", true, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 1)) }, nil},
 		{"sucesso sem forçar troca", false, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 1)) }, nil},
-		{"usuário inexistente", true, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 0)) }, repositories.ErrNotFound},
+		{"usuário inexistente", true, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 0)) }, identidade.ErrUsuarioNaoEncontrado},
 		{"erro do banco", false, func(e *sqlmock.ExpectedExec) { e.WillReturnError(erroBanco) }, erroBanco},
 	}
 	for _, c := range casos {
@@ -119,7 +119,7 @@ func TestAuthService_ResetPassword(t *testing.T) {
 			c.resultado(mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
 				WithArgs("novo-hash", c.deveTrocar, sqlmock.AnyArg(), int64(9)))
 
-			err = services.NewAuthService().ResetPassword(context.Background(), db, 9, "novo-hash", c.deveTrocar)
+			err = novoAuth().ResetPassword(context.Background(), db, 9, "novo-hash", c.deveTrocar)
 			if c.wantErrIs != nil {
 				assert.ErrorIs(t, err, c.wantErrIs)
 			} else {
@@ -134,18 +134,19 @@ func TestAuthService_HashPassword_Erros(t *testing.T) {
 	casos := []struct {
 		nome string
 		hs   config.HashSenha
+		want string // mensagem exata do erro de geração (ARQ-03: identidadecrypto)
 	}{
-		{"sem pepper", config.HashSenha{MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}},
-		{"memória zerada", config.HashSenha{Pepper: "p", Iteracoes: 1, Paralelismo: 1}},
-		{"iterações zeradas", config.HashSenha{Pepper: "p", MemoriaKiB: 64, Paralelismo: 1}},
-		{"paralelismo zerado", config.HashSenha{Pepper: "p", MemoriaKiB: 64, Iteracoes: 1}},
+		{"sem pepper", config.HashSenha{MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}, identidadecrypto.ErrPepperNaoConfigurado.Error()},
+		{"memória zerada", config.HashSenha{Pepper: "p", Iteracoes: 1, Paralelismo: 1}, "identidadecrypto: parâmetros Argon2id inválidos (m=0 t=1 p=1)"},
+		{"iterações zeradas", config.HashSenha{Pepper: "p", MemoriaKiB: 64, Paralelismo: 1}, "identidadecrypto: parâmetros Argon2id inválidos (m=64 t=0 p=1)"},
+		{"paralelismo zerado", config.HashSenha{Pepper: "p", MemoriaKiB: 64, Iteracoes: 1}, "identidadecrypto: parâmetros Argon2id inválidos (m=64 t=1 p=0)"},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			hash, err := services.NewAuthService().HashPassword(&config.Config{HashSenha: c.hs}, "senha")
+			hash, err := novoAuth().HashPassword(&config.Config{HashSenha: c.hs}, "senha")
 			require.Error(t, err)
 			assert.Empty(t, hash)
-			assert.Contains(t, err.Error(), "auth: hash falhou")
+			assert.EqualError(t, err, c.want)
 		})
 	}
 }
@@ -159,7 +160,7 @@ func TestAuthService_RehashPassword(t *testing.T) {
 		WithArgs("$argon2id$novo", int64(3), "$2a$12$antigo").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = services.NewAuthService().RehashPassword(context.Background(), db, 3, "$2a$12$antigo", "$argon2id$novo")
+	err = novoAuth().RehashPassword(context.Background(), db, 3, "$2a$12$antigo", "$argon2id$novo")
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -167,7 +168,7 @@ func TestAuthService_RehashPassword(t *testing.T) {
 // SEC-13: a verificação fictícia (login de e-mail inexistente) não pode
 // entrar em pânico, nem mesmo sem pepper.
 func TestAuthService_VerifyDummyPassword(t *testing.T) {
-	auth := services.NewAuthService()
+	auth := novoAuth()
 	assert.NotPanics(t, func() { auth.VerifyDummyPassword(newTestConfig(), "qualquer") })
 	assert.NotPanics(t, func() { auth.VerifyDummyPassword(&config.Config{}, "qualquer") })
 }

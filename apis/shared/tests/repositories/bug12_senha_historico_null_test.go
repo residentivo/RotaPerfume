@@ -20,10 +20,9 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/shared/identidade"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // bug12Linha descreve uma linha do SELECT da listagem. Ponteiros nil
@@ -58,7 +57,7 @@ func (l bug12Linha) valores(usuarioID int64) []driver.Value {
 
 // conferir valida o registro lido contra a linha de origem: NULL vira o
 // valor zero; valor preenchido chega intacto.
-func (l bug12Linha) conferir(t *testing.T, h repositories.SenhaHistorico) {
+func (l bug12Linha) conferir(t *testing.T, h senhaHistorico) {
 	t.Helper()
 	deref := func(p *string) string {
 		if p == nil {
@@ -90,20 +89,20 @@ type bug12Metodo struct {
 	count  string
 	lista  string
 	args   []driver.Value
-	chamar func(db *sql.DB) ([]repositories.SenhaHistorico, int, error)
+	chamar func(db *sql.DB) ([]senhaHistorico, int, error)
 }
 
 const bug12UsuarioID = int64(7)
 
 func bug12Metodos() []bug12Metodo {
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	return []bug12Metodo{
 		{
 			nome:  "FindAll",
 			count: `SELECT COUNT\(\*\) FROM senha_historico$`,
 			lista: `FROM senha_historico sh LEFT JOIN usuarios u1 ON u1\.id = sh\.usuario_id LEFT JOIN usuarios u2 ON u2\.id = sh\.resetado_por_id ORDER BY sh\.id DESC LIMIT \? OFFSET \?`,
 			args:  []driver.Value{20, 0},
-			chamar: func(db *sql.DB) ([]repositories.SenhaHistorico, int, error) {
+			chamar: func(db *sql.DB) ([]senhaHistorico, int, error) {
 				return repo.FindAll(context.Background(), db, 1, 20, "", "")
 			},
 		},
@@ -112,7 +111,7 @@ func bug12Metodos() []bug12Metodo {
 			count: `SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`,
 			lista: `FROM senha_historico sh LEFT JOIN usuarios u1 ON u1\.id = sh\.usuario_id LEFT JOIN usuarios u2 ON u2\.id = sh\.resetado_por_id WHERE sh\.usuario_id = \? ORDER BY sh\.id DESC LIMIT \? OFFSET \?`,
 			args:  []driver.Value{bug12UsuarioID, 20, 0},
-			chamar: func(db *sql.DB) ([]repositories.SenhaHistorico, int, error) {
+			chamar: func(db *sql.DB) ([]senhaHistorico, int, error) {
 				return repo.FindByUsuario(context.Background(), db, bug12UsuarioID, 1, 20, "", "")
 			},
 		},
@@ -215,8 +214,8 @@ func TestBUG12_SenhaHistorico_ScanTipoInvalido(t *testing.T) {
 				lista, total, err := m.chamar(db)
 
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), "repositories: scan senha_historico")
-				assert.NotErrorIs(t, err, repositories.ErrNotFound)
+				assert.Contains(t, err.Error(), "identidademysql: scan senha_historico")
+				assert.NotErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 				assert.Nil(t, lista)
 				assert.Equal(t, 0, total)
 			})
@@ -236,7 +235,7 @@ func TestBUG12_SenhaHistorico_ScanTipoInvalido(t *testing.T) {
 func TestIntegracaoBUG12_NullReal(t *testing.T) {
 	db := abrirDBSEC08(t)
 	ctx := context.Background()
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	sufixo := time.Now().UnixNano()
 
 	criarUsuario := func(tag string) int64 {
@@ -318,7 +317,7 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 		ids[4]:  {"10.0.0.3", "ua-bug12", "ZZ-BUG12-ALVO-" + fmt.Sprint(sufixo), true, true},
 		orfaoID: {"", "", "", true, false},
 	}
-	conferir := func(t *testing.T, h repositories.SenhaHistorico) {
+	conferir := func(t *testing.T, h senhaHistorico) {
 		t.Helper()
 		e := esperado[h.ID]
 		assert.Equal(t, e.ip, h.IPOrigem, "ip_origem id=%d", h.ID)

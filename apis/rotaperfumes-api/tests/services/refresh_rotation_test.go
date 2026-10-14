@@ -8,8 +8,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 const revokeCondicionalSQL = `UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`
@@ -38,7 +36,7 @@ func TestRefreshTokenService_BeginRotation(t *testing.T) {
 				mock.ExpectExec(revokeCondicionalSQL).WillReturnResult(sqlmock.NewResult(0, 0))
 				mock.ExpectRollback()
 			},
-			wantErr: services.ErrRefreshTokenRevoked,
+			wantErr: ErrRefreshTokenRevoked,
 		},
 		{
 			nome: "erro de banco no UPDATE é propagado",
@@ -62,14 +60,14 @@ func TestRefreshTokenService_BeginRotation(t *testing.T) {
 			db, mock := newRefreshTokenTestDB(t)
 			tc.setup(mock)
 
-			rot, err := services.NewRefreshTokenService().BeginRotation(context.Background(), db, 7)
+			rot, err := NewRefreshTokenService().BeginRotation(context.Background(), db, 7)
 			switch {
 			case tc.wantErr != nil:
 				assert.ErrorIs(t, err, tc.wantErr)
 				assert.Nil(t, rot)
 			case tc.wantAny:
 				assert.Error(t, err)
-				assert.NotErrorIs(t, err, services.ErrRefreshTokenRevoked)
+				assert.NotErrorIs(t, err, ErrRefreshTokenRevoked)
 				assert.Nil(t, rot)
 			default:
 				require.NoError(t, err)
@@ -120,7 +118,7 @@ func TestRefreshRotation_Issue(t *testing.T) {
 			mock.ExpectExec(revokeCondicionalSQL).WillReturnResult(sqlmock.NewResult(0, 1))
 			tc.setup(mock)
 
-			rot, err := services.NewRefreshTokenService().BeginRotation(context.Background(), db, 7)
+			rot, err := NewRefreshTokenService().BeginRotation(context.Background(), db, 7)
 			require.NoError(t, err)
 			tok, err := rot.Issue(context.Background(), 3, "ip", "ua")
 			rot.Rollback() // no-op após Issue
@@ -129,7 +127,7 @@ func TestRefreshRotation_Issue(t *testing.T) {
 				assert.Empty(t, tok)
 			} else {
 				require.NoError(t, err)
-				assert.Len(t, tok, services.RefreshTokenBytes*2)
+				assert.Len(t, tok, RefreshTokenBytes*2)
 			}
 
 			_, err = rot.Issue(context.Background(), 3, "ip", "ua")

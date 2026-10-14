@@ -57,7 +57,7 @@ func (c *sec12IT) token(expira time.Time, motivo string) int64 {
 	c.t.Helper()
 	c.seq++
 	rt := &repositories.RefreshToken{UsuarioID: c.uid, TokenHash: fmt.Sprintf("%s%d", c.prefix, c.seq), ExpiresAt: expira, IPOrigem: "127.0.0.1", UserAgent: "go-test"}
-	require.NoError(c.t, repositories.NewRefreshTokenRepository().Create(context.Background(), c.db, rt))
+	require.NoError(c.t, novoRefreshRepo().Create(context.Background(), c.db, rt))
 	if motivo != "" {
 		_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL 5 MINUTE, revoked_reason = ? WHERE id = ?`, motivo, rt.ID)
 		require.NoError(c.t, err)
@@ -74,7 +74,7 @@ func (c *sec12IT) marca(id int64) *time.Time {
 
 func TestIntegracaoSEC12_MarcarReusoDetectado(t *testing.T) {
 	c := novoSEC12IT(t)
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	janela := 30 * time.Minute
 	agora := time.Now().Truncate(time.Second)
@@ -152,7 +152,7 @@ func TestIntegracaoSEC12_MarcarReusoDetectado(t *testing.T) {
 
 func TestIntegracaoSEC12_DesfazerReusoDetectado(t *testing.T) {
 	c := novoSEC12IT(t)
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	agora := time.Now().Truncate(time.Second)
 	id := c.token(time.Now().Add(time.Hour), "rotacao")
@@ -176,7 +176,7 @@ func TestIntegracaoSEC12_DesfazerReusoDetectado(t *testing.T) {
 
 func TestIntegracaoCHORE02_DeleteExpired(t *testing.T) {
 	c := novoSEC12IT(t)
-	repo := repositories.NewRefreshTokenRepository()
+	repo := novoRefreshRepo()
 	ctx := context.Background()
 	corte := time.Date(2001, 1, 10, 12, 0, 0, 0, time.Local)
 

@@ -296,8 +296,9 @@ func TestARQ_ChavesLegadas_SoMiddlewareLegado(t *testing.T) {
 	arqs := todosOsArquivos(t)
 	assert.Empty(t, violacoesChavesLegadas(arqs))
 
-	// Sanidade: o único gravador legado continua sendo visto.
-	achou := 0
+	// ARQ-03: o middleware JWT legado saiu; nenhuma chave antiga é gravada e o
+	// único gravador de identidade no contexto é o httpx (chave não exportada).
+	achou, principal := 0, 0
 	for _, a := range arqs {
 		chamadasA(a, "context", func(nome string, call *ast.CallExpr) {
 			if nome == "WithValue" && len(call.Args) == 3 {
@@ -307,7 +308,17 @@ func TestARQ_ChavesLegadas_SoMiddlewareLegado(t *testing.T) {
 			}
 		})
 	}
-	assert.Equal(t, 2, achou, "o middleware legado grava keyUserID e keyRole")
+	for _, a := range arqs {
+		chamadasA(a, "context", func(nome string, call *ast.CallExpr) {
+			if nome == "WithValue" && len(call.Args) == 3 {
+				if cl, ok := call.Args[1].(*ast.CompositeLit); ok && textoDe(cl.Type) == "chavePrincipal" && a.pkg == pkgHttpx {
+					principal++
+				}
+			}
+		})
+	}
+	assert.Zero(t, achou, "nenhum gravador de keyUserID/keyRole depois do ARQ-03")
+	assert.Equal(t, 1, principal, "o httpx grava o Principal num único ponto (comPrincipal)")
 }
 
 func TestARQ_Filtro_SoAdapters(t *testing.T) {
@@ -418,16 +429,21 @@ func TestARQ_MiddlewareAuthLegado_SoAutenticador(t *testing.T) {
 	arqs := todosOsArquivos(t)
 	assert.Empty(t, violacoesMiddlewareAuthLegado(arqs))
 
-	// Sanidade: a referência permitida continua sendo vista.
-	vistas := 0
+	// ARQ-03: o middleware JWT legado saiu (o Autenticador do httpx autentica);
+	// do pacote middleware só resta a ponte de leitura GetUserID/GetRole.
+	legado, ponte := 0, 0
 	for _, a := range arqs {
 		referenciasA(a, modAPI+"/middleware", func(nome string, _ *ast.SelectorExpr) {
-			if nome == "JWTMiddlewareWithUserCheck" {
-				vistas++
+			switch nome {
+			case "JWTMiddleware", "JWTMiddlewareWithUserCheck", "RequireAdmin":
+				legado++
+			case "GetUserID", "GetRole":
+				ponte++
 			}
 		})
 	}
-	assert.Equal(t, 1, vistas, "internal/httpx/auth.go referencia JWTMiddlewareWithUserCheck")
+	assert.Zero(t, legado, "nenhuma referência ao middleware JWT legado")
+	assert.Positive(t, ponte, "sanidade: a varredura enxerga a ponte usada pelos handlers legados")
 }
 
 // N-4/N-5: referências sem chamada (valor de função) também são violações.

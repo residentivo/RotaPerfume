@@ -8,20 +8,22 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/catalogohttp"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/identidadehttp"
 	"github.com/rotaperfumes/shared/catalogo/catalogoapp"
 	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
 // Handlers agrupa os handlers HTTP. Os contextos ainda não migrados
-// (ARQ-03..06, strangler fig) usam os handlers LEGADOS; o campo de cada
-// contexto troca de tipo no lote dele (Catálogo: ARQ-02).
+// (ARQ-04..06, strangler fig) usam os handlers LEGADOS; o campo de cada
+// contexto troca de tipo no lote dele (Catálogo: ARQ-02; Identidade: ARQ-03).
 type Handlers struct {
-	Auth           *handlers.AuthHandler
-	Usuario        *handlers.UsuarioHandler
+	Auth           *identidadehttp.AuthHandler
+	Usuario        *identidadehttp.UsuarioHandler
 	Dashboard      *handlers.DashboardHandler
-	SenhaHistorico *handlers.SenhaHistoricoHandler
+	SenhaHistorico *identidadehttp.SenhaHistoricoHandler
 	Vendedor       *handlers.VendedorHandler
 	Cliente        *handlers.ClienteHandler
 	Produto        *catalogohttp.ProdutoHandler
@@ -32,16 +34,22 @@ type Handlers struct {
 	Estoque        *catalogohttp.EstoqueHandler
 }
 
-// NovosHandlers cria os handlers sobre o pool. Cada handler é criado uma vez
-// por processo; os rate limiters e o Turnstile do AuthHandler nascem aqui
-// dentro do construtor legado e passam a singletons explícitos no ARQ-03.
+// NovosHandlers cria os handlers sobre o pool, com a Identidade padrão
+// (Turnstile real, sem assinante de evento) e o e-mail informado.
 func NovosHandlers(pool *sql.DB, cfg *config.Config, email sharedsvc.EmailService) Handlers {
+	return NovosHandlersCom(pool, cfg, NovaIdentidade(pool, cfg, extPadrao(cfg, email)))
+}
+
+// NovosHandlersCom cria os handlers com os casos de uso de Identidade já
+// montados (produção: Montar; testes: captcha e publicador falsos).
+func NovosHandlersCom(pool *sql.DB, cfg *config.Config, identidade *identidadeapp.Casos) Handlers {
 	produto, estoque := NovoCatalogoHTTP(pool)
+	ident := NovoIdentidadeHTTP(identidade, cfg)
 	return Handlers{
-		Auth:           handlers.NewAuthHandler(pool, cfg),
-		Usuario:        handlers.NewUsuarioHandler(pool, cfg, email),
+		Auth:           ident.Auth,
+		Usuario:        ident.Usuario,
 		Dashboard:      handlers.NewDashboardHandler(pool, cfg),
-		SenhaHistorico: handlers.NewSenhaHistoricoHandler(pool),
+		SenhaHistorico: ident.SenhaHistorico,
 		Vendedor:       handlers.NewVendedorHandler(pool, cfg),
 		Cliente:        handlers.NewClienteHandler(pool, cfg),
 		Produto:        produto,

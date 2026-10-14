@@ -39,7 +39,7 @@ func (r *Produtos) Listar(ctx context.Context, f catalogo.FiltroProduto, p kerne
 		return kernel.Resultado[catalogo.Produto]{}, fmt.Errorf("catalogomysql: contar produtos: %w", err)
 	}
 	q := "SELECT " + produtoColunas + " FROM produtos" + w + ordemProduto(f.Ordenacao) + " LIMIT ? OFFSET ?"
-	itens, err := consultar(ctx, r.q, "listar produtos", q, paginada(args, p), scanProduto)
+	itens, err := db.Consultar(ctx, r.q, "catalogomysql: listar produtos", q, db.Paginada(args, p), scanProduto)
 	if err != nil {
 		return kernel.Resultado[catalogo.Produto]{}, err
 	}
@@ -68,7 +68,7 @@ func whereProduto(f catalogo.FiltroProduto) (string, []any) {
 		like := "%" + f.Busca + "%"
 		args = append(args, like, like)
 	}
-	return where(conds), args
+	return db.Where(conds), args
 }
 
 // PorID busca um produto; catalogo.ErrProdutoNaoEncontrado se não existir.

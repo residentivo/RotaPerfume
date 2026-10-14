@@ -12,6 +12,7 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/rotaperfumes-api/middleware"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
 
 func rotaValida() httpx.Rota {
@@ -92,11 +93,11 @@ func TestPolicy_String(t *testing.T) {
 func TestNovoRouter_E_Autenticador_DependenciaNilPanica(t *testing.T) {
 	assert.Panics(t, func() { httpx.NovoRouter(nil) })
 	assert.Panics(t, func() { httpx.NovoAutenticador(nil, checkerFake{}) })
-	assert.Panics(t, func() { httpx.NovoAutenticador(testCfg(), nil) })
+	assert.Panics(t, func() { httpx.NovoAutenticador(identidadecrypto.NovoJWT(testCfg()), nil) })
 }
 
 func TestAutenticador_Exigir_PoliticaInvalidaPanica(t *testing.T) {
-	a := httpx.NovoAutenticador(testCfg(), checkerFake{})
+	a := httpx.NovoAutenticador(identidadecrypto.NovoJWT(testCfg()), checkerFake{})
 	h := http.HandlerFunc(handlerOK)
 	for _, p := range []httpx.Policy{httpx.Public, httpx.Policy(0), httpx.Policy(99)} {
 		assert.Panics(t, func() { a.Exigir(p, h) }, "policy=%d", p)

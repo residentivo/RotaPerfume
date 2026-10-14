@@ -16,11 +16,10 @@ import (
 	"github.com/rotaperfumes/shared/vlog"
 )
 
-// Erros exportados para uso em handlers.
-//
-// ErrVendedorNaoEncontrado já é declarado em usuario_service.go (mesmo
-// pacote services) e é reaproveitado aqui.
+// Erros exportados para uso em handlers. ErrVendedorNaoEncontrado morava em
+// usuario_service.go (C13) e veio para cá no ARQ-03.
 var (
+	ErrVendedorNaoEncontrado        = errors.New("vendedor não encontrado")
 	ErrVendedorNomeObrigatorio      = errors.New("nome é obrigatório")
 	ErrVendedorRegiaoObrigatoria    = errors.New("regiao é obrigatória")
 	ErrVendedorUFInvalida           = errors.New("uf deve ter 2 letras")

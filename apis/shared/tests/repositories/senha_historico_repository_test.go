@@ -10,8 +10,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 var senhaHistoricoColumns = []string{
@@ -42,7 +40,7 @@ func TestSenhaHistoricoCreate_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	h := &repositories.SenhaHistorico{
+	h := &senhaHistorico{
 		UsuarioID:         1,
 		SenhaHashAnterior: "hash-antiga",
 		IPOrigem:          "127.0.0.1",
@@ -54,7 +52,7 @@ func TestSenhaHistoricoCreate_Success(t *testing.T) {
 		WithArgs(h.UsuarioID, nil, h.SenhaHashAnterior, h.IPOrigem, h.UserAgent, h.TipoReset).
 		WillReturnResult(sqlmock.NewResult(3, 1))
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, h)
 
@@ -67,7 +65,7 @@ func TestSenhaHistoricoCreate_ComResetadoPor(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	h := &repositories.SenhaHistorico{
+	h := &senhaHistorico{
 		UsuarioID:         1,
 		ResetadoPorID:     sql.NullInt64{Int64: 2, Valid: true},
 		SenhaHashAnterior: "hash-antiga",
@@ -80,7 +78,7 @@ func TestSenhaHistoricoCreate_ComResetadoPor(t *testing.T) {
 		WithArgs(h.UsuarioID, int64(2), h.SenhaHashAnterior, h.IPOrigem, h.UserAgent, h.TipoReset).
 		WillReturnResult(sqlmock.NewResult(4, 1))
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, h)
 
@@ -93,11 +91,11 @@ func TestSenhaHistoricoCreate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	h := &repositories.SenhaHistorico{}
+	h := &senhaHistorico{}
 	mock.ExpectExec("INSERT INTO senha_historico").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, h)
 
@@ -121,7 +119,7 @@ func TestSenhaHistoricoFindByUsuario_Success(t *testing.T) {
 		WithArgs(int64(1), 10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	historico, total, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
 
@@ -152,7 +150,7 @@ func TestSenhaHistoricoFindByUsuario_ComResetadoPor(t *testing.T) {
 		WithArgs(int64(1), 10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	historico, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
 
@@ -192,7 +190,7 @@ func TestSenhaHistoricoFindByUsuario_OrderBy(t *testing.T) {
 				WithArgs(int64(1), 10, 0).
 				WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-			repo := repositories.NewSenhaHistoricoRepository()
+			repo := novoHistoricoRepo()
 			ctx := context.Background()
 			_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, tt.orderBy, tt.orderDir)
 
@@ -210,7 +208,7 @@ func TestSenhaHistoricoFindByUsuario_CountError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
 
@@ -229,7 +227,7 @@ func TestSenhaHistoricoFindByUsuario_QueryError(t *testing.T) {
 		WithArgs(int64(1), 10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
 
@@ -248,7 +246,7 @@ func TestSenhaHistoricoFindByUsuario_Defaults(t *testing.T) {
 		WithArgs(int64(1), 20, 0).
 		WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindByUsuario(ctx, db, 1, 0, 0, "", "")
 
@@ -267,7 +265,7 @@ func TestSenhaHistoricoFindByUsuario_LimitCap(t *testing.T) {
 		WithArgs(int64(1), 100, 0).
 		WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 200, "", "")
 
@@ -291,7 +289,7 @@ func TestSenhaHistoricoFindAll_Success(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	historico, total, err := repo.FindAll(ctx, db, 1, 10, "", "")
 
@@ -322,7 +320,7 @@ func TestSenhaHistoricoFindAll_ComResetadoPor(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	historico, _, err := repo.FindAll(ctx, db, 1, 10, "", "")
 
@@ -358,7 +356,7 @@ func TestSenhaHistoricoFindAll_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-			repo := repositories.NewSenhaHistoricoRepository()
+			repo := novoHistoricoRepo()
 			ctx := context.Background()
 			_, _, err := repo.FindAll(ctx, db, 1, 10, tt.orderBy, tt.orderDir)
 
@@ -375,7 +373,7 @@ func TestSenhaHistoricoFindAll_CountError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico$`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindAll(ctx, db, 1, 10, "", "")
 
@@ -393,7 +391,7 @@ func TestSenhaHistoricoFindAll_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindAll(ctx, db, 1, 10, "", "")
 
@@ -411,7 +409,7 @@ func TestSenhaHistoricoFindAll_Defaults(t *testing.T) {
 		WithArgs(20, 0).
 		WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-	repo := repositories.NewSenhaHistoricoRepository()
+	repo := novoHistoricoRepo()
 	ctx := context.Background()
 	_, _, err := repo.FindAll(ctx, db, 0, 0, "", "")
 

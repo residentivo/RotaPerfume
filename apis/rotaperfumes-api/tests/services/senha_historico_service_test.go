@@ -9,8 +9,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 func newSenhaHistoricoTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
@@ -61,47 +59,47 @@ func TestSenhaHistoricoService_Registrar(t *testing.T) {
 		{
 			nome:          "sucesso - reset feito pelo próprio usuário (resetadoPorID nil)",
 			resetadoPorID: nil,
-			tipo:          services.TipoResetUsuario,
+			tipo:          TipoResetUsuario,
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
-					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", services.TipoResetUsuario).
+					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", TipoResetUsuario).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
 		},
 		{
 			nome:          "sucesso - reset feito por admin",
 			resetadoPorID: &adminID,
-			tipo:          services.TipoResetAdmin,
+			tipo:          TipoResetAdmin,
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
-					WithArgs(int64(10), adminID, "hash-antigo", "127.0.0.1", "curl/8.0", services.TipoResetAdmin).
+					WithArgs(int64(10), adminID, "hash-antigo", "127.0.0.1", "curl/8.0", TipoResetAdmin).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
 		},
 		{
 			nome:          "sucesso - tipo primeiro acesso",
 			resetadoPorID: nil,
-			tipo:          services.TipoResetPrimeiroAcesso,
+			tipo:          TipoResetPrimeiroAcesso,
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
-					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", services.TipoResetPrimeiroAcesso).
+					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", TipoResetPrimeiroAcesso).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
 		},
 		{
 			nome:          "sucesso - tipo esquecimento",
 			resetadoPorID: nil,
-			tipo:          services.TipoResetEsquecimento,
+			tipo:          TipoResetEsquecimento,
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
-					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", services.TipoResetEsquecimento).
+					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", TipoResetEsquecimento).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
 		},
 		{
 			nome:          "erro do repo é propagado",
 			resetadoPorID: nil,
-			tipo:          services.TipoResetUsuario,
+			tipo:          TipoResetUsuario,
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
 					WillReturnError(sql.ErrConnDone)
@@ -115,7 +113,7 @@ func TestSenhaHistoricoService_Registrar(t *testing.T) {
 			db, mock := newSenhaHistoricoTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewSenhaHistoricoService()
+			svc := NewSenhaHistoricoService()
 			err := svc.Registrar(context.Background(), db, 10, tc.resetadoPorID, "hash-antigo", "127.0.0.1", "curl/8.0", tc.tipo)
 
 			if tc.wantErr {
@@ -182,7 +180,7 @@ func TestSenhaHistoricoService_ListarPorUsuario(t *testing.T) {
 			db, mock := newSenhaHistoricoTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewSenhaHistoricoService()
+			svc := NewSenhaHistoricoService()
 			historico, total, err := svc.ListarPorUsuario(context.Background(), db, 10, 1, 20, "", "")
 
 			if tc.wantErr {
@@ -252,7 +250,7 @@ func TestSenhaHistoricoService_ListarTodos(t *testing.T) {
 			db, mock := newSenhaHistoricoTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewSenhaHistoricoService()
+			svc := NewSenhaHistoricoService()
 			historico, total, err := svc.ListarTodos(context.Background(), db, 1, 20, "", "")
 
 			if tc.wantErr {

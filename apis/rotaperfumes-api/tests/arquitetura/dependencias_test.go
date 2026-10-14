@@ -34,7 +34,9 @@ func violacoesDeDependencia(pacotes []pacote) []string {
 				falha(p, imp, "httpx não fala com o banco")
 			case p.importPath == pkgHttpx && (dentroDe(imp, modAPI+"/handlers") || dentroDe(imp, modAPI+"/services") ||
 				dentroDe(imp, modShared+"/repositories") || dentroDe(imp, modAPI+"/internal/bootstrap")):
-				falha(p, imp, "httpx só pode depender do middleware legado até o ARQ-03")
+				falha(p, imp, "httpx não depende do legado")
+			case p.importPath == pkgHttpx && (dentroDe(imp, modAPI+"/middleware") || dentroDe(imp, modShared+"/config")):
+				falha(p, imp, "ARQ-03: httpx não depende do middleware legado nem da config")
 			case ehHTTPDeContexto(p.importPath) && (dentroDe(imp, "database/sql") || ehAdapterMySQL(imp) ||
 				dentroDe(imp, modShared+"/repositories") || dentroDe(imp, modShared+"/config")):
 				falha(p, imp, "<ctx>http só fala com <ctx>app")
@@ -57,6 +59,8 @@ func TestARQ_Dependencias_API_DetectaViolacoes(t *testing.T) {
 		{importPath: pkgHttpx, imports: []string{"database/sql"}},
 		{importPath: pkgHttpx, imports: []string{modShared + "/catalogo/catalogomysql"}},
 		{importPath: pkgHttpx, imports: []string{modAPI + "/handlers"}},
+		{importPath: pkgHttpx, imports: []string{modAPI + "/middleware"}},
+		{importPath: pkgHttpx, imports: []string{modShared + "/config"}},
 		{importPath: modAPI + "/internal/catalogohttp", imports: []string{modShared + "/repositories"}},
 		{importPath: modAPI + "/internal/catalogohttp", imports: []string{modShared + "/config"}},
 		{importPath: modAPI + "/handlers", imports: []string{modShared + "/catalogo/catalogomysql"}},
@@ -65,7 +69,7 @@ func TestARQ_Dependencias_API_DetectaViolacoes(t *testing.T) {
 	assert.Len(t, violacoesDeDependencia(ruins), len(ruins))
 
 	bons := []pacote{
-		{importPath: pkgHttpx, imports: []string{"net/http", pkgKernel, pkgVlog, modAPI + "/middleware"}},
+		{importPath: pkgHttpx, imports: []string{"net/http", pkgKernel, pkgVlog, modShared + "/identidade"}},
 		{importPath: modAPI + "/internal/bootstrap", imports: []string{"database/sql", modShared + "/catalogo/catalogomysql"}},
 		{importPath: modAPI + "/internal/catalogohttp", imports: []string{pkgHttpx, modShared + "/catalogo/catalogoapp"}},
 	}

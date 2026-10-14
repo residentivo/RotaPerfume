@@ -10,6 +10,8 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
+	"github.com/rotaperfumes/shared/kernel"
 	sharedsvc "github.com/rotaperfumes/shared/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,7 +43,7 @@ func newRouter(t *testing.T) (http.Handler, sqlmock.Sqlmock) {
 
 func token(t *testing.T, uid int64, role string) string {
 	t.Helper()
-	tok, err := sharedsvc.NewAuthService().GenerateJWT(testCfg(), uid, role)
+	tok, err := identidadecrypto.NovoJWT(testCfg()).Emitir(uid, kernel.RoleDoBanco(role))
 	require.NoError(t, err)
 	return tok
 }

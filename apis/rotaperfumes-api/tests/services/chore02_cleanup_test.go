@@ -21,44 +21,42 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 const chore02DeleteSQL = `DELETE FROM refresh_tokens WHERE expires_at < \? ORDER BY id LIMIT \?`
 
 var chore02T0 = time.Date(2026, 9, 27, 3, 0, 0, 0, time.Local)
 
-func chore02Svc() *services.RefreshTokenService {
-	return services.NewRefreshTokenServiceWithClock(func() time.Time { return chore02T0 })
+func chore02Svc() *RefreshTokenService {
+	return NewRefreshTokenServiceWithClock(func() time.Time { return chore02T0 })
 }
 
 func TestCHORE02_Constantes(t *testing.T) {
-	assert.Equal(t, 720*time.Hour, services.RefreshTokenRetencaoPadrao)
-	assert.Equal(t, 24*time.Hour, services.RefreshTokenRetencaoMinima)
-	assert.Equal(t, 1000, services.RefreshCleanupLote)
+	assert.Equal(t, 720*time.Hour, RefreshTokenRetencaoPadrao)
+	assert.Equal(t, 24*time.Hour, RefreshTokenRetencaoMinima)
+	assert.Equal(t, 1000, RefreshCleanupLote)
 }
 
 func TestCHORE02_CleanupExpired_Corte(t *testing.T) {
 	casos := []struct {
 		nome       string
-		configurar func(s *services.RefreshTokenService)
+		configurar func(s *RefreshTokenService)
 		retencao   time.Duration
 	}{
-		{"padrão (sem Set) → 720h", func(*services.RefreshTokenService) {}, 720 * time.Hour},
-		{"Set(48h)", func(s *services.RefreshTokenService) { s.SetRetencao(48 * time.Hour) }, 48 * time.Hour},
-		{"Set(24h) no mínimo", func(s *services.RefreshTokenService) { s.SetRetencao(24 * time.Hour) }, 24 * time.Hour},
-		{"Set(8760h)", func(s *services.RefreshTokenService) { s.SetRetencao(8760 * time.Hour) }, 8760 * time.Hour},
-		{"Set(1h) abaixo do mínimo vira 24h", func(s *services.RefreshTokenService) { s.SetRetencao(time.Hour) }, 24 * time.Hour},
-		{"Set(1ns) abaixo do mínimo vira 24h", func(s *services.RefreshTokenService) { s.SetRetencao(time.Nanosecond) }, 24 * time.Hour},
-		{"Set(0) mantém o padrão", func(s *services.RefreshTokenService) { s.SetRetencao(0) }, 720 * time.Hour},
-		{"Set(negativo) mantém o padrão", func(s *services.RefreshTokenService) { s.SetRetencao(-time.Hour) }, 720 * time.Hour},
+		{"padrão (sem Set) → 720h", func(*RefreshTokenService) {}, 720 * time.Hour},
+		{"Set(48h)", func(s *RefreshTokenService) { s.SetRetencao(48 * time.Hour) }, 48 * time.Hour},
+		{"Set(24h) no mínimo", func(s *RefreshTokenService) { s.SetRetencao(24 * time.Hour) }, 24 * time.Hour},
+		{"Set(8760h)", func(s *RefreshTokenService) { s.SetRetencao(8760 * time.Hour) }, 8760 * time.Hour},
+		{"Set(1h) abaixo do mínimo vira 24h", func(s *RefreshTokenService) { s.SetRetencao(time.Hour) }, 24 * time.Hour},
+		{"Set(1ns) abaixo do mínimo vira 24h", func(s *RefreshTokenService) { s.SetRetencao(time.Nanosecond) }, 24 * time.Hour},
+		{"Set(0) mantém o padrão", func(s *RefreshTokenService) { s.SetRetencao(0) }, 720 * time.Hour},
+		{"Set(negativo) mantém o padrão", func(s *RefreshTokenService) { s.SetRetencao(-time.Hour) }, 720 * time.Hour},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
 			db, mock := newRefreshTokenTestDB(t)
 			corte := chore02T0.Add(-c.retencao)
-			mock.ExpectExec(chore02DeleteSQL).WithArgs(tempoIgual{corte}, services.RefreshCleanupLote).
+			mock.ExpectExec(chore02DeleteSQL).WithArgs(tempoIgual{corte}, RefreshCleanupLote).
 				WillReturnResult(sqlmock.NewResult(0, 0))
 
 			svc := chore02Svc()

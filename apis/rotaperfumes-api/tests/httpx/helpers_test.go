@@ -13,9 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/shared/config"
-	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
+	"github.com/rotaperfumes/shared/kernel"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
@@ -29,18 +30,18 @@ func testCfg() *config.Config {
 
 func token(t *testing.T, uid int64, role string) string {
 	t.Helper()
-	tok, err := sharedsvc.NewAuthService().GenerateJWT(testCfg(), uid, role)
+	tok, err := identidadecrypto.NovoJWT(testCfg()).Emitir(uid, kernel.RoleDoBanco(role))
 	require.NoError(t, err)
 	return tok
 }
 
 // checkerFake: user 1 admin, demais normal, todos ativos; status sobrescreve.
 type checkerFake struct {
-	status map[int64]middleware.UserStatus
+	status map[int64]identidade.StatusAcesso
 	calls  *int
 }
 
-func (f checkerFake) CheckUserStatus(_ context.Context, userID int64) (middleware.UserStatus, error) {
+func (f checkerFake) StatusParaAutenticacao(_ context.Context, userID int64) (identidade.StatusAcesso, error) {
 	if f.calls != nil {
 		*f.calls++
 	}
@@ -48,13 +49,13 @@ func (f checkerFake) CheckUserStatus(_ context.Context, userID int64) (middlewar
 		return st, nil
 	}
 	if userID == 1 {
-		return middleware.UserStatus{Ativo: true, Role: "admin"}, nil
+		return identidade.StatusAcesso{Ativo: true, Role: "admin"}, nil
 	}
-	return middleware.UserStatus{Ativo: true, Role: "normal"}, nil
+	return identidade.StatusAcesso{Ativo: true, Role: "normal"}, nil
 }
 
-func novoRouter(checker middleware.UserStatusChecker) *httpx.Router {
-	return httpx.NovoRouter(httpx.NovoAutenticador(testCfg(), checker))
+func novoRouter(checker httpx.ConsultaStatus) *httpx.Router {
+	return httpx.NovoRouter(httpx.NovoAutenticador(identidadecrypto.NovoJWT(testCfg()), checker))
 }
 
 func handlerOK(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }
