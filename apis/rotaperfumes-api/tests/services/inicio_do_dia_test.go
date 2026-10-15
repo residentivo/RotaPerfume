@@ -20,7 +20,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -37,8 +36,8 @@ func dataInicioCarteira(t *testing.T) (got, antes, depois time.Time) {
 	mock.ExpectCommit()
 
 	antes = time.Now()
-	_, err := services.NewClienteService(db, &config.Config{}).CreateClienteNaCarteira(context.Background(), db,
-		services.ClienteInput{CNPJ: "11222333000181", RazaoSocial: "Empresa", Segmento: "varejo", Cidade: "Curitiba", UF: "PR"}, 10)
+	_, err := NewClienteService(db, &config.Config{}).CreateClienteNaCarteira(context.Background(), db,
+		ClienteInput{CNPJ: "11222333000181", RazaoSocial: "Empresa", Segmento: "varejo", Cidade: "Curitiba", UF: "PR"}, 10)
 	depois = time.Now()
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())

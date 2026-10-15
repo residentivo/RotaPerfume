@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -43,7 +43,7 @@ func clienteRows() *sqlmock.Rows {
 func TestClienteService_ListClientes(t *testing.T) {
 	testCases := []struct {
 		nome    string
-		filtro  services.ClienteFiltro
+		filtro  ClienteFiltro
 		page    int
 		limit   int
 		mock    func(mock sqlmock.Sqlmock)
@@ -53,7 +53,7 @@ func TestClienteService_ListClientes(t *testing.T) {
 	}{
 		{
 			nome:   "sem filtros - sucesso",
-			filtro: services.ClienteFiltro{},
+			filtro: ClienteFiltro{},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -68,7 +68,7 @@ func TestClienteService_ListClientes(t *testing.T) {
 		},
 		{
 			nome:   "com filtros uf/segmento/ativo/q - repassa args ao repo",
-			filtro: services.ClienteFiltro{UF: "SP", Segmento: "varejo", Ativo: boolPtr(true), Q: "Teste"},
+			filtro: ClienteFiltro{UF: "SP", Segmento: "varejo", Ativo: boolPtr(true), Q: "Teste"},
 			page:   2,
 			limit:  10,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -84,7 +84,7 @@ func TestClienteService_ListClientes(t *testing.T) {
 		},
 		{
 			nome:   "NEG-02: q com máscara busca o cnpj sem máscara e em maiúsculas",
-			filtro: services.ClienteFiltro{Q: "12.abc.345/01de-35"},
+			filtro: ClienteFiltro{Q: "12.abc.345/01de-35"},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -100,7 +100,7 @@ func TestClienteService_ListClientes(t *testing.T) {
 		},
 		{
 			nome:   "erro no count do repo é propagado",
-			filtro: services.ClienteFiltro{},
+			filtro: ClienteFiltro{},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -116,7 +116,7 @@ func TestClienteService_ListClientes(t *testing.T) {
 			db, mock := newClienteTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewClienteService(db, clienteTestCfg(true))
+			svc := NewClienteService(db, clienteTestCfg(true))
 			clientes, total, err := svc.ListClientes(context.Background(), db, tc.page, tc.limit, tc.filtro)
 
 			if tc.wantErr {
@@ -142,7 +142,7 @@ func TestClienteService_GetClienteByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnRows(clienteRows())
 
-		svc := services.NewClienteService(db, clienteTestCfg(false))
+		svc := NewClienteService(db, clienteTestCfg(false))
 		c, err := svc.GetClienteByID(context.Background(), db, 1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(100), c.ClienteIDOrigem)
@@ -159,10 +159,10 @@ func TestClienteService_GetClienteByID(t *testing.T) {
 				"data_cadastro", "ativo", "created_at", "updated_at",
 			}))
 
-		svc := services.NewClienteService(db, clienteTestCfg(false))
+		svc := NewClienteService(db, clienteTestCfg(false))
 		c, err := svc.GetClienteByID(context.Background(), db, 999)
 		assert.Nil(t, c)
-		assert.ErrorIs(t, err, services.ErrClienteNaoEncontrado)
+		assert.ErrorIs(t, err, comercial.ErrClienteNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -172,11 +172,11 @@ func TestClienteService_GetClienteByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewClienteService(db, clienteTestCfg(false))
+		svc := NewClienteService(db, clienteTestCfg(false))
 		c, err := svc.GetClienteByID(context.Background(), db, 1)
 		assert.Nil(t, c)
 		assert.Error(t, err)
-		assert.False(t, err == services.ErrClienteNaoEncontrado)
+		assert.False(t, err == comercial.ErrClienteNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -196,7 +196,7 @@ func TestClienteService_ToggleAtivoCliente(t *testing.T) {
 			WithArgs(false, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		svc := services.NewClienteService(db, clienteTestCfg(true))
+		svc := NewClienteService(db, clienteTestCfg(true))
 		c, err := svc.ToggleAtivoCliente(context.Background(), db, 1, nil)
 		require.NoError(t, err)
 		assert.False(t, c.Ativo)
@@ -212,7 +212,7 @@ func TestClienteService_ToggleAtivoCliente(t *testing.T) {
 			WithArgs(true, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		svc := services.NewClienteService(db, clienteTestCfg(false))
+		svc := NewClienteService(db, clienteTestCfg(false))
 		ativo := true
 		c, err := svc.ToggleAtivoCliente(context.Background(), db, 1, &ativo)
 		require.NoError(t, err)
@@ -229,10 +229,10 @@ func TestClienteService_ToggleAtivoCliente(t *testing.T) {
 				"data_cadastro", "ativo", "created_at", "updated_at",
 			}))
 
-		svc := services.NewClienteService(db, clienteTestCfg(false))
+		svc := NewClienteService(db, clienteTestCfg(false))
 		c, err := svc.ToggleAtivoCliente(context.Background(), db, 999, nil)
 		assert.Nil(t, c)
-		assert.ErrorIs(t, err, services.ErrClienteNaoEncontrado)
+		assert.ErrorIs(t, err, comercial.ErrClienteNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -245,10 +245,10 @@ func TestClienteService_ToggleAtivoCliente(t *testing.T) {
 			WithArgs(false, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		svc := services.NewClienteService(db, clienteTestCfg(false))
+		svc := NewClienteService(db, clienteTestCfg(false))
 		c, err := svc.ToggleAtivoCliente(context.Background(), db, 1, nil)
 		assert.Nil(t, c)
-		assert.ErrorIs(t, err, services.ErrClienteNaoEncontrado)
+		assert.ErrorIs(t, err, comercial.ErrClienteNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -259,8 +259,8 @@ func boolPtr(b bool) *bool { return &b }
 // CreateCliente
 // ---------------------------------------------------------------------------
 
-func validClienteInput() services.ClienteInput {
-	return services.ClienteInput{
+func validClienteInput() ClienteInput {
+	return ClienteInput{
 		CNPJ:         "11222333000181",
 		RazaoSocial:  "Empresa Teste LTDA",
 		Segmento:     "varejo",
@@ -278,7 +278,7 @@ func validClienteInput() services.ClienteInput {
 func TestClienteService_CreateCliente(t *testing.T) {
 	testCases := []struct {
 		nome      string
-		input     func() services.ClienteInput
+		input     func() ClienteInput
 		mock      func(mock sqlmock.Sqlmock)
 		wantErr   error
 		wantErrIs bool
@@ -294,73 +294,73 @@ func TestClienteService_CreateCliente(t *testing.T) {
 		},
 		{
 			nome: "razao_social vazia",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.RazaoSocial = "   "
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrRazaoSocialObrigatoria,
+			wantErr:   comercial.ErrRazaoSocialObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "cnpj vazio",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.CNPJ = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrCNPJObrigatorio,
+			wantErr:   comercial.ErrCNPJObrigatorio,
 			wantErrIs: true,
 		},
 		{
 			nome: "segmento vazio",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.Segmento = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrSegmentoObrigatorio,
+			wantErr:   comercial.ErrSegmentoObrigatorio,
 			wantErrIs: true,
 		},
 		{
 			nome: "cidade vazia",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.Cidade = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrCidadeObrigatoria,
+			wantErr:   comercial.ErrCidadeObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "uf inválida",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.UF = "S"
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrUFInvalida,
+			wantErr:   comercial.ErrUFInvalida,
 			wantErrIs: true,
 		},
 		{
 			nome: "data_cadastro inválida",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.DataCadastro = "15/01/2024"
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrDataCadastroInvalida,
+			wantErr:   comercial.ErrDataCadastroInvalida,
 			wantErrIs: true,
 		},
 		{
 			nome: "data_cadastro vazia usa hoje (sucesso)",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.DataCadastro = ""
 				return in
@@ -396,7 +396,7 @@ func TestClienteService_CreateCliente(t *testing.T) {
 			db, mock := newClienteTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewClienteService(db, clienteTestCfg(true))
+			svc := NewClienteService(db, clienteTestCfg(true))
 			c, err := svc.CreateCliente(context.Background(), db, tc.input())
 
 			if tc.wantErr != nil {
@@ -424,7 +424,7 @@ func TestClienteService_CreateCliente(t *testing.T) {
 func TestClienteService_UpdateCliente(t *testing.T) {
 	testCases := []struct {
 		nome      string
-		input     func() services.ClienteInput
+		input     func() ClienteInput
 		mock      func(mock sqlmock.Sqlmock)
 		wantErr   error
 		wantErrIs bool
@@ -443,79 +443,79 @@ func TestClienteService_UpdateCliente(t *testing.T) {
 		},
 		{
 			nome: "razao_social vazia",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.RazaoSocial = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrRazaoSocialObrigatoria,
+			wantErr:   comercial.ErrRazaoSocialObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "cnpj vazio",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.CNPJ = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrCNPJObrigatorio,
+			wantErr:   comercial.ErrCNPJObrigatorio,
 			wantErrIs: true,
 		},
 		{
 			nome: "segmento vazio",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.Segmento = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrSegmentoObrigatorio,
+			wantErr:   comercial.ErrSegmentoObrigatorio,
 			wantErrIs: true,
 		},
 		{
 			nome: "cidade vazia",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.Cidade = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrCidadeObrigatoria,
+			wantErr:   comercial.ErrCidadeObrigatoria,
 			wantErrIs: true,
 		},
 		{
 			nome: "uf inválida",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.UF = "SPX"
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrUFInvalida,
+			wantErr:   comercial.ErrUFInvalida,
 			wantErrIs: true,
 		},
 		{
 			nome: "data_cadastro inválida",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.DataCadastro = "2024-31-01"
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrDataCadastroInvalida,
+			wantErr:   comercial.ErrDataCadastroInvalida,
 			wantErrIs: true,
 		},
 		{
 			nome: "data_cadastro vazia é erro na edição (defaultHoje=false)",
-			input: func() services.ClienteInput {
+			input: func() ClienteInput {
 				in := validClienteInput()
 				in.DataCadastro = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrDataCadastroInvalida,
+			wantErr:   comercial.ErrDataCadastroInvalida,
 			wantErrIs: true,
 		},
 		{
@@ -526,7 +526,7 @@ func TestClienteService_UpdateCliente(t *testing.T) {
 					WithArgs("11222333000181", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", sqlmock.AnyArg(), int64(999)).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			},
-			wantErr:   services.ErrClienteNaoEncontrado,
+			wantErr:   comercial.ErrClienteNaoEncontrado,
 			wantErrIs: true,
 		},
 		{
@@ -563,7 +563,7 @@ func TestClienteService_UpdateCliente(t *testing.T) {
 				id = 999
 			}
 
-			svc := services.NewClienteService(db, clienteTestCfg(true))
+			svc := NewClienteService(db, clienteTestCfg(true))
 			c, err := svc.UpdateCliente(context.Background(), db, id, tc.input())
 
 			if tc.wantErr != nil {

@@ -178,7 +178,7 @@ func TestGetIDVendedorByUsuarioID_NotFound(t *testing.T) {
 	idVendedor, err := repo.GetIDVendedorByUsuarioID(ctx, db, 999)
 
 	assert.Nil(t, idVendedor)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -31,7 +30,7 @@ func pularSemIntegracao(t *testing.T) {
 func criarVendedorTemp(t *testing.T, ctx context.Context, db *sql.DB, tag string) int64 {
 	t.Helper()
 	nome := fmt.Sprintf("ZZ-TEST-%s-%d", tag, time.Now().UnixNano())
-	v, err := services.NewVendedorService(db, &config.Config{}).CreateVendedor(ctx, db, services.VendedorInput{
+	v, err := NewVendedorService(db, &config.Config{}).CreateVendedor(ctx, db, VendedorInput{
 		Nome: nome, Regiao: "Teste", UF: "PR", DataAdmissao: "2024-01-01", MetaMensal: 1,
 	})
 	require.NoError(t, err)
@@ -51,7 +50,7 @@ func TestIntegracaoBUG04_RedesligarVendedorPreservaDataOriginal(t *testing.T) {
 	_, err := db.Exec("UPDATE vendedores SET data_desligamento = '2020-05-05' WHERE id = ?", id)
 	require.NoError(t, err)
 
-	v, err := services.NewVendedorService(db, &config.Config{}).DeleteVendedor(ctx, db, id)
+	v, err := NewVendedorService(db, &config.Config{}).DeleteVendedor(ctx, db, id)
 	require.NoError(t, err, "desligar de novo deve responder sucesso (200)")
 	require.NotNil(t, v)
 
@@ -65,11 +64,11 @@ func TestIntegracaoSEC01_CreateClienteNaCarteira(t *testing.T) {
 	pularSemIntegracao(t)
 	db := abrirDBIntegracao(t)
 	ctx := context.Background()
-	svc := services.NewClienteService(db, &config.Config{})
+	svc := NewClienteService(db, &config.Config{})
 	sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
 
-	input := func(tag string) services.ClienteInput {
-		return services.ClienteInput{
+	input := func(tag string) ClienteInput {
+		return ClienteInput{
 			CNPJ: cnpjValidoTeste(time.Now().UnixNano()), RazaoSocial: "ZZ-TEST-SEC01-" + tag + "-" + sufixo,
 			Segmento: "Teste", Cidade: "Curitiba", UF: "PR",
 		}

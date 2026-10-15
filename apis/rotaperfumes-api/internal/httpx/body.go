@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/rotaperfumes/shared/kernel"
 )
@@ -63,11 +64,31 @@ func IDDoPathPermissivo(r *http.Request, nome string) (int64, error) {
 }
 
 // JSONPaginadoCom escreve 200 com os itens de r convertidos por conv (DTO)
-// e a paginação. Sem itens, "data" continua null, como no legado.
+// e a paginação. Preserva nil × vazio, como o legado: sem linhas no banco
+// (Itens nil) "data" é null; a listagem vazia de quem não tem carteira
+// (Itens não nulo e vazio, E-03) é [].
 func JSONPaginadoCom[T, D any](w http.ResponseWriter, r kernel.Resultado[T], conv func(T) D) {
-	var itens []D
-	for _, v := range r.Itens {
-		itens = append(itens, conv(v))
+	JSONPaginado(w, kernel.NovoResultado(Lista(r.Itens, conv), r.Pagina, r.Total))
+}
+
+// Lista converte os itens preservando nil × vazio (nil → null; vazio → []).
+func Lista[T, D any](itens []T, conv func(T) D) []D {
+	if itens == nil {
+		return nil
 	}
-	JSONPaginado(w, kernel.NovoResultado(itens, r.Pagina, r.Total))
+	out := make([]D, 0, len(itens))
+	for _, v := range itens {
+		out = append(out, conv(v))
+	}
+	return out
+}
+
+// Int64DaQuery lê um id opcional da query com o parse legado
+// (parseInt64Query): espaços aparados; ausente ou inválido = 0 (sem filtro).
+func Int64DaQuery(r *http.Request, nome string) int64 {
+	n, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get(nome)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
 }

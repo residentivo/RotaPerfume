@@ -83,7 +83,7 @@ func NovosCamposProduto(d DadosProduto) (CamposProduto, error) {
 		return CamposProduto{}, ErrCustoUnitarioInvalido
 	}
 	if strings.TrimSpace(d.DataLancamento) != "" {
-		data, err := dataLocal(d.DataLancamento, ErrDataLancamentoInvalida)
+		data, err := kernel.ParseDataLocal(d.DataLancamento, ErrDataLancamentoInvalida)
 		if err != nil {
 			return CamposProduto{}, err
 		}

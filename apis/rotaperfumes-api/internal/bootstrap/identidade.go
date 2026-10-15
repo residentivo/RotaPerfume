@@ -3,20 +3,19 @@ package bootstrap
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"time"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/identidadehttp"
 	"github.com/rotaperfumes/shared/adapters/ratelimit"
 	"github.com/rotaperfumes/shared/adapters/turnstile"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/db"
 	"github.com/rotaperfumes/shared/identidade"
 	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/rotaperfumes/shared/identidade/identidademysql"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // Limites de rate limit (I-14), os mesmos do legado: login por IP e por
@@ -64,7 +63,7 @@ func NovaIdentidade(pool *sql.DB, cfg *config.Config, ext ExtIdentidade) *identi
 		},
 		Publicador: ext.Publicador,
 		Email:      ext.Email,
-		Vendedores: vendedoresLegado{pool: pool, repo: repositories.NewVendedorRepository()},
+		Vendedores: vendedoresParaIdentidade{vendedores: comercialmysql.NovoVendedores(pool)},
 		Relogio:    time.Now,
 	}, identidadeapp.Opcoes{
 		JanelaSupressaoReuso: cfg.RefreshReuseSuppressWindow,
@@ -98,26 +97,6 @@ func NovoIdentidadeHTTP(c *identidadeapp.Casos, cfg *config.Config) IdentidadeHT
 // caso de uso StatusParaAutenticacao.
 func NovoVerificadorStatus(pool *sql.DB) httpx.ConsultaStatus {
 	return identidademysql.NovoUsuarios(pool)
-}
-
-// vendedoresLegado liga a porta identidadeapp.Vendedores ao repositório de
-// vendedores ainda legado. TODO(ARQ-04): trocar pelo comercialmysql.
-type vendedoresLegado struct {
-	pool *sql.DB
-	repo *repositories.VendedorRepository
-}
-
-func (v vendedoresLegado) Existe(ctx context.Context, id int64) (bool, error) {
-	return v.repo.ExistsByID(ctx, v.pool, id)
-}
-
-// Desligado: vendedor inexistente (vínculo órfão) não é desligado.
-func (v vendedoresLegado) Desligado(ctx context.Context, id int64) (bool, error) {
-	desligado, err := v.repo.IsDesligado(ctx, v.pool, id)
-	if errors.Is(err, repositories.ErrNotFound) {
-		return false, nil
-	}
-	return desligado, err
 }
 
 // assinanteAlerta liga o evento de reuso ao notificador de alerta (SEC-09).

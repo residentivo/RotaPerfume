@@ -6,60 +6,59 @@
 
 **Decisões do usuário:** estratégia **incremental por bounded context**: cada lote termina com build e testes verdes e um commit na branch `refactor/ddd`. Escopo: API (`apis/rotaperfumes-api`) + módulo `apis/shared` (repositories, models, services, importers e CLIs).
 
-**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (no ARQ-03, o 🟣 SecBrain revisa depois, junto com o 🔴 TestBrain; ver decisão no card). ARQ-00 (commit `cd12d47`), ARQ-01 (commit `0e7e757`) e ARQ-02 (commit `17502da`) concluídos, ver `feito.md`; ARQ-04 a ARQ-08 estão em `afazer.md`, na ordem de execução.
+**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (no ARQ-03, o 🟣 SecBrain revisa depois, junto com o 🔴 TestBrain; ver decisão no card). ARQ-00 (commit `cd12d47`), ARQ-01 (commit `0e7e757`), ARQ-02 (commit `17502da`) e ARQ-03 (commit `c412d10`) concluídos, ver `feito.md`; ARQ-05 a ARQ-08 estão em `afazer.md`, na ordem de execução.
 
-**Passo atual:** ARQ-03 (Identidade e Acesso): implementado e aprovado com ressalvas pelo 🟣 SecBrain e pelo 🔴 TestBrain; 🟡 BackBrain aplicando os ajustes finais, depois vem o commit. Ver card abaixo.
+**Passo atual:** ARQ-04 (Comercial): 🟣 SecBrain e 🔴 TestBrain aprovaram; 🟡 BackBrain aplicando N1/N2/N3/N5/N6, depois commit. Ver card abaixo.
 
 **Pendência opcional (não é card):** o race detector (`go test -race`) está indisponível nesta máquina porque falta gcc/MinGW (cgo). Sugestão ao usuário: instalar o MinGW-w64 localmente ou rodar `go test -race ./...` no Jenkins (Linux).
 
 ---
 
-## ARQ-03: contexto Identidade e Acesso — prioridade ALTA (sensível a segurança)
+## ARQ-04: contexto Comercial — prioridade ALTA
 
-**Status:** em execução (Lote 21, desde 2026-10-14; ARQ-02 concluído em `17502da`)
-**Camadas:** Segurança, Backend
-**Responsável:** 🟡 BackBrain → 🟣 SecBrain (revisão aprofundada) + 🔴 TestBrain
-**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API. Referências: `docs/arquitetura-ddd.md` e `docs/arq-00-invariantes-seguranca.md` (I-01..I-16).
+**Status:** em execução (Lote 21, desde 2026-10-14; ARQ-03 concluído em `c412d10`)
+**Camada:** Backend
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
 
 **Descrição:** migrar:
-- Auth/JWT e Usuário;
-- RefreshToken com rotação e detecção de reuso;
-- SenhaHistórico;
-- hash Argon2, política de senha e gerador de senha;
-- Turnstile e alerta de segurança;
-- middlewares auth, user_status e ratelimit.
+- Vendedor e Carteira;
+- Cliente, com CNPJ como value object;
+- Visita e Oportunidade;
+- escopo de acesso por carteira.
 
-**Decisão do 🤍 MegaBrain (2026-10-14):** a especificação prévia do 🟣 SecBrain foi **dispensada**, porque `docs/arq-00-invariantes-seguranca.md` (I-01..I-16) já a cobre. Em compensação, o 🟣 SecBrain fará **revisão aprofundada pós-implementação**, junto com o 🔴 TestBrain.
+**Nota N-8 (🟣 SecBrain, ARQ-01, 2026-10-13):** `httpx.interno` loga o erro com `%v`; um erro 1062 cru do MySQL traz o valor duplicado (CNPJ) para o log. Garantir a O6-iv: o adapter traduz o 1062 para erro de domínio sem embrulhar o erro do driver.
 
-**Regras herdadas do piloto:** métrica "código novo ≤ lógica legada sem vlog; handlers ≤ 30 linhas; código novo 100% coberto"; vlog P1 via `defer vlog.Trace`.
+**Pendência herdada do ARQ-03 (2026-10-14):** trocar o adapter `vendedoresLegado` do bootstrap (marcado `TODO(ARQ-04)`) pela implementação de `comercialmysql`.
 
-**Implementação (🟡 BackBrain, 2026-10-14):** Identidade e Acesso migrado para `apis/shared/identidade{,app,mysql,crypto}` + `apis/rotaperfumes-api/internal/identidadehttp`: Autenticador nativo (role lida do banco, substituindo o adapter de transição do ARQ-01), singletons de rate limit/notifier/Turnstile, fronteiras transacionais idênticas às atuais e testes SEC portados. Legado removido: `handlers/{auth,senha_historico,usuario}_handler.go`, `middleware/{auth_middleware,ratelimit_middleware,user_status}.go` e `services/{refresh_cleanup,refresh_token_service,reset_senhas_ativos_service,senha_historico_service,usuario_service}.go`. Ficaram pontes para o ARQ-04/ARQ-07 (ver notas nesses cards).
+**Lições do piloto ARQ-02 (🤍 MegaBrain, 2026-10-14), valem também para o ARQ-05:**
+- promover `kernel.ParseDataLocal` para os 6 campos de data (BUG-01);
+- promover `consultar[T]`, `paginada` e `where` para `shared/db`, e `relerCriado`/`relerAtualizado` (BUG-08/09) para um pacote comum, em vez de duplicar por contexto;
+- separar os DTOs de create e update;
+- usar `httpx.IDDoPathPermissivo` onde o legado aceita id ≤ 0 e responde 404 (não mudar o contrato; ver CHORE-03);
+- métrica de tamanho: "código novo ≤ lógica legada sem vlog; handlers ≤ 30 linhas; código novo 100% coberto" (substitui a meta de −40%).
 
-**Histórico de validação:**
-- 2026-10-14, 🟣 SecBrain: **APROVADO COM RESSALVAS**, sem bloqueantes. I-01..I-16 e O4/O5/O7 conferidos; GAPs SEC-18, SEC-20, SEC-21 e SEC-22 preservados (nem piorados nem corrigidos). Ressalva #2 (restringir quem chama `ResetarSenhasAtivos`, `RegistrarReuso` e `DesfazerReuso`) vai para o ajuste final do 🟡 BackBrain; NB-1, NB-6 e NB-7 anotados no ARQ-07.
-- 2026-10-14, 🤍 MegaBrain: confirmou por `git show` que três comportamentos são idênticos ao legado: login de usuário inativo conta no rate limit, Bearer comparado com EqualFold e, no reset, campos obrigatórios validados antes do captcha.
-- 2026-10-14, 🔴 TestBrain: **APROVADO COM RESSALVAS**. R1 ok (testes API 793→806, shared 652→687); cobertura combinada 89,07%→89,35% (linhas descobertas 1.248→1.110). Das 18 mutações de segurança, 6 sobreviviam e passaram a ser mortas pelos testes `TestARQ03_*` que ele adicionou. As 285 linhas de asserção alteradas foram classificadas, quase todas troca de identificador. Ressalvas: a asserção do `bug11` não-verbose ficou vazia e a de `HashPassword_Erros` ficou genérica.
+**NB-3 (🟣 SecBrain, revisão ARQ-02, 2026-10-14): movida para o ARQ-05** (decisão do 🤍 MegaBrain, 2026-10-15). O ARQ-04 tratou só o 1062 de CNPJ/carteira.
 
-**Decisões:**
-- especificação prévia do 🟣 SecBrain dispensada, com revisão aprofundada pós-implementação (ver acima);
-- fronteiras transacionais conforme a seção abaixo (troca de senha fora da UoW → BUG-15);
-- GAPs de segurança pré-existentes não são corrigidos neste card (regra "não piorar");
-- pontes de transição (shims de teste, `middleware/principal_legado.go`, legado encolhido de usuário/refresh token, adapter `vendedoresLegado`) ficam até o ARQ-04/ARQ-07;
-- logs de auditoria com `por admin=<role>` seguem para o CHORE-05.
+**Decisão do 🤍 MegaBrain (2026-10-14), duplicidade:** CNPJ, SKU e e-mail duplicados **preservam o status HTTP atual de cada caso** (contrato inalterado). A eventual padronização para 409 vira card próprio, que exige decisão do usuário: **CHORE-06** em `afazer.md` (BAIXA, fora do Lote 21).
 
-**Passo atual:** 🟡 BackBrain aplicando os ajustes finais: (1) corrigir as 2 asserções (`bug11` não-verbose e `HashPassword_Erros`); (2) teste de arquitetura restringindo os chamadores de `ResetarSenhasAtivos`, `RegistrarReuso` e `DesfazerReuso` (ressalva #2 do 🟣 SecBrain); (3) registro no blueprint. Depois: build e testes verdes e commit do ARQ-03 na branch `refactor/ddd`.
+**Histórico:**
+- 🟡 BackBrain migrou Comercial para `apis/shared/comercial{,app,mysql}` + `apis/rotaperfumes-api/internal/comercialhttp`: `kernel.Escopo` substitui a sentinela `VendedorID <= 0`; `AutorizadorEscopo` sem cache; desligamento de vendedor em tx única; adapter `vendedoresLegado` trocado pela implementação de `comercialmysql`; ponte `handlers/scope.go` para pedido/pagamento/dashboard.
+- 🟣 **SecBrain: APROVADO, 0 bloqueantes.** Riscos críticos do ARQ-00 fechados: E-02 (sentinela 0 = global) e O1 (SemAcesso → consulta global). Ponte para pedido/pagamento/dashboard correta. Não bloqueantes N1..N7.
+- 🔴 **TestBrain: APROVADO.** R1 ok (API 806→821, shared 687→710); cobertura combinada 89,35% → 89,39% (descobertos 1.110 → 958); código novo 100%; 40 mutações, 6 sobreviventes (passos do desligamento e de cliente+carteira fora da tx; ponte sem Principal virando global) mortas por 3 testes `TestARQ04_*`; nenhuma asserção removida/enfraquecida.
 
-**Fronteiras transacionais (🤍 MegaBrain, 2026-10-14):**
-- **Troca de senha** (histórico + hash + corte + revogação): fica **fora** da Unit of Work neste card e vai para o BUG-15 (O8-iii).
-- **Rotação de refresh token** (UPDATE condicional + insert na mesma tx, I-06): **continua transacional** no ARQ-03, via `db.Transactor`.
-- **Detecção de reuso:** mantém a fronteira atual, com `RegistrarReuso` atômico + `DesfazerReuso` compensatório (O8-iv).
+**Decisões do 🤍 MegaBrain (ressalvas do SecBrain):**
+- aplicar agora: **N1** (zero value da ponte `handlers/scope.go` = restrito, derivado de `Filtro()`), **N2** (1062 de outro índice sem a mensagem do driver), **N3** (log com tag fixa para Principal inválido), **N5** (escopo inválido → 500, não 403), **N6** (panic na montagem com escopo nil);
+- **N4** (log `[escopo] bloqueado vendedor_desligado` perdeu `rota=`) → ARQ-07;
+- **N7** já registrado (BUG-14, TOCTOU V-02).
+
+**Passo atual:** 🟡 BackBrain aplicando N1/N2/N3/N5/N6; depois build/testes verdes e commit na branch `refactor/ddd`.
 
 **Critério de aceite:**
 - contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
 - `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
 - sem perda de cobertura;
 - logs `vlog` preservados;
-- invariantes I-01..I-16 preservadas (revisão do 🟣 SecBrain);
 - commit do lote na branch `refactor/ddd`.
 
 ---

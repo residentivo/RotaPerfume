@@ -3,29 +3,32 @@ package handlers
 
 import (
 	"database/sql"
-	"errors"
 	"log"
 	"net/http"
 
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/repositories"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
 // DashboardHandler trata as rotas /api/dashboard/*.
 type DashboardHandler struct {
-	db           *sql.DB
-	svc          *services.DashboardService
-	vendedorRepo *repositories.VendedorRepository
+	db     *sql.DB
+	svc    *services.DashboardService
+	escopo EscopoCarteira
 }
 
 // NewDashboardHandler cria um DashboardHandler com pool de conexão injetado.
-func NewDashboardHandler(db *sql.DB, cfg *config.Config) *DashboardHandler {
+// escopo é o AutorizadorEscopo do comercialapp (ARQ-04, ponte scope.go).
+func NewDashboardHandler(db *sql.DB, cfg *config.Config, escopo EscopoCarteira) *DashboardHandler {
+	if escopo == nil {
+		panic("handlers: NewDashboardHandler exige o escopo (N6)")
+	}
 	return &DashboardHandler{
-		db:           db,
-		svc:          services.NewDashboardService(db, cfg),
-		vendedorRepo: repositories.NewVendedorRepository(),
+		db:     db,
+		svc:    services.NewDashboardService(db, cfg),
+		escopo: escopo,
 	}
 }
 
@@ -207,71 +210,37 @@ func (h *DashboardHandler) GetClientes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, metrics, "")
 }
 
-// dashboardScope estende o escopo de vendedor com o bloqueio por
-// desligamento, exclusivo do Dashboard.
-//
-// Desligado=true: usuário normal cujo vendedor vinculado tem
-// data_desligamento preenchida. VendedorID é mantido (nunca zerado) — o
-// bloqueio é feito pelo handler via SemAcesso(), que devolve respostas
-// vazias sem consultar o repositório. Zerar VendedorID e seguir adiante
-// seria perigoso: vendedorFilter trata vendedorID <= 0 como "sem filtro"
-// (dados globais).
-//
-// VendedorInexistente=true: o vínculo id_vendedor aponta para um vendedor
-// que não existe mais — também sem acesso, mas sem o aviso de desligamento.
+// dashboardScope estende o escopo de vendedor com o aviso de desligamento,
+// exclusivo do Dashboard (D-01). Desligado, sem vínculo e vínculo órfão são
+// SemAcesso: o handler devolve as respostas zeradas SEM consultar o
+// repositório. O vendedor nunca é "zerado para seguir": SemAcesso não vira
+// filtro (vendedorFilter trata vendedorID <= 0 como "sem filtro").
 type dashboardScope struct {
 	vendedorScope
-	Desligado           bool
-	VendedorInexistente bool
+	Desligado bool
 }
 
-// SemAcesso reporta se o Dashboard deve responder vazio: usuário normal sem
-// vendedor vinculado, com vendedor inexistente ou com vendedor desligado.
+// SemAcesso reporta se o Dashboard deve responder vazio.
 func (s dashboardScope) SemAcesso() bool {
-	return s.vendedorScope.SemAcesso() || s.Desligado || s.VendedorInexistente
+	return s.vendedorScope.SemAcesso() || s.Desligado
 }
 
-// resolverEscopo resolve o escopo de vendedor da requisição e, para usuário
-// normal com vendedor vinculado, verifica se o vendedor está desligado
-// (fail-closed: erro de banco vira 500). Em caso de erro, registra log,
-// responde 500 e retorna ok=false.
+// resolverEscopo resolve o escopo pelo AutorizadorEscopo (ARQ-04,
+// ResolverParaAnalytics: desligado → SemAcesso com o aviso; fail-closed:
+// erro de banco vira 500). Em caso de erro, registra log, responde 500 e
+// retorna ok=false.
 func (h *DashboardHandler) resolverEscopo(w http.ResponseWriter, r *http.Request, acao string) (dashboardScope, bool) {
-	vlog.Printf("dashboard_handler.go", "DashboardHandler.resolverEscopo", "chamando resolverVendedorScopeBase e atribuindo resultado a base, err")
-	base, err := resolverVendedorScopeBase(r.Context(), h.db)
-	vlog.Printf("dashboard_handler.go", "DashboardHandler.resolverEscopo", "verificando se err != nil")
+	p, _ := httpx.PrincipalFrom(r) // sem usuário: o autorizador devolve SemAcesso
+	e, desligado, err := h.escopo.ResolverParaAnalytics(r.Context(), p)
 	if err != nil {
 		log.Printf("[dashboard] %s: %v", acao, err)
 		writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
 		return dashboardScope{}, false
 	}
-	vlog.Printf("dashboard_handler.go", "DashboardHandler.resolverEscopo", "montando dashboardScope em scope")
-	scope := dashboardScope{vendedorScope: base}
-
-	vlog.Printf("dashboard_handler.go", "DashboardHandler.resolverEscopo", "verificando se base.Restrito && base.VendedorID > 0")
-	if base.Restrito && base.VendedorID > 0 {
-		vlog.Printf("dashboard_handler.go", "DashboardHandler.resolverEscopo", "chamando h.vendedorRepo.IsDesligado e atribuindo resultado a desligado, err")
-		desligado, err := h.vendedorRepo.IsDesligado(r.Context(), h.db, base.VendedorID)
-		vlog.Printf("dashboard_handler.go", "DashboardHandler.resolverEscopo", "avaliando switch de condições")
-		switch {
-		case errors.Is(err, repositories.ErrNotFound):
-			vlog.Printf("dashboard_handler.go", "DashboardHandler.resolverEscopo", "atribuindo scope.VendedorInexistente = true")
-			// Vínculo aponta para vendedor inexistente: sem acesso, mas não
-			// é caso de desligamento (vendedor_desligado=false).
-			scope.VendedorInexistente = true
-		case err != nil:
-			log.Printf("[dashboard] %s vendedor desligado: %v", acao, err)
-			writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
-			return dashboardScope{}, false
-		default:
-			vlog.Printf("dashboard_handler.go", "DashboardHandler.resolverEscopo", "atribuindo scope.Desligado = desligado")
-			scope.Desligado = desligado
-		}
-	}
-
-	vlog.Printf("dashboard_handler.go", "DashboardHandler.resolverEscopo", "verificando se h.svc.Cfg.Verbose")
+	scope := dashboardScope{vendedorScope: escopoLegado(e), Desligado: desligado}
 	if h.svc.Cfg.Verbose {
 		log.Printf("[dashboard] %s escopo restrito=%t vendedor_id=%d desligado=%t sem_acesso=%t",
-			acao, scope.Restrito, scope.VendedorID, scope.Desligado, scope.SemAcesso())
+			acao, scope.Restrito(), scope.VendedorID, scope.Desligado, scope.SemAcesso())
 	}
 	return scope, true
 }

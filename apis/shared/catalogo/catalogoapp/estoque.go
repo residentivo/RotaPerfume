@@ -3,6 +3,7 @@ package catalogoapp
 import (
 	"context"
 
+	"github.com/rotaperfumes/shared/appkit"
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/kernel"
 	"github.com/rotaperfumes/shared/vlog"
@@ -63,7 +64,7 @@ func (c *Casos) AjustarEstoque(ctx context.Context, d catalogo.DadosEstoque) (e 
 	if err = c.estoques.Inserir(ctx, e); err != nil {
 		return nil, err
 	}
-	return relerCriado(ctx, "[estoque]", e.ID, e, c.estoques.PorID), nil
+	return appkit.RelerCriado(ctx, "[estoque] criado, mas falhou a releitura: id", e.ID, e, c.estoques.PorID), nil
 }
 
 // AtualizarSaldo é o PUT de estoque: só o saldo muda (SKU e data são a chave
@@ -80,5 +81,5 @@ func (c *Casos) AtualizarSaldo(ctx context.Context, id int64, saldo int) (e *cat
 	if err = c.estoques.AtualizarSaldo(ctx, id, e.Saldo, e.Ruptura); err != nil {
 		return nil, err
 	}
-	return relerAtualizado(ctx, id, c.estoques.PorID)
+	return appkit.RelerAtualizado(ctx, "catalogoapp", id, c.estoques.PorID)
 }

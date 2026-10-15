@@ -9,9 +9,9 @@ import (
 )
 
 // ARQ-03: o contexto Identidade migrou para identidade/identidademysql. Aqui
-// ficam RevokeAllByVendedorID (desligamento de vendedor, mesma tx do I-09,
-// ARQ-04) e FindByUsuario (sem chamador de produção; sai no ARQ-07 junto com
-// este arquivo).
+// fica FindByUsuario (sem chamador de produção; sai no ARQ-07 junto com este
+// arquivo). ARQ-04: a revogação por vendedor da tx do desligamento (I-09) foi
+// para identidademysql.RefreshTokens.RevogarDoVendedor.
 
 // RevokeReason é o motivo gravado em refresh_tokens.revoked_reason (SEC-07).
 type RevokeReason string
@@ -46,26 +46,6 @@ type RefreshTokenRepository struct{}
 // NewRefreshTokenRepository cria um repositório stateless.
 func NewRefreshTokenRepository() *RefreshTokenRepository {
 	return &RefreshTokenRepository{}
-}
-
-// RevokeAllByVendedorID revoga os refresh tokens ainda válidos dos usuários
-// do vendedor, na tx do desligamento (SEC-06/I-09). Idempotente; devolve
-// quantos tokens revogou.
-func (r *RefreshTokenRepository) RevokeAllByVendedorID(ctx context.Context, db Execer, vendedorID int64, reason RevokeReason) (int64, error) {
-	const q = `
-		UPDATE refresh_tokens rt
-		JOIN usuarios u ON u.id = rt.usuario_id
-		SET rt.revoked_at = ?, rt.revoked_reason = ?
-		WHERE u.id_vendedor = ? AND rt.revoked_at IS NULL`
-	res, err := db.ExecContext(ctx, q, time.Now(), string(reason), vendedorID)
-	if err != nil {
-		return 0, fmt.Errorf("repositories: revoke refresh_tokens por vendedor: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("repositories: revoke refresh_tokens por vendedor rows affected: %w", err)
-	}
-	return n, nil
 }
 
 // FindByUsuario lista refresh tokens de um usuário (paginado).

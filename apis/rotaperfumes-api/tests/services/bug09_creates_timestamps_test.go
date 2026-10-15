@@ -63,7 +63,7 @@ func bug09Casos() []bug09Caso {
 					AddRow(id, "Vendedor Do Banco", "Sudeste", "SP", criado, nil, 5000.0, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				v, err := services.NewVendedorService(db, vendedorTestCfg(verbose)).
+				v, err := NewVendedorService(db, vendedorTestCfg(verbose)).
 					CreateVendedor(context.Background(), db, validVendedorInput())
 				if err != nil || v == nil {
 					return nil, err
@@ -148,7 +148,7 @@ func bug09Casos() []bug09Caso {
 				}).AddRow(id, int64(100), int64(1), "Origem Do Banco", criado, "Prospeccao", 10.0, 1000.0, nil, nil, nil, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				o, err := services.NewOportunidadeService(db, oportunidadeTestCfg(verbose)).
+				o, err := NewOportunidadeService(db, oportunidadeTestCfg(verbose)).
 					CreateOportunidade(context.Background(), db, validOportunidadeInput())
 				if err != nil || o == nil {
 					return nil, err
@@ -180,7 +180,7 @@ func bug09Casos() []bug09Caso {
 				}).AddRow(id, int64(100), int64(1), criado, "Negativa", 30, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				v, err := services.NewVisitaService(db, visitaTestCfg(verbose)).
+				v, err := NewVisitaService(db, visitaTestCfg(verbose)).
 					CreateVisita(context.Background(), db, validVisitaInput())
 				if err != nil || v == nil {
 					return nil, err

@@ -73,3 +73,16 @@ func (d Data) String() string {
 	}
 	return d.t.Format(LayoutData)
 }
+
+// ParseDataLocal é ParseData devolvendo a meia-noite da data em time.Local:
+// o instante que vai ao banco (DSN loc=Local) e ao JSON (BUG-01). Mesmo
+// resultado de time.ParseInLocation(LayoutData, strings.TrimSpace(s),
+// time.Local). Em qualquer falha devolve errCampo (nil: panic, como
+// ParseData).
+func ParseDataLocal(s string, errCampo error) (time.Time, error) {
+	d, err := ParseData(s, errCampo)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return d.MeiaNoiteEm(time.Local), nil
+}

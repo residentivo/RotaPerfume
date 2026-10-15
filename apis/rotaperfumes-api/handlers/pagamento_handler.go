@@ -25,15 +25,21 @@ import (
 // via pedidos.vendedor_id) é aplicado em cada método com
 // resolverVendedorScope.
 type PagamentoHandler struct {
-	db  *sql.DB
-	svc *services.PagamentoService
+	db     *sql.DB
+	svc    *services.PagamentoService
+	escopo EscopoCarteira
 }
 
 // NewPagamentoHandler cria um PagamentoHandler com pool de conexão injetado.
-func NewPagamentoHandler(db *sql.DB, cfg *config.Config) *PagamentoHandler {
+// escopo é o AutorizadorEscopo do comercialapp (ARQ-04, ponte scope.go).
+func NewPagamentoHandler(db *sql.DB, cfg *config.Config, escopo EscopoCarteira) *PagamentoHandler {
+	if escopo == nil {
+		panic("handlers: NewPagamentoHandler exige o escopo (N6)")
+	}
 	return &PagamentoHandler{
-		db:  db,
-		svc: services.NewPagamentoService(db, cfg),
+		db:     db,
+		svc:    services.NewPagamentoService(db, cfg),
+		escopo: escopo,
 	}
 }
 
@@ -55,7 +61,7 @@ func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request
 	)
 
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] ListPagamentos", err)
@@ -93,7 +99,7 @@ func (h *PagamentoHandler) ListPagamentos(w http.ResponseWriter, r *http.Request
 		OrderDir:        parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "verificando se scope.Restrito")
-	if scope.Restrito {
+	if scope.Restrito() {
 		vlog.Printf("pagamento_handler.go", "PagamentoHandler.ListPagamentos", "atribuindo filtro.VendedorID = scope.VendedorID")
 		// Usuário role=normal: força o filtro à própria carteira.
 		filtro.VendedorID = scope.VendedorID
@@ -133,7 +139,7 @@ func (h *PagamentoHandler) GetPagamento(w http.ResponseWriter, r *http.Request) 
 	}
 
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] GetPagamento", err)
@@ -160,7 +166,7 @@ func (h *PagamentoHandler) GetPagamento(w http.ResponseWriter, r *http.Request) 
 	}
 
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se scope.Restrito")
-	if scope.Restrito {
+	if scope.Restrito() {
 		vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "chamando h.svc.VendedorIDDoPedido e atribuindo resultado a vendedorID, err")
 		vendedorID, err := h.svc.VendedorIDDoPedido(r.Context(), h.db, pagamento.PedidoID)
 		vlog.Printf("pagamento_handler.go", "PagamentoHandler.GetPagamento", "verificando se err != nil")
@@ -296,7 +302,7 @@ func (h *PagamentoHandler) pedidoNoEscopo(w http.ResponseWriter, r *http.Request
 // tiver vendedor vinculado.
 func (h *PagamentoHandler) CreatePagamento(w http.ResponseWriter, r *http.Request) {
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] CreatePagamento", err)
@@ -319,7 +325,7 @@ func (h *PagamentoHandler) CreatePagamento(w http.ResponseWriter, r *http.Reques
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "verificando se scope.Restrito && req.PedidoID > 0")
 	// pedido_id <= 0 segue para o service, que responde 400 "pedido_id é
 	// obrigatório" (nenhum registro é criado nesse caso).
-	if scope.Restrito && req.PedidoID > 0 {
+	if scope.Restrito() && req.PedidoID > 0 {
 		vlog.Printf("pagamento_handler.go", "PagamentoHandler.CreatePagamento", "verificando se !h.pedidoNoEscopo(...)")
 		if !h.pedidoNoEscopo(w, r, scope, req.PedidoID, "CreatePagamento", "pedido não encontrado") {
 			return
@@ -382,7 +388,7 @@ func (h *PagamentoHandler) UpdatePagamento(w http.ResponseWriter, r *http.Reques
 	}
 
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] UpdatePagamento", err)
@@ -395,7 +401,7 @@ func (h *PagamentoHandler) UpdatePagamento(w http.ResponseWriter, r *http.Reques
 	}
 
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se scope.Restrito")
-	if scope.Restrito {
+	if scope.Restrito() {
 		vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "chamando h.svc.GetPagamentoByID e atribuindo resultado a atual, err")
 		atual, err := h.svc.GetPagamentoByID(r.Context(), h.db, id)
 		vlog.Printf("pagamento_handler.go", "PagamentoHandler.UpdatePagamento", "verificando se err != nil")
@@ -471,7 +477,7 @@ func (h *PagamentoHandler) DeletePagamento(w http.ResponseWriter, r *http.Reques
 	}
 
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pagamentos] DeletePagamento", err)
@@ -498,7 +504,7 @@ func (h *PagamentoHandler) DeletePagamento(w http.ResponseWriter, r *http.Reques
 	}
 
 	vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se scope.Restrito")
-	if scope.Restrito {
+	if scope.Restrito() {
 		vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "chamando h.svc.VendedorIDDoPedido e atribuindo resultado a vendedorID, err")
 		vendedorID, err := h.svc.VendedorIDDoPedido(r.Context(), h.db, pagamento.PedidoID)
 		vlog.Printf("pagamento_handler.go", "PagamentoHandler.DeletePagamento", "verificando se err != nil")

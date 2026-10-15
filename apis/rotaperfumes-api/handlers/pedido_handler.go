@@ -17,15 +17,21 @@ import (
 
 // PedidoHandler trata as rotas /api/pedidos/*.
 type PedidoHandler struct {
-	db  *sql.DB
-	svc *services.PedidoService
+	db     *sql.DB
+	svc    *services.PedidoService
+	escopo EscopoCarteira
 }
 
 // NewPedidoHandler cria um PedidoHandler com pool de conexão injetado.
-func NewPedidoHandler(db *sql.DB, cfg *config.Config) *PedidoHandler {
+// escopo é o AutorizadorEscopo do comercialapp (ARQ-04, ponte scope.go).
+func NewPedidoHandler(db *sql.DB, cfg *config.Config, escopo EscopoCarteira) *PedidoHandler {
+	if escopo == nil {
+		panic("handlers: NewPedidoHandler exige o escopo (N6)")
+	}
 	return &PedidoHandler{
-		db:  db,
-		svc: services.NewPedidoService(db, cfg),
+		db:     db,
+		svc:    services.NewPedidoService(db, cfg),
+		escopo: escopo,
 	}
 }
 
@@ -46,7 +52,7 @@ func (h *PedidoHandler) ListPedidos(w http.ResponseWriter, r *http.Request) {
 	)
 
 	vlog.Printf("pedido_handler.go", "PedidoHandler.ListPedidos", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pedido_handler.go", "PedidoHandler.ListPedidos", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pedidos] ListPedidos", err)
@@ -71,7 +77,7 @@ func (h *PedidoHandler) ListPedidos(w http.ResponseWriter, r *http.Request) {
 		OrderDir:   parseOrderDirQuery(r.URL.Query().Get("order_dir")),
 	}
 	vlog.Printf("pedido_handler.go", "PedidoHandler.ListPedidos", "verificando se scope.Restrito")
-	if scope.Restrito {
+	if scope.Restrito() {
 		vlog.Printf("pedido_handler.go", "PedidoHandler.ListPedidos", "atribuindo filtro.VendedorID = scope.VendedorID")
 		// Usuário role=normal: força o filtro à própria carteira, ignorando
 		// qualquer vendedor_id vindo da query string (evita bypass via URL).
@@ -130,7 +136,7 @@ func (h *PedidoHandler) GetPedido(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog.Printf("pedido_handler.go", "PedidoHandler.GetPedido", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pedido_handler.go", "PedidoHandler.GetPedido", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pedidos] GetPedido", err)
@@ -157,7 +163,7 @@ func (h *PedidoHandler) GetPedido(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog.Printf("pedido_handler.go", "PedidoHandler.GetPedido", "verificando se scope.Restrito && !scope.PermiteVendedor(...)")
-	if scope.Restrito && !scope.PermiteVendedor(pedido.VendedorID) {
+	if scope.Restrito() && !scope.PermiteVendedor(pedido.VendedorID) {
 		writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
 		return
 	}
@@ -266,7 +272,7 @@ func pedidoErroParaStatus(err error) (status int, msg string, ok bool) {
 // vendedor). 403 se o usuário normal não tiver vendedor vinculado.
 func (h *PedidoHandler) CreatePedido(w http.ResponseWriter, r *http.Request) {
 	vlog.Printf("pedido_handler.go", "PedidoHandler.CreatePedido", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pedido_handler.go", "PedidoHandler.CreatePedido", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pedidos] CreatePedido", err)
@@ -287,14 +293,14 @@ func (h *PedidoHandler) CreatePedido(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog.Printf("pedido_handler.go", "PedidoHandler.CreatePedido", "verificando se scope.Restrito")
-	if scope.Restrito {
+	if scope.Restrito() {
 		vlog.Printf("pedido_handler.go", "PedidoHandler.CreatePedido", "atribuindo req.VendedorID = scope.VendedorID")
 		// Usuário role=normal: nunca confia no vendedor_id do payload — força
 		// à própria carteira (evita forjar pedido para outro vendedor).
 		req.VendedorID = scope.VendedorID
 
 		vlog.Printf("pedido_handler.go", "PedidoHandler.CreatePedido", "chamando clienteNaCarteiraDoVendedor e atribuindo resultado a pertence, err")
-		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.escopo, scope, req.ClienteID)
 		vlog.Printf("pedido_handler.go", "PedidoHandler.CreatePedido", "verificando se err != nil")
 		if err != nil {
 			log.Printf("[pedidos] CreatePedido checar carteira: %v", err)
@@ -358,7 +364,7 @@ func (h *PedidoHandler) UpdatePedido(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog.Printf("pedido_handler.go", "PedidoHandler.UpdatePedido", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pedido_handler.go", "PedidoHandler.UpdatePedido", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pedidos] UpdatePedido", err)
@@ -371,7 +377,7 @@ func (h *PedidoHandler) UpdatePedido(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog.Printf("pedido_handler.go", "PedidoHandler.UpdatePedido", "verificando se scope.Restrito")
-	if scope.Restrito {
+	if scope.Restrito() {
 		vlog.Printf("pedido_handler.go", "PedidoHandler.UpdatePedido", "chamando h.svc.GetPedidoDetalhe e atribuindo resultado a atual, err")
 		// Só o escopo restrito precisa do registro atual (para checar a
 		// posse); admin segue direto ao service, que já retorna 404 se o
@@ -404,14 +410,14 @@ func (h *PedidoHandler) UpdatePedido(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog.Printf("pedido_handler.go", "PedidoHandler.UpdatePedido", "verificando se scope.Restrito")
-	if scope.Restrito {
+	if scope.Restrito() {
 		vlog.Printf("pedido_handler.go", "PedidoHandler.UpdatePedido", "atribuindo req.VendedorID = scope.VendedorID")
 		// Usuário role=normal: nunca confia no vendedor_id do payload — força
 		// à própria carteira (evita reatribuir o pedido a outro vendedor).
 		req.VendedorID = scope.VendedorID
 
 		vlog.Printf("pedido_handler.go", "PedidoHandler.UpdatePedido", "chamando clienteNaCarteiraDoVendedor e atribuindo resultado a pertence, err")
-		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.db, scope.VendedorID, req.ClienteID)
+		pertence, err := clienteNaCarteiraDoVendedor(r.Context(), h.escopo, scope, req.ClienteID)
 		vlog.Printf("pedido_handler.go", "PedidoHandler.UpdatePedido", "verificando se err != nil")
 		if err != nil {
 			log.Printf("[pedidos] UpdatePedido checar carteira: %v", err)
@@ -475,7 +481,7 @@ func (h *PedidoHandler) DeletePedido(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog.Printf("pedido_handler.go", "PedidoHandler.DeletePedido", "chamando resolverVendedorScope e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScope(r, h.db)
+	scope, err := resolverVendedorScope(r, h.escopo)
 	vlog.Printf("pedido_handler.go", "PedidoHandler.DeletePedido", "verificando se err != nil")
 	if err != nil {
 		responderErroEscopo(w, "[pedidos] DeletePedido", err)
@@ -501,7 +507,7 @@ func (h *PedidoHandler) DeletePedido(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	vlog.Printf("pedido_handler.go", "PedidoHandler.DeletePedido", "verificando se scope.Restrito && !scope.PermiteVendedor(...)")
-	if scope.Restrito && !scope.PermiteVendedor(pedido.VendedorID) {
+	if scope.Restrito() && !scope.PermiteVendedor(pedido.VendedorID) {
 		writeJSON(w, http.StatusNotFound, nil, "pedido não encontrado")
 		return
 	}

@@ -17,8 +17,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 )
 
 const (
@@ -643,7 +641,7 @@ func TestDashboardEscopo_Verbose_SemVendedor(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	h := handlers.NewDashboardHandler(db, cfg)
+	h := novoDashboardHandler(db, cfg)
 	chains := []struct {
 		nome string
 		h    http.HandlerFunc

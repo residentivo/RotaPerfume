@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/identidade"
-	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
 )
 
@@ -31,15 +31,15 @@ func TestClienteRepository_CNPJDuplicado(t *testing.T) {
 		{"erro genérico", errors.New("db down"), false},
 	}
 	for _, tc := range cases {
-		c := &models.Cliente{CNPJ: "11222333000181", DataCadastro: time.Now()}
+		c := &comercial.Cliente{CNPJ: "11222333000181", DataCadastro: time.Now()}
 		t.Run("create/"+tc.nome, func(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 			mock.ExpectExec(`INSERT INTO clientes`).WillReturnError(tc.err)
 
-			err := repositories.NewClienteRepository().Create(context.Background(), db, c)
+			err := NewClienteRepository().Create(context.Background(), db, c)
 			require.Error(t, err)
-			assert.Equal(t, tc.wantDup, errors.Is(err, repositories.ErrCNPJDuplicado))
+			assert.Equal(t, tc.wantDup, errors.Is(err, comercial.ErrCNPJDuplicado))
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 		t.Run("update/"+tc.nome, func(t *testing.T) {
@@ -47,9 +47,9 @@ func TestClienteRepository_CNPJDuplicado(t *testing.T) {
 			defer db.Close()
 			mock.ExpectExec(`UPDATE clientes`).WillReturnError(tc.err)
 
-			err := repositories.NewClienteRepository().Update(context.Background(), db, 1, c)
+			err := NewClienteRepository().Update(context.Background(), db, 1, c)
 			require.Error(t, err)
-			assert.Equal(t, tc.wantDup, errors.Is(err, repositories.ErrCNPJDuplicado))
+			assert.Equal(t, tc.wantDup, errors.Is(err, comercial.ErrCNPJDuplicado))
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -65,7 +65,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows(cols).AddRow(int64(7), "Sete", "Sul", "PR", nil))
 
-		out, err := repositories.NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		out, err := NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
 		require.NoError(t, err)
 		require.Len(t, out, 1)
 		assert.Equal(t, int64(7), out[0].ID)
@@ -78,7 +78,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows(cols))
 
-		out, err := repositories.NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		out, err := NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
 		require.NoError(t, err)
 		assert.NotNil(t, out)
 		assert.Empty(t, out)
@@ -90,7 +90,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WillReturnError(errors.New("db down"))
 
-		_, err = repositories.NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		_, err = NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -100,7 +100,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows(cols).AddRow("x", "Sete", "Sul", "PR", nil))
 
-		_, err = repositories.NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		_, err = NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})

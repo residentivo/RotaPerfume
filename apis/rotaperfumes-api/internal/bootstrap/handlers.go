@@ -8,6 +8,7 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/catalogohttp"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/comercialhttp"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/identidadehttp"
 	"github.com/rotaperfumes/shared/catalogo/catalogoapp"
 	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
@@ -18,19 +19,20 @@ import (
 
 // Handlers agrupa os handlers HTTP. Os contextos ainda não migrados
 // (ARQ-04..06, strangler fig) usam os handlers LEGADOS; o campo de cada
-// contexto troca de tipo no lote dele (Catálogo: ARQ-02; Identidade: ARQ-03).
+// contexto troca de tipo no lote dele (Catálogo: ARQ-02; Identidade: ARQ-03;
+// Comercial: ARQ-04).
 type Handlers struct {
 	Auth           *identidadehttp.AuthHandler
 	Usuario        *identidadehttp.UsuarioHandler
 	Dashboard      *handlers.DashboardHandler
 	SenhaHistorico *identidadehttp.SenhaHistoricoHandler
-	Vendedor       *handlers.VendedorHandler
-	Cliente        *handlers.ClienteHandler
+	Vendedor       *comercialhttp.VendedorHandler
+	Cliente        *comercialhttp.ClienteHandler
 	Produto        *catalogohttp.ProdutoHandler
 	Pedido         *handlers.PedidoHandler
 	Pagamento      *handlers.PagamentoHandler
-	Oportunidade   *handlers.OportunidadeHandler
-	Visita         *handlers.VisitaHandler
+	Oportunidade   *comercialhttp.OportunidadeHandler
+	Visita         *comercialhttp.VisitaHandler
 	Estoque        *catalogohttp.EstoqueHandler
 }
 
@@ -44,19 +46,22 @@ func NovosHandlers(pool *sql.DB, cfg *config.Config, email sharedsvc.EmailServic
 // montados (produção: Montar; testes: captcha e publicador falsos).
 func NovosHandlersCom(pool *sql.DB, cfg *config.Config, identidade *identidadeapp.Casos) Handlers {
 	produto, estoque := NovoCatalogoHTTP(pool)
+	comercialCasos := NovoComercial(pool)
+	com := NovoComercialHTTP(comercialCasos)
+	escopo := comercialCasos.Escopo() // a mesma regra de escopo para os legados de Vendas e Analytics
 	ident := NovoIdentidadeHTTP(identidade, cfg)
 	return Handlers{
 		Auth:           ident.Auth,
 		Usuario:        ident.Usuario,
-		Dashboard:      handlers.NewDashboardHandler(pool, cfg),
+		Dashboard:      handlers.NewDashboardHandler(pool, cfg, escopo),
 		SenhaHistorico: ident.SenhaHistorico,
-		Vendedor:       handlers.NewVendedorHandler(pool, cfg),
-		Cliente:        handlers.NewClienteHandler(pool, cfg),
+		Vendedor:       com.Vendedor,
+		Cliente:        com.Cliente,
 		Produto:        produto,
-		Pedido:         handlers.NewPedidoHandler(pool, cfg),
-		Pagamento:      handlers.NewPagamentoHandler(pool, cfg),
-		Oportunidade:   handlers.NewOportunidadeHandler(pool, cfg),
-		Visita:         handlers.NewVisitaHandler(pool, cfg),
+		Pedido:         handlers.NewPedidoHandler(pool, cfg, escopo),
+		Pagamento:      handlers.NewPagamentoHandler(pool, cfg, escopo),
+		Oportunidade:   com.Oportunidade,
+		Visita:         com.Visita,
 		Estoque:        estoque,
 	}
 }

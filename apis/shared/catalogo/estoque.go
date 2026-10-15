@@ -53,7 +53,7 @@ func dataSnapshot(s string, agora time.Time) (time.Time, error) {
 	if strings.TrimSpace(s) == "" {
 		return time.Time{}, ErrEstoqueDataObrigatoria
 	}
-	data, err := dataLocal(s, ErrEstoqueDataInvalida)
+	data, err := kernel.ParseDataLocal(s, ErrEstoqueDataInvalida)
 	if err != nil {
 		return time.Time{}, err
 	}

@@ -8,11 +8,9 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 var vendedorGetColumns = []string{
@@ -30,7 +28,7 @@ func TestVendedorList_Success(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	vendedores, err := repo.List(ctx, db)
 
@@ -58,7 +56,7 @@ func TestVendedorList_AtivosEInativos(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	vendedores, err := repo.List(ctx, db)
 
@@ -84,7 +82,7 @@ func TestVendedorList_Vazio(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}))
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	vendedores, err := repo.List(ctx, db)
 
@@ -100,7 +98,7 @@ func TestVendedorList_QueryError(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	_, err := repo.List(ctx, db)
 
@@ -119,7 +117,7 @@ func TestVendedorList_ScanError(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	_, err := repo.List(ctx, db)
 
@@ -138,7 +136,7 @@ func TestVendedorList_IterError(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	_, err := repo.List(ctx, db)
 
@@ -171,7 +169,7 @@ func TestVendedorExistsByID(t *testing.T) {
 				q.WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 			}
 
-			repo := repositories.NewVendedorRepository()
+			repo := NewVendedorRepository()
 			ctx := context.Background()
 			exists, err := repo.ExistsByID(ctx, db, tt.id)
 
@@ -210,12 +208,12 @@ func TestVendedorIsDesligado(t *testing.T) {
 			defer db.Close()
 			tt.setup(mock.ExpectQuery(q).WithArgs(int64(3)))
 
-			desligado, err := repositories.NewVendedorRepository().IsDesligado(context.Background(), db, 3)
+			desligado, err := NewVendedorRepository().IsDesligado(context.Background(), db, 3)
 
 			assert.Equal(t, tt.wantDesligado, desligado)
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.Equal(t, tt.wantNotFound, errors.Is(err, repositories.ErrNotFound))
+				assert.Equal(t, tt.wantNotFound, errors.Is(err, comercial.ErrVendedorNaoEncontrado))
 			} else {
 				require.NoError(t, err)
 			}
@@ -232,7 +230,7 @@ func TestVendedorExistsByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	exists, err := repo.ExistsByID(ctx, db, 1)
 
@@ -257,7 +255,7 @@ func TestVendedorGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	v, err := repo.GetByID(ctx, db, 1)
 
@@ -275,12 +273,12 @@ func TestVendedorGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	v, err := repo.GetByID(ctx, db, 999)
 
 	assert.Nil(t, v)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -292,13 +290,13 @@ func TestVendedorGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	v, err := repo.GetByID(ctx, db, 1)
 
 	assert.Nil(t, v)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -311,13 +309,13 @@ func TestVendedorCreate_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	v := &models.Vendedor{Nome: "Novo Vendedor", Regiao: "Sul", UF: "RS", DataAdmissao: now, MetaMensal: 3000.0}
+	v := &comercial.Vendedor{Nome: "Novo Vendedor", Regiao: "Sul", UF: "RS", DataAdmissao: now, MetaMensal: 3000.0}
 
 	mock.ExpectExec(`INSERT INTO vendedores \(nome, regiao, uf, data_admissao, data_desligamento, meta_mensal\)\s+VALUES \(\?, \?, \?, \?, \?, \?\)`).
 		WithArgs(v.Nome, v.Regiao, v.UF, v.DataAdmissao, v.DataDesligamento, v.MetaMensal).
 		WillReturnResult(sqlmock.NewResult(9, 1))
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, v)
 
@@ -330,12 +328,12 @@ func TestVendedorCreate_ExecError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	v := &models.Vendedor{Nome: "Novo Vendedor", Regiao: "Sul", UF: "RS", DataAdmissao: time.Now(), MetaMensal: 3000.0}
+	v := &comercial.Vendedor{Nome: "Novo Vendedor", Regiao: "Sul", UF: "RS", DataAdmissao: time.Now(), MetaMensal: 3000.0}
 
 	mock.ExpectExec(`INSERT INTO vendedores \(nome, regiao, uf, data_admissao, data_desligamento, meta_mensal\)\s+VALUES \(\?, \?, \?, \?, \?, \?\)`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, v)
 
@@ -347,12 +345,12 @@ func TestVendedorCreate_LastInsertIdError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	v := &models.Vendedor{Nome: "Novo Vendedor", Regiao: "Sul", UF: "RS", DataAdmissao: time.Now(), MetaMensal: 3000.0}
+	v := &comercial.Vendedor{Nome: "Novo Vendedor", Regiao: "Sul", UF: "RS", DataAdmissao: time.Now(), MetaMensal: 3000.0}
 
 	mock.ExpectExec(`INSERT INTO vendedores \(nome, regiao, uf, data_admissao, data_desligamento, meta_mensal\)\s+VALUES \(\?, \?, \?, \?, \?, \?\)`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, v)
 
@@ -369,13 +367,13 @@ func TestVendedorUpdate_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	v := &models.Vendedor{Nome: "Vendedor Atualizado", Regiao: "Nordeste", UF: "BA", DataAdmissao: now, MetaMensal: 4000.0}
+	v := &comercial.Vendedor{Nome: "Vendedor Atualizado", Regiao: "Nordeste", UF: "BA", DataAdmissao: now, MetaMensal: 4000.0}
 
 	mock.ExpectExec(`UPDATE vendedores\s+SET nome = \?, regiao = \?, uf = \?, data_admissao = \?, meta_mensal = \?\s+WHERE id = \?`).
 		WithArgs(v.Nome, v.Regiao, v.UF, v.DataAdmissao, v.MetaMensal, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.Update(ctx, db, 1, v)
 
@@ -387,17 +385,17 @@ func TestVendedorUpdate_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	v := &models.Vendedor{Nome: "Vendedor X", Regiao: "Nordeste", UF: "BA", DataAdmissao: time.Now(), MetaMensal: 4000.0}
+	v := &comercial.Vendedor{Nome: "Vendedor X", Regiao: "Nordeste", UF: "BA", DataAdmissao: time.Now(), MetaMensal: 4000.0}
 
 	mock.ExpectExec(`UPDATE vendedores\s+SET nome = \?, regiao = \?, uf = \?, data_admissao = \?, meta_mensal = \?\s+WHERE id = \?`).
 		WithArgs(v.Nome, v.Regiao, v.UF, v.DataAdmissao, v.MetaMensal, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.Update(ctx, db, 999, v)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -405,12 +403,12 @@ func TestVendedorUpdate_ExecError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	v := &models.Vendedor{Nome: "Vendedor X", Regiao: "Nordeste", UF: "BA", DataAdmissao: time.Now(), MetaMensal: 4000.0}
+	v := &comercial.Vendedor{Nome: "Vendedor X", Regiao: "Nordeste", UF: "BA", DataAdmissao: time.Now(), MetaMensal: 4000.0}
 
 	mock.ExpectExec(`UPDATE vendedores\s+SET nome = \?, regiao = \?, uf = \?, data_admissao = \?, meta_mensal = \?\s+WHERE id = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.Update(ctx, db, 1, v)
 
@@ -422,12 +420,12 @@ func TestVendedorUpdate_RowsAffectedError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	v := &models.Vendedor{Nome: "Vendedor X", Regiao: "Nordeste", UF: "BA", DataAdmissao: time.Now(), MetaMensal: 4000.0}
+	v := &comercial.Vendedor{Nome: "Vendedor X", Regiao: "Nordeste", UF: "BA", DataAdmissao: time.Now(), MetaMensal: 4000.0}
 
 	mock.ExpectExec(`UPDATE vendedores\s+SET nome = \?, regiao = \?, uf = \?, data_admissao = \?, meta_mensal = \?\s+WHERE id = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.Update(ctx, db, 1, v)
 
@@ -463,7 +461,7 @@ func TestVendedorSetDataDesligamento_Success(t *testing.T) {
 				WithArgs(tt.dataDesligamento, int64(1)).
 				WillReturnResult(sqlmock.NewResult(0, 1))
 
-			repo := repositories.NewVendedorRepository()
+			repo := NewVendedorRepository()
 			ctx := context.Background()
 			err := repo.SetDataDesligamento(ctx, db, 1, tt.dataDesligamento)
 
@@ -483,11 +481,11 @@ func TestVendedorSetDataDesligamento_NotFound(t *testing.T) {
 		WithArgs(dataDesligamento, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.SetDataDesligamento(ctx, db, 999, dataDesligamento)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -500,7 +498,7 @@ func TestVendedorSetDataDesligamento_ExecError(t *testing.T) {
 	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.SetDataDesligamento(ctx, db, 1, dataDesligamento)
 
@@ -517,7 +515,7 @@ func TestVendedorSetDataDesligamento_RowsAffectedError(t *testing.T) {
 	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := repositories.NewVendedorRepository()
+	repo := NewVendedorRepository()
 	ctx := context.Background()
 	err := repo.SetDataDesligamento(ctx, db, 1, dataDesligamento)
 

@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/shared/adapters/ratelimit"
+	"github.com/rotaperfumes/shared/comercial"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
 	"github.com/rotaperfumes/shared/config"
 	shareddb "github.com/rotaperfumes/shared/db"
 	"github.com/rotaperfumes/shared/identidade"
@@ -79,17 +81,17 @@ type captchaAprova struct{}
 
 func (captchaAprova) Verificar(context.Context, string, string) error { return nil }
 
-// vendedoresLegado: a porta identidadeapp.Vendedores sobre o repositório de
-// vendedores ainda legado (como o bootstrap).
+// vendedoresLegado: a porta identidadeapp.Vendedores sobre o adapter de
+// Comercial (ARQ-04; como o bootstrap). O nome é o do ARQ-03.
 type vendedoresLegado struct{ db *sql.DB }
 
 func (v vendedoresLegado) Existe(ctx context.Context, id int64) (bool, error) {
-	return repositories.NewVendedorRepository().ExistsByID(ctx, v.db, id)
+	return comercialmysql.NovoVendedores(v.db).Existe(ctx, id)
 }
 
 func (v vendedoresLegado) Desligado(ctx context.Context, id int64) (bool, error) {
-	d, err := repositories.NewVendedorRepository().IsDesligado(ctx, v.db, id)
-	if errors.Is(err, repositories.ErrNotFound) {
+	d, err := comercialmysql.NovoVendedores(v.db).Desligado(ctx, id)
+	if errors.Is(err, comercial.ErrVendedorNaoEncontrado) {
 		return false, nil
 	}
 	return d, err

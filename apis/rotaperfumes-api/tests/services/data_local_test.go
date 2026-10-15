@@ -31,6 +31,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/catalogo/catalogoapp"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/tz"
 )
@@ -158,7 +159,7 @@ func dlCriarOportunidade(t *testing.T, abertura, fechamento string) (time.Time, 
 	mock.ExpectQuery(dlReExisteCliente).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
 	mock.ExpectQuery(dlReExisteVendedor).WithArgs(int64(2)).WillReturnRows(dlExisteRow())
 	mock.ExpectExec(`INSERT INTO oportunidades`).WillReturnResult(sqlmock.NewResult(9, 1))
-	o, err := services.NewOportunidadeService(db, &config.Config{}).CreateOportunidade(context.Background(), db, services.OportunidadeInput{
+	o, err := NewOportunidadeService(db, &config.Config{}).CreateOportunidade(context.Background(), db, OportunidadeInput{
 		ClienteID: 1, VendedorID: 2, Origem: "Indicação", DataAbertura: abertura,
 		Etapa: "Prospecção", ProbabilidadePct: 10, ValorEstimado: 100, DataFechamento: fechamento,
 	})
@@ -175,7 +176,7 @@ func dlParsers() []dlParserCaso {
 			db, mock := dlNewDB(t)
 			mock.ExpectExec(`INSERT INTO clientes`).WillReturnResult(sqlmock.NewResult(3, 1))
 			// Releitura falha (sem expectativa): o service devolve o objeto em memória.
-			c, err := services.NewClienteService(db, cfg).CreateCliente(ctx, db, services.ClienteInput{
+			c, err := NewClienteService(db, cfg).CreateCliente(ctx, db, ClienteInput{
 				CNPJ: "11222333000181", RazaoSocial: "Cliente", Segmento: "Varejo",
 				Cidade: "Curitiba", UF: "pr", DataCadastro: data,
 			})
@@ -242,7 +243,7 @@ func dlParsers() []dlParserCaso {
 		{"vendedor.data_admissao", func(t *testing.T, data string) time.Time {
 			db, mock := dlNewDB(t)
 			mock.ExpectExec(`INSERT INTO vendedores`).WillReturnResult(sqlmock.NewResult(7, 1))
-			v, err := services.NewVendedorService(db, cfg).CreateVendedor(ctx, db, services.VendedorInput{
+			v, err := NewVendedorService(db, cfg).CreateVendedor(ctx, db, VendedorInput{
 				Nome: "Vendedor", Regiao: "Sul", UF: "pr", DataAdmissao: data,
 			})
 			require.NoError(t, err)
@@ -254,8 +255,8 @@ func dlParsers() []dlParserCaso {
 			mock.ExpectQuery(dlReExisteCliente).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
 			mock.ExpectQuery(dlReExisteVendedor).WithArgs(int64(2)).WillReturnRows(dlExisteRow())
 			mock.ExpectExec(`INSERT INTO visitas`).WillReturnResult(sqlmock.NewResult(8, 1))
-			v, err := services.NewVisitaService(db, cfg).CreateVisita(ctx, db,
-				services.VisitaInput{ClienteID: 1, VendedorID: 2, DataVisita: data, Resultado: "Pedido", DuracaoMin: 30})
+			v, err := NewVisitaService(db, cfg).CreateVisita(ctx, db,
+				VisitaInput{ClienteID: 1, VendedorID: 2, DataVisita: data, Resultado: "Pedido", DuracaoMin: 30})
 			require.NoError(t, err)
 			require.NoError(t, mock.ExpectationsWereMet())
 			return v.DataVisita
@@ -354,10 +355,10 @@ func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 		t.Run(s, func(t *testing.T) {
 			db, mock := dlNewDB(t)
 
-			_, err := services.NewClienteService(db, cfg).CreateCliente(ctx, db, services.ClienteInput{
+			_, err := NewClienteService(db, cfg).CreateCliente(ctx, db, ClienteInput{
 				CNPJ: "11222333000181", RazaoSocial: "C", Segmento: "S", Cidade: "C", UF: "PR", DataCadastro: s,
 			})
-			assert.ErrorIs(t, err, services.ErrDataCadastroInvalida)
+			assert.ErrorIs(t, err, comercial.ErrDataCadastroInvalida)
 
 			_, _, err = listarEstoque(novosCasosCatalogo(db), 1, 10, catalogoapp.ConsultaEstoque{DataDe: s})
 			assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
@@ -375,8 +376,8 @@ func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 			})
 			assert.ErrorIs(t, err, catalogo.ErrDataLancamentoInvalida)
 
-			_, err = services.NewVendedorService(db, cfg).CreateVendedor(ctx, db, services.VendedorInput{Nome: "N", Regiao: "R", UF: "PR", DataAdmissao: s})
-			assert.ErrorIs(t, err, services.ErrVendedorDataAdmissaoInvalida)
+			_, err = NewVendedorService(db, cfg).CreateVendedor(ctx, db, VendedorInput{Nome: "N", Regiao: "R", UF: "PR", DataAdmissao: s})
+			assert.ErrorIs(t, err, comercial.ErrDataAdmissaoInvalida)
 
 			assert.NoError(t, mock.ExpectationsWereMet(), "data inválida deve falhar antes de consultar o banco")
 

@@ -274,3 +274,40 @@ func colunaUsuario(c identidade.CampoUsuario) string {
 		return "u.id"
 	}
 }
+
+// VendedorDoUsuario devolve usuarios.id_vendedor (nil sem vínculo);
+// identidade.ErrUsuarioNaoEncontrado se o usuário não existir. Consulta
+// própria a cada chamada: base do escopo de carteira (E-01, sem cache).
+func (r *Usuarios) VendedorDoUsuario(ctx context.Context, usuarioID int64) (*int64, error) {
+	const q = `SELECT id_vendedor FROM usuarios WHERE id = ? LIMIT 1`
+	var idVendedor sql.NullInt64
+	err := r.q.QueryRowContext(ctx, q, usuarioID).Scan(&idVendedor)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, identidade.ErrUsuarioNaoEncontrado
+	}
+	if err != nil {
+		return nil, fmt.Errorf("identidademysql: get id_vendedor usuario: %w", err)
+	}
+	vlog.Printf(arqUsuarios, "Usuarios.VendedorDoUsuario", "SELECT usuarios vinculado=%t", idVendedor.Valid)
+	if !idVendedor.Valid {
+		return nil, nil
+	}
+	return &idVendedor.Int64, nil
+}
+
+// InativarDoVendedor inativa os usuários ATIVOS do vendedor gravando o corte
+// de sessão (SEC-08) e devolve quantos foram afetados (0 não é erro). Roda
+// na tx do desligamento do vendedor (I-09).
+func (r *Usuarios) InativarDoVendedor(ctx context.Context, vendedorID int64) (int64, error) {
+	const q = `UPDATE usuarios SET ativo = 0, tokens_validos_desde = ? WHERE id_vendedor = ? AND ativo = 1`
+	res, err := r.q.ExecContext(ctx, q, identidade.CorteDeSessao(r.agora()), vendedorID)
+	if err != nil {
+		return 0, fmt.Errorf("identidademysql: inativar usuarios do vendedor: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("identidademysql: inativar usuarios do vendedor rowsAffected: %w", err)
+	}
+	vlog.Printf(arqUsuarios, "Usuarios.InativarDoVendedor", "UPDATE usuarios afetadas=%d", n)
+	return n, nil
+}

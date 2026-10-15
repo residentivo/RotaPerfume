@@ -28,11 +28,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/catalogo"
+	"github.com/rotaperfumes/shared/comercial"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
 	"github.com/rotaperfumes/shared/config"
 	shareddb "github.com/rotaperfumes/shared/db"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 func envOr(k, def string) string {
@@ -111,8 +111,8 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 				sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
 
 				t.Run("vendedor.data_admissao", func(t *testing.T) {
-					svc := services.NewVendedorService(db, cfg)
-					in := services.VendedorInput{Nome: "ZZ-TEST-BUG01-" + sufixo, Regiao: "Teste", UF: "PR", DataAdmissao: data}
+					svc := NewVendedorService(db, cfg)
+					in := VendedorInput{Nome: "ZZ-TEST-BUG01-" + sufixo, Regiao: "Teste", UF: "PR", DataAdmissao: data}
 					v, err := svc.CreateVendedor(ctx, db, in)
 					require.NoError(t, err)
 					require.NotZero(t, v.ID)
@@ -124,7 +124,7 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 					assert.Equal(t, data, dataNoBanco(t, db, "vendedores", "data_admissao", v.ID), "gravação")
 
 					for ciclo := 1; ciclo <= 3; ciclo++ {
-						lido, err := repositories.NewVendedorRepository().GetByID(ctx, db, v.ID)
+						lido, err := comercialmysql.NovoVendedores(db).PorID(ctx, v.ID)
 						require.NoError(t, err)
 						assert.Equal(t, data, lido.DataAdmissao.In(time.Local).Format("2006-01-02"), "leitura ciclo %d", ciclo)
 						assert.Equal(t, data, dataComoAPI(t, lido.DataAdmissao), "JSON ciclo %d", ciclo)
@@ -192,8 +192,8 @@ func TestIntegracao_UpdateSemAlteracao(t *testing.T) {
 	sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	t.Run("vendedor", func(t *testing.T) {
-		svc := services.NewVendedorService(db, cfg)
-		in := services.VendedorInput{Nome: "ZZ-TEST-BUG01-" + sufixo, Regiao: "Teste", UF: "PR", DataAdmissao: "2024-01-01", MetaMensal: 1}
+		svc := NewVendedorService(db, cfg)
+		in := VendedorInput{Nome: "ZZ-TEST-BUG01-" + sufixo, Regiao: "Teste", UF: "PR", DataAdmissao: "2024-01-01", MetaMensal: 1}
 		v, err := svc.CreateVendedor(ctx, db, in)
 		require.NoError(t, err)
 		t.Cleanup(func() {
@@ -238,9 +238,9 @@ func TestIntegracao_UpdateSemAlteracao(t *testing.T) {
 
 const bug05Prefixo = "ZZ-TEST-BUG05-"
 
-func bug05CriarVendedor(t *testing.T, ctx context.Context, db *sql.DB, svc *services.VendedorService, nome string) int64 {
+func bug05CriarVendedor(t *testing.T, ctx context.Context, db *sql.DB, svc *VendedorService, nome string) int64 {
 	t.Helper()
-	v, err := svc.CreateVendedor(ctx, db, services.VendedorInput{
+	v, err := svc.CreateVendedor(ctx, db, VendedorInput{
 		Nome: nome, Regiao: "Teste", UF: "PR", DataAdmissao: "2024-01-01", MetaMensal: 1,
 	})
 	require.NoError(t, err)
@@ -295,7 +295,7 @@ func TestIntegracaoBUG05_InativarVendedorInativaUsuarios(t *testing.T) {
 	}
 	db := abrirDBIntegracao(t)
 	ctx := context.Background()
-	svc := services.NewVendedorService(db, &config.Config{})
+	svc := NewVendedorService(db, &config.Config{})
 	sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
 	email := func(n string) string { return fmt.Sprintf("zz-test-bug05-%s-%s@teste.local", sufixo, n) }
 
@@ -363,7 +363,7 @@ func TestIntegracaoBUG05_InativarVendedorInativaUsuarios(t *testing.T) {
 
 	t.Run("DeleteVendedor inexistente nao altera usuarios", func(t *testing.T) {
 		_, err := svc.DeleteVendedor(ctx, db, -1)
-		assert.ErrorIs(t, err, services.ErrVendedorNaoEncontrado)
+		assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
 		assert.Equal(t, 1, bug05Ativo(t, db, ctrlOutroVend))
 		assert.Equal(t, 1, bug05Ativo(t, db, ctrlSemVend))
 	})

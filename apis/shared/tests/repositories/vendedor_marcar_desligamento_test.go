@@ -7,9 +7,8 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // BUG-04: desligar preserva a data original via COALESCE.
@@ -28,7 +27,7 @@ func TestVendedorMarcarDesligamento(t *testing.T) {
 		}, nil, false},
 		{"id inexistente", func(m sqlmock.Sqlmock) {
 			m.ExpectExec(reMarcarDesligamento).WithArgs(agora, int64(1)).WillReturnResult(sqlmock.NewResult(0, 0))
-		}, repositories.ErrNotFound, false},
+		}, comercial.ErrVendedorNaoEncontrado, false},
 		{"erro no exec", func(m sqlmock.Sqlmock) {
 			m.ExpectExec(reMarcarDesligamento).WillReturnError(sql.ErrConnDone)
 		}, nil, true},
@@ -42,7 +41,7 @@ func TestVendedorMarcarDesligamento(t *testing.T) {
 			defer db.Close()
 			tc.result(mock)
 
-			err := repositories.NewVendedorRepository().MarcarDesligamento(context.Background(), db, 1, agora)
+			err := NewVendedorRepository().MarcarDesligamento(context.Background(), db, 1, agora)
 
 			switch {
 			case tc.wantErr != nil:

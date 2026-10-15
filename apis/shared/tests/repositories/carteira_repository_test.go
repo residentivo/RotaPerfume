@@ -8,11 +8,9 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 var clienteResumoColumns = []string{
@@ -38,7 +36,7 @@ func TestCarteiraListClientesByVendedorID_ComClientes(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	clientes, err := repo.ListClientesByVendedorID(ctx, db, 1)
 
@@ -57,7 +55,7 @@ func TestCarteiraListClientesByVendedorID_Vazio(t *testing.T) {
 		WithArgs(int64(99)).
 		WillReturnRows(sqlmock.NewRows(clienteResumoColumns))
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	clientes, err := repo.ListClientesByVendedorID(ctx, db, 99)
 
@@ -74,7 +72,7 @@ func TestCarteiraListClientesByVendedorID_QueryError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	clientes, err := repo.ListClientesByVendedorID(ctx, db, 1)
 
@@ -95,7 +93,7 @@ func TestCarteiraListClientesByVendedorID_ScanError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	clientes, err := repo.ListClientesByVendedorID(ctx, db, 1)
 
@@ -117,7 +115,7 @@ func TestCarteiraListClientesByVendedorID_IterError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	clientes, err := repo.ListClientesByVendedorID(ctx, db, 1)
 
@@ -146,7 +144,7 @@ func TestCarteiraGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	c, err := repo.GetByID(ctx, db, 1)
 
@@ -163,12 +161,12 @@ func TestCarteiraGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	c, err := repo.GetByID(ctx, db, 999)
 
 	assert.Nil(t, c)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrVinculoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -180,13 +178,13 @@ func TestCarteiraGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	c, err := repo.GetByID(ctx, db, 1)
 
 	assert.Nil(t, c)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, comercial.ErrVinculoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -223,7 +221,7 @@ func TestCarteiraGetVinculoAtivoByClienteID(t *testing.T) {
 					WithArgs(int64(99)).
 					WillReturnError(sql.ErrNoRows)
 			},
-			wantErr: repositories.ErrNotFound,
+			wantErr: comercial.ErrVinculoNaoEncontrado,
 		},
 		{
 			nome:      "erro de query",
@@ -243,7 +241,7 @@ func TestCarteiraGetVinculoAtivoByClienteID(t *testing.T) {
 			defer db.Close()
 			tt.mock(mock)
 
-			repo := repositories.NewCarteiraRepository()
+			repo := NewCarteiraRepository()
 			ctx := context.Background()
 			c, err := repo.GetVinculoAtivoByClienteID(ctx, db, tt.clienteID)
 
@@ -256,7 +254,7 @@ func TestCarteiraGetVinculoAtivoByClienteID(t *testing.T) {
 				if tt.wantErr != nil {
 					assert.ErrorIs(t, err, tt.wantErr)
 				} else {
-					assert.NotErrorIs(t, err, repositories.ErrNotFound)
+					assert.NotErrorIs(t, err, comercial.ErrVinculoNaoEncontrado)
 				}
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -300,7 +298,7 @@ func TestCarteiraGetVinculoAtivo(t *testing.T) {
 					WithArgs(int64(2), int64(99)).
 					WillReturnError(sql.ErrNoRows)
 			},
-			wantErr: repositories.ErrNotFound,
+			wantErr: comercial.ErrVinculoNaoEncontrado,
 		},
 		{
 			nome:       "erro de query",
@@ -321,7 +319,7 @@ func TestCarteiraGetVinculoAtivo(t *testing.T) {
 			defer db.Close()
 			tt.mock(mock)
 
-			repo := repositories.NewCarteiraRepository()
+			repo := NewCarteiraRepository()
 			ctx := context.Background()
 			c, err := repo.GetVinculoAtivo(ctx, db, tt.vendedorID, tt.clienteID)
 
@@ -334,7 +332,7 @@ func TestCarteiraGetVinculoAtivo(t *testing.T) {
 				if tt.wantErr != nil {
 					assert.ErrorIs(t, err, tt.wantErr)
 				} else {
-					assert.NotErrorIs(t, err, repositories.ErrNotFound)
+					assert.NotErrorIs(t, err, comercial.ErrVinculoNaoEncontrado)
 				}
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -351,7 +349,7 @@ func TestCarteiraCreate_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	c := &models.Carteira{
+	c := &comercial.Carteira{
 		CarteiraIDOrigem: 500,
 		ClienteID:        10,
 		VendedorID:       1,
@@ -362,7 +360,7 @@ func TestCarteiraCreate_Success(t *testing.T) {
 		WithArgs(c.ClienteID, c.VendedorID, c.DataInicio, c.DataFim).
 		WillReturnResult(sqlmock.NewResult(7, 1))
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, c)
 
@@ -375,12 +373,12 @@ func TestCarteiraCreate_ExecError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	c := &models.Carteira{ClienteID: 10, VendedorID: 1, DataInicio: time.Now()}
+	c := &comercial.Carteira{ClienteID: 10, VendedorID: 1, DataInicio: time.Now()}
 
 	mock.ExpectExec(`INSERT INTO carteiras \(cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?\)`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, c)
 
@@ -392,12 +390,12 @@ func TestCarteiraCreate_LastInsertIdError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	c := &models.Carteira{ClienteID: 10, VendedorID: 1, DataInicio: time.Now()}
+	c := &comercial.Carteira{ClienteID: 10, VendedorID: 1, DataInicio: time.Now()}
 
 	mock.ExpectExec(`INSERT INTO carteiras \(cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?\)`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, c)
 
@@ -419,7 +417,7 @@ func TestCarteiraEncerrarVinculo_Success(t *testing.T) {
 		WithArgs(dataFim, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.EncerrarVinculo(ctx, db, 1, dataFim)
 
@@ -437,11 +435,11 @@ func TestCarteiraEncerrarVinculo_NotFound(t *testing.T) {
 		WithArgs(dataFim, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.EncerrarVinculo(ctx, db, 999, dataFim)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrVinculoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -452,7 +450,7 @@ func TestCarteiraEncerrarVinculo_ExecError(t *testing.T) {
 	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.EncerrarVinculo(ctx, db, 1, time.Now())
 
@@ -467,7 +465,7 @@ func TestCarteiraEncerrarVinculo_RowsAffectedError(t *testing.T) {
 	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.EncerrarVinculo(ctx, db, 1, time.Now())
 
@@ -487,7 +485,7 @@ func TestCarteiraDelete_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.Delete(ctx, db, 1)
 
@@ -503,11 +501,11 @@ func TestCarteiraDelete_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.Delete(ctx, db, 999)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrVinculoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -518,7 +516,7 @@ func TestCarteiraDelete_ExecError(t *testing.T) {
 	mock.ExpectExec(`DELETE FROM carteiras WHERE carteira_id_origem = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.Delete(ctx, db, 1)
 
@@ -533,7 +531,7 @@ func TestCarteiraDelete_RowsAffectedError(t *testing.T) {
 	mock.ExpectExec(`DELETE FROM carteiras WHERE carteira_id_origem = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := repositories.NewCarteiraRepository()
+	repo := NewCarteiraRepository()
 	ctx := context.Background()
 	err := repo.Delete(ctx, db, 1)
 

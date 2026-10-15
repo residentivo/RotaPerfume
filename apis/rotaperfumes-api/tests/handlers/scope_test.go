@@ -17,10 +17,9 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/comercialhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 )
 
 const (
@@ -57,12 +56,12 @@ func scRequisitar(t *testing.T, role, path string, fn http.HandlerFunc) (int, ma
 	return rec.Code, body
 }
 
-func scNewDB(t *testing.T) (*handlers.VendedorHandler, sqlmock.Sqlmock) {
+func scNewDB(t *testing.T) (*comercialhttp.VendedorHandler, sqlmock.Sqlmock) {
 	t.Helper()
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	return handlers.NewVendedorHandler(db, testCfg()), mock
+	return novoVendedorHandler(db, testCfg()), mock
 }
 
 func scExpectIDVendedor(m sqlmock.Sqlmock, v any) {

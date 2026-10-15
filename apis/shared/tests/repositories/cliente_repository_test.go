@@ -11,8 +11,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // boolPtr é um helper de teste usado por vários arquivos deste pacote
@@ -61,7 +59,7 @@ func TestClienteCountNovosNoPeriodo_Success(t *testing.T) {
 			mock.ExpectQuery(tt.queryRegexp).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(3))
 
-			repo := repositories.NewClienteRepository()
+			repo := NewClienteRepository()
 			ctx := context.Background()
 			total, err := repo.CountNovosNoPeriodo(ctx, db, tt.periodo, 0)
 
@@ -98,9 +96,9 @@ func TestClienteList_FiltroVendedorID(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows(clienteRepoColumns).
 			AddRow(int64(1), "12345678000199", "Empresa Teste", "varejo", "SP", "SP", "Centro", now, true, now, now))
 
-	repo := repositories.NewClienteRepository()
+	repo := NewClienteRepository()
 	ctx := context.Background()
-	clientes, total, err := repo.List(ctx, db, 1, 10, repositories.ClienteFiltro{VendedorID: 7})
+	clientes, total, err := repo.List(ctx, db, 1, 10, ClienteFiltro{VendedorID: 7})
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
@@ -120,9 +118,9 @@ func TestClienteList_SemFiltroVendedorID(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(sqlmock.NewRows(clienteRepoColumns))
 
-	repo := repositories.NewClienteRepository()
+	repo := NewClienteRepository()
 	ctx := context.Background()
-	_, total, err := repo.List(ctx, db, 1, 10, repositories.ClienteFiltro{})
+	_, total, err := repo.List(ctx, db, 1, 10, ClienteFiltro{})
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, total)
@@ -134,12 +132,12 @@ func TestClienteList_SemFiltroVendedorID(t *testing.T) {
 func TestClienteList_BuscaQCNPJ(t *testing.T) {
 	cases := []struct {
 		nome        string
-		filtro      repositories.ClienteFiltro
+		filtro      ClienteFiltro
 		wantLikeRS  string
 		wantLikeDoc string
 	}{
-		{"sem QCNPJ usa Q", repositories.ClienteFiltro{Q: "Teste"}, "%Teste%", "%Teste%"},
-		{"com QCNPJ", repositories.ClienteFiltro{Q: "12.abc.345", QCNPJ: "12ABC345"}, "%12.abc.345%", "%12ABC345%"},
+		{"sem QCNPJ usa Q", ClienteFiltro{Q: "Teste"}, "%Teste%", "%Teste%"},
+		{"com QCNPJ", ClienteFiltro{Q: "12.abc.345", QCNPJ: "12ABC345"}, "%12.abc.345%", "%12ABC345%"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
@@ -154,7 +152,7 @@ func TestClienteList_BuscaQCNPJ(t *testing.T) {
 				WithArgs(tc.wantLikeRS, tc.wantLikeDoc, 10, 0).
 				WillReturnRows(sqlmock.NewRows(clienteRepoColumns))
 
-			_, _, err := repositories.NewClienteRepository().List(context.Background(), db, 1, 10, tc.filtro)
+			_, _, err := NewClienteRepository().List(context.Background(), db, 1, 10, tc.filtro)
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -170,7 +168,7 @@ const carteiraAtivaWhereRegexp = `cliente_id_origem IN \(SELECT cliente_id FROM 
 // placeholder; e que vendedorID = 0 (admin) não adiciona restrição.
 func TestClienteContagens_EscopoCarteira(t *testing.T) {
 	ctx := context.Background()
-	repo := repositories.NewClienteRepository()
+	repo := NewClienteRepository()
 
 	t.Run("CountTotal", func(t *testing.T) {
 		db, mock := newMock(t)
@@ -277,7 +275,7 @@ func TestClienteCountNovosNoPeriodo_DBError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewClienteRepository()
+	repo := NewClienteRepository()
 	ctx := context.Background()
 	_, err := repo.CountNovosNoPeriodo(ctx, db, "week", 0)
 

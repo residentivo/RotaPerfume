@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/models"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/repositories"
 )
 
@@ -58,11 +58,11 @@ func TestClienteRepository_Create(t *testing.T) {
 				mock.ExpectRollback()
 			}
 
-			c := &models.Cliente{
+			c := &comercial.Cliente{
 				CNPJ: "12345678000199", RazaoSocial: "Empresa", Segmento: "varejo", Cidade: "Curitiba",
 				UF: "PR", Bairro: "Centro", DataCadastro: dataCad, Ativo: true,
 			}
-			err = repositories.NewClienteRepository().Create(ctx, exec, c)
+			err = NewClienteRepository().Create(ctx, exec, c)
 			if tx != nil {
 				require.NoError(t, tx.Rollback())
 			}

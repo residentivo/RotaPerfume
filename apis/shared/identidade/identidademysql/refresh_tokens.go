@@ -162,3 +162,20 @@ func scanRefreshToken(s db.Linha) (*identidade.RefreshToken, error) {
 	}
 	return &rt, nil
 }
+
+// RevogarDoVendedor revoga os refresh tokens ainda válidos dos usuários do
+// vendedor, na tx do desligamento (SEC-06/I-09). Idempotente; devolve
+// quantos revogou.
+func (r *RefreshTokens) RevogarDoVendedor(ctx context.Context, vendedorID int64, m identidade.MotivoRevogacao) (int64, error) {
+	const q = `
+		UPDATE refresh_tokens rt
+		JOIN usuarios u ON u.id = rt.usuario_id
+		SET rt.revoked_at = ?, rt.revoked_reason = ?
+		WHERE u.id_vendedor = ? AND rt.revoked_at IS NULL`
+	n, err := r.afetadas(ctx, "revoke refresh_tokens por vendedor", q, r.agora(), string(m), vendedorID)
+	if err != nil {
+		return 0, err
+	}
+	vlog.Printf(arqRefresh, "RefreshTokens.RevogarDoVendedor", "UPDATE refresh_tokens afetadas=%d", n)
+	return n, nil
+}

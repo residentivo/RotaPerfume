@@ -3,6 +3,7 @@ package catalogoapp
 import (
 	"context"
 
+	"github.com/rotaperfumes/shared/appkit"
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/kernel"
 	"github.com/rotaperfumes/shared/vlog"
@@ -33,7 +34,7 @@ func (c *Casos) CriarProduto(ctx context.Context, d catalogo.DadosProduto) (p *c
 	if err = c.produtos.Inserir(ctx, p); err != nil {
 		return nil, err
 	}
-	return relerCriado(ctx, "[produtos]", p.ID, p, c.produtos.PorID), nil
+	return appkit.RelerCriado(ctx, "[produtos] criado, mas falhou a releitura: id", p.ID, p, c.produtos.PorID), nil
 }
 
 // AtualizarProduto valida e grava os campos editáveis (SKU e ativo não
@@ -47,7 +48,7 @@ func (c *Casos) AtualizarProduto(ctx context.Context, id int64, d catalogo.Dados
 	if err = c.produtos.Atualizar(ctx, id, campos); err != nil {
 		return nil, err
 	}
-	return relerAtualizado(ctx, id, c.produtos.PorID)
+	return appkit.RelerAtualizado(ctx, "catalogoapp", id, c.produtos.PorID)
 }
 
 // AlternarAtivoProduto aplica o PATCH /inativar (exclusão lógica): ativo nil

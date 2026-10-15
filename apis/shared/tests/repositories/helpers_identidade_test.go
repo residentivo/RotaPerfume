@@ -7,8 +7,11 @@ package repositories_test
 // string) para a nova e convertem o retorno para a forma que as asserções
 // já liam. Erros não são traduzidos: as asserções usam os sentinelas de
 // identidade. As consultas que o legado de outros contextos ainda usa
-// (GetByID, GetIDVendedorByUsuarioID, InativarByVendedorID, FindByUsuario,
-// RevokeAllByVendedorID) continuam no pacote repositories.
+// (GetByID, FindByUsuario) continuam no pacote repositories. ARQ-04:
+// GetIDVendedorByUsuarioID, InativarByVendedorID e RevokeAllByVendedorID
+// passaram a repassar a identidademysql (VendedorDoUsuario,
+// InativarDoVendedor, RevogarDoVendedor), usados pelo escopo e pela tx do
+// desligamento de vendedor.
 
 import (
 	"context"
@@ -90,17 +93,17 @@ func (usuarioRepo) Create(ctx context.Context, q db.Querier, u *models.Usuario) 
 	return nil
 }
 
-// Consultas que continuam legadas.
+// Consultas que continuam legadas (GetByID) e as do ARQ-04 (escopo e I-09).
 func (r usuarioRepo) GetByID(ctx context.Context, d *sql.DB, id int64) (*models.Usuario, error) {
 	return r.legado.GetByID(ctx, d, id)
 }
 
-func (r usuarioRepo) GetIDVendedorByUsuarioID(ctx context.Context, d *sql.DB, id int64) (*int64, error) {
-	return r.legado.GetIDVendedorByUsuarioID(ctx, d, id)
+func (usuarioRepo) GetIDVendedorByUsuarioID(ctx context.Context, q db.Querier, id int64) (*int64, error) {
+	return identidademysql.NovoUsuarios(q).VendedorDoUsuario(ctx, id)
 }
 
-func (r usuarioRepo) InativarByVendedorID(ctx context.Context, d repositories.Execer, id int64) (int64, error) {
-	return r.legado.InativarByVendedorID(ctx, d, id)
+func (usuarioRepo) InativarByVendedorID(ctx context.Context, e repositories.Execer, id int64) (int64, error) {
+	return identidademysql.NovoUsuarios(e.(db.Querier)).InativarDoVendedor(ctx, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -157,9 +160,9 @@ func (refreshRepo) DeleteExpired(ctx context.Context, q db.Querier, corte time.T
 	return identidademysql.NovoRefreshTokens(q).ApagarExpirados(ctx, corte, lote)
 }
 
-// Consultas que continuam legadas.
-func (r refreshRepo) RevokeAllByVendedorID(ctx context.Context, d repositories.Execer, id int64, motivo repositories.RevokeReason) (int64, error) {
-	return r.legado.RevokeAllByVendedorID(ctx, d, id, motivo)
+// Consultas que continuam legadas (GetByID) e as do ARQ-04 (escopo e I-09).
+func (refreshRepo) RevokeAllByVendedorID(ctx context.Context, e repositories.Execer, id int64, motivo repositories.RevokeReason) (int64, error) {
+	return identidademysql.NovoRefreshTokens(e.(db.Querier)).RevogarDoVendedor(ctx, id, identidade.MotivoRevogacao(motivo))
 }
 
 func (r refreshRepo) FindByUsuario(ctx context.Context, d *sql.DB, uid int64, page, limit int) ([]repositories.RefreshToken, int, error) {

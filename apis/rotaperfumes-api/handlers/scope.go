@@ -3,174 +3,85 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
-	"errors"
-	"fmt"
-	"log"
 	"net/http"
 
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
-	"github.com/rotaperfumes/shared/repositories"
-	"github.com/rotaperfumes/shared/vlog"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
+	"github.com/rotaperfumes/shared/kernel"
 )
 
-// vendedorScope resume a restrição de carteira aplicada à requisição atual.
-//
-// Restrito=false (usuário admin): sem restrição, a consulta enxerga todos os
-// registros.
-//
-// Restrito=true (usuário role=normal): a consulta deve ser limitada a
-// VendedorID. Quando o usuário normal não tem vendedor vinculado
-// (id_vendedor NULL em usuarios), VendedorID vem 0 — nesse caso o chamador
-// deve tratar como "nenhum resultado" (nunca deixar de filtrar).
+// ARQ-04: o escopo de carteira é resolvido pelo comercialapp.AutorizadorEscopo
+// (a regra única, E-01). Este arquivo é só a PONTE para os handlers legados de
+// Vendas (pedido, pagamento) e Analytics (dashboard): converte o kernel.Escopo
+// no vendedorScope que eles já usam. TODO(ARQ-05/06): sai com eles.
+
+// EscopoCarteira é a porta do escopo novo (comercialapp.AutorizadorEscopo a
+// satisfaz; ligada no bootstrap).
+type EscopoCarteira interface {
+	Resolver(ctx context.Context, p kernel.Principal) (kernel.Escopo, error)
+	ResolverParaAnalytics(ctx context.Context, p kernel.Principal) (kernel.Escopo, bool, error)
+	ClienteNaCarteira(ctx context.Context, e kernel.Escopo, clienteID int64) (bool, error)
+}
+
+// vendedorScope é a forma legada do escopo. O ZERO VALUE é restrito e sem
+// vendedor, isto é, SemAcesso (N1): só o escopo Irrestrito (admin) liga
+// Irrestrito. Restrito com VendedorID 0 é SemAcesso (os handlers respondem
+// vazio/404 antes de consultar), então nenhum caminho chega aos
+// repositórios legados com 0 = "global" a partir de um usuário restrito.
 type vendedorScope struct {
-	Restrito   bool
+	Irrestrito bool
 	VendedorID int64
+	escopo     kernel.Escopo
 }
 
-// SemAcesso reporta se o escopo é restrito e o usuário não tem vendedor
-// vinculado — condição em que qualquer listagem/detalhe de negócio deve
-// retornar vazio/404, nunca dados de terceiros.
-func (s vendedorScope) SemAcesso() bool {
-	return s.Restrito && s.VendedorID <= 0
-}
-
-// PermiteVendedor reporta se o escopo atual permite acesso a registros do
-// vendedorID informado. Sempre true para admin (Restrito=false).
-func (s vendedorScope) PermiteVendedor(vendedorID int64) bool {
-	vlog.Printf("scope.go", "vendedorScope.PermiteVendedor", "verificando se !s.Restrito")
-	if !s.Restrito {
-		return true
-	}
-	return s.VendedorID > 0 && s.VendedorID == vendedorID
-}
-
-// msgVendedorDesligado é a mensagem exata (contrato SecBrain) devolvida com
-// 403 quando o usuário normal está vinculado a um vendedor desligado.
-const msgVendedorDesligado = "acesso bloqueado: vendedor desligado"
-
-// errVendedorDesligado é o erro sentinela retornado por resolverVendedorScope
-// quando o vendedor vinculado ao usuário está desligado.
-var errVendedorDesligado = errors.New("handlers: vendedor desligado")
-
-// resolverVendedorScopeBase calcula o escopo de carteira do usuário
-// autenticado a partir do contexto da requisição (userID/role injetados pelo
-// JWTMiddleware) e do vínculo id_vendedor persistido em usuarios, SEM checar
-// desligamento. Usado diretamente apenas pelo Dashboard, que responde 200
-// zerado + vendedor_desligado=true em vez de 403.
-//
-// Cada chamada executa sua própria consulta ao banco (sem cache L1),
-// garantindo que uma mudança de vínculo id_vendedor reflita imediatamente
-// nas próximas requisições, sem depender de reemissão do JWT.
-func resolverVendedorScopeBase(ctx context.Context, db *sql.DB) (vendedorScope, error) {
-	vlog.Printf("scope.go", "resolverVendedorScopeBase", "chamando middleware.GetRole e atribuindo resultado a role, _")
-	role, _ := middleware.GetRole(ctx)
-	vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se role == \"...\"")
-	if role == "admin" {
-		return vendedorScope{Restrito: false}, nil
-	}
-
-	vlog.Printf("scope.go", "resolverVendedorScopeBase", "chamando middleware.GetUserID e atribuindo resultado a userID, ok")
-	userID, ok := middleware.GetUserID(ctx)
-	vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se !ok")
-	if !ok {
-		// Não deveria ocorrer (a rota exige JWT válido) — trata como o
-		// escopo mais restritivo possível.
-		return vendedorScope{Restrito: true, VendedorID: 0}, nil
-	}
-
-	vlog.Printf("scope.go", "resolverVendedorScopeBase", "chamando repositories.NewUsuarioRepository().GetIDVendedorByUsuarioID e atribuindo resultado a idVendedor, err")
-	idVendedor, err := repositories.NewUsuarioRepository().GetIDVendedorByUsuarioID(ctx, db, userID)
-	vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se err != nil")
-	if err != nil {
-		vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se errors.Is(...)")
-		if errors.Is(err, repositories.ErrNotFound) {
-			return vendedorScope{Restrito: true, VendedorID: 0}, nil
-		}
-		return vendedorScope{}, fmt.Errorf("handlers: resolver escopo de vendedor: %w", err)
-	}
-	vlog.Printf("scope.go", "resolverVendedorScopeBase", "verificando se idVendedor == nil")
-	if idVendedor == nil {
-		return vendedorScope{Restrito: true, VendedorID: 0}, nil
-	}
-	return vendedorScope{Restrito: true, VendedorID: *idVendedor}, nil
-}
-
-// resolverVendedorScope calcula o escopo de carteira do usuário autenticado
-// (via resolverVendedorScopeBase) e, para usuário normal com vendedor
-// vinculado, bloqueia o acesso quando o vendedor está desligado
-// (data_desligamento preenchida), retornando errVendedorDesligado.
-//
-// Regras (contrato 🟣 SecBrain, fail-closed):
-//   - admin: sem consulta extra;
-//   - vendedor desligado: errVendedorDesligado (403 via responderErroEscopo);
-//   - vínculo órfão (vendedor inexistente): escopo "sem vendedor"
-//     (Restrito=true, VendedorID=0) — mesmo comportamento de id_vendedor NULL;
-//   - qualquer outro erro de banco: erro (500 via responderErroEscopo).
-//
-// Cada chamada executa suas próprias consultas ao banco (sem cache L1), para
-// que um desligamento bloqueie imediatamente as próximas requisições, sem
-// depender de reemissão do JWT.
-func resolverVendedorScope(r *http.Request, db *sql.DB) (vendedorScope, error) {
-	vlog.Printf("scope.go", "resolverVendedorScope", "chamando resolverVendedorScopeBase e atribuindo resultado a scope, err")
-	scope, err := resolverVendedorScopeBase(r.Context(), db)
-	vlog.Printf("scope.go", "resolverVendedorScope", "verificando se err != nil")
-	if err != nil {
-		return vendedorScope{}, err
-	}
-	vlog.Printf("scope.go", "resolverVendedorScope", "verificando se !scope.Restrito || scope.VendedorID <= 0")
-	if !scope.Restrito || scope.VendedorID <= 0 {
-		return scope, nil
-	}
-
-	vlog.Printf("scope.go", "resolverVendedorScope", "chamando repositories.NewVendedorRepository().IsDesligado e atribuindo resultado a desligado, err")
-	desligado, err := repositories.NewVendedorRepository().IsDesligado(r.Context(), db, scope.VendedorID)
-	vlog.Printf("scope.go", "resolverVendedorScope", "avaliando switch de condições")
+// escopoLegado converte o Escopo novo SÓ pelo Filtro() (O1): erro
+// (SemAcesso ou zero value) → restrito sem vendedor; filtra → o vendedor;
+// sem filtro (só Irrestrito) → irrestrito.
+func escopoLegado(e kernel.Escopo) vendedorScope {
+	vendedorID, filtra, err := e.Filtro()
 	switch {
-	case errors.Is(err, repositories.ErrNotFound):
-		return vendedorScope{Restrito: true, VendedorID: 0}, nil
 	case err != nil:
-		return vendedorScope{}, fmt.Errorf("handlers: checar vendedor desligado: %w", err)
-	case desligado:
-		vlog.Printf("scope.go", "resolverVendedorScope", "chamando middleware.GetUserID e atribuindo resultado a userID, _")
-		userID, _ := middleware.GetUserID(r.Context())
-		log.Printf("[escopo] bloqueado vendedor_desligado user_id=%d vendedor_id=%d rota=%s",
-			userID, scope.VendedorID, r.Method+" "+r.URL.Path)
-		return vendedorScope{}, errVendedorDesligado
+		return vendedorScope{escopo: e}
+	case filtra:
+		return vendedorScope{VendedorID: vendedorID, escopo: e}
+	default:
+		return vendedorScope{Irrestrito: true, escopo: e}
 	}
-	return scope, nil
 }
 
-// responderErroEscopo traduz o erro de resolverVendedorScope em resposta
-// HTTP: errVendedorDesligado → 403 com msgVendedorDesligado; qualquer outro
-// erro → log (com a tag do handler) + 500 "erro interno". Fail-closed.
-func responderErroEscopo(w http.ResponseWriter, tag string, err error) {
-	vlog.Printf("scope.go", "responderErroEscopo", "verificando se errors.Is(...)")
-	if errors.Is(err, errVendedorDesligado) {
-		writeJSON(w, http.StatusForbidden, nil, msgVendedorDesligado)
-		return
-	}
-	log.Printf("%s escopo: %v", tag, err)
-	writeJSON(w, http.StatusInternalServerError, nil, "erro interno")
+// Restrito informa se o escopo limita a carteira (tudo que não é admin).
+func (s vendedorScope) Restrito() bool { return !s.Irrestrito }
+
+// SemAcesso reporta o escopo de quem não tem carteira.
+func (s vendedorScope) SemAcesso() bool {
+	return s.Restrito() && s.VendedorID <= 0
 }
 
-// clienteNaCarteiraDoVendedor reporta se existe vínculo de carteira ativo
-// (data_fim IS NULL) entre o vendedor e o cliente informados. Usado para
-// impedir que um vendedor com escopo restrito crie/edite registros de
-// negócio (oportunidade, visita, ...) associados a um cliente fora da
-// própria carteira.
-//
-// Cada chamada executa sua própria consulta ao banco (sem cache L1).
-func clienteNaCarteiraDoVendedor(ctx context.Context, db *sql.DB, vendedorID, clienteID int64) (bool, error) {
-	vlog.Printf("scope.go", "clienteNaCarteiraDoVendedor", "chamando repositories.NewCarteiraRepository().GetVinculoAtivo e atribuindo resultado a _, err")
-	_, err := repositories.NewCarteiraRepository().GetVinculoAtivo(ctx, db, vendedorID, clienteID)
-	vlog.Printf("scope.go", "clienteNaCarteiraDoVendedor", "verificando se err != nil")
+// PermiteVendedor reporta se o escopo enxerga registros do vendedorID.
+func (s vendedorScope) PermiteVendedor(vendedorID int64) bool {
+	return s.escopo.Permite(vendedorID)
+}
+
+// resolverVendedorScope resolve o escopo da requisição pelo autorizador (a
+// cada chamada, sem cache). Sem usuário → SemAcesso, como no legado.
+// Desligado → comercial.ErrVendedorDesligado (403
+// via responderErroEscopo); erro de banco → 500.
+func resolverVendedorScope(r *http.Request, escopo EscopoCarteira) (vendedorScope, error) {
+	p, _ := httpx.PrincipalFrom(r) // sem usuário: o autorizador devolve SemAcesso
+	e, err := escopo.Resolver(r.Context(), p)
 	if err != nil {
-		vlog.Printf("scope.go", "clienteNaCarteiraDoVendedor", "verificando se errors.Is(...)")
-		if errors.Is(err, repositories.ErrNotFound) {
-			return false, nil
-		}
-		return false, fmt.Errorf("handlers: checar carteira do vendedor: %w", err)
+		return vendedorScope{}, err // zero value = SemAcesso (N1)
 	}
-	return true, nil
+	return escopoLegado(e), nil
+}
+
+// responderErroEscopo responde pelo mapper: desligado → 403 com a mensagem
+// do contrato; qualquer outro erro → log com a tag + 500 "erro interno".
+func responderErroEscopo(w http.ResponseWriter, tag string, err error) {
+	httpx.ResponderErro(w, tag+" escopo", err)
+}
+
+// clienteNaCarteiraDoVendedor reporta se o cliente está na carteira ativa do
+// escopo (consulta própria a cada chamada).
+func clienteNaCarteiraDoVendedor(ctx context.Context, escopo EscopoCarteira, s vendedorScope, clienteID int64) (bool, error) {
+	return escopo.ClienteNaCarteira(ctx, s.escopo, clienteID)
 }

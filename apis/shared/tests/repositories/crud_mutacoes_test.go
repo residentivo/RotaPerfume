@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/identidade"
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
@@ -39,21 +40,22 @@ type opExec struct {
 	checaRowsAffected bool
 	chama             func(ctx context.Context, db *sql.DB) error
 	// naoEncontrado: sentinela de "nenhuma linha" (nil = repositories.ErrNotFound;
-	// os adapters de identidade devolvem identidade.ErrUsuarioNaoEncontrado, ARQ-03).
+	// os adapters de identidade devolvem identidade.ErrUsuarioNaoEncontrado, ARQ-03;
+	// os de comercial, o sentinela da entidade, ARQ-04).
 	naoEncontrado error
 }
 
 func TestRepositorios_ExecComNotFound(t *testing.T) {
 	ctx := context.Background()
 	vend := int64(3)
-	cli := &models.Cliente{CNPJ: "11222333000181", RazaoSocial: "ACME", UF: "SP", DataCadastro: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}
+	cli := &comercial.Cliente{CNPJ: "11222333000181", RazaoSocial: "ACME", UF: "SP", DataCadastro: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}
 
 	ops := []opExec{
 		{
 			nome: "OportunidadeRepository.Delete", sqlRe: `DELETE FROM oportunidades WHERE oportunidade_id = \?`,
-			args: []driver.Value{int64(5)}, checaRowsAffected: true,
+			args: []driver.Value{int64(5)}, checaRowsAffected: true, naoEncontrado: comercial.ErrOportunidadeNaoEncontrada,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewOportunidadeRepository().Delete(ctx, db, 5)
+				return NewOportunidadeRepository().Delete(ctx, db, 5)
 			},
 		},
 		{
@@ -65,31 +67,31 @@ func TestRepositorios_ExecComNotFound(t *testing.T) {
 		},
 		{
 			nome: "VisitaRepository.Delete", sqlRe: `DELETE FROM visitas WHERE visita_id = \?`,
-			args: []driver.Value{int64(5)}, checaRowsAffected: true,
+			args: []driver.Value{int64(5)}, checaRowsAffected: true, naoEncontrado: comercial.ErrVisitaNaoEncontrada,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewVisitaRepository().Delete(ctx, db, 5)
+				return NewVisitaRepository().Delete(ctx, db, 5)
 			},
 		},
 		{
 			nome: "CarteiraRepository.ReativarVinculo", sqlRe: `UPDATE carteiras SET data_fim = NULL WHERE carteira_id_origem = \?`,
-			args: []driver.Value{int64(5)}, checaRowsAffected: true,
+			args: []driver.Value{int64(5)}, checaRowsAffected: true, naoEncontrado: comercial.ErrVinculoNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewCarteiraRepository().ReativarVinculo(ctx, db, 5)
+				return NewCarteiraRepository().ReativarVinculo(ctx, db, 5)
 			},
 		},
 		{
 			nome: "ClienteRepository.Update", sqlRe: `UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE cliente_id_origem = \?`,
 			args:              []driver.Value{cli.CNPJ, cli.RazaoSocial, "", "", "SP", "", cli.DataCadastro, int64(5)},
-			checaRowsAffected: true,
+			checaRowsAffected: true, naoEncontrado: comercial.ErrClienteNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewClienteRepository().Update(ctx, db, 5, cli)
+				return NewClienteRepository().Update(ctx, db, 5, cli)
 			},
 		},
 		{
 			nome: "ClienteRepository.SetAtivo", sqlRe: `UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`,
-			args: []driver.Value{false, int64(5)},
+			args: []driver.Value{false, int64(5)}, naoEncontrado: comercial.ErrClienteNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewClienteRepository().SetAtivo(ctx, db, 5, false)
+				return NewClienteRepository().SetAtivo(ctx, db, 5, false)
 			},
 		},
 		{
@@ -168,9 +170,9 @@ func TestClienteUpdate_CNPJDuplicado(t *testing.T) {
 			defer db.Close()
 			mock.ExpectExec(`UPDATE clientes`).WillReturnError(c.err)
 
-			err := repositories.NewClienteRepository().Update(context.Background(), db, 5, &models.Cliente{CNPJ: "1"})
+			err := NewClienteRepository().Update(context.Background(), db, 5, &comercial.Cliente{CNPJ: "1"})
 			require.Error(t, err)
-			assert.Equal(t, c.wantDup, errors.Is(err, repositories.ErrCNPJDuplicado))
+			assert.Equal(t, c.wantDup, errors.Is(err, comercial.ErrCNPJDuplicado))
 			if !c.wantDup {
 				var myErr *mysql.MySQLError
 				assert.True(t, errors.As(err, &myErr), "o erro original deve continuar embrulhado")
@@ -192,7 +194,7 @@ func TestRepositorios_Exists(t *testing.T) {
 		chama func(db *sql.DB) (bool, error)
 	}{
 		{"ClienteRepository.ExistsByID", `SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`, int64(9),
-			func(db *sql.DB) (bool, error) { return repositories.NewClienteRepository().ExistsByID(ctx, db, 9) }},
+			func(db *sql.DB) (bool, error) { return NewClienteRepository().ExistsByID(ctx, db, 9) }},
 		{"PagamentoRepository.ExistsByPedidoID", `SELECT 1 FROM pagamentos WHERE pedido_id = \? LIMIT 1`, int64(9),
 			func(db *sql.DB) (bool, error) {
 				return repositories.NewPagamentoRepository().ExistsByPedidoID(ctx, db, 9)
@@ -251,7 +253,7 @@ func TestClienteGetByID(t *testing.T) {
 			e.WillReturnRows(sqlmock.NewRows(clienteRepoColumns).
 				AddRow(int64(9), "11222333000181", "ACME", "Varejo", "Campinas", "SP", "Centro", agora, true, agora, agora))
 		}, nil},
-		{"não encontrado", func(e *sqlmock.ExpectedQuery) { e.WillReturnRows(sqlmock.NewRows(clienteRepoColumns)) }, repositories.ErrNotFound},
+		{"não encontrado", func(e *sqlmock.ExpectedQuery) { e.WillReturnRows(sqlmock.NewRows(clienteRepoColumns)) }, comercial.ErrClienteNaoEncontrado},
 		{"erro do banco", func(e *sqlmock.ExpectedQuery) { e.WillReturnError(errBanco) }, errBanco},
 	}
 	for _, c := range casos {
@@ -260,7 +262,7 @@ func TestClienteGetByID(t *testing.T) {
 			defer db.Close()
 			c.prepara(mock.ExpectQuery(`SELECT ` + clienteColunasRegexp + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).WithArgs(int64(9)))
 
-			got, err := repositories.NewClienteRepository().GetByID(context.Background(), db, 9)
+			got, err := NewClienteRepository().GetByID(context.Background(), db, 9)
 			if c.wantErrIs != nil {
 				assert.ErrorIs(t, err, c.wantErrIs)
 				assert.Nil(t, got)
@@ -294,7 +296,7 @@ func TestCarteiraGetVinculoByClienteVendedorData(t *testing.T) {
 		{"vínculo encerrado", func(e *sqlmock.ExpectedQuery) {
 			e.WillReturnRows(sqlmock.NewRows(carteiraColumns).AddRow(int64(4), int64(10), int64(3), dataInicio, agora, agora, agora))
 		}, nil, true},
-		{"não encontrado", func(e *sqlmock.ExpectedQuery) { e.WillReturnRows(sqlmock.NewRows(carteiraColumns)) }, repositories.ErrNotFound, false},
+		{"não encontrado", func(e *sqlmock.ExpectedQuery) { e.WillReturnRows(sqlmock.NewRows(carteiraColumns)) }, comercial.ErrVinculoNaoEncontrado, false},
 		{"erro do banco", func(e *sqlmock.ExpectedQuery) { e.WillReturnError(errBanco) }, errBanco, false},
 	}
 	for _, c := range casos {
@@ -304,7 +306,7 @@ func TestCarteiraGetVinculoByClienteVendedorData(t *testing.T) {
 			c.prepara(mock.ExpectQuery(`FROM carteiras\s+WHERE cliente_id = \? AND vendedor_id = \? AND data_inicio = \?`).
 				WithArgs(int64(10), int64(3), "2026-09-26"))
 
-			got, err := repositories.NewCarteiraRepository().GetVinculoByClienteVendedorData(context.Background(), db, 10, 3, dataInicio)
+			got, err := NewCarteiraRepository().GetVinculoByClienteVendedorData(context.Background(), db, 10, 3, dataInicio)
 			if c.wantErrIs != nil {
 				assert.ErrorIs(t, err, c.wantErrIs)
 				assert.Nil(t, got)

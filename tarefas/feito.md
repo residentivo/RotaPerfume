@@ -3,9 +3,33 @@
 > Histórico de tarefas finalizadas.
 
 ---
-## Lote 21 de 2026-10-13: 3 cards concluídos até agora (lote em andamento)
+## Lote 21 de 2026-10-13: 4 cards concluídos até agora (lote em andamento)
 
-> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-03 está em `fazendo.md` e os cards ARQ-04 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-04 está em `fazendo.md` e os cards ARQ-05 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+
+## ARQ-03: contexto Identidade e Acesso — 2026-10-14
+**Agentes:** 🟡 BackBrain → 🟣 SecBrain (revisão aprofundada pós-implementação) + 🔴 TestBrain → 🟡 BackBrain (ajustes finais) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-14. **Commit:** `c412d10` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend
+
+**Entregue:**
+- Auth/JWT, Usuário, RefreshToken (rotação e detecção de reuso), SenhaHistórico, hash/política/gerador de senha, Turnstile, alerta de segurança e os middlewares auth, user_status e ratelimit migrados para `apis/shared/identidade{,app,mysql,crypto}` e `apis/rotaperfumes-api/internal/identidadehttp`.
+- Autenticador nativo (role lida do banco), substituindo o adapter de transição do ARQ-01; singletons de rate limit, notifier e Turnstile; fronteiras transacionais idênticas às atuais; testes SEC portados.
+- Legado removido: `handlers/{auth,senha_historico,usuario}_handler.go`, `middleware/{auth_middleware,ratelimit_middleware,user_status}.go` e `services/{refresh_cleanup,refresh_token_service,reset_senhas_ativos_service,senha_historico_service,usuario_service}.go`. Pontes de transição (shims de teste, `middleware/principal_legado.go`, legado encolhido de usuário/refresh token, adapter `vendedoresLegado`) ficam até o ARQ-04/ARQ-07.
+- Ajustes finais: asserção do `bug11` não-verbose corrigida para o formato novo; `HashPassword_Erros` com `EqualError` exato; teste de arquitetura `arq03_allowlist_test.go` (`ResetarSenhasAtivos` só em `cmd/resetsenhas`; `RegistrarReuso`/`DesfazerReuso` só em `identidadeapp`), ressalva #2 do 🟣 SecBrain; registro no blueprint.
+
+**Patterns aplicados:** Repository; Unit of Work na rotação do refresh token (`db.Transactor`, I-06); Strategy de hash (bcrypt/Argon2id); Adapter para JWT, Turnstile e rate limit; Observer reuso → notificador; Null Object `SemPublicador`; Value Objects de segredo; Factory; estado por enum; Mapper/DTO; Composition Root.
+
+**Métricas:**
+- Testes de topo: API 793 → 808; shared 652 → 687.
+- Cobertura combinada 89,07% → 89,35% (linhas descobertas 1.248 → 1.110).
+- Mutações de segurança: 18; as 6 que sobreviviam passaram a ser mortas pelos testes `TestARQ03_*`.
+
+**Decisões:** especificação prévia do 🟣 SecBrain dispensada (coberta por I-01..I-16), com revisão aprofundada pós-implementação; troca de senha fora da UoW (→ BUG-15); detecção de reuso mantém `RegistrarReuso` atômico + `DesfazerReuso` compensatório; GAPs SEC-18, SEC-20, SEC-21 e SEC-22 preservados (regra "não piorar"); logs `por admin=<role>` → CHORE-05; NB-1, NB-6 e NB-7 anotados no ARQ-07.
+
+**Validação:** 🟣 SecBrain e 🔴 TestBrain aprovaram com ressalvas (sem bloqueantes; ressalvas resolvidas nos ajustes finais). 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos (687 testes de topo no shared, 808 na API). Race detector indisponível nesta máquina (sem gcc).
 
 ## ARQ-02: contexto Catálogo (Produto, Estoque), piloto — 2026-10-14
 **Agentes:** 🟡 BackBrain → 🔴 TestBrain → 🟣 SecBrain (checklist ARQ-02, C-01..C-03) → 🟡 BackBrain (NB-1/NB-2/NB-8 e teste de ordenação apertado) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
