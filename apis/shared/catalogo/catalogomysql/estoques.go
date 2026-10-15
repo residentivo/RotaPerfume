@@ -111,7 +111,7 @@ func (r *Estoques) Inserir(ctx context.Context, e *catalogo.RegistroEstoque) err
 		VALUES (?, ?, ?, ?)`
 	res, err := r.q.ExecContext(ctx, q, e.DataSnapshot.Format(kernel.LayoutData), e.SKU.String(), e.Saldo, e.Ruptura)
 	if err != nil {
-		return fmt.Errorf("catalogomysql: inserir estoque: %w", err)
+		return fmt.Errorf("catalogomysql: inserir estoque: %w", db.SemValorDuplicado(err)) // NB-3: 1062 de (data_snapshot, sku) sem o valor
 	}
 	id, err := res.LastInsertId()
 	if err != nil {

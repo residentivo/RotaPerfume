@@ -20,6 +20,7 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/comercialhttp"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/vendashttp"
 )
 
 // Cópias congeladas de shared/models (vendedor.go, cliente.go, visita.go,
@@ -261,10 +262,11 @@ func TestARQ04_CreateVendedor_BodyInvalido_400(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// N6: os handlers legados de Vendas/Analytics exigem o escopo na montagem.
+// N6: os handlers de Vendas (ARQ-05: vendashttp, exigem os casos de uso) e o
+// legado de Analytics (exige o escopo) dão panic na montagem.
 func TestARQ04_N6_HandlersLegadosExigemEscopo(t *testing.T) {
 	cfg := testCfg()
-	assert.Panics(t, func() { handlers.NewPedidoHandler(nil, cfg, nil) })
-	assert.Panics(t, func() { handlers.NewPagamentoHandler(nil, cfg, nil) })
+	assert.Panics(t, func() { vendashttp.NovoPedidoHandler(nil) })
+	assert.Panics(t, func() { vendashttp.NovoPagamentoHandler(nil) })
 	assert.Panics(t, func() { handlers.NewDashboardHandler(nil, cfg, nil) })
 }

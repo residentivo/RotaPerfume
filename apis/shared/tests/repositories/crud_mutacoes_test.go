@@ -25,6 +25,7 @@ import (
 	"github.com/rotaperfumes/shared/identidade"
 	"github.com/rotaperfumes/shared/models"
 	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vendas"
 )
 
 // ---------------------------------------------------------------------------
@@ -41,7 +42,8 @@ type opExec struct {
 	chama             func(ctx context.Context, db *sql.DB) error
 	// naoEncontrado: sentinela de "nenhuma linha" (nil = repositories.ErrNotFound;
 	// os adapters de identidade devolvem identidade.ErrUsuarioNaoEncontrado, ARQ-03;
-	// os de comercial, o sentinela da entidade, ARQ-04).
+	// os de comercial, o sentinela da entidade, ARQ-04; os de vendas, idem,
+	// ARQ-05).
 	naoEncontrado error
 }
 
@@ -60,9 +62,9 @@ func TestRepositorios_ExecComNotFound(t *testing.T) {
 		},
 		{
 			nome: "PagamentoRepository.Delete", sqlRe: `DELETE FROM pagamentos WHERE pagamento_id = \?`,
-			args: []driver.Value{int64(5)}, checaRowsAffected: true,
+			args: []driver.Value{int64(5)}, checaRowsAffected: true, naoEncontrado: vendas.ErrPagamentoNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewPagamentoRepository().Delete(ctx, db, 5)
+				return NewPagamentoRepository().Delete(ctx, db, 5)
 			},
 		},
 		{
@@ -197,7 +199,7 @@ func TestRepositorios_Exists(t *testing.T) {
 			func(db *sql.DB) (bool, error) { return NewClienteRepository().ExistsByID(ctx, db, 9) }},
 		{"PagamentoRepository.ExistsByPedidoID", `SELECT 1 FROM pagamentos WHERE pedido_id = \? LIMIT 1`, int64(9),
 			func(db *sql.DB) (bool, error) {
-				return repositories.NewPagamentoRepository().ExistsByPedidoID(ctx, db, 9)
+				return NewPagamentoRepository().ExistsByPedidoID(ctx, db, 9)
 			}},
 		{"ProdutoRepository.ExistsBySKU", `SELECT 1 FROM produtos WHERE sku = \? LIMIT 1`, "SKU-9",
 			func(db *sql.DB) (bool, error) {
@@ -408,7 +410,7 @@ func TestPedidoDeleteComItens(t *testing.T) {
 		}, nil, ""},
 		{"falha no begin", func(m sqlmock.Sqlmock) {
 			m.ExpectBegin().WillReturnError(errX)
-		}, errX, "begin tx delete pedido"},
+		}, errX, "db: begin"},
 		{"falha ao remover itens faz rollback", func(m sqlmock.Sqlmock) {
 			m.ExpectBegin()
 			m.ExpectExec(delItens).WillReturnError(errX)
@@ -431,13 +433,13 @@ func TestPedidoDeleteComItens(t *testing.T) {
 			m.ExpectExec(delItens).WillReturnResult(sqlmock.NewResult(0, 0))
 			m.ExpectExec(delPedido).WillReturnResult(sqlmock.NewResult(0, 0))
 			m.ExpectRollback()
-		}, repositories.ErrNotFound, ""},
+		}, vendas.ErrPedidoNaoEncontrado, ""},
 		{"falha no commit", func(m sqlmock.Sqlmock) {
 			m.ExpectBegin()
 			m.ExpectExec(delItens).WillReturnResult(sqlmock.NewResult(0, 1))
 			m.ExpectExec(delPedido).WillReturnResult(sqlmock.NewResult(0, 1))
 			m.ExpectCommit().WillReturnError(errX)
-		}, errX, "commit delete pedido"},
+		}, errX, "db: commit"},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -445,7 +447,7 @@ func TestPedidoDeleteComItens(t *testing.T) {
 			defer db.Close()
 			c.prepara(mock)
 
-			err := repositories.NewPedidoRepository().DeleteComItens(context.Background(), db, 7)
+			err := NewPedidoRepository().DeleteComItens(context.Background(), db, 7)
 			if c.wantErrIs == nil {
 				assert.NoError(t, err)
 			} else {

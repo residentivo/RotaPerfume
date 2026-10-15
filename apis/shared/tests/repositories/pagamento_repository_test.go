@@ -13,8 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vendas"
 )
 
 var pagamentoColumns = []string{
@@ -48,9 +47,9 @@ func TestPagamentoList_SemFiltro(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	pagamentos, total, err := repo.List(ctx, db, 1, 10, repositories.PagamentoFiltro{})
+	pagamentos, total, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{})
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
@@ -62,43 +61,43 @@ func TestPagamentoList_SemFiltro(t *testing.T) {
 func TestPagamentoList_ComFiltros(t *testing.T) {
 	testes := []struct {
 		nome        string
-		filtro      repositories.PagamentoFiltro
+		filtro      PagamentoFiltro
 		whereRegexp string
 		args        []driver.Value
 	}{
 		{
 			nome:        "filtro por status_pagamento",
-			filtro:      repositories.PagamentoFiltro{StatusPagamento: "Pago"},
+			filtro:      PagamentoFiltro{StatusPagamento: "Pago"},
 			whereRegexp: `WHERE status_pagamento = \?`,
 			args:        []driver.Value{"Pago"},
 		},
 		{
 			nome:        "filtro por forma_pagamento",
-			filtro:      repositories.PagamentoFiltro{FormaPagamento: "PIX"},
+			filtro:      PagamentoFiltro{FormaPagamento: "PIX"},
 			whereRegexp: `WHERE forma_pagamento = \?`,
 			args:        []driver.Value{"PIX"},
 		},
 		{
 			nome:        "filtro por pedido_id",
-			filtro:      repositories.PagamentoFiltro{PedidoID: 5},
+			filtro:      PagamentoFiltro{PedidoID: 5},
 			whereRegexp: `WHERE pedido_id = \?`,
 			args:        []driver.Value{int64(5)},
 		},
 		{
 			nome:        "filtro por vencimento_de e vencimento_ate",
-			filtro:      repositories.PagamentoFiltro{VencimentoDe: "2024-01-01", VencimentoAte: "2024-01-31"},
+			filtro:      PagamentoFiltro{VencimentoDe: "2024-01-01", VencimentoAte: "2024-01-31"},
 			whereRegexp: `WHERE data_vencimento >= \? AND data_vencimento <= \?`,
 			args:        []driver.Value{"2024-01-01", "2024-01-31"},
 		},
 		{
 			nome:        "filtro por vendedor_id (restrição de carteira)",
-			filtro:      repositories.PagamentoFiltro{VendedorID: 7},
+			filtro:      PagamentoFiltro{VendedorID: 7},
 			whereRegexp: `WHERE pedido_id IN \(SELECT pedido_id_origem FROM pedidos WHERE vendedor_id = \?\)`,
 			args:        []driver.Value{int64(7)},
 		},
 		{
 			nome: "filtro combinado (todos os campos)",
-			filtro: repositories.PagamentoFiltro{
+			filtro: PagamentoFiltro{
 				StatusPagamento: "Pago",
 				FormaPagamento:  "PIX",
 				PedidoID:        5,
@@ -125,7 +124,7 @@ func TestPagamentoList_ComFiltros(t *testing.T) {
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(pagamentoColumns))
 
-			repo := repositories.NewPagamentoRepository()
+			repo := NewPagamentoRepository()
 			ctx := context.Background()
 			_, _, err := repo.List(ctx, db, 1, 10, tt.filtro)
 
@@ -160,9 +159,9 @@ func TestPagamentoList_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(pagamentoColumns))
 
-			repo := repositories.NewPagamentoRepository()
+			repo := NewPagamentoRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, repositories.PagamentoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+			_, _, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -177,9 +176,9 @@ func TestPagamentoList_CountError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pagamentoFromRegexp).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.PagamentoFiltro{})
+	_, _, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -195,9 +194,9 @@ func TestPagamentoList_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.PagamentoFiltro{})
+	_, _, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -216,9 +215,9 @@ func TestPagamentoList_IterError(t *testing.T) {
 			AddRow(pagamentoRow(1, 10, "PIX", 1, 100.0, 0, 100.0, now, nil, "Em aberto", now, now)...).
 			RowError(0, sql.ErrConnDone))
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.PagamentoFiltro{})
+	_, _, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -237,7 +236,7 @@ func TestPagamentoGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	p, err := repo.GetByID(ctx, db, 1)
 
@@ -261,7 +260,7 @@ func TestPagamentoGetByID_SemDataPagamento(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	p, err := repo.GetByID(ctx, db, 1)
 
@@ -279,12 +278,12 @@ func TestPagamentoGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	p, err := repo.GetByID(ctx, db, 999)
 
 	assert.Nil(t, p)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, vendas.ErrPagamentoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -296,13 +295,13 @@ func TestPagamentoGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	p, err := repo.GetByID(ctx, db, 1)
 
 	assert.Nil(t, p)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, vendas.ErrPagamentoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -311,7 +310,7 @@ func TestPagamentoCreate_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	p := &models.Pagamento{
+	p := &vendas.Pagamento{
 		PedidoID:        10,
 		FormaPagamento:  "PIX",
 		Parcelas:        1,
@@ -326,7 +325,7 @@ func TestPagamentoCreate_Success(t *testing.T) {
 		WithArgs(p.PedidoID, p.FormaPagamento, p.Parcelas, p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento, nil, p.StatusPagamento).
 		WillReturnResult(sqlmock.NewResult(42, 1))
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, p)
 
@@ -341,7 +340,7 @@ func TestPagamentoCreate_ComDataPagamento(t *testing.T) {
 
 	now := time.Now()
 	dataPagamento := now
-	p := &models.Pagamento{
+	p := &vendas.Pagamento{
 		PedidoID:        10,
 		FormaPagamento:  "PIX",
 		Parcelas:        1,
@@ -356,7 +355,7 @@ func TestPagamentoCreate_ComDataPagamento(t *testing.T) {
 		WithArgs(p.PedidoID, p.FormaPagamento, p.Parcelas, p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento, dataPagamento, p.StatusPagamento).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, p)
 
@@ -368,11 +367,11 @@ func TestPagamentoCreate_ErroInsert(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Pagamento{}
+	p := &vendas.Pagamento{}
 	mock.ExpectExec(`INSERT INTO pagamentos`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	err := repo.Create(ctx, db, p)
 
@@ -385,7 +384,7 @@ func TestPagamentoUpdate_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	p := &models.Pagamento{
+	p := &vendas.Pagamento{
 		FormaPagamento:  "Boleto 14 dias",
 		Parcelas:        2,
 		Valor:           200.0,
@@ -399,7 +398,7 @@ func TestPagamentoUpdate_Success(t *testing.T) {
 		WithArgs(p.FormaPagamento, p.Parcelas, p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento, nil, p.StatusPagamento, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	err := repo.Update(ctx, db, 1, p)
 
@@ -411,15 +410,15 @@ func TestPagamentoUpdate_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Pagamento{}
+	p := &vendas.Pagamento{}
 	mock.ExpectExec(`UPDATE pagamentos`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	err := repo.Update(ctx, db, 999, p)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, vendas.ErrPagamentoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -427,11 +426,11 @@ func TestPagamentoUpdate_ErroExec(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Pagamento{}
+	p := &vendas.Pagamento{}
 	mock.ExpectExec(`UPDATE pagamentos`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPagamentoRepository()
+	repo := NewPagamentoRepository()
 	ctx := context.Background()
 	err := repo.Update(ctx, db, 1, p)
 

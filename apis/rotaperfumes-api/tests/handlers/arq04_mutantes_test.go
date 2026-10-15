@@ -1,11 +1,11 @@
 package handlers_test
 
-// ARQ-04 (TestBrain): a ponte handlers/scope.go (pedidos, pagamentos e
-// dashboard legados) também precisa tratar "sem Principal no contexto" como
-// SemAcesso, igual às rotas do Comercial (TestEscopo_SemUsuarioNoContexto):
-// resposta vazia/404, SEM tocar no banco. Mata o mutante em que a ponte
-// devolve o vendedorScope zero value (Restrito=false = global) quando
-// httpx.PrincipalFrom falha.
+// ARQ-04 (TestBrain): pedidos, pagamentos (ARQ-05: vendashttp, escopo pelo
+// AutorizadorEscopo) e o dashboard legado (ponte handlers/scope.go) também
+// precisam tratar "sem Principal no contexto" como SemAcesso, igual às rotas
+// do Comercial (TestEscopo_SemUsuarioNoContexto): resposta vazia/404, SEM
+// tocar no banco. Mata o mutante em que o escopo zero value vira "global"
+// quando httpx.PrincipalFrom falha.
 
 import (
 	"encoding/json"
@@ -19,10 +19,11 @@ import (
 
 	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/vendashttp"
 )
 
 func TestARQ04_PonteEscopo_SemPrincipal_SemAcessoSemSQL(t *testing.T) {
-	type montar func(h *handlers.PedidoHandler, p *handlers.PagamentoHandler, d *handlers.DashboardHandler) http.HandlerFunc
+	type montar func(h *vendashttp.PedidoHandler, p *vendashttp.PagamentoHandler, d *handlers.DashboardHandler) http.HandlerFunc
 	casos := []struct {
 		nome       string
 		metodo     string
@@ -34,31 +35,31 @@ func TestARQ04_PonteEscopo_SemPrincipal_SemAcessoSemSQL(t *testing.T) {
 		lista      bool
 	}{
 		{"ListPedidos", http.MethodGet, "/api/pedidos", "",
-			func(h *handlers.PedidoHandler, _ *handlers.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
+			func(h *vendashttp.PedidoHandler, _ *vendashttp.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
 				return h.ListPedidos
 			}, http.StatusOK, "", true},
 		{"GetPedido", http.MethodGet, "/api/pedidos/1", "1",
-			func(h *handlers.PedidoHandler, _ *handlers.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
+			func(h *vendashttp.PedidoHandler, _ *vendashttp.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
 				return h.GetPedido
 			}, http.StatusNotFound, "pedido não encontrado", false},
 		{"DeletePedido", http.MethodDelete, "/api/pedidos/1", "1",
-			func(h *handlers.PedidoHandler, _ *handlers.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
+			func(h *vendashttp.PedidoHandler, _ *vendashttp.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
 				return h.DeletePedido
 			}, http.StatusNotFound, "pedido não encontrado", false},
 		{"ListPagamentos", http.MethodGet, "/api/pagamentos", "",
-			func(_ *handlers.PedidoHandler, p *handlers.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
+			func(_ *vendashttp.PedidoHandler, p *vendashttp.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
 				return p.ListPagamentos
 			}, http.StatusOK, "", true},
 		{"GetPagamento", http.MethodGet, "/api/pagamentos/1", "1",
-			func(_ *handlers.PedidoHandler, p *handlers.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
+			func(_ *vendashttp.PedidoHandler, p *vendashttp.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
 				return p.GetPagamento
 			}, http.StatusNotFound, "pagamento não encontrado", false},
 		{"DeletePagamento", http.MethodDelete, "/api/pagamentos/1", "1",
-			func(_ *handlers.PedidoHandler, p *handlers.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
+			func(_ *vendashttp.PedidoHandler, p *vendashttp.PagamentoHandler, _ *handlers.DashboardHandler) http.HandlerFunc {
 				return p.DeletePagamento
 			}, http.StatusNotFound, "pagamento não encontrado", false},
 		{"Dashboard GetMetrics", http.MethodGet, "/api/dashboard/metrics", "",
-			func(_ *handlers.PedidoHandler, _ *handlers.PagamentoHandler, d *handlers.DashboardHandler) http.HandlerFunc {
+			func(_ *vendashttp.PedidoHandler, _ *vendashttp.PagamentoHandler, d *handlers.DashboardHandler) http.HandlerFunc {
 				return d.GetMetrics
 			}, http.StatusOK, "", false},
 	}
@@ -70,8 +71,8 @@ func TestARQ04_PonteEscopo_SemPrincipal_SemAcessoSemSQL(t *testing.T) {
 			defer db.Close()
 			escopo := bootstrap.NovoComercial(db).Escopo()
 			h := c.handler(
-				handlers.NewPedidoHandler(db, testCfg(), escopo),
-				handlers.NewPagamentoHandler(db, testCfg(), escopo),
+				novoPedidoHandler(db, testCfg()),
+				novoPagamentoHandler(db, testCfg()),
 				handlers.NewDashboardHandler(db, testCfg(), escopo),
 			)
 

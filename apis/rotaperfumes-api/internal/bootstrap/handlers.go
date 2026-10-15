@@ -10,6 +10,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/internal/catalogohttp"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/comercialhttp"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/identidadehttp"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/vendashttp"
 	"github.com/rotaperfumes/shared/catalogo/catalogoapp"
 	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
 	"github.com/rotaperfumes/shared/config"
@@ -17,10 +18,10 @@ import (
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
-// Handlers agrupa os handlers HTTP. Os contextos ainda não migrados
-// (ARQ-04..06, strangler fig) usam os handlers LEGADOS; o campo de cada
+// Handlers agrupa os handlers HTTP. O contexto ainda não migrado
+// (Analytics, ARQ-06, strangler fig) usa o handler LEGADO; o campo de cada
 // contexto troca de tipo no lote dele (Catálogo: ARQ-02; Identidade: ARQ-03;
-// Comercial: ARQ-04).
+// Comercial: ARQ-04; Vendas: ARQ-05).
 type Handlers struct {
 	Auth           *identidadehttp.AuthHandler
 	Usuario        *identidadehttp.UsuarioHandler
@@ -29,8 +30,8 @@ type Handlers struct {
 	Vendedor       *comercialhttp.VendedorHandler
 	Cliente        *comercialhttp.ClienteHandler
 	Produto        *catalogohttp.ProdutoHandler
-	Pedido         *handlers.PedidoHandler
-	Pagamento      *handlers.PagamentoHandler
+	Pedido         *vendashttp.PedidoHandler
+	Pagamento      *vendashttp.PagamentoHandler
 	Oportunidade   *comercialhttp.OportunidadeHandler
 	Visita         *comercialhttp.VisitaHandler
 	Estoque        *catalogohttp.EstoqueHandler
@@ -48,7 +49,8 @@ func NovosHandlersCom(pool *sql.DB, cfg *config.Config, identidade *identidadeap
 	produto, estoque := NovoCatalogoHTTP(pool)
 	comercialCasos := NovoComercial(pool)
 	com := NovoComercialHTTP(comercialCasos)
-	escopo := comercialCasos.Escopo() // a mesma regra de escopo para os legados de Vendas e Analytics
+	escopo := comercialCasos.Escopo() // a mesma regra de escopo para Vendas e para o Dashboard legado
+	vendas := NovoVendasHTTP(NovoVendas(pool, escopo))
 	ident := NovoIdentidadeHTTP(identidade, cfg)
 	return Handlers{
 		Auth:           ident.Auth,
@@ -58,8 +60,8 @@ func NovosHandlersCom(pool *sql.DB, cfg *config.Config, identidade *identidadeap
 		Vendedor:       com.Vendedor,
 		Cliente:        com.Cliente,
 		Produto:        produto,
-		Pedido:         handlers.NewPedidoHandler(pool, cfg, escopo),
-		Pagamento:      handlers.NewPagamentoHandler(pool, cfg, escopo),
+		Pedido:         vendas.Pedido,
+		Pagamento:      vendas.Pagamento,
 		Oportunidade:   com.Oportunidade,
 		Visita:         com.Visita,
 		Estoque:        estoque,

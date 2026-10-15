@@ -443,7 +443,12 @@ func TestARQ_MiddlewareAuthLegado_SoAutenticador(t *testing.T) {
 		})
 	}
 	assert.Zero(t, legado, "nenhuma referência ao middleware JWT legado")
-	assert.Positive(t, ponte, "sanidade: a varredura enxerga a ponte usada pelos handlers legados")
+	// ARQ-05: o último leitor de produção da ponte (o pedido_handler.go
+	// legado, log de auditoria com o role) saiu; os handlers novos leem o
+	// Principal do httpx. A ponte só é lida por tests/middleware e sai no
+	// ARQ-07. Que a varredura enxerga a referência (inclusive sem chamada) é
+	// provado por TestARQ_Allowlists_ReferenciaSemChamada (fonte sintética).
+	assert.Zero(t, ponte, "nenhum código de produção volta a ler a ponte middleware.GetUserID/GetRole")
 }
 
 // N-4/N-5: referências sem chamada (valor de função) também são violações.

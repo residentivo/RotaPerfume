@@ -1,44 +1,12 @@
 # A Fazer
 
-> Atualizado em 2026-10-14. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint, commit `cd12d47`), o ARQ-01 (fundação, commit `0e7e757`), o ARQ-02 (Catálogo, commit `17502da`) e o ARQ-03 (Identidade e Acesso, commit `c412d10`) foram concluídos (ver `feito.md`), o ARQ-04 está em `fazendo.md` e os cards ARQ-05 a ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08.
+> Atualizado em 2026-10-15. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint, commit `cd12d47`), o ARQ-01 (fundação, commit `0e7e757`), o ARQ-02 (Catálogo, commit `17502da`), o ARQ-03 (Identidade e Acesso, commit `c412d10`) e o ARQ-04 (Comercial, commit `fdaa7d9`) foram concluídos (ver `feito.md`), o ARQ-05 está em `fazendo.md` e os cards ARQ-06 a ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08.
 >
 > **Regras do Lote 21 válidas para ARQ-01 a ARQ-07 (decisões de 2026-10-13, ver ARQ-00 em `fazendo.md`):**
 > - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. O 🟡 BackBrain atualiza a regra no código (comentário de `apis/shared/vlog/vlog.go`); o 🔵 SubBrain atualiza a documentação no ARQ-08.
 > - **X1, contrato HTTP:** a única exceção ao "contrato HTTP inalterado" é a do ARQ-01 (métodos das 13 rotas, `/api/senha-historico/2/extra` e, pelo parse estrito de `{user_id...}` (R-f), `/api/senha-historico/0` e `/-1` passando a 400).
 >
 > Histórico anterior (2026-10-11): o 🔴 TestBrain executou `docs/roteiro-teste-manual-lote12.md` (24 aprovados, 1 falhou, 13 não verificáveis de 38; ver a seção "Execução (2026-10-07, 🔴 TestBrain)" no fim do roteiro). Daí saíram os cards BUG-13, LOG-01, DOC-05 e TST-04. BUG-13, LOG-01 e DOC-05 foram concluídos no Lote 16 (2026-10-07; ver `feito.md`). O LOG-02 (Lote 17) gerou o TST-05, e o DEP-00 (Lote 19) gerou o DEP-01 e o DEP-02. No Lote 20 (2026-10-11; ver `feito.md`) foram concluídos DEP-01, DEP-02 e TST-05; o TST-04 avançou parcialmente (só faltam 1.1, 1.2 e 1.7, que dependem do usuário rodar o `make`) e do DEP-01 saiu o card DEP-03 (BAIXA). O MAIL-01 e o DEPLOY-01 seguem em `fazendo.md`, aguardando o usuário.
-
----
-
-## ARQ-05: contexto Vendas — prioridade ALTA
-
-**Status:** pendente (Lote 21; depende do ARQ-04)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
-
-**Descrição:** migrar Pedido como aggregate root (com ItemPedido) e Pagamento.
-
-**Pendência herdada do ARQ-02 (🤍 MegaBrain, 2026-10-14):** `apis/shared/repositories/estoque_repository.go` ficou encolhido (126 linhas) porque `AjustarSaldoPorFaturamento` depende da tx de `PedidoRepository.UpdateComItens`. Neste card: migrar `AjustarSaldoPorFaturamento` para o adapter de catálogo/vendas e **apagar o arquivo**. (`UpsertPorDataSku`: ver ARQ-07.)
-
-**NB-5 (🟣 SecBrain, revisão ARQ-02, 2026-10-14):** há lost update no PUT de estoque e no toggle de ativo do produto, porque o código lê e depois grava sem lock. Avaliar `SELECT … FOR UPDATE` dentro do Transactor. Não é correção de carona: decidir neste card se entra ou vira card próprio.
-
-**Lições do piloto ARQ-02:** aplicar as mesmas do ARQ-04 (`ParseDataLocal`, `shared/db`, `relerCriado`/`relerAtualizado`, DTO create/update separados, `httpx.IDDoPathPermissivo`, métrica de tamanho).
-
-**Lições do ARQ-04 (2026-10-15):**
-- passar o Principal zero até o autorizador ("sem usuário = SemAcesso"); não usar `principalOuErro` em rotas com escopo;
-- usar `Leitor[T]` para "autoriza antes do decode";
-- helper `esperarPosseX` nos testes quando a checagem de posse migra do handler para o caso de uso;
-- UoW de pedido+itens: testes de "passo na mesma tx" com `SetMaxOpenConns(1)` + contexto curto (padrão do 🔴 TestBrain);
-- remover a ponte `apis/rotaperfumes-api/handlers/scope.go` quando pedido/pagamento migrarem;
-- **NB-3 do Catálogo (movida do ARQ-04):** traduzir o 1062 de SKU e de `(data_snapshot, sku)` para `KindConflito`, sem o valor do driver no log (`apis/shared/catalogo/catalogomysql/produtos.go` e `estoques.go`); o status HTTP não muda (ver CHORE-06).
-
-**Critério de aceite:**
-- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
-- `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
-- sem perda de cobertura;
-- logs `vlog` preservados;
-- commit do lote na branch `refactor/ddd`.
 
 ---
 

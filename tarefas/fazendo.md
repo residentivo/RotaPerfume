@@ -6,53 +6,38 @@
 
 **Decisões do usuário:** estratégia **incremental por bounded context**: cada lote termina com build e testes verdes e um commit na branch `refactor/ddd`. Escopo: API (`apis/rotaperfumes-api`) + módulo `apis/shared` (repositories, models, services, importers e CLIs).
 
-**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (no ARQ-03, o 🟣 SecBrain revisa depois, junto com o 🔴 TestBrain; ver decisão no card). ARQ-00 (commit `cd12d47`), ARQ-01 (commit `0e7e757`), ARQ-02 (commit `17502da`) e ARQ-03 (commit `c412d10`) concluídos, ver `feito.md`; ARQ-05 a ARQ-08 estão em `afazer.md`, na ordem de execução.
+**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (no ARQ-03, o 🟣 SecBrain revisa depois, junto com o 🔴 TestBrain; ver decisão no card). ARQ-00 (commit `cd12d47`), ARQ-01 (commit `0e7e757`), ARQ-02 (commit `17502da`), ARQ-03 (commit `c412d10`) e ARQ-04 (commit `fdaa7d9`) concluídos, ver `feito.md`; ARQ-06 a ARQ-08 estão em `afazer.md`, na ordem de execução.
 
-**Passo atual:** ARQ-04 (Comercial): 🟣 SecBrain e 🔴 TestBrain aprovaram; 🟡 BackBrain aplicando N1/N2/N3/N5/N6, depois commit. Ver card abaixo.
+**Passo atual:** ARQ-05 (Vendas): 🟡 BackBrain migrando; depois 🔴 TestBrain e 🟣 SecBrain validam. Ver card abaixo.
 
 **Pendência opcional (não é card):** o race detector (`go test -race`) está indisponível nesta máquina porque falta gcc/MinGW (cgo). Sugestão ao usuário: instalar o MinGW-w64 localmente ou rodar `go test -race ./...` no Jenkins (Linux).
 
 ---
 
-## ARQ-04: contexto Comercial — prioridade ALTA
+## ARQ-05: contexto Vendas — prioridade ALTA
 
-**Status:** em execução (Lote 21, desde 2026-10-14; ARQ-03 concluído em `c412d10`)
+**Status:** em execução (Lote 21, desde 2026-10-15; ARQ-04 concluído em `fdaa7d9`)
 **Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain + 🟣 SecBrain
 **Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
 
-**Descrição:** migrar:
-- Vendedor e Carteira;
-- Cliente, com CNPJ como value object;
-- Visita e Oportunidade;
-- escopo de acesso por carteira.
+**Descrição:** migrar Pedido como aggregate root (com ItemPedido) e Pagamento para `apis/shared/vendas{,app,mysql}` + `apis/rotaperfumes-api/internal/vendashttp`.
 
-**Nota N-8 (🟣 SecBrain, ARQ-01, 2026-10-13):** `httpx.interno` loga o erro com `%v`; um erro 1062 cru do MySQL traz o valor duplicado (CNPJ) para o log. Garantir a O6-iv: o adapter traduz o 1062 para erro de domínio sem embrulhar o erro do driver.
+**Pendência herdada do ARQ-02 (🤍 MegaBrain, 2026-10-14):** `apis/shared/repositories/estoque_repository.go` ficou encolhido (126 linhas) porque `AjustarSaldoPorFaturamento` depende da tx de `PedidoRepository.UpdateComItens`. Neste card: migrar `AjustarSaldoPorFaturamento` para o adapter de catálogo/vendas, na mesma tx do pedido, e **apagar o arquivo**. (`UpsertPorDataSku`: ver ARQ-07.)
 
-**Pendência herdada do ARQ-03 (2026-10-14):** trocar o adapter `vendedoresLegado` do bootstrap (marcado `TODO(ARQ-04)`) pela implementação de `comercialmysql`.
+**NB-5 (🟣 SecBrain, revisão ARQ-02, 2026-10-14):** há lost update no PUT de estoque e no toggle de ativo do produto, porque o código lê e depois grava sem lock. Avaliar `SELECT … FOR UPDATE` dentro do Transactor. Não é correção de carona: decidir neste card se entra ou vira card próprio.
 
-**Lições do piloto ARQ-02 (🤍 MegaBrain, 2026-10-14), valem também para o ARQ-05:**
-- promover `kernel.ParseDataLocal` para os 6 campos de data (BUG-01);
-- promover `consultar[T]`, `paginada` e `where` para `shared/db`, e `relerCriado`/`relerAtualizado` (BUG-08/09) para um pacote comum, em vez de duplicar por contexto;
-- separar os DTOs de create e update;
-- usar `httpx.IDDoPathPermissivo` onde o legado aceita id ≤ 0 e responde 404 (não mudar o contrato; ver CHORE-03);
-- métrica de tamanho: "código novo ≤ lógica legada sem vlog; handlers ≤ 30 linhas; código novo 100% coberto" (substitui a meta de −40%).
+**Lições do piloto ARQ-02:** `ParseDataLocal`, `shared/db`, `relerCriado`/`relerAtualizado`, DTO create/update separados, `httpx.IDDoPathPermissivo`, métrica de tamanho ("código novo ≤ lógica legada sem vlog; handlers ≤ 30 linhas; código novo 100% coberto").
 
-**NB-3 (🟣 SecBrain, revisão ARQ-02, 2026-10-14): movida para o ARQ-05** (decisão do 🤍 MegaBrain, 2026-10-15). O ARQ-04 tratou só o 1062 de CNPJ/carteira.
+**Lições do ARQ-04 (2026-10-15):**
+- passar o Principal zero até o autorizador ("sem usuário = SemAcesso"); não usar `principalOuErro` em rotas com escopo;
+- usar `Leitor[T]` para "autoriza antes do decode";
+- helper `esperarPosseX` nos testes quando a checagem de posse migra do handler para o caso de uso;
+- UoW de pedido+itens: testes de "passo na mesma tx" com `SetMaxOpenConns(1)` + contexto curto (padrão do 🔴 TestBrain);
+- remover a ponte `apis/rotaperfumes-api/handlers/scope.go` para pedido/pagamento (o dashboard segue na ponte até o ARQ-06);
+- **NB-3 do Catálogo (movida do ARQ-04):** traduzir o 1062 de SKU e de `(data_snapshot, sku)` para `KindConflito`, sem o valor do driver no log (`apis/shared/catalogo/catalogomysql/produtos.go` e `estoques.go`); o status HTTP não muda (ver CHORE-06).
 
-**Decisão do 🤍 MegaBrain (2026-10-14), duplicidade:** CNPJ, SKU e e-mail duplicados **preservam o status HTTP atual de cada caso** (contrato inalterado). A eventual padronização para 409 vira card próprio, que exige decisão do usuário: **CHORE-06** em `afazer.md` (BAIXA, fora do Lote 21).
-
-**Histórico:**
-- 🟡 BackBrain migrou Comercial para `apis/shared/comercial{,app,mysql}` + `apis/rotaperfumes-api/internal/comercialhttp`: `kernel.Escopo` substitui a sentinela `VendedorID <= 0`; `AutorizadorEscopo` sem cache; desligamento de vendedor em tx única; adapter `vendedoresLegado` trocado pela implementação de `comercialmysql`; ponte `handlers/scope.go` para pedido/pagamento/dashboard.
-- 🟣 **SecBrain: APROVADO, 0 bloqueantes.** Riscos críticos do ARQ-00 fechados: E-02 (sentinela 0 = global) e O1 (SemAcesso → consulta global). Ponte para pedido/pagamento/dashboard correta. Não bloqueantes N1..N7.
-- 🔴 **TestBrain: APROVADO.** R1 ok (API 806→821, shared 687→710); cobertura combinada 89,35% → 89,39% (descobertos 1.110 → 958); código novo 100%; 40 mutações, 6 sobreviventes (passos do desligamento e de cliente+carteira fora da tx; ponte sem Principal virando global) mortas por 3 testes `TestARQ04_*`; nenhuma asserção removida/enfraquecida.
-
-**Decisões do 🤍 MegaBrain (ressalvas do SecBrain):**
-- aplicar agora: **N1** (zero value da ponte `handlers/scope.go` = restrito, derivado de `Filtro()`), **N2** (1062 de outro índice sem a mensagem do driver), **N3** (log com tag fixa para Principal inválido), **N5** (escopo inválido → 500, não 403), **N6** (panic na montagem com escopo nil);
-- **N4** (log `[escopo] bloqueado vendedor_desligado` perdeu `rota=`) → ARQ-07;
-- **N7** já registrado (BUG-14, TOCTOU V-02).
-
-**Passo atual:** 🟡 BackBrain aplicando N1/N2/N3/N5/N6; depois build/testes verdes e commit na branch `refactor/ddd`.
+**Passo atual:** 🟡 BackBrain migrando Vendas (`shared/vendas{,app,mysql}` + `internal/vendashttp`): Pedido como aggregate root com itens, `AjustarSaldoPorFaturamento` na mesma tx do pedido e remoção do `estoque_repository.go`, NB-3 do Catálogo, remoção da ponte de escopo para pedido/pagamento. Depois, 🔴 TestBrain e 🟣 SecBrain validam.
 
 **Critério de aceite:**
 - contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);

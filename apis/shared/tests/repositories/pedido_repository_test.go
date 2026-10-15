@@ -11,8 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/vendas"
 )
 
 var pedidoColumns = []string{
@@ -51,9 +50,9 @@ func TestPedidoList_SemFiltro(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
-	pedidos, total, err := repo.List(ctx, db, 1, 10, repositories.PedidoFiltro{})
+	pedidos, total, err := repo.List(ctx, db, 1, 10, PedidoFiltro{})
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
@@ -65,43 +64,43 @@ func TestPedidoList_SemFiltro(t *testing.T) {
 func TestPedidoList_ComFiltros(t *testing.T) {
 	testes := []struct {
 		nome        string
-		filtro      repositories.PedidoFiltro
+		filtro      PedidoFiltro
 		whereRegexp string
 		args        []driver.Value
 	}{
 		{
 			nome:        "filtro por status",
-			filtro:      repositories.PedidoFiltro{Status: "aprovado"},
+			filtro:      PedidoFiltro{Status: "aprovado"},
 			whereRegexp: `WHERE p\.status = \?`,
 			args:        []driver.Value{"aprovado"},
 		},
 		{
 			nome:        "filtro por canal",
-			filtro:      repositories.PedidoFiltro{Canal: "online"},
+			filtro:      PedidoFiltro{Canal: "online"},
 			whereRegexp: `WHERE p\.canal = \?`,
 			args:        []driver.Value{"online"},
 		},
 		{
 			nome:        "filtro por cliente",
-			filtro:      repositories.PedidoFiltro{ClienteID: 5},
+			filtro:      PedidoFiltro{ClienteID: 5},
 			whereRegexp: `WHERE p\.cliente_id = \?`,
 			args:        []driver.Value{int64(5)},
 		},
 		{
 			nome:        "filtro por vendedor",
-			filtro:      repositories.PedidoFiltro{VendedorID: 3},
+			filtro:      PedidoFiltro{VendedorID: 3},
 			whereRegexp: `WHERE p\.vendedor_id = \?`,
 			args:        []driver.Value{int64(3)},
 		},
 		{
 			nome:        "filtro por data inicio e fim",
-			filtro:      repositories.PedidoFiltro{DataInicio: "2024-01-01", DataFim: "2024-01-31"},
+			filtro:      PedidoFiltro{DataInicio: "2024-01-01", DataFim: "2024-01-31"},
 			whereRegexp: `WHERE p\.data_pedido >= \? AND p\.data_pedido <= \?`,
 			args:        []driver.Value{"2024-01-01", "2024-01-31"},
 		},
 		{
 			nome:        "filtro por busca textual",
-			filtro:      repositories.PedidoFiltro{Q: "Empresa"},
+			filtro:      PedidoFiltro{Q: "Empresa"},
 			whereRegexp: `WHERE c\.razao_social LIKE \?`,
 			args:        []driver.Value{"%Empresa%"},
 		},
@@ -121,7 +120,7 @@ func TestPedidoList_ComFiltros(t *testing.T) {
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(pedidoColumns))
 
-			repo := repositories.NewPedidoRepository()
+			repo := NewPedidoRepository()
 			ctx := context.Background()
 			_, _, err := repo.List(ctx, db, 1, 10, tt.filtro)
 
@@ -187,9 +186,9 @@ func TestPedidoList_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(pedidoColumns))
 
-			repo := repositories.NewPedidoRepository()
+			repo := NewPedidoRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, repositories.PedidoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+			_, _, err := repo.List(ctx, db, 1, 10, PedidoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -204,9 +203,9 @@ func TestPedidoList_CountError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pedidoFromRegexp).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.PedidoFiltro{})
+	_, _, err := repo.List(ctx, db, 1, 10, PedidoFiltro{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -222,9 +221,9 @@ func TestPedidoList_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.PedidoFiltro{})
+	_, _, err := repo.List(ctx, db, 1, 10, PedidoFiltro{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -243,9 +242,9 @@ func TestPedidoList_IterError(t *testing.T) {
 			AddRow(pedidoRow(201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...).
 			RowError(0, sql.ErrConnDone))
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.PedidoFiltro{})
+	_, _, err := repo.List(ctx, db, 1, 10, PedidoFiltro{})
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -263,7 +262,7 @@ func TestPedidoGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	p, err := repo.GetByID(ctx, db, 1)
 
@@ -281,12 +280,12 @@ func TestPedidoGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	p, err := repo.GetByID(ctx, db, 999)
 
 	assert.Nil(t, p)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -298,13 +297,13 @@ func TestPedidoGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	p, err := repo.GetByID(ctx, db, 1)
 
 	assert.Nil(t, p)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -320,7 +319,7 @@ func TestPedidoListItensByPedidoID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	itens, err := repo.ListItensByPedidoID(ctx, db, 1)
 
@@ -338,7 +337,7 @@ func TestPedidoListItensByPedidoID_Vazio(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itemPedidoColumns))
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	itens, err := repo.ListItensByPedidoID(ctx, db, 1)
 
@@ -355,7 +354,7 @@ func TestPedidoListItensByPedidoID_QueryError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	_, err := repo.ListItensByPedidoID(ctx, db, 1)
 
@@ -376,7 +375,7 @@ func TestPedidoListItensByPedidoID_IterError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	_, err := repo.ListItensByPedidoID(ctx, db, 1)
 
@@ -407,7 +406,7 @@ func TestPedidoExistsByID(t *testing.T) {
 				q.WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 			}
 
-			repo := repositories.NewPedidoRepository()
+			repo := NewPedidoRepository()
 			ctx := context.Background()
 			exists, err := repo.ExistsByID(ctx, db, tt.id)
 
@@ -426,7 +425,7 @@ func TestPedidoExistsByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	exists, err := repo.ExistsByID(ctx, db, 1)
 
@@ -443,7 +442,7 @@ func TestPedidoCreateComItens_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	p := &models.Pedido{
+	p := &vendas.Pedido{
 		ClienteID:  1,
 		VendedorID: 1,
 		DataPedido: now,
@@ -451,7 +450,7 @@ func TestPedidoCreateComItens_Success(t *testing.T) {
 		Status:     "aprovado",
 		ValorTotal: 150.0,
 	}
-	itens := []models.ItemPedido{
+	itens := []vendas.ItemPedido{
 		{ProdutoID: 1, Quantidade: 3, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 150.0},
 	}
 
@@ -464,7 +463,7 @@ func TestPedidoCreateComItens_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(20, 1))
 	mock.ExpectCommit()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.CreateComItens(ctx, db, p, itens)
 
@@ -480,7 +479,7 @@ func TestPedidoCreateComItens_SemItens(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "aprovado", ValorTotal: 0}
+	p := &vendas.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "aprovado", ValorTotal: 0}
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO pedidos").
@@ -488,7 +487,7 @@ func TestPedidoCreateComItens_SemItens(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(11, 1))
 	mock.ExpectCommit()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.CreateComItens(ctx, db, p, nil)
 
@@ -501,14 +500,14 @@ func TestPedidoCreateComItens_ErroInsertPedido(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Pedido{}
+	p := &vendas.Pedido{}
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO pedidos").
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.CreateComItens(ctx, db, p, nil)
 
@@ -520,8 +519,8 @@ func TestPedidoCreateComItens_ErroInsertItem(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Pedido{}
-	itens := []models.ItemPedido{{ProdutoID: 1, Quantidade: 1, PrecoPraticado: 10.0}}
+	p := &vendas.Pedido{}
+	itens := []vendas.ItemPedido{{ProdutoID: 1, Quantidade: 1, PrecoPraticado: 10.0}}
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO pedidos").
@@ -530,7 +529,7 @@ func TestPedidoCreateComItens_ErroInsertItem(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.CreateComItens(ctx, db, p, itens)
 
@@ -550,8 +549,8 @@ func TestPedidoUpdateComItens_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "aprovado", ValorTotal: 200.0}
-	itens := []models.ItemPedido{
+	p := &vendas.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "aprovado", ValorTotal: 200.0}
+	itens := []vendas.ItemPedido{
 		{ProdutoID: 2, Quantidade: 4, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 200.0},
 	}
 
@@ -573,7 +572,7 @@ func TestPedidoUpdateComItens_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(30, 1))
 	mock.ExpectCommit()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.UpdateComItens(ctx, db, 1, p, itens)
 
@@ -586,7 +585,7 @@ func TestPedidoUpdateComItens_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Pedido{}
+	p := &vendas.Pedido{}
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
@@ -594,11 +593,11 @@ func TestPedidoUpdateComItens_NotFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.UpdateComItens(ctx, db, 999, p, nil)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -606,7 +605,7 @@ func TestPedidoUpdateComItens_ErroUpdate(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Pedido{}
+	p := &vendas.Pedido{}
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
@@ -619,7 +618,7 @@ func TestPedidoUpdateComItens_ErroUpdate(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.UpdateComItens(ctx, db, 1, p, nil)
 
@@ -631,7 +630,7 @@ func TestPedidoUpdateComItens_ErroDelete(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	p := &models.Pedido{}
+	p := &vendas.Pedido{}
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
@@ -646,7 +645,7 @@ func TestPedidoUpdateComItens_ErroDelete(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.UpdateComItens(ctx, db, 1, p, nil)
 
@@ -659,8 +658,8 @@ func TestPedidoUpdateComItens_TransicaoParaFaturado_BaixaEstoque(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
-	itens := []models.ItemPedido{
+	p := &vendas.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
+	itens := []vendas.ItemPedido{
 		{ProdutoID: 2, Quantidade: 4, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 200.0},
 	}
 
@@ -690,7 +689,7 @@ func TestPedidoUpdateComItens_TransicaoParaFaturado_BaixaEstoque(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.UpdateComItens(ctx, db, 1, p, itens)
 
@@ -703,11 +702,11 @@ func TestPedidoUpdateComItens_ReenvioFaturadoIdempotente_NaoBaixaEstoqueDeNovo(t
 	defer db.Close()
 
 	now := time.Now()
-	itens := []models.ItemPedido{
+	itens := []vendas.ItemPedido{
 		{ProdutoID: 2, Quantidade: 4, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 200.0},
 	}
 	// payload igual aos itens já persistidos (mesmo produto/qtd/preco/desconto).
-	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
+	p := &vendas.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
@@ -724,7 +723,7 @@ func TestPedidoUpdateComItens_ReenvioFaturadoIdempotente_NaoBaixaEstoqueDeNovo(t
 	// nem dispara baixa de estoque novamente (statusAtual já era Faturado).
 	mock.ExpectCommit()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.UpdateComItens(ctx, db, 1, p, itens)
 
@@ -738,10 +737,10 @@ func TestPedidoUpdateComItens_FaturadoTentaAlterarItens_Erro(t *testing.T) {
 
 	now := time.Now()
 	// payload com item DIFERENTE do persistido (quantidade mudou).
-	itens := []models.ItemPedido{
+	itens := []vendas.ItemPedido{
 		{ProdutoID: 2, Quantidade: 99, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 200.0},
 	}
-	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
+	p := &vendas.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
@@ -753,11 +752,11 @@ func TestPedidoUpdateComItens_FaturadoTentaAlterarItens_Erro(t *testing.T) {
 			AddRow(int64(2), 4, 50.0, 0.0))
 	mock.ExpectRollback()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.UpdateComItens(ctx, db, 1, p, itens)
 
-	assert.ErrorIs(t, err, repositories.ErrPedidoJaFaturadoNaoPodeAlterarItens)
+	assert.ErrorIs(t, err, vendas.ErrPedidoJaFaturadoNaoPodeAlterarItens)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -766,8 +765,8 @@ func TestPedidoUpdateComItens_ErroBaixaEstoque_RollbackTudo(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	p := &models.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
-	itens := []models.ItemPedido{
+	p := &vendas.Pedido{ClienteID: 1, VendedorID: 1, DataPedido: now, Canal: "online", Status: "Faturado", ValorTotal: 200.0}
+	itens := []vendas.ItemPedido{
 		{ProdutoID: 2, Quantidade: 4, PrecoPraticado: 50.0, DescontoPct: 0, ValorBruto: 200.0},
 	}
 
@@ -792,7 +791,7 @@ func TestPedidoUpdateComItens_ErroBaixaEstoque_RollbackTudo(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
-	repo := repositories.NewPedidoRepository()
+	repo := NewPedidoRepository()
 	ctx := context.Background()
 	err := repo.UpdateComItens(ctx, db, 1, p, itens)
 

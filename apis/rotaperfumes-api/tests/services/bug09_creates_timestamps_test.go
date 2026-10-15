@@ -16,8 +16,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // bug09Resultado normaliza o retorno dos 6 creates para as asserções comuns.
@@ -115,7 +113,7 @@ func bug09Casos() []bug09Caso {
 					AddRow(id, int64(1), "Boleto", uint8(1), 100.0, 0.0, 100.0, criado, nil, "Em aberto", criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				p, err := services.NewPagamentoService(db, pagamentoTestCfg(verbose)).
+				p, err := NewPagamentoService(db, pagamentoTestCfg(verbose)).
 					CreatePagamento(context.Background(), db, validPagamentoInput())
 				if err != nil || p == nil {
 					return nil, err

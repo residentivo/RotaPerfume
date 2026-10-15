@@ -28,12 +28,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/catalogo/catalogoapp"
 	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/tz"
+	"github.com/rotaperfumes/shared/vendas"
 )
 
 const (
@@ -131,8 +131,8 @@ type dlParserCaso struct {
 	parse func(t *testing.T, data string) time.Time
 }
 
-func dlPagamentoInput(venc, pag string) services.PagamentoInput {
-	return services.PagamentoInput{
+func dlPagamentoInput(venc, pag string) PagamentoInput {
+	return PagamentoInput{
 		PedidoID: 1, FormaPagamento: "Dinheiro", Parcelas: 1, Valor: 100, ValorLiquido: 100,
 		DataVencimento: venc, DataPagamento: pag, StatusPagamento: "Pago",
 	}
@@ -143,7 +143,7 @@ func dlCriarPagamento(t *testing.T, venc, pag string) *time.Time {
 	db, mock := dlNewDB(t)
 	mock.ExpectQuery(dlReExistePedido).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
 	mock.ExpectExec(`INSERT INTO pagamentos`).WillReturnResult(sqlmock.NewResult(5, 1))
-	p, err := services.NewPagamentoService(db, &config.Config{}).CreatePagamento(context.Background(), db, dlPagamentoInput(venc, pag))
+	p, err := NewPagamentoService(db, &config.Config{}).CreatePagamento(context.Background(), db, dlPagamentoInput(venc, pag))
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 	if pag != "" {
@@ -220,9 +220,9 @@ func dlParsers() []dlParserCaso {
 				WithArgs(int64(1), int64(2), dlCapturaTempo{&got}, "App", "Faturado", sqlmock.AnyArg()).
 				WillReturnError(errDLParar)
 			mock.ExpectRollback()
-			_, err := services.NewPedidoService(db, cfg).CreatePedido(ctx, db, services.PedidoInput{
+			_, err := NewPedidoService(db, cfg).CreatePedido(ctx, db, PedidoInput{
 				ClienteID: 1, VendedorID: 2, DataPedido: data, Canal: "App", Status: "Faturado",
-				Itens: []services.ItemPedidoInput{{ProdutoID: 3, Quantidade: 1, PrecoPraticado: 10}},
+				Itens: []ItemPedidoInput{{ProdutoID: 3, Quantidade: 1, PrecoPraticado: 10}},
 			})
 			require.ErrorIs(t, err, errDLParar)
 			require.NoError(t, mock.ExpectationsWereMet())
@@ -368,8 +368,8 @@ func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 			_, err = novosCasosCatalogo(db).AjustarEstoque(ctx, catalogo.DadosEstoque{SKU: "SKU-1", DataSnapshot: s})
 			assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
 
-			_, err = services.NewPedidoService(db, cfg).CreatePedido(ctx, db, services.PedidoInput{ClienteID: 1, VendedorID: 1, DataPedido: s})
-			assert.ErrorIs(t, err, services.ErrDataPedidoInvalida)
+			_, err = NewPedidoService(db, cfg).CreatePedido(ctx, db, PedidoInput{ClienteID: 1, VendedorID: 1, DataPedido: s})
+			assert.ErrorIs(t, err, vendas.ErrDataPedidoInvalida)
 
 			_, err = novosCasosCatalogo(db).CriarProduto(ctx, catalogo.DadosProduto{
 				SKU: "S", Descricao: "D", Categoria: "C", Marca: "M", Unidade: "UN", DataLancamento: s,
@@ -382,14 +382,14 @@ func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 			assert.NoError(t, mock.ExpectationsWereMet(), "data inválida deve falhar antes de consultar o banco")
 
 			// Pagamento confere o pedido antes de validar as datas.
-			for _, in := range []services.PagamentoInput{dlPagamentoInput(s, ""), dlPagamentoInput("2024-01-01", s)} {
+			for _, in := range []PagamentoInput{dlPagamentoInput(s, ""), dlPagamentoInput("2024-01-01", s)} {
 				dbp, mockp := dlNewDB(t)
 				mockp.ExpectQuery(dlReExistePedido).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
-				_, err = services.NewPagamentoService(dbp, cfg).CreatePagamento(ctx, dbp, in)
+				_, err = NewPagamentoService(dbp, cfg).CreatePagamento(ctx, dbp, in)
 				if in.DataPagamento == s {
-					assert.ErrorIs(t, err, services.ErrDataPagamentoInvalida)
+					assert.ErrorIs(t, err, vendas.ErrDataPagamentoInvalida)
 				} else {
-					assert.ErrorIs(t, err, services.ErrDataVencimentoInvalida)
+					assert.ErrorIs(t, err, vendas.ErrDataVencimentoInvalida)
 				}
 				assert.NoError(t, mockp.ExpectationsWereMet(), "nenhum INSERT com data inválida")
 			}

@@ -106,7 +106,7 @@ func (r *Produtos) Inserir(ctx context.Context, p *catalogo.Produto) error {
 	res, err := r.q.ExecContext(ctx, q, p.SKU.String(), p.Descricao, p.Categoria, p.Marca,
 		nullString(p.NotaOlfativa), p.PrecoTabela, p.CustoUnitario, p.Unidade, nullTime(p.DataLancamento), p.Ativo)
 	if err != nil {
-		return fmt.Errorf("catalogomysql: inserir produto: %w", err)
+		return fmt.Errorf("catalogomysql: inserir produto: %w", db.SemValorDuplicado(err)) // NB-3: 1062 do SKU sem o valor
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
@@ -138,7 +138,7 @@ func (r *Produtos) DefinirAtivo(ctx context.Context, id int64, ativo bool) error
 func (r *Produtos) exec(ctx context.Context, op, rotulo, q string, args ...any) error {
 	res, err := r.q.ExecContext(ctx, q, args...)
 	if err != nil {
-		return fmt.Errorf("catalogomysql: %s: %w", op, err)
+		return fmt.Errorf("catalogomysql: %s: %w", op, db.SemValorDuplicado(err))
 	}
 	n, err := res.RowsAffected()
 	if err != nil {

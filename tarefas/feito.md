@@ -3,9 +3,37 @@
 > Histórico de tarefas finalizadas.
 
 ---
-## Lote 21 de 2026-10-13: 4 cards concluídos até agora (lote em andamento)
+## Lote 21 de 2026-10-13: 5 cards concluídos até agora (lote em andamento)
 
-> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-04 está em `fazendo.md` e os cards ARQ-05 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-05 está em `fazendo.md` e os cards ARQ-06 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+
+## ARQ-04: contexto Comercial e escopo por carteira — 2026-10-15
+**Agentes:** 🟡 BackBrain → 🟣 SecBrain + 🔴 TestBrain → 🟡 BackBrain (ressalvas N1/N2/N3/N5/N6) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-15. **Commit:** `fdaa7d9` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend
+
+**Entregue:**
+- Vendedor e Carteira, Cliente (CNPJ como value object), Visita e Oportunidade migrados para `apis/shared/comercial{,app,mysql}` e `apis/rotaperfumes-api/internal/comercialhttp`.
+- Escopo de acesso por carteira: `kernel.Escopo` substitui a sentinela `VendedorID <= 0`; `AutorizadorEscopo` sem cache; desligamento de vendedor em tx única; adapter `vendedoresLegado` do bootstrap trocado pela implementação de `comercialmysql` (pendência do ARQ-03 fechada).
+- Ponte `apis/rotaperfumes-api/handlers/scope.go` para pedido/pagamento/dashboard (sai no ARQ-05/ARQ-06).
+- 1062 de CNPJ/carteira traduzido para erro de domínio sem o valor do driver no log (N-8 do ARQ-01 fechada).
+- Ressalvas do 🟣 SecBrain aplicadas: **N1** zero value da ponte = restrito, derivado de `Filtro()`; **N2** `db.SemValorDuplicado` para 1062 de outro índice, sem a mensagem do driver; **N3** log `[escopo] principal invalido`; **N5** escopo inválido → 500 em `VendedorDaEscrita`; **N6** panic na montagem dos handlers legados com escopo nil.
+
+**Patterns aplicados:** Specification/Escopo via `Filtro()`; política de escrita como função pura; Unit of Work no desligamento de vendedor e em cliente+carteira; Repository + Adapter (incluindo as portas para Identidade); Factory/Value Object CNPJ; Command adiado `Leitor[T]` ("autoriza antes do decode"); Template de releitura (`appkit`); Mapper/DTO; Error mapper.
+
+**Destaque de segurança:** fechados os riscos críticos do ARQ-00 **E-02** (sentinela 0 = acesso global) e **O1** (SemAcesso → consulta global).
+
+**Métricas:**
+- Testes de topo: API 806 → 823; shared 687 → 712.
+- Cobertura combinada 89,35% → 89,39% (linhas descobertas 1.110 → 958); código novo 100% coberto.
+- Cerca de 21% menos lógica.
+- Mutações: 40; as 6 sobreviventes (passos do desligamento e de cliente+carteira fora da tx; ponte sem Principal virando global) passaram a ser mortas pelos testes `TestARQ04_*`. Nenhuma asserção removida ou enfraquecida.
+
+**Decisões:** duplicidade preserva o status HTTP atual (padronização para 409 → CHORE-06); NB-3 do Catálogo → ARQ-05; N4 (log `[escopo] bloqueado vendedor_desligado` sem `rota=`) → ARQ-07; N7 já coberta pelo BUG-14 (TOCTOU V-02).
+
+**Validação:** 🟣 SecBrain aprovou (0 bloqueantes) e 🔴 TestBrain aprovou. 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos (712 testes de topo no shared, 823 na API). Race detector indisponível nesta máquina (sem gcc).
 
 ## ARQ-03: contexto Identidade e Acesso — 2026-10-14
 **Agentes:** 🟡 BackBrain → 🟣 SecBrain (revisão aprofundada pós-implementação) + 🔴 TestBrain → 🟡 BackBrain (ajustes finais) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain

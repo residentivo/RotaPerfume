@@ -171,14 +171,7 @@ type oportunidadeRequest struct {
 // leitor adia o decode do body para depois da autorização do caso de uso
 // ("escopo antes do decode", E-05). Body inválido → 400 "body JSON inválido".
 func leitor[Req, D any](r *http.Request, conv func(Req) D) comercialapp.Leitor[D] {
-	return func() (D, error) {
-		var req Req
-		if err := httpx.DecodificarJSON(r, &req); err != nil {
-			var zero D
-			return zero, err
-		}
-		return conv(req), nil
-	}
+	return httpx.LeitorJSON(r, conv)
 }
 
 func dadosVendedor(q vendedorRequest) comercial.DadosVendedor { return comercial.DadosVendedor(q) }
@@ -254,21 +247,12 @@ func principalDoEscopo(r *http.Request) kernel.Principal {
 // idDoPath lê o {id} com o parse permissivo do legado (-1 e 0 seguem e dão
 // 404); não numérico → 400 "id inválido".
 func idDoPath(w http.ResponseWriter, r *http.Request, tag string) (int64, bool) {
-	id, err := httpx.IDDoPathPermissivo(r, "id")
-	if err != nil {
-		httpx.ResponderErro(w, tag, err)
-		return 0, false
-	}
-	return id, true
+	return httpx.IDOuErro(w, r, tag, "id")
 }
 
 // responder escreve o erro pelo mapper ou o objeto convertido no status.
 func responder[T, D any](w http.ResponseWriter, tag string, status int, v *T, err error, conv func(T) D) {
-	if err != nil {
-		httpx.ResponderErro(w, tag, err)
-		return
-	}
-	httpx.JSON(w, status, conv(*v), "")
+	httpx.Responder(w, tag, status, v, err, conv)
 }
 
 // responderLista escreve a lista (nil → null; vazia → []).
@@ -282,9 +266,5 @@ func responderLista[T, D any](w http.ResponseWriter, tag string, vs []T, err err
 
 // responderPaginado escreve a listagem paginada.
 func responderPaginado[T, D any](w http.ResponseWriter, tag string, res kernel.Resultado[T], err error, conv func(T) D) {
-	if err != nil {
-		httpx.ResponderErro(w, tag, err)
-		return
-	}
-	httpx.JSONPaginadoCom(w, res, conv)
+	httpx.ResponderPaginado(w, tag, res, err, conv)
 }

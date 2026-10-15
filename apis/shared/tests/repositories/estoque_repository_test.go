@@ -14,14 +14,14 @@ import (
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
 	"github.com/rotaperfumes/shared/kernel"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // ARQ-02: List/UltimaPosicaoPorSku/GetByID/Create/Update de EstoqueRepository
 // migraram para catalogomysql.Estoques (Historico/UltimaPosicao/PorID/
 // Inserir/AtualizarSaldo, mesmo SQL); os nomes de teste são mantidos (R1).
-// UpsertPorDataSku e AjustarSaldoPorFaturamento continuam no legado (baixa
-// por faturamento do pedido, ARQ-05).
+// ARQ-05: UpsertPorDataSku e AjustarSaldoPorFaturamento saíram do legado
+// para catalogomysql.Estoques (mesmo SQL), pelos repassadores de
+// helpers_vendas_test.go.
 
 // listarEstoque chama a listagem na página 1 com limite 10 e devolve no
 // formato do legado (itens, total, erro).
@@ -536,7 +536,7 @@ func TestEstoqueUpsertPorDataSku_InsertNovo(t *testing.T) {
 		WithArgs("2024-06-01", "SKU1", 15, false).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	repo := repositories.NewEstoqueRepository()
+	repo := NewEstoqueRepository()
 	ctx := context.Background()
 	err := repo.UpsertPorDataSku(ctx, db, "SKU1", data, 15, false)
 
@@ -557,7 +557,7 @@ func TestEstoqueUpsertPorDataSku_UpdateExistente(t *testing.T) {
 		WithArgs("2024-06-01", "SKU1", 0, true).
 		WillReturnResult(sqlmock.NewResult(1, 2))
 
-	repo := repositories.NewEstoqueRepository()
+	repo := NewEstoqueRepository()
 	ctx := context.Background()
 	err := repo.UpsertPorDataSku(ctx, db, "SKU1", data, 0, true)
 
@@ -574,7 +574,7 @@ func TestEstoqueUpsertPorDataSku_DBError(t *testing.T) {
 	mock.ExpectExec("INSERT INTO estoque").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewEstoqueRepository()
+	repo := NewEstoqueRepository()
 	ctx := context.Background()
 	err := repo.UpsertPorDataSku(ctx, db, "SKU1", data, 15, false)
 
@@ -611,7 +611,7 @@ func TestEstoqueAjustarSaldoPorFaturamento_CriaRegistroQuandoNaoExiste(t *testin
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	repo := repositories.NewEstoqueRepository()
+	repo := NewEstoqueRepository()
 	ctx := context.Background()
 	err := repo.AjustarSaldoPorFaturamento(ctx, tx, "SKU1", data, 5)
 	require.NoError(t, err)
@@ -634,7 +634,7 @@ func TestEstoqueAjustarSaldoPorFaturamento_DecrementaSaldoExistente(t *testing.T
 		WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectCommit()
 
-	repo := repositories.NewEstoqueRepository()
+	repo := NewEstoqueRepository()
 	ctx := context.Background()
 	err := repo.AjustarSaldoPorFaturamento(ctx, tx, "SKU1", data, 3)
 	require.NoError(t, err)
@@ -672,7 +672,7 @@ func TestEstoqueAjustarSaldoPorFaturamento_RupturaRecalculada(t *testing.T) {
 				WillReturnResult(sqlmock.NewResult(1, 1))
 			mock.ExpectCommit()
 
-			repo := repositories.NewEstoqueRepository()
+			repo := NewEstoqueRepository()
 			ctx := context.Background()
 			err := repo.AjustarSaldoPorFaturamento(ctx, tx, "SKU1", data, tt.delta)
 			require.NoError(t, err)
@@ -694,7 +694,7 @@ func TestEstoqueAjustarSaldoPorFaturamento_ErroNoLock(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := repositories.NewEstoqueRepository()
+	repo := NewEstoqueRepository()
 	ctx := context.Background()
 	err := repo.AjustarSaldoPorFaturamento(ctx, tx, "SKU1", data, 5)
 	assert.Error(t, err)
@@ -716,7 +716,7 @@ func TestEstoqueAjustarSaldoPorFaturamento_ErroNoUpsert(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := repositories.NewEstoqueRepository()
+	repo := NewEstoqueRepository()
 	ctx := context.Background()
 	err := repo.AjustarSaldoPorFaturamento(ctx, tx, "SKU1", data, 5)
 	assert.Error(t, err)
