@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/analyticshttp"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/comercialhttp"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/vendashttp"
 )
@@ -263,10 +263,10 @@ func TestARQ04_CreateVendedor_BodyInvalido_400(t *testing.T) {
 }
 
 // N6: os handlers de Vendas (ARQ-05: vendashttp, exigem os casos de uso) e o
-// legado de Analytics (exige o escopo) dão panic na montagem.
+// de Analytics (ARQ-06: analyticshttp, exige as consultas, que exigem o
+// escopo) dão panic na montagem.
 func TestARQ04_N6_HandlersLegadosExigemEscopo(t *testing.T) {
-	cfg := testCfg()
 	assert.Panics(t, func() { vendashttp.NovoPedidoHandler(nil) })
 	assert.Panics(t, func() { vendashttp.NovoPagamentoHandler(nil) })
-	assert.Panics(t, func() { handlers.NewDashboardHandler(nil, cfg, nil) })
+	assert.Panics(t, func() { analyticshttp.NovoDashboardHandler(nil) })
 }

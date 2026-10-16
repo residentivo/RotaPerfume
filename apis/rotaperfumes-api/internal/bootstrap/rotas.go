@@ -81,7 +81,7 @@ func rotas(h Handlers) []httpx.Rota {
 		{Metodo: get, Padrao: "/api/senha-historico", Policy: admin, Arquivo: fSenha, Funcao: "SenhaHistoricoHandler.ListarTodos", Handler: h.SenhaHistorico.ListarTodos},
 		{Metodo: get, Padrao: "/api/senha-historico/{user_id...}", Policy: admin, Arquivo: fSenha, Funcao: "SenhaHistoricoHandler.ListarPorUsuario", Handler: h.SenhaHistorico.ListarPorUsuario},
 
-		// Dashboard (escopo por vendedor no handler).
+		// Dashboard (analyticshttp, ARQ-06; escopo por vendedor, D-01).
 		{Metodo: get, Padrao: "/api/dashboard/metrics", Policy: autent, Arquivo: fDash, Funcao: "DashboardHandler.GetMetrics", Handler: h.Dashboard.GetMetrics},
 		{Metodo: get, Padrao: "/api/dashboard/vendas", Policy: autent, Arquivo: fDash, Funcao: "DashboardHandler.GetVendas", Handler: h.Dashboard.GetVendas},
 		{Metodo: get, Padrao: "/api/dashboard/vendedores", Policy: autent, Arquivo: fDash, Funcao: "DashboardHandler.GetVendedores", Handler: h.Dashboard.GetVendedores},

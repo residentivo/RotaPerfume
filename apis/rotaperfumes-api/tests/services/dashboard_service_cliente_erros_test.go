@@ -7,8 +7,6 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // TestDashboardService_GetClienteMetrics_ErroEmCadaEtapa injeta erro em cada
@@ -55,7 +53,7 @@ func TestDashboardService_GetClienteMetrics_ErroEmCadaEtapa(t *testing.T) {
 				}
 			}
 
-			svc := services.NewDashboardService(db, dashboardTestCfg(false))
+			svc := NewDashboardService(db, dashboardTestCfg(false))
 			metrics, err := svc.GetClienteMetrics(context.Background(), db, "month", 7)
 			assert.Nil(t, metrics)
 			assert.ErrorIs(t, err, sql.ErrConnDone)

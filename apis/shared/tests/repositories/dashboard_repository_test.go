@@ -12,8 +12,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // errTabelaNaoExiste simula o erro do driver MySQL quando a tabela não existe
@@ -39,7 +37,7 @@ func TestDashboardGetVendasTotais_Success(t *testing.T) {
 			mock.ExpectQuery("SELECT COALESCE\\(SUM\\(valor_total\\), 0\\), COUNT\\(\\*\\) FROM pedidos WHERE .+").
 				WillReturnRows(rows)
 
-			repo := repositories.NewDashboardRepository()
+			repo := NewDashboardRepository()
 			ctx := context.Background()
 			valor, qtd, err := repo.GetVendasTotais(ctx, db, tt.periodo, 0)
 
@@ -58,7 +56,7 @@ func TestDashboardGetVendasTotais_TabelaNaoExiste(t *testing.T) {
 	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(valor_total\\), 0\\), COUNT\\(\\*\\) FROM pedidos WHERE .+").
 		WillReturnError(errTabelaNaoExiste)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	valor, qtd, err := repo.GetVendasTotais(ctx, db, "today", 0)
 
@@ -75,7 +73,7 @@ func TestDashboardGetVendasTotais_DBError(t *testing.T) {
 	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(valor_total\\), 0\\), COUNT\\(\\*\\) FROM pedidos WHERE .+").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, _, err := repo.GetVendasTotais(ctx, db, "today", 0)
 
@@ -101,7 +99,7 @@ func TestDashboardGetTotalPedidos_Success(t *testing.T) {
 			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM pedidos WHERE .+").
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(7))
 
-			repo := repositories.NewDashboardRepository()
+			repo := NewDashboardRepository()
 			ctx := context.Background()
 			total, err := repo.GetTotalPedidos(ctx, db, tt.periodo, 0)
 
@@ -123,7 +121,7 @@ func TestDashboardGetVendasTotais_PeriodoWeek_UsaDateSub(t *testing.T) {
 	mock.ExpectQuery(`SELECT COALESCE\(SUM\(valor_total\), 0\), COUNT\(\*\)\s+FROM pedidos\s+WHERE data_pedido >= DATE_SUB\(CURDATE\(\), INTERVAL 6 DAY\) AND status NOT IN`).
 		WillReturnRows(rows)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	valor, qtd, err := repo.GetVendasTotais(ctx, db, "week", 0)
 
@@ -142,7 +140,7 @@ func TestDashboardGetTotalPedidos_PeriodoWeek_UsaDateSub(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM pedidos\s+WHERE data_pedido >= DATE_SUB\(CURDATE\(\), INTERVAL 6 DAY\) AND status NOT IN`).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(4))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	total, err := repo.GetTotalPedidos(ctx, db, "week", 0)
 
@@ -158,7 +156,7 @@ func TestDashboardGetTotalPedidos_TabelaNaoExiste(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM pedidos WHERE .+").
 		WillReturnError(errTabelaNaoExiste)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	total, err := repo.GetTotalPedidos(ctx, db, "today", 0)
 
@@ -174,7 +172,7 @@ func TestDashboardGetTotalPedidos_DBError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM pedidos WHERE .+").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, err := repo.GetTotalPedidos(ctx, db, "today", 0)
 
@@ -189,7 +187,7 @@ func TestDashboardGetMetaMensalTotal_Success(t *testing.T) {
 	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(meta_mensal\\), 0\\)\\s+FROM vendedores\\s+WHERE data_desligamento IS NULL").
 		WillReturnRows(sqlmock.NewRows([]string{"meta_total"}).AddRow(35000.75))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	meta, err := repo.GetMetaMensalTotal(ctx, db, 0)
 
@@ -206,7 +204,7 @@ func TestDashboardGetMetaMensalTotal_TabelaVazia(t *testing.T) {
 	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(meta_mensal\\), 0\\)\\s+FROM vendedores\\s+WHERE data_desligamento IS NULL").
 		WillReturnRows(sqlmock.NewRows([]string{"meta_total"}).AddRow(0.0))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	meta, err := repo.GetMetaMensalTotal(ctx, db, 0)
 
@@ -222,7 +220,7 @@ func TestDashboardGetMetaMensalTotal_TabelaNaoExiste(t *testing.T) {
 	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(meta_mensal\\), 0\\)\\s+FROM vendedores\\s+WHERE data_desligamento IS NULL").
 		WillReturnError(errTabelaNaoExiste)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	meta, err := repo.GetMetaMensalTotal(ctx, db, 0)
 
@@ -238,7 +236,7 @@ func TestDashboardGetMetaMensalTotal_DBError(t *testing.T) {
 	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(meta_mensal\\), 0\\)\\s+FROM vendedores\\s+WHERE data_desligamento IS NULL").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, err := repo.GetMetaMensalTotal(ctx, db, 0)
 
@@ -260,7 +258,7 @@ func TestDashboardGetTopVendedores_ComEnrich(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"vendedor_id", "total", "qtd"}).
 			AddRow(1, 5000.0, 3))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	result, err := repo.GetTopVendedores(ctx, db, 5, 0)
 
@@ -281,7 +279,7 @@ func TestDashboardGetTopVendedores_Vazio(t *testing.T) {
 		WithArgs(5).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	result, err := repo.GetTopVendedores(ctx, db, 5, 0)
 
@@ -311,7 +309,7 @@ func TestDashboardGetTopVendedores_EnrichPreservaCentavos(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"vendedor_id", "total", "qtd"}).
 			AddRow(1, 1234.56, 2))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	result, err := repo.GetTopVendedores(context.Background(), db, 5, 0)
 
 	require.NoError(t, err)
@@ -329,7 +327,7 @@ func TestDashboardGetTopVendedores_TabelaNaoExiste(t *testing.T) {
 		WithArgs(5).
 		WillReturnError(errTabelaNaoExiste)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	result, err := repo.GetTopVendedores(ctx, db, 5, 0)
 
@@ -346,7 +344,7 @@ func TestDashboardGetTopVendedores_DBError(t *testing.T) {
 		WithArgs(5).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, err := repo.GetTopVendedores(ctx, db, 5, 0)
 
@@ -367,7 +365,7 @@ func TestDashboardGetMetasVendedores_ComEnrich(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"vendedor_id", "total", "qtd"}).
 			AddRow(1, 2500.0, 2))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	result, err := repo.GetMetasVendedores(ctx, db, 0)
 
@@ -386,7 +384,7 @@ func TestDashboardGetMetasVendedores_Vazio(t *testing.T) {
 	mock.ExpectQuery("SELECT v\\.id, v\\.nome, v\\.regiao, v\\.uf, v\\.meta_mensal AS meta FROM vendedores v WHERE v\\.data_desligamento IS NULL ORDER BY v\\.meta_mensal DESC").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta"}))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	result, err := repo.GetMetasVendedores(ctx, db, 0)
 
@@ -415,7 +413,7 @@ func TestDashboardGetMetasVendedores_EnrichPreservaCentavos(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"vendedor_id", "total", "qtd"}).
 			AddRow(1, 99.99, 1))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	result, err := repo.GetMetasVendedores(context.Background(), db, 0)
 
 	require.NoError(t, err)
@@ -432,7 +430,7 @@ func TestDashboardGetMetasVendedores_QueryError(t *testing.T) {
 	mock.ExpectQuery("SELECT v\\.id, v\\.nome, v\\.regiao, v\\.uf, v\\.meta_mensal AS meta FROM vendedores v WHERE v\\.data_desligamento IS NULL ORDER BY v\\.meta_mensal DESC").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, err := repo.GetMetasVendedores(ctx, db, 0)
 
@@ -453,7 +451,7 @@ func TestDashboardGetVendasSeries_Success(t *testing.T) {
 		WithArgs(1).
 		WillReturnRows(sqlmock.NewRows([]string{"dia"}).AddRow("2024-01-01"))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	series, err := repo.GetVendasSeries(ctx, db, 1, 0)
 
@@ -525,7 +523,7 @@ func TestDashboardGetVendasSeries_FormatoDataISO_BuildFullSeries(t *testing.T) {
 				WithArgs(tt.dias).
 				WillReturnRows(serieRows)
 
-			repo := repositories.NewDashboardRepository()
+			repo := NewDashboardRepository()
 			ctx := context.Background()
 			series, err := repo.GetVendasSeries(ctx, db, tt.dias, 0)
 
@@ -568,7 +566,7 @@ func TestDashboardGetVendasSeries_TabelaNaoExiste(t *testing.T) {
 		WithArgs(3).
 		WillReturnError(errTabelaNaoExiste)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	series, err := repo.GetVendasSeries(ctx, db, 3, 0)
 
@@ -585,7 +583,7 @@ func TestDashboardGetVendasSeries_DBError(t *testing.T) {
 		WithArgs(3).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, err := repo.GetVendasSeries(ctx, db, 3, 0)
 
@@ -601,7 +599,7 @@ func TestDashboardGetVendasSeries_SemRegistros(t *testing.T) {
 		WithArgs(2).
 		WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	series, err := repo.GetVendasSeries(ctx, db, 2, 0)
 
@@ -637,7 +635,7 @@ func TestDashboardGetVendasSeries_EmptySeries_FormatoDataReal(t *testing.T) {
 				query.WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 			}
 
-			repo := repositories.NewDashboardRepository()
+			repo := NewDashboardRepository()
 			ctx := context.Background()
 			series, err := repo.GetVendasSeries(ctx, db, tt.dias, 0)
 
@@ -682,7 +680,7 @@ func TestDashboardGetVendasSeries_BuildFullSeriesErro(t *testing.T) {
 		WithArgs(1).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	series, err := repo.GetVendasSeries(ctx, db, 1, 0)
 
@@ -704,7 +702,7 @@ func TestDashboardGetVendedoresRanking_ComVendas(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}).
 			AddRow(1, "Vendedor A", "Sudeste", "SP", 10000.0, 4000.0, 4, 40.0))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	result, total, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 
@@ -730,7 +728,7 @@ func TestDashboardGetVendedoresRanking_Vazio(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	result, total, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 
@@ -751,7 +749,7 @@ func TestDashboardGetVendedoresRanking_Defaults(t *testing.T) {
 		WithArgs(20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, _, err := repo.GetVendedoresRanking(ctx, db, 0, 0, 0)
 
@@ -770,7 +768,7 @@ func TestDashboardGetVendedoresRanking_LimitCap(t *testing.T) {
 		WithArgs(100, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, _, err := repo.GetVendedoresRanking(ctx, db, 1, 200, 0)
 
@@ -785,7 +783,7 @@ func TestDashboardGetVendedoresRanking_CountError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM vendedores WHERE data_desligamento IS NULL").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, _, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 
@@ -824,7 +822,7 @@ func TestDashboardGetVendedoresRanking_EmpateMeta_OrdenaPorAtingimento(t *testin
 		WithArgs(10, 0).
 		WillReturnRows(rankingRows)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	result, total, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 
@@ -864,7 +862,7 @@ func TestDashboardGetVendedoresRanking_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 	_, _, err := repo.GetVendedoresRanking(ctx, db, 1, 10, 0)
 

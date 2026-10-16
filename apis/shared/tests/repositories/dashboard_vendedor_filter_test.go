@@ -15,12 +15,10 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 func TestDashboardVendedorFilter(t *testing.T) {
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	ctx := context.Background()
 
 	consultas := []struct {

@@ -14,8 +14,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // jsonKeys serializa v em JSON e devolve as chaves do objeto (ordenadas).
@@ -43,7 +41,7 @@ func TestDashboardService_EmptyMetrics_MesmoFormato(t *testing.T) {
 			t.Run(nome, func(t *testing.T) {
 				db, mock := newDashboardTestDB(t)
 				expectMetricsHappyPath(mock)
-				svc := services.NewDashboardService(db, dashboardTestCfg(verbose))
+				svc := NewDashboardService(db, dashboardTestCfg(verbose))
 
 				normal, err := svc.GetMetrics(context.Background(), db, periodo, 0)
 				require.NoError(t, err)
@@ -96,7 +94,7 @@ func TestDashboardService_EmptyVendasSeries_MesmoFormato(t *testing.T) {
 			mock.ExpectQuery(`SELECT DATE_FORMAT\(DATE_SUB\(CURDATE\(\), INTERVAL n DAY\), '%Y-%m-%d'\) AS dia`).
 				WithArgs(tt.dias).
 				WillReturnRows(sqlmock.NewRows([]string{"dia"}).AddRow(hoje))
-			svc := services.NewDashboardService(db, dashboardTestCfg(tt.verbose))
+			svc := NewDashboardService(db, dashboardTestCfg(tt.verbose))
 
 			normal, err := svc.GetVendasSeries(context.Background(), db, tt.dias, 0)
 			require.NoError(t, err)
@@ -144,7 +142,7 @@ func TestDashboardService_EscopoVendedor_RepassaVendedorID(t *testing.T) {
 		mock.ExpectQuery(`SUM\(meta_mensal\).*AND id = \?`).WithArgs(vid).
 			WillReturnRows(sqlmock.NewRows([]string{"m"}).AddRow(100.0))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
+		svc := NewDashboardService(db, dashboardTestCfg(true))
 		m, err := svc.GetMetrics(context.Background(), db, "month", vid)
 		require.NoError(t, err)
 		assert.Equal(t, 50.0, m["ticket_medio"])
@@ -157,7 +155,7 @@ func TestDashboardService_EscopoVendedor_RepassaVendedorID(t *testing.T) {
 			WithArgs(7, vid).
 			WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		s, err := svc.GetVendasSeries(context.Background(), db, 7, vid)
 		require.NoError(t, err)
 		assert.Len(t, s["pontos"], 7)
@@ -174,7 +172,7 @@ func TestDashboardService_EscopoVendedor_RepassaVendedorID(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}).
 				AddRow(vid, "B", "Sul", "PR", 100.0, 50.0, 1, 50.0))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
+		svc := NewDashboardService(db, dashboardTestCfg(true))
 		lista, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, vid)
 		require.NoError(t, err)
 		assert.Equal(t, 1, total)

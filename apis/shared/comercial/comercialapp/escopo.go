@@ -27,8 +27,8 @@ type vinculosAtivos interface {
 // troca de vínculo vale na requisição seguinte). É o ÚNICO construtor de
 // kernel.Escopo fora do kernel (O5, TestARQ_Escopo_SoAutorizador).
 //
-// Os handlers legados de Vendas e Analytics (até ARQ-05/06) usam este mesmo
-// autorizador pela ponte handlers/scope.go: uma regra só.
+// Vendas (ARQ-05) e Analytics (ARQ-06) usam este mesmo autorizador pelas
+// portas declaradas nos seus <ctx>app (sem ponte): uma regra só.
 type AutorizadorEscopo struct {
 	vinculo    VinculoUsuario
 	vendedores desligamentos

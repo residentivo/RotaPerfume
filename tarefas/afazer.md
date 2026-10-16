@@ -1,30 +1,12 @@
 # A Fazer
 
-> Atualizado em 2026-10-15. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint, commit `cd12d47`), o ARQ-01 (fundação, commit `0e7e757`), o ARQ-02 (Catálogo, commit `17502da`), o ARQ-03 (Identidade e Acesso, commit `c412d10`) e o ARQ-04 (Comercial, commit `fdaa7d9`) foram concluídos (ver `feito.md`), o ARQ-05 está em `fazendo.md` e os cards ARQ-06 a ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08.
+> Atualizado em 2026-10-15. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint, commit `cd12d47`), o ARQ-01 (fundação, commit `0e7e757`), o ARQ-02 (Catálogo, commit `17502da`), o ARQ-03 (Identidade e Acesso, commit `c412d10`), o ARQ-04 (Comercial, commit `fdaa7d9`) e o ARQ-05 (Vendas, commit `3e33f6f`) foram concluídos (ver `feito.md`), o ARQ-06 está em `fazendo.md` e os cards ARQ-07 e ARQ-08 estão abaixo, na ordem de execução (sequencial, um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08. Do ARQ-05 (2026-10-15) saíram BUG-16, SEC-26, SEC-27, TST-06 e BUG-17, no bloco "Achados do ARQ-05", logo após o BUG-15. Do ARQ-06 (2026-10-15) saiu o BUG-18, logo após o BUG-17.
 >
 > **Regras do Lote 21 válidas para ARQ-01 a ARQ-07 (decisões de 2026-10-13, ver ARQ-00 em `fazendo.md`):**
 > - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. O 🟡 BackBrain atualiza a regra no código (comentário de `apis/shared/vlog/vlog.go`); o 🔵 SubBrain atualiza a documentação no ARQ-08.
 > - **X1, contrato HTTP:** a única exceção ao "contrato HTTP inalterado" é a do ARQ-01 (métodos das 13 rotas, `/api/senha-historico/2/extra` e, pelo parse estrito de `{user_id...}` (R-f), `/api/senha-historico/0` e `/-1` passando a 400).
 >
 > Histórico anterior (2026-10-11): o 🔴 TestBrain executou `docs/roteiro-teste-manual-lote12.md` (24 aprovados, 1 falhou, 13 não verificáveis de 38; ver a seção "Execução (2026-10-07, 🔴 TestBrain)" no fim do roteiro). Daí saíram os cards BUG-13, LOG-01, DOC-05 e TST-04. BUG-13, LOG-01 e DOC-05 foram concluídos no Lote 16 (2026-10-07; ver `feito.md`). O LOG-02 (Lote 17) gerou o TST-05, e o DEP-00 (Lote 19) gerou o DEP-01 e o DEP-02. No Lote 20 (2026-10-11; ver `feito.md`) foram concluídos DEP-01, DEP-02 e TST-05; o TST-04 avançou parcialmente (só faltam 1.1, 1.2 e 1.7, que dependem do usuário rodar o `make`) e do DEP-01 saiu o card DEP-03 (BAIXA). O MAIL-01 e o DEPLOY-01 seguem em `fazendo.md`, aguardando o usuário.
-
----
-
-## ARQ-06: contexto Analytics (Dashboard) — prioridade MÉDIA
-
-**Status:** pendente (Lote 21; depende do ARQ-05)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
-
-**Descrição:** migrar o Dashboard como read model (lado de consulta, no estilo CQRS).
-
-**Critério de aceite:**
-- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
-- `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
-- sem perda de cobertura;
-- logs `vlog` preservados;
-- commit do lote na branch `refactor/ddd`.
 
 ---
 
@@ -52,6 +34,19 @@
 **Pendências herdadas do ARQ-04 (2026-10-15):**
 - **(f) N4 (🟣 SecBrain):** o log `[escopo] bloqueado vendedor_desligado` perdeu o campo `rota=` (`apis/shared/comercial/comercialapp/escopo.go:~62`). Restaurar.
 - **(g) Reforço opcional (🔴 TestBrain):** os testes de shared em `tests/comercial` não cobrem 404×403 nem a checagem de carteira na escrita (hoje só a suíte da API cobre).
+
+**Pendências herdadas do ARQ-05 (2026-10-15):**
+- **(h) Helpers duplicados:** `execPorID`, `existe`, `inserir` e `lerUma` estão duplicados em `comercialmysql` e `vendasmysql`. Mover para `apis/shared/db`.
+- **(i) Shim de teste:** remover `helpers_vendas_test.go` (reescrever os testes que dependem dele sobre a API nova).
+- **(j) `UpsertPorDataSku`:** agora em `catalogomysql`, sem chamador de produção. Avaliar a remoção, conferindo importadores/CLIs e testes (substitui a pendência herdada do ARQ-02 acima; o `estoque_repository.go` já foi apagado no ARQ-05).
+
+**Decisão do 🤍 MegaBrain sobre cobertura (ARQ-06, 2026-10-15):** a cobertura do lote será mantida extraindo a lógica dos `main` de `cmd/*` (≈800 statements descobertos; só `shared/cmd/testeemail` tem 467) para pacotes testáveis, com `main` fino (composition root, padrão Clean Code). **Sem afrouxar o portão:** a cobertura combinada não cai e os statements descobertos não sobem.
+
+**Pendências herdadas do ARQ-06 (2026-10-15):**
+- **(k) Teste de AST de SQL (sugestão do 🔴 TestBrain):** estender o teste para pegar concatenação com `+` em textos passados a `QueryContext`/`QueryRowContext`/`ExecContext`.
+- **(l) `TestARQ_Varredura_DoisModulos`:** atualizar quando `middleware` e `shared/repositories` forem apagados.
+- **(m) Repassadores de teste:** remover `helpers_analytics_test.go` (nos dois módulos) e reescrever os testes asserindo sobre os read models.
+- **(n) Ressalva N-7 (🟣 SecBrain, ponteiro nil tipado):** passa a valer também para `analyticsapp.Novo`.
 
 **Achado do 🔴 TestBrain (ARQ-00):** `apis/shared/tools/testeemail/testeemail_test.go` é teste interno ao pacote de produção (8 testes), fora de `tests/`. Decidir na migração: mover para a suíte de testes ou manter, sem perder os 8 testes da linha de base.
 
@@ -135,6 +130,108 @@
 
 ---
 
+## Achados do ARQ-05 (BUG-16, SEC-26, SEC-27, TST-06, BUG-17)
+
+> Origem comum: revisão do ARQ-05 (Vendas) pelo 🟣 SecBrain e pelo 🔴 TestBrain, Lote 21 (2026-10-15). **Fora do escopo do Lote 21:** não corrigir dentro dos cards ARQ. Executar após o ARQ-07 ou em lote próprio, por decisão do 🤍 MegaBrain/usuário. Durante a refatoração, não piorar estes pontos. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
+
+---
+
+## BUG-16: baixa de estoque dupla no ciclo de status Faturado → outro → Faturado — prioridade ALTA
+
+**Status:** pendente (fora do escopo do Lote 21; **exige decisão de produto do usuário**)
+**Camada:** Backend
+**Responsável:** usuário (decisão) → 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15).
+
+**Descrição:** em `SH/vendas/pedido.go:~223-232` (`PlanejarAtualizacao`), cada entrada no status Faturado baixa o estoque, mas a saída de Faturado não estorna. Um pedido levado de Faturado para outro status e de volta a Faturado baixa o estoque duas vezes. Como o vendedor pode alterar o status dos próprios pedidos, ele consegue manipular o saldo do próprio estoque.
+
+**Opções (decisão do usuário):**
+1. proibir a saída do status Faturado (transição inválida → erro de validação);
+2. estornar o estoque na saída de Faturado, na mesma tx do pedido (UoW `TxPedido`).
+
+**Critério de aceite:** decisão registrada no card; a regra fica no agregado Pedido; teste do ciclo Faturado → outro → Faturado sem baixa dupla; teste de atomicidade (falha no estorno/baixa faz rollback do pedido); contrato HTTP inalterado ou mudança aprovada pelo usuário.
+
+---
+
+## SEC-26: TOCTOU de posse no PUT de pedido e exclusão de pedido fora do lock — prioridade MÉDIA
+
+**Status:** pendente (fora do escopo do Lote 21)
+**Camada:** Backend
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15).
+
+**Descrição:** em `SH/vendas/vendasapp/pedidos.go`, a checagem de posse do PUT (`~74-78`) e a exclusão (`~107-120`: posse, `PodeExcluir` e `ExistePorPedido`) leem o pedido fora da tx/lock em que gravam. Entre a leitura e a gravação, o pedido pode mudar de vendedor ou de status, ou ganhar pagamento.
+
+**Ação esperada:** dentro da tx, ler `status, vendedor_id … FOR UPDATE` e só então checar posse, `PodeExcluir` e `ExistePorPedido`. Testes: checagens ocorrem na mesma tx (padrão `SetMaxOpenConns(1)` + contexto curto do 🔴 TestBrain).
+
+**Critério de aceite:** posse e regras de exclusão checadas sob lock; testes verdes; contrato HTTP inalterado.
+
+---
+
+## SEC-27: pagamento quitado continua editável e `taxa_pct` sem limite superior — prioridade BAIXA
+
+**Status:** pendente (fora do escopo do Lote 21; **exige decisão de produto do usuário**)
+**Camada:** Backend
+**Responsável:** usuário (decisão) → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15).
+
+**Descrição:** um pagamento já quitado continua editável via PUT (valor e status). Além disso, `taxa_pct` não tem teto (aceita, por exemplo, valores acima de 100).
+
+**Decisão do usuário:** (a) se pagamento quitado deve ser imutável (ou editável só por admin); (b) qual o teto de `taxa_pct`.
+
+**Critério de aceite:** regras no domínio (`SH/vendas`); testes de cada regra; contrato HTTP inalterado ou mudança aprovada pelo usuário; Postman/docs atualizados se o contrato mudar.
+
+---
+
+## TST-06: asserções de tipo sem checagem nos testes de handler — prioridade BAIXA
+
+**Status:** pendente (fora do escopo do Lote 21)
+**Camada:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain, revisão do ARQ-05 (Lote 21, 2026-10-15).
+
+**Descrição:** os testes de handler usam asserções de tipo sem checagem, como `body["data"].(map[string]any)`. Se a resposta vier em outro formato, o teste dá panic, aborta o pacote inteiro e esconde as falhas dos testes seguintes.
+
+**Ação esperada:** trocar por `require.IsType` ou pela forma `v, ok := …` com `require.True(t, ok)`, em todas as suítes de handler. Sem enfraquecer nenhuma asserção.
+
+**Critério de aceite:** nenhuma asserção de tipo sem checagem nos testes de handler (conferir por busca); mesma quantidade de testes, todos verdes.
+
+---
+
+## BUG-17: toggle de ativo do produto concorrente se anula (lê e depois grava `!ativo`) — prioridade BAIXA
+
+**Status:** pendente (fora do escopo do Lote 21; **exige decisão de produto do usuário**)
+**Camada:** Backend
+**Responsável:** usuário (decisão) → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** NB-5 do 🟣 SecBrain (revisão do ARQ-02, 2026-10-14), avaliada no ARQ-05 (2026-10-15) e transformada em card próprio.
+
+**Descrição:** o toggle de ativo do produto (`SH/catalogo`) lê o valor e grava `!ativo` sem lock. Dois toggles concorrentes leem o mesmo valor e se anulam (lost update).
+
+**Ação esperada (a decidir):** `UPDATE … SET ativo = NOT ativo` atômico, ou ler com `SELECT … FOR UPDATE` dentro do Transactor. Conferir também o PUT de estoque, citado na mesma NB-5.
+
+**Critério de aceite:** toggles concorrentes não se anulam; teste do comportamento escolhido; contrato HTTP inalterado.
+
+---
+
+## BUG-18: Analytics, IN sem limite nas metas e detecção de "tabela não existe" por texto amplo — prioridade BAIXA
+
+**Status:** pendente (fora do escopo do Lote 21)
+**Camada:** Backend
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** revisão do ARQ-06 (Analytics/Dashboard) pelo 🟣 SecBrain, Lote 21 (2026-10-15).
+
+**Descrição:**
+- consulta de metas monta `IN` sem limite (`marcadores(len(ids))`), com tamanho igual ao nº de vendedores ativos;
+- a detecção de "tabela não existe" em `SH/analytics/analyticsmysql/filtros.go:~92-100` compara texto amplo da mensagem (inclui `not found`), podendo mascarar outros erros.
+
+**Ação esperada:** limitar/fatiar o `IN` (ou trocar por subconsulta/JOIN); detectar a tabela ausente via `errors.As` em `*mysql.MySQLError` com código 1146. Testes para os dois pontos.
+
+**Critério de aceite:** `IN` com tamanho limitado ou eliminado; só o código 1146 é tratado como tabela ausente; contrato HTTP inalterado; testes verdes.
+
+**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
+
+---
+
 ## GAPs de segurança da auditoria ARQ-00 (SEC-14 a SEC-25)
 
 > Origem comum: 🟣 SecBrain, auditoria ARQ-00, Lote 21 (2026-10-13). Relatório completo em `docs/arq-00-invariantes-seguranca.md` (seção "GAPs"; itens 1 a 11). O item 12 (teste de matriz de rotas) não virou card: é feito pelo 🔴 TestBrain dentro do ARQ-00.
@@ -155,6 +252,8 @@
 **Descrição:** o servidor tem Read/Write 15s e Idle 60s (`API/cmd/server/main.go:117-144`), mas não limita o tamanho do corpo das requisições (nenhum `http.MaxBytesReader`) nem define `ReadHeaderTimeout`. Um cliente pode enviar corpos JSON grandes ou segurar headers lentamente (slowloris), consumindo memória e conexões.
 
 **Ação esperada:** aplicar `http.MaxBytesReader` (limite global, ex. 1 MiB, com exceção explícita se alguma rota precisar de mais) na cadeia de middlewares ou no decode de JSON, respondendo 413 com mensagem fixa; definir `ReadHeaderTimeout` (ex. 5s) no `http.Server`. Testes: corpo acima do limite → 413; corpo normal inalterado.
+
+**Nota do ARQ-05 (🟣 SecBrain, 2026-10-15):** os itens do pedido não têm limite de quantidade: cada item gera um INSERT na mesma tx, segurando locks. Além do `MaxBytesReader`, limitar o número de itens no domínio (`shared/vendas`, na Factory `NovoPedido`/atualização), com erro de validação e teste.
 
 **Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
 
@@ -189,6 +288,8 @@
 **Nota N-3 (🟣 SecBrain, ARQ-01, 2026-10-13):** `kernel.Pagina.Offset()` (`apis/shared/kernel/pagina.go:37`) herda o problema: `(n-1)*limit` com `page` gigante estoura `int` e vira negativo, e o MySQL responde com erro (500). Tratar quando o adapter de Catálogo (ARQ-02) passar a usar `Offset()`, sem correção de carona.
 
 **NB-6 (🟣 SecBrain, revisão ARQ-02, 2026-10-14), consolida a N-3:** o adapter de Catálogo já usa `Offset()`, então o overflow de `kernel/pagina.go:37` agora também chega a `/api/produtos` e `/api/estoque`. É o mesmo ponto da N-3; corrigir uma vez só no VO `Pagina`, e a correção vale para todos os contextos.
+
+**Nota do ARQ-06 (🟣 SecBrain, 2026-10-15):** o overflow do offset também alcança as rotas do Dashboard (paginação do ranking em `SH/analytics`). Mesma correção única no VO `Pagina`.
 
 **Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
 
@@ -326,6 +427,8 @@
 **Ação esperada:** criar um helper único de escape (`\` → `\\`, `%` → `\%`, `_` → `\_`) e usá-lo em todas as buscas LIKE, com `ESCAPE '\\'` explícito no SQL. Depois do ARQ-02, colocar o helper na infraestrutura compartilhada. Testes: busca por `%` e `_` encontra só os registros que têm esses caracteres literalmente.
 
 **NB-7 (🟣 SecBrain, revisão ARQ-02, 2026-10-14), amplia o escopo:** além do escape, impor um limite de comprimento ao parâmetro `q`, com truncamento ou 400 de mensagem fixa (a decidir). Também avaliar o custo do `LIKE '%…%'` em 2 colunas, que não usa índice (full scan).
+
+**Nota do ARQ-05 (🟣 SecBrain, 2026-10-15):** a busca de pedidos (`apis/shared/vendas/vendasmysql/pedidos.go:~80`) também usa `q` sem escape de curingas e sem limite de comprimento. Incluir no mesmo helper.
 
 **Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
 

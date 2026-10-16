@@ -47,8 +47,9 @@ func Novo(d Deps) *Casos {
 	return &Casos{d: d, escopo: NovoAutorizadorEscopo(d.Vinculo, d.Vendedores, d.Carteiras)}
 }
 
-// Escopo devolve o autorizador (a mesma regra para os handlers legados de
-// Vendas e Analytics até ARQ-05/06).
+// Escopo devolve o autorizador (a mesma regra para Vendas, porta
+// vendasapp.EscopoCarteira, e para Analytics, porta
+// analyticsapp.EscopoAnalytics; ligadas no bootstrap).
 func (c *Casos) Escopo() *AutorizadorEscopo { return c.escopo }
 
 func (c *Casos) agora() time.Time { return c.d.Relogio() }

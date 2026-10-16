@@ -3,9 +3,36 @@
 > Histórico de tarefas finalizadas.
 
 ---
-## Lote 21 de 2026-10-13: 5 cards concluídos até agora (lote em andamento)
+## Lote 21 de 2026-10-13: 6 cards concluídos até agora (lote em andamento)
 
-> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-05 está em `fazendo.md` e os cards ARQ-06 a ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** o ARQ-06 está em `fazendo.md` e os cards ARQ-07 e ARQ-08 estão em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+
+## ARQ-05: contexto Vendas (Pedido + itens, Pagamento) — 2026-10-15
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain + 🟣 SecBrain → 🟡 BackBrain (ressalvas) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-15. **Commit:** `3e33f6f` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend
+
+**Entregue:**
+- Pedido (aggregate root com ItemPedido) e Pagamento migrados para `apis/shared/vendas{,app,mysql}` e `apis/rotaperfumes-api/internal/vendashttp`.
+- `AjustarSaldoPorFaturamento` movido para a mesma tx do pedido (baixa de estoque no Unit of Work); `apis/shared/repositories/estoque_repository.go` apagado (`UpsertPorDataSku` foi para `catalogomysql`, sem chamador de produção; ver ARQ-07).
+- Ponte `apis/rotaperfumes-api/handlers/scope.go` removida para pedido/pagamento (segue só para o dashboard, até o ARQ-06).
+- NB-3 do Catálogo: 1062 de SKU e de `(data_snapshot, sku)` traduzido para `KindConflito`, sem o valor do driver no log; status HTTP inalterado (ver CHORE-06).
+- Ressalvas aplicadas pelo 🟡 BackBrain: `faturamento.go` via `db.SemValorDuplicado` (🟣 SecBrain #7) e teste `TestARQ05_ListagemRestrita_IgnoraVendedorDaQuery`.
+
+**Patterns aplicados:** Aggregate root + Factory `NovoPedido`; Value Objects de status, canal, forma de pagamento e desconto; Specification como dado; Repository com escopo via `Filtro()`; Unit of Work `TxPedido` com baixa de estoque na mesma tx; portas entre contextos (`EscopoCarteira`, `BaixaEstoque`); `Leitor[T]`; Strategy de ordenação; Error mapper; Facade no bootstrap.
+
+**Métricas:**
+- Testes de topo: shared 712 → 740; API 823 → 833.
+- Cobertura combinada 89,39% → 89,42% (linhas descobertas 958 → 881).
+- Mutações: 40; as 7 sobreviventes (V-03 valores do payload; zero value do escopo fail-open na checagem de posse; upsert do faturamento sobrescrevendo saldo/ruptura; 1062 no UPDATE de produto) passaram a ser mortas pelos testes `TestARQ05_*`.
+
+**Decisão do usuário (teste interno):** autorizada a remoção de `apis/shared/db/db_internal_test.go` (teste interno em pacote de produção, contra a convenção). O 🤍 MegaBrain removeu o arquivo e o substituiu por `apis/shared/tests/db/mask_dsn_test.go` (teste externo, com asserções mais fortes). O hash do commit do ARQ-05 é `3e33f6f`.
+
+**Achados que viraram cards (em `afazer.md`, fora do Lote 21):** BUG-16 (baixa de estoque dupla no ciclo Faturado → outro → Faturado, ALTA, decisão de produto), SEC-26 (TOCTOU de posse no PUT/DELETE de pedido), SEC-27 (pagamento quitado editável e `taxa_pct` sem teto), TST-06 (asserções de tipo sem checagem nos testes de handler), BUG-17 (toggle de produto concorrente, NB-5). Notas acrescentadas a SEC-14 (itens do pedido sem limite), SEC-25 (busca de pedidos) e ARQ-07 (helpers duplicados e `helpers_vendas_test.go`).
+
+**Validação:** 🟣 SecBrain aprovou (0 bloqueantes); 🔴 TestBrain aprovou com ressalvas (resolvidas acima). 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos (740 testes de topo no shared, 833 na API). Race detector indisponível nesta máquina (sem gcc).
 
 ## ARQ-04: contexto Comercial e escopo por carteira — 2026-10-15
 **Agentes:** 🟡 BackBrain → 🟣 SecBrain + 🔴 TestBrain → 🟡 BackBrain (ressalvas N1/N2/N3/N5/N6) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain

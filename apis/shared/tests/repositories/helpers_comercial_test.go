@@ -8,8 +8,8 @@ package repositories_test
 // para a nova. A tradução do vendedorID de escopo é a do §7.2-5: 0 (o
 // "global" do legado) vira kernel.EscopoIrrestrito de um admin; > 0 vira
 // kernel.EscopoDoVendedor. Erros não são traduzidos: as asserções usam os
-// sentinelas de comercial. As métricas de cliente do Dashboard continuam no
-// repositories.ClienteRepository legado (ARQ-06) e passam direto.
+// sentinelas de comercial. As métricas de cliente do Dashboard (ARQ-06)
+// vão para o analyticsmysql (helpers_analytics_test.go).
 // Sai no ARQ-07, quando os testes forem reescritos sobre a API nova.
 
 import (
@@ -145,15 +145,13 @@ type ClienteFiltro struct {
 	OrderDir     string
 }
 
-// clienteRepo repassa as operações de cadastro ao adapter novo e mantém as
-// métricas do Dashboard no repositório legado (embutido).
-type clienteRepo struct {
-	*repositories.ClienteRepository
-}
+// clienteRepo repassa as operações de cadastro ao comercialmysql e as
+// métricas do Dashboard ao analyticsmysql (helpers_analytics_test.go).
+type clienteRepo struct{}
 
 // NewClienteRepository substitui repositories.NewClienteRepository.
 func NewClienteRepository() clienteRepo {
-	return clienteRepo{repositories.NewClienteRepository()}
+	return clienteRepo{}
 }
 
 func (clienteRepo) List(ctx context.Context, q db.Querier, page, limit int, f ClienteFiltro) ([]comercial.Cliente, int, error) {

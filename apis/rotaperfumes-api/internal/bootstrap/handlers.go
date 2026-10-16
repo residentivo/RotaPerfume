@@ -6,7 +6,7 @@ package bootstrap
 import (
 	"database/sql"
 
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/analyticshttp"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/catalogohttp"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/comercialhttp"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/identidadehttp"
@@ -18,14 +18,13 @@ import (
 	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
-// Handlers agrupa os handlers HTTP. O contexto ainda não migrado
-// (Analytics, ARQ-06, strangler fig) usa o handler LEGADO; o campo de cada
-// contexto troca de tipo no lote dele (Catálogo: ARQ-02; Identidade: ARQ-03;
-// Comercial: ARQ-04; Vendas: ARQ-05).
+// Handlers agrupa os handlers HTTP, um campo por handler de contexto
+// (Catálogo: ARQ-02; Identidade: ARQ-03; Comercial: ARQ-04; Vendas: ARQ-05;
+// Analytics: ARQ-06). Desde o ARQ-06 nenhum handler legado resta.
 type Handlers struct {
 	Auth           *identidadehttp.AuthHandler
 	Usuario        *identidadehttp.UsuarioHandler
-	Dashboard      *handlers.DashboardHandler
+	Dashboard      *analyticshttp.DashboardHandler
 	SenhaHistorico *identidadehttp.SenhaHistoricoHandler
 	Vendedor       *comercialhttp.VendedorHandler
 	Cliente        *comercialhttp.ClienteHandler
@@ -49,13 +48,13 @@ func NovosHandlersCom(pool *sql.DB, cfg *config.Config, identidade *identidadeap
 	produto, estoque := NovoCatalogoHTTP(pool)
 	comercialCasos := NovoComercial(pool)
 	com := NovoComercialHTTP(comercialCasos)
-	escopo := comercialCasos.Escopo() // a mesma regra de escopo para Vendas e para o Dashboard legado
+	escopo := comercialCasos.Escopo() // a mesma regra de escopo para Vendas e para o Dashboard
 	vendas := NovoVendasHTTP(NovoVendas(pool, escopo))
 	ident := NovoIdentidadeHTTP(identidade, cfg)
 	return Handlers{
 		Auth:           ident.Auth,
 		Usuario:        ident.Usuario,
-		Dashboard:      handlers.NewDashboardHandler(pool, cfg, escopo),
+		Dashboard:      NovoAnalyticsHTTP(NovoAnalytics(pool, escopo)),
 		SenhaHistorico: ident.SenhaHistorico,
 		Vendedor:       com.Vendedor,
 		Cliente:        com.Cliente,

@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/models"
 )
@@ -641,7 +640,7 @@ func TestParsePagination(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.nome, func(t *testing.T) {
-			page, limit := services.ParsePagination(tc.pageStr, tc.limitStr)
+			page, limit := ParsePagination(tc.pageStr, tc.limitStr)
 			assert.Equal(t, tc.wantPage, page)
 			assert.Equal(t, tc.wantLimit, limit)
 		})

@@ -152,7 +152,8 @@ func (r *Produtos) exec(ctx context.Context, op, rotulo, q string, args ...any) 
 }
 
 // ContarTotal devolve o total de produtos. Leitura para métricas (sem
-// chamador HTTP hoje; o Analytics a assume no ARQ-06).
+// chamador HTTP: o Dashboard migrado no ARQ-06 não conta produtos, como o
+// legado; o ARQ-07 decide se fica).
 func (r *Produtos) ContarTotal(ctx context.Context) (int, error) {
 	var total int
 	if err := r.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM produtos`).Scan(&total); err != nil {

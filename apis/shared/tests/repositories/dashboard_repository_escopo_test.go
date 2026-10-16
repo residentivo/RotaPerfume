@@ -16,8 +16,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // newCapturingMock cria um sqlmock com matcher regexp que também registra o
@@ -84,7 +82,7 @@ func TestDashboardEscopo_GetVendasTotais(t *testing.T) {
 				}
 				exp.WillReturnRows(sqlmock.NewRows([]string{"v", "q"}).AddRow(50.0, 1))
 
-				valor, qtd, err := repositories.NewDashboardRepository().GetVendasTotais(context.Background(), db, periodo, tt.vendedorID)
+				valor, qtd, err := NewDashboardRepository().GetVendasTotais(context.Background(), db, periodo, tt.vendedorID)
 				require.NoError(t, err)
 				assert.Equal(t, 50.0, valor)
 				assert.Equal(t, 1, qtd)
@@ -108,7 +106,7 @@ func TestDashboardEscopo_GetTotalPedidos(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"t"}).AddRow(3))
 
-			total, err := repositories.NewDashboardRepository().GetTotalPedidos(context.Background(), db, "month", tt.vendedorID)
+			total, err := NewDashboardRepository().GetTotalPedidos(context.Background(), db, "month", tt.vendedorID)
 			require.NoError(t, err)
 			assert.Equal(t, 3, total)
 			assertFiltro(t, (*captured)[0], "AND vendedor_id = ?", tt.filtra, "")
@@ -129,7 +127,7 @@ func TestDashboardEscopo_GetMetaMensalTotal(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"m"}).AddRow(1000.0))
 
-			meta, err := repositories.NewDashboardRepository().GetMetaMensalTotal(context.Background(), db, tt.vendedorID)
+			meta, err := NewDashboardRepository().GetMetaMensalTotal(context.Background(), db, tt.vendedorID)
 			require.NoError(t, err)
 			assert.Equal(t, 1000.0, meta)
 			assertFiltro(t, (*captured)[0], "WHERE data_desligamento IS NULL AND id = ?", tt.filtra, "")
@@ -151,7 +149,7 @@ func TestDashboardEscopo_GetTopVendedores(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}))
 
-			res, err := repositories.NewDashboardRepository().GetTopVendedores(context.Background(), db, 10, tt.vendedorID)
+			res, err := NewDashboardRepository().GetTopVendedores(context.Background(), db, 10, tt.vendedorID)
 			require.NoError(t, err)
 			assert.Empty(t, res)
 			assertFiltro(t, (*captured)[0], "WHERE v.data_desligamento IS NULL AND v.id = ?", tt.filtra, "ORDER BY")
@@ -172,7 +170,7 @@ func TestDashboardEscopo_GetMetasVendedores(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta"}))
 
-			res, err := repositories.NewDashboardRepository().GetMetasVendedores(context.Background(), db, tt.vendedorID)
+			res, err := NewDashboardRepository().GetMetasVendedores(context.Background(), db, tt.vendedorID)
 			require.NoError(t, err)
 			assert.Empty(t, res)
 			assertFiltro(t, (*captured)[0], "WHERE v.data_desligamento IS NULL AND v.id = ?", tt.filtra, "ORDER BY")
@@ -194,7 +192,7 @@ func TestDashboardEscopo_GetVendasSeries(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
-			serie, err := repositories.NewDashboardRepository().GetVendasSeries(context.Background(), db, 15, tt.vendedorID)
+			serie, err := NewDashboardRepository().GetVendasSeries(context.Background(), db, 15, tt.vendedorID)
 			require.NoError(t, err)
 			assert.Len(t, serie, 15)
 			assertFiltro(t, (*captured)[0], "AND status NOT IN ('cancelado', 'devolvido') AND vendedor_id = ?", tt.filtra, "GROUP BY")
@@ -239,7 +237,7 @@ func TestDashboardEscopo_GetVendedoresRanking(t *testing.T) {
 			count.WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(total))
 			lista.WillReturnRows(rows)
 
-			res, gotTotal, err := repositories.NewDashboardRepository().GetVendedoresRanking(context.Background(), db, tt.page, tt.limit, tt.vendedorID)
+			res, gotTotal, err := NewDashboardRepository().GetVendedoresRanking(context.Background(), db, tt.page, tt.limit, tt.vendedorID)
 			require.NoError(t, err)
 			assert.Equal(t, total, gotTotal)
 			require.Len(t, *captured, 2)
@@ -262,7 +260,7 @@ func TestDashboardEscopo_GetVendedoresRanking_CountError_ComFiltro(t *testing.T)
 		WithArgs(int64(7)).
 		WillReturnError(sql.ErrConnDone)
 
-	_, _, err := repositories.NewDashboardRepository().GetVendedoresRanking(context.Background(), db, 1, 20, 7)
+	_, _, err := NewDashboardRepository().GetVendedoresRanking(context.Background(), db, 1, 20, 7)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sql.ErrConnDone)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -280,7 +278,7 @@ func TestDashboardEmptySeries(t *testing.T) {
 		{"trinta dias", 30},
 		{"365 dias", 365},
 	}
-	repo := repositories.NewDashboardRepository()
+	repo := NewDashboardRepository()
 	for _, tt := range casos {
 		t.Run(tt.nome, func(t *testing.T) {
 			serie := repo.EmptySeries(tt.dias)

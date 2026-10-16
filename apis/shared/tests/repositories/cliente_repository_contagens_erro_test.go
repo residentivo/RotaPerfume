@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/analytics"
 )
 
 // TestClienteContagens_ErrosPropagados cobre os caminhos de erro (query,
@@ -19,7 +19,7 @@ import (
 // e o resultado nunca deve ser um valor "parcial".
 func TestClienteContagens_ErrosPropagados(t *testing.T) {
 	ctx := context.Background()
-	repo := repositories.NewClienteRepository()
+	repo := NewClienteRepository()
 	errDB := errors.New("db down")
 
 	casos := []struct {
@@ -102,9 +102,9 @@ func TestClienteContagens_ErrosPropagados(t *testing.T) {
 			switch v := out.(type) {
 			case int:
 				assert.Equal(t, 0, v)
-			case []repositories.SegmentoContagem:
+			case []analytics.ContagemSegmento:
 				assert.Nil(t, v)
-			case []repositories.UFContagem:
+			case []analytics.ContagemUF:
 				assert.Nil(t, v)
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())

@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -55,7 +54,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
 		expectMetricsHappyPath(mock)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
+		svc := NewDashboardService(db, dashboardTestCfg(true))
 		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		require.NoError(t, err)
 		assert.Equal(t, "today", metrics["periodo"])
@@ -81,7 +80,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COALESCE\(SUM\(meta_mensal\), 0\)\s+FROM vendedores\s+WHERE data_desligamento IS NULL`).
 			WillReturnRows(sqlmock.NewRows([]string{"meta_total"}).AddRow(0.0))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		metrics, err := svc.GetMetrics(context.Background(), db, "month", 0)
 		require.NoError(t, err)
 		assert.Equal(t, 0.0, metrics["ticket_medio"])
@@ -94,7 +93,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COALESCE\(SUM\(valor_total\), 0\), COUNT\(\*\)\s+FROM pedidos`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
@@ -108,7 +107,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM pedidos\s+WHERE`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
@@ -125,7 +124,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 			WithArgs(10).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
@@ -144,7 +143,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT\s+v\.id,\s+v\.nome,\s+v\.regiao,\s+v\.uf,\s+v\.meta_mensal AS meta\s+FROM vendedores v`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
@@ -165,7 +164,7 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COALESCE\(SUM\(meta_mensal\), 0\)\s+FROM vendedores\s+WHERE data_desligamento IS NULL`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
@@ -188,7 +187,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WithArgs(7).
 			WillReturnRows(sqlmock.NewRows([]string{"dia"}).AddRow("2024-01-01"))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
+		svc := NewDashboardService(db, dashboardTestCfg(true))
 		series, err := svc.GetVendasSeries(context.Background(), db, 7, 0)
 		require.NoError(t, err)
 		require.NotNil(t, series)
@@ -210,7 +209,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WithArgs(7).
 			WillReturnError(sql.ErrNoRows) // não contém texto "doesn't exist" -> repo retorna erro real
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		series, err := svc.GetVendasSeries(context.Background(), db, 7, 0)
 		// Como sql.ErrNoRows não é reconhecido como "tabela não existe" pelo
 		// repo, o erro é propagado.
@@ -225,7 +224,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WithArgs(3).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		// sql.ErrConnDone também não contém "doesn't exist" -> erro propagado.
 		series, err := svc.GetVendasSeries(context.Background(), db, 3, 0)
 		assert.Error(t, err)
@@ -240,7 +239,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WithArgs(4).
 			WillReturnError(errTabelaNaoExiste)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		series, err := svc.GetVendasSeries(context.Background(), db, 4, 0)
 		require.NoError(t, err)
 		require.NotNil(t, series)
@@ -271,7 +270,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 			WithArgs(20, 0).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
+		svc := NewDashboardService(db, dashboardTestCfg(true))
 		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, 0)
 		require.NoError(t, err)
 		assert.Len(t, ranking, 0)
@@ -288,7 +287,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}).
 				AddRow(int64(1), "João", "Sudeste", "SP", 10000.0, 5000.0, 5, 50.0))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, 0)
 		require.NoError(t, err)
 		require.Len(t, ranking, 1)
@@ -304,7 +303,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, 0)
 		assert.Nil(t, ranking)
 		assert.Equal(t, 0, total)
@@ -335,7 +334,7 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT uf, COUNT\(\*\) AS total\s+FROM clientes\s+GROUP BY uf\s+ORDER BY total DESC`).
 			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}).AddRow("SP", 40))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
+		svc := NewDashboardService(db, dashboardTestCfg(true))
 		metrics, err := svc.GetClienteMetrics(context.Background(), db, "month", 0)
 		require.NoError(t, err)
 		assert.Equal(t, "month", metrics["periodo"])
@@ -368,7 +367,7 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 			WithArgs(int64(7)).
 			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
+		svc := NewDashboardService(db, dashboardTestCfg(true))
 		metrics, err := svc.GetClienteMetrics(context.Background(), db, "week", 7)
 		require.NoError(t, err)
 		assert.Equal(t, 4, metrics["total_clientes"])
@@ -384,7 +383,7 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 	t.Run("EmptyClienteMetrics tem o mesmo formato, zerado e sem queries", func(t *testing.T) {
 		for _, verbose := range []bool{false, true} {
 			db, mock := newDashboardTestDB(t)
-			svc := services.NewDashboardService(db, dashboardTestCfg(verbose))
+			svc := NewDashboardService(db, dashboardTestCfg(verbose))
 			keys, m := jsonKeys(t, svc.EmptyClienteMetrics("today"))
 			assert.ElementsMatch(t, []string{
 				"periodo", "total_clientes", "total_ativos", "total_inativos",
@@ -405,7 +404,7 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		metrics, err := svc.GetClienteMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
@@ -427,7 +426,7 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total\s+FROM clientes\s+GROUP BY segmento\s+ORDER BY total DESC`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
+		svc := NewDashboardService(db, dashboardTestCfg(false))
 		metrics, err := svc.GetClienteMetrics(context.Background(), db, "today", 0)
 		assert.Nil(t, metrics)
 		assert.Error(t, err)
