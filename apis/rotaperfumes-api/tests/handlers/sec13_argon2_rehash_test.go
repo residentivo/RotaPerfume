@@ -7,6 +7,8 @@ package handlers_test
 import (
 	"database/sql/driver"
 	"errors"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"net/http"
 	"testing"
 	"time"
@@ -27,8 +29,8 @@ type argon2idDe string
 func (s argon2idDe) Match(v driver.Value) bool {
 	h, ok := v.(string)
 	cfg := testCfg()
-	auth := novoAuthCrypto()
-	return ok && auth.VerifyPassword(cfg, h, string(s)) && !auth.NeedsRehash(cfg, h)
+	hasher := identidadecrypto.NovoHasher(cfg.HashSenha)
+	return ok && hasher.Verificar(identidade.NovoHashSenha(h), identidade.NovaSenha(string(s))) && !hasher.PrecisaRehash(identidade.NovoHashSenha(h))
 }
 
 func esperarUsuarioLogin(mock sqlmock.Sqlmock, hash string) {

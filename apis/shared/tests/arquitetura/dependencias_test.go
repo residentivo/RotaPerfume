@@ -173,8 +173,20 @@ func TestARQ_Dependencias_VarreduraEncontraKernel(t *testing.T) {
 	for _, p := range pacotesDoModulo(t, raizModulo, mod) {
 		achou[p.importPath] = true
 	}
-	for _, esperado := range []string{mod + "/kernel", mod + "/db", mod + "/vlog", mod + "/repositories"} {
+	for _, esperado := range []string{mod + "/kernel", mod + "/db", mod + "/vlog", mod + "/notificacao/notificacaosmtp", mod + "/importers/importkit"} {
 		assert.True(t, achou[esperado], "varredura não encontrou %s", esperado)
+	}
+	// ARQ-07: o legado saiu ("≥ 1 uso" virou "0 usos"): os pacotes não existem
+	// mais e nenhum pacote do módulo os importa.
+	for _, l := range legado {
+		assert.False(t, achou[l], "pacote legado voltou: %s", l)
+	}
+	for _, p := range pacotesDoModulo(t, raizModulo, mod) {
+		for _, imp := range p.imports {
+			for _, l := range legado {
+				assert.False(t, dentroDe(imp, l), "%s importa o legado %s", p.importPath, imp)
+			}
+		}
 	}
 	assert.True(t, existe(t, raizModulo+"/go.mod"), "raiz do módulo errada")
 }

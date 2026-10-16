@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
 
@@ -192,9 +191,9 @@ func TestRouter_RotaPublica_SemPrincipal(t *testing.T) {
 	rt := rotaValida()
 	rt.Policy = httpx.Public
 	rt.Handler = func(w http.ResponseWriter, req *http.Request) {
+		// ARQ-07: as chaves antigas (middleware.GetUserID) não existem mais; a
+		// rota pública segue sem Principal.
 		_, ok = httpx.PrincipalFrom(req)
-		_, okLegado := middleware.GetUserID(req.Context())
-		assert.False(t, okLegado, "rota pública não recebe as chaves antigas")
 	}
 	r.Handle(rt)
 	servir(r.Mux(), "GET", "/api/x", token(t, 1, "admin"))

@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -53,7 +54,7 @@ func TestEstoqueService_ListEstoque_Padrao_UsaUltimaPosicao(t *testing.T) {
 		WillReturnRows(estoqueRows(1, 10, false))
 
 	casos := novosCasosCatalogo(db)
-	registros, total, err := listarEstoque(casos, 1, 20, catalogoapp.ConsultaEstoque{})
+	registros, total, err := itensETotal(casos.ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{}, kernel.NovaPagina(1, 20)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
@@ -71,7 +72,7 @@ func TestEstoqueService_ListEstoque_Historico_UsaListSimples(t *testing.T) {
 		WillReturnRows(estoqueRows(1, 10, false))
 
 	casos := novosCasosCatalogo(db)
-	_, total, err := listarEstoque(casos, 1, 20, catalogoapp.ConsultaEstoque{Historico: true})
+	_, total, err := itensETotal(casos.ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{Historico: true}, kernel.NovaPagina(1, 20)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 3, total)
@@ -82,7 +83,7 @@ func TestEstoqueService_ListEstoque_DataDeInvalida(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
 	casos := novosCasosCatalogo(db)
-	_, _, err := listarEstoque(casos, 1, 20, catalogoapp.ConsultaEstoque{DataDe: "31/12/2024"})
+	_, _, err := itensETotal(casos.ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{DataDe: "31/12/2024"}, kernel.NovaPagina(1, 20)))
 
 	assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -92,7 +93,7 @@ func TestEstoqueService_ListEstoque_DataAteInvalida(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
 	casos := novosCasosCatalogo(db)
-	_, _, err := listarEstoque(casos, 1, 20, catalogoapp.ConsultaEstoque{DataAte: "31/12/2024"})
+	_, _, err := itensETotal(casos.ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{DataAte: "31/12/2024"}, kernel.NovaPagina(1, 20)))
 
 	assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
 	assert.NoError(t, mock.ExpectationsWereMet())

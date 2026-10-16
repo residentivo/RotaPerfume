@@ -89,7 +89,7 @@ func TestClienteService_CreateCliente_CNPJ(t *testing.T) {
 			in := validClienteInput()
 			in.CNPJ = tc.cnpj
 
-			c, err := NewClienteService(db, clienteTestCfg(true)).CreateCliente(context.Background(), db, in)
+			c, err := casosComercial(db, 0).CriarCliente(context.Background(), principalAdmin(), fixo(in))
 			if tc.wantErr != nil {
 				assert.ErrorIs(t, err, tc.wantErr)
 				assert.Nil(t, c)
@@ -109,7 +109,7 @@ func TestClienteService_CreateCliente_OutroDuplicadoNaoViraCNPJ(t *testing.T) {
 	mock.ExpectExec(reInsertClienteCNPJ).
 		WillReturnError(&mysql.MySQLError{Number: 1062, Message: "Duplicate entry 'x' for key 'clientes.PRIMARY'"})
 
-	_, err := NewClienteService(db, clienteTestCfg(false)).CreateCliente(context.Background(), db, validClienteInput())
+	_, err := casosComercial(db, 0).CriarCliente(context.Background(), principalAdmin(), fixo(validClienteInput()))
 	assert.Error(t, err)
 	assert.NotErrorIs(t, err, comercial.ErrCNPJDuplicado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -121,7 +121,7 @@ func TestClienteService_CreateClienteNaCarteira_CNPJDuplicadoFazRollback(t *test
 	mock.ExpectExec(reInsertClienteCNPJ).WillReturnError(erroDuplicadoCNPJ())
 	mock.ExpectRollback()
 
-	c, err := NewClienteService(db, clienteTestCfg(false)).CreateClienteNaCarteira(context.Background(), db, validClienteInput(), 10)
+	c, err := casosComercial(db, 10).CriarCliente(context.Background(), principalRestrito(), fixo(validClienteInput()))
 	assert.ErrorIs(t, err, comercial.ErrCNPJDuplicado)
 	assert.Nil(t, c)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -132,7 +132,7 @@ func TestClienteService_CreateClienteNaCarteira_DVInvalidoAntesDoBegin(t *testin
 	in := validClienteInput()
 	in.CNPJ = "12345678000199"
 
-	_, err := NewClienteService(db, clienteTestCfg(false)).CreateClienteNaCarteira(context.Background(), db, in, 10)
+	_, err := casosComercial(db, 10).CriarCliente(context.Background(), principalRestrito(), fixo(in))
 	assert.ErrorIs(t, err, comercial.ErrCNPJInvalido)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -216,7 +216,7 @@ func TestClienteService_UpdateCliente_CNPJ(t *testing.T) {
 			in := validClienteInput()
 			in.CNPJ = tc.cnpj
 
-			c, err := NewClienteService(db, clienteTestCfg(true)).UpdateCliente(context.Background(), db, 1, in)
+			c, err := casosComercial(db, 0).AtualizarCliente(context.Background(), principalAdmin(), 1, fixo(in))
 			switch {
 			case tc.wantErr != nil:
 				assert.ErrorIs(t, err, tc.wantErr)
@@ -242,7 +242,7 @@ func TestClienteService_UpdateCliente_DVInvalidoTemPrecedenciaSobre404(t *testin
 	in := validClienteInput()
 	in.CNPJ = "29401965569816"
 
-	c, err := NewClienteService(db, clienteTestCfg(false)).UpdateCliente(context.Background(), db, 999999, in)
+	c, err := casosComercial(db, 0).AtualizarCliente(context.Background(), principalAdmin(), 999999, fixo(in))
 	assert.ErrorIs(t, err, comercial.ErrCNPJInvalido)
 	assert.NotErrorIs(t, err, comercial.ErrClienteNaoEncontrado)
 	assert.Nil(t, c)

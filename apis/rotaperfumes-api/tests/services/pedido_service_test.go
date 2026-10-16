@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -71,14 +72,14 @@ func itemPedidoRows(pedidoID int64) *sqlmock.Rows {
 // item 1: 2 * 100.0 * (1 - 10/100) = 180.0
 // item 2: 1 * 50.0  * (1 - 0/100)  = 50.0
 // valor_total = 230.0
-func validPedidoInput() PedidoInput {
-	return PedidoInput{
+func validPedidoInput() vendas.DadosPedido {
+	return vendas.DadosPedido{
 		ClienteID:  1,
 		VendedorID: 2,
 		DataPedido: "2024-01-15",
 		Canal:      "App",
 		Status:     "Faturado",
-		Itens: []ItemPedidoInput{
+		Itens: []vendas.DadosItem{
 			{ProdutoID: 10, Quantidade: 2, PrecoPraticado: 100.0, DescontoPct: 10},
 			{ProdutoID: 11, Quantidade: 1, PrecoPraticado: 50.0, DescontoPct: 0},
 		},
@@ -92,7 +93,7 @@ func validPedidoInput() PedidoInput {
 func TestPedidoService_ListPedidos(t *testing.T) {
 	testCases := []struct {
 		nome    string
-		filtro  PedidoFiltro
+		filtro  vendas.FiltroPedido
 		page    int
 		limit   int
 		mock    func(mock sqlmock.Sqlmock)
@@ -102,7 +103,7 @@ func TestPedidoService_ListPedidos(t *testing.T) {
 	}{
 		{
 			nome:   "sem filtros - sucesso",
-			filtro: PedidoFiltro{},
+			filtro: vendas.FiltroPedido{Ordenacao: vendas.OrdenacaoPedidoPadrao()},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -117,9 +118,10 @@ func TestPedidoService_ListPedidos(t *testing.T) {
 		},
 		{
 			nome: "com todos os filtros - repassa args ao repo",
-			filtro: PedidoFiltro{
+			filtro: vendas.FiltroPedido{
 				Status: "Faturado", Canal: "App", ClienteID: 1, VendedorID: 2,
-				DataInicio: "2024-01-01", DataFim: "2024-01-31", Q: "Teste",
+				DataInicio: "2024-01-01", DataFim: "2024-01-31", Busca: "Teste",
+				Ordenacao: vendas.OrdenacaoPedidoPadrao(),
 			},
 			page:  2,
 			limit: 10,
@@ -137,7 +139,7 @@ func TestPedidoService_ListPedidos(t *testing.T) {
 		},
 		{
 			nome:   "erro no count do repo é propagado",
-			filtro: PedidoFiltro{},
+			filtro: vendas.FiltroPedido{Ordenacao: vendas.OrdenacaoPedidoPadrao()},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -153,8 +155,8 @@ func TestPedidoService_ListPedidos(t *testing.T) {
 			db, mock := newPedidoTestDB(t)
 			tc.mock(mock)
 
-			svc := NewPedidoService(db, pedidoTestCfg(true))
-			pedidos, total, err := svc.ListPedidos(context.Background(), db, tc.page, tc.limit, tc.filtro)
+			casos := casosVendas(db, 0)
+			pedidos, total, err := itensETotal(casos.ListarPedidos(context.Background(), principalAdmin(), tc.filtro, kernel.NovaPagina(tc.page, tc.limit)))
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -182,8 +184,8 @@ func TestPedidoService_GetPedidoDetalhe(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnRows(itemPedidoRows(1))
 
-		svc := NewPedidoService(db, pedidoTestCfg(false))
-		p, err := svc.GetPedidoDetalhe(context.Background(), db, 1)
+		casos := casosVendas(db, 0)
+		p, err := casos.ObterPedido(context.Background(), principalAdmin(), 1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), p.PedidoIDOrigem)
 		assert.Equal(t, 230.0, p.ValorTotal)
@@ -197,8 +199,8 @@ func TestPedidoService_GetPedidoDetalhe(t *testing.T) {
 			WithArgs(int64(999)).
 			WillReturnRows(emptyPedidoRows())
 
-		svc := NewPedidoService(db, pedidoTestCfg(false))
-		p, err := svc.GetPedidoDetalhe(context.Background(), db, 999)
+		casos := casosVendas(db, 0)
+		p, err := casos.ObterPedido(context.Background(), principalAdmin(), 999)
 		assert.Nil(t, p)
 		assert.ErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -210,8 +212,8 @@ func TestPedidoService_GetPedidoDetalhe(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := NewPedidoService(db, pedidoTestCfg(false))
-		p, err := svc.GetPedidoDetalhe(context.Background(), db, 1)
+		casos := casosVendas(db, 0)
+		p, err := casos.ObterPedido(context.Background(), principalAdmin(), 1)
 		assert.Nil(t, p)
 		assert.Error(t, err)
 		assert.False(t, err == vendas.ErrPedidoNaoEncontrado)
@@ -227,8 +229,8 @@ func TestPedidoService_GetPedidoDetalhe(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := NewPedidoService(db, pedidoTestCfg(false))
-		p, err := svc.GetPedidoDetalhe(context.Background(), db, 1)
+		casos := casosVendas(db, 0)
+		p, err := casos.ObterPedido(context.Background(), principalAdmin(), 1)
 		assert.Nil(t, p)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -241,17 +243,17 @@ func TestPedidoService_GetPedidoDetalhe(t *testing.T) {
 
 func pedidoValidacaoTestCases() []struct {
 	nome    string
-	input   func() PedidoInput
+	input   func() vendas.DadosPedido
 	wantErr error
 } {
 	return []struct {
 		nome    string
-		input   func() PedidoInput
+		input   func() vendas.DadosPedido
 		wantErr error
 	}{
 		{
 			nome: "cliente_id zero",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.ClienteID = 0
 				return in
@@ -260,7 +262,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "vendedor_id zero",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.VendedorID = 0
 				return in
@@ -269,7 +271,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "data_pedido vazia",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.DataPedido = ""
 				return in
@@ -278,7 +280,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "data_pedido em formato inválido",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.DataPedido = "15/01/2024"
 				return in
@@ -287,7 +289,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "canal inválido",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.Canal = "Email"
 				return in
@@ -296,7 +298,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "status inválido",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.Status = "Pendente"
 				return in
@@ -305,7 +307,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "lista de itens vazia",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.Itens = nil
 				return in
@@ -314,7 +316,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "produto_id ausente em um item",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.Itens[0].ProdutoID = 0
 				return in
@@ -323,7 +325,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "quantidade inválida em um item",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.Itens[0].Quantidade = 0
 				return in
@@ -332,7 +334,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "preco_praticado negativo em um item",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.Itens[0].PrecoPraticado = -0.01
 				return in
@@ -341,7 +343,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "desconto_pct negativo em um item",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.Itens[0].DescontoPct = -1
 				return in
@@ -350,7 +352,7 @@ func pedidoValidacaoTestCases() []struct {
 		},
 		{
 			nome: "desconto_pct acima de 100 em um item",
-			input: func() PedidoInput {
+			input: func() vendas.DadosPedido {
 				in := validPedidoInput()
 				in.Itens[0].DescontoPct = 101
 				return in
@@ -369,8 +371,8 @@ func TestPedidoService_CreatePedido_Validacoes(t *testing.T) {
 		t.Run(tc.nome, func(t *testing.T) {
 			db, mock := newPedidoTestDB(t)
 			// nenhuma query é esperada: validação falha antes de tocar o repo.
-			svc := NewPedidoService(db, pedidoTestCfg(true))
-			p, err := svc.CreatePedido(context.Background(), db, tc.input())
+			casos := casosVendas(db, 0)
+			p, err := casos.CriarPedido(context.Background(), principalAdmin(), lerFixo(tc.input()))
 			assert.Nil(t, p)
 			assert.ErrorIs(t, err, tc.wantErr)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -407,8 +409,8 @@ func TestPedidoService_CreatePedido_Sucesso(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
 	expectCreateComItensSuccess(mock)
 
-	svc := NewPedidoService(db, pedidoTestCfg(true))
-	p, err := svc.CreatePedido(context.Background(), db, validPedidoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.CriarPedido(context.Background(), principalAdmin(), lerFixo(validPedidoInput()))
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	assert.Equal(t, int64(100), p.PedidoIDOrigem)
@@ -424,8 +426,8 @@ func TestPedidoService_CreatePedido_ErroCreateComItens(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	p, err := svc.CreatePedido(context.Background(), db, validPedidoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.CriarPedido(context.Background(), principalAdmin(), lerFixo(validPedidoInput()))
 	assert.Nil(t, p)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -439,8 +441,8 @@ func TestPedidoService_CreatePedido_ErroLastInsertId(t *testing.T) {
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 	mock.ExpectRollback()
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	p, err := svc.CreatePedido(context.Background(), db, validPedidoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.CriarPedido(context.Background(), principalAdmin(), lerFixo(validPedidoInput()))
 	assert.Nil(t, p)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -454,8 +456,8 @@ func TestPedidoService_UpdatePedido_Validacoes(t *testing.T) {
 	for _, tc := range pedidoValidacaoTestCases() {
 		t.Run(tc.nome, func(t *testing.T) {
 			db, mock := newPedidoTestDB(t)
-			svc := NewPedidoService(db, pedidoTestCfg(true))
-			p, err := svc.UpdatePedido(context.Background(), db, 1, tc.input())
+			casos := casosVendas(db, 0)
+			p, err := casos.AtualizarPedido(context.Background(), principalAdmin(), 1, lerFixo(tc.input()))
 			assert.Nil(t, p)
 			assert.ErrorIs(t, err, tc.wantErr)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -522,8 +524,8 @@ func TestPedidoService_UpdatePedido_Sucesso(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(itemPedidoRows(1))
 
-	svc := NewPedidoService(db, pedidoTestCfg(true))
-	p, err := svc.UpdatePedido(context.Background(), db, 1, validPedidoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.AtualizarPedido(context.Background(), principalAdmin(), 1, lerFixo(validPedidoInput()))
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	assert.Equal(t, int64(1), p.PedidoIDOrigem)
@@ -540,8 +542,8 @@ func TestPedidoService_UpdatePedido_NaoEncontrado(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	p, err := svc.UpdatePedido(context.Background(), db, 999, validPedidoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.AtualizarPedido(context.Background(), principalAdmin(), 999, lerFixo(validPedidoInput()))
 	assert.Nil(t, p)
 	assert.ErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -561,8 +563,8 @@ func TestPedidoService_UpdatePedido_ErroGenericoDoRepo(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	p, err := svc.UpdatePedido(context.Background(), db, 1, validPedidoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.AtualizarPedido(context.Background(), principalAdmin(), 1, lerFixo(validPedidoInput()))
 	assert.Nil(t, p)
 	assert.Error(t, err)
 	assert.False(t, err == vendas.ErrPedidoNaoEncontrado)
@@ -585,8 +587,8 @@ func TestPedidoService_UpdatePedido_FaturadoTentaAlterarItens_Erro409(t *testing
 		WillReturnRows(itensAtuaisRowsVazio())
 	mock.ExpectRollback()
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	p, err := svc.UpdatePedido(context.Background(), db, 1, validPedidoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.AtualizarPedido(context.Background(), principalAdmin(), 1, lerFixo(validPedidoInput()))
 	assert.Nil(t, p)
 	assert.ErrorIs(t, err, vendas.ErrPedidoJaFaturadoNaoPodeAlterarItens)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -628,8 +630,8 @@ func TestPedidoService_DeletePedido_Sucesso(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
-	svc := NewPedidoService(db, pedidoTestCfg(true))
-	err := svc.DeletePedido(context.Background(), db, 1)
+	casos := casosVendas(db, 0)
+	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 1)
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -642,8 +644,8 @@ func TestPedidoService_DeletePedido_NaoEncontrado(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnRows(emptyPedidoRows())
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	err := svc.DeletePedido(context.Background(), db, 999)
+	casos := casosVendas(db, 0)
+	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 999)
 	assert.ErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -659,8 +661,8 @@ func TestPedidoService_DeletePedido_PossuiPagamentosVinculados_409(t *testing.T)
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	err := svc.DeletePedido(context.Background(), db, 1)
+	casos := casosVendas(db, 0)
+	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 1)
 	assert.ErrorIs(t, err, vendas.ErrPedidoPossuiPagamentosVinculados)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -676,8 +678,8 @@ func TestPedidoService_DeletePedido_Faturado_409(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrNoRows)
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	err := svc.DeletePedido(context.Background(), db, 1)
+	casos := casosVendas(db, 0)
+	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 1)
 	assert.ErrorIs(t, err, vendas.ErrPedidoFaturadoNaoPodeSerExcluido)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -693,8 +695,8 @@ func TestPedidoService_DeletePedido_ErroExistsByPedidoID(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	err := svc.DeletePedido(context.Background(), db, 1)
+	casos := casosVendas(db, 0)
+	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 1)
 	assert.Error(t, err)
 	assert.False(t, errors.Is(err, vendas.ErrPedidoNaoEncontrado))
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -716,8 +718,8 @@ func TestPedidoService_DeletePedido_ErroDeleteComItens(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	svc := NewPedidoService(db, pedidoTestCfg(false))
-	err := svc.DeletePedido(context.Background(), db, 1)
+	casos := casosVendas(db, 0)
+	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 1)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

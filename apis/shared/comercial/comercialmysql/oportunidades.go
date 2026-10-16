@@ -80,7 +80,7 @@ func (r *Oportunidades) PorID(ctx context.Context, id int64) (*comercial.Oportun
 }
 
 func scanOportunidade(s db.Linha) (*comercial.Oportunidade, error) {
-	return lerUma(s, comercial.ErrOportunidadeNaoEncontrada, "oportunidade", func(o *comercial.Oportunidade) []any {
+	return db.LerUma(s, comercial.ErrOportunidadeNaoEncontrada, "comercialmysql: ler oportunidade", func(o *comercial.Oportunidade) []any {
 		return []any{&o.OportunidadeID, &o.ClienteID, &o.VendedorID, &o.Origem, &o.DataAbertura, &o.Etapa, &o.ProbabilidadePct,
 			&o.ValorEstimado, &o.DataFechamento, &o.CicloDias, &o.MotivoPerda, &o.CreatedAt, &o.UpdatedAt}
 	})
@@ -91,7 +91,7 @@ func (r *Oportunidades) Inserir(ctx context.Context, o *comercial.Oportunidade) 
 	const q = `
 		INSERT INTO oportunidades (cliente_id, vendedor_id, origem, data_abertura, etapa, probabilidade_pct, valor_estimado, data_fechamento, ciclo_dias, motivo_perda)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	id, err := inserir(ctx, r.q, "inserir oportunidade", q, o.ClienteID, o.VendedorID, o.Origem, o.DataAbertura, o.Etapa,
+	id, err := db.Inserir(ctx, r.q, "comercialmysql: inserir oportunidade", q, o.ClienteID, o.VendedorID, o.Origem, o.DataAbertura, o.Etapa,
 		o.ProbabilidadePct, o.ValorEstimado, o.DataFechamento, o.CicloDias, o.MotivoPerda)
 	if err != nil {
 		return err
@@ -107,13 +107,13 @@ func (r *Oportunidades) Atualizar(ctx context.Context, id int64, o *comercial.Op
 		UPDATE oportunidades
 		SET cliente_id = ?, vendedor_id = ?, origem = ?, data_abertura = ?, etapa = ?, probabilidade_pct = ?, valor_estimado = ?, data_fechamento = ?, ciclo_dias = ?, motivo_perda = ?
 		WHERE oportunidade_id = ?`
-	return execPorID(ctx, r.q, arqOportunidades, "Oportunidades.Atualizar", "atualizar oportunidade", comercial.ErrOportunidadeNaoEncontrada,
+	return db.ExecPorID(ctx, r.q, arqOportunidades, "Oportunidades.Atualizar", "comercialmysql: atualizar oportunidade", comercial.ErrOportunidadeNaoEncontrada,
 		q, o.ClienteID, o.VendedorID, o.Origem, o.DataAbertura, o.Etapa, o.ProbabilidadePct, o.ValorEstimado,
 		o.DataFechamento, o.CicloDias, o.MotivoPerda, id)
 }
 
 // Excluir remove a oportunidade (hard delete).
 func (r *Oportunidades) Excluir(ctx context.Context, id int64) error {
-	return execPorID(ctx, r.q, arqOportunidades, "Oportunidades.Excluir", "delete oportunidade", comercial.ErrOportunidadeNaoEncontrada,
+	return db.ExecPorID(ctx, r.q, arqOportunidades, "Oportunidades.Excluir", "comercialmysql: delete oportunidade", comercial.ErrOportunidadeNaoEncontrada,
 		`DELETE FROM oportunidades WHERE oportunidade_id = ?`, id)
 }

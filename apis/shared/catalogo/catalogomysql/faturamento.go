@@ -71,22 +71,3 @@ func (r *Estoques) AjustarSaldoPorFaturamento(ctx context.Context, sku string, d
 	vlog.Printf(arqFaturamento, "Estoques.AjustarSaldoPorFaturamento", "UPSERT estoque delta=%d", delta)
 	return nil
 }
-
-// UpsertPorDataSku grava o saldo ABSOLUTO de um sku numa data (como o CSV
-// do ERP): sobrescreve o par (data_snapshot, sku) se existir, senão cria.
-// Sem chamador de produção (o importador de estoque grava com SQL próprio,
-// em lote); veio do legado com os testes. O ARQ-07 decide se fica. NÃO
-// usar para baixa de faturamento (use AjustarSaldoPorFaturamento).
-func (r *Estoques) UpsertPorDataSku(ctx context.Context, sku string, dia time.Time, saldo int, ruptura bool) error {
-	const q = `
-		INSERT INTO estoque (data_snapshot, sku, saldo, ruptura)
-		VALUES (?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE
-			saldo = VALUES(saldo),
-			ruptura = VALUES(ruptura)`
-	if _, err := r.q.ExecContext(ctx, q, dia.Format(kernel.LayoutData), sku, saldo, ruptura); err != nil {
-		return fmt.Errorf("catalogomysql: upsert estoque por data/sku: %w", db.SemValorDuplicado(err))
-	}
-	vlog.Printf(arqFaturamento, "Estoques.UpsertPorDataSku", "UPSERT estoque")
-	return nil
-}

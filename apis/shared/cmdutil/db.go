@@ -11,8 +11,6 @@ import (
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql" // driver MySQL usado por OpenMySQL
-
-	"github.com/rotaperfumes/shared/vlog"
 )
 
 // DB é o subconjunto de *sql.DB usado pelas funções de leitura (lookups) e
@@ -38,9 +36,7 @@ type Opener func() (Conn, error)
 // cargo do Run do importador.
 func OpenMySQL(dsn string) Opener {
 	return func() (Conn, error) {
-		vlog.Printf("db.go", "OpenMySQL.func", "abrindo handle MySQL via sql.Open")
 		db, err := sql.Open("mysql", dsn)
-		vlog.Printf("db.go", "OpenMySQL.func", "verificando se err != nil após sql.Open")
 		if err != nil {
 			return nil, fmt.Errorf("sql.Open: %w", err)
 		}

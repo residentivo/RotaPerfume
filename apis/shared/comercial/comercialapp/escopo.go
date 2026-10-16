@@ -59,7 +59,7 @@ func (a *AutorizadorEscopo) Resolver(ctx context.Context, p kernel.Principal) (k
 		return kernel.Escopo{}, err
 	}
 	if desligado {
-		log.Printf("[escopo] bloqueado vendedor_desligado user_id=%d vendedor_id=%d", p.UserID(), vendedorID)
+		log.Printf("[escopo] bloqueado vendedor_desligado user_id=%d vendedor_id=%d rota=%s", p.UserID(), vendedorID, kernel.RotaDe(ctx))
 		return kernel.Escopo{}, comercial.ErrVendedorDesligado
 	}
 	return e, nil

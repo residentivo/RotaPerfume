@@ -1,20 +1,22 @@
 package services_test
 
-// SEC-07: ValidateRefreshToken devolve *RevokedTokenError (ID, UsuarioID,
-// motivo, RevokedAt, Recent) para token revogado, preservando errors.Is com
-// ErrRefreshTokenRevoked / ErrRefreshTokenRevokedRecently.
+// SEC-07: o token revogado carrega id, usuário, motivo e instante da
+// revogação; a classificação (recente × fora da janela) e o sinal de reuso
+// de rotação vêm do domínio. ARQ-07: o RevokedTokenError era montado pelo
+// repassador de teste; agora as asserções são sobre o próprio
+// identidade.RefreshToken (adapter real) e identidade.EstadoRefresh
+// (Avaliar/ReusoDeRotacao, as regras que o RenovarSessao aplica).
 
 import (
 	"context"
-	"errors"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 const findRefreshSEC07 = `SELECT id, usuario_id, token_hash, expires_at, revoked_at, ip_origem, user_agent, revoked_reason\s+FROM refresh_tokens\s+WHERE token_hash = \?\s+LIMIT 1`
@@ -25,17 +27,17 @@ func TestSEC07_ValidateRefreshToken_RevokedTokenError(t *testing.T) {
 		nome       string
 		revokedAt  time.Time
 		motivo     any
-		wantReason repositories.RevokeReason
+		wantReason identidade.MotivoRevogacao
 		wantRecent bool
 		wantReuso  bool
 	}{
-		{"rotacao fora da janela = reuso", agora.Add(-time.Minute), "rotacao", repositories.RevokeReasonRotacao, false, true},
-		{"rotacao dentro da janela = corrida", agora.Add(-5 * time.Second), "rotacao", repositories.RevokeReasonRotacao, true, false},
-		{"logout fora da janela", agora.Add(-time.Minute), "logout", repositories.RevokeReasonLogout, false, false},
-		{"inativacao fora da janela", agora.Add(-time.Minute), "inativacao", repositories.RevokeReasonInativacao, false, false},
-		{"senha fora da janela", agora.Add(-time.Minute), "senha", repositories.RevokeReasonSenha, false, false},
-		{"revogacao_massa fora da janela", agora.Add(-time.Minute), "revogacao_massa", repositories.RevokeReasonRevogacaoMassa, false, false},
-		{"NULL legado fora da janela (conservador)", agora.Add(-time.Minute), nil, repositories.RevokeReasonDesconhecido, false, false},
+		{"rotacao fora da janela = reuso", agora.Add(-time.Minute), "rotacao", identidade.MotivoRotacao, false, true},
+		{"rotacao dentro da janela = corrida", agora.Add(-5 * time.Second), "rotacao", identidade.MotivoRotacao, true, false},
+		{"logout fora da janela", agora.Add(-time.Minute), "logout", identidade.MotivoLogout, false, false},
+		{"inativacao fora da janela", agora.Add(-time.Minute), "inativacao", identidade.MotivoInativacao, false, false},
+		{"senha fora da janela", agora.Add(-time.Minute), "senha", identidade.MotivoSenha, false, false},
+		{"revogacao_massa fora da janela", agora.Add(-time.Minute), "revogacao_massa", identidade.MotivoRevogacaoMassa, false, false},
+		{"NULL legado fora da janela (conservador)", agora.Add(-time.Minute), nil, identidade.MotivoDesconhecido, false, false},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -47,52 +49,47 @@ func TestSEC07_ValidateRefreshToken_RevokedTokenError(t *testing.T) {
 				WillReturnRows(sqlmock.NewRows(refreshTokenColunas()).
 					AddRow(int64(44), int64(9), hashOf(token), agora.Add(time.Hour), c.revokedAt, "ip", "ua", c.motivo))
 
-			svc := NewRefreshTokenServiceWithClock(func() time.Time { return agora })
-			rt, err := svc.ValidateRefreshToken(context.Background(), db, token)
+			rt, estado, err := buscarEAvaliar(db, token, agora)
 
-			assert.Nil(t, rt)
-			var rev *RevokedTokenError
-			require.True(t, errors.As(err, &rev), "deve devolver *RevokedTokenError")
-			assert.Equal(t, int64(44), rev.TokenID)
-			assert.Equal(t, int64(9), rev.UsuarioID)
-			assert.Equal(t, c.wantReason, rev.Reason)
-			assert.True(t, rev.RevokedAt.Equal(c.revokedAt))
-			assert.Equal(t, c.wantRecent, rev.Recent)
-			assert.Equal(t, c.wantReuso, rev.IsRotationReuse())
+			require.NoError(t, err)
+			assert.Equal(t, int64(44), rt.ID)
+			assert.Equal(t, int64(9), rt.UsuarioID)
+			assert.Equal(t, c.wantReason, rt.Motivo)
+			require.NotNil(t, rt.RevogadoEm)
+			assert.True(t, rt.RevogadoEm.Equal(c.revokedAt))
+			assert.Equal(t, c.wantRecent, estado == identidade.RefreshRevogadoRecente)
+			assert.Equal(t, c.wantReuso, rt.ReusoDeRotacao(estado))
 
-			assert.ErrorIs(t, err, ErrRefreshTokenRevoked)
-			if c.wantRecent {
-				assert.ErrorIs(t, err, ErrRefreshTokenRevokedRecently)
-			} else {
-				assert.NotErrorIs(t, err, ErrRefreshTokenRevokedRecently)
+			// revogado (recente ou não): nunca válido nem expirado.
+			assert.Contains(t, []identidade.EstadoRefresh{identidade.RefreshRevogado, identidade.RefreshRevogadoRecente}, estado)
+			if !c.wantRecent {
+				assert.Equal(t, identidade.RefreshRevogado, estado)
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
 }
 
-// BeginRotation grava revoked_reason = "rotacao".
+// BeginRotation grava revoked_reason = "rotacao". ARQ-07: a revogação da
+// rotação é a do caso de uso RenovarSessao (UoW real); o UPDATE condicional
+// recusa (0 linhas) e a tx é desfeita, como o Rollback do teste antigo.
 func TestSEC07_BeginRotation_GravaMotivoRotacao(t *testing.T) {
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
-	require.NoError(t, err)
-	defer db.Close()
-	mock.ExpectBegin()
-	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE id = \? AND revoked_at IS NULL`).
-		WithArgs(sqlmock.AnyArg(), "rotacao", int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectRollback()
-
-	rot, err := NewRefreshTokenService().BeginRotation(context.Background(), db, 7)
-	require.NoError(t, err)
-	rot.Rollback()
+	_, err, mock := renovar(t, func(m sqlmock.Sqlmock) {
+		m.ExpectBegin()
+		m.ExpectExec(revokeCondicionalSQL).
+			WithArgs(sqlmock.AnyArg(), "rotacao", int64(7)).WillReturnResult(sqlmock.NewResult(0, 0))
+		m.ExpectRollback()
+	})
+	assert.ErrorIs(t, err, identidade.ErrRefreshRevogado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // RevokeAllUserTokens grava exatamente o motivo informado pelo chamador.
 func TestSEC07_RevokeAllUserTokens_GravaMotivoInformado(t *testing.T) {
-	for _, motivo := range []repositories.RevokeReason{
-		repositories.RevokeReasonSenha,
-		repositories.RevokeReasonInativacao,
-		repositories.RevokeReasonRevogacaoMassa,
+	for _, motivo := range []identidade.MotivoRevogacao{
+		identidade.MotivoSenha,
+		identidade.MotivoInativacao,
+		identidade.MotivoRevogacaoMassa,
 	} {
 		t.Run(string(motivo), func(t *testing.T) {
 			db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
@@ -101,7 +98,7 @@ func TestSEC07_RevokeAllUserTokens_GravaMotivoInformado(t *testing.T) {
 			mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
 				WithArgs(sqlmock.AnyArg(), string(motivo), int64(3)).WillReturnResult(sqlmock.NewResult(0, 1))
 
-			err = NewRefreshTokenService().RevokeAllUserTokens(context.Background(), db, 3, motivo)
+			err = identidademysql.NovoRefreshTokens(db).RevogarTodosDoUsuario(context.Background(), 3, motivo)
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})

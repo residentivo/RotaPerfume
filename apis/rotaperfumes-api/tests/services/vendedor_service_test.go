@@ -31,8 +31,8 @@ func clienteResumoRows() *sqlmock.Rows {
 		AddRow(int64(2), "22.222.222/0001-22", "Cliente B", "Atacado", "Campinas", "SP", int64(11), now, nil)
 }
 
-func validVendedorInput() VendedorInput {
-	return VendedorInput{
+func validVendedorInput() comercial.DadosVendedor {
+	return comercial.DadosVendedor{
 		Nome:         "Novo Vendedor",
 		Regiao:       "Sudeste",
 		UF:           "SP",
@@ -125,8 +125,8 @@ func TestVendedorService_ListVendedores(t *testing.T) {
 			db, mock := newVendedorTestDB(t)
 			tc.mock(mock)
 
-			svc := NewVendedorService(db, vendedorTestCfg(tc.verbose))
-			vendedores, err := svc.ListVendedores(context.Background(), db)
+			casos := casosComercial(db, 0)
+			vendedores, err := casos.ListarVendedores(context.Background(), principalAdmin())
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -227,8 +227,8 @@ func TestVendedorService_GetVendedorDetalhe(t *testing.T) {
 			db, mock := newVendedorTestDB(t)
 			tc.mock(mock)
 
-			svc := NewVendedorService(db, vendedorTestCfg(true))
-			detalhe, err := svc.GetVendedorDetalhe(context.Background(), db, tc.id)
+			casos := casosComercial(db, 0)
+			detalhe, err := casos.ObterVendedor(context.Background(), principalAdmin(), tc.id)
 
 			switch {
 			case tc.wantErr != nil:
@@ -253,17 +253,17 @@ func TestVendedorService_GetVendedorDetalhe(t *testing.T) {
 
 func vendedorValidacaoTestCases() []struct {
 	nome    string
-	input   func() VendedorInput
+	input   func() comercial.DadosVendedor
 	wantErr error
 } {
 	return []struct {
 		nome    string
-		input   func() VendedorInput
+		input   func() comercial.DadosVendedor
 		wantErr error
 	}{
 		{
 			nome: "nome vazio",
-			input: func() VendedorInput {
+			input: func() comercial.DadosVendedor {
 				in := validVendedorInput()
 				in.Nome = "   "
 				return in
@@ -272,7 +272,7 @@ func vendedorValidacaoTestCases() []struct {
 		},
 		{
 			nome: "regiao vazia",
-			input: func() VendedorInput {
+			input: func() comercial.DadosVendedor {
 				in := validVendedorInput()
 				in.Regiao = "  "
 				return in
@@ -281,7 +281,7 @@ func vendedorValidacaoTestCases() []struct {
 		},
 		{
 			nome: "uf com tamanho inválido",
-			input: func() VendedorInput {
+			input: func() comercial.DadosVendedor {
 				in := validVendedorInput()
 				in.UF = "SAO"
 				return in
@@ -290,7 +290,7 @@ func vendedorValidacaoTestCases() []struct {
 		},
 		{
 			nome: "meta_mensal negativa",
-			input: func() VendedorInput {
+			input: func() comercial.DadosVendedor {
 				in := validVendedorInput()
 				in.MetaMensal = -1
 				return in
@@ -299,7 +299,7 @@ func vendedorValidacaoTestCases() []struct {
 		},
 		{
 			nome: "data_admissao em formato inválido",
-			input: func() VendedorInput {
+			input: func() comercial.DadosVendedor {
 				in := validVendedorInput()
 				in.DataAdmissao = "15/01/2024"
 				return in
@@ -317,8 +317,8 @@ func TestVendedorService_CreateVendedor_Validacoes(t *testing.T) {
 	for _, tc := range vendedorValidacaoTestCases() {
 		t.Run(tc.nome, func(t *testing.T) {
 			db, mock := newVendedorTestDB(t)
-			svc := NewVendedorService(db, vendedorTestCfg(true))
-			v, err := svc.CreateVendedor(context.Background(), db, tc.input())
+			casos := casosComercial(db, 0)
+			v, err := casos.CriarVendedor(context.Background(), principalAdmin(), tc.input())
 			assert.Nil(t, v)
 			assert.ErrorIs(t, err, tc.wantErr)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -336,8 +336,8 @@ func TestVendedorService_CreateVendedor_DataAdmissaoVaziaUsaHoje(t *testing.T) {
 		WithArgs("Novo Vendedor", "Sudeste", "SP", sqlmock.AnyArg(), nil, 5000.0).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	svc := NewVendedorService(db, vendedorTestCfg(true))
-	v, err := svc.CreateVendedor(context.Background(), db, in)
+	casos := casosComercial(db, 0)
+	v, err := casos.CriarVendedor(context.Background(), principalAdmin(), in)
 
 	require.NoError(t, err)
 	require.NotNil(t, v)
@@ -352,8 +352,8 @@ func TestVendedorService_CreateVendedor_Sucesso(t *testing.T) {
 		WithArgs("Novo Vendedor", "Sudeste", "SP", sqlmock.AnyArg(), nil, 5000.0).
 		WillReturnResult(sqlmock.NewResult(5, 1))
 
-	svc := NewVendedorService(db, vendedorTestCfg(true))
-	v, err := svc.CreateVendedor(context.Background(), db, validVendedorInput())
+	casos := casosComercial(db, 0)
+	v, err := casos.CriarVendedor(context.Background(), principalAdmin(), validVendedorInput())
 
 	require.NoError(t, err)
 	require.NotNil(t, v)
@@ -368,8 +368,8 @@ func TestVendedorService_CreateVendedor_ErroDoRepo(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO vendedores \(nome, regiao, uf, data_admissao, data_desligamento, meta_mensal\)`).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.CreateVendedor(context.Background(), db, validVendedorInput())
+	casos := casosComercial(db, 0)
+	v, err := casos.CriarVendedor(context.Background(), principalAdmin(), validVendedorInput())
 
 	assert.Nil(t, v)
 	assert.Error(t, err)
@@ -384,8 +384,8 @@ func TestVendedorService_UpdateVendedor_Validacoes(t *testing.T) {
 	for _, tc := range vendedorValidacaoTestCases() {
 		t.Run(tc.nome, func(t *testing.T) {
 			db, mock := newVendedorTestDB(t)
-			svc := NewVendedorService(db, vendedorTestCfg(true))
-			v, err := svc.UpdateVendedor(context.Background(), db, 1, tc.input())
+			casos := casosComercial(db, 0)
+			v, err := casos.AtualizarVendedor(context.Background(), principalAdmin(), 1, tc.input())
 			assert.Nil(t, v)
 			assert.ErrorIs(t, err, tc.wantErr)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -399,8 +399,8 @@ func TestVendedorService_UpdateVendedor_DataAdmissaoVaziaEhErro(t *testing.T) {
 	in := validVendedorInput()
 	in.DataAdmissao = ""
 
-	svc := NewVendedorService(db, vendedorTestCfg(true))
-	v, err := svc.UpdateVendedor(context.Background(), db, 1, in)
+	casos := casosComercial(db, 0)
+	v, err := casos.AtualizarVendedor(context.Background(), principalAdmin(), 1, in)
 
 	assert.Nil(t, v)
 	assert.ErrorIs(t, err, comercial.ErrDataAdmissaoInvalida)
@@ -417,8 +417,8 @@ func TestVendedorService_UpdateVendedor_Sucesso(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(vendedorGetRows(1, "Novo Vendedor", nil))
 
-	svc := NewVendedorService(db, vendedorTestCfg(true))
-	v, err := svc.UpdateVendedor(context.Background(), db, 1, validVendedorInput())
+	casos := casosComercial(db, 0)
+	v, err := casos.AtualizarVendedor(context.Background(), principalAdmin(), 1, validVendedorInput())
 
 	require.NoError(t, err)
 	require.NotNil(t, v)
@@ -433,8 +433,8 @@ func TestVendedorService_UpdateVendedor_NaoEncontrado(t *testing.T) {
 		WithArgs("Novo Vendedor", "Sudeste", "SP", sqlmock.AnyArg(), 5000.0, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.UpdateVendedor(context.Background(), db, 999, validVendedorInput())
+	casos := casosComercial(db, 0)
+	v, err := casos.AtualizarVendedor(context.Background(), principalAdmin(), 999, validVendedorInput())
 
 	assert.Nil(t, v)
 	assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
@@ -447,8 +447,8 @@ func TestVendedorService_UpdateVendedor_ErroGenericoDoRepo(t *testing.T) {
 	mock.ExpectExec(`UPDATE vendedores\s+SET nome = \?, regiao = \?, uf = \?, data_admissao = \?, meta_mensal = \?\s+WHERE id = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.UpdateVendedor(context.Background(), db, 1, validVendedorInput())
+	casos := casosComercial(db, 0)
+	v, err := casos.AtualizarVendedor(context.Background(), principalAdmin(), 1, validVendedorInput())
 
 	assert.Nil(t, v)
 	assert.Error(t, err)
@@ -466,8 +466,8 @@ func TestVendedorService_UpdateVendedor_ErroNoGetByIDApósUpdate(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.UpdateVendedor(context.Background(), db, 1, validVendedorInput())
+	casos := casosComercial(db, 0)
+	v, err := casos.AtualizarVendedor(context.Background(), principalAdmin(), 1, validVendedorInput())
 
 	assert.Nil(t, v)
 	assert.Error(t, err)
@@ -510,8 +510,8 @@ func TestVendedorService_DeleteVendedor_Sucesso(t *testing.T) {
 				WithArgs(int64(1)).
 				WillReturnRows(vendedorGetRows(1, "João Vendedor", time.Now()))
 
-			svc := NewVendedorService(db, vendedorTestCfg(true))
-			v, err := svc.DeleteVendedor(context.Background(), db, 1)
+			casos := casosComercial(db, 0)
+			v, err := casos.DesligarVendedor(context.Background(), principalAdmin(), 1)
 
 			require.NoError(t, err)
 			require.NotNil(t, v)
@@ -530,8 +530,8 @@ func TestVendedorService_DeleteVendedor_NaoEncontrado_NaoInativaUsuarios(t *test
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectRollback()
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.DeleteVendedor(context.Background(), db, 999)
+	casos := casosComercial(db, 0)
+	v, err := casos.DesligarVendedor(context.Background(), principalAdmin(), 999)
 
 	assert.Nil(t, v)
 	assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
@@ -548,8 +548,8 @@ func TestVendedorService_DeleteVendedor_ErroGenericoDoRepo(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.DesligarVendedor(context.Background(), principalAdmin(), 1)
 
 	assert.Nil(t, v)
 	assert.Error(t, err)
@@ -569,8 +569,8 @@ func TestVendedorService_DeleteVendedor_ErroAoInativarUsuarios_FazRollback(t *te
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.DesligarVendedor(context.Background(), principalAdmin(), 1)
 
 	assert.Nil(t, v)
 	require.Error(t, err)
@@ -595,8 +595,8 @@ func TestVendedorService_DeleteVendedor_ErroAoRevogarTokens_FazRollback(t *testi
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.DesligarVendedor(context.Background(), principalAdmin(), 1)
 
 	assert.Nil(t, v)
 	assert.ErrorIs(t, err, sql.ErrConnDone)
@@ -623,8 +623,8 @@ func TestVendedorService_DeleteVendedor_JaDesligado_RevogacaoIdempotente(t *test
 		WithArgs(int64(1)).
 		WillReturnRows(vendedorGetRows(1, "João Vendedor", time.Now()))
 
-	svc := NewVendedorService(db, vendedorTestCfg(true))
-	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.DesligarVendedor(context.Background(), principalAdmin(), 1)
 
 	require.NoError(t, err)
 	require.NotNil(t, v)
@@ -636,8 +636,8 @@ func TestVendedorService_DeleteVendedor_ErroNoBegin(t *testing.T) {
 
 	mock.ExpectBegin().WillReturnError(sql.ErrConnDone)
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.DesligarVendedor(context.Background(), principalAdmin(), 1)
 
 	assert.Nil(t, v)
 	assert.ErrorIs(t, err, sql.ErrConnDone)
@@ -659,8 +659,8 @@ func TestVendedorService_DeleteVendedor_ErroNoCommit(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit().WillReturnError(sql.ErrConnDone)
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.DesligarVendedor(context.Background(), principalAdmin(), 1)
 
 	assert.Nil(t, v)
 	assert.ErrorIs(t, err, sql.ErrConnDone)
@@ -681,8 +681,8 @@ func TestVendedorService_ReativarVendedor_Sucesso(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(vendedorGetRows(1, "João Vendedor", nil))
 
-	svc := NewVendedorService(db, vendedorTestCfg(true))
-	v, err := svc.ReativarVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.ReativarVendedor(context.Background(), principalAdmin(), 1)
 
 	require.NoError(t, err)
 	require.NotNil(t, v)
@@ -698,8 +698,8 @@ func TestVendedorService_ReativarVendedor_NaoEncontrado(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.ReativarVendedor(context.Background(), db, 999)
+	casos := casosComercial(db, 0)
+	v, err := casos.ReativarVendedor(context.Background(), principalAdmin(), 999)
 
 	assert.Nil(t, v)
 	assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
@@ -712,8 +712,8 @@ func TestVendedorService_ReativarVendedor_ErroGenericoDoRepo(t *testing.T) {
 	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.ReativarVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.ReativarVendedor(context.Background(), principalAdmin(), 1)
 
 	assert.Nil(t, v)
 	assert.Error(t, err)
@@ -731,8 +731,8 @@ func TestVendedorService_ReativarVendedor_ErroNoGetByIDApósUpdate(t *testing.T)
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.ReativarVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.ReativarVendedor(context.Background(), principalAdmin(), 1)
 
 	assert.Nil(t, v)
 	assert.Error(t, err)
@@ -975,8 +975,8 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 			db, mock := newVendedorTestDB(t)
 			tc.mock(mock)
 
-			svc := NewVendedorService(db, vendedorTestCfg(true))
-			resumo, err := svc.VincularCliente(context.Background(), db, tc.vendedorID, tc.clienteID)
+			casos := casosComercial(db, 0)
+			resumo, err := casos.VincularCliente(context.Background(), principalAdmin(), tc.vendedorID, tc.clienteID)
 
 			switch {
 			case tc.wantErr != nil:
@@ -1074,8 +1074,8 @@ func TestVendedorService_DesvincularCliente(t *testing.T) {
 			db, mock := newVendedorTestDB(t)
 			tc.mock(mock)
 
-			svc := NewVendedorService(db, vendedorTestCfg(true))
-			err := svc.DesvincularCliente(context.Background(), db, tc.vendedorID, tc.clienteID)
+			casos := casosComercial(db, 0)
+			err := casos.DesvincularCliente(context.Background(), principalAdmin(), tc.vendedorID, tc.clienteID)
 
 			switch {
 			case tc.wantErr != nil:
@@ -1108,8 +1108,8 @@ func TestVendedorService_DeleteVendedor_ErroNoGetByIDApósUpdate(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := NewVendedorService(db, vendedorTestCfg(false))
-	v, err := svc.DeleteVendedor(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	v, err := casos.DesligarVendedor(context.Background(), principalAdmin(), 1)
 
 	assert.Nil(t, v)
 	assert.Error(t, err)

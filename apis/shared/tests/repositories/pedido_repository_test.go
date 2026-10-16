@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"github.com/rotaperfumes/shared/kernel"
+	"github.com/rotaperfumes/shared/vendas/vendasmysql"
 	"testing"
 	"time"
 
@@ -50,9 +52,8 @@ func TestPedidoList_SemFiltro(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	pedidos, total, err := repo.List(ctx, db, 1, 10, PedidoFiltro{})
+	pedidos, total, err := itensETotal(vendasmysql.NovoPedidos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPedido{Ordenacao: vendas.OrdenacaoPedidoPadrao()}, kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
@@ -64,43 +65,43 @@ func TestPedidoList_SemFiltro(t *testing.T) {
 func TestPedidoList_ComFiltros(t *testing.T) {
 	testes := []struct {
 		nome        string
-		filtro      PedidoFiltro
+		filtro      vendas.FiltroPedido
 		whereRegexp string
 		args        []driver.Value
 	}{
 		{
 			nome:        "filtro por status",
-			filtro:      PedidoFiltro{Status: "aprovado"},
+			filtro:      vendas.FiltroPedido{Status: "aprovado", Ordenacao: vendas.OrdenacaoPedidoPadrao()},
 			whereRegexp: `WHERE p\.status = \?`,
 			args:        []driver.Value{"aprovado"},
 		},
 		{
 			nome:        "filtro por canal",
-			filtro:      PedidoFiltro{Canal: "online"},
+			filtro:      vendas.FiltroPedido{Canal: "online", Ordenacao: vendas.OrdenacaoPedidoPadrao()},
 			whereRegexp: `WHERE p\.canal = \?`,
 			args:        []driver.Value{"online"},
 		},
 		{
 			nome:        "filtro por cliente",
-			filtro:      PedidoFiltro{ClienteID: 5},
+			filtro:      vendas.FiltroPedido{ClienteID: 5, Ordenacao: vendas.OrdenacaoPedidoPadrao()},
 			whereRegexp: `WHERE p\.cliente_id = \?`,
 			args:        []driver.Value{int64(5)},
 		},
 		{
 			nome:        "filtro por vendedor",
-			filtro:      PedidoFiltro{VendedorID: 3},
+			filtro:      vendas.FiltroPedido{VendedorID: 3, Ordenacao: vendas.OrdenacaoPedidoPadrao()},
 			whereRegexp: `WHERE p\.vendedor_id = \?`,
 			args:        []driver.Value{int64(3)},
 		},
 		{
 			nome:        "filtro por data inicio e fim",
-			filtro:      PedidoFiltro{DataInicio: "2024-01-01", DataFim: "2024-01-31"},
+			filtro:      vendas.FiltroPedido{DataInicio: "2024-01-01", DataFim: "2024-01-31", Ordenacao: vendas.OrdenacaoPedidoPadrao()},
 			whereRegexp: `WHERE p\.data_pedido >= \? AND p\.data_pedido <= \?`,
 			args:        []driver.Value{"2024-01-01", "2024-01-31"},
 		},
 		{
 			nome:        "filtro por busca textual",
-			filtro:      PedidoFiltro{Q: "Empresa"},
+			filtro:      vendas.FiltroPedido{Busca: "Empresa", Ordenacao: vendas.OrdenacaoPedidoPadrao()},
 			whereRegexp: `WHERE c\.razao_social LIKE \?`,
 			args:        []driver.Value{"%Empresa%"},
 		},
@@ -120,9 +121,8 @@ func TestPedidoList_ComFiltros(t *testing.T) {
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(pedidoColumns))
 
-			repo := NewPedidoRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, tt.filtro)
+			_, _, err := itensETotal(vendasmysql.NovoPedidos(db).Listar(ctx, escopoAdmin(), tt.filtro, kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -186,9 +186,8 @@ func TestPedidoList_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(pedidoColumns))
 
-			repo := NewPedidoRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, PedidoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+			_, _, err := itensETotal(vendasmysql.NovoPedidos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPedido{Ordenacao: kernel.ParseOrdenacao(tt.orderBy, tt.orderDir, vendas.CamposOrdenacaoPedido(), vendas.OrdenacaoPedidoPadrao())}, kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -203,9 +202,8 @@ func TestPedidoList_CountError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pedidoFromRegexp).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, PedidoFiltro{})
+	_, _, err := itensETotal(vendasmysql.NovoPedidos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPedido{Ordenacao: vendas.OrdenacaoPedidoPadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -221,9 +219,8 @@ func TestPedidoList_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, PedidoFiltro{})
+	_, _, err := itensETotal(vendasmysql.NovoPedidos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPedido{Ordenacao: vendas.OrdenacaoPedidoPadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -242,9 +239,8 @@ func TestPedidoList_IterError(t *testing.T) {
 			AddRow(pedidoRow(201, 1, 1, now, "online", "aprovado", 100.0, now, now, "Cliente A", "Vendedor A")...).
 			RowError(0, sql.ErrConnDone))
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, PedidoFiltro{})
+	_, _, err := itensETotal(vendasmysql.NovoPedidos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPedido{Ordenacao: vendas.OrdenacaoPedidoPadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -262,9 +258,8 @@ func TestPedidoGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 1)
+	p, err := vendasmysql.NovoPedidos(db).PorID(ctx, 1)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(201), p.PedidoIDOrigem)
@@ -280,9 +275,8 @@ func TestPedidoGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 999)
+	p, err := vendasmysql.NovoPedidos(db).PorID(ctx, 999)
 
 	assert.Nil(t, p)
 	assert.ErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
@@ -297,9 +291,8 @@ func TestPedidoGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 1)
+	p, err := vendasmysql.NovoPedidos(db).PorID(ctx, 1)
 
 	assert.Nil(t, p)
 	assert.Error(t, err)
@@ -319,9 +312,8 @@ func TestPedidoListItensByPedidoID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	itens, err := repo.ListItensByPedidoID(ctx, db, 1)
+	itens, err := vendasmysql.NovoPedidos(db).Itens(ctx, 1)
 
 	require.NoError(t, err)
 	require.Len(t, itens, 1)
@@ -337,9 +329,8 @@ func TestPedidoListItensByPedidoID_Vazio(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itemPedidoColumns))
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	itens, err := repo.ListItensByPedidoID(ctx, db, 1)
+	itens, err := vendasmysql.NovoPedidos(db).Itens(ctx, 1)
 
 	require.NoError(t, err)
 	assert.Len(t, itens, 0)
@@ -354,9 +345,8 @@ func TestPedidoListItensByPedidoID_QueryError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	_, err := repo.ListItensByPedidoID(ctx, db, 1)
+	_, err := vendasmysql.NovoPedidos(db).Itens(ctx, 1)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -375,9 +365,8 @@ func TestPedidoListItensByPedidoID_IterError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	_, err := repo.ListItensByPedidoID(ctx, db, 1)
+	_, err := vendasmysql.NovoPedidos(db).Itens(ctx, 1)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -406,9 +395,8 @@ func TestPedidoExistsByID(t *testing.T) {
 				q.WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 			}
 
-			repo := NewPedidoRepository()
 			ctx := context.Background()
-			exists, err := repo.ExistsByID(ctx, db, tt.id)
+			exists, err := vendasmysql.NovoPedidos(db).Existe(ctx, tt.id)
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, exists)
@@ -425,9 +413,8 @@ func TestPedidoExistsByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	exists, err := repo.ExistsByID(ctx, db, 1)
+	exists, err := vendasmysql.NovoPedidos(db).Existe(ctx, 1)
 
 	assert.False(t, exists)
 	assert.Error(t, err)
@@ -463,9 +450,8 @@ func TestPedidoCreateComItens_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(20, 1))
 	mock.ExpectCommit()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.CreateComItens(ctx, db, p, itens)
+	err := inserirPedido(ctx, db, p, itens)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(10), p.PedidoIDOrigem)
@@ -487,9 +473,8 @@ func TestPedidoCreateComItens_SemItens(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(11, 1))
 	mock.ExpectCommit()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.CreateComItens(ctx, db, p, nil)
+	err := inserirPedido(ctx, db, p, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(11), p.PedidoIDOrigem)
@@ -507,9 +492,8 @@ func TestPedidoCreateComItens_ErroInsertPedido(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.CreateComItens(ctx, db, p, nil)
+	err := inserirPedido(ctx, db, p, nil)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -529,9 +513,8 @@ func TestPedidoCreateComItens_ErroInsertItem(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.CreateComItens(ctx, db, p, itens)
+	err := inserirPedido(ctx, db, p, itens)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -572,9 +555,8 @@ func TestPedidoUpdateComItens_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(30, 1))
 	mock.ExpectCommit()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.UpdateComItens(ctx, db, 1, p, itens)
+	err := atualizarPedido(ctx, db, 1, p, itens)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(30), itens[0].ItemIDOrigem)
@@ -593,9 +575,8 @@ func TestPedidoUpdateComItens_NotFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.UpdateComItens(ctx, db, 999, p, nil)
+	err := atualizarPedido(ctx, db, 999, p, nil)
 
 	assert.ErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -618,9 +599,8 @@ func TestPedidoUpdateComItens_ErroUpdate(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.UpdateComItens(ctx, db, 1, p, nil)
+	err := atualizarPedido(ctx, db, 1, p, nil)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -645,9 +625,8 @@ func TestPedidoUpdateComItens_ErroDelete(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 	mock.ExpectRollback()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.UpdateComItens(ctx, db, 1, p, nil)
+	err := atualizarPedido(ctx, db, 1, p, nil)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -689,9 +668,8 @@ func TestPedidoUpdateComItens_TransicaoParaFaturado_BaixaEstoque(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.UpdateComItens(ctx, db, 1, p, itens)
+	err := atualizarPedido(ctx, db, 1, p, itens)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -723,9 +701,8 @@ func TestPedidoUpdateComItens_ReenvioFaturadoIdempotente_NaoBaixaEstoqueDeNovo(t
 	// nem dispara baixa de estoque novamente (statusAtual já era Faturado).
 	mock.ExpectCommit()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.UpdateComItens(ctx, db, 1, p, itens)
+	err := atualizarPedido(ctx, db, 1, p, itens)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -752,9 +729,8 @@ func TestPedidoUpdateComItens_FaturadoTentaAlterarItens_Erro(t *testing.T) {
 			AddRow(int64(2), 4, 50.0, 0.0))
 	mock.ExpectRollback()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.UpdateComItens(ctx, db, 1, p, itens)
+	err := atualizarPedido(ctx, db, 1, p, itens)
 
 	assert.ErrorIs(t, err, vendas.ErrPedidoJaFaturadoNaoPodeAlterarItens)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -791,9 +767,8 @@ func TestPedidoUpdateComItens_ErroBaixaEstoque_RollbackTudo(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
-	repo := NewPedidoRepository()
 	ctx := context.Background()
-	err := repo.UpdateComItens(ctx, db, 1, p, itens)
+	err := atualizarPedido(ctx, db, 1, p, itens)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

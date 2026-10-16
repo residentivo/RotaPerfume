@@ -16,7 +16,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/shared/identidade"
-	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 // fakeUserStatusChecker segue a convenção dos testes (user_id 1 = admin,
@@ -50,7 +50,7 @@ func newRouterWithChecker(t *testing.T, checker httpx.ConsultaStatus) http.Handl
 	db, _, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	return bootstrap.HandlerHTTP(cfg, checker, bootstrap.NovosHandlers(db, cfg, sharedsvc.NewNoopEmailService()))
+	return bootstrap.HandlerHTTP(cfg, checker, bootstrap.NovosHandlers(db, cfg, notificacaosmtp.NovoNoop()))
 }
 
 func TestSEC06_Router_UsuarioInativo_401(t *testing.T) {

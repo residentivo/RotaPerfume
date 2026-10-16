@@ -7,6 +7,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
+	shareddb "github.com/rotaperfumes/shared/db"
 	"testing"
 	"time"
 
@@ -15,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/comercial"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 const reInsertClienteRepo = `INSERT INTO clientes \(cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo\)\s+VALUES \(\?, \?, \?, \?, \?, \?, \?, \?\)`
@@ -44,7 +45,7 @@ func TestClienteRepository_Create(t *testing.T) {
 			defer db.Close()
 			ctx := context.Background()
 
-			var exec repositories.Execer = db
+			var exec shareddb.Querier = db // ARQ-07: o Execer legado virou db.Querier (pool ou tx)
 			var tx *sql.Tx
 			if tc.emTx {
 				mock.ExpectBegin()
@@ -62,7 +63,7 @@ func TestClienteRepository_Create(t *testing.T) {
 				CNPJ: "12345678000199", RazaoSocial: "Empresa", Segmento: "varejo", Cidade: "Curitiba",
 				UF: "PR", Bairro: "Centro", DataCadastro: dataCad, Ativo: true,
 			}
-			err = NewClienteRepository().Create(ctx, exec, c)
+			err = comercialmysql.NovoClientes(exec).Inserir(ctx, c)
 			if tx != nil {
 				require.NoError(t, tx.Rollback())
 			}

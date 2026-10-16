@@ -116,8 +116,9 @@ type Publicador interface {
 	Publicar(ctx context.Context, e identidade.ReusoDeRefreshDetectado)
 }
 
-// EnviadorSenhaInicial envia por e-mail a senha gerada pelo sistema (o
-// EmailService legado satisfaz). A senha nunca é logada nem devolvida (M-02).
+// EnviadorSenhaInicial envia por e-mail a senha gerada pelo sistema
+// (notificacaosmtp.SMTP ou o Null Object notificacaosmtp.Noop satisfazem).
+// A senha nunca é logada nem devolvida (M-02).
 type EnviadorSenhaInicial interface {
 	EnviarSenhaInicial(ctx context.Context, destinatario, nomeUsuario, senha string) error
 }

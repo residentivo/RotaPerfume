@@ -24,7 +24,7 @@ const senhaIT = "Senha-IT-Lote6@1"
 func (c *itCtx) usuarioComSenha(tag, role string, vendedorID int64) (int64, string) {
 	c.t.Helper()
 	id := c.usuario(tag, vendedorID, true)
-	hash, err := novoAuthCrypto().HashPassword(testCfg(), senhaIT)
+	hash, err := gerarHashSenha(testCfg().HashSenha, senhaIT)
 	require.NoError(c.t, err)
 	_, err = c.db.Exec(`UPDATE usuarios SET password_hash = ?, role = ?, deve_trocar_senha = 0 WHERE id = ?`, hash, role, id)
 	require.NoError(c.t, err)
@@ -257,9 +257,8 @@ func TestIntegracaoHTTP_SEC06_RoleEInexistente(t *testing.T) {
 // abaixo do limite de 10.
 func TestIntegracaoHTTP_SEC07_ReusoForaDaJanela(t *testing.T) {
 	c := novoItCtx(t)
-	svc := novoRefreshSvc()
 	novoToken := func(t *testing.T, uid int64) string {
-		tok, err := svc.GenerateRefreshToken(context.Background(), c.db, uid, "127.0.0.1", "go-test")
+		tok, err := emitirRefresh(context.Background(), c.db, uid, "127.0.0.1", "go-test")
 		require.NoError(t, err)
 		return tok
 	}

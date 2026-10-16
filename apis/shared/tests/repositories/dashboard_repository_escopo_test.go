@@ -8,6 +8,10 @@ package repositories_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/analytics"
+	"github.com/rotaperfumes/shared/analytics/analyticsmysql"
+	"github.com/rotaperfumes/shared/kernel"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -82,7 +86,7 @@ func TestDashboardEscopo_GetVendasTotais(t *testing.T) {
 				}
 				exp.WillReturnRows(sqlmock.NewRows([]string{"v", "q"}).AddRow(50.0, 1))
 
-				valor, qtd, err := NewDashboardRepository().GetVendasTotais(context.Background(), db, periodo, tt.vendedorID)
+				valor, qtd, err := valorEQtd(analyticsmysql.NovoDashboard(db, time.Now).VendasTotais(context.Background(), escopoDe(tt.vendedorID), periodoDe(periodo)))
 				require.NoError(t, err)
 				assert.Equal(t, 50.0, valor)
 				assert.Equal(t, 1, qtd)
@@ -106,7 +110,7 @@ func TestDashboardEscopo_GetTotalPedidos(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"t"}).AddRow(3))
 
-			total, err := NewDashboardRepository().GetTotalPedidos(context.Background(), db, "month", tt.vendedorID)
+			total, err := analyticsmysql.NovoDashboard(db, time.Now).TotalPedidos(context.Background(), escopoDe(tt.vendedorID), periodoDe("month"))
 			require.NoError(t, err)
 			assert.Equal(t, 3, total)
 			assertFiltro(t, (*captured)[0], "AND vendedor_id = ?", tt.filtra, "")
@@ -127,7 +131,7 @@ func TestDashboardEscopo_GetMetaMensalTotal(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"m"}).AddRow(1000.0))
 
-			meta, err := NewDashboardRepository().GetMetaMensalTotal(context.Background(), db, tt.vendedorID)
+			meta, err := analyticsmysql.NovoDashboard(db, time.Now).MetaMensalTotal(context.Background(), escopoDe(tt.vendedorID))
 			require.NoError(t, err)
 			assert.Equal(t, 1000.0, meta)
 			assertFiltro(t, (*captured)[0], "WHERE data_desligamento IS NULL AND id = ?", tt.filtra, "")
@@ -149,7 +153,7 @@ func TestDashboardEscopo_GetTopVendedores(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}))
 
-			res, err := NewDashboardRepository().GetTopVendedores(context.Background(), db, 10, tt.vendedorID)
+			res, err := analyticsmysql.NovoDashboard(db, time.Now).TopVendedores(context.Background(), escopoDe(tt.vendedorID), 10)
 			require.NoError(t, err)
 			assert.Empty(t, res)
 			assertFiltro(t, (*captured)[0], "WHERE v.data_desligamento IS NULL AND v.id = ?", tt.filtra, "ORDER BY")
@@ -170,7 +174,7 @@ func TestDashboardEscopo_GetMetasVendedores(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta"}))
 
-			res, err := NewDashboardRepository().GetMetasVendedores(context.Background(), db, tt.vendedorID)
+			res, err := analyticsmysql.NovoDashboard(db, time.Now).MetasVendedores(context.Background(), escopoDe(tt.vendedorID))
 			require.NoError(t, err)
 			assert.Empty(t, res)
 			assertFiltro(t, (*captured)[0], "WHERE v.data_desligamento IS NULL AND v.id = ?", tt.filtra, "ORDER BY")
@@ -192,7 +196,7 @@ func TestDashboardEscopo_GetVendasSeries(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
-			serie, err := NewDashboardRepository().GetVendasSeries(context.Background(), db, 15, tt.vendedorID)
+			serie, err := analyticsmysql.NovoDashboard(db, time.Now).SerieVendas(context.Background(), escopoDe(tt.vendedorID), analytics.DiasDe(15))
 			require.NoError(t, err)
 			assert.Len(t, serie, 15)
 			assertFiltro(t, (*captured)[0], "AND status NOT IN ('cancelado', 'devolvido') AND vendedor_id = ?", tt.filtra, "GROUP BY")
@@ -237,7 +241,7 @@ func TestDashboardEscopo_GetVendedoresRanking(t *testing.T) {
 			count.WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(total))
 			lista.WillReturnRows(rows)
 
-			res, gotTotal, err := NewDashboardRepository().GetVendedoresRanking(context.Background(), db, tt.page, tt.limit, tt.vendedorID)
+			res, gotTotal, err := itensETotal(analyticsmysql.NovoDashboard(db, time.Now).Ranking(context.Background(), escopoDe(tt.vendedorID), kernel.NovaPagina(tt.page, tt.limit)))
 			require.NoError(t, err)
 			assert.Equal(t, total, gotTotal)
 			require.Len(t, *captured, 2)
@@ -245,7 +249,7 @@ func TestDashboardEscopo_GetVendedoresRanking(t *testing.T) {
 			assertFiltro(t, (*captured)[1], "WHERE v.data_desligamento IS NULL AND v.id = ?", tt.filtra, "ORDER BY")
 			if tt.filtra {
 				require.Len(t, res, 1)
-				assert.Equal(t, tt.vendedorID, res[0]["vendedor_id"])
+				assert.Equal(t, tt.vendedorID, res[0].VendedorID)
 			} else {
 				assert.Empty(t, res)
 			}
@@ -260,7 +264,7 @@ func TestDashboardEscopo_GetVendedoresRanking_CountError_ComFiltro(t *testing.T)
 		WithArgs(int64(7)).
 		WillReturnError(sql.ErrConnDone)
 
-	_, _, err := NewDashboardRepository().GetVendedoresRanking(context.Background(), db, 1, 20, 7)
+	_, _, err := itensETotal(analyticsmysql.NovoDashboard(db, time.Now).Ranking(context.Background(), escopoDe(7), kernel.NovaPagina(1, 20)))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sql.ErrConnDone)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -278,23 +282,22 @@ func TestDashboardEmptySeries(t *testing.T) {
 		{"trinta dias", 30},
 		{"365 dias", 365},
 	}
-	repo := NewDashboardRepository()
 	for _, tt := range casos {
 		t.Run(tt.nome, func(t *testing.T) {
-			serie := repo.EmptySeries(tt.dias)
+			serie := analytics.SerieZerada(tt.dias, time.Now())
 			require.NotNil(t, serie)
 			require.Len(t, serie, tt.dias)
 			for i, p := range serie {
-				assert.Len(t, p, 3)
-				assert.Regexp(t, isoDate, p["dia"])
-				assert.Equal(t, 0.0, p["total_vendas"])
-				assert.Equal(t, 0, p["total_pedidos"])
+				assert.Equal(t, 3, reflect.TypeOf(p).NumField(), "três campos: dia, total_vendas, total_pedidos")
+				assert.Regexp(t, isoDate, p.Dia)
+				assert.Equal(t, 0.0, p.TotalVendas)
+				assert.Equal(t, 0, p.TotalPedidos)
 				if i > 0 {
-					assert.Less(t, serie[i-1]["dia"].(string), p["dia"].(string), "ordem crescente")
+					assert.Less(t, serie[i-1].Dia, p.Dia, "ordem crescente")
 				}
 			}
 			if tt.dias > 0 {
-				assert.Equal(t, time.Now().Format("2006-01-02"), serie[tt.dias-1]["dia"], "último ponto é hoje")
+				assert.Equal(t, time.Now().Format("2006-01-02"), serie[tt.dias-1].Dia, "último ponto é hoje")
 			}
 		})
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
 	"testing"
 	"time"
 
@@ -36,9 +37,8 @@ func TestCarteiraListClientesByVendedorID_ComClientes(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	clientes, err := repo.ListClientesByVendedorID(ctx, db, 1)
+	clientes, err := comercialmysql.NovoCarteiras(db).ClientesDoVendedor(ctx, 1)
 
 	require.NoError(t, err)
 	require.Len(t, clientes, 2)
@@ -55,9 +55,8 @@ func TestCarteiraListClientesByVendedorID_Vazio(t *testing.T) {
 		WithArgs(int64(99)).
 		WillReturnRows(sqlmock.NewRows(clienteResumoColumns))
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	clientes, err := repo.ListClientesByVendedorID(ctx, db, 99)
+	clientes, err := comercialmysql.NovoCarteiras(db).ClientesDoVendedor(ctx, 99)
 
 	require.NoError(t, err)
 	assert.Len(t, clientes, 0)
@@ -72,9 +71,8 @@ func TestCarteiraListClientesByVendedorID_QueryError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	clientes, err := repo.ListClientesByVendedorID(ctx, db, 1)
+	clientes, err := comercialmysql.NovoCarteiras(db).ClientesDoVendedor(ctx, 1)
 
 	assert.Nil(t, clientes)
 	assert.Error(t, err)
@@ -93,9 +91,8 @@ func TestCarteiraListClientesByVendedorID_ScanError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	clientes, err := repo.ListClientesByVendedorID(ctx, db, 1)
+	clientes, err := comercialmysql.NovoCarteiras(db).ClientesDoVendedor(ctx, 1)
 
 	assert.Nil(t, clientes)
 	assert.Error(t, err)
@@ -115,9 +112,8 @@ func TestCarteiraListClientesByVendedorID_IterError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	clientes, err := repo.ListClientesByVendedorID(ctx, db, 1)
+	clientes, err := comercialmysql.NovoCarteiras(db).ClientesDoVendedor(ctx, 1)
 
 	assert.Nil(t, clientes)
 	assert.Error(t, err)
@@ -144,9 +140,8 @@ func TestCarteiraGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	c, err := repo.GetByID(ctx, db, 1)
+	c, err := comercialmysql.NovoCarteiras(db).PorID(ctx, 1)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(500), c.CarteiraIDOrigem)
@@ -161,9 +156,8 @@ func TestCarteiraGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	c, err := repo.GetByID(ctx, db, 999)
+	c, err := comercialmysql.NovoCarteiras(db).PorID(ctx, 999)
 
 	assert.Nil(t, c)
 	assert.ErrorIs(t, err, comercial.ErrVinculoNaoEncontrado)
@@ -178,9 +172,8 @@ func TestCarteiraGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	c, err := repo.GetByID(ctx, db, 1)
+	c, err := comercialmysql.NovoCarteiras(db).PorID(ctx, 1)
 
 	assert.Nil(t, c)
 	assert.Error(t, err)
@@ -241,9 +234,8 @@ func TestCarteiraGetVinculoAtivoByClienteID(t *testing.T) {
 			defer db.Close()
 			tt.mock(mock)
 
-			repo := NewCarteiraRepository()
 			ctx := context.Background()
-			c, err := repo.GetVinculoAtivoByClienteID(ctx, db, tt.clienteID)
+			c, err := comercialmysql.NovoCarteiras(db).VinculoAtivoDoCliente(ctx, tt.clienteID)
 
 			if tt.wantID != 0 {
 				require.NoError(t, err)
@@ -319,9 +311,8 @@ func TestCarteiraGetVinculoAtivo(t *testing.T) {
 			defer db.Close()
 			tt.mock(mock)
 
-			repo := NewCarteiraRepository()
 			ctx := context.Background()
-			c, err := repo.GetVinculoAtivo(ctx, db, tt.vendedorID, tt.clienteID)
+			c, err := comercialmysql.NovoCarteiras(db).VinculoAtivo(ctx, tt.vendedorID, tt.clienteID)
 
 			if tt.wantID != 0 {
 				require.NoError(t, err)
@@ -360,9 +351,8 @@ func TestCarteiraCreate_Success(t *testing.T) {
 		WithArgs(c.ClienteID, c.VendedorID, c.DataInicio, c.DataFim).
 		WillReturnResult(sqlmock.NewResult(7, 1))
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, c)
+	err := comercialmysql.NovoCarteiras(db).Inserir(ctx, c)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), c.CarteiraIDOrigem)
@@ -378,9 +368,8 @@ func TestCarteiraCreate_ExecError(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO carteiras \(cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?\)`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, c)
+	err := comercialmysql.NovoCarteiras(db).Inserir(ctx, c)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -395,9 +384,8 @@ func TestCarteiraCreate_LastInsertIdError(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO carteiras \(cliente_id, vendedor_id, data_inicio, data_fim\)\s+VALUES \(\?, \?, \?, \?\)`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, c)
+	err := comercialmysql.NovoCarteiras(db).Inserir(ctx, c)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -417,9 +405,8 @@ func TestCarteiraEncerrarVinculo_Success(t *testing.T) {
 		WithArgs(dataFim, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.EncerrarVinculo(ctx, db, 1, dataFim)
+	err := comercialmysql.NovoCarteiras(db).Encerrar(ctx, 1, dataFim)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -435,9 +422,8 @@ func TestCarteiraEncerrarVinculo_NotFound(t *testing.T) {
 		WithArgs(dataFim, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.EncerrarVinculo(ctx, db, 999, dataFim)
+	err := comercialmysql.NovoCarteiras(db).Encerrar(ctx, 999, dataFim)
 
 	assert.ErrorIs(t, err, comercial.ErrVinculoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -450,9 +436,8 @@ func TestCarteiraEncerrarVinculo_ExecError(t *testing.T) {
 	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.EncerrarVinculo(ctx, db, 1, time.Now())
+	err := comercialmysql.NovoCarteiras(db).Encerrar(ctx, 1, time.Now())
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -465,9 +450,8 @@ func TestCarteiraEncerrarVinculo_RowsAffectedError(t *testing.T) {
 	mock.ExpectExec(`UPDATE carteiras SET data_fim = \? WHERE carteira_id_origem = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.EncerrarVinculo(ctx, db, 1, time.Now())
+	err := comercialmysql.NovoCarteiras(db).Encerrar(ctx, 1, time.Now())
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -485,9 +469,8 @@ func TestCarteiraDelete_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.Delete(ctx, db, 1)
+	err := comercialmysql.NovoCarteiras(db).Excluir(ctx, 1)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -501,9 +484,8 @@ func TestCarteiraDelete_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.Delete(ctx, db, 999)
+	err := comercialmysql.NovoCarteiras(db).Excluir(ctx, 999)
 
 	assert.ErrorIs(t, err, comercial.ErrVinculoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -516,9 +498,8 @@ func TestCarteiraDelete_ExecError(t *testing.T) {
 	mock.ExpectExec(`DELETE FROM carteiras WHERE carteira_id_origem = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.Delete(ctx, db, 1)
+	err := comercialmysql.NovoCarteiras(db).Excluir(ctx, 1)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -531,9 +512,8 @@ func TestCarteiraDelete_RowsAffectedError(t *testing.T) {
 	mock.ExpectExec(`DELETE FROM carteiras WHERE carteira_id_origem = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := NewCarteiraRepository()
 	ctx := context.Background()
-	err := repo.Delete(ctx, db, 1)
+	err := comercialmysql.NovoCarteiras(db).Excluir(ctx, 1)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

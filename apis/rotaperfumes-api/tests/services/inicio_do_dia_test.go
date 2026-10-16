@@ -13,14 +13,13 @@ package services_test
 
 import (
 	"context"
+	"github.com/rotaperfumes/shared/comercial"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/config"
 )
 
 // dataInicioCarteira cria cliente+carteira e devolve o data_inicio gravado,
@@ -36,8 +35,7 @@ func dataInicioCarteira(t *testing.T) (got, antes, depois time.Time) {
 	mock.ExpectCommit()
 
 	antes = time.Now()
-	_, err := NewClienteService(db, &config.Config{}).CreateClienteNaCarteira(context.Background(), db,
-		ClienteInput{CNPJ: "11222333000181", RazaoSocial: "Empresa", Segmento: "varejo", Cidade: "Curitiba", UF: "PR"}, 10)
+	_, err := casosComercial(db, 10).CriarCliente(context.Background(), principalRestrito(), fixo(comercial.DadosCliente{CNPJ: "11222333000181", RazaoSocial: "Empresa", Segmento: "varejo", Cidade: "Curitiba", UF: "PR"}))
 	depois = time.Now()
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())

@@ -6,6 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
+	"github.com/rotaperfumes/shared/kernel"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -71,8 +73,7 @@ func testCfg() *config.Config {
 
 // generateToken cria um token JWT para testes.
 func generateToken(t *testing.T, cfg *config.Config, uid int64, role string) string {
-	auth := novoAuthCrypto()
-	tok, err := auth.GenerateJWT(cfg, uid, role)
+	tok, err := identidadecrypto.NovoJWT(cfg).Emitir(uid, kernel.RoleDoBanco(role))
 	require.NoError(t, err)
 	return tok
 }
@@ -106,11 +107,11 @@ func setupTestServer(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock) 
 }
 
 // setupTestServerWithAuthHandler é como setupTestServer, mas também retorna
-// o AuthHandler real usado pelo router (authHandlerTeste) — permite que os testes de
-// captcha (Login/ResetPassword) substituam o CaptchaVerifier via
-// AuthHandler.SetCaptchaVerifier para simular sucesso/falha do Turnstile sem
+// o AuthHandler real usado pelo router (identidadeTeste) — permite que os testes de
+// captcha (Login/ResetPassword) troquem o verificador injetado no caso de uso
+// (authHandler.captcha.trocar) para simular sucesso/falha do Turnstile sem
 // chamadas de rede reais.
-func setupTestServerWithAuthHandler(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock, *authHandlerTeste) {
+func setupTestServerWithAuthHandler(t *testing.T) (*httptest.Server, *sql.DB, sqlmock.Sqlmock, *identidadeTeste) {
 	cfg := testCfg()
 
 	// sqlmock para DB
@@ -119,8 +120,8 @@ func setupTestServerWithAuthHandler(t *testing.T) (*httptest.Server, *sql.DB, sq
 
 	// Handlers reais sobre o db mockado. O captcha fake aprova tokens não
 	// vazios (o fail-closed do token vazio continua); os testes de captcha
-	// trocam o verificador com authHandler.SetCaptchaVerifier (ARQ-03: ponto de
-	// troca do teste, não setter de produção).
+	// trocam o verificador com authHandler.captcha.trocar (dependência do caso
+	// de uso injetada na montagem; não há setter de produção).
 	authHandler := novaIdentidadeTeste(db, cfg)
 	hs := bootstrap.NovosHandlersCom(db, cfg, authHandler.casos)
 
@@ -144,7 +145,7 @@ func TestLogin_Success(t *testing.T) {
 
 	// Mock: busca usuário admin@test.com
 	// Tabela usuarios: id, nome, email, password_hash, role, id_vendedor, ativo, created_at, updated_at, ultimo_login_at
-	hash, err := novoAuthCrypto().HashPassword(cfg, "senha-correta")
+	hash, err := gerarHashSenha(cfg.HashSenha, "senha-correta")
 	require.NoError(t, err)
 
 	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
@@ -205,7 +206,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	hash, err := novoAuthCrypto().HashPassword(cfg, "senha-correta")
+	hash, err := gerarHashSenha(cfg.HashSenha, "senha-correta")
 	require.NoError(t, err)
 
 	// Usuário existe, mas senha errada
@@ -256,7 +257,7 @@ func TestLogin_UsuarioInativo(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	hash, err := novoAuthCrypto().HashPassword(cfg, "senha-correta")
+	hash, err := gerarHashSenha(cfg.HashSenha, "senha-correta")
 	require.NoError(t, err)
 
 	// Usuário existe mas inativo
@@ -286,7 +287,7 @@ func TestLogin_RateLimited_AposVariasFalhas(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	hash, err := novoAuthCrypto().HashPassword(cfg, "senha-correta")
+	hash, err := gerarHashSenha(cfg.HashSenha, "senha-correta")
 	require.NoError(t, err)
 
 	const maxFailures = 5 // deve bater com loginMaxFailures em auth_handler.go
@@ -338,7 +339,7 @@ func TestLogin_RateLimited_SucessoResetaContador(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	hash, err := novoAuthCrypto().HashPassword(cfg, "senha-correta")
+	hash, err := gerarHashSenha(cfg.HashSenha, "senha-correta")
 	require.NoError(t, err)
 
 	rowsCorretas := func() *sqlmock.Rows {
@@ -404,7 +405,7 @@ func TestLogin_RateLimited_QuebraComConexoesNovasPorTentativa(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	hash, err := novoAuthCrypto().HashPassword(cfg, "senha-correta")
+	hash, err := gerarHashSenha(cfg.HashSenha, "senha-correta")
 	require.NoError(t, err)
 
 	const maxFailures = 5 // deve bater com loginMaxFailures em auth_handler.go
@@ -483,7 +484,7 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 	cfg := testCfg()
 	normalToken := generateToken(t, cfg, 2, "normal")
 
-	hash, _ := novoAuthCrypto().HashPassword(cfg, "senha-atual")
+	hash, _ := gerarHashSenha(cfg.HashSenha, "senha-atual")
 	// Mock: busca usuário (valida senha_atual)
 	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.id\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs(int64(2)).
@@ -539,7 +540,7 @@ func TestAdminResetPassword_Success(t *testing.T) {
 
 	// Mock: busca usuário alvo para capturar hash anterior (GetByID #1,
 	// chamado pelo handler antes de invocar o service).
-	hash, _ := novoAuthCrypto().HashPassword(cfg, "senha-antiga")
+	hash, _ := gerarHashSenha(cfg.HashSenha, "senha-antiga")
 	usuarioRowsFn := func() *sqlmock.Rows {
 		return sqlmock.NewRows([]string{"id", "nome", "email", "password_hash", "role", "id_vendedor", "ativo", "deve_trocar_senha", "created_at", "updated_at", "ultimo_login_at", "vendedor_nome"}).
 			AddRow(int64(5), "User 5", "user5@test.com", hash, "normal", nil, true, false, time.Now(), time.Now(), nil, nil)
@@ -607,7 +608,7 @@ func mockSenhaHistoricoRecente(mock sqlmock.Sqlmock, uid int64, hashesAnteriores
 // usado pelo ResetPassword handler para validar a senha_atual, retornando um
 // usuário cujo password_hash corresponde a senhaAtualPlana.
 func mockUsuarioParaResetPassword(t *testing.T, mock sqlmock.Sqlmock, cfg *config.Config, uid int64, senhaAtualPlana string) {
-	hash, err := novoAuthCrypto().HashPassword(cfg, senhaAtualPlana)
+	hash, err := gerarHashSenha(cfg.HashSenha, senhaAtualPlana)
 	require.NoError(t, err)
 	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.id\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs(uid).
@@ -761,7 +762,7 @@ func TestResetPassword_NovaSenhaIgualAoHistorico(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	hashSenhaAntiga, err := novoAuthCrypto().HashPassword(cfg, "SenhaAntiga123!")
+	hashSenhaAntiga, err := gerarHashSenha(cfg.HashSenha, "SenhaAntiga123!")
 	require.NoError(t, err)
 
 	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaAtual999!")
@@ -801,7 +802,7 @@ func TestResetPassword_ReusoConta_NoRateLimiter(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	hashSenhaAntiga, err := novoAuthCrypto().HashPassword(cfg, "SenhaAntiga123!")
+	hashSenhaAntiga, err := gerarHashSenha(cfg.HashSenha, "SenhaAntiga123!")
 	require.NoError(t, err)
 
 	const resetPasswordMaxFailures = 10 // deve bater com auth_handler.go
@@ -864,7 +865,7 @@ func TestResetPassword_NovaSenhaForte_NaoReutilizada_Sucesso(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	hashSenhaAntiga, err := novoAuthCrypto().HashPassword(cfg, "SenhaBemAntiga1!")
+	hashSenhaAntiga, err := gerarHashSenha(cfg.HashSenha, "SenhaBemAntiga1!")
 	require.NoError(t, err)
 
 	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaAtual999!")
@@ -989,7 +990,7 @@ func TestLogin_CaptchaInvalido(t *testing.T) {
 	defer server.Close()
 	defer db.Close()
 
-	authHandler.SetCaptchaVerifier(&fakeCaptchaVerifier{err: turnstile.ErrCaptchaInvalido})
+	authHandler.captcha.trocar(&fakeCaptchaVerifier{err: turnstile.ErrCaptchaInvalido})
 
 	resp, err := http.Post(server.URL+"/api/auth/login", "application/json",
 		makeJSON(validCaptchaBody(map[string]any{"email": "qualquer@test.com", "password": "qualquer"})))
@@ -1009,7 +1010,7 @@ func TestLogin_CaptchaValido_ProssegueParaCredenciais(t *testing.T) {
 	defer server.Close()
 	defer db.Close()
 
-	authHandler.SetCaptchaVerifier(&fakeCaptchaVerifier{err: nil})
+	authHandler.captcha.trocar(&fakeCaptchaVerifier{err: nil})
 
 	mock.ExpectQuery(`FROM\s+usuarios\s+u\s+LEFT\s+JOIN\s+vendedores\s+v\s+ON\s+v\.id\s+=\s+u\.id_vendedor\s+WHERE\s+u\.email\s+=\s+\?\s+LIMIT\s+1`).
 		WithArgs("captcha-ok@test.com").
@@ -1057,7 +1058,7 @@ func TestResetPassword_CaptchaInvalido(t *testing.T) {
 	defer server.Close()
 	defer db.Close()
 
-	authHandler.SetCaptchaVerifier(&fakeCaptchaVerifier{err: turnstile.ErrCaptchaInvalido})
+	authHandler.captcha.trocar(&fakeCaptchaVerifier{err: turnstile.ErrCaptchaInvalido})
 
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")

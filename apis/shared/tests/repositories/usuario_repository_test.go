@@ -6,6 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -14,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/identidade"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 func newMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
@@ -57,9 +58,8 @@ func TestGetByEmail_Success(t *testing.T) {
 		WithArgs(email).
 		WillReturnRows(rows)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	u, err := repo.GetByEmail(ctx, db, email)
+	u, err := identidademysql.NovoUsuarios(db).PorEmail(ctx, email)
 
 	require.NoError(t, err)
 	assert.NotNil(t, u)
@@ -78,9 +78,8 @@ func TestGetByEmail_NotFound(t *testing.T) {
 		WithArgs("naoexiste@test.com").
 		WillReturnError(sql.ErrNoRows)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	u, err := repo.GetByEmail(ctx, db, "naoexiste@test.com")
+	u, err := identidademysql.NovoUsuarios(db).PorEmail(ctx, "naoexiste@test.com")
 
 	assert.Nil(t, u)
 	assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
@@ -101,9 +100,8 @@ func TestGetByID_Success(t *testing.T) {
 		WithArgs(id).
 		WillReturnRows(rows)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	u, err := repo.GetByID(ctx, db, id)
+	u, err := identidademysql.NovoUsuarios(db).PorID(ctx, id)
 
 	require.NoError(t, err)
 	assert.NotNil(t, u)
@@ -121,12 +119,11 @@ func TestGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(99999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	u, err := repo.GetByID(ctx, db, 99999)
+	u, err := identidademysql.NovoUsuarios(db).PorID(ctx, 99999)
 
 	assert.Nil(t, u)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado) // ARQ-07: o sentinela do domínio substitui repositories.ErrNotFound
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -138,9 +135,8 @@ func TestGetIDVendedorByUsuarioID_ComVinculo(t *testing.T) {
 		WithArgs(int64(5)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	idVendedor, err := repo.GetIDVendedorByUsuarioID(ctx, db, 5)
+	idVendedor, err := identidademysql.NovoUsuarios(db).VendedorDoUsuario(ctx, 5)
 
 	require.NoError(t, err)
 	require.NotNil(t, idVendedor)
@@ -156,9 +152,8 @@ func TestGetIDVendedorByUsuarioID_SemVinculo(t *testing.T) {
 		WithArgs(int64(5)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	idVendedor, err := repo.GetIDVendedorByUsuarioID(ctx, db, 5)
+	idVendedor, err := identidademysql.NovoUsuarios(db).VendedorDoUsuario(ctx, 5)
 
 	require.NoError(t, err)
 	assert.Nil(t, idVendedor)
@@ -173,9 +168,8 @@ func TestGetIDVendedorByUsuarioID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	idVendedor, err := repo.GetIDVendedorByUsuarioID(ctx, db, 999)
+	idVendedor, err := identidademysql.NovoUsuarios(db).VendedorDoUsuario(ctx, 999)
 
 	assert.Nil(t, idVendedor)
 	assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
@@ -190,9 +184,8 @@ func TestGetIDVendedorByUsuarioID_DBError(t *testing.T) {
 		WithArgs(int64(5)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	idVendedor, err := repo.GetIDVendedorByUsuarioID(ctx, db, 5)
+	idVendedor, err := identidademysql.NovoUsuarios(db).VendedorDoUsuario(ctx, 5)
 
 	assert.Nil(t, idVendedor)
 	assert.Error(t, err)
@@ -217,9 +210,8 @@ func TestList_Pagination(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rowsPage1)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	usuarios, total, err := repo.List(ctx, db, 1, 10, "", "")
+	usuarios, total, err := itensETotal(identidademysql.NovoUsuarios(db).Listar(ctx, ordemUsuario("", ""), kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 15, total, "total vem do COUNT")
@@ -242,8 +234,7 @@ func TestList_Pagination(t *testing.T) {
 		WithArgs(10, 10).
 		WillReturnRows(rowsPage2)
 
-	repo2 := novoUsuarioRepo()
-	usuarios2, total2, err2 := repo2.List(context.Background(), db2, 2, 10, "", "")
+	usuarios2, total2, err2 := itensETotal(identidademysql.NovoUsuarios(db2).Listar(context.Background(), ordemUsuario("", ""), kernel.NovaPagina(2, 10)))
 	require.NoError(t, err2)
 	assert.Equal(t, 15, total2)
 	assert.Len(t, usuarios2, 5)
@@ -262,9 +253,8 @@ func TestList_Defaults(t *testing.T) {
 		WithArgs(20, 0). // offset=0 quando page=1
 		WillReturnRows(sqlmock.NewRows(baseColumns))
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 0, 0, "", "") // valores inválidos devem ser corrigidos
+	_, _, err := itensETotal(identidademysql.NovoUsuarios(db).Listar(ctx, ordemUsuario("", ""), kernel.NovaPagina(0, 0))) // valores inválidos devem ser corrigidos
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -281,9 +271,8 @@ func TestList_LimitCap(t *testing.T) {
 		WithArgs(100, 0).
 		WillReturnRows(sqlmock.NewRows(baseColumns))
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 200, "", "")
+	_, _, err := itensETotal(identidademysql.NovoUsuarios(db).Listar(ctx, ordemUsuario("", ""), kernel.NovaPagina(1, 200)))
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -297,9 +286,8 @@ func TestUpdatePasswordHash_Success(t *testing.T) {
 		WithArgs("novo-hash-bcrypt", false, sqlmock.AnyArg(), int64(7)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	err := repo.UpdatePasswordHash(ctx, db, 7, "novo-hash-bcrypt", false)
+	err := identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, 7, identidade.NovoHashSenha("novo-hash-bcrypt"), false)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -330,7 +318,7 @@ func TestRehashPassword(t *testing.T) {
 				exp.WillReturnResult(c.result)
 			}
 
-			err := novoUsuarioRepo().RehashPassword(context.Background(), db, 7, "$2a$12$antigo", "$argon2id$novo")
+			err := identidademysql.NovoUsuarios(db).RegravarHash(context.Background(), 7, identidade.NovoHashSenha("$2a$12$antigo"), identidade.NovoHashSenha("$argon2id$novo"))
 			if c.wantErr {
 				assert.ErrorIs(t, err, sql.ErrConnDone)
 			} else {
@@ -349,9 +337,8 @@ func TestUpdatePasswordHash_NotFound(t *testing.T) {
 		WithArgs("hash", false, sqlmock.AnyArg(), int64(99999)).
 		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 linhas afetadas
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	err := repo.UpdatePasswordHash(ctx, db, 99999, "hash", false)
+	err := identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, 99999, identidade.NovoHashSenha("hash"), false)
 
 	assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -365,9 +352,8 @@ func TestUpdatePasswordHash_DBError(t *testing.T) {
 		WithArgs("hash", false, sqlmock.AnyArg(), int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	err := repo.UpdatePasswordHash(ctx, db, 1, "hash", false)
+	err := identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, 1, identidade.NovoHashSenha("hash"), false)
 
 	assert.Error(t, err)
 	assert.NotErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado, "erro de DB não é ErrNotFound")
@@ -383,9 +369,8 @@ func TestUpdateUltimoLogin_Success(t *testing.T) {
 		WithArgs(now, int64(3)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	err := repo.UpdateUltimoLogin(ctx, db, 3, now)
+	err := identidademysql.NovoUsuarios(db).RegistrarLogin(ctx, 3, now)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -417,9 +402,8 @@ func TestList_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(baseColumns))
 
-			repo := novoUsuarioRepo()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, tt.orderBy, tt.orderDir)
+			_, _, err := itensETotal(identidademysql.NovoUsuarios(db).Listar(ctx, ordemUsuario(tt.orderBy, tt.orderDir), kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -434,9 +418,8 @@ func TestList_CountError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usuarios").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, "", "")
+	_, _, err := itensETotal(identidademysql.NovoUsuarios(db).Listar(ctx, ordemUsuario("", ""), kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -455,9 +438,8 @@ func TestList_IterError(t *testing.T) {
 			AddRow(baseRow(1, "U1", "u1@test.com", "h", "normal", nil, true, time.Now(), time.Now(), nil)...).
 			RowError(0, sql.ErrConnDone))
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, "", "")
+	_, _, err := itensETotal(identidademysql.NovoUsuarios(db).Listar(ctx, ordemUsuario("", ""), kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -475,9 +457,8 @@ func TestGetByEmail_ComUltimoLogin(t *testing.T) {
 		WithArgs("user@test.com").
 		WillReturnRows(rows)
 
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
-	u, err := repo.GetByEmail(ctx, db, "user@test.com")
+	u, err := identidademysql.NovoUsuarios(db).PorEmail(ctx, "user@test.com")
 
 	require.NoError(t, err)
 	assert.NotNil(t, u.UltimoLoginEm)
@@ -499,8 +480,7 @@ func TestInativarByVendedorID_ComUsuarios(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), int64(3)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
 
-	repo := novoUsuarioRepo()
-	n, err := repo.InativarByVendedorID(context.Background(), db, 3)
+	n, err := identidademysql.NovoUsuarios(db).InativarDoVendedor(context.Background(), 3)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n)
@@ -515,8 +495,7 @@ func TestInativarByVendedorID_SemUsuarios_NaoEhErro(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), int64(3)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := novoUsuarioRepo()
-	n, err := repo.InativarByVendedorID(context.Background(), db, 3)
+	n, err := identidademysql.NovoUsuarios(db).InativarDoVendedor(context.Background(), 3)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), n)
@@ -531,8 +510,7 @@ func TestInativarByVendedorID_ExecError(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), int64(3)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoUsuarioRepo()
-	n, err := repo.InativarByVendedorID(context.Background(), db, 3)
+	n, err := identidademysql.NovoUsuarios(db).InativarDoVendedor(context.Background(), 3)
 
 	assert.ErrorIs(t, err, sql.ErrConnDone)
 	assert.Equal(t, int64(0), n)
@@ -547,8 +525,7 @@ func TestInativarByVendedorID_RowsAffectedError(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), int64(3)).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := novoUsuarioRepo()
-	_, err := repo.InativarByVendedorID(context.Background(), db, 3)
+	_, err := identidademysql.NovoUsuarios(db).InativarDoVendedor(context.Background(), 3)
 
 	assert.ErrorIs(t, err, sql.ErrConnDone)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -568,8 +545,7 @@ func TestInativarByVendedorID_DentroDeTransacao(t *testing.T) {
 	tx, err := db.BeginTx(ctx, nil)
 	require.NoError(t, err)
 
-	repo := novoUsuarioRepo()
-	n, err := repo.InativarByVendedorID(ctx, tx, 3)
+	n, err := identidademysql.NovoUsuarios(tx).InativarDoVendedor(ctx, 3)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), n)
 	require.NoError(t, tx.Commit())
@@ -579,7 +555,6 @@ func TestInativarByVendedorID_DentroDeTransacao(t *testing.T) {
 // OPS-01: ListAtivos filtra ativo = 1, ordena por id e propaga erros.
 func TestListAtivos(t *testing.T) {
 	const q = `WHERE u\.ativo = 1\s+ORDER BY u\.id ASC`
-	repo := novoUsuarioRepo()
 	ctx := context.Background()
 
 	t.Run("sucesso", func(t *testing.T) {
@@ -590,7 +565,7 @@ func TestListAtivos(t *testing.T) {
 			AddRow(baseRow(1, "Admin", "admin@test.com", "h1", "admin", nil, true, now, now, nil)...).
 			AddRow(baseRow(2, "Ana", "ana@test.com", "h2", "normal", nil, true, now, now, nil)...))
 
-		us, err := repo.ListAtivos(ctx, db)
+		us, err := identidademysql.NovoUsuarios(db).ListarAtivos(ctx)
 		require.NoError(t, err)
 		require.Len(t, us, 2)
 		assert.Equal(t, "admin@test.com", us[0].Email)
@@ -602,7 +577,7 @@ func TestListAtivos(t *testing.T) {
 		db, mock := newMock(t)
 		defer db.Close()
 		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows(baseColumns))
-		us, err := repo.ListAtivos(ctx, db)
+		us, err := identidademysql.NovoUsuarios(db).ListarAtivos(ctx)
 		require.NoError(t, err)
 		assert.Empty(t, us)
 	})
@@ -611,7 +586,7 @@ func TestListAtivos(t *testing.T) {
 		db, mock := newMock(t)
 		defer db.Close()
 		mock.ExpectQuery(q).WillReturnError(sql.ErrConnDone)
-		_, err := repo.ListAtivos(ctx, db)
+		_, err := identidademysql.NovoUsuarios(db).ListarAtivos(ctx)
 		assert.ErrorIs(t, err, sql.ErrConnDone)
 	})
 
@@ -619,7 +594,7 @@ func TestListAtivos(t *testing.T) {
 		db, mock := newMock(t)
 		defer db.Close()
 		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-		_, err := repo.ListAtivos(ctx, db)
+		_, err := identidademysql.NovoUsuarios(db).ListarAtivos(ctx)
 		assert.Error(t, err)
 	})
 
@@ -630,7 +605,7 @@ func TestListAtivos(t *testing.T) {
 		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows(baseColumns).
 			AddRow(baseRow(1, "Admin", "admin@test.com", "h1", "admin", nil, true, now, now, nil)...).
 			RowError(0, sql.ErrConnDone))
-		_, err := repo.ListAtivos(ctx, db)
+		_, err := identidademysql.NovoUsuarios(db).ListarAtivos(ctx)
 		assert.ErrorIs(t, err, sql.ErrConnDone)
 	})
 }

@@ -211,10 +211,11 @@ func (c *Casos) gerarSenhaEHash() (identidade.Senha, identidade.HashSenha, error
 }
 
 // enviarSenhaInicial é best-effort: falha só é logada (e-mail mascarado) e
-// devolvida como false.
+// devolvida como false. O texto do erro sai sem o e-mail: respostas SMTP
+// 550 ecoam o RCPT (NB-1).
 func (c *Casos) enviarSenhaInicial(ctx context.Context, email, nome string, senha identidade.Senha) bool {
 	if err := c.d.Email.EnviarSenhaInicial(ctx, email, nome, senha.Revelar()); err != nil {
-		log.Printf("[usuarios] falha ao enviar email de senha inicial para %s: %v", vlog.MaskEmail(email), err)
+		log.Printf("[usuarios] falha ao enviar email de senha inicial para %s: %s", vlog.MaskEmail(email), vlog.OcultarEmail(err, email))
 		return false
 	}
 	return true

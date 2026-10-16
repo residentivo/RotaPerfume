@@ -12,14 +12,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 type sec12IT struct {
@@ -56,8 +56,8 @@ func novoSEC12IT(t *testing.T) *sec12IT {
 func (c *sec12IT) token(expira time.Time, motivo string) int64 {
 	c.t.Helper()
 	c.seq++
-	rt := &repositories.RefreshToken{UsuarioID: c.uid, TokenHash: fmt.Sprintf("%s%d", c.prefix, c.seq), ExpiresAt: expira, IPOrigem: "127.0.0.1", UserAgent: "go-test"}
-	require.NoError(c.t, novoRefreshRepo().Create(context.Background(), c.db, rt))
+	rt := &identidade.RefreshToken{UsuarioID: c.uid, HashToken: fmt.Sprintf("%s%d", c.prefix, c.seq), ExpiraEm: expira, IP: "127.0.0.1", UserAgent: "go-test"}
+	require.NoError(c.t, identidademysql.NovoRefreshTokens(c.db).Inserir(context.Background(), rt))
 	if motivo != "" {
 		_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL 5 MINUTE, revoked_reason = ? WHERE id = ?`, motivo, rt.ID)
 		require.NoError(c.t, err)
@@ -74,7 +74,6 @@ func (c *sec12IT) marca(id int64) *time.Time {
 
 func TestIntegracaoSEC12_MarcarReusoDetectado(t *testing.T) {
 	c := novoSEC12IT(t)
-	repo := novoRefreshRepo()
 	ctx := context.Background()
 	janela := 30 * time.Minute
 	agora := time.Now().Truncate(time.Second)
@@ -91,7 +90,7 @@ func TestIntegracaoSEC12_MarcarReusoDetectado(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-inicio
-				ok, err := repo.MarcarReusoDetectado(ctx, c.db, id, agora, agora.Add(-janela))
+				ok, err := identidademysql.NovoRefreshTokens(c.db).MarcarReuso(ctx, id, agora, agora.Add(-janela))
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -124,7 +123,7 @@ func TestIntegracaoSEC12_MarcarReusoDetectado(t *testing.T) {
 	}
 	for _, cs := range casos {
 		t.Run(cs.nome, func(t *testing.T) {
-			ok, err := repo.MarcarReusoDetectado(ctx, c.db, id, cs.agora, cs.agora.Add(-janela))
+			ok, err := identidademysql.NovoRefreshTokens(c.db).MarcarReuso(ctx, id, cs.agora, cs.agora.Add(-janela))
 			require.NoError(t, err)
 			assert.Equal(t, cs.want, ok)
 			m := c.marca(id)
@@ -136,7 +135,7 @@ func TestIntegracaoSEC12_MarcarReusoDetectado(t *testing.T) {
 	t.Run("token não rotacionado nunca é marcado", func(t *testing.T) {
 		for _, motivo := range []string{"", "logout", "senha", "inativacao", "revogacao_massa"} {
 			outro := c.token(time.Now().Add(time.Hour), motivo)
-			ok, err := repo.MarcarReusoDetectado(ctx, c.db, outro, agora, agora.Add(-janela))
+			ok, err := identidademysql.NovoRefreshTokens(c.db).MarcarReuso(ctx, outro, agora, agora.Add(-janela))
 			require.NoError(t, err)
 			assert.False(t, ok, "motivo=%q", motivo)
 			assert.Nil(t, c.marca(outro), "motivo=%q", motivo)
@@ -144,7 +143,7 @@ func TestIntegracaoSEC12_MarcarReusoDetectado(t *testing.T) {
 	})
 
 	t.Run("token inexistente → false sem erro", func(t *testing.T) {
-		ok, err := repo.MarcarReusoDetectado(ctx, c.db, -1, agora, agora.Add(-janela))
+		ok, err := identidademysql.NovoRefreshTokens(c.db).MarcarReuso(ctx, -1, agora, agora.Add(-janela))
 		require.NoError(t, err)
 		assert.False(t, ok)
 	})
@@ -152,31 +151,29 @@ func TestIntegracaoSEC12_MarcarReusoDetectado(t *testing.T) {
 
 func TestIntegracaoSEC12_DesfazerReusoDetectado(t *testing.T) {
 	c := novoSEC12IT(t)
-	repo := novoRefreshRepo()
 	ctx := context.Background()
 	agora := time.Now().Truncate(time.Second)
 	id := c.token(time.Now().Add(time.Hour), "rotacao")
 
-	ok, err := repo.MarcarReusoDetectado(ctx, c.db, id, agora, agora.Add(-30*time.Minute))
+	ok, err := identidademysql.NovoRefreshTokens(c.db).MarcarReuso(ctx, id, agora, agora.Add(-30*time.Minute))
 	require.NoError(t, err)
 	require.True(t, ok)
 
 	// Marca de outra chamada: não mexe.
-	require.NoError(t, repo.DesfazerReusoDetectado(ctx, c.db, id, agora.Add(-time.Second)))
+	require.NoError(t, identidademysql.NovoRefreshTokens(c.db).DesfazerReuso(ctx, id, agora.Add(-time.Second)))
 	require.NotNil(t, c.marca(id), "marca de outra chamada é preservada")
 
-	require.NoError(t, repo.DesfazerReusoDetectado(ctx, c.db, id, agora))
+	require.NoError(t, identidademysql.NovoRefreshTokens(c.db).DesfazerReuso(ctx, id, agora))
 	assert.Nil(t, c.marca(id), "a marca desta chamada é limpa")
 
 	// Depois de desfeita, o próximo reuso volta a cortar mesmo dentro da janela.
-	ok, err = repo.MarcarReusoDetectado(ctx, c.db, id, agora.Add(time.Minute), agora.Add(time.Minute-30*time.Minute))
+	ok, err = identidademysql.NovoRefreshTokens(c.db).MarcarReuso(ctx, id, agora.Add(time.Minute), agora.Add(time.Minute-30*time.Minute))
 	require.NoError(t, err)
 	assert.True(t, ok)
 }
 
 func TestIntegracaoCHORE02_DeleteExpired(t *testing.T) {
 	c := novoSEC12IT(t)
-	repo := novoRefreshRepo()
 	ctx := context.Background()
 	corte := time.Date(2001, 1, 10, 12, 0, 0, 0, time.Local)
 
@@ -191,17 +188,17 @@ func TestIntegracaoCHORE02_DeleteExpired(t *testing.T) {
 		c.token(corte.Add(-48*time.Hour), "rotacao"),
 		c.token(corte.Add(-time.Second), "logout"),
 	}
-	noCorte := c.token(corte, "")                          // expires_at == corte: fica (estrito <)
+	noCorte := c.token(corte, "")                              // expires_at == corte: fica (estrito <)
 	depois := c.token(corte.Add(time.Hour), "revogacao_massa") // depois do corte: fica
-	valido := c.token(time.Now().Add(time.Hour), "")       // ainda válido: fica
+	valido := c.token(time.Now().Add(time.Hour), "")           // ainda válido: fica
 
-	n, err := repo.DeleteExpired(ctx, c.db, corte, 2)
+	n, err := identidademysql.NovoRefreshTokens(c.db).ApagarExpirados(ctx, corte, 2)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n, "respeita o LIMIT do lote")
-	n, err = repo.DeleteExpired(ctx, c.db, corte, 2)
+	n, err = identidademysql.NovoRefreshTokens(c.db).ApagarExpirados(ctx, corte, 2)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), n, "lote incompleto: fim")
-	n, err = repo.DeleteExpired(ctx, c.db, corte, 2)
+	n, err = identidademysql.NovoRefreshTokens(c.db).ApagarExpirados(ctx, corte, 2)
 	require.NoError(t, err)
 	assert.Zero(t, n)
 

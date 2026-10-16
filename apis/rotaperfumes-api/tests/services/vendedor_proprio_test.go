@@ -36,7 +36,7 @@ func TestVendedorService_ListVendedorProprio(t *testing.T) {
 			db, mock := newVendedorTestDB(t)
 			tc.setup(mock)
 
-			out, err := NewVendedorService(db, vendedorTestCfg(tc.verbose)).ListVendedorProprio(context.Background(), db, 7)
+			out, err := casosComercial(db, 7).ListarVendedores(context.Background(), principalRestrito())
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {

@@ -104,7 +104,9 @@ func TestCookiesDeSessao(t *testing.T) {
 	assert.Equal(t, "", httpx.CookieRefreshDe(local))
 }
 
+// ARQ-07: PrincipalDoContexto (ponte do legado) deixou de ser exportada; o
+// mesmo caminho é lido por PrincipalFrom.
 func TestPrincipalDoContexto_SemPrincipal(t *testing.T) {
-	_, ok := httpx.PrincipalDoContexto(context.Background())
+	_, ok := httpx.PrincipalFrom(httptest.NewRequest(http.MethodGet, "/", nil).WithContext(context.Background()))
 	assert.False(t, ok)
 }

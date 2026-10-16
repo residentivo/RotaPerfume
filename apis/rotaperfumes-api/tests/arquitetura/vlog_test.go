@@ -136,8 +136,6 @@ type excecaoVlog struct {
 var excecoesVlogLegado = []excecaoVlog{
 	{modShared + "/config config.go", "identificador sensível chave", "nome da variável de ambiente, nunca o valor"},
 	{modShared + "/config config.go", "identificador sensível key", "nome da variável de ambiente, nunca o valor"},
-	{modShared + "/services email_service.go", "%v no formato", "erro do pool de CAs do sistema (sem dado de usuário)"},
-	{modShared + "/tools/resetpassword resetpassword.go", "%v no formato", "booleano admin_encontrado"},
 }
 
 func (e excecaoVlog) cobre(v string) bool {

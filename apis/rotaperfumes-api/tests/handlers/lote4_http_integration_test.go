@@ -29,7 +29,6 @@ import (
 func TestIntegracaoHTTP_SEC02_RefreshConcorrente(t *testing.T) {
 	c := novoItCtx(t)
 	usu := c.usuario("USEC02", 0, true)
-	svc := novoRefreshSvc()
 	ctx := context.Background()
 
 	// SEC-04: 15 refreshes paralelos com o mesmo token (abas concorrentes)
@@ -41,7 +40,7 @@ func TestIntegracaoHTTP_SEC02_RefreshConcorrente(t *testing.T) {
 	const paralelos = 15
 	for i := 0; i < rodadas; i++ {
 		t.Run(fmt.Sprintf("rodada %d", i+1), func(t *testing.T) {
-			tok, err := svc.GenerateRefreshToken(ctx, c.db, usu, "127.0.0.1", "go-test")
+			tok, err := emitirRefresh(ctx, c.db, usu, "127.0.0.1", "go-test")
 			require.NoError(t, err)
 			ativosAntes := c.contar("SELECT COUNT(*) FROM refresh_tokens WHERE usuario_id = ? AND revoked_at IS NULL", usu)
 
@@ -92,7 +91,7 @@ func TestIntegracaoHTTP_SEC02_RefreshConcorrente(t *testing.T) {
 	}
 
 	t.Run("reuso do token já rotacionado -> 401", func(t *testing.T) {
-		tok, err := svc.GenerateRefreshToken(ctx, c.db, usu, "127.0.0.1", "go-test")
+		tok, err := emitirRefresh(ctx, c.db, usu, "127.0.0.1", "go-test")
 		require.NoError(t, err)
 		st, _ := c.req("POST", "/api/auth/refresh", "", map[string]any{"refresh_token": tok})
 		require.Equal(t, http.StatusOK, st)

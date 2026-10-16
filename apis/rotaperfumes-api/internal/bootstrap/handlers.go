@@ -15,7 +15,6 @@ import (
 	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/identidade/identidadeapp"
-	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
 // Handlers agrupa os handlers HTTP, um campo por handler de contexto
@@ -38,7 +37,7 @@ type Handlers struct {
 
 // NovosHandlers cria os handlers sobre o pool, com a Identidade padrão
 // (Turnstile real, sem assinante de evento) e o e-mail informado.
-func NovosHandlers(pool *sql.DB, cfg *config.Config, email sharedsvc.EmailService) Handlers {
+func NovosHandlers(pool *sql.DB, cfg *config.Config, email identidadeapp.EnviadorSenhaInicial) Handlers {
 	return NovosHandlersCom(pool, cfg, NovaIdentidade(pool, cfg, extPadrao(cfg, email)))
 }
 

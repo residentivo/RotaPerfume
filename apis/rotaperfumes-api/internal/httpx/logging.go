@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rotaperfumes/shared/kernel"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
@@ -16,7 +17,8 @@ func Logging(next http.Handler) http.Handler {
 		inicio := time.Now()
 		rec := novoStatusRecorder(w)
 		next.ServeHTTP(rec, r)
-		log.Printf("[http] %s %s -> %d (%s)", r.Method, r.URL.Path, rec.status, time.Since(inicio))
+		// ARQ-07 NB-C: path decodificado saneado (sem quebra de linha no log).
+		log.Printf("[http] %s %s -> %d (%s)", r.Method, kernel.SanearRota(r.URL.Path), rec.status, time.Since(inicio))
 	})
 }
 

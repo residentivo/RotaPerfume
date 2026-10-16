@@ -9,14 +9,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/rotaperfumes/shared/comercial"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/config"
 )
 
 func pularSemIntegracao(t *testing.T) {
@@ -30,7 +29,7 @@ func pularSemIntegracao(t *testing.T) {
 func criarVendedorTemp(t *testing.T, ctx context.Context, db *sql.DB, tag string) int64 {
 	t.Helper()
 	nome := fmt.Sprintf("ZZ-TEST-%s-%d", tag, time.Now().UnixNano())
-	v, err := NewVendedorService(db, &config.Config{}).CreateVendedor(ctx, db, VendedorInput{
+	v, err := casosComercial(db, 0).CriarVendedor(ctx, principalAdmin(), comercial.DadosVendedor{
 		Nome: nome, Regiao: "Teste", UF: "PR", DataAdmissao: "2024-01-01", MetaMensal: 1,
 	})
 	require.NoError(t, err)
@@ -50,7 +49,7 @@ func TestIntegracaoBUG04_RedesligarVendedorPreservaDataOriginal(t *testing.T) {
 	_, err := db.Exec("UPDATE vendedores SET data_desligamento = '2020-05-05' WHERE id = ?", id)
 	require.NoError(t, err)
 
-	v, err := NewVendedorService(db, &config.Config{}).DeleteVendedor(ctx, db, id)
+	v, err := casosComercial(db, 0).DesligarVendedor(ctx, principalAdmin(), id)
 	require.NoError(t, err, "desligar de novo deve responder sucesso (200)")
 	require.NotNil(t, v)
 
@@ -64,11 +63,10 @@ func TestIntegracaoSEC01_CreateClienteNaCarteira(t *testing.T) {
 	pularSemIntegracao(t)
 	db := abrirDBIntegracao(t)
 	ctx := context.Background()
-	svc := NewClienteService(db, &config.Config{})
 	sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
 
-	input := func(tag string) ClienteInput {
-		return ClienteInput{
+	input := func(tag string) comercial.DadosCliente {
+		return comercial.DadosCliente{
 			CNPJ: cnpjValidoTeste(time.Now().UnixNano()), RazaoSocial: "ZZ-TEST-SEC01-" + tag + "-" + sufixo,
 			Segmento: "Teste", Cidade: "Curitiba", UF: "PR",
 		}
@@ -81,7 +79,7 @@ func TestIntegracaoSEC01_CreateClienteNaCarteira(t *testing.T) {
 
 	t.Run("sucesso grava cliente e carteira ativa de hoje", func(t *testing.T) {
 		vendID := criarVendedorTemp(t, ctx, db, "SEC01")
-		c, err := svc.CreateClienteNaCarteira(ctx, db, input("OK"), vendID)
+		c, err := casosComercial(db, vendID).CriarCliente(ctx, principalRestrito(), fixo(input("OK")))
 		require.NoError(t, err)
 		t.Cleanup(func() { apagarCliente(c.ClienteIDOrigem) })
 
@@ -98,7 +96,7 @@ func TestIntegracaoSEC01_CreateClienteNaCarteira(t *testing.T) {
 
 	t.Run("falha na carteira faz rollback do cliente", func(t *testing.T) {
 		in := input("ROLLBACK")
-		_, err := svc.CreateClienteNaCarteira(ctx, db, in, -1) // FK de vendedor inválida
+		_, err := casosComercial(db, -1).CriarCliente(ctx, principalRestrito(), fixo(in)) // FK de vendedor inválida
 		require.Error(t, err)
 
 		var n int

@@ -1,7 +1,7 @@
 package handlers_test
 
 // Escopo de carteira (SEC-01/SEC-03) exercitado pela API pública: o
-// VendedorHandler real atrás do JWTMiddleware real. Substitui o antigo teste
+// VendedorHandler real atrás do httpx.Autenticador real. Substitui o antigo teste
 // white-box de resolverVendedorScope/responderErroEscopo/vendedorScope:
 //   - GET /api/vendedores (ListVendedores) mostra o escopo resolvido:
 //     admin → lista completa; normal → só o próprio vendedor; sem vínculo →
@@ -12,6 +12,7 @@ package handlers_test
 import (
 	"encoding/json"
 	"errors"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -49,7 +50,7 @@ func scRequisitar(t *testing.T, role, path string, fn http.HandlerFunc) (int, ma
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/vendedores", fn)
 	mux.Handle("GET /api/vendedores/{id}/clientes", fn)
-	jwtMiddleware(cfg, true, false)(mux).ServeHTTP(rec, req)
+	exigirAutenticado(cfg, mux).ServeHTTP(rec, req)
 
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body), "body: %s", rec.Body.String())
@@ -61,7 +62,7 @@ func scNewDB(t *testing.T) (*comercialhttp.VendedorHandler, sqlmock.Sqlmock) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	return novoVendedorHandler(db, testCfg()), mock
+	return bootstrap.NovoComercialHTTP(bootstrap.NovoComercial(db)).Vendedor, mock
 }
 
 func scExpectIDVendedor(m sqlmock.Sqlmock, v any) {

@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -51,7 +52,7 @@ func vendedorExistsRows() *sqlmock.Rows {
 func TestOportunidadeService_ListOportunidades(t *testing.T) {
 	testCases := []struct {
 		nome    string
-		filtro  OportunidadeFiltro
+		filtro  comercial.FiltroOportunidade
 		page    int
 		limit   int
 		mock    func(mock sqlmock.Sqlmock)
@@ -61,7 +62,7 @@ func TestOportunidadeService_ListOportunidades(t *testing.T) {
 	}{
 		{
 			nome:   "sem filtros - sucesso",
-			filtro: OportunidadeFiltro{},
+			filtro: comercial.FiltroOportunidade{Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -76,7 +77,7 @@ func TestOportunidadeService_ListOportunidades(t *testing.T) {
 		},
 		{
 			nome:   "com filtros cliente/vendedor/etapa - repassa args ao repo",
-			filtro: OportunidadeFiltro{ClienteID: 100, VendedorID: 1, Etapa: "Prospeccao"},
+			filtro: comercial.FiltroOportunidade{ClienteID: 100, VendedorID: 1, Etapa: "Prospeccao", Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			page:   2,
 			limit:  10,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -92,7 +93,7 @@ func TestOportunidadeService_ListOportunidades(t *testing.T) {
 		},
 		{
 			nome:   "erro no count do repo é propagado",
-			filtro: OportunidadeFiltro{},
+			filtro: comercial.FiltroOportunidade{Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -108,8 +109,8 @@ func TestOportunidadeService_ListOportunidades(t *testing.T) {
 			db, mock := newOportunidadeTestDB(t)
 			tc.mock(mock)
 
-			svc := NewOportunidadeService(db, oportunidadeTestCfg(true))
-			oportunidades, total, err := svc.ListOportunidades(context.Background(), db, tc.page, tc.limit, tc.filtro)
+			casos := casosComercial(db, 0)
+			oportunidades, total, err := itensETotal(casos.ListarOportunidades(context.Background(), principalAdmin(), tc.filtro, kernel.NovaPagina(tc.page, tc.limit)))
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -134,8 +135,8 @@ func TestOportunidadeService_GetOportunidadeByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnRows(oportunidadeRows())
 
-		svc := NewOportunidadeService(db, oportunidadeTestCfg(false))
-		o, err := svc.GetOportunidadeByID(context.Background(), db, 1)
+		casos := casosComercial(db, 0)
+		o, err := casos.ObterOportunidade(context.Background(), principalAdmin(), 1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), o.OportunidadeID)
 		assert.Equal(t, "Prospeccao", o.Etapa)
@@ -148,8 +149,8 @@ func TestOportunidadeService_GetOportunidadeByID(t *testing.T) {
 			WithArgs(int64(999)).
 			WillReturnError(sql.ErrNoRows)
 
-		svc := NewOportunidadeService(db, oportunidadeTestCfg(false))
-		o, err := svc.GetOportunidadeByID(context.Background(), db, 999)
+		casos := casosComercial(db, 0)
+		o, err := casos.ObterOportunidade(context.Background(), principalAdmin(), 999)
 		assert.Nil(t, o)
 		assert.ErrorIs(t, err, comercial.ErrOportunidadeNaoEncontrada)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -161,8 +162,8 @@ func TestOportunidadeService_GetOportunidadeByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := NewOportunidadeService(db, oportunidadeTestCfg(false))
-		o, err := svc.GetOportunidadeByID(context.Background(), db, 1)
+		casos := casosComercial(db, 0)
+		o, err := casos.ObterOportunidade(context.Background(), principalAdmin(), 1)
 		assert.Nil(t, o)
 		assert.Error(t, err)
 		assert.False(t, err == comercial.ErrOportunidadeNaoEncontrada)
@@ -174,8 +175,8 @@ func TestOportunidadeService_GetOportunidadeByID(t *testing.T) {
 // CreateOportunidade
 // ---------------------------------------------------------------------------
 
-func validOportunidadeInput() OportunidadeInput {
-	return OportunidadeInput{
+func validOportunidadeInput() comercial.DadosOportunidade {
+	return comercial.DadosOportunidade{
 		ClienteID:        100,
 		VendedorID:       1,
 		Origem:           "Site",
@@ -189,7 +190,7 @@ func validOportunidadeInput() OportunidadeInput {
 func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 	testCases := []struct {
 		nome      string
-		input     func() OportunidadeInput
+		input     func() comercial.DadosOportunidade
 		mock      func(mock sqlmock.Sqlmock)
 		wantErr   error
 		wantErrIs bool
@@ -211,7 +212,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "cliente_id ausente",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.ClienteID = 0
 				return in
@@ -222,7 +223,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "vendedor_id ausente",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.VendedorID = 0
 				return in
@@ -233,7 +234,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "origem vazia",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.Origem = "  "
 				return in
@@ -244,7 +245,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "etapa vazia",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.Etapa = ""
 				return in
@@ -255,7 +256,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "probabilidade abaixo de 0",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.ProbabilidadePct = -1
 				return in
@@ -266,7 +267,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "probabilidade acima de 100",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.ProbabilidadePct = 101
 				return in
@@ -277,7 +278,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "valor_estimado negativo",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.ValorEstimado = -100
 				return in
@@ -288,7 +289,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "etapa Fechado perdido sem motivo_perda",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.Etapa = "Fechado perdido"
 				return in
@@ -299,7 +300,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "etapa Fechado perdido com motivo_perda - sucesso",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.Etapa = "Fechado perdido"
 				in.MotivoPerda = "Preço"
@@ -319,7 +320,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "cliente inexistente",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				return validOportunidadeInput()
 			},
 			mock: func(mock sqlmock.Sqlmock) {
@@ -332,7 +333,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "vendedor inexistente",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				return validOportunidadeInput()
 			},
 			mock: func(mock sqlmock.Sqlmock) {
@@ -348,7 +349,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "data_abertura inválida",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.DataAbertura = "15/01/2024"
 				return in
@@ -366,7 +367,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "data_abertura vazia usa hoje (sucesso na criação)",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.DataAbertura = ""
 				return in
@@ -385,7 +386,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "data_fechamento inválida",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.DataFechamento = "31/12/2024"
 				return in
@@ -423,8 +424,8 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 			db, mock := newOportunidadeTestDB(t)
 			tc.mock(mock)
 
-			svc := NewOportunidadeService(db, oportunidadeTestCfg(true))
-			o, err := svc.CreateOportunidade(context.Background(), db, tc.input())
+			casos := casosComercial(db, 0)
+			o, err := casos.CriarOportunidade(context.Background(), principalAdmin(), fixo(tc.input()))
 
 			if tc.wantErr != nil {
 				assert.Nil(t, o)
@@ -450,7 +451,7 @@ func TestOportunidadeService_CreateOportunidade(t *testing.T) {
 func TestOportunidadeService_UpdateOportunidade(t *testing.T) {
 	testCases := []struct {
 		nome      string
-		input     func() OportunidadeInput
+		input     func() comercial.DadosOportunidade
 		mock      func(mock sqlmock.Sqlmock)
 		wantErr   error
 		wantErrIs bool
@@ -475,7 +476,7 @@ func TestOportunidadeService_UpdateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "data_abertura vazia é erro na edição (defaultHoje=false)",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				in := validOportunidadeInput()
 				in.DataAbertura = ""
 				return in
@@ -493,7 +494,7 @@ func TestOportunidadeService_UpdateOportunidade(t *testing.T) {
 		},
 		{
 			nome: "id inexistente retorna ErrOportunidadeNaoEncontrada",
-			input: func() OportunidadeInput {
+			input: func() comercial.DadosOportunidade {
 				return validOportunidadeInput()
 			},
 			mock: func(mock sqlmock.Sqlmock) {
@@ -557,8 +558,8 @@ func TestOportunidadeService_UpdateOportunidade(t *testing.T) {
 			esperarPosseOportunidade(mock, id)
 			tc.mock(mock)
 
-			svc := NewOportunidadeService(db, oportunidadeTestCfg(true))
-			o, err := svc.UpdateOportunidade(context.Background(), db, id, tc.input())
+			casos := casosComercial(db, 0)
+			o, err := casos.AtualizarOportunidade(context.Background(), principalAdmin(), id, fixo(tc.input()))
 
 			if tc.wantErr != nil {
 				assert.Nil(t, o)
@@ -590,8 +591,8 @@ func TestOportunidadeService_DeleteOportunidade_Sucesso(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	svc := NewOportunidadeService(db, oportunidadeTestCfg(true))
-	err := svc.DeleteOportunidade(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	err := casos.ExcluirOportunidade(context.Background(), principalAdmin(), 1)
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -603,8 +604,8 @@ func TestOportunidadeService_DeleteOportunidade_NaoEncontrada(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	svc := NewOportunidadeService(db, oportunidadeTestCfg(false))
-	err := svc.DeleteOportunidade(context.Background(), db, 999)
+	casos := casosComercial(db, 0)
+	err := casos.ExcluirOportunidade(context.Background(), principalAdmin(), 999)
 	assert.ErrorIs(t, err, comercial.ErrOportunidadeNaoEncontrada)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -616,8 +617,8 @@ func TestOportunidadeService_DeleteOportunidade_ErroRepo(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := NewOportunidadeService(db, oportunidadeTestCfg(false))
-	err := svc.DeleteOportunidade(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	err := casos.ExcluirOportunidade(context.Background(), principalAdmin(), 1)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

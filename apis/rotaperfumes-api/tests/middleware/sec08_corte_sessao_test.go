@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -60,7 +61,7 @@ func serveSemChecker(t *testing.T, token string, called *bool) int {
 	req := httptest.NewRequest("GET", "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
-	jwtMiddleware(testCfg(), true, false)(next).ServeHTTP(w, req)
+	semBanco(testCfg(), httpx.Authenticated)(next).ServeHTTP(w, req)
 	return w.Code
 }
 

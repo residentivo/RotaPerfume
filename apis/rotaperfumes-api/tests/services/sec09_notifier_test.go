@@ -12,7 +12,6 @@ package services_test
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -24,10 +23,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
-	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/notificacao"
+	"github.com/rotaperfumes/shared/notificacao/notificacaoapp"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 const (
@@ -48,7 +48,7 @@ var sec09Admins = []string{sec09Admin1, sec09Admin2}
 type sec09Chamada struct {
 	dest      string
 	nome      string
-	alerta    sharedsvc.AlertaReuso
+	alerta    notificacao.AlertaReuso
 	paraAdmin bool
 	deadline  time.Time
 	temPrazo  bool
@@ -66,7 +66,7 @@ type sec09Sender struct {
 	liberar chan struct{}
 }
 
-func (s *sec09Sender) EnviarAlertaReusoToken(ctx context.Context, dest, nome string, a sharedsvc.AlertaReuso, paraAdmin bool) error {
+func (s *sec09Sender) EnviarAlertaReusoToken(ctx context.Context, dest, nome string, a notificacao.AlertaReuso, paraAdmin bool) error {
 	dl, ok := ctx.Deadline()
 	s.mu.Lock()
 	s.chamdas = append(s.chamdas, sec09Chamada{dest: dest, nome: nome, alerta: a, paraAdmin: paraAdmin,
@@ -102,27 +102,27 @@ func (s *sec09Sender) reset() {
 
 type sec09Lookup struct {
 	mu    sync.Mutex
-	users map[int64]*models.Usuario
+	users map[int64]notificacao.Contato
 	err   error
-	nilOK bool // devolve (nil, nil)
+	nilOK bool // devolve (Contato{}, nil)
 	ctxs  []context.Context
 }
 
-func (l *sec09Lookup) GetByID(ctx context.Context, _ *sql.DB, id int64) (*models.Usuario, error) {
+func (l *sec09Lookup) ContatoDoUsuario(ctx context.Context, id int64) (notificacao.Contato, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.ctxs = append(l.ctxs, ctx)
 	if l.err != nil {
-		return nil, l.err
+		return notificacao.Contato{}, l.err
 	}
 	if l.nilOK {
-		return nil, nil
+		return notificacao.Contato{}, nil
 	}
 	if u, ok := l.users[id]; ok {
 		return u, nil
 	}
 	// Por padrão cada id tem um e-mail próprio.
-	return &models.Usuario{ID: id, Nome: fmt.Sprintf("U%d", id), Email: fmt.Sprintf("u%d@exemplo.com", id)}, nil
+	return notificacao.Contato{Nome: fmt.Sprintf("U%d", id), Email: fmt.Sprintf("u%d@exemplo.com", id)}, nil
 }
 
 type sec09Relogio struct {
@@ -173,15 +173,12 @@ var sec09T0 = time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 
 // sec09Notifier monta o notifier com relógio manual, run síncrono e lookup
 // fake em que o usuário 5 é a Maria.
-func sec09Notifier(t *testing.T, admins []string) (*services.AlertaSegurancaNotifier, *sec09Sender, *sec09Lookup, *sec09Relogio) {
+func sec09Notifier(t *testing.T, admins []string) (*notificacaoapp.AlertaSegurancaNotifier, *sec09Sender, *sec09Lookup, *sec09Relogio) {
 	t.Helper()
 	s := &sec09Sender{}
-	l := &sec09Lookup{users: map[int64]*models.Usuario{5: {ID: 5, Nome: "Maria", Email: sec09Email}}}
+	l := &sec09Lookup{users: map[int64]notificacao.Contato{5: {Nome: "Maria", Email: sec09Email}}}
 	r := &sec09Relogio{t: sec09T0}
-	n := services.NewAlertaSegurancaNotifier(nil, s, admins)
-	n.SetNow(r.now)
-	n.SetRun(func(f func()) { f() })
-	n.SetUsuarioLookup(l)
+	n := notificacaoapp.NovoAlertaSegurancaNotifier(notificacaoapp.Deps{Contatos: l, Enviador: s, Admins: admins, Relogio: r.now, Executor: func(f func()) { f() }})
 	return n, s, l, r
 }
 
@@ -203,7 +200,7 @@ func TestSEC09_Notifier_PrimeiroAlerta_UsuarioEAdmins(t *testing.T) {
 		assert.Equal(t, wantDest[i], c.dest)
 		assert.Equal(t, wantAdmin[i], c.paraAdmin)
 		assert.Equal(t, "Maria", c.nome)
-		assert.Equal(t, sharedsvc.AlertaReuso{UsuarioID: 5, EmailUsuario: sec09Email, IP: sec09IP,
+		assert.Equal(t, notificacao.AlertaReuso{UsuarioID: 5, EmailUsuario: sec09Email, IP: sec09IP,
 			UserAgent: sec09UA, TokenID: sec09TokenID, Quando: sec09T0}, c.alerta)
 	}
 	out := logs.String()
@@ -276,15 +273,15 @@ func TestSEC09_Notifier_Dedup(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSEC09_Notifier_Teto(t *testing.T) {
-	require.Equal(t, 20, services.AlertaTetoPorHora)
-	require.Equal(t, 30*time.Minute, services.AlertaDedupJanela)
-	require.Equal(t, 4, services.AlertaMaxEnviosSimultaneos)
+	require.Equal(t, 20, notificacaoapp.AlertaTetoPorHora)
+	require.Equal(t, 30*time.Minute, notificacaoapp.AlertaDedupJanela)
+	require.Equal(t, 4, notificacaoapp.AlertaMaxEnviosSimultaneos)
 
 	casos := []struct {
 		nome string
-		run  func(t *testing.T, n *services.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log)
+		run  func(t *testing.T, n *notificacaoapp.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log)
 	}{
-		{"21º em 1h suprimido pelo teto", func(t *testing.T, n *services.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log) {
+		{"21º em 1h suprimido pelo teto", func(t *testing.T, n *notificacaoapp.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log) {
 			for id := int64(1); id <= 20; id++ {
 				n.Notificar(id, id, sec09IP, sec09UA)
 				r.avancar(time.Minute)
@@ -294,7 +291,7 @@ func TestSEC09_Notifier_Teto(t *testing.T) {
 			assert.Len(t, s.chamadas(), 20)
 			assert.Contains(t, logs.String(), "[auth][seguranca] alerta suprimido (teto): user_id=21")
 		}},
-		{"janela reinicia após 1h do início (janela fixa)", func(t *testing.T, n *services.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log) {
+		{"janela reinicia após 1h do início (janela fixa)", func(t *testing.T, n *notificacaoapp.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log) {
 			for id := int64(1); id <= 20; id++ {
 				n.Notificar(id, id, sec09IP, sec09UA)
 			}
@@ -313,7 +310,7 @@ func TestSEC09_Notifier_Teto(t *testing.T) {
 			assert.Len(t, s.chamadas(), 40)
 			assert.Contains(t, logs.String(), "alerta suprimido (teto): user_id=41")
 		}},
-		{"suprimido pelo teto não marca dedup", func(t *testing.T, n *services.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log) {
+		{"suprimido pelo teto não marca dedup", func(t *testing.T, n *notificacaoapp.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log) {
 			for id := int64(1); id <= 20; id++ {
 				n.Notificar(id, id, sec09IP, sec09UA)
 			}
@@ -324,7 +321,7 @@ func TestSEC09_Notifier_Teto(t *testing.T) {
 			assert.Len(t, s.chamadas(), 21)
 			assert.Contains(t, logs.String()[antesLog:], "alerta enviado: user_id=99")
 		}},
-		{"dedup não consome o teto", func(t *testing.T, n *services.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log) {
+		{"dedup não consome o teto", func(t *testing.T, n *notificacaoapp.AlertaSegurancaNotifier, s *sec09Sender, r *sec09Relogio, logs *sec09Log) {
 			n.Notificar(1, 1, sec09IP, sec09UA)
 			for i := 0; i < 30; i++ {
 				n.Notificar(1, 1, sec09IP, sec09UA) // dedup
@@ -362,7 +359,7 @@ func TestSEC09_Notifier_Destinatarios(t *testing.T) {
 		{
 			nome:     "GetByID ErrNotFound → só admins",
 			admins:   sec09Admins,
-			lookup:   func(l *sec09Lookup) { l.err = repositories.ErrNotFound },
+			lookup:   func(l *sec09Lookup) { l.err = identidade.ErrUsuarioNaoEncontrado },
 			wantDest: []string{sec09Admin1, sec09Admin2},
 			wantLog: []string{"[auth][seguranca] alerta: usuário não carregado (só admins): user_id=5",
 				"alerta enviado: user_id=5 destinos=admin(2)"},
@@ -377,7 +374,7 @@ func TestSEC09_Notifier_Destinatarios(t *testing.T) {
 		{
 			nome:       "e-mail vazio → só admins",
 			admins:     sec09Admins,
-			lookup:     func(l *sec09Lookup) { l.users[5] = &models.Usuario{ID: 5, Nome: "Maria", Email: ""} },
+			lookup:     func(l *sec09Lookup) { l.users[5] = notificacao.Contato{Nome: "Maria", Email: ""} },
 			wantDest:   []string{sec09Admin1, sec09Admin2},
 			wantNome:   "Maria",
 			wantLog:    []string{"alerta enviado: user_id=5 destinos=admin(2)"},
@@ -386,7 +383,7 @@ func TestSEC09_Notifier_Destinatarios(t *testing.T) {
 		{
 			nome:     "e-mail só com espaços → só admins",
 			admins:   sec09Admins,
-			lookup:   func(l *sec09Lookup) { l.users[5] = &models.Usuario{ID: 5, Nome: "Maria", Email: "   "} },
+			lookup:   func(l *sec09Lookup) { l.users[5] = notificacao.Contato{Nome: "Maria", Email: "   "} },
 			wantDest: []string{sec09Admin1, sec09Admin2},
 			wantNome: "Maria",
 			wantLog:  []string{"destinos=admin(2)"},
@@ -402,7 +399,7 @@ func TestSEC09_Notifier_Destinatarios(t *testing.T) {
 			nome:   "e-mail com espaços nas pontas é aparado",
 			admins: nil,
 			lookup: func(l *sec09Lookup) {
-				l.users[5] = &models.Usuario{ID: 5, Nome: "Maria", Email: "  " + sec09Email + " "}
+				l.users[5] = notificacao.Contato{Nome: "Maria", Email: "  " + sec09Email + " "}
 			},
 			wantDest: []string{sec09Email},
 			wantNome: "Maria",
@@ -420,7 +417,7 @@ func TestSEC09_Notifier_Destinatarios(t *testing.T) {
 		{
 			nome:       "sem admins e usuário não carregado → sem destinatários",
 			admins:     nil,
-			lookup:     func(l *sec09Lookup) { l.err = repositories.ErrNotFound },
+			lookup:     func(l *sec09Lookup) { l.err = identidade.ErrUsuarioNaoEncontrado },
 			wantDest:   nil,
 			wantLog:    []string{"[auth][seguranca] alerta sem destinatários entregues: user_id=5"},
 			wantSemLog: []string{"alerta enviado"},
@@ -522,7 +519,7 @@ func TestSEC09_Notifier_FalhaDoSender(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLOG01_Notifier_EnviadoVsPulado(t *testing.T) {
-	errSkipEmbrulhado := fmt.Errorf("noop: %w", sharedsvc.ErrSMTPNaoConfigurado)
+	errSkipEmbrulhado := fmt.Errorf("noop: %w", notificacao.ErrSMTPNaoConfigurado)
 	casos := []struct {
 		nome       string
 		admins     []string
@@ -539,8 +536,8 @@ func TestLOG01_Notifier_EnviadoVsPulado(t *testing.T) {
 		{
 			nome:   "todos pulados → só \"pulado\" com os destinos",
 			admins: sec09Admins,
-			errPor: map[string]error{sec09Email: sharedsvc.ErrSMTPNaoConfigurado,
-				sec09Admin1: sharedsvc.ErrSMTPNaoConfigurado, sec09Admin2: sharedsvc.ErrSMTPNaoConfigurado},
+			errPor: map[string]error{sec09Email: notificacao.ErrSMTPNaoConfigurado,
+				sec09Admin1: notificacao.ErrSMTPNaoConfigurado, sec09Admin2: notificacao.ErrSMTPNaoConfigurado},
 			wantLog:    []string{"[auth][seguranca] alerta pulado (SMTP não configurado): user_id=5 destinos=usuario,admin(2)\n"},
 			wantSemLog: []string{"alerta enviado", "falha", "sem destinatários"},
 		},
@@ -554,7 +551,7 @@ func TestLOG01_Notifier_EnviadoVsPulado(t *testing.T) {
 		{
 			nome:   "misto: usuário pulado, admins enviados → cada destino no seu log",
 			admins: sec09Admins,
-			errPor: map[string]error{sec09Email: sharedsvc.ErrSMTPNaoConfigurado},
+			errPor: map[string]error{sec09Email: notificacao.ErrSMTPNaoConfigurado},
 			wantLog: []string{"alerta enviado: user_id=5 destinos=admin(2)\n",
 				"alerta pulado (SMTP não configurado): user_id=5 destinos=usuario\n"},
 			wantSemLog: []string{"falha", "destinos=usuario,admin"},
@@ -562,7 +559,7 @@ func TestLOG01_Notifier_EnviadoVsPulado(t *testing.T) {
 		{
 			nome:   "pulado + falha real → falha logada e pulado, sem \"enviado\"",
 			admins: []string{sec09Admin1},
-			errPor: map[string]error{sec09Email: sharedsvc.ErrSMTPNaoConfigurado,
+			errPor: map[string]error{sec09Email: notificacao.ErrSMTPNaoConfigurado,
 				sec09Admin1: errors.New("smtp dial: timeout")},
 			wantLog: []string{"falha ao enviar alerta: user_id=5: smtp dial: timeout",
 				"alerta pulado (SMTP não configurado): user_id=5 destinos=usuario\n"},
@@ -603,10 +600,8 @@ func TestLOG01_Notifier_EnviadoVsPulado(t *testing.T) {
 func TestLOG01_Notifier_ComNoopReal(t *testing.T) {
 	logs := sec09CapturarLog(t)
 	r := &sec09Relogio{t: sec09T0}
-	n := services.NewAlertaSegurancaNotifier(nil, sharedsvc.NewNoopEmailService(), sec09Admins)
-	n.SetNow(r.now)
-	n.SetRun(func(f func()) { f() })
-	n.SetUsuarioLookup(&sec09Lookup{users: map[int64]*models.Usuario{5: {ID: 5, Nome: "Maria", Email: sec09Email}}})
+	n := notificacaoapp.NovoAlertaSegurancaNotifier(notificacaoapp.Deps{Contatos: &sec09Lookup{users: map[int64]notificacao.Contato{5: {Nome: "Maria", Email: sec09Email}}},
+		Enviador: notificacaosmtp.NovoNoop(), Admins: sec09Admins, Relogio: r.now, Executor: func(f func()) { f() }})
 
 	n.Notificar(5, sec09TokenID, sec09IP, sec09UA)
 
@@ -638,7 +633,7 @@ func TestLOG01_Notifier_CombinacoesAdmin(t *testing.T) {
 		{
 			nome:         "usuário enviado, admins pulados",
 			admins:       sec09Admins,
-			errPor:       map[string]error{sec09Admin1: sharedsvc.ErrSMTPNaoConfigurado, sec09Admin2: sharedsvc.ErrSMTPNaoConfigurado},
+			errPor:       map[string]error{sec09Admin1: notificacao.ErrSMTPNaoConfigurado, sec09Admin2: notificacao.ErrSMTPNaoConfigurado},
 			wantChamadas: 3,
 			wantLog: []string{"alerta enviado: user_id=5 destinos=usuario\n",
 				"alerta pulado (SMTP não configurado): user_id=5 destinos=admin(2)\n"},
@@ -648,7 +643,7 @@ func TestLOG01_Notifier_CombinacoesAdmin(t *testing.T) {
 			nome:           "usuário não carregado, admins pulados → só admin(N) pulado",
 			admins:         sec09Admins,
 			usuarioSemMail: true,
-			errPor:         map[string]error{sec09Admin1: sharedsvc.ErrSMTPNaoConfigurado, sec09Admin2: sharedsvc.ErrSMTPNaoConfigurado},
+			errPor:         map[string]error{sec09Admin1: notificacao.ErrSMTPNaoConfigurado, sec09Admin2: notificacao.ErrSMTPNaoConfigurado},
 			wantChamadas:   2,
 			wantLog:        []string{"alerta pulado (SMTP não configurado): user_id=5 destinos=admin(2)\n"},
 			wantSemLog:     []string{"alerta enviado", "falha", "sem destinatários", "usuario"},
@@ -656,7 +651,7 @@ func TestLOG01_Notifier_CombinacoesAdmin(t *testing.T) {
 		{
 			nome:         "admins divididos: 1 enviado, 1 pulado; usuário enviado",
 			admins:       sec09Admins,
-			errPor:       map[string]error{sec09Admin2: sharedsvc.ErrSMTPNaoConfigurado},
+			errPor:       map[string]error{sec09Admin2: notificacao.ErrSMTPNaoConfigurado},
 			wantChamadas: 3,
 			wantLog: []string{"alerta enviado: user_id=5 destinos=usuario,admin(1)\n",
 				"alerta pulado (SMTP não configurado): user_id=5 destinos=admin(1)\n"},
@@ -677,7 +672,7 @@ func TestLOG01_Notifier_CombinacoesAdmin(t *testing.T) {
 			logs := sec09CapturarLog(t)
 			n, s, l, _ := sec09Notifier(t, c.admins)
 			if c.usuarioSemMail {
-				l.err = repositories.ErrNotFound
+				l.err = identidade.ErrUsuarioNaoEncontrado
 			}
 			s.errPor = c.errPor
 
@@ -703,7 +698,7 @@ func TestLOG01_Notifier_CombinacoesAdmin(t *testing.T) {
 func TestSEC09_Notifier_FalhaAdmin_UsuarioNaoCarregado(t *testing.T) {
 	logs := sec09CapturarLog(t)
 	n, s, l, _ := sec09Notifier(t, []string{sec09Admin1})
-	l.err = repositories.ErrNotFound
+	l.err = identidade.ErrUsuarioNaoEncontrado
 	s.errPor = map[string]error{sec09Admin1: errors.New("smtp rcpt to: 550 caixa cheia")}
 
 	n.Notificar(5, sec09TokenID, sec09IP, sec09UA)
@@ -768,17 +763,15 @@ func TestSEC09_Notifier_FilaCheia(t *testing.T) {
 	s := &sec09Sender{iniciou: make(chan string, 16), liberar: make(chan struct{})}
 	r := &sec09Relogio{t: sec09T0}
 	fim := make(chan struct{}, 16)
-	n := services.NewAlertaSegurancaNotifier(nil, s, nil)
-	n.SetNow(r.now)
-	n.SetUsuarioLookup(&sec09Lookup{users: map[int64]*models.Usuario{}})
 	// Executor assíncrono que avisa quando f terminou (inclusive a liberação
 	// do semáforo, feita por defer dentro de f).
-	n.SetRun(func(f func()) {
-		go func() {
-			f()
-			fim <- struct{}{}
-		}()
-	})
+	n := notificacaoapp.NovoAlertaSegurancaNotifier(notificacaoapp.Deps{Contatos: &sec09Lookup{users: map[int64]notificacao.Contato{}},
+		Enviador: s, Relogio: r.now, Executor: func(f func()) {
+			go func() {
+				f()
+				fim <- struct{}{}
+			}()
+		}})
 
 	for id := int64(1); id <= 4; id++ {
 		n.Notificar(id, id, sec09IP, sec09UA)
@@ -820,15 +813,13 @@ func TestSEC09_Notifier_FilaCheia_DesfazReserva(t *testing.T) {
 	s := &sec09Sender{iniciou: make(chan string, 64), liberar: make(chan struct{})}
 	r := &sec09Relogio{t: sec09T0}
 	fim := make(chan struct{}, 64)
-	n := services.NewAlertaSegurancaNotifier(nil, s, nil)
-	n.SetNow(r.now)
-	n.SetUsuarioLookup(&sec09Lookup{users: map[int64]*models.Usuario{}})
-	n.SetRun(func(f func()) {
-		go func() {
-			f()
-			fim <- struct{}{}
-		}()
-	})
+	n := notificacaoapp.NovoAlertaSegurancaNotifier(notificacaoapp.Deps{Contatos: &sec09Lookup{users: map[int64]notificacao.Contato{}},
+		Enviador: s, Relogio: r.now, Executor: func(f func()) {
+			go func() {
+				f()
+				fim <- struct{}{}
+			}()
+		}})
 	liberarTodos := func(k int) {
 		for i := 0; i < k; i++ {
 			s.liberar <- struct{}{}
@@ -882,7 +873,7 @@ func TestSEC09_Notifier_FilaCheia_DesfazReserva(t *testing.T) {
 }
 
 // Construtor com dependências padrão: executor em goroutine, relógio real e
-// UsuarioRepository real (sqlmock).
+// adapter real de Identidade (sqlmock), montados pelo bootstrap.
 func TestSEC09_Notifier_DependenciasPadrao(t *testing.T) {
 	logs := sec09CapturarLog(t)
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
@@ -912,7 +903,7 @@ func TestSEC09_Notifier_DependenciasPadrao(t *testing.T) {
 			for range c.wantDest {
 				s.liberar <- struct{}{}
 			}
-			n := services.NewAlertaSegurancaNotifier(db, s, []string{sec09Admin1})
+			n := bootstrap.NovoNotificadorAlerta(db, s, []string{sec09Admin1})
 			c.setup()
 
 			n.Notificar(c.userID, 1, sec09IP, sec09UA)

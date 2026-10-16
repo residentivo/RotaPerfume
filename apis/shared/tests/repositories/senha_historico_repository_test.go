@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -40,21 +43,20 @@ func TestSenhaHistoricoCreate_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	h := &senhaHistorico{
-		UsuarioID:         1,
-		SenhaHashAnterior: "hash-antiga",
-		IPOrigem:          "127.0.0.1",
-		UserAgent:         "go-test",
-		TipoReset:         "usuario",
+	h := &identidade.RegistroSenha{
+		UsuarioID:    1,
+		HashAnterior: identidade.NovoHashSenha("hash-antiga"),
+		IP:           "127.0.0.1",
+		UserAgent:    "go-test",
+		Tipo:         "usuario",
 	}
 
 	mock.ExpectExec("INSERT INTO senha_historico").
-		WithArgs(h.UsuarioID, nil, h.SenhaHashAnterior, h.IPOrigem, h.UserAgent, h.TipoReset).
+		WithArgs(h.UsuarioID, nil, h.HashAnterior.Revelar(), h.IP, h.UserAgent, string(h.Tipo)).
 		WillReturnResult(sqlmock.NewResult(3, 1))
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, h)
+	err := identidademysql.NovoHistoricoSenhas(db).Registrar(ctx, h)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), h.ID)
@@ -65,22 +67,21 @@ func TestSenhaHistoricoCreate_ComResetadoPor(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	h := &senhaHistorico{
-		UsuarioID:         1,
-		ResetadoPorID:     sql.NullInt64{Int64: 2, Valid: true},
-		SenhaHashAnterior: "hash-antiga",
-		IPOrigem:          "127.0.0.1",
-		UserAgent:         "go-test",
-		TipoReset:         "admin",
+	h := &identidade.RegistroSenha{
+		UsuarioID:     1,
+		ResetadoPorID: ptrInt64(2),
+		HashAnterior:  identidade.NovoHashSenha("hash-antiga"),
+		IP:            "127.0.0.1",
+		UserAgent:     "go-test",
+		Tipo:          "admin",
 	}
 
 	mock.ExpectExec("INSERT INTO senha_historico").
-		WithArgs(h.UsuarioID, int64(2), h.SenhaHashAnterior, h.IPOrigem, h.UserAgent, h.TipoReset).
+		WithArgs(h.UsuarioID, int64(2), h.HashAnterior.Revelar(), h.IP, h.UserAgent, string(h.Tipo)).
 		WillReturnResult(sqlmock.NewResult(4, 1))
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, h)
+	err := identidademysql.NovoHistoricoSenhas(db).Registrar(ctx, h)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), h.ID)
@@ -91,13 +92,12 @@ func TestSenhaHistoricoCreate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	h := &senhaHistorico{}
+	h := &identidade.RegistroSenha{}
 	mock.ExpectExec("INSERT INTO senha_historico").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, h)
+	err := identidademysql.NovoHistoricoSenhas(db).Registrar(ctx, h)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -119,15 +119,14 @@ func TestSenhaHistoricoFindByUsuario_Success(t *testing.T) {
 		WithArgs(int64(1), 10, 0).
 		WillReturnRows(rows)
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	historico, total, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
+	historico, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
 	require.Len(t, historico, 1)
-	assert.False(t, historico[0].ResetadoPorID.Valid)
-	assert.False(t, historico[0].ResetadoPorNome.Valid, "resetado_por_nome deve ser NULL quando resetado_por_id é NULL")
+	assert.Nil(t, historico[0].ResetadoPorID)
+	assert.Nil(t, historico[0].ResetadoPorNome, "resetado_por_nome deve ser NULL quando resetado_por_id é NULL")
 	assert.Equal(t, "Usuario Teste", historico[0].UsuarioNome, "usuario_nome deve vir preenchido pelo JOIN mesmo sem reset por terceiros")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -150,17 +149,16 @@ func TestSenhaHistoricoFindByUsuario_ComResetadoPor(t *testing.T) {
 		WithArgs(int64(1), 10, 0).
 		WillReturnRows(rows)
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	historico, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
+	historico, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	require.Len(t, historico, 1)
-	assert.True(t, historico[0].ResetadoPorID.Valid)
-	assert.Equal(t, int64(2), historico[0].ResetadoPorID.Int64)
+	assert.NotNil(t, historico[0].ResetadoPorID)
+	assert.Equal(t, int64(2), *historico[0].ResetadoPorID)
 	assert.Equal(t, "Usuario Teste", historico[0].UsuarioNome)
-	require.True(t, historico[0].ResetadoPorNome.Valid, "resetado_por_nome deve ser preenchido quando resetado_por_id existe")
-	assert.Equal(t, "Admin Teste", historico[0].ResetadoPorNome.String)
+	require.NotNil(t, historico[0].ResetadoPorNome, "resetado_por_nome deve ser preenchido quando resetado_por_id existe")
+	assert.Equal(t, "Admin Teste", *historico[0].ResetadoPorNome)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -190,9 +188,8 @@ func TestSenhaHistoricoFindByUsuario_OrderBy(t *testing.T) {
 				WithArgs(int64(1), 10, 0).
 				WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-			repo := novoHistoricoRepo()
 			ctx := context.Background()
-			_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, tt.orderBy, tt.orderDir)
+			_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico(tt.orderBy, tt.orderDir), kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -208,9 +205,8 @@ func TestSenhaHistoricoFindByUsuario_CountError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -227,9 +223,8 @@ func TestSenhaHistoricoFindByUsuario_QueryError(t *testing.T) {
 		WithArgs(int64(1), 10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10, "", "")
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -246,9 +241,8 @@ func TestSenhaHistoricoFindByUsuario_Defaults(t *testing.T) {
 		WithArgs(int64(1), 20, 0).
 		WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 0, 0, "", "")
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(0, 0)))
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -265,9 +259,8 @@ func TestSenhaHistoricoFindByUsuario_LimitCap(t *testing.T) {
 		WithArgs(int64(1), 100, 0).
 		WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 200, "", "")
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(1, 200)))
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -289,16 +282,15 @@ func TestSenhaHistoricoFindAll_Success(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	historico, total, err := repo.FindAll(ctx, db, 1, 10, "", "")
+	historico, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
 	assert.Len(t, historico, 2)
 	for _, h := range historico {
 		assert.Equal(t, "Usuario Teste", h.UsuarioNome)
-		assert.False(t, h.ResetadoPorNome.Valid)
+		assert.Nil(t, h.ResetadoPorNome)
 	}
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -320,15 +312,14 @@ func TestSenhaHistoricoFindAll_ComResetadoPor(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	historico, _, err := repo.FindAll(ctx, db, 1, 10, "", "")
+	historico, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	require.Len(t, historico, 1)
 	assert.Equal(t, "Usuario Teste", historico[0].UsuarioNome)
-	require.True(t, historico[0].ResetadoPorNome.Valid)
-	assert.Equal(t, "Admin Teste", historico[0].ResetadoPorNome.String)
+	require.NotNil(t, historico[0].ResetadoPorNome)
+	assert.Equal(t, "Admin Teste", *historico[0].ResetadoPorNome)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -356,9 +347,8 @@ func TestSenhaHistoricoFindAll_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-			repo := novoHistoricoRepo()
 			ctx := context.Background()
-			_, _, err := repo.FindAll(ctx, db, 1, 10, tt.orderBy, tt.orderDir)
+			_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico(tt.orderBy, tt.orderDir), kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -373,9 +363,8 @@ func TestSenhaHistoricoFindAll_CountError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM senha_historico$`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindAll(ctx, db, 1, 10, "", "")
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -391,9 +380,8 @@ func TestSenhaHistoricoFindAll_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindAll(ctx, db, 1, 10, "", "")
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -409,9 +397,8 @@ func TestSenhaHistoricoFindAll_Defaults(t *testing.T) {
 		WithArgs(20, 0).
 		WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-	repo := novoHistoricoRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindAll(ctx, db, 0, 0, "", "")
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico("", ""), kernel.NovaPagina(0, 0)))
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

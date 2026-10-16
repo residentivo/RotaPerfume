@@ -6,6 +6,7 @@ package services_test
 import (
 	"context"
 	"errors"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"testing"
 	"time"
 
@@ -83,7 +84,7 @@ func TestAuthService_GetUsuarioByEmail(t *testing.T) {
 			defer db.Close()
 			c.prepara(mock)
 
-			u, err := novoAuth().GetUsuarioByEmail(context.Background(), db, "ana@rp.com")
+			u, err := identidademysql.NovoUsuarios(db).PorEmail(context.Background(), "ana@rp.com")
 			if c.wantErrIs != nil {
 				assert.ErrorIs(t, err, c.wantErrIs)
 				assert.Nil(t, u)
@@ -119,7 +120,7 @@ func TestAuthService_ResetPassword(t *testing.T) {
 			c.resultado(mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
 				WithArgs("novo-hash", c.deveTrocar, sqlmock.AnyArg(), int64(9)))
 
-			err = novoAuth().ResetPassword(context.Background(), db, 9, "novo-hash", c.deveTrocar)
+			err = identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 9, identidade.NovoHashSenha("novo-hash"), c.deveTrocar)
 			if c.wantErrIs != nil {
 				assert.ErrorIs(t, err, c.wantErrIs)
 			} else {
@@ -143,7 +144,7 @@ func TestAuthService_HashPassword_Erros(t *testing.T) {
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			hash, err := novoAuth().HashPassword(&config.Config{HashSenha: c.hs}, "senha")
+			hash, err := identidadecrypto.NovoHasher(c.hs).Gerar(identidade.NovaSenha("senha"))
 			require.Error(t, err)
 			assert.Empty(t, hash)
 			assert.EqualError(t, err, c.want)
@@ -160,7 +161,7 @@ func TestAuthService_RehashPassword(t *testing.T) {
 		WithArgs("$argon2id$novo", int64(3), "$2a$12$antigo").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = novoAuth().RehashPassword(context.Background(), db, 3, "$2a$12$antigo", "$argon2id$novo")
+	err = identidademysql.NovoUsuarios(db).RegravarHash(context.Background(), 3, identidade.NovoHashSenha("$2a$12$antigo"), identidade.NovoHashSenha("$argon2id$novo"))
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -168,7 +169,10 @@ func TestAuthService_RehashPassword(t *testing.T) {
 // SEC-13: a verificação fictícia (login de e-mail inexistente) não pode
 // entrar em pânico, nem mesmo sem pepper.
 func TestAuthService_VerifyDummyPassword(t *testing.T) {
-	auth := novoAuth()
-	assert.NotPanics(t, func() { auth.VerifyDummyPassword(newTestConfig(), "qualquer") })
-	assert.NotPanics(t, func() { auth.VerifyDummyPassword(&config.Config{}, "qualquer") })
+	assert.NotPanics(t, func() {
+		identidadecrypto.NovoHasher(newTestConfig().HashSenha).ExecutarDescartavel(identidade.NovaSenha("qualquer"))
+	})
+	assert.NotPanics(t, func() {
+		identidadecrypto.NovoHasher(config.HashSenha{}) // sem pepper.ExecutarDescartavel(identidade.NovaSenha("qualquer"))
+	})
 }

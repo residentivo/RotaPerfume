@@ -82,7 +82,21 @@ func TestARQ_Varredura_DoisModulos(t *testing.T) {
 	for _, p := range pacotesDosDoisModulos(t) {
 		achou[p.importPath] = len(p.arquivos) > 0
 	}
-	for _, esperado := range []string{pkgHttpx, modAPI + "/internal/bootstrap", modAPI + "/middleware", pkgKernel, pkgVlog, modShared + "/repositories"} {
+	for _, esperado := range []string{pkgHttpx, modAPI + "/internal/bootstrap", modAPI + "/internal/resetsenhas", pkgKernel, pkgVlog, modShared + "/notificacao/notificacaoapp"} {
 		assert.True(t, achou[esperado], "varredura não encontrou %s", esperado)
+	}
+	// ARQ-07 ("≥ 1 uso" → "0 usos"): o legado não existe mais nos dois módulos
+	// e nenhum pacote de produção o importa.
+	legado := []string{modAPI + "/middleware", modAPI + "/services", modAPI + "/handlers", modAPI + "/routes",
+		modShared + "/repositories", modShared + "/services", modShared + "/models"}
+	for _, p := range pacotesDosDoisModulos(t) {
+		for _, l := range legado {
+			assert.False(t, dentroDe(p.importPath, l), "pacote legado voltou: %s", p.importPath)
+		}
+		for _, imp := range p.imports {
+			for _, l := range legado {
+				assert.False(t, dentroDe(imp, l), "%s importa o legado %s", p.importPath, imp)
+			}
+		}
 	}
 }

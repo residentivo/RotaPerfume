@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -12,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/identidade"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 var refreshTokenColumns = []string{
@@ -31,21 +32,20 @@ func TestRefreshTokenCreate_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	rt := &repositories.RefreshToken{
+	rt := &identidade.RefreshToken{
 		UsuarioID: 1,
-		TokenHash: "hash-abc",
-		ExpiresAt: time.Now().Add(24 * time.Hour),
-		IPOrigem:  "127.0.0.1",
+		HashToken: "hash-abc",
+		ExpiraEm:  time.Now().Add(24 * time.Hour),
+		IP:        "127.0.0.1",
 		UserAgent: "go-test",
 	}
 
 	mock.ExpectExec("INSERT INTO refresh_tokens").
-		WithArgs(rt.UsuarioID, rt.TokenHash, rt.ExpiresAt, rt.IPOrigem, rt.UserAgent).
+		WithArgs(rt.UsuarioID, rt.HashToken, rt.ExpiraEm, rt.IP, rt.UserAgent).
 		WillReturnResult(sqlmock.NewResult(5, 1))
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, rt)
+	err := identidademysql.NovoRefreshTokens(db).Inserir(ctx, rt)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), rt.ID)
@@ -56,13 +56,12 @@ func TestRefreshTokenCreate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	rt := &repositories.RefreshToken{}
+	rt := &identidade.RefreshToken{}
 	mock.ExpectExec("INSERT INTO refresh_tokens").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, rt)
+	err := identidademysql.NovoRefreshTokens(db).Inserir(ctx, rt)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -80,13 +79,12 @@ func TestRefreshTokenFindByTokenHash_Success(t *testing.T) {
 		WithArgs("hash-abc").
 		WillReturnRows(rows)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	rt, err := repo.FindByTokenHash(ctx, db, "hash-abc")
+	rt, err := identidademysql.NovoRefreshTokens(db).PorHash(ctx, "hash-abc")
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rt.ID)
-	assert.False(t, rt.RevokedAt.Valid)
+	assert.Nil(t, rt.RevogadoEm)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -103,12 +101,11 @@ func TestRefreshTokenFindByTokenHash_ComRevoked(t *testing.T) {
 		WithArgs("hash-def").
 		WillReturnRows(rows)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	rt, err := repo.FindByTokenHash(ctx, db, "hash-def")
+	rt, err := identidademysql.NovoRefreshTokens(db).PorHash(ctx, "hash-def")
 
 	require.NoError(t, err)
-	assert.True(t, rt.RevokedAt.Valid)
+	assert.NotNil(t, rt.RevogadoEm)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -120,9 +117,8 @@ func TestRefreshTokenFindByTokenHash_NotFound(t *testing.T) {
 		WithArgs("naoexiste").
 		WillReturnError(sql.ErrNoRows)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	rt, err := repo.FindByTokenHash(ctx, db, "naoexiste")
+	rt, err := identidademysql.NovoRefreshTokens(db).PorHash(ctx, "naoexiste")
 
 	assert.Nil(t, rt)
 	assert.ErrorIs(t, err, identidade.ErrRefreshInvalido)
@@ -137,9 +133,8 @@ func TestRefreshTokenFindByTokenHash_DBError(t *testing.T) {
 		WithArgs("hash").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	rt, err := repo.FindByTokenHash(ctx, db, "hash")
+	rt, err := identidademysql.NovoRefreshTokens(db).PorHash(ctx, "hash")
 
 	assert.Nil(t, rt)
 	assert.Error(t, err)
@@ -155,9 +150,8 @@ func TestRefreshTokenRevoke_Success(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "rotacao", int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	err := repo.Revoke(ctx, db, 1, repositories.RevokeReasonRotacao)
+	err := identidademysql.NovoRefreshTokens(db).Revogar(ctx, 1, identidade.MotivoRotacao)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -171,9 +165,8 @@ func TestRefreshTokenRevoke_NotFound(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "rotacao", int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	err := repo.Revoke(ctx, db, 999, repositories.RevokeReasonRotacao)
+	err := identidademysql.NovoRefreshTokens(db).Revogar(ctx, 999, identidade.MotivoRotacao)
 
 	assert.ErrorIs(t, err, identidade.ErrRefreshRevogado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -187,9 +180,8 @@ func TestRefreshTokenRevoke_DBError(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "rotacao", int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	err := repo.Revoke(ctx, db, 1, repositories.RevokeReasonRotacao)
+	err := identidademysql.NovoRefreshTokens(db).Revogar(ctx, 1, identidade.MotivoRotacao)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -203,9 +195,8 @@ func TestRefreshTokenRevokeAllByUser_Success(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 3))
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	err := repo.RevokeAllByUser(ctx, db, 1, repositories.RevokeReasonRevogacaoMassa)
+	err := identidademysql.NovoRefreshTokens(db).RevogarTodosDoUsuario(ctx, 1, identidade.MotivoRevogacaoMassa)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -219,9 +210,8 @@ func TestRefreshTokenRevokeAllByUser_DBError(t *testing.T) {
 		WithArgs(sqlmock.AnyArg(), "revogacao_massa", int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	err := repo.RevokeAllByUser(ctx, db, 1, repositories.RevokeReasonRevogacaoMassa)
+	err := identidademysql.NovoRefreshTokens(db).RevogarTodosDoUsuario(ctx, 1, identidade.MotivoRevogacaoMassa)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -236,9 +226,8 @@ func TestRefreshTokenDeleteExpired_Success(t *testing.T) {
 		WithArgs(corte, 1000).
 		WillReturnResult(sqlmock.NewResult(0, 4))
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	n, err := repo.DeleteExpired(ctx, db, corte, 1000)
+	n, err := identidademysql.NovoRefreshTokens(db).ApagarExpirados(ctx, corte, 1000)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), n)
@@ -252,34 +241,44 @@ func TestRefreshTokenDeleteExpired_DBError(t *testing.T) {
 	mock.ExpectExec(`DELETE FROM refresh_tokens`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	_, err := repo.DeleteExpired(ctx, db, time.Now(), 1000)
+	_, err := identidademysql.NovoRefreshTokens(db).ApagarExpirados(ctx, time.Now(), 1000)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// ARQ-07: RefreshTokenRepository.FindByUsuario (listagem paginada por usuário,
+// sem chamador de produção desde o ARQ-03) saiu com o legado. Os testes, com
+// os mesmos nomes, exercitam a listagem paginada por usuário que existe em
+// Identidade, HistoricoSenhas.DoUsuario: o mesmo desenho (COUNT por
+// usuario_id + página com LIMIT/OFFSET), os mesmos padrões de página (page
+// < 1 → 1, limit < 1 → 20, limit > 100 → 100, kernel.NovaPagina) e os mesmos
+// ramos de erro.
+const (
+	reContaHistoricoUsuario = `SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`
+	reListaHistoricoUsuario = `SELECT .+ FROM senha_historico sh .+ WHERE sh\.usuario_id = \? ORDER BY sh\.id DESC LIMIT \? OFFSET \?`
+)
+
 func TestRefreshTokenFindByUsuario_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM refresh_tokens WHERE usuario_id = \?`).
+	mock.ExpectQuery(reContaHistoricoUsuario).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(2))
 
 	now := time.Now()
-	rows := sqlmock.NewRows(refreshTokenColumns).
-		AddRow(refreshTokenRow(2, 1, "hash-2", now, nil, "ip", "ua")...).
-		AddRow(refreshTokenRow(1, 1, "hash-1", now, nil, "ip", "ua")...)
+	rows := sqlmock.NewRows(senhaHistoricoColumns).
+		AddRow(senhaHistoricoRow(2, 1, nil, "hash-2", "ip", "ua", "usuario", now)...).
+		AddRow(senhaHistoricoRow(1, 1, nil, "hash-1", "ip", "ua", "usuario", now)...)
 
-	mock.ExpectQuery(`SELECT .+ FROM refresh_tokens WHERE usuario_id = \? ORDER BY id DESC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(reListaHistoricoUsuario).
 		WithArgs(int64(1), 10, 0).
 		WillReturnRows(rows)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	tokens, total, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
+	tokens, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
@@ -291,16 +290,15 @@ func TestRefreshTokenFindByUsuario_Defaults(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM refresh_tokens WHERE usuario_id = \?`).
+	mock.ExpectQuery(reContaHistoricoUsuario).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-	mock.ExpectQuery(`SELECT .+ FROM refresh_tokens WHERE usuario_id = \? ORDER BY id DESC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(reListaHistoricoUsuario).
 		WithArgs(int64(1), 20, 0).
-		WillReturnRows(sqlmock.NewRows(refreshTokenColumns))
+		WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 0, 0)
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(0, 0)))
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -310,16 +308,15 @@ func TestRefreshTokenFindByUsuario_LimitCap(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM refresh_tokens WHERE usuario_id = \?`).
+	mock.ExpectQuery(reContaHistoricoUsuario).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-	mock.ExpectQuery(`SELECT .+ FROM refresh_tokens WHERE usuario_id = \? ORDER BY id DESC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(reListaHistoricoUsuario).
 		WithArgs(int64(1), 100, 0).
-		WillReturnRows(sqlmock.NewRows(refreshTokenColumns))
+		WillReturnRows(sqlmock.NewRows(senhaHistoricoColumns))
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 200)
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(1, 200)))
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -329,15 +326,14 @@ func TestRefreshTokenFindByUsuario_CountError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM refresh_tokens WHERE usuario_id = \?`).
+	mock.ExpectQuery(reContaHistoricoUsuario).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, sql.ErrConnDone)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -345,17 +341,16 @@ func TestRefreshTokenFindByUsuario_QueryError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM refresh_tokens WHERE usuario_id = \?`).
+	mock.ExpectQuery(reContaHistoricoUsuario).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
-	mock.ExpectQuery(`SELECT .+ FROM refresh_tokens WHERE usuario_id = \? ORDER BY id DESC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(reListaHistoricoUsuario).
 		WithArgs(int64(1), 10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := novoRefreshRepo()
 	ctx := context.Background()
-	_, _, err := repo.FindByUsuario(ctx, db, 1, 1, 10)
+	_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, 1, ordemHistorico("", ""), kernel.NovaPagina(1, 10)))
 
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, sql.ErrConnDone)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

@@ -172,7 +172,19 @@ func TestRun_DryRunNaoTocaArquivos(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, out.String(), "=== DRY-RUN ===")
-	assert.Len(t, reHash.FindAllString(out.String(), -1), 2, "imprime os dois hashes")
+	// ARQ-07 / NB-7: sem -show-password o dry-run não imprime o hash inteiro.
+	assert.Empty(t, reHash.FindAllString(out.String(), -1), "sem -show-password, nenhum hash completo")
+	assert.Equal(t, 2, strings.Count(out.String(), "(hash completo só com -show-password)"))
+	assert.Equal(t, sqlAdmin, ler(t, filepath.Join(root, "sql", "02_seed_admin.sql")))
+
+	out.Reset()
+	err = seedusers.Run(cfgRapida(), seedusers.Options{DryRun: true, ShowPassword: true}, seedusers.Deps{
+		Out:         &out,
+		ProjectRoot: func() (string, error) { t.Fatal("dry-run não precisa da raiz"); return "", nil },
+		RunSQL:      func(*config.Config, string) error { t.Fatal("dry-run não executa SQL"); return nil },
+	})
+	require.NoError(t, err)
+	assert.Len(t, reHash.FindAllString(out.String(), -1), 2, "com -show-password, imprime os dois hashes")
 	assert.Equal(t, sqlAdmin, ler(t, filepath.Join(root, "sql", "02_seed_admin.sql")))
 }
 
@@ -293,7 +305,8 @@ func TestRenderSeedFile(t *testing.T) {
 func TestMySQLArgs_SenhaNaoVaiNaLinhaDeComando(t *testing.T) {
 	cfg := &config.Config{DBUsuario: "u", DBSenha: "segredo", DBHost: "h", DBPort: "3307", DBName: "rp"}
 	args := seedusers.MySQLArgs(cfg)
-	assert.Equal(t, []string{"-uu", "-hh", "-P3307", "--default-character-set=utf8mb4", "--local-infile=1", "rp"}, args)
+	assert.Equal(t, []string{"-uu", "-hh", "-P3307", "--default-character-set=utf8mb4", "rp"}, args)
+	assert.NotContains(t, strings.Join(args, " "), "local-infile", "ARQ-07 NB-F: LOAD DATA LOCAL desligado")
 	assert.NotContains(t, strings.Join(args, " "), "segredo", "senha vai via MYSQL_PWD")
 }
 

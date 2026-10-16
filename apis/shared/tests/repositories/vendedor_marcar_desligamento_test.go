@@ -3,6 +3,7 @@ package repositories_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func TestVendedorMarcarDesligamento(t *testing.T) {
 			defer db.Close()
 			tc.result(mock)
 
-			err := NewVendedorRepository().MarcarDesligamento(context.Background(), db, 1, agora)
+			err := comercialmysql.NovoVendedores(db).MarcarDesligamento(context.Background(), 1, agora)
 
 			switch {
 			case tc.wantErr != nil:

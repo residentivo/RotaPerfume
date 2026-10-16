@@ -3,7 +3,7 @@ package arquitetura_test
 // ARQ-03 (ressalva #2 do 🟣 SecBrain): métodos de identidadeapp.Casos que não
 // passam por Principal nem pela sequência completa do caso de uso.
 //   - ResetarSenhasAtivos (reset em massa, CLI sem Principal, O5): só em
-//     cmd/resetsenhas.
+//     internal/resetsenhas (o comando cmd/resetsenhas, ARQ-07).
 //   - RegistrarReuso / DesfazerReuso (passos do I-07, exportados para a suíte
 //     SEC-12 exercitar janela e relógio): só dentro de identidadeapp.
 // A varredura pega qualquer seletor com esses nomes (chamado ou não, N-4), nos
@@ -17,7 +17,7 @@ import (
 )
 
 var allowlistIdentidade = map[string]map[string]bool{
-	"ResetarSenhasAtivos": {modAPI + "/cmd/resetsenhas": true},
+	"ResetarSenhasAtivos": {modAPI + "/internal/resetsenhas": true},
 	"RegistrarReuso":      {modShared + "/identidade/identidadeapp": true},
 	"DesfazerReuso":       {modShared + "/identidade/identidadeapp": true},
 }
@@ -72,7 +72,7 @@ func f(c *Casos) {
 `)
 	assert.Len(t, violacoesIdentidadeRestrita([]arquivo{ruim}), 3)
 
-	bom := fonteSintetica(t, modAPI+"/cmd/resetsenhas", "main.go", `package main
+	bom := fonteSintetica(t, modAPI+"/internal/resetsenhas", "resetsenhas.go", `package resetsenhas
 
 func f(c *Casos) { _, _ = c.ResetarSenhasAtivos(nil, true) }
 `)

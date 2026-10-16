@@ -24,7 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/notificacao"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 // smtpTLS devolve o certificado de servidor do httptest (válido para
@@ -251,7 +252,7 @@ func TestSMTPEmailService_EnviarSenhaInicial_Sucesso(t *testing.T) {
 
 			// ServerName errado de propósito: o construtor força o host configurado
 			// (SMTP_TLS_SERVER_NAME vazio).
-			svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), &tls.Config{RootCAs: pool, ServerName: "host-errado.invalid"})
+			svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), &tls.Config{RootCAs: pool, ServerName: "host-errado.invalid"})
 			require.NoError(t, err)
 
 			err = svc.EnviarSenhaInicial(context.Background(), "cliente@exemplo.com", "Maria", "S3nh@Forte!")
@@ -312,7 +313,7 @@ func TestSMTPEmailService_EnviarSenhaInicial_Erros(t *testing.T) {
 			if c.semCA {
 				tlsCfg = nil
 			}
-			svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), tlsCfg)
+			svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), tlsCfg)
 			require.NoError(t, err)
 
 			err = svc.EnviarSenhaInicial(context.Background(), "cliente@exemplo.com", "Maria", "S3nh@Forte!")
@@ -338,7 +339,7 @@ func TestSMTPEmailService_EnviarSenhaInicial_ErroDeConexao(t *testing.T) {
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			svc, err := services.NewSMTPEmailService(smtpCfg("127.0.0.1", c.port))
+			svc, err := notificacaosmtp.Novo(smtpCfg("127.0.0.1", c.port))
 			require.NoError(t, err)
 			err = svc.EnviarSenhaInicial(c.ctx(), "cliente@exemplo.com", "Maria", "x")
 			require.Error(t, err)
@@ -351,14 +352,14 @@ func TestNewSMTPEmailServiceWithTLSConfig(t *testing.T) {
 	t.Run("config incompleta", func(t *testing.T) {
 		cfg := smtpCfg("smtp.exemplo.com", "587")
 		cfg.SMTPFrom = ""
-		svc, err := services.NewSMTPEmailServiceWithTLSConfig(cfg, &tls.Config{})
+		svc, err := notificacaosmtp.NovoComTLS(cfg, &tls.Config{})
 		assert.Nil(t, svc)
-		assert.ErrorIs(t, err, services.ErrSMTPNaoConfigurado)
+		assert.ErrorIs(t, err, notificacao.ErrSMTPNaoConfigurado)
 	})
 
 	t.Run("não altera a tls.Config recebida (clona)", func(t *testing.T) {
 		orig := &tls.Config{ServerName: "outro-host"}
-		svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg("smtp.exemplo.com", "587"), orig)
+		svc, err := notificacaosmtp.NovoComTLS(smtpCfg("smtp.exemplo.com", "587"), orig)
 		require.NoError(t, err)
 		require.NotNil(t, svc)
 		assert.Equal(t, "outro-host", orig.ServerName)

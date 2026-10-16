@@ -1,4 +1,7 @@
-// Package models_test contém testes unitários para o modelo Usuario.
+// Package models_test testava o models.Usuario legado. ARQ-07 (§7.6): o
+// pacote models saiu; os testes, com os mesmos nomes, exercitam os
+// equivalentes do domínio de Identidade: o VO kernel.Role (EhAdmin, I-05) e
+// o agregado identidade.Usuario (EhAdmin e o flag Ativo).
 package models_test
 
 import (
@@ -6,25 +9,27 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/rotaperfumes/shared/models"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/kernel"
 )
 
-// TestUsuarioIsAdmin garante que IsAdmin retorna true apenas para role "admin".
+// TestUsuarioIsAdmin garante que EhAdmin é verdadeiro apenas para role "admin".
 func TestUsuarioIsAdmin(t *testing.T) {
 	t.Run("admin retorna true", func(t *testing.T) {
-		u := &models.Usuario{Role: models.RoleAdmin}
-		assert.True(t, u.IsAdmin())
+		u := &identidade.Usuario{Role: kernel.RoleAdmin}
+		assert.True(t, u.EhAdmin())
 	})
 
 	t.Run("normal retorna false", func(t *testing.T) {
-		u := &models.Usuario{Role: models.RoleNormal}
-		assert.False(t, u.IsAdmin())
+		u := &identidade.Usuario{Role: kernel.RoleNormal}
+		assert.False(t, u.EhAdmin())
 	})
 
 	t.Run("nil retorna false (sem panic)", func(t *testing.T) {
-		var u *models.Usuario
+		// O VO não tem ponteiro: o zero value é o "nenhum papel".
+		var r kernel.Role
 		assert.NotPanics(t, func() {
-			assert.False(t, u.IsAdmin())
+			assert.False(t, r.EhAdmin())
 		})
 	})
 
@@ -42,29 +47,30 @@ func TestUsuarioIsAdmin(t *testing.T) {
 		}
 		for _, c := range cases {
 			t.Run(c.role, func(t *testing.T) {
-				u := &models.Usuario{Role: c.role}
-				assert.Equal(t, c.expect, u.IsAdmin())
+				u := &identidade.Usuario{Role: kernel.RoleDoBanco(c.role)}
+				assert.Equal(t, c.expect, u.EhAdmin())
+				assert.Equal(t, c.expect, kernel.RoleDoBanco(c.role).EhAdmin())
 			})
 		}
 	})
 }
 
-// TestUsuarioIsActive garante que IsActive reflete corretamente o flag Ativo.
+// TestUsuarioIsActive garante que o flag Ativo do agregado é o que veio do banco.
 func TestUsuarioIsActive(t *testing.T) {
 	t.Run("ativo true retorna true", func(t *testing.T) {
-		u := &models.Usuario{Ativo: true}
-		assert.True(t, u.IsActive())
+		u := identidade.Usuario{Ativo: true}
+		assert.True(t, u.Ativo)
 	})
 
 	t.Run("ativo false retorna false", func(t *testing.T) {
-		u := &models.Usuario{Ativo: false}
-		assert.False(t, u.IsActive())
+		u := identidade.Usuario{Ativo: false}
+		assert.False(t, u.Ativo)
 	})
 
 	t.Run("nil retorna false (sem panic)", func(t *testing.T) {
-		var u *models.Usuario
+		var u identidade.Usuario // zero value: inativo
 		assert.NotPanics(t, func() {
-			assert.False(t, u.IsActive())
+			assert.False(t, u.Ativo)
 		})
 	})
 
@@ -83,9 +89,9 @@ func TestUsuarioIsActive(t *testing.T) {
 		}
 		for _, c := range cases {
 			t.Run(c.name, func(t *testing.T) {
-				u := &models.Usuario{Role: c.role, Ativo: c.ativo}
-				assert.Equal(t, c.admin, u.IsAdmin())
-				assert.Equal(t, c.active, u.IsActive())
+				u := identidade.Usuario{Role: kernel.RoleDoBanco(c.role), Ativo: c.ativo}
+				assert.Equal(t, c.admin, u.EhAdmin())
+				assert.Equal(t, c.active, u.Ativo)
 			})
 		}
 	})

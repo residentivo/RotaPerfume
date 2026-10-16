@@ -168,7 +168,7 @@ func TestSEC12_Refresh_ReusoRepetido(t *testing.T) {
 			defer db.Close()
 			logs := capturarLog(t)
 			fake := &sec09FakeNotificador{mock: mock}
-			h.SetAlertaSeguranca(fake)
+			h.alerta.trocar(fake)
 			url := server.URL + "/api/auth/refresh"
 
 			var primeiroCorpo string
@@ -208,7 +208,7 @@ func TestSEC12_Refresh_ReusoSuprimido_ContaNoRateLimit(t *testing.T) {
 	defer db.Close()
 	logs := capturarLog(t)
 	fake := &sec09FakeNotificador{mock: mock}
-	h.SetAlertaSeguranca(fake)
+	h.alerta.trocar(fake)
 	url := server.URL + "/api/auth/refresh"
 
 	for i := 0; i < 10; i++ {
@@ -278,7 +278,7 @@ func TestSEC12_Refresh_NaoMarcaForaDoReusoDeRotacao(t *testing.T) {
 			defer db.Close()
 			logs := capturarLog(t)
 			fake := &sec09FakeNotificador{mock: mock}
-			h.SetAlertaSeguranca(fake)
+			h.alerta.trocar(fake)
 
 			expectRefreshRevogadoComMotivo(mock, time.Now().Add(c.revokedAt), c.motivo)
 			// Sem ExpectExec: qualquer UPDATE (marca/corte) seria inesperado.
@@ -330,7 +330,7 @@ func TestSEC12_NewAuthHandler_JanelaDaConfig(t *testing.T) {
 			capturarLog(t)
 			cfg := testCfg()
 			cfg.RefreshReuseSuppressWindow = c.janela
-			h := novoAuthHandler(db, cfg)
+			h := novaIdentidadeTeste(db, cfg)
 
 			var mu sync.Mutex
 			var agora, limite time.Time

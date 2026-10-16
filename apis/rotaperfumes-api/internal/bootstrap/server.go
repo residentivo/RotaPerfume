@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/adapters/turnstile"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/db"
 	"github.com/rotaperfumes/shared/identidade/identidadeapp"
+	"github.com/rotaperfumes/shared/notificacao/notificacaoapp"
 )
 
 // Timeouts do servidor e do shutdown (F-04, valores inalterados).
@@ -27,36 +27,40 @@ const (
 	timeoutOcioso      = 60 * time.Second
 	timeoutShutdown    = 10 * time.Second
 	timeoutTarefasFund = 10 * time.Second
+	timeoutAlertas     = 10 * time.Second
 )
 
-// App é a API montada: o handler HTTP completo (com o log de acesso) e os
-// casos de uso de Identidade (a limpeza de refresh tokens roda sobre eles).
+// App é a API montada: o handler HTTP completo (com o log de acesso), os
+// casos de uso de Identidade (a limpeza de refresh tokens roda sobre eles) e
+// o notificador de alertas (o shutdown espera os envios em andamento).
 type App struct {
-	Handler    http.Handler
-	Identidade *identidadeapp.Casos
+	Handler     http.Handler
+	Identidade  *identidadeapp.Casos
+	Notificador *notificacaoapp.AlertaSegurancaNotifier
 }
 
-// Montar liga as dependências sobre o pool: e-mail (SMTP ou noop), notifier
+// Montar liga as dependências sobre o pool: e-mail (SMTP ou Noop), notifier
 // de alerta (SEC-09), handlers, checker de usuário (SEC-06) e a cadeia
 // Logging → CORS → SecurityHeaders → mux. Singletons por processo.
 func Montar(cfg *config.Config, pool *sql.DB) *App {
-	emailSvc, alertaSender := novoEmail(cfg)
-	notifier := services.NewAlertaSegurancaNotifier(pool, alertaSender, cfg.SecurityAlertEmails)
+	email := NovoEmail(cfg)
+	notifier := NovoNotificadorAlerta(pool, email, cfg.SecurityAlertEmails)
 	log.Printf("[server] alertas de segurança: admins=%d", len(cfg.SecurityAlertEmails))
 
 	identidade := NovaIdentidade(pool, cfg, ExtIdentidade{
 		Captcha:    turnstile.Novo(cfg.TurnstileSecretKey),
 		Publicador: identidadeapp.NovoPublicadorLocal(assinanteAlerta(notifier)),
-		Email:      emailSvc,
+		Email:      email,
 	})
 	hs := NovosHandlersCom(pool, cfg, identidade)
 	// SEC-06: o checker é o próprio caso de uso (consulta o banco a cada request).
-	return &App{Handler: httpx.Chain(HandlerHTTP(cfg, identidade, hs), httpx.Logging), Identidade: identidade}
+	return &App{Handler: httpx.Chain(HandlerHTTP(cfg, identidade, hs), httpx.Logging), Identidade: identidade, Notificador: notifier}
 }
 
 // Run abre o banco, sobe a limpeza de refresh tokens (CHORE-02) e o servidor,
 // e no SIGINT/SIGTERM faz o shutdown na ordem F-04/I-10: servidor (10 s) →
-// tarefas de fundo (até 10 s) → pool.
+// tarefas de fundo (até 10 s) → alertas de segurança em andamento (até
+// 10 s, NB-6) → pool.
 func Run(cfg *config.Config) {
 	pool := abrirBanco(cfg)
 
@@ -88,6 +92,7 @@ func Run(cfg *config.Config) {
 		log.Printf("[server] shutdown erro: %v", err)
 	}
 	pararTarefasDeFundo(bgCancel, limpezaDone, timeoutTarefasFund)
+	aguardarAlertas(app.Notificador, timeoutAlertas)
 	_ = pool.Close()
 	log.Printf("[server] bye")
 }

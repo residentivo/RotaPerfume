@@ -97,7 +97,7 @@ func TestValidarForcaSenha(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.nome, func(t *testing.T) {
-			err := validarForcaSenha(tc.senha)
+			err := identidade.ValidarForca(identidade.NovaSenha(tc.senha))
 			if tc.wantErr == nil {
 				if err != nil {
 					t.Fatalf("esperava nil, obteve: %v", err)

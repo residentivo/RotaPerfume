@@ -14,7 +14,8 @@ import (
 )
 
 // Regexes/colunas que espelham as constantes de
-// apis/shared/repositories/vendedor_repository.go e carteira_repository.go.
+// apis/shared/comercial/comercialmysql (SQL dos legados vendedor_repository.go e
+// carteira_repository.go).
 const vendedorGetColunasRegexH = `id, nome, regiao, uf, data_admissao, data_desligamento, meta_mensal, created_at, updated_at FROM vendedores WHERE id = \? LIMIT 1`
 const clienteResumoColunasRegexH = `c\.cliente_id_origem, c\.cnpj, c\.razao_social, c\.segmento, c\.cidade, c\.uf, ca\.carteira_id_origem, ca\.data_inicio, ca\.data_fim`
 const clienteResumoFromRegexH = ` FROM carteiras ca JOIN clientes c ON c\.cliente_id_origem = ca\.cliente_id`

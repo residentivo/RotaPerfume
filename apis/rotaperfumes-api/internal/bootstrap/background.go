@@ -17,3 +17,18 @@ func pararTarefasDeFundo(cancel context.CancelFunc, done <-chan struct{}, timeou
 		log.Printf("[server] tarefas de fundo não encerraram em %s — seguindo com o shutdown", timeout)
 	}
 }
+
+// alertador é o que o shutdown precisa do notificador de alertas.
+type alertador interface {
+	Aguardar(timeout time.Duration) bool
+}
+
+// aguardarAlertas espera os alertas de segurança em andamento (busca do
+// usuário + envio) antes do pool.Close (NB-6), por até timeout.
+func aguardarAlertas(n alertador, timeout time.Duration) {
+	if n.Aguardar(timeout) {
+		log.Printf("[server] alertas de segurança encerrados")
+		return
+	}
+	log.Printf("[server] alertas de segurança não encerraram em %s — seguindo com o shutdown", timeout)
+}

@@ -22,7 +22,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/notificacao"
+	"github.com/rotaperfumes/shared/notificacao/notificacaoapp"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 const (
@@ -31,8 +33,8 @@ const (
 	sec09Email   = "maria.silva@exemplo.com"
 )
 
-func sec09Alerta() services.AlertaReuso {
-	return services.AlertaReuso{
+func sec09Alerta() notificacao.AlertaReuso {
+	return notificacao.AlertaReuso{
 		UsuarioID:    sec09UserID,
 		EmailUsuario: sec09Email,
 		IP:           "203.0.113.9",
@@ -45,15 +47,15 @@ func sec09Alerta() services.AlertaReuso {
 
 // sec09Enviar envia o alerta por um fakeSMTP novo e devolve (cabeçalhos,
 // corpo, RCPT TO) como recebidos pelo servidor.
-func sec09Enviar(t *testing.T, destinatario, nome string, a services.AlertaReuso, paraAdmin bool) (string, string, string) {
+func sec09Enviar(t *testing.T, destinatario, nome string, a notificacao.AlertaReuso, paraAdmin bool) (string, string, string) {
 	t.Helper()
 	cert, pool := smtpTLS(t)
 	f := &fakeSMTP{cert: cert}
 	host, port := f.start(t)
-	svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), &tls.Config{RootCAs: pool})
+	svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), &tls.Config{RootCAs: pool})
 	require.NoError(t, err)
 
-	var _ services.AlertaSegurancaSender = svc
+	var _ notificacaoapp.EnviadorAlerta = svc
 	require.NoError(t, svc.EnviarAlertaReusoToken(context.Background(), destinatario, nome, a, paraAdmin))
 
 	f.mu.Lock()
@@ -212,7 +214,7 @@ func TestSEC09_EnviarAlertaReusoToken_TruncaUserAgent(t *testing.T) {
 // SMTP configurado aponta para uma porta sem servidor: se discasse, o erro
 // seria de dial, não ErrDestinatarioInvalido).
 func TestSEC09_DestinatarioInvalido(t *testing.T) {
-	svc, err := services.NewSMTPEmailService(smtpCfg("127.0.0.1", "1"))
+	svc, err := notificacaosmtp.Novo(smtpCfg("127.0.0.1", "1"))
 	require.NoError(t, err)
 
 	destinos := []struct{ nome, dest string }{
@@ -225,24 +227,24 @@ func TestSEC09_DestinatarioInvalido(t *testing.T) {
 	for _, d := range destinos {
 		t.Run("alerta/"+d.nome, func(t *testing.T) {
 			err := svc.EnviarAlertaReusoToken(context.Background(), d.dest, "Maria", sec09Alerta(), false)
-			assert.ErrorIs(t, err, services.ErrDestinatarioInvalido)
+			assert.ErrorIs(t, err, notificacao.ErrDestinatarioInvalido)
 		})
 		t.Run("senha inicial/"+d.nome, func(t *testing.T) {
 			err := svc.EnviarSenhaInicial(context.Background(), d.dest, "Maria", "S3nh@!")
-			assert.ErrorIs(t, err, services.ErrDestinatarioInvalido)
+			assert.ErrorIs(t, err, notificacao.ErrDestinatarioInvalido)
 		})
 	}
 }
 
 // Destinatário válido segue para o dial (erro de conexão, não de validação).
 func TestSEC09_DestinatarioValido_ChegaAoDial(t *testing.T) {
-	svc, err := services.NewSMTPEmailService(smtpCfg("127.0.0.1", "1"))
+	svc, err := notificacaosmtp.Novo(smtpCfg("127.0.0.1", "1"))
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	err = svc.EnviarAlertaReusoToken(ctx, " a@x.com ", "Maria", sec09Alerta(), true)
 	require.Error(t, err)
-	assert.NotErrorIs(t, err, services.ErrDestinatarioInvalido)
+	assert.NotErrorIs(t, err, notificacao.ErrDestinatarioInvalido)
 	assert.Contains(t, err.Error(), "smtp dial")
 }
 
@@ -267,8 +269,8 @@ func TestSEC09_Noop_EnviarAlertaReusoToken(t *testing.T) {
 		{"admin", "seg@rotaperfumes.com", true, "para_admin=true"},
 		{"destinatário vazio também não falha", "", false, "para_admin=false"},
 	}
-	svc := services.NewNoopEmailService()
-	var _ services.AlertaSegurancaSender = svc
+	svc := notificacaosmtp.NovoNoop()
+	var _ notificacaoapp.EnviadorAlerta = svc
 
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -279,7 +281,7 @@ func TestSEC09_Noop_EnviarAlertaReusoToken(t *testing.T) {
 
 			err := svc.EnviarAlertaReusoToken(context.Background(), c.dest, "Maria", sec09Alerta(), c.paraAdmin)
 			// LOG-01: o skip é sinalizado ao chamador pelo erro sentinela.
-			require.ErrorIs(t, err, services.ErrSMTPNaoConfigurado)
+			require.ErrorIs(t, err, notificacao.ErrSMTPNaoConfigurado)
 
 			out := buf.String()
 			assert.Contains(t, out, "[email] alerta de seguranca pulado: SMTP não configurado user_id=777 "+c.wantLog)

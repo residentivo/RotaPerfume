@@ -5,6 +5,10 @@ package repositories_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/analytics/analyticsmysql"
+	"github.com/rotaperfumes/shared/comercial"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -59,9 +63,8 @@ func TestClienteCountNovosNoPeriodo_Success(t *testing.T) {
 			mock.ExpectQuery(tt.queryRegexp).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(3))
 
-			repo := NewClienteRepository()
 			ctx := context.Background()
-			total, err := repo.CountNovosNoPeriodo(ctx, db, tt.periodo, 0)
+			total, err := analyticsmysql.NovoClientes(db).NovosNoPeriodo(ctx, escopoDe(0), periodoDe(tt.periodo))
 
 			require.NoError(t, err)
 			assert.Equal(t, 3, total)
@@ -96,9 +99,8 @@ func TestClienteList_FiltroVendedorID(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows(clienteRepoColumns).
 			AddRow(int64(1), "12345678000199", "Empresa Teste", "varejo", "SP", "SP", "Centro", now, true, now, now))
 
-	repo := NewClienteRepository()
 	ctx := context.Background()
-	clientes, total, err := repo.List(ctx, db, 1, 10, ClienteFiltro{VendedorID: 7})
+	clientes, total, err := itensETotal(comercialmysql.NovoClientes(db).Listar(ctx, escopoDe(7), comercial.FiltroCliente{Ordenacao: comercial.OrdenacaoClientePadrao()}, kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
@@ -118,9 +120,8 @@ func TestClienteList_SemFiltroVendedorID(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(sqlmock.NewRows(clienteRepoColumns))
 
-	repo := NewClienteRepository()
 	ctx := context.Background()
-	_, total, err := repo.List(ctx, db, 1, 10, ClienteFiltro{})
+	_, total, err := itensETotal(comercialmysql.NovoClientes(db).Listar(ctx, escopoAdmin(), comercial.FiltroCliente{Ordenacao: comercial.OrdenacaoClientePadrao()}, kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, total)
@@ -132,12 +133,12 @@ func TestClienteList_SemFiltroVendedorID(t *testing.T) {
 func TestClienteList_BuscaQCNPJ(t *testing.T) {
 	cases := []struct {
 		nome        string
-		filtro      ClienteFiltro
+		filtro      comercial.FiltroCliente
 		wantLikeRS  string
 		wantLikeDoc string
 	}{
-		{"sem QCNPJ usa Q", ClienteFiltro{Q: "Teste"}, "%Teste%", "%Teste%"},
-		{"com QCNPJ", ClienteFiltro{Q: "12.abc.345", QCNPJ: "12ABC345"}, "%12.abc.345%", "%12ABC345%"},
+		{"sem QCNPJ usa Q", comercial.FiltroCliente{Busca: "Teste", Ordenacao: comercial.OrdenacaoClientePadrao()}, "%Teste%", "%Teste%"},
+		{"com QCNPJ", comercial.FiltroCliente{Busca: "12.abc.345", Ordenacao: comercial.OrdenacaoClientePadrao()}, "%12.abc.345%", "%12ABC345%"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
@@ -152,7 +153,7 @@ func TestClienteList_BuscaQCNPJ(t *testing.T) {
 				WithArgs(tc.wantLikeRS, tc.wantLikeDoc, 10, 0).
 				WillReturnRows(sqlmock.NewRows(clienteRepoColumns))
 
-			_, _, err := NewClienteRepository().List(context.Background(), db, 1, 10, tc.filtro)
+			_, _, err := itensETotal(comercialmysql.NovoClientes(db).Listar(context.Background(), escopoAdmin(), tc.filtro, kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -168,7 +169,6 @@ const carteiraAtivaWhereRegexp = `cliente_id_origem IN \(SELECT cliente_id FROM 
 // placeholder; e que vendedorID = 0 (admin) não adiciona restrição.
 func TestClienteContagens_EscopoCarteira(t *testing.T) {
 	ctx := context.Background()
-	repo := NewClienteRepository()
 
 	t.Run("CountTotal", func(t *testing.T) {
 		db, mock := newMock(t)
@@ -180,10 +180,10 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 			WithoutArgs().
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(40))
 
-		total, err := repo.CountTotal(ctx, db, 7)
+		total, err := analyticsmysql.NovoClientes(db).Total(ctx, escopoDe(7))
 		require.NoError(t, err)
 		assert.Equal(t, 4, total)
-		total, err = repo.CountTotal(ctx, db, 0)
+		total, err = analyticsmysql.NovoClientes(db).Total(ctx, escopoDe(0))
 		require.NoError(t, err)
 		assert.Equal(t, 40, total)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -199,10 +199,10 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 			WithArgs(false).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(9))
 
-		total, err := repo.CountPorAtivo(ctx, db, true, 7)
+		total, err := analyticsmysql.NovoClientes(db).PorAtivo(ctx, escopoDe(7), true)
 		require.NoError(t, err)
 		assert.Equal(t, 3, total)
-		total, err = repo.CountPorAtivo(ctx, db, false, 0)
+		total, err = analyticsmysql.NovoClientes(db).PorAtivo(ctx, escopoDe(0), false)
 		require.NoError(t, err)
 		assert.Equal(t, 9, total)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -215,7 +215,7 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 			WithArgs(int64(7)).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
 
-		total, err := repo.CountNovosNoPeriodo(ctx, db, "today", 7)
+		total, err := analyticsmysql.NovoClientes(db).NovosNoPeriodo(ctx, escopoDe(7), periodoDe("today"))
 		require.NoError(t, err)
 		assert.Equal(t, 1, total)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -231,12 +231,12 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 			WithoutArgs().
 			WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}))
 
-		out, err := repo.CountPorSegmento(ctx, db, 7)
+		out, err := analyticsmysql.NovoClientes(db).PorSegmento(ctx, escopoDe(7))
 		require.NoError(t, err)
 		require.Len(t, out, 1)
 		assert.Equal(t, "varejo", out[0].Segmento)
 
-		vazio, err := repo.CountPorSegmento(ctx, db, 0)
+		vazio, err := analyticsmysql.NovoClientes(db).PorSegmento(ctx, escopoDe(0))
 		require.NoError(t, err)
 		require.NotNil(t, vazio, "sem linhas deve devolver slice vazio, nunca nil")
 		assert.Len(t, vazio, 0)
@@ -253,12 +253,12 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 			WithoutArgs().
 			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}).AddRow("SP", 5))
 
-		vazio, err := repo.CountPorUF(ctx, db, 7)
+		vazio, err := analyticsmysql.NovoClientes(db).PorUF(ctx, escopoDe(7))
 		require.NoError(t, err)
 		require.NotNil(t, vazio, "sem linhas deve devolver slice vazio, nunca nil")
 		assert.Len(t, vazio, 0)
 
-		out, err := repo.CountPorUF(ctx, db, 0)
+		out, err := analyticsmysql.NovoClientes(db).PorUF(ctx, escopoDe(0))
 		require.NoError(t, err)
 		require.Len(t, out, 1)
 		assert.Equal(t, "SP", out[0].UF)
@@ -275,9 +275,8 @@ func TestClienteCountNovosNoPeriodo_DBError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewClienteRepository()
 	ctx := context.Background()
-	_, err := repo.CountNovosNoPeriodo(ctx, db, "week", 0)
+	_, err := analyticsmysql.NovoClientes(db).NovosNoPeriodo(ctx, escopoDe(0), periodoDe("week"))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

@@ -88,7 +88,7 @@ func (r *Clientes) PorID(ctx context.Context, id int64) (*comercial.Cliente, err
 }
 
 func scanCliente(s db.Linha) (*comercial.Cliente, error) {
-	return lerUma(s, comercial.ErrClienteNaoEncontrado, "cliente", func(c *comercial.Cliente) []any {
+	return db.LerUma(s, comercial.ErrClienteNaoEncontrado, "comercialmysql: ler cliente", func(c *comercial.Cliente) []any {
 		return []any{&c.ClienteIDOrigem, &c.CNPJ, &c.RazaoSocial, &c.Segmento, &c.Cidade, &c.UF, &c.Bairro,
 			&c.DataCadastro, &c.Ativo, &c.CreatedAt, &c.UpdatedAt}
 	})
@@ -96,7 +96,7 @@ func scanCliente(s db.Linha) (*comercial.Cliente, error) {
 
 // Existe informa se há cliente com o id (ativo ou não).
 func (r *Clientes) Existe(ctx context.Context, id int64) (bool, error) {
-	return existe(ctx, r.q, arqClientes, "Clientes.Existe", "existe cliente", `SELECT 1 FROM clientes WHERE cliente_id_origem = ? LIMIT 1`, id)
+	return db.Existe(ctx, r.q, arqClientes, "Clientes.Existe", "comercialmysql: existe cliente", `SELECT 1 FROM clientes WHERE cliente_id_origem = ? LIMIT 1`, id)
 }
 
 // Inserir grava o cliente e preenche ClienteIDOrigem. O 1062 do CNPJ vira
@@ -105,7 +105,7 @@ func (r *Clientes) Inserir(ctx context.Context, c *comercial.Cliente) error {
 	const q = `
 		INSERT INTO clientes (cnpj, razao_social, segmento, cidade, uf, bairro, data_cadastro, ativo)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	id, err := inserir(ctx, r.q, "inserir cliente", q, c.CNPJ, c.RazaoSocial, c.Segmento, c.Cidade, c.UF, c.Bairro, c.DataCadastro, c.Ativo)
+	id, err := db.Inserir(ctx, r.q, "comercialmysql: inserir cliente", q, c.CNPJ, c.RazaoSocial, c.Segmento, c.Cidade, c.UF, c.Bairro, c.DataCadastro, c.Ativo)
 	if db.ChaveDuplicada(err, uqClientesCNPJ) {
 		return comercial.ErrCNPJDuplicado
 	}
@@ -123,7 +123,7 @@ func (r *Clientes) Atualizar(ctx context.Context, id int64, c *comercial.Cliente
 		UPDATE clientes
 		SET cnpj = ?, razao_social = ?, segmento = ?, cidade = ?, uf = ?, bairro = ?, data_cadastro = ?
 		WHERE cliente_id_origem = ?`
-	err := execPorID(ctx, r.q, arqClientes, "Clientes.Atualizar", "atualizar cliente", comercial.ErrClienteNaoEncontrado,
+	err := db.ExecPorID(ctx, r.q, arqClientes, "Clientes.Atualizar", "comercialmysql: atualizar cliente", comercial.ErrClienteNaoEncontrado,
 		q, c.CNPJ, c.RazaoSocial, c.Segmento, c.Cidade, c.UF, c.Bairro, c.DataCadastro, id)
 	if db.ChaveDuplicada(err, uqClientesCNPJ) {
 		return comercial.ErrCNPJDuplicado

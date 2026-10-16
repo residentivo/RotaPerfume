@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 // escutar aceita conexões e entrega cada uma a atender (em goroutine).
@@ -56,7 +56,7 @@ func TestARQ06_SMTP_PrazoDoContextoFechaAConexao(t *testing.T) {
 		defer c.Close()
 		<-liberar
 	})
-	svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), &tls.Config{})
+	svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), &tls.Config{})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -79,7 +79,7 @@ func TestARQ06_SMTP_CAFileSomaAsRootCAsDoConfig(t *testing.T) {
 	cfg := smtpCfg("smtp.exemplo.com", "587")
 	cfg.SMTPTLSCAFile = caminho
 	base := x509.NewCertPool()
-	_, err := services.NewSMTPEmailServiceWithTLSConfig(cfg, &tls.Config{RootCAs: base})
+	_, err := notificacaosmtp.NovoComTLS(cfg, &tls.Config{RootCAs: base})
 	require.NoError(t, err)
 	assert.True(t, base.Equal(x509.NewCertPool()), "as RootCAs do chamador não mudam (o pool é um Clone)")
 }
@@ -125,7 +125,7 @@ func TestARQ06_SMTP_AuthLoginDesafioInesperado(t *testing.T) {
 	})
 	cfg := smtpCfg(host, port)
 	cfg.SMTPTLSMode = "implicit"
-	svc, err := services.NewSMTPEmailServiceWithTLSConfig(cfg, &tls.Config{RootCAs: pool})
+	svc, err := notificacaosmtp.NovoComTLS(cfg, &tls.Config{RootCAs: pool})
 	require.NoError(t, err)
 
 	err = enviarTeste(t, svc)
@@ -179,7 +179,7 @@ func TestARQ06_SMTP_CancelarDuranteODataFalhaAEscrita(t *testing.T) {
 	})
 	cfg := smtpCfg(host, port)
 	cfg.SMTPTLSMode = "implicit"
-	svc, err := services.NewSMTPEmailServiceWithTLSConfig(cfg, &tls.Config{RootCAs: pool})
+	svc, err := notificacaosmtp.NovoComTLS(cfg, &tls.Config{RootCAs: pool})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -192,5 +192,5 @@ func TestARQ06_SMTP_CancelarDuranteODataFalhaAEscrita(t *testing.T) {
 	nomeEnorme := strings.Repeat("n", 32<<20) // maior que qualquer buffer de socket
 	err = svc.EnviarSenhaInicial(ctx, "cliente@exemplo.com", nomeEnorme, "S3nh@Forte!")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "services: smtp write")
+	assert.Contains(t, err.Error(), "notificacaosmtp: smtp write")
 }

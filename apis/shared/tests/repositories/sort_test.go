@@ -8,6 +8,7 @@ package repositories_test
 
 import (
 	"context"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"strings"
 	"testing"
 
@@ -102,7 +103,7 @@ func TestOrdenacao_SenhaHistoricoFindAll(t *testing.T) {
 				WithArgs(20, 0).
 				WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-			_, _, err := novoHistoricoRepo().FindAll(context.Background(), db, 1, 20, tt.orderBy, tt.orderDir)
+			_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(context.Background(), ordemHistorico(tt.orderBy, tt.orderDir), kernel.NovaPagina(1, 20)))
 			require.NoError(t, err)
 			require.NoError(t, mock.ExpectationsWereMet())
 

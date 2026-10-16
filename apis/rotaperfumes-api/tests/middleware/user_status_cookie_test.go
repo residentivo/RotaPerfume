@@ -7,6 +7,7 @@ package middleware_test
 
 import (
 	"errors"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -42,7 +43,7 @@ func TestUserCheck_CookieAccessToken(t *testing.T) {
 			req := httptest.NewRequest("GET", "/protected", nil)
 			req.AddCookie(&http.Cookie{Name: "access_token", Value: generateToken(t, cfg, 42, "admin", time.Hour, "")})
 			w := httptest.NewRecorder()
-			jwtMiddlewareWithUserCheck(cfg, c.checker, true, c.requireAdm)(next).ServeHTTP(w, req)
+			porPolitica(autenticador(cfg, c.checker), politica(true, c.requireAdm))(next).ServeHTTP(w, req)
 
 			assert.Equal(t, c.wantStatus, w.Code)
 			assert.Equal(t, c.wantCalled, called)
@@ -85,7 +86,7 @@ func TestUserCheck_RotaPublica_QualquerTokenSegueSemConsultarBanco(t *testing.T)
 				req.AddCookie(&http.Cookie{Name: "access_token", Value: c.cookie})
 			}
 			w := httptest.NewRecorder()
-			jwtMiddlewareWithUserCheck(cfg, chk, false, false)(next).ServeHTTP(w, req)
+			porPolitica(autenticador(cfg, chk), httpx.Public)(next).ServeHTTP(w, req)
 
 			assert.Equal(t, http.StatusOK, w.Code)
 			assert.True(t, called, "rota pública sempre chega ao handler")

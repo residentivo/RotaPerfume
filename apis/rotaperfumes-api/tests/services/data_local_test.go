@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"github.com/rotaperfumes/shared/kernel"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +32,6 @@ import (
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/catalogo/catalogoapp"
 	"github.com/rotaperfumes/shared/comercial"
-	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/tz"
 	"github.com/rotaperfumes/shared/vendas"
 )
@@ -131,11 +131,11 @@ type dlParserCaso struct {
 	parse func(t *testing.T, data string) time.Time
 }
 
-func dlPagamentoInput(venc, pag string) PagamentoInput {
-	return PagamentoInput{
-		PedidoID: 1, FormaPagamento: "Dinheiro", Parcelas: 1, Valor: 100, ValorLiquido: 100,
+func dlPagamentoInput(venc, pag string) vendas.DadosNovoPagamento {
+	return vendas.DadosNovoPagamento{PedidoID: 1, DadosPagamento: vendas.DadosPagamento{
+		FormaPagamento: "Dinheiro", Parcelas: 1, Valor: 100, ValorLiquido: 100,
 		DataVencimento: venc, DataPagamento: pag, StatusPagamento: "Pago",
-	}
+	}}
 }
 
 func dlCriarPagamento(t *testing.T, venc, pag string) *time.Time {
@@ -143,7 +143,7 @@ func dlCriarPagamento(t *testing.T, venc, pag string) *time.Time {
 	db, mock := dlNewDB(t)
 	mock.ExpectQuery(dlReExistePedido).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
 	mock.ExpectExec(`INSERT INTO pagamentos`).WillReturnResult(sqlmock.NewResult(5, 1))
-	p, err := NewPagamentoService(db, &config.Config{}).CreatePagamento(context.Background(), db, dlPagamentoInput(venc, pag))
+	p, err := casosVendas(db, 0).CriarPagamento(context.Background(), principalAdmin(), lerFixo(dlPagamentoInput(venc, pag)))
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 	if pag != "" {
@@ -159,27 +159,26 @@ func dlCriarOportunidade(t *testing.T, abertura, fechamento string) (time.Time, 
 	mock.ExpectQuery(dlReExisteCliente).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
 	mock.ExpectQuery(dlReExisteVendedor).WithArgs(int64(2)).WillReturnRows(dlExisteRow())
 	mock.ExpectExec(`INSERT INTO oportunidades`).WillReturnResult(sqlmock.NewResult(9, 1))
-	o, err := NewOportunidadeService(db, &config.Config{}).CreateOportunidade(context.Background(), db, OportunidadeInput{
+	o, err := casosComercial(db, 0).CriarOportunidade(context.Background(), principalAdmin(), fixo(comercial.DadosOportunidade{
 		ClienteID: 1, VendedorID: 2, Origem: "Indicação", DataAbertura: abertura,
 		Etapa: "Prospecção", ProbabilidadePct: 10, ValorEstimado: 100, DataFechamento: fechamento,
-	})
+	}))
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 	return o.DataAbertura, o.DataFechamento
 }
 
 func dlParsers() []dlParserCaso {
-	cfg := &config.Config{}
 	ctx := context.Background()
 	return []dlParserCaso{
 		{"cliente.data_cadastro", func(t *testing.T, data string) time.Time {
 			db, mock := dlNewDB(t)
 			mock.ExpectExec(`INSERT INTO clientes`).WillReturnResult(sqlmock.NewResult(3, 1))
 			// Releitura falha (sem expectativa): o service devolve o objeto em memória.
-			c, err := NewClienteService(db, cfg).CreateCliente(ctx, db, ClienteInput{
+			c, err := casosComercial(db, 0).CriarCliente(ctx, principalAdmin(), fixo(comercial.DadosCliente{
 				CNPJ: "11222333000181", RazaoSocial: "Cliente", Segmento: "Varejo",
 				Cidade: "Curitiba", UF: "pr", DataCadastro: data,
-			})
+			}))
 			require.NoError(t, err)
 			return c.DataCadastro
 		}},
@@ -220,10 +219,10 @@ func dlParsers() []dlParserCaso {
 				WithArgs(int64(1), int64(2), dlCapturaTempo{&got}, "App", "Faturado", sqlmock.AnyArg()).
 				WillReturnError(errDLParar)
 			mock.ExpectRollback()
-			_, err := NewPedidoService(db, cfg).CreatePedido(ctx, db, PedidoInput{
+			_, err := casosVendas(db, 0).CriarPedido(ctx, principalAdmin(), lerFixo(vendas.DadosPedido{
 				ClienteID: 1, VendedorID: 2, DataPedido: data, Canal: "App", Status: "Faturado",
-				Itens: []ItemPedidoInput{{ProdutoID: 3, Quantidade: 1, PrecoPraticado: 10}},
-			})
+				Itens: []vendas.DadosItem{{ProdutoID: 3, Quantidade: 1, PrecoPraticado: 10}},
+			}))
 			require.ErrorIs(t, err, errDLParar)
 			require.NoError(t, mock.ExpectationsWereMet())
 			return got
@@ -243,7 +242,7 @@ func dlParsers() []dlParserCaso {
 		{"vendedor.data_admissao", func(t *testing.T, data string) time.Time {
 			db, mock := dlNewDB(t)
 			mock.ExpectExec(`INSERT INTO vendedores`).WillReturnResult(sqlmock.NewResult(7, 1))
-			v, err := NewVendedorService(db, cfg).CreateVendedor(ctx, db, VendedorInput{
+			v, err := casosComercial(db, 0).CriarVendedor(ctx, principalAdmin(), comercial.DadosVendedor{
 				Nome: "Vendedor", Regiao: "Sul", UF: "pr", DataAdmissao: data,
 			})
 			require.NoError(t, err)
@@ -255,8 +254,7 @@ func dlParsers() []dlParserCaso {
 			mock.ExpectQuery(dlReExisteCliente).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
 			mock.ExpectQuery(dlReExisteVendedor).WithArgs(int64(2)).WillReturnRows(dlExisteRow())
 			mock.ExpectExec(`INSERT INTO visitas`).WillReturnResult(sqlmock.NewResult(8, 1))
-			v, err := NewVisitaService(db, cfg).CreateVisita(ctx, db,
-				VisitaInput{ClienteID: 1, VendedorID: 2, DataVisita: data, Resultado: "Pedido", DuracaoMin: 30})
+			v, err := casosComercial(db, 0).CriarVisita(ctx, principalAdmin(), fixo(comercial.DadosVisita{ClienteID: 1, VendedorID: 2, DataVisita: data, Resultado: "Pedido", DuracaoMin: 30}))
 			require.NoError(t, err)
 			require.NoError(t, mock.ExpectationsWereMet())
 			return v.DataVisita
@@ -312,8 +310,8 @@ func TestBUG01_FiltroDataEstoque(t *testing.T) {
 					mock.ExpectQuery(`SELECT COUNT`).
 						WithArgs(dlCapturaTexto{&de}, dlCapturaTexto{&ate}).
 						WillReturnError(errDLParar)
-					_, _, err := listarEstoque(novosCasosCatalogo(db), 1, 10,
-						catalogoapp.ConsultaEstoque{DataDe: d.s, DataAte: d.s, Historico: historico})
+					_, _, err := itensETotal(novosCasosCatalogo(db).ListarEstoque(context.Background(),
+						catalogoapp.ConsultaEstoque{DataDe: d.s, DataAte: d.s, Historico: historico}, kernel.NovaPagina(1, 10)))
 					require.ErrorIs(t, err, errDLParar)
 					require.NoError(t, mock.ExpectationsWereMet())
 					assert.Equal(t, strings.TrimSpace(d.s), de)
@@ -348,27 +346,26 @@ func TestBUG01_RegressaoParseUTC(t *testing.T) {
 // inválida é rejeitada antes de qualquer escrita no banco.
 func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 	invalidas := []string{"10/03/2024", "2024-13-01", "2024-02-30", "2024-3-10", "2024-03-10T00:00:00Z", "abc"}
-	cfg := &config.Config{}
 	ctx := context.Background()
 
 	for _, s := range invalidas {
 		t.Run(s, func(t *testing.T) {
 			db, mock := dlNewDB(t)
 
-			_, err := NewClienteService(db, cfg).CreateCliente(ctx, db, ClienteInput{
+			_, err := casosComercial(db, 0).CriarCliente(ctx, principalAdmin(), fixo(comercial.DadosCliente{
 				CNPJ: "11222333000181", RazaoSocial: "C", Segmento: "S", Cidade: "C", UF: "PR", DataCadastro: s,
-			})
+			}))
 			assert.ErrorIs(t, err, comercial.ErrDataCadastroInvalida)
 
-			_, _, err = listarEstoque(novosCasosCatalogo(db), 1, 10, catalogoapp.ConsultaEstoque{DataDe: s})
+			_, _, err = itensETotal(novosCasosCatalogo(db).ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{DataDe: s}, kernel.NovaPagina(1, 10)))
 			assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
-			_, _, err = listarEstoque(novosCasosCatalogo(db), 1, 10, catalogoapp.ConsultaEstoque{DataAte: s})
+			_, _, err = itensETotal(novosCasosCatalogo(db).ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{DataAte: s}, kernel.NovaPagina(1, 10)))
 			assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
 
 			_, err = novosCasosCatalogo(db).AjustarEstoque(ctx, catalogo.DadosEstoque{SKU: "SKU-1", DataSnapshot: s})
 			assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
 
-			_, err = NewPedidoService(db, cfg).CreatePedido(ctx, db, PedidoInput{ClienteID: 1, VendedorID: 1, DataPedido: s})
+			_, err = casosVendas(db, 0).CriarPedido(ctx, principalAdmin(), lerFixo(vendas.DadosPedido{ClienteID: 1, VendedorID: 1, DataPedido: s}))
 			assert.ErrorIs(t, err, vendas.ErrDataPedidoInvalida)
 
 			_, err = novosCasosCatalogo(db).CriarProduto(ctx, catalogo.DadosProduto{
@@ -376,16 +373,16 @@ func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 			})
 			assert.ErrorIs(t, err, catalogo.ErrDataLancamentoInvalida)
 
-			_, err = NewVendedorService(db, cfg).CreateVendedor(ctx, db, VendedorInput{Nome: "N", Regiao: "R", UF: "PR", DataAdmissao: s})
+			_, err = casosComercial(db, 0).CriarVendedor(ctx, principalAdmin(), comercial.DadosVendedor{Nome: "N", Regiao: "R", UF: "PR", DataAdmissao: s})
 			assert.ErrorIs(t, err, comercial.ErrDataAdmissaoInvalida)
 
 			assert.NoError(t, mock.ExpectationsWereMet(), "data inválida deve falhar antes de consultar o banco")
 
 			// Pagamento confere o pedido antes de validar as datas.
-			for _, in := range []PagamentoInput{dlPagamentoInput(s, ""), dlPagamentoInput("2024-01-01", s)} {
+			for _, in := range []vendas.DadosNovoPagamento{dlPagamentoInput(s, ""), dlPagamentoInput("2024-01-01", s)} {
 				dbp, mockp := dlNewDB(t)
 				mockp.ExpectQuery(dlReExistePedido).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
-				_, err = NewPagamentoService(dbp, cfg).CreatePagamento(ctx, dbp, in)
+				_, err = casosVendas(dbp, 0).CriarPagamento(ctx, principalAdmin(), lerFixo(in))
 				if in.DataPagamento == s {
 					assert.ErrorIs(t, err, vendas.ErrDataPagamentoInvalida)
 				} else {

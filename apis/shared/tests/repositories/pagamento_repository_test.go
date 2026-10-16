@@ -6,6 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"github.com/rotaperfumes/shared/kernel"
+	"github.com/rotaperfumes/shared/vendas/vendasmysql"
 	"testing"
 	"time"
 
@@ -47,9 +49,8 @@ func TestPagamentoList_SemFiltro(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	pagamentos, total, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{})
+	pagamentos, total, err := itensETotal(vendasmysql.NovoPagamentos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPagamento{Ordenacao: vendas.OrdenacaoPagamentoPadrao()}, kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
@@ -61,50 +62,52 @@ func TestPagamentoList_SemFiltro(t *testing.T) {
 func TestPagamentoList_ComFiltros(t *testing.T) {
 	testes := []struct {
 		nome        string
-		filtro      PagamentoFiltro
+		filtro      vendas.FiltroPagamento
+		vendedor    int64 // escopo (0 = admin)
 		whereRegexp string
 		args        []driver.Value
 	}{
 		{
 			nome:        "filtro por status_pagamento",
-			filtro:      PagamentoFiltro{StatusPagamento: "Pago"},
+			filtro:      vendas.FiltroPagamento{StatusPagamento: "Pago"},
 			whereRegexp: `WHERE status_pagamento = \?`,
 			args:        []driver.Value{"Pago"},
 		},
 		{
 			nome:        "filtro por forma_pagamento",
-			filtro:      PagamentoFiltro{FormaPagamento: "PIX"},
+			filtro:      vendas.FiltroPagamento{FormaPagamento: "PIX"},
 			whereRegexp: `WHERE forma_pagamento = \?`,
 			args:        []driver.Value{"PIX"},
 		},
 		{
 			nome:        "filtro por pedido_id",
-			filtro:      PagamentoFiltro{PedidoID: 5},
+			filtro:      vendas.FiltroPagamento{PedidoID: 5},
 			whereRegexp: `WHERE pedido_id = \?`,
 			args:        []driver.Value{int64(5)},
 		},
 		{
 			nome:        "filtro por vencimento_de e vencimento_ate",
-			filtro:      PagamentoFiltro{VencimentoDe: "2024-01-01", VencimentoAte: "2024-01-31"},
+			filtro:      vendas.FiltroPagamento{VencimentoDe: "2024-01-01", VencimentoAte: "2024-01-31"},
 			whereRegexp: `WHERE data_vencimento >= \? AND data_vencimento <= \?`,
 			args:        []driver.Value{"2024-01-01", "2024-01-31"},
 		},
 		{
 			nome:        "filtro por vendedor_id (restrição de carteira)",
-			filtro:      PagamentoFiltro{VendedorID: 7},
+			filtro:      vendas.FiltroPagamento{},
+			vendedor:    7,
 			whereRegexp: `WHERE pedido_id IN \(SELECT pedido_id_origem FROM pedidos WHERE vendedor_id = \?\)`,
 			args:        []driver.Value{int64(7)},
 		},
 		{
 			nome: "filtro combinado (todos os campos)",
-			filtro: PagamentoFiltro{
+			filtro: vendas.FiltroPagamento{
 				StatusPagamento: "Pago",
 				FormaPagamento:  "PIX",
 				PedidoID:        5,
 				VencimentoDe:    "2024-01-01",
 				VencimentoAte:   "2024-01-31",
-				VendedorID:      7,
 			},
+			vendedor:    7,
 			whereRegexp: `WHERE status_pagamento = \? AND forma_pagamento = \? AND pedido_id = \? AND data_vencimento >= \? AND data_vencimento <= \? AND pedido_id IN \(SELECT pedido_id_origem FROM pedidos WHERE vendedor_id = \?\)`,
 			args:        []driver.Value{"Pago", "PIX", int64(5), "2024-01-01", "2024-01-31", int64(7)},
 		},
@@ -124,9 +127,10 @@ func TestPagamentoList_ComFiltros(t *testing.T) {
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(pagamentoColumns))
 
-			repo := NewPagamentoRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, tt.filtro)
+			f := tt.filtro
+			f.Ordenacao = vendas.OrdenacaoPagamentoPadrao() // o parse do HTTP com order_by vazio
+			_, _, err := itensETotal(vendasmysql.NovoPagamentos(db).Listar(ctx, escopoDe(tt.vendedor), f, kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -159,9 +163,8 @@ func TestPagamentoList_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(pagamentoColumns))
 
-			repo := NewPagamentoRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+			_, _, err := itensETotal(vendasmysql.NovoPagamentos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPagamento{Ordenacao: kernel.ParseOrdenacao(tt.orderBy, tt.orderDir, vendas.CamposOrdenacaoPagamento(), vendas.OrdenacaoPagamentoPadrao())}, kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -176,9 +179,8 @@ func TestPagamentoList_CountError(t *testing.T) {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) ` + pagamentoFromRegexp).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{})
+	_, _, err := itensETotal(vendasmysql.NovoPagamentos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPagamento{Ordenacao: vendas.OrdenacaoPagamentoPadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -194,9 +196,8 @@ func TestPagamentoList_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{})
+	_, _, err := itensETotal(vendasmysql.NovoPagamentos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPagamento{Ordenacao: vendas.OrdenacaoPagamentoPadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -215,9 +216,8 @@ func TestPagamentoList_IterError(t *testing.T) {
 			AddRow(pagamentoRow(1, 10, "PIX", 1, 100.0, 0, 100.0, now, nil, "Em aberto", now, now)...).
 			RowError(0, sql.ErrConnDone))
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, PagamentoFiltro{})
+	_, _, err := itensETotal(vendasmysql.NovoPagamentos(db).Listar(ctx, escopoAdmin(), vendas.FiltroPagamento{Ordenacao: vendas.OrdenacaoPagamentoPadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -236,9 +236,8 @@ func TestPagamentoGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 1)
+	p, err := vendasmysql.NovoPagamentos(db).PorID(ctx, 1)
 
 	require.NoError(t, err)
 	require.NotNil(t, p)
@@ -260,9 +259,8 @@ func TestPagamentoGetByID_SemDataPagamento(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 1)
+	p, err := vendasmysql.NovoPagamentos(db).PorID(ctx, 1)
 
 	require.NoError(t, err)
 	require.NotNil(t, p)
@@ -278,9 +276,8 @@ func TestPagamentoGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 999)
+	p, err := vendasmysql.NovoPagamentos(db).PorID(ctx, 999)
 
 	assert.Nil(t, p)
 	assert.ErrorIs(t, err, vendas.ErrPagamentoNaoEncontrado)
@@ -295,9 +292,8 @@ func TestPagamentoGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	p, err := repo.GetByID(ctx, db, 1)
+	p, err := vendasmysql.NovoPagamentos(db).PorID(ctx, 1)
 
 	assert.Nil(t, p)
 	assert.Error(t, err)
@@ -325,9 +321,8 @@ func TestPagamentoCreate_Success(t *testing.T) {
 		WithArgs(p.PedidoID, p.FormaPagamento, p.Parcelas, p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento, nil, p.StatusPagamento).
 		WillReturnResult(sqlmock.NewResult(42, 1))
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, p)
+	err := vendasmysql.NovoPagamentos(db).Inserir(ctx, p)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(42), p.PagamentoID)
@@ -355,9 +350,8 @@ func TestPagamentoCreate_ComDataPagamento(t *testing.T) {
 		WithArgs(p.PedidoID, p.FormaPagamento, p.Parcelas, p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento, dataPagamento, p.StatusPagamento).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, p)
+	err := vendasmysql.NovoPagamentos(db).Inserir(ctx, p)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -371,9 +365,8 @@ func TestPagamentoCreate_ErroInsert(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO pagamentos`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, p)
+	err := vendasmysql.NovoPagamentos(db).Inserir(ctx, p)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -398,9 +391,8 @@ func TestPagamentoUpdate_Success(t *testing.T) {
 		WithArgs(p.FormaPagamento, p.Parcelas, p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento, nil, p.StatusPagamento, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, p)
+	err := vendasmysql.NovoPagamentos(db).Atualizar(ctx, 1, p)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -414,9 +406,8 @@ func TestPagamentoUpdate_NotFound(t *testing.T) {
 	mock.ExpectExec(`UPDATE pagamentos`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 999, p)
+	err := vendasmysql.NovoPagamentos(db).Atualizar(ctx, 999, p)
 
 	assert.ErrorIs(t, err, vendas.ErrPagamentoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -430,9 +421,8 @@ func TestPagamentoUpdate_ErroExec(t *testing.T) {
 	mock.ExpectExec(`UPDATE pagamentos`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewPagamentoRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, p)
+	err := vendasmysql.NovoPagamentos(db).Atualizar(ctx, 1, p)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

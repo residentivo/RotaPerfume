@@ -197,7 +197,7 @@ func load(exigirDB bool) (*Config, error) {
 		getEnv("LOG_LEVEL", "info") == "debug"
 
 	// SMTP: sem defaults para user/password/from — quando ausentes, a
-	// aplicação usa um EmailService "noop" (log-only). Host/porta têm
+	// aplicação usa o envio Noop (notificacaosmtp, log-only). Host/porta têm
 	// defaults compatíveis com Gmail.
 	vlog.Printf("config.go", "load", "lendo SMTP_HOST (padrão smtp.gmail.com)")
 	cfg.SMTPHost = getEnv("SMTP_HOST", "smtp.gmail.com")

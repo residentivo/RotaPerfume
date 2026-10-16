@@ -12,7 +12,7 @@ import (
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/rotaperfumes/shared/kernel"
-	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +37,7 @@ func newRouter(t *testing.T) (http.Handler, sqlmock.Sqlmock) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	mux := bootstrap.HandlerHTTP(cfg, fakeUserStatusChecker{}, bootstrap.NovosHandlers(db, cfg, sharedsvc.NewNoopEmailService()))
+	mux := bootstrap.HandlerHTTP(cfg, fakeUserStatusChecker{}, bootstrap.NovosHandlers(db, cfg, notificacaosmtp.NovoNoop()))
 	return mux, mock
 }
 

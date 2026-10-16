@@ -3,6 +3,8 @@ package repositories_test
 import (
 	"context"
 	"errors"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"testing"
 	"time"
 
@@ -13,7 +15,6 @@ import (
 
 	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/identidade"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // Testes do Lote 4: NEG-01 (1062 em uq_clientes_cnpj), SEC-03
@@ -37,7 +38,7 @@ func TestClienteRepository_CNPJDuplicado(t *testing.T) {
 			defer db.Close()
 			mock.ExpectExec(`INSERT INTO clientes`).WillReturnError(tc.err)
 
-			err := NewClienteRepository().Create(context.Background(), db, c)
+			err := comercialmysql.NovoClientes(db).Inserir(context.Background(), c)
 			require.Error(t, err)
 			assert.Equal(t, tc.wantDup, errors.Is(err, comercial.ErrCNPJDuplicado))
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -47,7 +48,7 @@ func TestClienteRepository_CNPJDuplicado(t *testing.T) {
 			defer db.Close()
 			mock.ExpectExec(`UPDATE clientes`).WillReturnError(tc.err)
 
-			err := NewClienteRepository().Update(context.Background(), db, 1, c)
+			err := comercialmysql.NovoClientes(db).Atualizar(context.Background(), 1, c)
 			require.Error(t, err)
 			assert.Equal(t, tc.wantDup, errors.Is(err, comercial.ErrCNPJDuplicado))
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -65,7 +66,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows(cols).AddRow(int64(7), "Sete", "Sul", "PR", nil))
 
-		out, err := NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		out, err := comercialmysql.NovoVendedores(db).ListarResumo(context.Background(), escopoDe(7))
 		require.NoError(t, err)
 		require.Len(t, out, 1)
 		assert.Equal(t, int64(7), out[0].ID)
@@ -78,7 +79,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows(cols))
 
-		out, err := NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		out, err := comercialmysql.NovoVendedores(db).ListarResumo(context.Background(), escopoDe(7))
 		require.NoError(t, err)
 		assert.NotNil(t, out)
 		assert.Empty(t, out)
@@ -90,7 +91,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WillReturnError(errors.New("db down"))
 
-		_, err = NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		_, err = comercialmysql.NovoVendedores(db).ListarResumo(context.Background(), escopoDe(7))
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -100,7 +101,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows(cols).AddRow("x", "Sete", "Sul", "PR", nil))
 
-		_, err = NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		_, err = comercialmysql.NovoVendedores(db).ListarResumo(context.Background(), escopoDe(7))
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -128,7 +129,7 @@ func TestRefreshTokenRevoke_Condicional_EmTx(t *testing.T) {
 
 			tx, err := db.Begin()
 			require.NoError(t, err)
-			err = novoRefreshRepo().Revoke(context.Background(), tx, 3, repositories.RevokeReasonRotacao)
+			err = identidademysql.NovoRefreshTokens(tx).Revogar(context.Background(), 3, identidade.MotivoRotacao)
 			_ = tx.Rollback()
 			if tc.wantErr != nil {
 				assert.ErrorIs(t, err, tc.wantErr)
@@ -145,7 +146,7 @@ func TestRefreshTokenRevoke_RowsAffectedErro(t *testing.T) {
 	defer db.Close()
 	mock.ExpectExec(`UPDATE refresh_tokens`).WillReturnResult(sqlmock.NewErrorResult(errors.New("sem rows affected")))
 
-	err := novoRefreshRepo().Revoke(context.Background(), db, 3, repositories.RevokeReasonRotacao)
+	err := identidademysql.NovoRefreshTokens(db).Revogar(context.Background(), 3, identidade.MotivoRotacao)
 	assert.Error(t, err)
 	assert.NotErrorIs(t, err, identidade.ErrRefreshRevogado)
 	assert.NoError(t, mock.ExpectationsWereMet())

@@ -10,6 +10,7 @@ package handlers_test
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -219,8 +220,7 @@ func TestARQ02_EscritaSemPrincipal_FalhaFechado(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
-	prod := novoProdutoHandler(db, nil)
-	est := novoEstoqueHandler(db, nil)
+	prod, est := bootstrap.NovoCatalogoHTTP(db)
 	casos := []struct {
 		nome string
 		h    http.HandlerFunc

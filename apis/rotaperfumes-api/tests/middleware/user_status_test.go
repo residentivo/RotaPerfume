@@ -48,7 +48,7 @@ func serveWithCheck(t *testing.T, checker httpx.ConsultaStatus, protected, requi
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	w := httptest.NewRecorder()
-	jwtMiddlewareWithUserCheck(testCfg(), checker, protected, requireAdmin)(next).ServeHTTP(w, req)
+	porPolitica(autenticador(testCfg(), checker), politica(protected, requireAdmin))(next).ServeHTTP(w, req)
 	return w, called
 }
 
@@ -172,7 +172,7 @@ func TestUserCheck_SemCache_ConsultaACadaRequest(t *testing.T) {
 
 func TestUserCheck_CheckerNil_Panica(t *testing.T) {
 	assert.Panics(t, func() {
-		jwtMiddlewareWithUserCheck(testCfg(), nil, true, false)
+		porPolitica(autenticador(testCfg(), nil), httpx.Authenticated)
 	})
 }
 

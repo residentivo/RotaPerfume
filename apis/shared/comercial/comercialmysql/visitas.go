@@ -77,7 +77,7 @@ func (r *Visitas) PorID(ctx context.Context, id int64) (*comercial.Visita, error
 }
 
 func scanVisita(s db.Linha) (*comercial.Visita, error) {
-	return lerUma(s, comercial.ErrVisitaNaoEncontrada, "visita", func(v *comercial.Visita) []any {
+	return db.LerUma(s, comercial.ErrVisitaNaoEncontrada, "comercialmysql: ler visita", func(v *comercial.Visita) []any {
 		return []any{&v.VisitaID, &v.ClienteID, &v.VendedorID, &v.DataVisita, &v.Resultado, &v.DuracaoMin, &v.CreatedAt, &v.UpdatedAt}
 	})
 }
@@ -87,7 +87,7 @@ func (r *Visitas) Inserir(ctx context.Context, v *comercial.Visita) error {
 	const q = `
 		INSERT INTO visitas (cliente_id, vendedor_id, data_visita, resultado, duracao_min)
 		VALUES (?, ?, ?, ?, ?)`
-	id, err := inserir(ctx, r.q, "inserir visita", q, v.ClienteID, v.VendedorID, v.DataVisita, v.Resultado, v.DuracaoMin)
+	id, err := db.Inserir(ctx, r.q, "comercialmysql: inserir visita", q, v.ClienteID, v.VendedorID, v.DataVisita, v.Resultado, v.DuracaoMin)
 	if err != nil {
 		return err
 	}
@@ -102,12 +102,12 @@ func (r *Visitas) Atualizar(ctx context.Context, id int64, v *comercial.Visita) 
 		UPDATE visitas
 		SET cliente_id = ?, vendedor_id = ?, data_visita = ?, resultado = ?, duracao_min = ?
 		WHERE visita_id = ?`
-	return execPorID(ctx, r.q, arqVisitas, "Visitas.Atualizar", "atualizar visita", comercial.ErrVisitaNaoEncontrada,
+	return db.ExecPorID(ctx, r.q, arqVisitas, "Visitas.Atualizar", "comercialmysql: atualizar visita", comercial.ErrVisitaNaoEncontrada,
 		q, v.ClienteID, v.VendedorID, v.DataVisita, v.Resultado, v.DuracaoMin, id)
 }
 
 // Excluir remove a visita (hard delete: não há deleted_at).
 func (r *Visitas) Excluir(ctx context.Context, id int64) error {
-	return execPorID(ctx, r.q, arqVisitas, "Visitas.Excluir", "delete visita", comercial.ErrVisitaNaoEncontrada,
+	return db.ExecPorID(ctx, r.q, arqVisitas, "Visitas.Excluir", "comercialmysql: delete visita", comercial.ErrVisitaNaoEncontrada,
 		`DELETE FROM visitas WHERE visita_id = ?`, id)
 }

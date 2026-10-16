@@ -15,7 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
+	"github.com/rotaperfumes/shared/notificacao"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 func fullSMTPConfig() *config.Config {
@@ -88,15 +90,15 @@ func TestNewSMTPEmailService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.nome, func(t *testing.T) {
-			svc, err := services.NewSMTPEmailService(tc.cfg())
+			svc, err := notificacaosmtp.Novo(tc.cfg())
 			if tc.wantErr {
 				assert.Nil(t, svc)
-				assert.ErrorIs(t, err, services.ErrSMTPNaoConfigurado)
+				assert.ErrorIs(t, err, notificacao.ErrSMTPNaoConfigurado)
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, svc)
 				// Confirma que a implementação satisfaz a interface EmailService.
-				var _ services.EmailService = svc
+				var _ identidadeapp.EnviadorSenhaInicial = svc
 			}
 		})
 	}
@@ -118,8 +120,8 @@ func TestNoopEmailService_EnviarSenhaInicial(t *testing.T) {
 		{"nome vazio ainda assim não retorna erro", "user@test.com", "", "senha-gerada-123"},
 	}
 
-	svc := services.NewNoopEmailService()
-	var _ services.EmailService = svc
+	svc := notificacaosmtp.NovoNoop()
+	var _ identidadeapp.EnviadorSenhaInicial = svc
 
 	for _, tc := range testCases {
 		t.Run(tc.nome, func(t *testing.T) {

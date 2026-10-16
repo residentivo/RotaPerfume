@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
@@ -57,13 +57,11 @@ func generateToken(t *testing.T, cfg *config.Config, uid int64, role string, ttl
 // Coloca os claims injetados pelo middleware nos headers de resposta
 // para que o teste possa validá-los via w.Result().
 var dummyHandler http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
-	uid, ok := middleware.GetUserID(r.Context())
-	role, ok2 := middleware.GetRole(r.Context())
-	if ok {
-		w.Header().Set("X-User-ID", fmt.Sprintf("%d", uid))
-	}
-	if ok2 {
-		w.Header().Set("X-User-Role", role)
+	// ARQ-07: a ponte middleware.GetUserID/GetRole saiu; o handler lê o
+	// Principal gravado pelo Autenticador (o mesmo dado: user_id e role do banco).
+	if p, ok := httpx.PrincipalFrom(r); ok {
+		w.Header().Set("X-User-ID", fmt.Sprintf("%d", p.UserID()))
+		w.Header().Set("X-User-Role", p.Role().String())
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -76,7 +74,7 @@ var dummyHandler http.HandlerFunc = func(w http.ResponseWriter, r *http.Request)
 
 func TestJWTMiddleware_ValidToken(t *testing.T) {
 	cfg := testCfg()
-	m := jwtMiddleware(cfg, true, false)
+	m := semBanco(cfg, httpx.Authenticated)
 
 	token := generateToken(t, cfg, 42, "admin", 1*time.Hour, "")
 
@@ -92,7 +90,7 @@ func TestJWTMiddleware_ValidToken(t *testing.T) {
 
 func TestJWTMiddleware_ValidToken_NormalRole(t *testing.T) {
 	cfg := testCfg()
-	m := jwtMiddleware(cfg, true, false)
+	m := semBanco(cfg, httpx.Authenticated)
 
 	token := generateToken(t, cfg, 7, "normal", 1*time.Hour, "")
 
@@ -111,7 +109,7 @@ func TestJWTMiddleware_ValidToken_NormalRole(t *testing.T) {
 
 func TestJWTMiddleware_MissingToken(t *testing.T) {
 	cfg := testCfg()
-	m := jwtMiddleware(cfg, true, false)
+	m := semBanco(cfg, httpx.Authenticated)
 
 	t.Run("sem header authorization", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/protected", nil)
@@ -150,7 +148,7 @@ func TestJWTMiddleware_MissingToken(t *testing.T) {
 	})
 
 	t.Run("rota pública (protected=false) não exige token", func(t *testing.T) {
-		pub := jwtMiddleware(cfg, false, false)
+		pub := semBanco(cfg, httpx.Public)
 		req := httptest.NewRequest("GET", "/public", nil)
 		w := httptest.NewRecorder()
 		pub(dummyHandler).ServeHTTP(w, req)
@@ -165,7 +163,7 @@ func TestJWTMiddleware_MissingToken(t *testing.T) {
 
 func TestJWTMiddleware_InvalidToken(t *testing.T) {
 	cfg := testCfg()
-	m := jwtMiddleware(cfg, true, false)
+	m := semBanco(cfg, httpx.Authenticated)
 
 	t.Run("string aleatória", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/protected", nil)
@@ -211,7 +209,7 @@ func TestJWTMiddleware_InvalidToken(t *testing.T) {
 
 func TestJWTMiddleware_ExpiredToken(t *testing.T) {
 	cfg := testCfg()
-	m := jwtMiddleware(cfg, true, false)
+	m := semBanco(cfg, httpx.Authenticated)
 
 	// Token com TTL negativo = expirado no momento da geração.
 	token := generateToken(t, cfg, 1, "admin", -1*time.Hour, "")
@@ -232,7 +230,7 @@ func TestJWTMiddleware_ExpiredToken(t *testing.T) {
 func TestJWTMiddleware_RequireAdmin_Success(t *testing.T) {
 	cfg := testCfg()
 	// protected=true, requireAdmin=true.
-	m := jwtMiddleware(cfg, true, true)
+	m := semBanco(cfg, httpx.AdminOnly)
 
 	token := generateToken(t, cfg, 1, "admin", 1*time.Hour, "")
 
@@ -247,7 +245,7 @@ func TestJWTMiddleware_RequireAdmin_Success(t *testing.T) {
 
 func TestJWTMiddleware_RequireAdmin_Forbidden(t *testing.T) {
 	cfg := testCfg()
-	m := jwtMiddleware(cfg, true, true)
+	m := semBanco(cfg, httpx.AdminOnly)
 
 	t.Run("role normal é bloqueado", func(t *testing.T) {
 		token := generateToken(t, cfg, 2, "normal", 1*time.Hour, "")
@@ -302,16 +300,16 @@ func TestJWTMiddleware_RequireAdmin_Forbidden(t *testing.T) {
 // ------------------------------------------------------------------
 
 func TestGetUserID_NotSet(t *testing.T) {
-	// Contexto sem injeção retorna zero values.
-	uid, ok := middleware.GetUserID(context.Background())
+	// Contexto sem injeção retorna zero values (ARQ-07: lido pelo httpx, sem a ponte).
+	p, ok := httpx.PrincipalFrom(httptest.NewRequest(http.MethodGet, "/", nil).WithContext(context.Background()))
 	assert.False(t, ok)
-	assert.Equal(t, int64(0), uid)
+	assert.Equal(t, int64(0), p.UserID())
 }
 
 func TestGetRole_NotSet(t *testing.T) {
-	role, ok := middleware.GetRole(context.Background())
+	p, ok := httpx.PrincipalFrom(httptest.NewRequest(http.MethodGet, "/", nil).WithContext(context.Background()))
 	assert.False(t, ok)
-	assert.Equal(t, "", role)
+	assert.Equal(t, "", p.Role().String())
 }
 
 // ------------------------------------------------------------------
@@ -340,7 +338,7 @@ func TestJWTMiddleware_Combinatorial(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			m := jwtMiddleware(cfg, c.protected, c.requireAdmin)
+			m := semBanco(cfg, politica(c.protected, c.requireAdmin))
 			req := httptest.NewRequest("GET", "/test", nil)
 			if c.token != "" {
 				req.Header.Set("Authorization", "Bearer "+c.token)
@@ -355,7 +353,7 @@ func TestJWTMiddleware_Combinatorial(t *testing.T) {
 
 func TestJWTMiddleware_ResponseFormat(t *testing.T) {
 	cfg := testCfg()
-	m := jwtMiddleware(cfg, true, false)
+	m := semBanco(cfg, httpx.Authenticated)
 
 	req := httptest.NewRequest("GET", "/protected", nil)
 	w := httptest.NewRecorder()
@@ -373,7 +371,7 @@ func TestJWTMiddleware_ResponseFormat(t *testing.T) {
 
 func TestJWTMiddleware_Context(t *testing.T) {
 	cfg := testCfg()
-	m := jwtMiddleware(cfg, true, false)
+	m := semBanco(cfg, httpx.Authenticated)
 	token := generateToken(t, cfg, 99, "normal", 1*time.Hour, "")
 
 	req := httptest.NewRequest("GET", "/protected", nil)

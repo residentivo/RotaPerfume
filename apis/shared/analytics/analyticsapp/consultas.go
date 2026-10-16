@@ -32,6 +32,9 @@ type Deps struct {
 type Consultas struct{ d Deps }
 
 // Novo monta as consultas. Dependência nil é erro de montagem: panic.
+// Ressalva N-7 (ARQ-07, só documentada): uma interface não nula guardando
+// um ponteiro nil tipado passa por esta checagem, como no legado; a proteção
+// é o bootstrap montar sempre os adapters reais (analyticsmysql/comercialapp).
 func Novo(d Deps) *Consultas {
 	for _, dep := range []any{d.Vendas, d.Clientes, d.Escopo} {
 		if dep == nil {

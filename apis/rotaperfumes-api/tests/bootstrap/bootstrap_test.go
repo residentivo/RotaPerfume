@@ -24,7 +24,7 @@ import (
 	"github.com/rotaperfumes/shared/identidade"
 	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/rotaperfumes/shared/kernel"
-	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 type saida struct {
@@ -139,7 +139,7 @@ func TestNovoRouter_SessentaRotas(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 	cfg := testCfg()
-	hs := bootstrap.NovosHandlers(pool, cfg, sharedsvc.NewNoopEmailService())
+	hs := bootstrap.NovosHandlers(pool, cfg, notificacaosmtp.NovoNoop())
 	rotas := bootstrap.NovoRouter(cfg, checkerNulo{}, hs).Rotas()
 	assert.Len(t, rotas, 60)
 	re := regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE)$`)
@@ -153,7 +153,7 @@ func TestHandlerHTTP_CheckerNilPanica(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 	cfg := testCfg()
-	hs := bootstrap.NovosHandlers(pool, cfg, sharedsvc.NewNoopEmailService())
+	hs := bootstrap.NovosHandlers(pool, cfg, notificacaosmtp.NovoNoop())
 	assert.Panics(t, func() { bootstrap.HandlerHTTP(cfg, nil, hs) })
 }
 

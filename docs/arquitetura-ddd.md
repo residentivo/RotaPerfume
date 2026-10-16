@@ -125,7 +125,8 @@ apis/
 │   │   ├── data.go                    Data (AAAA-MM-DD)
 │   │   ├── email.go                   Email
 │   │   ├── dinheiro.go                Dinheiro (ver P3)
-│   │   └── erros.go                   Kind, Erro, sentinelas genéricas
+│   │   ├── erros.go                   Kind, Erro, sentinelas genéricas
+│   │   └── rota.go                    ComRota/RotaDe (rota do request no ctx, só para log; N4, ARQ-07)
 │   │
 │   ├── catalogo/                      DOMÍNIO   package catalogo
 │   │   ├── produto.go  estoque.go  erros.go  ordenacao.go
@@ -151,15 +152,17 @@ apis/
 │   │   ├── turnstile/                 CaptchaVerifier (Adapter)
 │   │   └── ratelimit/                 limitador em memória
 │   │
-│   ├── config/  db/  vlog/  tz/  cnpj/  cmdutil/     (FICAM; db ganha Querier/Transactor)
-│   ├── importers/                     ficam; ganham importers/importkit (Template Method), ARQ-07
-│   ├── tools/  cmd/                   ficam; passam a usar <ctx>app quando houver regra (ARQ-07)
+│   ├── config/  db/  vlog/  tz/  cnpj/  cmdutil/     (FICAM; db ganha Querier/Transactor e, no ARQ-07, linhas.go;
+│   │                                  cmdutil ganha cli.go: Ambiente + Executar dos CLIs)
+│   ├── importers/importkit/           Template Method (Executar/Etapas, LerCSV, Upsert[R]), ARQ-07
+│   ├── importers/<nome>/              8 importers sobre o importkit (SQL de upsert mantido) + cli.go
+│   ├── tools/                         lógica dos CLIs (cli.go testável); cmd/<nome>/main.go fino
 │   ├── tests/                         ficam (+ tests/arquitetura)
-│   └── (legado, removido no ARQ-07)   models/ repositories/ services/
+│   └── (removidos no ARQ-07)          models/ repositories/ services/
 │
 └── rotaperfumes-api/                  módulo github.com/rotaperfumes/rotaperfumes-api
     ├── cmd/server/main.go             ~30 linhas: carrega env/config e chama bootstrap.Run
-    ├── cmd/resetsenhas/main.go        usa identidadeapp (ARQ-07)
+    ├── cmd/resetsenhas/main.go        fino; lógica em internal/resetsenhas (identidadeapp, ARQ-07)
     ├── internal/
     │   ├── bootstrap/                 COMPOSITION ROOT (Facade): wire.go, server.go, email.go, background.go
     │   ├── httpx/                     kit HTTP transversal
@@ -177,7 +180,8 @@ apis/
     │   ├── vendashttp/
     │   └── analyticshttp/
     ├── tests/                         ficam (mesmas pastas; ver §7.2)
-    └── (legado, removido no ARQ-07)   handlers/ services/ middleware/ routes/
+    ├── internal/resetsenhas/          CLI do OPS-01 (simula por padrão; -executar), ARQ-07
+    └── (removidos até o ARQ-07)       handlers/ services/ middleware/ routes/
 ```
 
 ### 2.2 Por que essa forma
@@ -1601,6 +1605,33 @@ Hoje `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` lê `routes/routes.go` com a
 - **Testes:** `shared/tests/services/email_*`, `mail01_*`, `sec10_tls_test.go`, `sec09_alerta_email_test.go`; `tests/services/sec09_notifier_test.go`; `shared/tests/importers/*` (123); `shared/tests/tools/*`; `tools/testeemail/testeemail_test.go` (§7.2-8).
 - **Aceite:** §7.1; `grep -r "shared/models\|shared/repositories\|rotaperfumes-api/handlers" apis` vazio; o teste de arquitetura sem exceções temporárias.
 - **Riscos:** os CLIs de banco (`make db-seed` usa `resetpassword`). Mitigação: rodar o `make db-reset` local antes do commit (pedir ao usuário, como no TST-04).
+- **Registro do ARQ-07 (o que foi feito, o que divergiu do desenho e o que fica para o ARQ-08; 🟡 BackBrain, 2026-10-16):**
+  - **Entregue.**
+    - **Notificação** (`shared/notificacao`): domínio `Destinatario` (sem CR/LF, aparado), `ModoTLS` + `ResolverModoTLS`, `Contato`, `AlertaReuso`, `Mensagem` (`MensagemSenhaInicial`, `MensagemAlertaReuso`: controles e U+2028/2029 saneados, UA truncado em 120 runas). `notificacaosmtp`: **Adapter** SMTP (`Novo`/`NovoComTLS`; verificação de certificado sempre ligada, TLS ≥ 1.2, ServerName, CA extra), **Strategy** de TLS (`tlsImplicito` | `startTLS`, aborta se STARTTLS não for anunciado; AUTH só sobre TLS), **Null Object** `Noop` (e-mail mascarado). `notificacaoapp`: o `AlertaSegurancaNotifier` migrado da API com as mesmas regras (dedup 30 min, teto 20/h, 4 concorrentes, timeout 30 s, I-08), construído por `Deps` (sem setters; panic se nil) e com `Aguardar(timeout)` (NB-6: o `bootstrap.Run` espera os alertas em voo, até 10 s, antes do `pool.Close`). Composição em `bootstrap/email.go` (`NovoEmail` com `log.Fatalf` em config inválida, `NovoNotificadorAlerta`, `NovosContatos` sobre `identidademysql`).
+    - **NB-1:** a falha de envio da senha inicial (`identidadeapp/senha.go`) loga `vlog.OcultarEmail(err, email)` — o endereço vira `[email-usuario]` mesmo quando o driver SMTP o repete na mensagem.
+    - **Importers** (`importers/importkit`, **Template Method**): `Executar(Etapas{Tag, Ler, LerNoDryRun, Gravar}, dryRun, abrir)` fixa a ordem ler → (dry-run para aqui) → abrir/ping → gravar; `LerCSV`/`LerArquivo` (erro por linha sem o valor), `Upsert[R].Gravar` (prepare único, contagem inseridos/atualizados/falhas), `IDsDeOrigem`/`IDsPorChave`, `CLI`. Os 8 importers usam o kit com o **SQL de upsert byte a byte**; as funções exportadas atuais ficaram como fachadas. M-04: o erro de CNPJ inválido do importer de clientes não carrega mais o valor.
+    - **CLIs com `main` fino** (`cmdutil.Executar(tag, cmd, args, Ambiente)` → código de saída; `Ambiente` injeta stdin/stdout/stderr, `.env`, config e abertura do banco): os 13 `main` (9 importers/export, `resetpassword`, `seedusers`, `testeemail`, `resetsenhas`) viraram `os.Exit(cmdutil.Executar(...))` (só o comentário de uso e a chamada); a lógica foi para `cli.go` testável (`tools/*`, `importers/*`) e `rotaperfumes-api/internal/resetsenhas`. `tools/testeemail` recebeu o diagnóstico SMTP que estava no `main` (927 linhas → `diagnostico.go`, `conexao_tls.go`, `comandos_smtp.go`). O `testeemail_test.go` interno foi para `shared/tests/tools/testeemail` (mesmos 8 nomes). Flags e textos de uso inalterados (`make db-seed`, `db-import-*`, `reset-senhas-*` seguem iguais).
+    - **NB-7:** `seedusers` loga só os parâmetros Argon2id e imprime o hash completo apenas com `-show-password` (sem ele, prefixo + aviso); `resetsenhas` mascara os e-mails na listagem e no cabeçalho (remetente).
+    - **N4:** `kernel.ComRota`/`RotaDe` (o `httpx.Autenticador` grava `r.URL.Path` no ctx); o log de bloqueio de vendedor desligado do `comercialapp` passou a `… rota=<path>`, sem a aplicação importar `net/http`.
+    - **Helpers de adapter** (`execPorID`, `existe`, `inserir`, `lerUma`) foram para `shared/db/linhas.go` (`ExecPorID`, `Existe`, `Inserir`, `LerUma[T]`), com o prefixo do pacote no nome da operação (mesmo texto de wrap).
+  - **Removido:** API `middleware/` (`principal_legado.go`) e `services/` (`alerta_seguranca_notifier.go`); `shared/services` (`email_service.go`, `email_smtp.go`), `shared/repositories` (usuário, refresh, `erros.go`, `execer.go`), `shared/models`; `catalogomysql.UpsertPorDataSku` (sem chamador de produção; os 3 testes passaram a exercitar `importers/estoque.UpsertAll`, que grava o mesmo par `(data_snapshot, sku)`); `httpx.PrincipalDoContexto` deixou de ser exportado (só `PrincipalFrom`). `grep "shared/models\|shared/repositories\|shared/services\|rotaperfumes-api/handlers"` em `apis/**/*.go` só acha as fontes sintéticas dos testes de arquitetura; nenhum `TODO(ARQ-0X)`.
+  - **Shims de teste removidos:** todos os `helpers_*_test.go` (API `tests/handlers`, `tests/services`, `tests/middleware`; shared `tests/repositories`, `tests/services`). No lugar, fixtures sem regra própria (`apoio_*_test.go`) e chamadas diretas a `<ctx>app`/`<ctx>mysql`/`identidadecrypto`. Os tautológicos foram reescritos: `TestUserCheck_RotaPublica_*` e `TestSEC08_CorteDeSessao_RotaPublicaIgnoraCorte` passam pelo `httpx.Router` real (`autenticador_router_test.go`), e `refresh_rotation_test.go` + `TestSEC07_BeginRotation*` passam por `Casos.RenovarSessao` (UoW real).
+  - **Testes de arquitetura:** sanidades "≥ 1 uso" viraram "pacote ausente e 0 importadores" nos dois módulos (`middleware`, `services`, `shared/models|repositories|services`) e exigem os pacotes novos; `TestARQ07_ConcatenacaoSQLSoConstantes` (+ controle negativo `_DetectaViolacoes`) estende o AST de SQL à concatenação `+` em `QueryContext`/`QueryRowContext`/`ExecContext` (parâmetros seguidos até o chamador); exceções do `vlog_test` para `email_service.go` e `resetpassword` saíram; `ResetarSenhasAtivos` só em `internal/resetsenhas`.
+  - **Mapa M-01..M-04:**
+    - **M-01** → `notificacaosmtp/transporte.go`, `conexao.go`, `auth.go`, `smtp.go`; `notificacao/destinatario.go`; `bootstrap/email.go` (`log.Fatalf`). Testes: `TestMAIL01_*` (TLS implícito, servidor em texto puro, sem AUTH, mecanismo não suportado, CA, ServerName), `TestSMTPEmailService_EnviarSenhaInicial_Erros` (STARTTLS não anunciado, AUTH sem TLS), `TestSEC10_TLS_InsecureSkipVerifyIgnorado`, `TestSEC10_TLS_Versoes`, `TestSEC09_DestinatarioInvalido`, `TestARQ07_NovoDestinatario`, `TestMontarMensagemRejeitaCRLF`.
+    - **M-02** → `notificacao/mensagem.go`, `notificacaosmtp/noop.go`, `identidadeapp/senha.go` (NB-1), `tools/seedusers` (NB-7). Testes: `TestNoopEmailService_EnviarSenhaInicial`, `TestSEC09_Noop_EnviarAlertaReusoToken`, `TestARQ07_NB1_FalhaDoEmailNaoLogaOEndereco`, `TestARQ07_OcultarEmail`, `TestRun_DryRunNaoTocaArquivos`, `TestARQ07_ResetSenhas_SimulaPorPadraoEMascaraEmails`.
+    - **M-03** → `cmdutil.Configurar(amb, semDB)` (`LoadSemCredenciaisDB` só com `seedusers -dry-run/-no-exec`); `internal/resetsenhas` (simula sem `-executar`; grava/revoga via `identidadeapp.ResetarSenhasAtivos`). Testes: `TestARQ07_Configurar`, `TestARQ07_CLISeedusers`, `TestARQ07_ResetSenhas_*`, `TestOPS01_*`.
+    - **M-04** → `importkit` (placeholders no `Upsert`; erro de linha sem valor; nenhum log por linha) e `importers/clientes`. Testes: `TestARQ07_M04_CNPJInvalidoNaoVaiParaOLog`, `TestImportkit_LerCSV`, `TestImportkit_UpsertGravar`, `TestARQ_VlogSemConteudoSensivel`.
+  - **Divergências do desenho:**
+    - **(a) `tools/resetpassword` e `tools/seedusers` mantêm o SQL próprio** (hash pelo `identidadecrypto`, como no ARQ-03): upsert por e-mail e placeholder de seed não são casos de uso, e as suítes sqlmock dessas ferramentas ficaram intactas. Só o `resetsenhas` usa `identidadeapp`.
+    - **(b) `importkit.Spec[Row]` virou `importkit.Etapas`** (funções `Ler`/`Gravar` por importer): `pedidos` tem dois CSVs e duas gravações, o que um `Spec` de uma linha não expressa sem genérico duplo.
+    - **(c) Suítes protegidas com asserção trocada (igual ou mais forte):** SEC06 `StatusParaAutenticacao` (o zero value de `StatusAcesso` em vez de `nil`, `assert.Zero`); SEC07 `RevokedTokenError` passou a asserir o estado de domínio (`Motivo`, `RevogadoEm`, `ReusoDeRotacao`); SEC07 `BeginRotation` via `RenovarSessao` (revoke de 0 linhas = reuso); SEC09 notifier construído por `Deps`; `dashboard_service_escopo`/`dashboard_repository_escopo` asserem os read models (zeros, listas `[]` não nulas, `vendedor_desligado`) — o contrato JSON segue em `TestARQ06_ContratoJSON_ByteAByte`; `router_test` perdeu a checagem da chave legada (o pacote não existe mais; a ausência é provada pela sanidade de arquitetura); "rotação finalizada não pode emitir de novo" virou "sessão nil na falha". Nenhum status, mensagem, SQL ou argumento esperado mudou.
+    - **(d) `FindByUsuario`** (refresh) era só do legado: os testes foram reapontados para `HistoricoSenhas.DoUsuario`/`RefreshTokens`; o `ResetPassword` legado, para hasher + `Usuarios.AtualizarSenha`.
+    - **(e)** As linhas de vlog "de sintaxe" (uma por `if`/atribuição) saíram dos importers e tools reescritos (P1: só ação relevante); os textos de log operacionais ficaram iguais.
+    - **(f) N-7** ficou só documentado (`analyticsapp.Novo` e ARQ-01): a interface não nula com ponteiro nil tipado não é detectada; a proteção é o bootstrap.
+  - **Portões.** gofmt, build, vet e `go test -count=1 ./...` verdes nos dois módulos. R1 contra `adce2b8`: shared **762 → 796**, API **839 → 847**, nenhum nome perdido; as mesmas 36 linhas `--- SKIP` (integração MySQL), sem `t.Skip` novo. Cobertura combinada **89,42% → 98,06%** (6661/6793); descobertos **852 → 132**. `apis/Dockerfile` (`./cmd/server`), `Makefile` (todos os `go run ./cmd/…` e flags) e `Jenkinsfile` (`go vet`/`go test` por módulo) seguem válidos sem alteração.
+  - **Linhas.** Produção: 92 arquivos, +3529/−4728 (−1199). Legado apagado: 1210 físicas (899 de lógica); código novo (arquivos criados): 2844 físicas (2181 de lógica), compensadas pelos 13 `main`, que encolheram de 1674 para 312 linhas físicas. Testes: 146 arquivos, +4520/−4395.
+  - **Para o ARQ-08 (docs):** revisar §3.8/§3.9 (coluna "origem atual" e o `Spec`), §4.3 (`TestARQ_ChavesLegadas_SoMiddlewareLegado` já sem o middleware) e §7.5 (transição encerrada); `docs/logs-verbose.md` com `rota=` (N4) e `[email-usuario]` (NB-1); `.claude/agents/backend.md` com a estrutura final (`shared/<ctx>`, `importkit`, `cmdutil.Executar`, `internal/<ctx>http`, `internal/resetsenhas`); README/manuais dos CLIs (`seedusers -show-password`, `resetsenhas` mascarado).
 
 #### ARQ-08: Documentação (🔵 SubBrain)
 

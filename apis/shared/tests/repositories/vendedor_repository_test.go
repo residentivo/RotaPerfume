@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
 	"testing"
 	"time"
 
@@ -28,9 +29,8 @@ func TestVendedorList_Success(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	vendedores, err := repo.List(ctx, db)
+	vendedores, err := comercialmysql.NovoVendedores(db).ListarResumo(ctx, escopoAdmin())
 
 	require.NoError(t, err)
 	assert.Len(t, vendedores, 2)
@@ -56,9 +56,8 @@ func TestVendedorList_AtivosEInativos(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	vendedores, err := repo.List(ctx, db)
+	vendedores, err := comercialmysql.NovoVendedores(db).ListarResumo(ctx, escopoAdmin())
 
 	require.NoError(t, err)
 	require.Len(t, vendedores, 2)
@@ -82,9 +81,8 @@ func TestVendedorList_Vazio(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "data_desligamento"}))
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	vendedores, err := repo.List(ctx, db)
+	vendedores, err := comercialmysql.NovoVendedores(db).ListarResumo(ctx, escopoAdmin())
 
 	require.NoError(t, err)
 	assert.Len(t, vendedores, 0)
@@ -98,9 +96,8 @@ func TestVendedorList_QueryError(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	_, err := repo.List(ctx, db)
+	_, err := comercialmysql.NovoVendedores(db).ListarResumo(ctx, escopoAdmin())
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -117,9 +114,8 @@ func TestVendedorList_ScanError(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	_, err := repo.List(ctx, db)
+	_, err := comercialmysql.NovoVendedores(db).ListarResumo(ctx, escopoAdmin())
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -136,9 +132,8 @@ func TestVendedorList_IterError(t *testing.T) {
 	mock.ExpectQuery(`SELECT id, nome, regiao, uf, data_desligamento FROM vendedores ORDER BY nome ASC`).
 		WillReturnRows(rows)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	_, err := repo.List(ctx, db)
+	_, err := comercialmysql.NovoVendedores(db).ListarResumo(ctx, escopoAdmin())
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -169,9 +164,8 @@ func TestVendedorExistsByID(t *testing.T) {
 				q.WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 			}
 
-			repo := NewVendedorRepository()
 			ctx := context.Background()
-			exists, err := repo.ExistsByID(ctx, db, tt.id)
+			exists, err := comercialmysql.NovoVendedores(db).Existe(ctx, tt.id)
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, exists)
@@ -208,7 +202,7 @@ func TestVendedorIsDesligado(t *testing.T) {
 			defer db.Close()
 			tt.setup(mock.ExpectQuery(q).WithArgs(int64(3)))
 
-			desligado, err := NewVendedorRepository().IsDesligado(context.Background(), db, 3)
+			desligado, err := comercialmysql.NovoVendedores(db).Desligado(context.Background(), 3)
 
 			assert.Equal(t, tt.wantDesligado, desligado)
 			if tt.wantErr {
@@ -230,9 +224,8 @@ func TestVendedorExistsByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	exists, err := repo.ExistsByID(ctx, db, 1)
+	exists, err := comercialmysql.NovoVendedores(db).Existe(ctx, 1)
 
 	assert.False(t, exists)
 	assert.Error(t, err)
@@ -255,9 +248,8 @@ func TestVendedorGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	v, err := repo.GetByID(ctx, db, 1)
+	v, err := comercialmysql.NovoVendedores(db).PorID(ctx, 1)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), v.ID)
@@ -273,9 +265,8 @@ func TestVendedorGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	v, err := repo.GetByID(ctx, db, 999)
+	v, err := comercialmysql.NovoVendedores(db).PorID(ctx, 999)
 
 	assert.Nil(t, v)
 	assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
@@ -290,9 +281,8 @@ func TestVendedorGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	v, err := repo.GetByID(ctx, db, 1)
+	v, err := comercialmysql.NovoVendedores(db).PorID(ctx, 1)
 
 	assert.Nil(t, v)
 	assert.Error(t, err)
@@ -315,9 +305,8 @@ func TestVendedorCreate_Success(t *testing.T) {
 		WithArgs(v.Nome, v.Regiao, v.UF, v.DataAdmissao, v.DataDesligamento, v.MetaMensal).
 		WillReturnResult(sqlmock.NewResult(9, 1))
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, v)
+	err := comercialmysql.NovoVendedores(db).Inserir(ctx, v)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(9), v.ID)
@@ -333,9 +322,8 @@ func TestVendedorCreate_ExecError(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO vendedores \(nome, regiao, uf, data_admissao, data_desligamento, meta_mensal\)\s+VALUES \(\?, \?, \?, \?, \?, \?\)`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, v)
+	err := comercialmysql.NovoVendedores(db).Inserir(ctx, v)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -350,9 +338,8 @@ func TestVendedorCreate_LastInsertIdError(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO vendedores \(nome, regiao, uf, data_admissao, data_desligamento, meta_mensal\)\s+VALUES \(\?, \?, \?, \?, \?, \?\)`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, v)
+	err := comercialmysql.NovoVendedores(db).Inserir(ctx, v)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -373,9 +360,8 @@ func TestVendedorUpdate_Success(t *testing.T) {
 		WithArgs(v.Nome, v.Regiao, v.UF, v.DataAdmissao, v.MetaMensal, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, v)
+	err := comercialmysql.NovoVendedores(db).Atualizar(ctx, 1, v)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -391,9 +377,8 @@ func TestVendedorUpdate_NotFound(t *testing.T) {
 		WithArgs(v.Nome, v.Regiao, v.UF, v.DataAdmissao, v.MetaMensal, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 999, v)
+	err := comercialmysql.NovoVendedores(db).Atualizar(ctx, 999, v)
 
 	assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -408,9 +393,8 @@ func TestVendedorUpdate_ExecError(t *testing.T) {
 	mock.ExpectExec(`UPDATE vendedores\s+SET nome = \?, regiao = \?, uf = \?, data_admissao = \?, meta_mensal = \?\s+WHERE id = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, v)
+	err := comercialmysql.NovoVendedores(db).Atualizar(ctx, 1, v)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -425,9 +409,8 @@ func TestVendedorUpdate_RowsAffectedError(t *testing.T) {
 	mock.ExpectExec(`UPDATE vendedores\s+SET nome = \?, regiao = \?, uf = \?, data_admissao = \?, meta_mensal = \?\s+WHERE id = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, v)
+	err := comercialmysql.NovoVendedores(db).Atualizar(ctx, 1, v)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -461,9 +444,8 @@ func TestVendedorSetDataDesligamento_Success(t *testing.T) {
 				WithArgs(tt.dataDesligamento, int64(1)).
 				WillReturnResult(sqlmock.NewResult(0, 1))
 
-			repo := NewVendedorRepository()
 			ctx := context.Background()
-			err := repo.SetDataDesligamento(ctx, db, 1, tt.dataDesligamento)
+			err := comercialmysql.NovoVendedores(db).DefinirDesligamento(ctx, 1, tempoDe(tt.dataDesligamento))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -481,9 +463,8 @@ func TestVendedorSetDataDesligamento_NotFound(t *testing.T) {
 		WithArgs(dataDesligamento, int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.SetDataDesligamento(ctx, db, 999, dataDesligamento)
+	err := comercialmysql.NovoVendedores(db).DefinirDesligamento(ctx, 999, tempoDe(dataDesligamento))
 
 	assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -498,9 +479,8 @@ func TestVendedorSetDataDesligamento_ExecError(t *testing.T) {
 	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.SetDataDesligamento(ctx, db, 1, dataDesligamento)
+	err := comercialmysql.NovoVendedores(db).DefinirDesligamento(ctx, 1, tempoDe(dataDesligamento))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -515,9 +495,8 @@ func TestVendedorSetDataDesligamento_RowsAffectedError(t *testing.T) {
 	mock.ExpectExec(`UPDATE vendedores SET data_desligamento = \? WHERE id = \?`).
 		WillReturnResult(sqlmock.NewErrorResult(sql.ErrConnDone))
 
-	repo := NewVendedorRepository()
 	ctx := context.Background()
-	err := repo.SetDataDesligamento(ctx, db, 1, dataDesligamento)
+	err := comercialmysql.NovoVendedores(db).DefinirDesligamento(ctx, 1, tempoDe(dataDesligamento))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

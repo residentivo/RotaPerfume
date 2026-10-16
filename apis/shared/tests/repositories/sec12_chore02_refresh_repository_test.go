@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"regexp"
 	"strings"
 	"testing"
@@ -77,7 +78,7 @@ func TestSEC12_MarcarReusoDetectado(t *testing.T) {
 			db, mock := newMockSQLExato(t)
 			c.setup(mock.ExpectExec(sqlMarcarReuso).WithArgs(agora, int64(10), limite))
 
-			ok, err := novoRefreshRepo().MarcarReusoDetectado(context.Background(), db, 10, agora, limite)
+			ok, err := identidademysql.NovoRefreshTokens(db).MarcarReuso(context.Background(), 10, agora, limite)
 			assert.Equal(t, c.want, ok)
 			if c.wantErr != "" {
 				require.Error(t, err)
@@ -101,7 +102,7 @@ func TestSEC12_MarcarReusoDetectado_EmTransacao(t *testing.T) {
 
 	tx, err := db.Begin()
 	require.NoError(t, err)
-	ok, err := novoRefreshRepo().MarcarReusoDetectado(context.Background(), tx, 7, agora, agora.Add(-time.Minute))
+	ok, err := identidademysql.NovoRefreshTokens(tx).MarcarReuso(context.Background(), 7, agora, agora.Add(-time.Minute))
 	require.NoError(t, err)
 	assert.True(t, ok)
 	require.NoError(t, tx.Commit())
@@ -124,7 +125,7 @@ func TestSEC12_DesfazerReusoDetectado(t *testing.T) {
 			db, mock := newMockSQLExato(t)
 			c.setup(mock.ExpectExec(sqlDesfazerReuso).WithArgs(int64(10), marca))
 
-			err := novoRefreshRepo().DesfazerReusoDetectado(context.Background(), db, 10, marca)
+			err := identidademysql.NovoRefreshTokens(db).DesfazerReuso(context.Background(), 10, marca)
 			if c.wantErr {
 				require.Error(t, err)
 				assert.ErrorIs(t, err, errBancoSEC12)
@@ -160,7 +161,7 @@ func TestCHORE02_DeleteExpired(t *testing.T) {
 			db, mock := newMockSQLExato(t)
 			c.setup(mock.ExpectExec(sqlDeleteExpired).WithArgs(corte, c.lote))
 
-			n, err := novoRefreshRepo().DeleteExpired(context.Background(), db, corte, c.lote)
+			n, err := identidademysql.NovoRefreshTokens(db).ApagarExpirados(context.Background(), corte, c.lote)
 			assert.Equal(t, c.wantN, n)
 			if c.wantErr != "" {
 				require.Error(t, err)

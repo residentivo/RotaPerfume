@@ -14,8 +14,11 @@ package services_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"os"
 	"sync"
 	"testing"
@@ -55,9 +58,12 @@ func novoL12IT(t *testing.T) *l12IT {
 // revogação direto no banco. motivo "" = ativo.
 func (c *l12IT) token(expira time.Time, motivo string, revogadoHa time.Duration) (string, int64) {
 	c.t.Helper()
-	svc := NewRefreshTokenService()
-	tok, err := svc.GenerateRefreshToken(context.Background(), c.db, c.uid, "127.0.0.1", "go-test")
+	// ARQ-07: gerador opaco + adapter, como o identidadeapp grava (emitirRefresh).
+	g := identidadecrypto.GeradorRefresh{}
+	opaco := g.Novo()
+	err := identidademysql.NovoRefreshTokens(c.db).Inserir(context.Background(), identidade.NovoRefreshToken(c.uid, g.Hash(opaco), time.Now(), "127.0.0.1", "go-test"))
 	require.NoError(c.t, err)
+	tok := opaco.Revelar()
 	var id int64
 	require.NoError(c.t, c.db.QueryRow(`SELECT id FROM refresh_tokens WHERE token_hash = ?`, hashOf(tok)).Scan(&id))
 	_, err = c.db.Exec(`UPDATE refresh_tokens SET expires_at = ? WHERE id = ?`, expira, id)
@@ -84,7 +90,7 @@ func TestIntegracaoSEC12_RegistrarReuso_Concorrencia(t *testing.T) {
 	_, id := c.token(time.Now().Add(24*time.Hour), "rotacao", 5*time.Minute)
 
 	agora := time.Now()
-	svc := NewRefreshTokenServiceWithClock(func() time.Time { return agora })
+	uc := novosCasos(c.db, nil, nil, func() time.Time { return agora }, identidadeapp.Opcoes{})
 
 	const n = 20
 	var wg sync.WaitGroup
@@ -97,7 +103,7 @@ func TestIntegracaoSEC12_RegistrarReuso_Concorrencia(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-inicio
-			cortar, m, err := svc.RegistrarReuso(ctx, c.db, id)
+			cortar, m, err := uc.RegistrarReuso(ctx, id)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -126,20 +132,20 @@ func TestIntegracaoSEC12_RegistrarReuso_Concorrencia(t *testing.T) {
 	}
 	for _, cs := range casos {
 		t.Run(cs.nome, func(t *testing.T) {
-			s := NewRefreshTokenServiceWithClock(func() time.Time { return agora.Add(cs.depois) })
-			cortar, _, err := s.RegistrarReuso(ctx, c.db, id)
+			s := novosCasos(c.db, nil, nil, func() time.Time { return agora.Add(cs.depois) }, identidadeapp.Opcoes{})
+			cortar, _, err := s.RegistrarReuso(ctx, id)
 			require.NoError(t, err)
 			assert.Equal(t, cs.want, cortar)
 		})
 	}
 
 	t.Run("DesfazerReuso reabre o corte dentro da janela", func(t *testing.T) {
-		s := NewRefreshTokenServiceWithClock(func() time.Time { return agora.Add(31 * time.Minute) })
-		require.NoError(t, s.DesfazerReuso(ctx, c.db, id, agora.Add(31*time.Minute).Truncate(time.Second)))
+		s := novosCasos(c.db, nil, nil, func() time.Time { return agora.Add(31 * time.Minute) }, identidadeapp.Opcoes{})
+		require.NoError(t, s.DesfazerReuso(ctx, id, agora.Add(31*time.Minute).Truncate(time.Second)))
 		var v *time.Time
 		require.NoError(t, c.db.QueryRow(`SELECT reuso_detectado_em FROM refresh_tokens WHERE id = ?`, id).Scan(&v))
 		assert.Nil(t, v)
-		cortar, _, err := s.RegistrarReuso(ctx, c.db, id)
+		cortar, _, err := s.RegistrarReuso(ctx, id)
 		require.NoError(t, err)
 		assert.True(t, cortar)
 	})
@@ -151,7 +157,7 @@ func TestIntegracaoCHORE02_CleanupExpired(t *testing.T) {
 	c := novoL12IT(t)
 	ctx := context.Background()
 	agora := time.Now()
-	corte := agora.Add(-RefreshTokenRetencaoPadrao)
+	corte := agora.Add(-identidadeapp.RetencaoRefreshPadrao)
 
 	var outros int
 	require.NoError(t, c.db.QueryRow(`SELECT COUNT(*) FROM refresh_tokens WHERE expires_at < ? AND usuario_id <> ?`,
@@ -167,8 +173,8 @@ func TestIntegracaoCHORE02_CleanupExpired(t *testing.T) {
 	rotacionado, rotacionadoID := c.token(agora.Add(6*24*time.Hour), "rotacao", 10*time.Minute)
 	_, ativo := c.token(agora.Add(7*24*time.Hour), "", 0)
 
-	svc := NewRefreshTokenService()
-	n, err := svc.CleanupExpired(ctx, c.db)
+	uc := novosCasos(c.db, nil, nil, time.Now, identidadeapp.Opcoes{})
+	n, err := uc.LimparRefreshExpirados(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n, "só os expirados há mais de 30 dias")
 
@@ -191,18 +197,17 @@ func TestIntegracaoCHORE02_CleanupExpired(t *testing.T) {
 	}
 
 	t.Run("token rotacionado continua gerando detecção de reuso", func(t *testing.T) {
-		_, err := svc.ValidateRefreshToken(ctx, c.db, rotacionado)
-		var rev *RevokedTokenError
-		require.True(t, errors.As(err, &rev), "err=%v", err)
-		assert.True(t, rev.IsRotationReuse())
-		assert.Equal(t, rotacionadoID, rev.TokenID)
-		cortar, _, err := svc.RegistrarReuso(ctx, c.db, rev.TokenID)
+		rt, estado, err := buscarEAvaliar(c.db, rotacionado, time.Now())
+		require.NoError(t, err)
+		assert.True(t, rt.ReusoDeRotacao(estado))
+		assert.Equal(t, rotacionadoID, rt.ID)
+		cortar, _, err := uc.RegistrarReuso(ctx, rt.ID)
 		require.NoError(t, err)
 		assert.True(t, cortar)
 	})
 
 	t.Run("segunda execução não apaga mais nada", func(t *testing.T) {
-		n, err := svc.CleanupExpired(ctx, c.db)
+		n, err := uc.LimparRefreshExpirados(ctx)
 		require.NoError(t, err)
 		assert.Zero(t, n)
 	})
@@ -214,7 +219,7 @@ func TestIntegracaoCHORE02_Agendador(t *testing.T) {
 	agora := time.Now()
 	var outros int
 	require.NoError(t, c.db.QueryRow(`SELECT COUNT(*) FROM refresh_tokens WHERE expires_at < ? AND usuario_id <> ?`,
-		agora.Add(-RefreshTokenRetencaoPadrao+time.Hour), c.uid).Scan(&outros))
+		agora.Add(-identidadeapp.RetencaoRefreshPadrao+time.Hour), c.uid).Scan(&outros))
 	if outros > 0 {
 		t.Skipf("banco de dev tem %d tokens de outros usuários expirados há mais de 30 dias", outros)
 	}
@@ -222,10 +227,9 @@ func TestIntegracaoCHORE02_Agendador(t *testing.T) {
 	_, novo := c.token(agora.Add(time.Hour), "", 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	done := IniciarLimpezaRefreshTokens(ctx, c.db, NewRefreshTokenService(), time.Hour)
+	done := identidadeapp.IniciarLimpezaPeriodica(ctx, novosCasos(c.db, nil, nil, time.Now, identidadeapp.Opcoes{}), time.Hour)
 	esperarAte(t, 5*time.Second, func() bool { return !c.existe(velho) }, "execução imediata do agendador")
 	cancel()
 	require.True(t, fechaEm(done, time.Second))
 	assert.True(t, c.existe(novo))
 }
-

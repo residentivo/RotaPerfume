@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"errors"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 	"strings"
 	"testing"
 	"time"
@@ -14,8 +15,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/models"
 )
 
 const reListAtivos = usuarioColunasRegex + `\s+WHERE u\.ativo = 1\s+ORDER BY u\.id ASC`
@@ -52,8 +51,8 @@ type usuarioOPS01 struct {
 }
 
 var ativosOPS01 = []usuarioOPS01{
-	{1, "admin@test.com", models.RoleAdmin, "$2a$12$hashantigoadmin"},
-	{2, "ana@test.com", models.RoleNormal, "$2a$12$hashantigoana"},
+	{1, "admin@test.com", "admin", "$2a$12$hashantigoadmin"},
+	{2, "ana@test.com", "normal", "$2a$12$hashantigoana"},
 }
 
 func linhaUsuario(rows *sqlmock.Rows, u usuarioOPS01) *sqlmock.Rows {
@@ -79,7 +78,7 @@ func esperarReset(mock sqlmock.Sqlmock, u usuarioOPS01, comPosProcessamento bool
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	if comPosProcessamento {
 		mock.ExpectExec(`INSERT INTO senha_historico`).
-			WithArgs(u.id, sqlmock.AnyArg(), u.hash, ResetMassaIPOrigem, ResetMassaUserAgent, "admin").
+			WithArgs(u.id, sqlmock.AnyArg(), u.hash, identidadeapp.ResetMassaIPOrigem, identidadeapp.ResetMassaUserAgent, "admin").
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
 			WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), u.id).
@@ -92,9 +91,9 @@ func TestOPS01_Simulacao_NaoGravaNemEnvia(t *testing.T) {
 	db, mock := newUsuarioTestDB(t)
 	esperarListaAtivos(mock) // só o SELECT: qualquer outro SQL falha o teste
 	email := &emailPorDestino{senhas: map[string]string{}}
-	svc := NewResetSenhasAtivosService(NewUsuarioService(db, usuarioTestCfg(false), email))
+	casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
 
-	itens, err := svc.Executar(context.Background(), db, true)
+	itens, err := casos.ResetarSenhasAtivos(context.Background(), true)
 	require.NoError(t, err)
 	require.Len(t, itens, 2)
 	for i, it := range itens {
@@ -114,9 +113,9 @@ func TestOPS01_Executar_SenhaEnviadaEhOHashArgon2idGravado(t *testing.T) {
 		hashes[i] = esperarReset(mock, u, true)
 	}
 	email := &emailPorDestino{senhas: map[string]string{}}
-	svc := NewResetSenhasAtivosService(NewUsuarioService(db, cfg, email))
+	casos := novosCasos(db, cfg, email, time.Now, identidadeapp.Opcoes{})
 
-	itens, err := svc.Executar(context.Background(), db, false)
+	itens, err := casos.ResetarSenhasAtivos(context.Background(), false)
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 
@@ -141,10 +140,10 @@ func TestOPS01_Executar_ParaNoPrimeiroEmailQueFalha(t *testing.T) {
 	esperarListaAtivos(mock)
 	esperarReset(mock, ativosOPS01[0], true) // o 2º usuário nunca é tocado
 	email := &emailPorDestino{senhas: map[string]string{}, falharEm: ativosOPS01[0].email}
-	svc := NewResetSenhasAtivosService(NewUsuarioService(db, usuarioTestCfg(false), email))
+	casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
 
-	itens, err := svc.Executar(context.Background(), db, false)
-	require.ErrorIs(t, err, ErrEmailResetFalhou)
+	itens, err := casos.ResetarSenhasAtivos(context.Background(), false)
+	require.ErrorIs(t, err, identidadeapp.ErrEmailResetFalhou)
 	require.Len(t, itens, 1)
 	assert.Equal(t, "falha_email", itens[0].Status)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -156,8 +155,8 @@ func TestOPS01_Executar_ErrosDoBanco(t *testing.T) {
 	t.Run("listagem falha", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
 		mock.ExpectQuery(reListAtivos).WillReturnError(errBanco)
-		svc := NewResetSenhasAtivosService(NewUsuarioService(db, usuarioTestCfg(false), &emailPorDestino{senhas: map[string]string{}}))
-		itens, err := svc.Executar(context.Background(), db, false)
+		casos := novosCasos(db, usuarioTestCfg(false), &emailPorDestino{senhas: map[string]string{}}, time.Now, identidadeapp.Opcoes{})
+		itens, err := casos.ResetarSenhasAtivos(context.Background(), false)
 		assert.ErrorIs(t, err, errBanco)
 		assert.Nil(t, itens)
 	})
@@ -170,9 +169,9 @@ func TestOPS01_Executar_ErrosDoBanco(t *testing.T) {
 			WillReturnRows(linhaUsuario(sqlmock.NewRows(usuarioColunasHeader()), u))
 		mock.ExpectExec(`UPDATE usuarios SET password_hash`).WillReturnError(errBanco)
 		email := &emailPorDestino{senhas: map[string]string{}}
-		svc := NewResetSenhasAtivosService(NewUsuarioService(db, usuarioTestCfg(false), email))
+		casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
 
-		itens, err := svc.Executar(context.Background(), db, false)
+		itens, err := casos.ResetarSenhasAtivos(context.Background(), false)
 		assert.ErrorIs(t, err, errBanco)
 		assert.Empty(t, itens)
 		assert.Empty(t, email.senhas)
@@ -188,9 +187,9 @@ func TestOPS01_Executar_ErrosDoBanco(t *testing.T) {
 			mock.ExpectExec(`UPDATE refresh_tokens`).WillReturnError(errBanco)
 		}
 		email := &emailPorDestino{senhas: map[string]string{}}
-		svc := NewResetSenhasAtivosService(NewUsuarioService(db, usuarioTestCfg(false), email))
+		casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
 
-		itens, err := svc.Executar(context.Background(), db, false)
+		itens, err := casos.ResetarSenhasAtivos(context.Background(), false)
 		require.NoError(t, err)
 		assert.Len(t, itens, 2)
 		assert.Len(t, email.senhas, 2)

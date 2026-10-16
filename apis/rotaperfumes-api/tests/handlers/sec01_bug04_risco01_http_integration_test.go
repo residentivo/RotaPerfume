@@ -80,8 +80,8 @@ func novoItCtx(t *testing.T) *itCtx {
 	t.Cleanup(func() { db.Close() })
 
 	cfg := testCfg()
-	authH := novoAuthHandler(db, cfg)
-	authH.SetCaptchaVerifier(&fakeCaptchaVerifier{})
+	authH := novaIdentidadeTeste(db, cfg)
+	authH.captcha.trocar(&fakeCaptchaVerifier{})
 	hs := bootstrap.NovosHandlers(db, cfg, &fakeEmailService{})
 	hs.Auth = authH.AuthHandler
 	mux := bootstrap.HandlerHTTP(cfg, bootstrap.NovoVerificadorStatus(db), hs)
@@ -734,12 +734,11 @@ func TestIntegracaoHTTP_RISCO01_Data20181104(t *testing.T) {
 func TestIntegracaoHTTP_RISCO01_RefreshToken(t *testing.T) {
 	c := novoItCtx(t)
 	usu := c.usuario("UREFRESH", 0, true)
-	svc := novoRefreshSvc()
 	ctx := context.Background()
 
 	novoToken := func(t *testing.T, expira time.Time) string {
 		t.Helper()
-		tok, err := svc.GenerateRefreshToken(ctx, c.db, usu, "127.0.0.1", "go-test")
+		tok, err := emitirRefresh(ctx, c.db, usu, "127.0.0.1", "go-test")
 		require.NoError(t, err)
 		_, err = c.db.Exec("UPDATE refresh_tokens SET expires_at = ? WHERE token_hash = ?", expira, hashRefresh(tok))
 		require.NoError(t, err)
@@ -748,7 +747,7 @@ func TestIntegracaoHTTP_RISCO01_RefreshToken(t *testing.T) {
 
 	t.Run("expires_at gravado no fuso -03", func(t *testing.T) {
 		antes := time.Now()
-		tok, err := svc.GenerateRefreshToken(ctx, c.db, usu, "127.0.0.1", "go-test")
+		tok, err := emitirRefresh(ctx, c.db, usu, "127.0.0.1", "go-test")
 		require.NoError(t, err)
 		var gravado string
 		require.NoError(t, c.db.QueryRow("SELECT DATE_FORMAT(expires_at,'%Y-%m-%d %H:%i') FROM refresh_tokens WHERE token_hash = ?",

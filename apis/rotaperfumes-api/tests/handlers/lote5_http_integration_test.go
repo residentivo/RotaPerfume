@@ -41,9 +41,8 @@ func refreshIT(t *testing.T, c *itCtx, tok string) (int, string, string) {
 func TestIntegracaoHTTP_SEC04_JanelaDeGraca(t *testing.T) {
 	c := novoItCtx(t)
 	usu := c.usuario("USEC04", 0, true)
-	svc := novoRefreshSvc()
 	novoToken := func(t *testing.T) string {
-		tok, err := svc.GenerateRefreshToken(context.Background(), c.db, usu, "127.0.0.1", "go-test")
+		tok, err := emitirRefresh(context.Background(), c.db, usu, "127.0.0.1", "go-test")
 		require.NoError(t, err)
 		return tok
 	}

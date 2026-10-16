@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"context"
 	"database/sql"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/rotaperfumes/shared/comercial/comercialmysql"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/db"
-	"github.com/rotaperfumes/shared/identidade"
 	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/rotaperfumes/shared/identidade/identidademysql"
@@ -97,13 +95,4 @@ func NovoIdentidadeHTTP(c *identidadeapp.Casos, cfg *config.Config) IdentidadeHT
 // caso de uso StatusParaAutenticacao.
 func NovoVerificadorStatus(pool *sql.DB) httpx.ConsultaStatus {
 	return identidademysql.NovoUsuarios(pool)
-}
-
-// assinanteAlerta liga o evento de reuso ao notificador de alerta (SEC-09).
-func assinanteAlerta(n interface {
-	Notificar(userID, tokenID int64, ip, ua string)
-}) func(context.Context, identidade.ReusoDeRefreshDetectado) {
-	return func(_ context.Context, e identidade.ReusoDeRefreshDetectado) {
-		n.Notificar(e.UsuarioID, e.TokenID, e.IP, e.UserAgent)
-	}
 }

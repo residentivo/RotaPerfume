@@ -79,7 +79,7 @@ func (r *Vendedores) resumos(ctx context.Context, op, q string, args ...any) ([]
 // PorID busca o vendedor (ativo ou não); ErrVendedorNaoEncontrado sem linha.
 func (r *Vendedores) PorID(ctx context.Context, id int64) (*comercial.Vendedor, error) {
 	q := "SELECT " + vendedorColunas + " FROM vendedores WHERE id = ? LIMIT 1"
-	v, err := lerUma(r.q.QueryRowContext(ctx, q, id), comercial.ErrVendedorNaoEncontrado, "vendedor", func(v *comercial.Vendedor) []any {
+	v, err := db.LerUma(r.q.QueryRowContext(ctx, q, id), comercial.ErrVendedorNaoEncontrado, "comercialmysql: ler vendedor", func(v *comercial.Vendedor) []any {
 		return []any{&v.ID, &v.Nome, &v.Regiao, &v.UF, &v.DataAdmissao, &v.DataDesligamento, &v.MetaMensal, &v.CreatedAt, &v.UpdatedAt}
 	})
 	if err != nil {
@@ -91,7 +91,7 @@ func (r *Vendedores) PorID(ctx context.Context, id int64) (*comercial.Vendedor, 
 
 // Existe informa se há vendedor com o id (ativo ou não).
 func (r *Vendedores) Existe(ctx context.Context, id int64) (bool, error) {
-	return existe(ctx, r.q, arqVendedores, "Vendedores.Existe", "existe vendedor", `SELECT 1 FROM vendedores WHERE id = ? LIMIT 1`, id)
+	return db.Existe(ctx, r.q, arqVendedores, "Vendedores.Existe", "comercialmysql: existe vendedor", `SELECT 1 FROM vendedores WHERE id = ? LIMIT 1`, id)
 }
 
 // Desligado informa se o vendedor tem data_desligamento. Consulta própria a
@@ -115,7 +115,7 @@ func (r *Vendedores) Inserir(ctx context.Context, v *comercial.Vendedor) error {
 	const q = `
 		INSERT INTO vendedores (nome, regiao, uf, data_admissao, data_desligamento, meta_mensal)
 		VALUES (?, ?, ?, ?, ?, ?)`
-	id, err := inserir(ctx, r.q, "inserir vendedor", q, v.Nome, v.Regiao, v.UF, v.DataAdmissao, v.DataDesligamento, v.MetaMensal)
+	id, err := db.Inserir(ctx, r.q, "comercialmysql: inserir vendedor", q, v.Nome, v.Regiao, v.UF, v.DataAdmissao, v.DataDesligamento, v.MetaMensal)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (r *Vendedores) Atualizar(ctx context.Context, id int64, v *comercial.Vende
 		UPDATE vendedores
 		SET nome = ?, regiao = ?, uf = ?, data_admissao = ?, meta_mensal = ?
 		WHERE id = ?`
-	return execPorID(ctx, r.q, arqVendedores, "Vendedores.Atualizar", "atualizar vendedor", comercial.ErrVendedorNaoEncontrado,
+	return db.ExecPorID(ctx, r.q, arqVendedores, "Vendedores.Atualizar", "comercialmysql: atualizar vendedor", comercial.ErrVendedorNaoEncontrado,
 		q, v.Nome, v.Regiao, v.UF, v.DataAdmissao, v.MetaMensal, id)
 }
 
@@ -141,7 +141,7 @@ func (r *Vendedores) DefinirDesligamento(ctx context.Context, id int64, quando *
 	if quando != nil {
 		data = sql.NullTime{Time: *quando, Valid: true}
 	}
-	return execPorID(ctx, r.q, arqVendedores, "Vendedores.DefinirDesligamento", "definir desligamento vendedor",
+	return db.ExecPorID(ctx, r.q, arqVendedores, "Vendedores.DefinirDesligamento", "comercialmysql: definir desligamento vendedor",
 		comercial.ErrVendedorNaoEncontrado, q, data, id)
 }
 
@@ -151,6 +151,6 @@ func (r *Vendedores) DefinirDesligamento(ctx context.Context, id int64, quando *
 // do desligamento (I-09).
 func (r *Vendedores) MarcarDesligamento(ctx context.Context, id int64, quando time.Time) error {
 	const q = `UPDATE vendedores SET data_desligamento = COALESCE(data_desligamento, ?) WHERE id = ?`
-	return execPorID(ctx, r.q, arqVendedores, "Vendedores.MarcarDesligamento", "marcar desligamento vendedor",
+	return db.ExecPorID(ctx, r.q, arqVendedores, "Vendedores.MarcarDesligamento", "comercialmysql: marcar desligamento vendedor",
 		comercial.ErrVendedorNaoEncontrado, q, quando, id)
 }

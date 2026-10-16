@@ -1,5 +1,5 @@
-// Package testeemail_test testa por fora o tools/testeemail (os testes
-// internos do pacote continuam em tools/testeemail até o ARQ-07, §7.2-8).
+// Package testeemail_test testa por fora o tools/testeemail (desde o ARQ-07,
+// todos os testes do pacote ficam aqui, §7.2-8).
 package testeemail_test
 
 import (

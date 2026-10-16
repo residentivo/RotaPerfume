@@ -1,7 +1,7 @@
 package handlers_test
 
 // ARQ-05: contrato JSON byte a byte das rotas de Vendas contra cópias
-// CONGELADAS dos models legados apagados (shared/models/pedido.go,
+// CONGELADAS dos models legados apagados (models/pedido.go,
 // item_pedido.go, pagamento.go e repositories.PedidoListagem/
 // ItemPedidoDetalhe/PedidoDetalhe), serializadas pelo envelope legado (map +
 // Encoder); e os quatro níveis do vlog sem valores digitados (P1, O7).

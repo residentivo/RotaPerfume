@@ -61,8 +61,8 @@ func bug09Casos() []bug09Caso {
 					AddRow(id, "Vendedor Do Banco", "Sudeste", "SP", criado, nil, 5000.0, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				v, err := NewVendedorService(db, vendedorTestCfg(verbose)).
-					CreateVendedor(context.Background(), db, validVendedorInput())
+				v, err := casosComercial(db, 0).
+					CriarVendedor(context.Background(), principalAdmin(), validVendedorInput())
 				if err != nil || v == nil {
 					return nil, err
 				}
@@ -113,8 +113,8 @@ func bug09Casos() []bug09Caso {
 					AddRow(id, int64(1), "Boleto", uint8(1), 100.0, 0.0, 100.0, criado, nil, "Em aberto", criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				p, err := NewPagamentoService(db, pagamentoTestCfg(verbose)).
-					CreatePagamento(context.Background(), db, validPagamentoInput())
+				p, err := casosVendas(db, 0).
+					CriarPagamento(context.Background(), principalAdmin(), lerFixo(validPagamentoInput()))
 				if err != nil || p == nil {
 					return nil, err
 				}
@@ -146,8 +146,8 @@ func bug09Casos() []bug09Caso {
 				}).AddRow(id, int64(100), int64(1), "Origem Do Banco", criado, "Prospeccao", 10.0, 1000.0, nil, nil, nil, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				o, err := NewOportunidadeService(db, oportunidadeTestCfg(verbose)).
-					CreateOportunidade(context.Background(), db, validOportunidadeInput())
+				o, err := casosComercial(db, 0).
+					CriarOportunidade(context.Background(), principalAdmin(), fixo(validOportunidadeInput()))
 				if err != nil || o == nil {
 					return nil, err
 				}
@@ -178,8 +178,8 @@ func bug09Casos() []bug09Caso {
 				}).AddRow(id, int64(100), int64(1), criado, "Negativa", 30, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				v, err := NewVisitaService(db, visitaTestCfg(verbose)).
-					CreateVisita(context.Background(), db, validVisitaInput())
+				v, err := casosComercial(db, 0).
+					CriarVisita(context.Background(), principalAdmin(), fixo(validVisitaInput()))
 				if err != nil || v == nil {
 					return nil, err
 				}

@@ -57,7 +57,7 @@ func (r *Carteiras) ClientesDoVendedor(ctx context.Context, vendedorID int64) ([
 }
 
 func scanClienteResumo(s db.Linha) (*comercial.ClienteResumo, error) {
-	return lerUma(s, comercial.ErrVinculoNaoEncontrado, "cliente resumo", func(c *comercial.ClienteResumo) []any {
+	return db.LerUma(s, comercial.ErrVinculoNaoEncontrado, "comercialmysql: ler cliente resumo", func(c *comercial.ClienteResumo) []any {
 		return []any{&c.ID, &c.CNPJ, &c.RazaoSocial, &c.Segmento, &c.Cidade, &c.UF, &c.CarteiraID, &c.DataInicio, &c.DataFim}
 	})
 }
@@ -91,7 +91,7 @@ func (r *Carteiras) VinculoDoDia(ctx context.Context, clienteID, vendedorID int6
 }
 
 func (r *Carteiras) vinculo(ctx context.Context, rotulo, q string, args ...any) (*comercial.Carteira, error) {
-	c, err := lerUma(r.q.QueryRowContext(ctx, q, args...), comercial.ErrVinculoNaoEncontrado, "carteira", func(c *comercial.Carteira) []any {
+	c, err := db.LerUma(r.q.QueryRowContext(ctx, q, args...), comercial.ErrVinculoNaoEncontrado, "comercialmysql: ler carteira", func(c *comercial.Carteira) []any {
 		return []any{&c.CarteiraIDOrigem, &c.ClienteID, &c.VendedorID, &c.DataInicio, &c.DataFim, &c.CreatedAt, &c.UpdatedAt}
 	})
 	vlog.Printf(arqCarteiras, rotulo, "SELECT carteiras encontrado=%t", err == nil)
@@ -105,7 +105,7 @@ func (r *Carteiras) Inserir(ctx context.Context, c *comercial.Carteira) error {
 	const q = `
 		INSERT INTO carteiras (cliente_id, vendedor_id, data_inicio, data_fim)
 		VALUES (?, ?, ?, ?)`
-	id, err := inserir(ctx, r.q, "inserir carteira", q, c.ClienteID, c.VendedorID, c.DataInicio, c.DataFim)
+	id, err := db.Inserir(ctx, r.q, "comercialmysql: inserir carteira", q, c.ClienteID, c.VendedorID, c.DataInicio, c.DataFim)
 	if db.ChaveDuplicada(err, qualquerIndice) {
 		return comercial.ErrVinculoDuplicado
 	}
@@ -119,19 +119,19 @@ func (r *Carteiras) Inserir(ctx context.Context, c *comercial.Carteira) error {
 
 // Encerrar grava data_fim (troca de vendedor sem apagar o histórico).
 func (r *Carteiras) Encerrar(ctx context.Context, id int64, fim time.Time) error {
-	return execPorID(ctx, r.q, arqCarteiras, "Carteiras.Encerrar", "encerrar vinculo carteira", comercial.ErrVinculoNaoEncontrado,
+	return db.ExecPorID(ctx, r.q, arqCarteiras, "Carteiras.Encerrar", "comercialmysql: encerrar vinculo carteira", comercial.ErrVinculoNaoEncontrado,
 		`UPDATE carteiras SET data_fim = ? WHERE carteira_id_origem = ?`, fim, id)
 }
 
 // Reabrir limpa data_fim (revinculação no mesmo dia do encerramento).
 func (r *Carteiras) Reabrir(ctx context.Context, id int64) error {
-	return execPorID(ctx, r.q, arqCarteiras, "Carteiras.Reabrir", "reativar vinculo carteira", comercial.ErrVinculoNaoEncontrado,
+	return db.ExecPorID(ctx, r.q, arqCarteiras, "Carteiras.Reabrir", "comercialmysql: reativar vinculo carteira", comercial.ErrVinculoNaoEncontrado,
 		`UPDATE carteiras SET data_fim = NULL WHERE carteira_id_origem = ?`, id)
 }
 
 // Excluir remove o vínculo (sem chamador HTTP; mantido com os testes do
 // repositório legado).
 func (r *Carteiras) Excluir(ctx context.Context, id int64) error {
-	return execPorID(ctx, r.q, arqCarteiras, "Carteiras.Excluir", "delete carteira", comercial.ErrVinculoNaoEncontrado,
+	return db.ExecPorID(ctx, r.q, arqCarteiras, "Carteiras.Excluir", "comercialmysql: delete carteira", comercial.ErrVinculoNaoEncontrado,
 		`DELETE FROM carteiras WHERE carteira_id_origem = ?`, id)
 }

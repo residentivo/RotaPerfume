@@ -6,50 +6,11 @@
 
 **Decisões do usuário:** estratégia **incremental por bounded context**: cada lote termina com build e testes verdes e um commit na branch `refactor/ddd`. Escopo: API (`apis/rotaperfumes-api`) + módulo `apis/shared` (repositories, models, services, importers e CLIs).
 
-**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (no ARQ-03, o 🟣 SecBrain revisa depois, junto com o 🔴 TestBrain; ver decisão no card). ARQ-00 (commit `cd12d47`), ARQ-01 (commit `0e7e757`), ARQ-02 (commit `17502da`), ARQ-03 (commit `c412d10`), ARQ-04 (commit `fdaa7d9`) e ARQ-05 (commit `3e33f6f`) concluídos, ver `feito.md`; ARQ-07 e ARQ-08 estão em `afazer.md`, na ordem de execução.
+**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (no ARQ-03, o 🟣 SecBrain revisa depois, junto com o 🔴 TestBrain; ver decisão no card). ARQ-00 (commit `cd12d47`), ARQ-01 (commit `0e7e757`), ARQ-02 (commit `17502da`), ARQ-03 (commit `c412d10`), ARQ-04 (commit `fdaa7d9`), ARQ-05 (commit `3e33f6f`), ARQ-06 (commit `adce2b8`) e ARQ-07 (commit `<HASH-ARQ-07>`) concluídos, ver `feito.md`; ARQ-08 está em `afazer.md`.
 
-**Passo atual:** ARQ-06 (Analytics/Dashboard): aprovado pelo 🟣 SecBrain e pelo 🔴 TestBrain; 🟡 BackBrain aplica os ajustes finais e depois vem o commit. Ver card abaixo.
+**Passo atual:** ARQ-08 (documentação e fechamento do Lote 21, 🔵 SubBrain), aguardando início. Card em `afazer.md`.
 
 **Pendência opcional (não é card):** o race detector (`go test -race`) está indisponível nesta máquina porque falta gcc/MinGW (cgo). Sugestão ao usuário: instalar o MinGW-w64 localmente ou rodar `go test -race ./...` no Jenkins (Linux).
-
----
-
-## ARQ-06: contexto Analytics (Dashboard) — prioridade MÉDIA
-
-**Status:** em execução (Lote 21, desde 2026-10-15; ARQ-05 concluído em `3e33f6f`)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain + 🟣 SecBrain
-**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
-
-**Descrição:** migrar o Dashboard como read model (lado de consulta, no estilo CQRS leve) para `apis/shared/analytics{,app,mysql}` + `apis/rotaperfumes-api/internal/analyticshttp`.
-
-**Itens do card:**
-- read models de consulta (CQRS leve), sem passar pelos agregados de escrita;
-- escopo por carteira via `Filtro()` (mesmo padrão de Comercial/Vendas; zero value = restrito);
-- teste de arquitetura `TestARQ_SprintfSQLSoConstantes` (SQL montado com `Sprintf` só a partir de constantes);
-- remoção da ponte `apis/rotaperfumes-api/handlers/scope.go` (último consumidor era o dashboard).
-
-**Lições do ARQ-05 (2026-10-15):** zero value do escopo nunca pode ser fail-open (mutação sobrevivente no ARQ-05); filtros de vendedor vindos da query devem ser ignorados na listagem restrita (`TestARQ05_ListagemRestrita_IgnoraVendedorDaQuery`); preferir `require.IsType`/`, ok` nas asserções de tipo dos testes de handler (ver TST-06).
-
-**Histórico (2026-10-15):**
-- 🟡 BackBrain migrou Analytics/Dashboard (`shared/analytics{,app,mysql}` + `internal/analyticshttp`); removidos `handlers/{dashboard_handler,response,scope}.go`, `services/{dashboard_service,paginacao}.go` e `shared/repositories/{cliente,dashboard}_repository.go`.
-- 🟣 SecBrain: **APROVADO**, 0 bloqueantes. D-01..D-03, O1 e O5 atendidos; a remoção da ponte `handlers/scope.go` não deixou caminho sem escopo; o ranking do perfil restrito é igual ao legado.
-- 🔴 TestBrain: **APROVADO**. R1 ok (shared 740→761 testes, API 833→839); cobertura combinada 89,416%→89,418%, descobertos 881→852; 31/31 mutantes mortos pelos testes existentes.
-- **Incidente:** houve um incidente no script de mutação do 🔴 TestBrain; foi revertido e a integridade foi verificada por md5 do perfil de cobertura.
-
-**Decisões (🤍 MegaBrain):**
-- aplicar agora as ressalvas #2 (erro ignorado no Ranking) e #6 (`Relogio` no lugar de `time.Now()` na série) do 🟣 SecBrain;
-- demais ressalvas fora do lote: BUG-18 (IN sem limite nas metas e detecção de tabela ausente por texto) e nota no SEC-16 (overflow do offset no ranking);
-- ARQ-07: cobertura mantida extraindo a lógica dos `main` de `cmd/*` para pacotes testáveis (sem afrouxar o portão) e pendências (k)–(n) registradas no card.
-
-**Passo atual:** 🟡 BackBrain aplicando os ajustes finais (SecBrain #2 e #6); depois, build/testes verdes e commit do ARQ-06 na branch `refactor/ddd`.
-
-**Critério de aceite:**
-- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro);
-- `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
-- sem perda de cobertura;
-- logs `vlog` preservados;
-- commit do lote na branch `refactor/ddd`.
 
 ---
 

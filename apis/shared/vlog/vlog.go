@@ -34,6 +34,7 @@ package vlog
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"sync/atomic"
 )
@@ -64,4 +65,25 @@ func MaskEmail(email string) string {
 		return "***"
 	}
 	return email[:1] + "***" + email[at:]
+}
+
+// OcultarEmail devolve o texto de err com cada e-mail trocado por
+// "[email-usuario]". Servidores SMTP costumam ecoar o destinatário nas
+// respostas de erro (ex.: 550 <a@b>), e o log nunca deve levar esse e-mail
+// (SEC-09, NB-1). E-mail vazio é ignorado (sem nenhum, o texto volta igual).
+//
+// ARQ-07 NB-A: cada e-mail é aparado e a troca ignora maiúsculas (o servidor
+// pode ecoar o endereço normalizado em minúsculas). NB-B: aceita vários
+// (usuário e destino do envio).
+func OcultarEmail(err error, emails ...string) string {
+	msg := err.Error()
+	for _, email := range emails {
+		email = strings.TrimSpace(email)
+		if email == "" {
+			continue
+		}
+		re := regexp.MustCompile("(?i)" + regexp.QuoteMeta(email))
+		msg = re.ReplaceAllLiteralString(msg, "[email-usuario]")
+	}
+	return msg
 }

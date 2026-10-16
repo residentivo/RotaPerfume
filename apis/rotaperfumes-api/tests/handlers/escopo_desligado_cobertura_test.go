@@ -370,7 +370,7 @@ func TestResetPassword_VendedorDesligado_Acessivel(t *testing.T) {
 	defer db.Close()
 
 	cfg := testCfg()
-	hash, _ := novoAuthCrypto().HashPassword(cfg, "senha-atual")
+	hash, _ := gerarHashSenha(cfg.HashSenha, "senha-atual")
 	now := time.Now()
 	mock.ExpectQuery(reUsuarioMe).
 		WithArgs(desligUserID).

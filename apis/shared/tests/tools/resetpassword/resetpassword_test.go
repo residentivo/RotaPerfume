@@ -45,7 +45,7 @@ var (
 	reListar      = "SELECT id, nome, email, role, ativo"
 )
 
-var colunasLista = []string{"id", "nome", "email", "role", "ativo", "preview", "status"}
+var colunasLista = []string{"id", "nome", "email", "role", "ativo", "algoritmo", "status"}
 
 // hashDe é um sqlmock.Argument que só casa com um hash Argon2id da senha
 // informada, gerado com o pepper e os parâmetros de hsTeste.
@@ -92,9 +92,9 @@ func geradorProibido(t *testing.T) resetpassword.PasswordGenerator {
 
 func listaComAdmin() *sqlmock.Rows {
 	return sqlmock.NewRows(colunasLista).
-		AddRow(1, "Admin", resetpassword.AdminEmail, "admin", 1, "$argon2id$v=19$m=65536", "OK").
-		AddRow(2, "Vendedor", "vend@x.com", "normal", 1, "$2a$12$XXXXPLACEHOLDER", "PLACEHOLDER").
-		AddRow(3, "Antigo", "antigo@x.com", "normal", 1, "$2a$12$abc", "BCRYPT_LEGADO")
+		AddRow(1, "Admin", resetpassword.AdminEmail, "admin", 1, "$argon2id", "OK").
+		AddRow(2, "Vendedor", "vend@x.com", "normal", 1, "$2a", "PLACEHOLDER").
+		AddRow(3, "Antigo", "antigo@x.com", "normal", 1, "$2a", "BCRYPT_LEGADO")
 }
 
 // ---------------------------------------------------------------------------

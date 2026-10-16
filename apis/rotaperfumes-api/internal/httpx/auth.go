@@ -103,7 +103,8 @@ func (a *Autenticador) autenticar(next http.Handler, exigeAdmin bool) http.Handl
 		if !role.Conhecido() {
 			log.Printf("[auth] role desconhecido user_id=%d", claims.UserID) // R-a: segue restrito
 		}
-		next.ServeHTTP(w, r.WithContext(comPrincipal(r.Context(), p)))
+		// N4: o path vai junto, só para os logs operacionais da aplicação.
+		next.ServeHTTP(w, r.WithContext(kernel.ComRota(comPrincipal(r.Context(), p), r.URL.Path)))
 	})
 }
 
@@ -154,13 +155,14 @@ func (a *Autenticador) conferirUsuario(r *http.Request, c identidade.ClaimsAcess
 	st, err := a.status.StatusParaAutenticacao(r.Context(), c.UserID)
 	switch {
 	case errors.Is(err, identidade.ErrUsuarioNaoEncontrado):
-		log.Printf("[auth] acesso negado: user_id=%d inexistente (token válido) %s %s", c.UserID, r.Method, r.URL.Path)
+		// ARQ-07 NB-C: path decodificado saneado (sem quebra de linha no log).
+		log.Printf("[auth] acesso negado: user_id=%d inexistente (token válido) %s %s", c.UserID, r.Method, kernel.SanearRota(r.URL.Path))
 		return "", recusa{http.StatusUnauthorized, msgUsuarioInativo}
 	case err != nil:
 		log.Printf("[auth] erro ao verificar usuário user_id=%d: %v", c.UserID, err)
 		return "", recusa{http.StatusInternalServerError, msgErroInterno}
 	case !st.Ativo:
-		log.Printf("[auth] acesso negado: user_id=%d inativo %s %s", c.UserID, r.Method, r.URL.Path)
+		log.Printf("[auth] acesso negado: user_id=%d inativo %s %s", c.UserID, r.Method, kernel.SanearRota(r.URL.Path))
 		return "", recusa{http.StatusUnauthorized, msgUsuarioInativo}
 	case st.TokenAnteriorAoCorte(c.EmitidoEm):
 		log.Printf("[auth] acesso negado: user_id=%d token anterior ao corte de sessão iat=%d corte=%d",

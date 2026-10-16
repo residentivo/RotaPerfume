@@ -71,8 +71,8 @@ func TestARQ04_PonteEscopo_SemPrincipal_SemAcessoSemSQL(t *testing.T) {
 			defer db.Close()
 			escopo := bootstrap.NovoComercial(db).Escopo()
 			h := c.handler(
-				novoPedidoHandler(db, testCfg()),
-				novoPagamentoHandler(db, testCfg()),
+				bootstrap.NovoVendasHTTP(bootstrap.NovoVendas(db, bootstrap.NovoComercial(db).Escopo())).Pedido,
+				bootstrap.NovoVendasHTTP(bootstrap.NovoVendas(db, bootstrap.NovoComercial(db).Escopo())).Pagamento,
 				bootstrap.NovoAnalyticsHTTP(bootstrap.NovoAnalytics(db, escopo)),
 			)
 

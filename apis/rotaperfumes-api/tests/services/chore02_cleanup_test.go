@@ -1,9 +1,10 @@
 package services_test
 
-// CHORE-02 (Lote 12): RefreshTokenService.CleanupExpired com relógio fixo.
+// CHORE-02 (Lote 12): RefreshTokenService.CleanupExpired com relógio fixo
+// (ARQ-07: o caso de uso identidadeapp.LimparRefreshExpirados, sem repassador).
 //   - corte = now() - retenção; retenção padrão 720h; SetRetencao(d <= 0)
 //     mantém o padrão; retenção < 24h vira 24h dentro do CleanupExpired.
-//   - DELETE em lotes de RefreshCleanupLote (1000) até um lote vir
+//   - DELETE em lotes de identidadeapp.LoteLimpezaRefresh (1000) até um lote vir
 //     incompleto; args exatamente (corte, 1000).
 //   - erro no N-ésimo lote → (soma parcial, erro);
 //   - ctx cancelado → (soma parcial, ctx.Err()), sem novo DELETE;
@@ -12,8 +13,10 @@ package services_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 	"strings"
 	"testing"
 	"time"
@@ -27,41 +30,40 @@ const chore02DeleteSQL = `DELETE FROM refresh_tokens WHERE expires_at < \? ORDER
 
 var chore02T0 = time.Date(2026, 9, 27, 3, 0, 0, 0, time.Local)
 
-func chore02Svc() *RefreshTokenService {
-	return NewRefreshTokenServiceWithClock(func() time.Time { return chore02T0 })
+// chore02Casos: os casos de uso de Identidade com o relógio fixo em chore02T0.
+func chore02Casos(db *sql.DB, o identidadeapp.Opcoes) *identidadeapp.Casos {
+	return novosCasos(db, nil, nil, func() time.Time { return chore02T0 }, o)
 }
 
 func TestCHORE02_Constantes(t *testing.T) {
-	assert.Equal(t, 720*time.Hour, RefreshTokenRetencaoPadrao)
-	assert.Equal(t, 24*time.Hour, RefreshTokenRetencaoMinima)
-	assert.Equal(t, 1000, RefreshCleanupLote)
+	assert.Equal(t, 720*time.Hour, identidadeapp.RetencaoRefreshPadrao)
+	assert.Equal(t, 24*time.Hour, identidadeapp.RetencaoRefreshMinima)
+	assert.Equal(t, 1000, identidadeapp.LoteLimpezaRefresh)
 }
 
 func TestCHORE02_CleanupExpired_Corte(t *testing.T) {
 	casos := []struct {
-		nome       string
-		configurar func(s *RefreshTokenService)
-		retencao   time.Duration
+		nome     string
+		opcoes   identidadeapp.Opcoes
+		retencao time.Duration
 	}{
-		{"padrão (sem Set) → 720h", func(*RefreshTokenService) {}, 720 * time.Hour},
-		{"Set(48h)", func(s *RefreshTokenService) { s.SetRetencao(48 * time.Hour) }, 48 * time.Hour},
-		{"Set(24h) no mínimo", func(s *RefreshTokenService) { s.SetRetencao(24 * time.Hour) }, 24 * time.Hour},
-		{"Set(8760h)", func(s *RefreshTokenService) { s.SetRetencao(8760 * time.Hour) }, 8760 * time.Hour},
-		{"Set(1h) abaixo do mínimo vira 24h", func(s *RefreshTokenService) { s.SetRetencao(time.Hour) }, 24 * time.Hour},
-		{"Set(1ns) abaixo do mínimo vira 24h", func(s *RefreshTokenService) { s.SetRetencao(time.Nanosecond) }, 24 * time.Hour},
-		{"Set(0) mantém o padrão", func(s *RefreshTokenService) { s.SetRetencao(0) }, 720 * time.Hour},
-		{"Set(negativo) mantém o padrão", func(s *RefreshTokenService) { s.SetRetencao(-time.Hour) }, 720 * time.Hour},
+		{"padrão (sem Set) → 720h", identidadeapp.Opcoes{}, 720 * time.Hour},
+		{"Set(48h)", identidadeapp.Opcoes{RetencaoRefresh: 48 * time.Hour}, 48 * time.Hour},
+		{"Set(24h) no mínimo", identidadeapp.Opcoes{RetencaoRefresh: 24 * time.Hour}, 24 * time.Hour},
+		{"Set(8760h)", identidadeapp.Opcoes{RetencaoRefresh: 8760 * time.Hour}, 8760 * time.Hour},
+		{"Set(1h) abaixo do mínimo vira 24h", identidadeapp.Opcoes{RetencaoRefresh: time.Hour}, 24 * time.Hour},
+		{"Set(1ns) abaixo do mínimo vira 24h", identidadeapp.Opcoes{RetencaoRefresh: time.Nanosecond}, 24 * time.Hour},
+		{"Set(0) mantém o padrão", identidadeapp.Opcoes{RetencaoRefresh: 0}, 720 * time.Hour},
+		{"Set(negativo) mantém o padrão", identidadeapp.Opcoes{RetencaoRefresh: -time.Hour}, 720 * time.Hour},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
 			db, mock := newRefreshTokenTestDB(t)
 			corte := chore02T0.Add(-c.retencao)
-			mock.ExpectExec(chore02DeleteSQL).WithArgs(tempoIgual{corte}, RefreshCleanupLote).
+			mock.ExpectExec(chore02DeleteSQL).WithArgs(tempoIgual{corte}, identidadeapp.LoteLimpezaRefresh).
 				WillReturnResult(sqlmock.NewResult(0, 0))
 
-			svc := chore02Svc()
-			c.configurar(svc)
-			n, err := svc.CleanupExpired(context.Background(), db)
+			n, err := chore02Casos(db, c.opcoes).LimparRefreshExpirados(context.Background())
 			require.NoError(t, err)
 			assert.Zero(t, n)
 			assert.False(t, corte.After(chore02T0.Add(-24*time.Hour)), "invariante: nunca apaga token com expires_at >= agora")
@@ -107,7 +109,7 @@ func TestCHORE02_CleanupExpired_Lotes(t *testing.T) {
 				}
 			}
 
-			n, err := chore02Svc().CleanupExpired(context.Background(), db)
+			n, err := chore02Casos(db, identidadeapp.Opcoes{}).LimparRefreshExpirados(context.Background())
 			assert.Equal(t, c.wantTotal, n)
 			if c.wantErr != nil {
 				assert.ErrorIs(t, err, c.wantErr)
@@ -143,7 +145,7 @@ func TestCHORE02_CleanupExpired_ContextoCancelado(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		n, err := chore02Svc().CleanupExpired(ctx, db)
+		n, err := chore02Casos(db, identidadeapp.Opcoes{}).LimparRefreshExpirados(ctx)
 		assert.Zero(t, n)
 		assert.ErrorIs(t, err, context.Canceled)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -172,7 +174,7 @@ func TestCHORE02_CleanupExpired_ContextoCancelado(t *testing.T) {
 			// Nenhum DELETE depois do cancelamento: um DELETE extra não
 			// programado viraria erro do sqlmock e mudaria o retorno.
 
-			n, err := chore02Svc().CleanupExpired(ctx, db)
+			n, err := chore02Casos(db, identidadeapp.Opcoes{}).LimparRefreshExpirados(ctx)
 			assert.Equal(t, c.wantTotal, n, "devolve o total parcial")
 			assert.ErrorIs(t, err, context.Canceled)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -185,7 +187,7 @@ func TestCHORE02_CleanupExpired_ContextoCancelado(t *testing.T) {
 		db, mock := newRefreshTokenTestDB(t)
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 		defer cancel()
-		n, err := chore02Svc().CleanupExpired(ctx, db)
+		n, err := chore02Casos(db, identidadeapp.Opcoes{}).LimparRefreshExpirados(ctx)
 		assert.Zero(t, n)
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -201,7 +203,7 @@ func TestCHORE02_CleanupExpired_MuitosLotes(t *testing.T) {
 		mock.ExpectExec(chore02DeleteSQL).WillReturnResult(sqlmock.NewResult(0, 1000))
 	}
 	mock.ExpectExec(chore02DeleteSQL).WillReturnResult(sqlmock.NewResult(0, 1))
-	n, err := chore02Svc().CleanupExpired(context.Background(), db)
+	n, err := chore02Casos(db, identidadeapp.Opcoes{}).LimparRefreshExpirados(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, int64(cheios*1000+1), n, fmt.Sprintf("%d lotes", cheios+1))
 	assert.NoError(t, mock.ExpectationsWereMet())

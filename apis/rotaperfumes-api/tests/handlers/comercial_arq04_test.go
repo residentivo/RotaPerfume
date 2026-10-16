@@ -8,6 +8,7 @@ package handlers_test
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,7 +24,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/internal/vendashttp"
 )
 
-// Cópias congeladas de shared/models (vendedor.go, cliente.go, visita.go,
+// Cópias congeladas dos models legados apagados (vendedor.go, cliente.go, visita.go,
 // oportunidade.go) e de repositories.ClienteResumo/VendedorResumo.
 type (
 	legadoVendedor struct {
@@ -228,7 +229,7 @@ func TestARQ04_GestaoSemPrincipal_500(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
-	h := novoVendedorHandler(db, testCfg())
+	h := bootstrap.NovoComercialHTTP(bootstrap.NovoComercial(db)).Vendedor
 
 	for nome, chamar := range map[string]func(w http.ResponseWriter){
 		"CreateVendedor": func(w http.ResponseWriter) {

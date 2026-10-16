@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/rotaperfumes/shared/kernel"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/shared/comercial"
-	"github.com/rotaperfumes/shared/config"
 )
 
 // cnpjCriarCliente chama CreateCliente com o CNPJ informado e devolve o CNPJ
@@ -37,9 +37,9 @@ func cnpjCriarCliente(t *testing.T, raw string) (gravado string, err error) {
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), true).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	// A releitura (BUG-08) não tem expectativa: o service devolve o objeto em memória.
-	c, err := NewClienteService(db, &config.Config{}).CreateCliente(context.Background(), db, ClienteInput{
+	c, err := casosComercial(db, 0).CriarCliente(context.Background(), principalAdmin(), fixo(comercial.DadosCliente{
 		CNPJ: raw, RazaoSocial: "Cliente", Segmento: "Varejo", Cidade: "Curitiba", UF: "PR",
-	})
+	}))
 	if err == nil {
 		require.NoError(t, mock.ExpectationsWereMet())
 		assert.Equal(t, gravado, c.CNPJ, "objeto devolvido = valor gravado")
@@ -56,7 +56,7 @@ func cnpjTermoBusca(t *testing.T, q string) string {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE \(razao_social LIKE \? OR cnpj LIKE \?\)`).
 		WithArgs(dlCapturaTexto{&razao}, dlCapturaTexto{&termo}).
 		WillReturnError(errDLParar)
-	_, _, err := NewClienteService(db, &config.Config{}).ListClientes(context.Background(), db, 1, 10, ClienteFiltro{Q: q})
+	_, _, err := itensETotal(casosComercial(db, 0).ListarClientes(context.Background(), principalAdmin(), comercial.FiltroCliente{Busca: q, Ordenacao: comercial.OrdenacaoClientePadrao()}, kernel.NovaPagina(1, 10)))
 	require.ErrorIs(t, err, errDLParar)
 	require.NoError(t, mock.ExpectationsWereMet())
 	assert.Equal(t, "%"+q+"%", razao, "razão social busca sempre o q original")

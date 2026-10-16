@@ -36,18 +36,15 @@
 package estoque
 
 import (
-	"encoding/csv"
 	"fmt"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rotaperfumes/shared/cmdutil"
-	"github.com/rotaperfumes/shared/vlog"
+	"github.com/rotaperfumes/shared/importers/importkit"
 )
 
 // Tag prefixa os logs e as mensagens de erro do importador.
@@ -79,126 +76,55 @@ type Options struct {
 // open (só se não for dry-run) e faz o upsert. Erros fatais são devolvidos
 // sem o prefixo Tag.
 func Run(opts Options, open cmdutil.Opener) error {
-	vlog.Printf("estoque.go", "Run", "declarando csvPath, err com resultado de ResolveCSVPath()")
-	csvPath, err := ResolveCSVPath(opts.CSVFlag)
-	vlog.Printf("estoque.go", "Run", "verificando se err != nil")
+	i := &importacao{opts: opts}
+	return importkit.Executar(importkit.Etapas{Tag: Tag, Ler: i.ler, Gravar: i.gravar}, opts.DryRun, open)
+}
+
+// importacao guarda o estado de uma execução entre os passos do pipeline.
+type importacao struct {
+	opts      Options
+	rows      []Row
+	invalidas int
+}
+
+func (i *importacao) ler() error {
+	csvPath, err := ResolveCSVPath(i.opts.CSVFlag)
 	if err != nil {
 		return err
 	}
 	log.Printf("importestoque: lendo CSV de %s", csvPath)
-
-	vlog.Printf("estoque.go", "Run", "declarando rows, parseErrs, err com resultado de ReadCSVFile()")
-	rows, parseErrs, err := ReadCSVFile(csvPath)
-	vlog.Printf("estoque.go", "Run", "verificando se err != nil")
-	if err != nil {
+	if i.rows, i.invalidas, err = ReadCSVFile(csvPath); err != nil {
 		return fmt.Errorf("falha ao ler CSV: %w", err)
 	}
-	log.Printf("importestoque: %d linhas válidas lidas, %d linhas com erro de parsing", len(rows), parseErrs)
+	log.Printf("importestoque: %d linhas válidas lidas, %d linhas com erro de parsing", len(i.rows), i.invalidas)
+	return nil
+}
 
-	vlog.Printf("estoque.go", "Run", "verificando se opts.DryRun")
-	if opts.DryRun {
-		log.Printf("importestoque: --dry-run informado, nada foi gravado no banco")
-		return nil
-	}
-
-	vlog.Printf("estoque.go", "Run", "declarando db, err com resultado de open()")
-	db, err := open()
-	vlog.Printf("estoque.go", "Run", "verificando se err != nil")
+func (i *importacao) gravar(db cmdutil.DB) error {
+	inserted, updated, failed, err := UpsertAll(db, i.rows)
 	if err != nil {
 		return err
 	}
-	vlog.Printf("estoque.go", "Run", "agendando defer de db.Close()")
-	defer db.Close()
-
-	vlog.Printf("estoque.go", "Run", "chamando db.Ping() e verificando se err != nil")
-	if err := db.Ping(); err != nil {
-		return fmt.Errorf("ping no banco falhou: %w", err)
-	}
-
-	vlog.Printf("estoque.go", "Run", "declarando inserted, updated, failed, err com resultado de UpsertAll()")
-	inserted, updated, failed, err := UpsertAll(db, rows)
-	vlog.Printf("estoque.go", "Run", "verificando se err != nil")
-	if err != nil {
-		return err
-	}
-
 	log.Printf("importestoque: OK — lidos=%d inseridos_ou_inalterados=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
-		len(rows), inserted, updated, failed, parseErrs)
+		len(i.rows), inserted, updated, failed, i.invalidas)
 	return nil
 }
 
 // ResolveCSVPath decide o caminho final do CSV, na ordem:
 // flag -csv > env ESTOQUE_CSV_PATH > default (dados/erp/estoque.csv na raiz do projeto).
 func ResolveCSVPath(flagValue string) (string, error) {
-	vlog.Printf("estoque.go", "ResolveCSVPath", "verificando condição do if")
-	if flagValue != "" {
-		return flagValue, nil
-	}
-	vlog.Printf("estoque.go", "ResolveCSVPath", "chamando os.Getenv() e verificando condição do if")
-	if v := os.Getenv(EnvCSVPath); v != "" {
-		return v, nil
-	}
-	vlog.Printf("estoque.go", "ResolveCSVPath", "declarando root, err com resultado de cmdutil.FindProjectRoot()")
-	root, err := cmdutil.FindProjectRoot()
-	vlog.Printf("estoque.go", "ResolveCSVPath", "verificando se err != nil")
-	if err != nil {
-		return "", fmt.Errorf("não foi possível localizar a raiz do projeto: %w", err)
-	}
-	return filepath.Join(root, "dados", "erp", "estoque.csv"), nil
+	return importkit.ResolverCSV(flagValue, EnvCSVPath, "dados", "erp", "estoque.csv")
 }
 
 // ReadCSVFile abre o arquivo em path e delega para ReadCSV.
 func ReadCSVFile(path string) (rows []Row, parseErrs int, err error) {
-	vlog.Printf("estoque.go", "ReadCSVFile", "declarando f, err com resultado de os.Open()")
-	f, err := os.Open(path)
-	vlog.Printf("estoque.go", "ReadCSVFile", "verificando se err != nil")
-	if err != nil {
-		return nil, 0, fmt.Errorf("abrindo arquivo: %w", err)
-	}
-	vlog.Printf("estoque.go", "ReadCSVFile", "agendando defer de f.Close()")
-	defer f.Close()
-	return ReadCSV(f)
+	return importkit.LerArquivo(path, ReadCSV)
 }
 
 // ReadCSV lê e normaliza o CSV (com cabeçalho). Linhas malformadas são
 // contadas em parseErrs e puladas (não abortam a importação inteira).
 func ReadCSV(rd io.Reader) (rows []Row, parseErrs int, err error) {
-	vlog.Printf("estoque.go", "ReadCSV", "declarando r com resultado de csv.NewReader()")
-	r := csv.NewReader(rd)
-	vlog.Printf("estoque.go", "ReadCSV", "atribuindo a r.FieldsPerRecord o valor de valor literal")
-	r.FieldsPerRecord = 4
-
-	// Descarta o cabeçalho.
-	vlog.Printf("estoque.go", "ReadCSV", "chamando r.Read() e verificando se err != nil")
-	if _, err := r.Read(); err != nil {
-		return nil, 0, fmt.Errorf("lendo cabeçalho: %w", err)
-	}
-
-	vlog.Printf("estoque.go", "ReadCSV", "declarando lineNum com valor literal")
-	lineNum := 1
-	vlog.Printf("estoque.go", "ReadCSV", "iniciando loop for sem condição (até break)")
-	for {
-		record, err := r.Read()
-		if err == io.EOF {
-			break
-		}
-		lineNum++
-		if err != nil {
-			log.Printf("importestoque: linha %d: erro de leitura CSV: %v", lineNum, err)
-			parseErrs++
-			continue
-		}
-
-		row, err := ParseRow(record)
-		if err != nil {
-			log.Printf("importestoque: linha %d: %v", lineNum, err)
-			parseErrs++
-			continue
-		}
-		rows = append(rows, row)
-	}
-	vlog.Printf("estoque.go", "ReadCSV", "loop concluído; linhas válidas: %d, erros de parsing: %d", len(rows), parseErrs)
-	return rows, parseErrs, nil
+	return importkit.LerCSV(rd, importkit.Formato{Prefixo: "importestoque:", Campos: 4}, ParseRow)
 }
 
 // ParseRow converte um registro CSV bruto em Row, aplicando TRIM,
@@ -249,8 +175,8 @@ func ParseRuptura(raw string) bool {
 // mesmo que uma baixa por faturamento tenha gravado esse par
 // (data_snapshot, sku) antes. Só devolve err se o prepare falhar.
 func UpsertAll(db cmdutil.DB, rows []Row) (inserted, updated, failed int, err error) {
-	vlog.Printf("estoque.go", "UpsertAll", "declarando constante query")
-	const query = `
+	c, err := importkit.Upsert[Row]{
+		SQL: `
 		INSERT INTO estoque
 			(data_snapshot, sku, saldo, ruptura)
 		VALUES
@@ -258,43 +184,15 @@ func UpsertAll(db cmdutil.DB, rows []Row) (inserted, updated, failed int, err er
 		ON DUPLICATE KEY UPDATE
 			saldo = VALUES(saldo),
 			ruptura = VALUES(ruptura)
-	`
-
-	vlog.Printf("estoque.go", "UpsertAll", "declarando stmt, err com resultado de db.Prepare()")
-	stmt, err := db.Prepare(query)
-	vlog.Printf("estoque.go", "UpsertAll", "verificando se err != nil")
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("prepare falhou: %w", err)
-	}
-	vlog.Printf("estoque.go", "UpsertAll", "agendando defer de stmt.Close()")
-	defer stmt.Close()
-
-	vlog.Printf("estoque.go", "UpsertAll", "iniciando loop range sobre rows")
-	for _, row := range rows {
-		result, err := stmt.Exec(
-			row.DataSnapshot.Format(dataSnapshotLayout), row.SKU, row.Saldo, row.Ruptura,
-		)
-		if err != nil {
+	`,
+		ErroPrepare: "prepare falhou",
+		Args: func(row Row) ([]any, bool) {
+			return []any{row.DataSnapshot.Format(dataSnapshotLayout), row.SKU, row.Saldo, row.Ruptura}, true
+		},
+		LogFalha: func(row Row, err error) {
 			log.Printf("importestoque: erro no upsert de data_snapshot=%s sku=%s: %v",
 				row.DataSnapshot.Format(dataSnapshotLayout), row.SKU, err)
-			failed++
-			continue
-		}
-		// Com clientFoundRows=true no DSN (BUG-04), o MySQL devolve, via ON
-		// DUPLICATE KEY UPDATE: 1 = INSERT novo OU linha já existente sem
-		// alteração; 2 = UPDATE com alteração real. Por isso o contador
-		// "inseridos" é rotulado como inseridos_ou_inalterados.
-		affected, _ := result.RowsAffected()
-		switch affected {
-		case 1:
-			inserted++
-		case 2:
-			updated++
-		default:
-			// affected == 0: não ocorre com clientFoundRows=true (mantido por robustez).
-			updated++
-		}
-	}
-	vlog.Printf("estoque.go", "UpsertAll", "loop concluído; itens: %d", len(rows))
-	return inserted, updated, failed, nil
+		},
+	}.Gravar(db, rows)
+	return c.Inseridos, c.Atualizados, c.Falhas, err
 }

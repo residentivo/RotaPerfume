@@ -34,18 +34,15 @@ package pagamentos
 
 import (
 	"database/sql"
-	"encoding/csv"
 	"fmt"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rotaperfumes/shared/cmdutil"
-	"github.com/rotaperfumes/shared/vlog"
+	"github.com/rotaperfumes/shared/importers/importkit"
 )
 
 // Tag prefixa os logs e as mensagens de erro do importador.
@@ -86,79 +83,50 @@ type Options struct {
 // open (só se não for dry-run), carrega o lookup de pedidos e faz o upsert.
 // Erros fatais são devolvidos sem o prefixo Tag.
 func Run(opts Options, open cmdutil.Opener) error {
-	vlog.Printf("pagamentos.go", "Run", "declarando pagamentosCSVPath, err com resultado de ResolveCSVPath()")
-	pagamentosCSVPath, err := ResolveCSVPath(opts.PagamentosCSVFlag, EnvCSVPath, "pagamentos.csv")
-	vlog.Printf("pagamentos.go", "Run", "verificando se err != nil")
+	i := &importacao{opts: opts}
+	return importkit.Executar(importkit.Etapas{Tag: Tag, Ler: i.ler, Gravar: i.gravar}, opts.DryRun, open)
+}
+
+// importacao guarda o estado de uma execução entre os passos do pipeline.
+type importacao struct {
+	opts      Options
+	rows      []Row
+	invalidas int
+}
+
+func (i *importacao) ler() error {
+	csvPath, err := ResolveCSVPath(i.opts.PagamentosCSVFlag, EnvCSVPath, "pagamentos.csv")
 	if err != nil {
 		return err
 	}
-
-	log.Printf("importpagamentos: lendo CSV de pagamentos: %s", pagamentosCSVPath)
-	vlog.Printf("pagamentos.go", "Run", "declarando rows, parseErrs, err com resultado de ReadPagamentosCSVFile()")
-	rows, parseErrs, err := ReadPagamentosCSVFile(pagamentosCSVPath)
-	vlog.Printf("pagamentos.go", "Run", "verificando se err != nil")
-	if err != nil {
+	log.Printf("importpagamentos: lendo CSV de pagamentos: %s", csvPath)
+	if i.rows, i.invalidas, err = ReadPagamentosCSVFile(csvPath); err != nil {
 		return fmt.Errorf("falha ao ler CSV de pagamentos: %w", err)
 	}
-	log.Printf("importpagamentos: %d linhas válidas lidas, %d linhas com erro de parsing", len(rows), parseErrs)
+	log.Printf("importpagamentos: %d linhas válidas lidas, %d linhas com erro de parsing", len(i.rows), i.invalidas)
+	return nil
+}
 
-	vlog.Printf("pagamentos.go", "Run", "verificando se opts.DryRun")
-	if opts.DryRun {
-		log.Printf("importpagamentos: --dry-run informado, nada foi gravado no banco")
-		return nil
-	}
-
-	vlog.Printf("pagamentos.go", "Run", "declarando db, err com resultado de open()")
-	db, err := open()
-	vlog.Printf("pagamentos.go", "Run", "verificando se err != nil")
-	if err != nil {
-		return err
-	}
-	vlog.Printf("pagamentos.go", "Run", "agendando defer de db.Close()")
-	defer db.Close()
-
-	vlog.Printf("pagamentos.go", "Run", "chamando db.Ping() e verificando se err != nil")
-	if err := db.Ping(); err != nil {
-		return fmt.Errorf("ping no banco falhou: %w", err)
-	}
-
-	vlog.Printf("pagamentos.go", "Run", "declarando pedidoIDs, err com resultado de LoadPedidoIDsByOrigem()")
+func (i *importacao) gravar(db cmdutil.DB) error {
 	pedidoIDs, err := LoadPedidoIDsByOrigem(db)
-	vlog.Printf("pagamentos.go", "Run", "verificando se err != nil")
 	if err != nil {
 		return fmt.Errorf("falha ao carregar pedidos: %w", err)
 	}
 	log.Printf("importpagamentos: %d pedidos carregados para lookup", len(pedidoIDs))
 
-	vlog.Printf("pagamentos.go", "Run", "declarando inserted, updated, failed, err com resultado de UpsertPagamentos()")
-	inserted, updated, failed, err := UpsertPagamentos(db, rows, pedidoIDs)
-	vlog.Printf("pagamentos.go", "Run", "verificando se err != nil")
+	inserted, updated, failed, err := UpsertPagamentos(db, i.rows, pedidoIDs)
 	if err != nil {
 		return err
 	}
 	log.Printf("importpagamentos: concluído — lidos=%d inseridos_ou_inalterados=%d atualizados=%d erros_upsert=%d erros_parsing=%d",
-		len(rows), inserted, updated, failed, parseErrs)
+		len(i.rows), inserted, updated, failed, i.invalidas)
 	return nil
 }
 
 // ResolveCSVPath decide o caminho final do CSV, na ordem:
 // flag > env > default (dados/erp/<fileName> na raiz do projeto).
 func ResolveCSVPath(flagValue, envVar, fileName string) (string, error) {
-	vlog.Printf("pagamentos.go", "ResolveCSVPath", "verificando condição do if")
-	if flagValue != "" {
-		return flagValue, nil
-	}
-	vlog.Printf("pagamentos.go", "ResolveCSVPath", "chamando os.Getenv() e verificando condição do if")
-	if v := os.Getenv(envVar); v != "" {
-		return v, nil
-	}
-	vlog.Printf("pagamentos.go", "ResolveCSVPath", "declarando root, err com resultado de cmdutil.FindProjectRoot()")
-	root, err := cmdutil.FindProjectRoot()
-	vlog.Printf("pagamentos.go", "ResolveCSVPath", "verificando se err != nil")
-	if err != nil {
-		return "", fmt.Errorf("não foi possível localizar a raiz do projeto: %w", err)
-	}
-	return filepath.Join(root, "dados", "erp", fileName), nil
+	return importkit.ResolverCSV(flagValue, envVar, "dados", "erp", fileName)
 }
 
 // ---------------------------------------------------------------
@@ -167,55 +135,13 @@ func ResolveCSVPath(flagValue, envVar, fileName string) (string, error) {
 
 // ReadPagamentosCSVFile abre o arquivo em path e delega para ReadPagamentosCSV.
 func ReadPagamentosCSVFile(path string) (rows []Row, parseErrs int, err error) {
-	vlog.Printf("pagamentos.go", "ReadPagamentosCSVFile", "declarando f, err com resultado de os.Open()")
-	f, err := os.Open(path)
-	vlog.Printf("pagamentos.go", "ReadPagamentosCSVFile", "verificando se err != nil")
-	if err != nil {
-		return nil, 0, fmt.Errorf("abrindo arquivo: %w", err)
-	}
-	vlog.Printf("pagamentos.go", "ReadPagamentosCSVFile", "agendando defer de f.Close()")
-	defer f.Close()
-	return ReadPagamentosCSV(f)
+	return importkit.LerArquivo(path, ReadPagamentosCSV)
 }
 
 // ReadPagamentosCSV lê e normaliza pagamentos.csv (com cabeçalho). Linhas
 // malformadas são contadas em parseErrs e puladas.
 func ReadPagamentosCSV(rd io.Reader) (rows []Row, parseErrs int, err error) {
-	vlog.Printf("pagamentos.go", "ReadPagamentosCSV", "declarando r com resultado de csv.NewReader()")
-	r := csv.NewReader(rd)
-	vlog.Printf("pagamentos.go", "ReadPagamentosCSV", "atribuindo a r.FieldsPerRecord o valor de valor literal")
-	r.FieldsPerRecord = 10
-
-	vlog.Printf("pagamentos.go", "ReadPagamentosCSV", "chamando r.Read() e verificando se err != nil")
-	if _, err := r.Read(); err != nil {
-		return nil, 0, fmt.Errorf("lendo cabeçalho: %w", err)
-	}
-
-	vlog.Printf("pagamentos.go", "ReadPagamentosCSV", "declarando lineNum com valor literal")
-	lineNum := 1
-	vlog.Printf("pagamentos.go", "ReadPagamentosCSV", "iniciando loop for sem condição (até break)")
-	for {
-		record, err := r.Read()
-		if err == io.EOF {
-			break
-		}
-		lineNum++
-		if err != nil {
-			log.Printf("importpagamentos: pagamentos.csv linha %d: erro de leitura CSV: %v", lineNum, err)
-			parseErrs++
-			continue
-		}
-
-		row, err := ParsePagamentoRow(record)
-		if err != nil {
-			log.Printf("importpagamentos: pagamentos.csv linha %d: %v", lineNum, err)
-			parseErrs++
-			continue
-		}
-		rows = append(rows, row)
-	}
-	vlog.Printf("pagamentos.go", "ReadPagamentosCSV", "loop concluído; linhas válidas: %d, erros de parsing: %d", len(rows), parseErrs)
-	return rows, parseErrs, nil
+	return importkit.LerCSV(rd, importkit.Formato{Prefixo: "importpagamentos: pagamentos.csv", Campos: 10}, ParsePagamentoRow)
 }
 
 // ParsePagamentoRow converte um registro CSV bruto (pagamento_id,pedido_id,
@@ -333,27 +259,7 @@ func IsValidStatusPagamento(v string) bool {
 // valor usado como FK em pagamentos.pedido_id é o próprio pedido_id_origem
 // — o mapa serve apenas para checar existência (identidade origem -> origem).
 func LoadPedidoIDsByOrigem(db cmdutil.DB) (map[int64]int64, error) {
-	vlog.Printf("pagamentos.go", "LoadPedidoIDsByOrigem", "declarando rows, err com resultado de db.Query()")
-	rows, err := db.Query("SELECT pedido_id_origem FROM pedidos")
-	vlog.Printf("pagamentos.go", "LoadPedidoIDsByOrigem", "verificando se err != nil")
-	if err != nil {
-		return nil, err
-	}
-	vlog.Printf("pagamentos.go", "LoadPedidoIDsByOrigem", "agendando defer de rows.Close()")
-	defer rows.Close()
-
-	vlog.Printf("pagamentos.go", "LoadPedidoIDsByOrigem", "declarando m com resultado de make()")
-	m := make(map[int64]int64)
-	vlog.Printf("pagamentos.go", "LoadPedidoIDsByOrigem", "iniciando loop for enquanto rows.Next()")
-	for rows.Next() {
-		var origem int64
-		if err := rows.Scan(&origem); err != nil {
-			return nil, err
-		}
-		m[origem] = origem
-	}
-	vlog.Printf("pagamentos.go", "LoadPedidoIDsByOrigem", "loop concluído; registros carregados: %d", len(m))
-	return m, rows.Err()
+	return importkit.IDsDeOrigem(db, "SELECT pedido_id_origem FROM pedidos")
 }
 
 // ---------------------------------------------------------------
@@ -368,8 +274,8 @@ func LoadPedidoIDsByOrigem(db cmdutil.DB) (map[int64]int64, error) {
 // lookup são contadas como erro e puladas (não abortam a importação). Só
 // devolve err se o prepare falhar.
 func UpsertPagamentos(db cmdutil.DB, rows []Row, pedidoIDs map[int64]int64) (inserted, updated, failed int, err error) {
-	vlog.Printf("pagamentos.go", "UpsertPagamentos", "declarando constante query")
-	const query = `
+	c, err := importkit.Upsert[Row]{
+		SQL: `
 		INSERT INTO pagamentos
 			(pagamento_id, pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento)
 		VALUES
@@ -384,56 +290,26 @@ func UpsertPagamentos(db cmdutil.DB, rows []Row, pedidoIDs map[int64]int64) (ins
 			data_vencimento = VALUES(data_vencimento),
 			data_pagamento = VALUES(data_pagamento),
 			status_pagamento = VALUES(status_pagamento)
-	`
-
-	vlog.Printf("pagamentos.go", "UpsertPagamentos", "declarando stmt, err com resultado de db.Prepare()")
-	stmt, err := db.Prepare(query)
-	vlog.Printf("pagamentos.go", "UpsertPagamentos", "verificando se err != nil")
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("prepare (pagamentos) falhou: %w", err)
-	}
-	vlog.Printf("pagamentos.go", "UpsertPagamentos", "agendando defer de stmt.Close()")
-	defer stmt.Close()
-
-	vlog.Printf("pagamentos.go", "UpsertPagamentos", "iniciando loop range sobre rows")
-	for _, row := range rows {
-		pedidoID, ok := pedidoIDs[row.PedidoIDOrigem]
-		if !ok {
-			log.Printf("importpagamentos: pagamento_id=%d: pedido_id=%d não encontrado em pedidos.pedido_id_origem",
-				row.PagamentoID, row.PedidoIDOrigem)
-			failed++
-			continue
-		}
-
-		var dataPagamento interface{}
-		if row.DataPagamento.Valid {
-			dataPagamento = row.DataPagamento.String
-		}
-
-		result, err := stmt.Exec(
-			row.PagamentoID, pedidoID, row.FormaPagamento, row.Parcelas,
-			row.Valor, row.TaxaPct, row.ValorLiquido,
-			row.DataVencimento, dataPagamento, row.StatusPagamento,
-		)
-		if err != nil {
+	`,
+		ErroPrepare: "prepare (pagamentos) falhou",
+		Args: func(row Row) ([]any, bool) {
+			pedidoID, ok := pedidoIDs[row.PedidoIDOrigem]
+			if !ok {
+				log.Printf("importpagamentos: pagamento_id=%d: pedido_id=%d não encontrado em pedidos.pedido_id_origem",
+					row.PagamentoID, row.PedidoIDOrigem)
+				return nil, false
+			}
+			var dataPagamento any
+			if row.DataPagamento.Valid {
+				dataPagamento = row.DataPagamento.String
+			}
+			return []any{row.PagamentoID, pedidoID, row.FormaPagamento, row.Parcelas,
+				row.Valor, row.TaxaPct, row.ValorLiquido,
+				row.DataVencimento, dataPagamento, row.StatusPagamento}, true
+		},
+		LogFalha: func(row Row, err error) {
 			log.Printf("importpagamentos: erro no upsert de pagamento_id=%d: %v", row.PagamentoID, err)
-			failed++
-			continue
-		}
-		// Com clientFoundRows=true no DSN (BUG-04), o MySQL devolve, via ON
-		// DUPLICATE KEY UPDATE: 1 = INSERT novo OU linha já existente sem
-		// alteração; 2 = UPDATE com alteração real. Por isso o contador
-		// "inseridos" é rotulado como inseridos_ou_inalterados.
-		affected, _ := result.RowsAffected()
-		switch affected {
-		case 1:
-			inserted++
-		case 2:
-			updated++
-		default:
-			updated++
-		}
-	}
-	vlog.Printf("pagamentos.go", "UpsertPagamentos", "loop concluído; itens: %d", len(rows))
-	return inserted, updated, failed, nil
+		},
+	}.Gravar(db, rows)
+	return c.Inseridos, c.Atualizados, c.Falhas, err
 }

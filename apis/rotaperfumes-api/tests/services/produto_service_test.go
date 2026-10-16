@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -109,7 +110,7 @@ func TestProdutoService_ListProdutos(t *testing.T) {
 			tc.mock(mock)
 
 			casos := novosCasosCatalogo(db)
-			produtos, total, err := listarProdutos(casos, tc.page, tc.limit, tc.filtro)
+			produtos, total, err := itensETotal(casos.ListarProdutos(context.Background(), tc.filtro, kernel.NovaPagina(tc.page, tc.limit)))
 
 			if tc.wantErr {
 				assert.Error(t, err)

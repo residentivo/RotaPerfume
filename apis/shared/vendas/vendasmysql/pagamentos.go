@@ -121,7 +121,7 @@ func (r *Pagamentos) PorID(ctx context.Context, id int64) (*vendas.Pagamento, er
 
 func scanPagamento(s db.Linha) (*vendas.Pagamento, error) {
 	var dataPagamento sql.NullTime
-	p, err := lerUma(s, vendas.ErrPagamentoNaoEncontrado, "pagamento", func(p *vendas.Pagamento) []any {
+	p, err := db.LerUma(s, vendas.ErrPagamentoNaoEncontrado, "vendasmysql: scan pagamento", func(p *vendas.Pagamento) []any {
 		return []any{&p.PagamentoID, &p.PedidoID, &p.FormaPagamento, &p.Parcelas, &p.Valor, &p.TaxaPct,
 			&p.ValorLiquido, &p.DataVencimento, &dataPagamento, &p.StatusPagamento, &p.CreatedAt, &p.UpdatedAt}
 	})
@@ -139,7 +139,7 @@ func (r *Pagamentos) Inserir(ctx context.Context, p *vendas.Pagamento) error {
 	const q = `
 		INSERT INTO pagamentos (pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	id, err := inserir(ctx, r.q, "create pagamento", q, p.PedidoID, p.FormaPagamento, p.Parcelas,
+	id, err := db.Inserir(ctx, r.q, "vendasmysql: create pagamento", q, p.PedidoID, p.FormaPagamento, p.Parcelas,
 		p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento, nullTime(p.DataPagamento), p.StatusPagamento)
 	if err != nil {
 		return err
@@ -156,20 +156,20 @@ func (r *Pagamentos) Atualizar(ctx context.Context, id int64, p *vendas.Pagament
 		UPDATE pagamentos
 		SET forma_pagamento = ?, parcelas = ?, valor = ?, taxa_pct = ?, valor_liquido = ?, data_vencimento = ?, data_pagamento = ?, status_pagamento = ?
 		WHERE pagamento_id = ?`
-	return execPorID(ctx, r.q, arqPagamentos, "Pagamentos.Atualizar", "update pagamento", vendas.ErrPagamentoNaoEncontrado,
+	return db.ExecPorID(ctx, r.q, arqPagamentos, "Pagamentos.Atualizar", "vendasmysql: update pagamento", vendas.ErrPagamentoNaoEncontrado,
 		q, p.FormaPagamento, p.Parcelas, p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento,
 		nullTime(p.DataPagamento), p.StatusPagamento, id)
 }
 
 // ExistePorPedido informa se há pagamento do pedido (trava V-01 da exclusão).
 func (r *Pagamentos) ExistePorPedido(ctx context.Context, pedidoID int64) (bool, error) {
-	return existe(ctx, r.q, arqPagamentos, "Pagamentos.ExistePorPedido", "exists pagamento por pedido_id",
+	return db.Existe(ctx, r.q, arqPagamentos, "Pagamentos.ExistePorPedido", "vendasmysql: exists pagamento por pedido_id",
 		`SELECT 1 FROM pagamentos WHERE pedido_id = ? LIMIT 1`, pedidoID)
 }
 
 // Excluir remove o pagamento (hard delete: não há deleted_at).
 func (r *Pagamentos) Excluir(ctx context.Context, id int64) error {
-	return execPorID(ctx, r.q, arqPagamentos, "Pagamentos.Excluir", "delete pagamento", vendas.ErrPagamentoNaoEncontrado,
+	return db.ExecPorID(ctx, r.q, arqPagamentos, "Pagamentos.Excluir", "vendasmysql: delete pagamento", vendas.ErrPagamentoNaoEncontrado,
 		`DELETE FROM pagamentos WHERE pagamento_id = ?`, id)
 }
 

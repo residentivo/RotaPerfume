@@ -125,7 +125,7 @@ func (r *Pedidos) PorID(ctx context.Context, id int64) (*vendas.Pedido, error) {
 }
 
 func scanPedido(s db.Linha) (*vendas.Pedido, error) {
-	return lerUma(s, vendas.ErrPedidoNaoEncontrado, "pedido", func(p *vendas.Pedido) []any {
+	return db.LerUma(s, vendas.ErrPedidoNaoEncontrado, "vendasmysql: scan pedido", func(p *vendas.Pedido) []any {
 		return []any{&p.PedidoIDOrigem, &p.ClienteID, &p.VendedorID, &p.DataPedido, &p.Canal, &p.Status,
 			&p.ValorTotal, &p.CreatedAt, &p.UpdatedAt, &p.ClienteNome, &p.VendedorNome}
 	})
@@ -143,7 +143,7 @@ func (r *Pedidos) Itens(ctx context.Context, pedidoID int64) ([]vendas.ItemPedid
 }
 
 func scanItem(s db.Linha) (*vendas.ItemPedido, error) {
-	return lerUma(s, vendas.ErrPedidoNaoEncontrado, "item_pedido", func(it *vendas.ItemPedido) []any {
+	return db.LerUma(s, vendas.ErrPedidoNaoEncontrado, "vendasmysql: scan item_pedido", func(it *vendas.ItemPedido) []any {
 		return []any{&it.ItemIDOrigem, &it.PedidoID, &it.ProdutoID, &it.Quantidade, &it.PrecoPraticado,
 			&it.DescontoPct, &it.ValorBruto, &it.CreatedAt, &it.UpdatedAt, &it.ProdutoSKU, &it.ProdutoDescricao}
 	})
@@ -151,7 +151,7 @@ func scanItem(s db.Linha) (*vendas.ItemPedido, error) {
 
 // Existe informa se o pedido existe (validação do pedido_id do pagamento).
 func (r *Pedidos) Existe(ctx context.Context, id int64) (bool, error) {
-	return existe(ctx, r.q, arqPedidos, "Pedidos.Existe", "exists pedido",
+	return db.Existe(ctx, r.q, arqPedidos, "Pedidos.Existe", "vendasmysql: exists pedido",
 		`SELECT 1 FROM pedidos WHERE pedido_id_origem = ? LIMIT 1`, id)
 }
 
@@ -165,7 +165,7 @@ func (r *Pedidos) Inserir(ctx context.Context, p *vendas.Pedido) error {
 	const insertPedido = `
 		INSERT INTO pedidos (cliente_id, vendedor_id, data_pedido, canal, status, valor_total)
 		VALUES (?, ?, ?, ?, ?, ?)`
-	id, err := inserir(ctx, r.q, "create pedido", insertPedido,
+	id, err := db.Inserir(ctx, r.q, "vendasmysql: create pedido", insertPedido,
 		p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal)
 	if err != nil {
 		return err
@@ -183,7 +183,7 @@ func (r *Pedidos) inserirItens(ctx context.Context, pedidoID int64, itens []vend
 	for i := range itens {
 		it := &itens[i]
 		it.PedidoID = pedidoID
-		id, err := inserir(ctx, r.q, "create item_pedido", insertItem,
+		id, err := db.Inserir(ctx, r.q, "vendasmysql: create item_pedido", insertItem,
 			it.PedidoID, it.ProdutoID, it.Quantidade, it.PrecoPraticado, it.DescontoPct, it.ValorBruto)
 		if err != nil {
 			return err
@@ -232,7 +232,7 @@ func (r *Pedidos) AtualizarCabecalho(ctx context.Context, id int64, p *vendas.Pe
 		UPDATE pedidos
 		SET cliente_id = ?, vendedor_id = ?, data_pedido = ?, canal = ?, status = ?, valor_total = ?
 		WHERE pedido_id_origem = ?`
-	return execPorID(ctx, r.q, arqPedidos, "Pedidos.AtualizarCabecalho", "update pedido", vendas.ErrPedidoNaoEncontrado,
+	return db.ExecPorID(ctx, r.q, arqPedidos, "Pedidos.AtualizarCabecalho", "vendasmysql: update pedido", vendas.ErrPedidoNaoEncontrado,
 		updatePedido, p.ClienteID, p.VendedorID, p.DataPedido, p.Canal, p.Status, p.ValorTotal, id)
 }
 
@@ -249,6 +249,6 @@ func (r *Pedidos) Excluir(ctx context.Context, id int64) error {
 	if _, err := r.q.ExecContext(ctx, `DELETE FROM itens_pedido WHERE pedido_id = ?`, id); err != nil {
 		return wrap("delete itens_pedido", err)
 	}
-	return execPorID(ctx, r.q, arqPedidos, "Pedidos.Excluir", "delete pedido", vendas.ErrPedidoNaoEncontrado,
+	return db.ExecPorID(ctx, r.q, arqPedidos, "Pedidos.Excluir", "vendasmysql: delete pedido", vendas.ErrPedidoNaoEncontrado,
 		`DELETE FROM pedidos WHERE pedido_id_origem = ?`, id)
 }

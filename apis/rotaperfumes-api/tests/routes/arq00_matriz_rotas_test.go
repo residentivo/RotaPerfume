@@ -30,7 +30,7 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/shared/identidade"
-	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 type politicaRota int
@@ -183,7 +183,7 @@ func arq00Router(t *testing.T, checker httpx.ConsultaStatus) (http.Handler, sqlm
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	h := bootstrap.HandlerHTTP(cfg, checker, bootstrap.NovosHandlers(db, cfg, sharedsvc.NewNoopEmailService()))
+	h := bootstrap.HandlerHTTP(cfg, checker, bootstrap.NovosHandlers(db, cfg, notificacaosmtp.NovoNoop()))
 	return h, mock
 }
 
@@ -194,7 +194,7 @@ func arq00RotasRegistradas(t *testing.T) []httpx.Rota {
 	db, _, err := sqlmock.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	return bootstrap.NovoRouter(cfg, fakeUserStatusChecker{}, bootstrap.NovosHandlers(db, cfg, sharedsvc.NewNoopEmailService())).Rotas()
+	return bootstrap.NovoRouter(cfg, fakeUserStatusChecker{}, bootstrap.NovosHandlers(db, cfg, notificacaosmtp.NovoNoop())).Rotas()
 }
 
 func arq00Serve(h http.Handler, method, path, tok, origin string) *httptest.ResponseRecorder {
