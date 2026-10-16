@@ -3,14 +3,47 @@
 > Histórico de tarefas finalizadas.
 
 ---
-## Lote 21 de 2026-10-13: 8 cards concluídos até agora (lote em andamento)
+## Lote 21 de 2026-10-13: 9 cards concluídos (de 9)
 
-> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Estratégia incremental por bounded context, um commit por card na branch `refactor/ddd`. **O lote segue em andamento:** falta só o ARQ-08 (documentação e fechamento), que está em `afazer.md`. Este bloco recebe os próximos cards conforme forem concluídos.
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Fechado em 2026-10-16 pelo 🔵 SubBrain (ARQ-08).
+>
+> **Decisões do usuário:** estratégia **incremental por bounded context**: cada card de código termina com build e testes verdes e um commit na branch `refactor/ddd`. Escopo: API (`apis/rotaperfumes-api`) + módulo `apis/shared` (repositories, models, services, importers e CLIs). P1 (vlog em 4 níveis) e X1 (método fixo em 13 rotas e parse estrito de `/api/senha-historico/{user_id...}`) aprovados pelo usuário.
+>
+> **Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada card de código: 🟡 BackBrain → 🔴 TestBrain + 🟣 SecBrain → 🟡 BackBrain (ressalvas) → 🤍 MegaBrain (validação e commit).
+>
+> **Commits:** ARQ-00 `cd12d47`, ARQ-01 `0e7e757`, ARQ-02 `17502da`, ARQ-03 `c412d10`, ARQ-04 `fdaa7d9`, ARQ-05 `3e33f6f`, ARQ-06 `adce2b8`, ARQ-07 `719393c`, ARQ-08 `<HASH-ARQ-08>`.
+>
+> **Resultado:** contextos Catálogo, Identidade e Acesso, Comercial, Vendas, Analytics e Notificação em `apis/shared/<contexto>{,app,mysql}`; HTTP em `apis/rotaperfumes-api/internal/{httpx,<contexto>http,bootstrap}`; legado (`middleware`, `services`, `routes`, `handlers`, `repositories`, `models`) removido. Testes de topo: API 720 → 847, shared 593 → 796. Cobertura combinada 88,48% → 98,06%. Contrato HTTP inalterado, exceto a X1. Estrutura final, patterns e divergências: `docs/arquitetura-ddd.md` §10; ADR: `docs/adr-001-reestruturacao-ddd.md`.
+>
+> **Pendência opcional (não é card):** o race detector (`go test -race`) está indisponível nesta máquina porque falta gcc/MinGW (cgo). Sugestão ao usuário: instalar o MinGW-w64 localmente ou rodar `go test -race ./...` no Jenkins (Linux).
+>
+> **Saíram do lote (em `afazer.md`):** ARQ-09, BUG-14 a BUG-18, SEC-14 a SEC-28, TST-06, TST-07 e CHORE-03 a CHORE-06.
+
+## ARQ-08: documentação e fechamento do Lote 21 — 2026-10-16
+**Agentes:** 🔵 SubBrain
+
+**Status:** concluído em 2026-10-16. **Commit:** `<HASH-ARQ-08>` (branch `refactor/ddd`).
+
+**Camada:** Documentação
+
+**Entregue:**
+- **ADR** da reestruturação: `docs/adr-001-reestruturacao-ddd.md` (contexto, decisão, alternativas rejeitadas, consequências, X1, N-7 e pendências).
+- **`docs/arquitetura-ddd.md`:** cabeçalho com o estado final e nova seção 10, conferida no código: estrutura real dos dois módulos; contextos e camadas (domínio, `*app`, adapters `*mysql`/`*crypto`/`*smtp`); `internal/bootstrap` como composition root (tabela das 60 rotas em `rotas.go`); `internal/httpx`; `kernel` (incluindo `rota.go`/`SanearRota`); `shared/db` (`tx.go`, `consulta.go`, `linhas.go`, `duplicada.go`); `importkit` (Template Method) e CLIs com `main` fino (`cmdutil.Executar`); testes de arquitetura; como rodar a integração; tabela "pattern → onde no código" (21 entradas, caminhos conferidos); divergências do desenho; estado da N-7. Notas nos §2.1, §3.8, §3.9, §4.3, §6.4 e §7.5 e registro no §7.6.
+- **`docs/logs-verbose.md`:** a regra LOG-02 (Lote 17, "linha a linha") foi substituída pelo modelo de 4 níveis aprovado no ARQ-00 (P1): rota (`httpx.Trace`, automático), caso de uso (`defer vlog.Trace`), decisão e query; tabela do que cada nível pode logar; `vlog.OcultarEmail` (`[email-usuario]`); `rota=` saneado por `kernel.SanearRota`; CLIs ligando o vlog via `cmdutil.Configurar`; testes de AST. O formato da linha e as proibições não mudaram. O comentário de pacote de `apis/shared/vlog/vlog.go` já estava atualizado pelo 🟡 BackBrain. O histórico do LOG-02 neste arquivo não foi reescrito.
+- **Testes de integração documentados** (`docs/arquitetura-ddd.md` §10.9): exigem `INTEGRATION=1` **e** as `DB_*` do `.env` no ambiente (SEC-11), com `go test -p 1`; comandos para Git Bash e PowerShell. Comentário e texto de ajuda do alvo `test-integration` do `Makefile` atualizados (sem mudar o comando).
+- **Postman:** contrato conferido. Todas as requisições das 13 rotas da X1 já usam o método documentado e nenhuma chama `/api/senha-historico/{id}` com subcaminho, `0` ou negativo, então nenhuma requisição mudou. Seção "Mudanças do Lote 21" no `postman/README.md` e na descrição da `postman/collection.json`; referências a arquivos legados atualizadas nos dois.
+- **Caminhos que deixaram de existir:** atualizados em `docs/manual-base-de-dados.md`, `docs/roteiro-teste-manual-clientes.md`, `postman/` e no histórico do MAIL-01 em `fazendo.md` (código SMTP agora em `apis/shared/notificacao/notificacaosmtp/`; `apis/shared/tests/services/mail01_smtp_tls_test.go` continua existindo). Registros históricos (`docs/arq-00-invariantes-seguranca.md` e roteiros dos Lotes 4, 5 e 6) receberam uma nota apontando para o §10, sem reescrita.
+- **Ressalva N-7 (pendência n do ARQ-07):** conferida no código. Não tratada no código, aceita e documentada (`apis/shared/analytics/analyticsapp/consultas.go`, comentário de `Novo`); o bootstrap só monta adapters reais (`analyticsmysql.NovoDashboard`/`NovoClientes`, `comercialCasos.Escopo()`), então não há ponteiro nil tipado em produção. Opção de fechar no código registrada no §10.12, sem card.
+- **Kanban:** bloco do Lote 21 fechado em `fazendo.md` e resumo movido para cá; ARQ-08 saiu de `afazer.md`. MAIL-01 e DEPLOY-01 seguem em `fazendo.md`.
+
+**Não alterado (aguarda o usuário):** `.claude/agents/backend.md` (seção "Estrutura esperada" ainda cita `models`, `middleware`, `handlers`, `services` e `routes`) e `.claude/agents/tester.md` (exemplo `NewRefreshTokenServiceWithClock`). São arquivos de configuração dos agentes; a mudança proposta foi entregue ao 🤍 MegaBrain para aprovação do usuário. O `CLAUDE.md` não cita caminhos removidos.
+
+**Validação:** só documentação, Kanban, Postman (texto de descrição) e comentários do `Makefile`; nenhum código Go alterado. Os critérios de build/teste do card valem pelo estado do ARQ-07 (`719393c`): `go build`, `go vet` e `go test ./...` verdes nos dois módulos.
 
 ## ARQ-07: Notificação/SMTP, importadores, CLIs e remoção do legado — 2026-10-16
 **Agentes:** 🟡 BackBrain → 🔴 TestBrain + 🟣 SecBrain → 🟡 BackBrain (NB-A a NB-F) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
 
-**Status:** concluído em 2026-10-16. **Commit:** `<HASH-ARQ-07>` (branch `refactor/ddd`).
+**Status:** concluído em 2026-10-16. **Commit:** `719393c` (branch `refactor/ddd`).
 
 **Camadas:** Segurança, Backend
 

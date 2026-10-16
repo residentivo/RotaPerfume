@@ -1,19 +1,5 @@
 # Fazendo
 
-## Lote 21 (2026-10-13): reestruturação DDD + Clean Code + Design Patterns da API
-
-> Aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API".
-
-**Decisões do usuário:** estratégia **incremental por bounded context**: cada lote termina com build e testes verdes e um commit na branch `refactor/ddd`. Escopo: API (`apis/rotaperfumes-api`) + módulo `apis/shared` (repositories, models, services, importers e CLIs).
-
-**Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada lote de código: 🟡 BackBrain → 🔴 TestBrain (no ARQ-03, o 🟣 SecBrain revisa depois, junto com o 🔴 TestBrain; ver decisão no card). ARQ-00 (commit `cd12d47`), ARQ-01 (commit `0e7e757`), ARQ-02 (commit `17502da`), ARQ-03 (commit `c412d10`), ARQ-04 (commit `fdaa7d9`), ARQ-05 (commit `3e33f6f`), ARQ-06 (commit `adce2b8`) e ARQ-07 (commit `<HASH-ARQ-07>`) concluídos, ver `feito.md`; ARQ-08 está em `afazer.md`.
-
-**Passo atual:** ARQ-08 (documentação e fechamento do Lote 21, 🔵 SubBrain), aguardando início. Card em `afazer.md`.
-
-**Pendência opcional (não é card):** o race detector (`go test -race`) está indisponível nesta máquina porque falta gcc/MinGW (cgo). Sugestão ao usuário: instalar o MinGW-w64 localmente ou rodar `go test -race ./...` no Jenkins (Linux).
-
----
-
 ## MAIL-01: programa de diagnóstico de envio de e-mail (`cmd/testeemail`) — prioridade ALTA
 
 **Status:** em execução (2026-10-09; avançou no Lote 20, 2026-10-11)
@@ -21,13 +7,15 @@
 **Responsável:** 🟡 BackBrain
 **Origem:** pedido do usuário: "o envio de email não está funcionando". Pediu um programa que só envie um e-mail de `henrique.rodrigues@rotaperfumes.com.br` para `admin@rotaperfumes.com.br`, com texto padrão, logando todos os passos e erros e usando o `.env` da raiz.
 
-**Suspeitas levantadas (🤍 MegaBrain):** no `.env` da raiz, `SMTP_PORT=465` (TLS implícito/SMTPS). Mas `services/email_service.go` (`enviar`) abre TCP puro e exige STARTTLS, e na 465 o servidor espera o handshake TLS antes do banner, então trava ou falha. Além disso, `SMTP_HOST` é um IP (`192.168.168.106`) e o `ServerName` do TLS recebe o host, então a verificação do certificado falha se o certificado não tiver SAN de IP.
+**Onde está o código hoje (Lote 21, ARQ-07, commit `719393c`):** o envio SMTP saiu de `apis/shared/services/email_service.go`/`email_smtp.go` (pacote removido) e foi para o contexto Notificação, com o mesmo comportamento: `apis/shared/notificacao/notificacaosmtp/` (`smtp.go`: `Novo`/`NovoComTLS`, ServerName e CA extra; `conexao.go`: TLS implícito ou STARTTLS; `auth.go`: PLAIN/LOGIN; `transporte.go`) e `apis/shared/notificacao/modo_tls.go` (`SMTP_TLS_MODE`). A montagem na API é `apis/rotaperfumes-api/internal/bootstrap/email.go` (config SMTP inválida impede a API de subir). O programa de diagnóstico continua em `apis/shared/cmd/testeemail` (`main` fino) com a lógica em `apis/shared/tools/testeemail/` (`testeemail.go`, `diagnostico.go`, `conexao_tls.go`, `comandos_smtp.go`); os testes internos do tool foram para `apis/shared/tests/tools/testeemail/`. Os `TestMAIL01_*` continuam em `apis/shared/tests/services/mail01_smtp_tls_test.go` (a pasta de testes manteve o nome). Os comandos do "Passo atual" abaixo não mudaram.
+
+**Suspeitas levantadas (🤍 MegaBrain):** no `.env` da raiz, `SMTP_PORT=465` (TLS implícito/SMTPS). Mas `services/email_service.go` (`enviar`; código anterior ao Lote 21) abre TCP puro e exige STARTTLS, e na 465 o servidor espera o handshake TLS antes do banner, então trava ou falha. Além disso, `SMTP_HOST` é um IP (`192.168.168.106`) e o `ServerName` do TLS recebe o host, então a verificação do certificado falha se o certificado não tiver SAN de IP.
 
 **Histórico:**
 - 2026-10-09: 🟡 BackBrain entregou `apis/shared/cmd/testeemail` e `apis/shared/tools/testeemail` (build, vet e 6 testes OK).
 - 2026-10-11 (Lote 20): o diagnóstico real rodou uma vez. A porta 465 em `192.168.168.106` está acessível (a 587 recusa). O certificado é autoassinado ("rcgen self signed cert", SAN DNS só `localhost`, sem SAN de IP), SHA-256 `C2:A9:4D:46:D2:D2:4C:92:0A:A2:B9:EC:59:D4:5E:66:47:9F:CA:23:BB:24:87:29:52:C1:1C:2A:17:10:10:E0`. Falhou no handshake TLS (x509 sem IP SAN) e nenhum e-mail foi enviado. Aviso: o remetente `henrique.rodrigues@` é diferente do `SMTP_USER` (`admin@`).
 - 2026-10-11 (Lote 20): correção no código (🟡 BackBrain):
-  - novo `apis/shared/services/email_smtp.go`: TLS implícito na 465 e STARTTLS nas outras portas; AUTH obrigatório (`ErrSMTPSemAuth`; PLAIN ou LOGIN); credenciais nunca trafegam sem TLS; timeouts de 10s/30s; verificação de certificado sempre ligada; TLS ≥ 1.2;
+  - novo `apis/shared/services/email_smtp.go` (desde o ARQ-07, em `apis/shared/notificacao/notificacaosmtp/`): TLS implícito na 465 e STARTTLS nas outras portas; AUTH obrigatório (`ErrSMTPSemAuth`; PLAIN ou LOGIN); credenciais nunca trafegam sem TLS; timeouts de 10s/30s; verificação de certificado sempre ligada; TLS ≥ 1.2;
   - variáveis novas opcionais `SMTP_TLS_MODE`, `SMTP_TLS_SERVER_NAME` e `SMTP_TLS_CA_FILE` (em `.env.example` e `deploy/api.env.example`);
   - configuração SMTP inválida agora impede a API de subir;
   - `testeemail` ganhou `-tls-ca-file` e `-salvar-cert`;

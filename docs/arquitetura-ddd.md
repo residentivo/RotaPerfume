@@ -1,13 +1,15 @@
-# Arquitetura DDD da API (blueprint ARQ-00)
+# Arquitetura DDD da API (blueprint ARQ-00 e estado final ARQ-08)
 
+> **Estado final (ARQ-08, 🔵 SubBrain, 2026-10-16):** o Lote 21 foi concluído (ARQ-00 a ARQ-08). **A estrutura que vale hoje está na seção 10 ("Estado final")**, conferida contra o código. As seções 1 a 9 são o blueprint do ARQ-00 com os registros de cada lote: a seção 1 descreve o código **anterior** à refatoração (os pacotes `handlers`, `services`, `middleware`, `routes`, `repositories` e `models` citados ali não existem mais), e onde o código final divergiu do desenho a seção 10.11 registra a divergência. Decisão em formato ADR: `docs/adr-001-reestruturacao-ddd.md`.
+>
 > **Origem:** 🟡 BackBrain, card ARQ-00, Lote 21 (2026-10-13), branch `refactor/ddd`.
-> **Escopo:** `apis/rotaperfumes-api` (handlers, services, middleware, routes, cmd) e `apis/shared` (repositories, models, services, config, db, cnpj, tz, vlog, importers, cmd, tools, cmdutil).
+> **Escopo (no ARQ-00):** `apis/rotaperfumes-api` (handlers, services, middleware, routes, cmd) e `apis/shared` (repositories, models, services, config, db, cnpj, tz, vlog, importers, cmd, tools, cmdutil).
 > **Referências obrigatórias:**
 > - invariantes de segurança do 🟣 SecBrain: `docs/arq-00-invariantes-seguranca.md` (IDs R-, F-, C-, I-, E-, V-, D-, M-);
 > - matriz de rotas do 🔴 TestBrain: `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 35 Authenticated, 21 AdminOnly; corrigido no ARQ-01, N-6);
 > - linha de base de testes e cobertura (2026-10-13): API **720** testes de topo, cobertura **91,5%**; shared **593** testes de topo, cobertura **85,6%** (ver §7.1).
 >
-> Este documento é **só desenho**: nenhum código foi movido no ARQ-00.
+> No ARQ-00 este documento era **só desenho** (nenhum código foi movido naquele card). O código foi migrado do ARQ-01 ao ARQ-07; ver a seção 10.
 >
 > **Status (2026-10-13):** revisado pelo 🟣 SecBrain, **aprovado com ressalvas**. Os obrigatórios O1 a O9 e os recomendados R-a a R-g já estão incorporados (ver §0.2). Decisões P1 a P4 tomadas (ver §0.1).
 
@@ -32,7 +34,7 @@
 
 | # | Tema | Decisão | Quem decidiu |
 |---|---|---|---|
-| P1 | Densidade do vlog (LOG-02) | **Aprovado:** vlog em 4 níveis (§6), com as proibições do O7. O `docs/logs-verbose.md` é atualizado no ARQ-08. | usuário |
+| P1 | Densidade do vlog (LOG-02) | **Aprovado:** vlog em 4 níveis (§6), com as proibições do O7. O `docs/logs-verbose.md` foi atualizado no ARQ-08. | usuário |
 | P2 | Exceção X1 | **Aprovada:** método fixo nas 13 rotas sem método (método errado → 405); `GET /api/senha-historico/{user_id...}`: caminho vazio continua 400 "usuario_id é obrigatório na URL" e `/2/extra` passa de 200 para 400 "usuario_id inválido" (§7.3). | usuário |
 | P3 | `Dinheiro` | **`float64` encapsulado no VO** no ARQ-05, com comportamento idêntico (mesma fórmula de `pedido_service.go:261`). A troca para centavos fica no card **ARQ-09**. | 🤍 MegaBrain |
 | P4 | `VincularCliente` sem transação (`vendedor_service.go:427-529`) | **Card BUG-14.** O ARQ-04 **preserva** o comportamento atual (mesma sequência de chamadas, sem `Transactor`). | 🤍 MegaBrain |
@@ -112,6 +114,8 @@ Caminhos relativos a `apis/`. `API` = `rotaperfumes-api`, `SH` = `shared`.
 ## 2. Estrutura-alvo
 
 ### 2.1 Árvore
+
+> **ARQ-08:** árvore-alvo do ARQ-00. A árvore real, conferida no código, está no §10.1 (diferenças: não existe `bootstrap/wire.go`, a montagem foi dividida por contexto; as rotas ficam numa tabela única em `bootstrap/rotas.go`, não num `routes.go` por `<ctx>http`; não existe `httpx/trace.go`, o `Trace` está em `httpx/logging.go`; `JanelaDias` virou `analytics.Dias`; há ainda `shared/appkit`).
 
 ```
 apis/
@@ -419,18 +423,19 @@ func (p Principal) EhAdmin() bool { return p.Valido() && p.role.EhAdmin() }
 
 ### 3.8 Notificação (ARQ-07)
 
-| Elemento | Conteúdo | Origem atual |
-|---|---|---|
-| Domínio | `AlertaReuso`, `Destinatario` (Email sem CR/LF), `ModoTLS` (`Implicito | STARTTLS`) | `SH/services/email_service.go:39`, `email_smtp.go:51` |
-| Aplicação | `AlertaSegurancaNotifier` (assinante do evento `identidade.ReusoDeRefreshDetectado`; dedup 30 min, teto 20/h, 4 concorrentes, timeout 30 s, I-08); portas `EnviadorSenhaInicial`, `EnviadorAlerta` | `API/services/alerta_seguranca_notifier.go` |
-| Infra | `notificacaosmtp.SMTP` (Adapter; Strategy de TLS; AUTH só sobre TLS, M-01); `notificacaosmtp.Noop` (Null Object; loga e-mail mascarado, M-02) | `email_service.go`, `email_smtp.go` |
+| Elemento | Conteúdo | Onde ficou (ARQ-07) | Origem (antes do Lote 21, removida) |
+|---|---|---|---|
+| Domínio | `AlertaReuso`, `Destinatario` (Email sem CR/LF), `ModoTLS` (`Implicito | STARTTLS`) + `ResolverModoTLS`, `Contato`, `Mensagem` | `apis/shared/notificacao/{notificacao,destinatario,modo_tls,mensagem}.go` | `SH/services/email_service.go:39`, `email_smtp.go:51` |
+| Aplicação | `AlertaSegurancaNotifier` (assinante do evento `identidade.ReusoDeRefreshDetectado`; dedup 30 min, teto 20/h, 4 concorrentes, timeout 30 s, I-08; `Aguardar` no shutdown); portas `EnviadorAlerta` e `Contatos` (a porta `EnviadorSenhaInicial` ficou em `identidadeapp`, que é quem a consome) | `apis/shared/notificacao/notificacaoapp/{notifier,portas}.go` | `API/services/alerta_seguranca_notifier.go` |
+| Infra | `notificacaosmtp.SMTP` (Adapter; Strategy de TLS `tlsImplicito`/`startTLS`; AUTH só sobre TLS, M-01); `notificacaosmtp.Noop` (Null Object; loga e-mail mascarado, M-02) | `apis/shared/notificacao/notificacaosmtp/{smtp,transporte,conexao,auth,noop}.go`; montagem em `apis/rotaperfumes-api/internal/bootstrap/email.go` | `email_service.go`, `email_smtp.go` |
 
 ### 3.9 Importers, tools e CLIs (ARQ-07)
 
-- `importers/importkit`: esqueleto genérico (Template Method, §5.13). Cada importer vira um `importkit.Spec[Row]` com `Parse`/`Upsert` e mantém o SQL de upsert (performance e idempotência). **Não** passam a usar repositórios de agregado: carga em lote não é caso de uso transacional por entidade, e forçar isso seria overengineering.
+- `importers/importkit`: esqueleto genérico (Template Method, §5.13). Cada importer fornece um `importkit.Etapas` (funções `Ler`, `LerNoDryRun` opcional e `Gravar`; no desenho era um `Spec[Row]`, ver divergência (b) do registro do ARQ-07 no §7.6) e mantém o SQL de upsert (performance e idempotência). A gravação em lote usa `importkit.Upsert[R]` (`importkit/lote.go`). **Não** passam a usar repositórios de agregado: carga em lote não é caso de uso transacional por entidade, e forçar isso seria overengineering.
 - Os importers que validam CNPJ usam o VO `comercial.CNPJ` (M-04: CNPJ nunca logado).
-- `tools/resetpassword`, `tools/seedusers` e `cmd/resetsenhas` passam a usar `identidadeapp` e `identidadecrypto` (hash, histórico e revogação num lugar só, M-03). `LoadSemCredenciaisDB` continua só no dry-run.
-- `tools/testeemail` usa `notificacaosmtp`. **Atenção:** `tools/testeemail/testeemail_test.go` é teste interno ao pacote (8 testes de topo). Se o arquivo for movido para `tests/tools/testeemail`, a contagem migra de pacote e o total do módulo `shared` não pode cair (§7.2).
+- `tools/resetpassword`, `tools/seedusers` e `cmd/resetsenhas` passam a usar `identidadeapp` e `identidadecrypto` (hash, histórico e revogação num lugar só, M-03). `LoadSemCredenciaisDB` continua só no dry-run. **Como ficou:** só o `resetsenhas` (`apis/rotaperfumes-api/internal/resetsenhas`) usa `identidadeapp`; `resetpassword` e `seedusers` usam `identidadecrypto` para o hash e mantêm o SQL próprio (divergência (a) do ARQ-07).
+- `tools/testeemail` usa `notificacaosmtp`. **Como ficou:** a lógica do diagnóstico foi para `tools/testeemail/{testeemail,diagnostico,conexao_tls,comandos_smtp}.go`, e o antigo `tools/testeemail/testeemail_test.go` (teste interno) foi movido para `apis/shared/tests/tools/testeemail/`, com os mesmos 8 nomes de teste.
+- **CLIs com `main` fino (ARQ-07):** os 13 `main` (`apis/shared/cmd/*` e `apis/rotaperfumes-api/cmd/resetsenhas`) são só `os.Exit(cmdutil.Executar(tag, pacote.CLI, os.Args[1:], cmdutil.AmbientePadrao()))`; a lógica fica em `cli.go` testável (`tools/*`, `importers/*`) e recebe o `cmdutil.Ambiente` por injeção (`apis/shared/cmdutil/cli.go`).
 
 ---
 
@@ -522,7 +527,7 @@ Ficam no **módulo da API**, em `rotaperfumes-api/tests/arquitetura/`, porque s�
 | `TestARQ_NovoPrincipal_SoHttpx` | `kernel.NovoPrincipal` só pode ser chamado em `rotaperfumes-api/internal/httpx`. O `httpx` **não exporta** setter de Principal nem de chaves de contexto: os testes HTTP obtêm Principal passando pelo `Autenticador` com checker fake. | O5 |
 | `TestARQ_Escopo_SoAutorizador` | `kernel.EscopoIrrestrito`, `EscopoDoVendedor` e `EscopoSemAcesso` só podem ser chamados em `shared/comercial/comercialapp` e no próprio `kernel`. | O5 |
 | `TestARQ_Filtro_SoAdapters` | Nenhum adapter `*mysql` usa `Escopo.VendedorID()` nem `Escopo.Irrestrito()` para decidir SQL; a tradução é só via `Escopo.Filtro()`. | O1 |
-| `TestARQ_ChavesLegadas_SoMiddlewareLegado` | `context.WithValue` com as chaves `keyUserID`/`keyRole` só existe em `middleware/auth_middleware.go`, até ele ser removido no ARQ-07. Se `ComPrincipalLegado` vier a existir (§7.5), o único chamador permitido é `internal/httpx/auth.go`. | O4 |
+| `TestARQ_ChavesLegadas_SoMiddlewareLegado` | `context.WithValue` com as chaves `keyUserID`/`keyRole` só existe em `middleware/auth_middleware.go`, até ele ser removido no ARQ-07. Se `ComPrincipalLegado` vier a existir (§7.5), o único chamador permitido é `internal/httpx/auth.go`. **Estado final (ARQ-08):** o nome foi mantido (R1), mas o teste agora exige **zero** gravadores de `key*` e **um único** `context.WithValue` com `chavePrincipal` no pacote `httpx`. | O4 |
 | `TestARQ_NovoErro_SentinelaLiteral` | Toda chamada a `kernel.NovoErro` (1) está dentro de uma declaração `var` de nível de pacote, (2) tem como 1º argumento uma constante `kernel.Kind*` e (3) tem como 2º argumento um **literal string** (`*ast.BasicLit`): nada de variável, concatenação ou `fmt.Sprintf`. | O6-iii |
 | `TestARQ_SemErrorsJoinDeDominio` | `errors.Join` proibido nos pacotes `<ctx>`, `<ctx>app` e `<ctx>mysql`. Juntar erro de infraestrutura com sentinela de domínio faria o mapper responder com a mensagem do sentinela e engolir a falha de infra. A regra é: **ou** o sentinela (decisão de negócio) **ou** `fmt.Errorf("op: %w", errInfra)`. | R-c |
 | `TestARQ_VlogSemConteudoSensivel` | Em toda chamada a `vlog.Printf` e `vlog.Trace`: (1) o formato (literal) não contém `%v`, `%+v` nem `%#v`; (2) nenhum argumento é um identificador ou seletor que case com `(?i)senha|password|token|secret|cnpj|email|hash|captcha|chave|key`, a menos que esteja envolvido em `vlog.MaskEmail(...)` ou `.Mascarado()`; (3) nenhum argumento é `r.URL`, `r.Header`, `r.Body`, `cmd`, `req`, `filtro` ou struct de entidade (heurística: tipo não básico via `go/types`, quando disponível; senão, a lista de nomes). | O7 |
@@ -1259,7 +1264,7 @@ func Trace(arquivo, funcao, format string, args ...any) func(errp *error) {
 - **Fica proibido** daqui para frente: vlog de sintaxe ("declarando variável", "verificando se err != nil"), `if cfg.Verbose { log.Printf }` (B9; vira nível 3) e vlog em `kernel`/domínio (o domínio é puro; quem loga é a aplicação).
 - **Estimativa:** de 3.726 para ~600 chamadas, e de ~45% para <10% das linhas de produção.
 - **Por que não decorator de interface por caso de uso:** exigiria uma interface e um wrapper por caso de uso (~70). O `defer vlog.Trace` é uma linha e tem o mesmo efeito.
-- **Documentação:** `docs/logs-verbose.md` §2, §6 e §7 é atualizado no ARQ-08 com os níveis e a tabela do §6.3. Até lá, o código novo segue esta seção.
+- **Documentação:** `docs/logs-verbose.md` foi atualizado no ARQ-08 com os níveis e a tabela do §6.3 (seções 2, 5, 6 e 7 daquele documento).
 
 ---
 
@@ -1336,6 +1341,8 @@ Hoje `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` lê `routes/routes.go` com a
 7. **R-b:** a matriz ganha dois casos por rota protegida: `HEAD` sem token → 401 (só nas rotas `GET`, já que o `ServeMux` casa HEAD com GET) e um método não registrado → 405 **sem consultar o checker** (o checker fake conta as chamadas e o teste exige zero).
 
 ### 7.5 Como a API continua funcionando durante a transição
+
+> **ARQ-08:** transição **encerrada** no ARQ-07. Não restam handlers legados, pontes (`middleware.ComPrincipalLegado`, `principal_legado.go`, `handlers/scope.go`), shims de teste (`helpers_*_test.go`) nem adapters `// TODO(ARQ-0X)`. Esta seção fica como registro.
 
 - **No ARQ-01, o router novo assume todas as 60 rotas de uma vez**, apontando para os handlers **legados** dos contextos ainda não migrados: `httpx.Rota{…, Handler: legado.Produto.ListProdutos}`. `routes/routes.go` é apagado no ARQ-01 e o `cmd/server` passa a chamar `bootstrap`.
 - **Principal na transição (O4), sem ponte exportada:**
@@ -1637,6 +1644,14 @@ Hoje `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` lê `routes/routes.go` com a
 
 ADR, revisão deste documento com o que mudou nos lotes, `docs/logs-verbose.md` (níveis do §6), `.claude/agents/backend.md` (estrutura `apis/shared/<ctx>`, `internal/<ctx>http`), Postman (só a exceção X1).
 
+- **Registro do ARQ-08 (🔵 SubBrain, 2026-10-16):**
+  - **ADR:** `docs/adr-001-reestruturacao-ddd.md`.
+  - **Este documento:** cabeçalho com o estado final; nova seção 10 (estrutura real, camadas, composition root, `httpx`, `kernel`, `shared/db`, `importkit`, CLIs, testes de arquitetura, testes de integração, tabela de patterns conferida no código, divergências e N-7); notas no §2.1, §3.8, §3.9, §4.3 e §7.5.
+  - **`docs/logs-verbose.md`:** regra LOG-02 reescrita para os 4 níveis (P1), com `[email-usuario]` (NB-1), `rota=` saneado (N4/NB-C) e os testes de AST. O comentário de pacote de `apis/shared/vlog/vlog.go` já estava atualizado pelo 🟡 BackBrain.
+  - **Postman:** contrato conferido; nenhuma requisição dependia do comportamento anterior à X1. Seção "Mudanças do Lote 21" no `postman/README.md` e na descrição da `collection.json`; referências a arquivos legados atualizadas.
+  - **Caminhos legados:** atualizados em `docs/manual-base-de-dados.md`, `docs/roteiro-teste-manual-clientes.md` e `postman/`; nota de "caminhos anteriores ao Lote 21" em `docs/arq-00-invariantes-seguranca.md` e nos roteiros dos Lotes 4, 5 e 6 (registros históricos, não reescritos).
+  - **`.claude/agents/backend.md` e `CLAUDE.md`:** mudança proposta ao usuário (arquivos de configuração dos agentes; não editados sem aprovação dele).
+
 ---
 
 ## 8. Checklist de invariantes de segurança por lote
@@ -1753,3 +1768,223 @@ Referência: `docs/arq-00-invariantes-seguranca.md`. Marcar no PR de cada lote. 
 - **SQL:** constantes no adapter; placeholders para valores; identificadores só de `switch` sobre enum.
 - **Arquivos:** um agregado por arquivo no domínio; `portas.go` em cada `<ctx>app`; `dto.go` e `routes.go` em cada `<ctx>http`.
 - **Nomes:** em português para conceitos de negócio (já é o padrão do projeto); a sigla em inglês só para termos técnicos estabelecidos (`Querier`, `Transactor`, `Policy`).
+- **ARQ-08:** o item "`dto.go` e `routes.go` em cada `<ctx>http`" não foi seguido para as rotas: todas ficam na tabela única `internal/bootstrap/rotas.go` (§10.3).
+
+---
+
+## 10. Estado final (ARQ-08, 2026-10-16)
+
+> Conferido pelo 🔵 SubBrain contra o código da branch `refactor/ddd` depois do commit `719393c` (ARQ-07). Todos os caminhos citados nesta seção existem. Caminhos relativos a `apis/` quando começam por `shared/` ou `rotaperfumes-api/`.
+
+### 10.1 Estrutura real
+
+```
+apis/
+├── Dockerfile                                (inalterado; compila ./cmd/server)
+├── shared/                                   módulo github.com/rotaperfumes/shared
+│   ├── kernel/          data.go dinheiro.go email.go erros.go escopo.go ordenacao.go pagina.go principal.go rota.go
+│   ├── catalogo/        produto.go estoque.go sku.go ordenacao.go erros.go                       DOMÍNIO
+│   │   ├── catalogoapp/     casos.go portas.go produtos.go estoque.go                            APLICAÇÃO
+│   │   └── catalogomysql/   produtos.go estoques.go faturamento.go linhas.go                     ADAPTER
+│   ├── identidade/      usuario.go refresh.go historico.go politica_senha.go segredos.go erros.go
+│   │   ├── identidadeapp/   casos.go portas.go login.go sessao.go senha.go usuarios.go massa.go limpeza.go
+│   │   ├── identidademysql/ usuarios.go refresh_tokens.go historico.go
+│   │   └── identidadecrypto/ hasher.go jwt.go aleatorio.go
+│   ├── comercial/       vendedor.go carteira.go cliente.go cnpj.go visita.go oportunidade.go politica.go ordenacao.go erros.go
+│   │   ├── comercialapp/    casos.go portas.go escopo.go clientes.go carteiras.go vendedores.go visitas.go oportunidades.go
+│   │   └── comercialmysql/  clientes.go carteiras.go vendedores.go visitas.go oportunidades.go linhas.go
+│   ├── vendas/          pedido.go pagamento.go filtros.go erros.go
+│   │   ├── vendasapp/       casos.go portas.go uow.go pedidos.go pagamentos.go
+│   │   └── vendasmysql/     pedidos.go pagamentos.go linhas.go
+│   ├── analytics/       periodo.go dias.go metricas.go serie.go ranking.go clientes.go           (read models)
+│   │   ├── analyticsapp/    consultas.go portas.go
+│   │   └── analyticsmysql/  dashboard.go clientes.go filtros.go sql.go
+│   ├── notificacao/     notificacao.go destinatario.go modo_tls.go mensagem.go
+│   │   ├── notificacaoapp/  notifier.go portas.go
+│   │   └── notificacaosmtp/ smtp.go transporte.go conexao.go auth.go noop.go
+│   ├── appkit/          releitura.go           (RelerCriado/RelerAtualizado: releitura depois da escrita)
+│   ├── adapters/        turnstile/turnstile.go  ratelimit/ratelimit.go
+│   ├── db/              db.go tx.go consulta.go linhas.go duplicada.go
+│   ├── config/  vlog/ (vlog.go, trace.go)  tz/  cnpj/
+│   ├── cmdutil/         cmdutil.go db.go cli.go
+│   ├── importers/       importkit/ (importkit.go lote.go cli.go) e carteiras, clientes, estoque, oportunidades,
+│   │                    pagamentos, pedidos, produtos, visitas (<nome>.go + cli.go); clientesdedup (biblioteca)
+│   ├── tools/           exportdados, resetpassword, seedusers, testeemail (cli.go + lógica)
+│   ├── cmd/             import{carteiras,clientes,estoque,oportunidades,pagamentos,pedidos,produtos,visitas},
+│   │                    exportdados, resetpassword, seedusers, testeemail: só main.go fino
+│   └── tests/           (inclui tests/arquitetura)
+└── rotaperfumes-api/                         módulo github.com/rotaperfumes/rotaperfumes-api
+    ├── cmd/server/main.go        carrega .env e config, liga o vlog e chama bootstrap.Run
+    ├── cmd/resetsenhas/main.go   main fino → internal/resetsenhas
+    ├── internal/
+    │   ├── bootstrap/    server.go rotas.go handlers.go identidade.go comercial.go vendas.go analytics.go email.go background.go
+    │   ├── httpx/        router.go chain.go cors.go secheaders.go auth.go principal.go errmap.go respond.go
+    │   │                 query.go body.go casos.go clientip.go cookies.go logging.go
+    │   ├── catalogohttp/    produto_handler.go estoque_handler.go dto.go
+    │   ├── identidadehttp/  auth_handler.go usuario_handler.go senha_historico_handler.go dto.go
+    │   ├── comercialhttp/   cliente_handler.go vendedor_handler.go visita_handler.go oportunidade_handler.go dto.go
+    │   ├── vendashttp/      pedido_handler.go pagamento_handler.go dto.go
+    │   ├── analyticshttp/   dashboard_handler.go dto.go
+    │   └── resetsenhas/     resetsenhas.go (OPS-01)
+    └── tests/            (inclui tests/arquitetura)
+```
+
+Removidos no ARQ-07 (não existem mais): `rotaperfumes-api/{handlers,services,middleware,routes}` e `shared/{services,repositories,models}`.
+
+### 10.2 Contextos e camadas
+
+| Contexto | Domínio | Aplicação | Adapters | HTTP |
+|---|---|---|---|---|
+| Catálogo (Produto, Estoque) | `shared/catalogo` | `catalogoapp` | `catalogomysql` (inclui `faturamento.go`, a baixa de estoque usada por Vendas na mesma tx) | `internal/catalogohttp` |
+| Identidade e Acesso (Usuário, RefreshToken, Histórico de senha) | `shared/identidade` | `identidadeapp` | `identidademysql`, `identidadecrypto` (hash Argon2id/bcrypt, JWT, aleatoriedade), `shared/adapters/turnstile`, `shared/adapters/ratelimit` | `internal/identidadehttp` + autenticação em `internal/httpx/auth.go` |
+| Comercial (Vendedor, Carteira, Cliente, Visita, Oportunidade) | `shared/comercial` | `comercialapp` (inclui o `AutorizadorEscopo`) | `comercialmysql` | `internal/comercialhttp` |
+| Vendas (Pedido + itens, Pagamento) | `shared/vendas` | `vendasapp` (Unit of Work `TxPedido`) | `vendasmysql` | `internal/vendashttp` |
+| Analytics (Dashboard, read model) | `shared/analytics` | `analyticsapp` | `analyticsmysql` | `internal/analyticshttp` |
+| Notificação (e-mail de senha inicial e alerta de segurança) | `shared/notificacao` | `notificacaoapp` | `notificacaosmtp` (SMTP e Noop) | (sem rotas; montagem em `bootstrap/email.go`) |
+
+Regras de dependência efetivas (verificadas pelos testes do §10.8):
+
+- **kernel:** só stdlib, sem `database/sql`, `net/http` e `log`.
+- **Domínio (`<ctx>`):** importa do projeto só `kernel`, `cnpj` e `tz`; sem `database/sql`, `net/http`, `encoding/json`, `log`, `config`, `vlog`, `db`.
+- **Aplicação (`<ctx>app`):** sem `database/sql`, `net/http`, `config`, `db`, `adapters` e sem o próprio `<ctx>mysql`; pode usar `kernel`, o domínio, `vlog` e `appkit`. As transações entram por portas (`Transactor`) declaradas na própria aplicação.
+- **Adapters (`<ctx>mysql`):** não importam a aplicação nem `net/http`; satisfazem as portas por tipagem estrutural.
+- **Entre contextos:** um contexto não importa outro. A dependência passa por porta declarada no `<ctx>app` consumidor e ligada no `bootstrap` (ex.: `vendasapp.EscopoCarteira` e `analyticsapp.EscopoAnalytics` → `comercialapp.AutorizadorEscopo`; `vendasapp.BaixaEstoque` → `catalogomysql/faturamento.go`; evento `identidade.ReusoDeRefreshDetectado` → `notificacaoapp`).
+- **HTTP:** `internal/<ctx>http` não importa `database/sql` nem `*mysql`; só o `internal/bootstrap` importa adapters.
+- **Nenhum pacote** importa os pacotes legados (o teste falha se eles voltarem a existir com importadores).
+
+### 10.3 Composition root (`rotaperfumes-api/internal/bootstrap`)
+
+- `server.go`: `Run(cfg)` abre o pool (`db.Open`, DSN mascarado), chama `Montar`, sobe a limpeza periódica de refresh tokens (`identidadeapp.IniciarLimpezaPeriodica`) e o `http.Server` (timeouts 15/15/60 s) e, no SIGINT/SIGTERM, desliga na ordem servidor (10 s) → tarefas de fundo (até 10 s, `background.go`) → alertas de segurança em andamento (até 10 s, `Notificador.Aguardar`) → pool. `Montar(cfg, pool)` liga e-mail (`NovoEmail`: SMTP ou Noop; config SMTP inválida → `log.Fatalf`), notificador de alerta, Identidade (captcha Turnstile, publicador de eventos, e-mail), os handlers e a cadeia `Logging → CORS → SecurityHeaders → mux`. O próprio `identidadeapp.Casos` é o checker de status por request (SEC-06).
+- `rotas.go`: `HandlerHTTP` (CORS → SecurityHeaders → mux, usado também pelos testes), `NovoRouter` e a **tabela declarativa das 60 rotas**, cada uma com `Metodo`, `Padrao`, `Policy` (`Public`, `Authenticated`, `AdminOnly`), `Arquivo` e `Funcao` (rótulo do vlog nível 1). `Rotas()` do router é a fonte da matriz `tests/routes/arq00_matriz_rotas_test.go`.
+- `handlers.go`, `identidade.go`, `comercial.go`, `vendas.go`, `analytics.go`, `email.go`: uma função `Novo<Contexto>` (casos de uso sobre o pool) e `Novo<Contexto>HTTP` (handlers) por contexto. O escopo de carteira é um só para Vendas e Analytics (`comercialCasos.Escopo()`).
+- `cmd/server/main.go` só carrega `.env` e config, liga o `vlog` e chama `bootstrap.Run`.
+
+### 10.4 Kit HTTP (`rotaperfumes-api/internal/httpx`)
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `router.go` | `Policy`, `Rota`, `Router` (`NovoRouter`, `Handle` com panic para política, método, padrão, handler ou rótulo inválido; O2), `Rotas()`. Cada rota é montada como `Exigir(policy)(Trace(handler))` (O9). |
+| `chain.go` | `Middleware` e `Chain` (Chain of Responsibility). |
+| `cors.go`, `secheaders.go` | CORS com allowlist exata e OPTIONS → 204 antes do mux (O3); headers de segurança. |
+| `auth.go`, `principal.go` | `Autenticador` (JWT via `ValidadorAcesso`, ativo/role/corte de sessão no banco via `ConsultaStatus` a cada request, grava a rota com `kernel.ComRota`); o `Principal` nasce só aqui e vai ao contexto por chave não exportada; leitura por `PrincipalFrom`. |
+| `errmap.go` | `ResponderErro`: `switch` sobre `kernel.Kind` → status + mensagem fixa do sentinela, `default` 500 "erro interno"; `ResponderBloqueado` (429 + `Retry-After`). |
+| `respond.go`, `casos.go`, `body.go` | Envelope `{success, data, error, pagination}`; `Responder`/`ResponderPaginado` com conversão para DTO; `LeitorJSON` (decode adiado, "autoriza antes do decode"); `DecodificarJSON`, `LerAtivoOpcional`, `IDDoPathPermissivo` (preserva o 404 legado, ver CHORE-03). |
+| `query.go` | `PaginaDaQuery`, `OrdenacaoDaQuery`, `BoolDaQuery`, `IDDoPath`/`ParseID` (parse estrito). |
+| `clientip.go`, `cookies.go` | IP do cliente (XFF só com `TRUST_PROXY_HEADERS`) e cookies de sessão. |
+| `logging.go` | `Logging` (log de acesso `[http]`, sempre ligado, path saneado por `kernel.SanearRota`) e `Trace` (vlog nível 1). |
+
+### 10.5 Shared kernel (`shared/kernel`)
+
+`principal.go` (`Principal`, `Role`, `NovoPrincipal`), `escopo.go` (`Escopo` com zero value inválido, `Filtro()` como única tradução para SQL), `pagina.go` (`Pagina`, `Resultado[T]`), `ordenacao.go` (`Ordenacao[C]`, `Direcao`), `data.go`, `email.go` (`NovoEmail`, `Mascarado`), `dinheiro.go` (`float64` encapsulado; centavos no ARQ-09), `erros.go` (`Kind`, `Erro`, `NovoErro`) e `rota.go`:
+
+- `ComRota(ctx, rota)` / `RotaDe(ctx)`: o `httpx.Autenticador` grava o path no contexto e a aplicação o lê para o log `[escopo] bloqueado vendedor_desligado ... rota=<path>` sem importar `net/http` (N4, ARQ-07);
+- `SanearRota(rota)`: troca caracteres de controle e separadores de linha Unicode pela forma escapada de Go (`\n`), para um path decodificado não forjar linhas de log (NB-C, ARQ-07). Usado por `ComRota` e pelo `httpx.Logging`.
+
+### 10.6 Infraestrutura de banco compartilhada (`shared/db`)
+
+| Arquivo | Conteúdo |
+|---|---|
+| `db.go` | `Open` (pool, ping de 5 s, DSN mascarado no log). |
+| `tx.go` | `Querier` (`*sql.DB` ou `*sql.Tx`) e `Transactor[R]`/`NewTransactor` (Unit of Work genérico: abre a tx, liga os repositórios de `R` ao mesmo `*sql.Tx`, commit/rollback). |
+| `consulta.go` | `Linha`, `Consultar[T]` (query + scan de várias linhas), `Paginada`, `Where`, `DirecaoSQL`. |
+| `linhas.go` | Helpers dos adapters, antes duplicados em `comercialmysql`/`vendasmysql` (ARQ-07, pendência h): `ExecPorID` (UPDATE/DELETE por id com "não encontrado"), `Existe`, `Inserir` (devolve o id), `LerUma[T]`. |
+| `duplicada.go` | `ChaveDuplicada` (1062 de um índice) e `SemValorDuplicado` (1062 sem o valor do driver no erro/log). |
+
+### 10.7 Importadores e CLIs
+
+- **Template Method** em `shared/importers/importkit/importkit.go`: `Executar(Etapas, dryRun, abrir)` fixa a ordem ler → (dry-run para aqui) → abrir/pingar o banco → gravar. Cada importador fornece `Etapas{Tag, Ler, LerNoDryRun, Gravar}` e mantém o próprio SQL de upsert. `LerCSV`/`LerArquivo` contam e pulam linhas inválidas sem logar valores (M-04); `lote.go` tem `Upsert[R]` (prepare único, contagem de inseridos/atualizados/falhas); `cli.go` tem o comando comum dos importadores.
+- **CLIs com `main` fino:** os 13 `main` (`shared/cmd/*` e `rotaperfumes-api/cmd/resetsenhas`) chamam só `os.Exit(cmdutil.Executar(...))`. `shared/cmdutil/cli.go` define `Ambiente` (stdin/stdout/stderr, `.env`, config com e sem credenciais de banco, abertura do banco), `Comando`, `Executar` (códigos de saída 0/1/2) e `Configurar` (carrega `.env` e config e liga o `vlog`). A lógica de cada comando fica em `cli.go` testável (`shared/importers/<nome>/cli.go`, `shared/tools/<nome>/cli.go`) ou em `rotaperfumes-api/internal/resetsenhas`.
+- Flags, textos de uso e alvos do `Makefile` (`db-seed`, `db-import-*`, `db-export`, `gen-hash`, `reset-senhas-*`) não mudaram.
+
+### 10.8 Testes de arquitetura
+
+Rodam com `make arch-check` (e dentro de `make test`).
+
+| Arquivo | Testes | Regra |
+|---|---|---|
+| `shared/tests/arquitetura/dependencias_test.go` (+ `pacotes_test.go`, helpers) | `TestARQ_Dependencias`, `TestARQ_Dependencias_EntreContextosELegado`, `TestARQ_Dependencias_DetectaViolacoes`, `TestARQ_Dependencias_VarreduraEncontraKernel` | Camadas por contexto, contexto não importa contexto, domínio puro, nenhum importador de `models`/`repositories`/`services`. |
+| `rotaperfumes-api/tests/arquitetura/dependencias_test.go` | `TestARQ_Dependencias_API`, `TestARQ_Dependencias_API_DetectaViolacoes`, `TestARQ_Varredura_DoisModulos` | Camada HTTP sem `database/sql`/`*mysql`; só o bootstrap importa adapters; a varredura enxerga os dois módulos. |
+| `rotaperfumes-api/tests/arquitetura/allowlists_test.go` | `TestARQ_NovoPrincipal_SoHttpx`, `TestARQ_Escopo_SoAutorizador`, `TestARQ_NovoErro_SentinelaLiteral`, `TestARQ_NovoErro_DentroDoKernel`, `TestARQ_SemErrorsJoinDeDominio`, `TestARQ_ChavesLegadas_SoMiddlewareLegado`, `TestARQ_Filtro_SoAdapters`, `TestARQ_MiddlewareAuthLegado_SoAutenticador`, `TestARQ_Allowlists_DetectamViolacoes`, `TestARQ_Allowlists_ReferenciaSemChamada` | Allowlists de chamadores e ASTs do §4.3 (O1, O4, O5, O6, R-c). |
+| `rotaperfumes-api/tests/arquitetura/vlog_test.go` | `TestARQ_VlogSemConteudoSensivel` (+ `_DetectaViolacoes`) | Conteúdo do vlog (O7). |
+| `rotaperfumes-api/tests/arquitetura/arq03_allowlist_test.go` | `TestARQ03_MetodosRestritosDeIdentidade` (+ `_DetectaViolacoes`) | `ResetarSenhasAtivos` só em `internal/resetsenhas`; `RegistrarReuso`/`DesfazerReuso` só em `identidadeapp`. |
+| `rotaperfumes-api/tests/arquitetura/arq04_escopo_test.go` | `TestARQ04_Escopo_SoNoArquivoDoAutorizador`, `TestARQ04_ListagensComercialRecebemEscopo`, `TestARQ04_RegrasDeEscopo_DetectamViolacoes` | Escopo por carteira em Comercial. |
+| `rotaperfumes-api/tests/arquitetura/arq05_vendas_test.go` | `TestARQ05_ListagensVendasRecebemEscopo` (+ `_DetectaViolacao`) | Escopo em Vendas. |
+| `rotaperfumes-api/tests/arquitetura/arq06_analytics_test.go` | `TestARQ_SprintfSQLSoConstantes`, `TestARQ06_ConsultasAnalyticsRecebemEscopo`, `TestARQ06_RegrasAnalytics_DetectamViolacoes` | SQL com `Sprintf` só de constantes (D-02); escopo nas consultas do Dashboard. |
+| `rotaperfumes-api/tests/arquitetura/arq07_sql_concat_test.go` | `TestARQ07_ConcatenacaoSQLSoConstantes` (+ `_DetectaViolacoes`) | Sem concatenação `+` de SQL em `QueryContext`/`QueryRowContext`/`ExecContext`. Hoje cobre só `analyticsmysql` (extensão: card TST-07). |
+
+Todos têm controle negativo (fonte sintética que a regra precisa reprovar).
+
+### 10.9 Como rodar os testes (unitários e de integração)
+
+- **Unitários:** `make test` (os dois módulos), ou `go test ./...` em `apis/shared` e em `apis/rotaperfumes-api`. Cobertura combinada (portão do Lote 21): `make cover-combinada`.
+- **Integração (MySQL local):** os testes `*_integration_test.go` e `TestIntegracao*` são pulados (`t.Skip`) sem `INTEGRATION=1`. **Só `INTEGRATION=1` não basta:** as variáveis `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USUARIO` e `DB_SENHA` precisam estar **no ambiente do processo** (SEC-11: sem default; os testes não leem o `.env` sozinhos). Sem elas, parte dos testes é pulada e outra falha ao conectar, e um resultado "verde" pode não ter tocado o banco. Rode **com `-p 1`**: os pacotes de integração usam o mesmo banco e, em paralelo, interferem entre si.
+  - Git Bash (na raiz do repositório):
+
+    ```bash
+    set -a; . ./.env; set +a
+    (cd apis/shared && INTEGRATION=1 go test -p 1 -count=1 ./...)
+    (cd apis/rotaperfumes-api && INTEGRATION=1 go test -p 1 -count=1 ./...)
+    ```
+
+  - PowerShell (na raiz do repositório; carrega só as `DB_*` do `.env`):
+
+    ```powershell
+    Get-Content .env | Where-Object { $_ -match '^\s*(DB_[A-Z_]+)=(.*)$' } | ForEach-Object { Set-Item "env:$($Matches[1])" $Matches[2].Trim() }
+    $env:INTEGRATION = "1"
+    Push-Location apis/shared; go test -p 1 -count=1 ./...; Pop-Location
+    Push-Location apis/rotaperfumes-api; go test -p 1 -count=1 ./...; Pop-Location
+    ```
+
+  - `make test-integration` exporta as variáveis do `.env` (o `Makefile` faz `-include .env` + `export`), mas **não** passa `-p 1`; prefira os comandos acima.
+  - Resultado de referência (ARQ-07, 2026-10-16): shared 2930 e API 4096 execuções aprovadas, 0 falhas.
+
+### 10.10 Design Patterns aplicados → onde no código
+
+| Pattern | Onde (caminhos conferidos) | O que simplificou |
+|---|---|---|
+| Layered / Hexagonal (portas e adapters) | `shared/<ctx>/<ctx>app/portas.go` (portas) e `shared/<ctx>/<ctx>mysql/*.go` (adapters) | Casos de uso testáveis sem banco; troca de adapter por fake nos testes. |
+| Repository | portas em `catalogoapp/portas.go`, `identidadeapp/portas.go`, `comercialapp/portas.go`, `vendasapp/portas.go`, `analyticsapp/portas.go`; adapters em `catalogomysql/produtos.go`, `identidademysql/usuarios.go`, `comercialmysql/clientes.go`, `vendasmysql/pedidos.go` etc. | Fim do `*sql.DB` em toda assinatura e dos repositórios `struct{}`. |
+| Unit of Work | `shared/db/tx.go` (`Transactor[R]`, `NewTransactor`); `vendasapp/uow.go` + `vendasapp/portas.go` (`TxPedido`: pedido, itens e baixa de estoque na mesma tx); `comercialapp/portas.go` e `identidadeapp/portas.go` (`Transactor`) | Transação decidida pelo caso de uso, não pelo repositório. |
+| Factory com validação | `catalogo/produto.go` (`NovoProduto`), `vendas/pedido.go` (`NovoPedido`), `comercial/cnpj.go` (`NovoCNPJ`), `kernel/email.go` (`NovoEmail`), `kernel/principal.go` (`NovoPrincipal`) | Entidade nasce válida; fim das validações que devolviam 6 a 8 valores. |
+| Value Object | `kernel/{pagina,ordenacao,data,email,dinheiro,escopo}.go`, `catalogo/sku.go`, `comercial/cnpj.go`, `analytics/{periodo,dias}.go`, `identidade/segredos.go`, `notificacao/{destinatario,modo_tls}.go` | Regra do valor num lugar só (CNPJ, paginação, janela de dias, segredo sem JSON). |
+| Aggregate root | `vendas/pedido.go` (Pedido com itens; valores calculados no domínio, V-03) | Totais nunca vêm do payload. |
+| Specification (escopo) | `kernel/escopo.go` (`Escopo.Filtro`), `comercial/politica.go` (`VendedorDaEscrita`), `comercialapp/escopo.go` (`AutorizadorEscopo.Resolver`) | Fim da sentinela `vendedorID <= 0`; SemAcesso nunca vira consulta global (E-02, O1). |
+| Strategy | hash em `identidadecrypto/hasher.go` (Argon2id; bcrypt só verifica e marca rehash); TLS em `notificacaosmtp/conexao.go` (`tlsImplicito`, `startTLS`); ordenação por enum em `catalogo/ordenacao.go`, `comercial/ordenacao.go` + `kernel/ordenacao.go` | Sem `if` espalhado por modo; coluna de ordenação nunca é texto livre. |
+| Builder de rotas com política tipada | `rotaperfumes-api/internal/httpx/router.go` (`Policy`, `Rota`, `Router.Handle`); tabela em `internal/bootstrap/rotas.go` | Fim do `jwt(true, false)`; método obrigatório (X1). |
+| Chain of Responsibility | `internal/httpx/chain.go` (`Chain`, `Middleware`), `cors.go`, `secheaders.go`, `auth.go` (`Autenticador.Exigir`) | Ordem dos middlewares explícita e testada. |
+| Decorator | `internal/httpx/logging.go` (`Logging`, `Trace`); `shared/vlog/trace.go` (`vlog.Trace`) | Log de rota e de caso de uso sem repetir código; de ~3.700 para ~600 chamadas. |
+| Adapter | `shared/adapters/turnstile/turnstile.go`, `shared/adapters/ratelimit/ratelimit.go`, `identidadecrypto/jwt.go`, `notificacaosmtp/smtp.go`, `catalogomysql/faturamento.go` (implementa `vendasapp.BaixaEstoque`) | Serviços externos e outro contexto atrás de interface pequena. |
+| Facade / Composition Root | `internal/bootstrap/server.go` (`Montar`, `Run`), `internal/bootstrap/handlers.go`, `cmd/server/main.go`; `shared/cmdutil/cli.go` (`Executar`) | Um só lugar monta dependências; `main` fino; singletons (rate limit, notifier) visíveis. |
+| Observer / evento de domínio | evento `identidade.ReusoDeRefreshDetectado` (`identidade/refresh.go`); `PublicadorLocal`/`NovoPublicadorLocal` (`identidadeapp/casos.go`); assinante ligado em `bootstrap/email.go` (`assinanteAlerta`) e `bootstrap/server.go` | Identidade não conhece e-mail; o notificador assina o evento. |
+| Null Object | `identidadeapp/casos.go` (`SemPublicador`), `notificacaosmtp/noop.go` (`Noop`) | Sem `if notifier != nil`; sem SMTP, só log mascarado. |
+| Template Method | `shared/importers/importkit/importkit.go` (`Executar`, `Etapas`) + `importkit/lote.go` (`Upsert[R]`); `shared/appkit/releitura.go` (releitura padronizada depois de criar/atualizar) | 8 importadores com o mesmo pipeline; mesma regra de releitura (BUG-08/09) em todos os contextos. |
+| Query object / CQRS leve | `analyticsapp/consultas.go` (`ConsultaMetricas`, `ConsultaSerieVendas`, `ConsultaRanking`, `ConsultaMetricasClientes`); read models em `analytics/{metricas,serie,ranking,clientes}.go` | Dashboard sem passar pelos agregados de escrita; respostas tipadas no lugar de `map[string]any`. |
+| Command adiado (`Leitor[T]`) | `comercialapp/casos.go` e `vendasapp/portas.go` (`Leitor[T]`); `internal/httpx/casos.go` (`LeitorJSON`) | "Autoriza antes do decode" (E-05) sem lógica no handler. |
+| Mapper / DTO | `internal/<ctx>http/dto.go`; `internal/httpx/casos.go` (`Responder`, `ResponderPaginado`) | Domínio sem tags JSON; contrato HTTP isolado. |
+| Error mapper | `kernel/erros.go` (`Kind`, `Erro`, `NovoErro`); `internal/httpx/errmap.go` (`ResponderErro`); `shared/db/duplicada.go` (`SemValorDuplicado`) | Fim dos ~12 `xxxErroParaStatus`; mensagem pública fixa; 1062 sem valor no log. |
+| Helpers compartilhados (DRY) | `shared/db/linhas.go`, `shared/db/consulta.go` | Fim dos helpers duplicados nos adapters. |
+
+### 10.11 Divergências do desenho (consolidado)
+
+| Desenho (§2 a §9) | Como ficou | Origem |
+|---|---|---|
+| `bootstrap/wire.go` | Montagem dividida por contexto: `handlers.go`, `identidade.go`, `comercial.go`, `vendas.go`, `analytics.go`, `email.go`, `server.go`, `rotas.go`, `background.go` | ARQ-01 a ARQ-07 |
+| `routes.go` em cada `<ctx>http` | Tabela única de rotas em `bootstrap/rotas.go` | ARQ-01 |
+| `httpx/trace.go` | `Trace` em `httpx/logging.go` | ARQ-01 |
+| `analytics.JanelaDias` | `analytics.Dias` (`dias.go`) | ARQ-06 |
+| `importkit.Spec[Row]` | `importkit.Etapas` (funções `Ler`/`Gravar`) | ARQ-07 (b) |
+| `resetpassword`/`seedusers` sobre `identidadeapp` | Mantêm o SQL próprio; usam `identidadecrypto` para o hash | ARQ-07 (a) |
+| `tools/testeemail/testeemail_test.go` interno | Movido para `shared/tests/tools/testeemail/` (mesmos nomes) | ARQ-07 |
+| Testes nas pastas antigas | Mantidos em `tests/services`, `tests/repositories`, `tests/middleware` etc. com os nomes antigos (R1), exercitando os pacotes novos | §7.2 |
+| `IDDoPath` estrito em todas as rotas | Só em `/api/senha-historico/{user_id...}`; as demais usam `IDDoPathPermissivo` (404 legado) | ARQ-02, card CHORE-03 |
+| Pacote novo `appkit` | Não estava no desenho: releitura pós-escrita compartilhada pelos contextos | ARQ-04 |
+
+### 10.12 Ressalva N-7 (ponteiro nil tipado): estado final
+
+- **O que é:** os construtores que conferem dependência com `dep == nil` (ex.: `analyticsapp.Novo`, `httpx.NovoAutenticador`) não detectam uma interface **não nula** que guarda um ponteiro nil tipado (ex.: `var r *analyticsmysql.Dashboard; Deps{Vendas: r}`). A montagem passaria, e o panic só viria na primeira chamada.
+- **Estado no código (conferido em 2026-10-16):** **não tratada no código, aceita e documentada.** O comentário de `shared/analytics/analyticsapp/consultas.go` (`Novo`, linhas 34 a 37) registra a ressalva. A proteção é o composition root: `bootstrap/analytics.go` monta `analyticsmysql.NovoDashboard(pool, relogio)` e `analyticsmysql.NovoClientes(pool)` (construtores que devolvem ponteiros novos) e o escopo vem de `comercialCasos.Escopo()`, que devolve o `AutorizadorEscopo` criado em `comercialapp.Novo` por `NovoAutorizadorEscopo` (nunca nil). O checker do `httpx.NovoAutenticador` é o `*identidadeapp.Casos` devolvido por `NovaIdentidade` (nunca nil).
+- **Se quiser fechar no código (decisão do 🤍 MegaBrain/usuário, fora do Lote 21):** checar com `reflect.ValueOf(dep).IsNil()` para tipos ponteiro nos construtores, ou um teste do bootstrap que monte a API e faça uma chamada por contexto. Sem card aberto.
+
+### 10.13 Pendências que saíram do Lote 21
+
+Todas em `tarefas/afazer.md`, fora do escopo do lote: ARQ-09, BUG-14 a BUG-18, SEC-14 a SEC-28, TST-06, TST-07, CHORE-03 a CHORE-06.

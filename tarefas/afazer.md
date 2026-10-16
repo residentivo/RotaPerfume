@@ -1,39 +1,12 @@
 # A Fazer
 
-> Atualizado em 2026-10-16. O Lote 21 (2026-10-13) abriu a reestruturação da API em DDD + Clean Code + Design Patterns: o ARQ-00 (blueprint, commit `cd12d47`), o ARQ-01 (fundação, commit `0e7e757`), o ARQ-02 (Catálogo, commit `17502da`), o ARQ-03 (Identidade e Acesso, commit `c412d10`), o ARQ-04 (Comercial, commit `fdaa7d9`), o ARQ-05 (Vendas, commit `3e33f6f`), o ARQ-06 (Analytics, commit `adce2b8`) e o ARQ-07 (Notificação, importadores, CLIs e remoção do legado, commit `<HASH-ARQ-07>`) foram concluídos (ver `feito.md`); falta só o ARQ-08, abaixo (um commit por lote na branch `refactor/ddd`). Logo depois deles estão os cards SEC-14 a SEC-25, GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), logo após o ARQ-08. Do ARQ-05 (2026-10-15) saíram BUG-16, SEC-26, SEC-27, TST-06 e BUG-17, no bloco "Achados do ARQ-05", logo após o BUG-15. Do ARQ-06 (2026-10-15) saiu o BUG-18, logo após o BUG-17. Do ARQ-07 (2026-10-16) saíram SEC-28 e TST-07, logo após o BUG-18.
+> Atualizado em 2026-10-16. O Lote 21 (2026-10-13 a 2026-10-16, reestruturação da API em DDD + Clean Code + Design Patterns) foi **concluído**: ARQ-00 a ARQ-08 estão em `feito.md` (estrutura final em `docs/arquitetura-ddd.md` §10; ADR em `docs/adr-001-reestruturacao-ddd.md`). Os cards abaixo saíram do lote e ficam fora do escopo dele. Os cards SEC-14 a SEC-25 são GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), no topo da lista. Do ARQ-05 (2026-10-15) saíram BUG-16, SEC-26, SEC-27, TST-06 e BUG-17, no bloco "Achados do ARQ-05", logo após o BUG-15. Do ARQ-06 (2026-10-15) saiu o BUG-18, logo após o BUG-17. Do ARQ-07 (2026-10-16) saíram SEC-28 e TST-07, logo após o BUG-18.
 >
-> **Regras do Lote 21 válidas para ARQ-01 a ARQ-07 (decisões de 2026-10-13, ver ARQ-00 em `fazendo.md`):**
-> - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. O 🟡 BackBrain atualiza a regra no código (comentário de `apis/shared/vlog/vlog.go`); o 🔵 SubBrain atualiza a documentação no ARQ-08.
+> **Regras do Lote 21 (decisões de 2026-10-13, ver ARQ-00 em `feito.md`), que continuam valendo para o código daqui em diante:**
+> - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. Regra no código: comentário de `apis/shared/vlog/vlog.go`; documentação: `docs/logs-verbose.md` (atualizada no ARQ-08).
 > - **X1, contrato HTTP:** a única exceção ao "contrato HTTP inalterado" é a do ARQ-01 (métodos das 13 rotas, `/api/senha-historico/2/extra` e, pelo parse estrito de `{user_id...}` (R-f), `/api/senha-historico/0` e `/-1` passando a 400).
 >
 > Histórico anterior (2026-10-11): o 🔴 TestBrain executou `docs/roteiro-teste-manual-lote12.md` (24 aprovados, 1 falhou, 13 não verificáveis de 38; ver a seção "Execução (2026-10-07, 🔴 TestBrain)" no fim do roteiro). Daí saíram os cards BUG-13, LOG-01, DOC-05 e TST-04. BUG-13, LOG-01 e DOC-05 foram concluídos no Lote 16 (2026-10-07; ver `feito.md`). O LOG-02 (Lote 17) gerou o TST-05, e o DEP-00 (Lote 19) gerou o DEP-01 e o DEP-02. No Lote 20 (2026-10-11; ver `feito.md`) foram concluídos DEP-01, DEP-02 e TST-05; o TST-04 avançou parcialmente (só faltam 1.1, 1.2 e 1.7, que dependem do usuário rodar o `make`) e do DEP-01 saiu o card DEP-03 (BAIXA). O MAIL-01 e o DEPLOY-01 seguem em `fazendo.md`, aguardando o usuário.
-
----
-
-## ARQ-08: documentação e fechamento do Lote 21 — prioridade MÉDIA
-
-**Status:** pendente (Lote 21; ARQ-07 concluído em `<HASH-ARQ-07>`, pronto para iniciar)
-**Camada:** Documentação
-**Responsável:** 🔵 SubBrain
-**Origem:** Lote 21 (2026-10-13), reestruturação DDD da API.
-
-**Descrição:**
-- escrever o ADR da reestruturação;
-- revisar `docs/arquitetura-ddd.md`, incluindo o que entrou no ARQ-07: o contexto Notificação (`apis/shared/notificacao`, `notificacaoapp` com o notifier de alerta e `notificacaosmtp` com o transporte SMTP do MAIL-01), o Template Method dos importadores (`apis/shared/importers/importkit` + `cli.go` por importador), os CLIs com `main` fino (`apis/shared/cmd/*`, `tools/*/cli.go`, `cmdutil/cli.go`, `apis/rotaperfumes-api/internal/resetsenhas`), os helpers SQL compartilhados (`apis/shared/db/linhas.go`), `kernel/rota.go`/`kernel.SanearRota` e a remoção dos pacotes legados (`middleware`, `services`, `routes`, `repositories`, `models`);
-- atualizar referências a caminhos que deixaram de existir no ARQ-07 (ex.: `services/email_service.go`/`email_smtp.go`, `apis/shared/tests/services/mail01_smtp_tls_test.go`, `apis/shared/tools/testeemail/testeemail_test.go`) em `docs/`, `.claude/agents/` e nos cards abertos (o histórico do MAIL-01 em `fazendo.md` cita os caminhos antigos);
-- documentar que os testes de integração exigem `INTEGRATION=1` **e** as variáveis DB_* do `.env` no ambiente (SEC-11), rodando com `-p 1`;
-- conferir a ressalva N-7 do 🟣 SecBrain (ponteiro nil tipado), que passou a valer também para `analyticsapp.Novo` (pendência n do ARQ-07), e registrar o estado final;
-- atualizar `.claude/agents/backend.md` e o `CLAUDE.md`, se aplicável;
-- Postman (`postman/`): conferir; a única mudança de contrato é a X1 (405 nas 13 rotas que passam a ter método fixo e 400 em `/api/senha-historico/2/extra`). Ajustar requests e exemplos que dependam do comportamento antigo;
-- atualizar a documentação da regra LOG-02 para o modelo de 4 níveis (P1): `docs/logs-verbose.md`, nota no histórico do `feito.md` e conferir se o comentário de `apis/shared/vlog/vlog.go` já foi atualizado pelo 🟡 BackBrain;
-- fechar o Kanban e mover ARQ-00 a ARQ-08 para `feito.md`.
-
-**Critério de aceite:**
-- contrato HTTP inalterado (rotas, payloads, status codes e mensagens de erro), exceto a mudança X1 do ARQ-01;
-- `go build`, `go vet` e `go test ./...` verdes em `apis/rotaperfumes-api` e `apis/shared`;
-- sem perda de cobertura;
-- logs `vlog` preservados;
-- commit do lote na branch `refactor/ddd`.
 
 ---
 
@@ -61,7 +34,7 @@
 **Responsável:** 🟡 BackBrain → 🔴 TestBrain
 **Origem:** decisão P4 do 🤍 MegaBrain no ARQ-00 (2026-10-13).
 
-**Descrição:** `apis/rotaperfumes-api/services/vendedor_service.go:427-529` (linhas de antes da refatoração) encerra o vínculo antigo do cliente e cria o novo **sem transação**. Uma falha entre as duas operações deixa o cliente sem vendedor ou com vínculo inconsistente.
+**Descrição:** `apis/rotaperfumes-api/services/vendedor_service.go:427-529` (linhas de antes da refatoração; desde o ARQ-04, `VincularCliente` em `apis/shared/comercial/comercialapp/carteiras.go`) encerra o vínculo antigo do cliente e cria o novo **sem transação**. Uma falha entre as duas operações deixa o cliente sem vendedor ou com vínculo inconsistente.
 
 **Ação esperada:** executar as duas operações numa única transação (Unit of Work do ARQ-01, se já existir); teste que simula falha na criação do novo vínculo e confirma o rollback do encerramento. Durante a refatoração (ARQ-04), preservar o comportamento atual e não piorar o ponto.
 
@@ -76,7 +49,7 @@
 **Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
 **Origem:** revisão do blueprint pelo 🟣 SecBrain no ARQ-00 (2026-10-13), registrada pelo 🤍 MegaBrain.
 
-**Descrição:** `ResetPassword` (troca da própria senha, `apis/rotaperfumes-api/handlers/auth_handler.go`) e o reset feito pelo admin gravam o histórico de senha, o novo hash, o corte `tokens_validos_desde` e a revogação dos refresh tokens em chamadas separadas, **sem transação**. Uma falha no meio deixa estado parcial (ex.: senha trocada sem revogar sessões, ou histórico gravado sem a troca).
+**Descrição:** `ResetPassword` (troca da própria senha; antes em `apis/rotaperfumes-api/handlers/auth_handler.go`, desde o ARQ-03 `TrocarSenha` em `apis/shared/identidade/identidadeapp/senha.go`) e o reset feito pelo admin (`AdminResetarSenha`, mesmo arquivo) gravam o histórico de senha, o novo hash, o corte `tokens_validos_desde` e a revogação dos refresh tokens em chamadas separadas, **sem transação**. Uma falha no meio deixa estado parcial (ex.: senha trocada sem revogar sessões, ou histórico gravado sem a troca).
 
 **Ação esperada:** envolver as operações numa Unit of Work (do ARQ-01) quando o contexto Identidade e Acesso estiver migrado (após o ARQ-03). As expectativas de sqlmock das suítes SEC precisarão mudar (Begin/Commit/Rollback): fazer isso neste card, não dentro dos cards ARQ. Teste de falha em cada etapa confirmando o rollback completo.
 
@@ -223,6 +196,20 @@
 > **Todos os cards abaixo estão fora do escopo do Lote 21: não corrigir dentro dos cards ARQ. Executar após o ARQ-07 ou em lote próprio, por decisão do 🤍 MegaBrain/usuário.** Durante a refatoração, a regra é não piorar nenhum destes pontos.
 >
 > Caminhos: `API` = `apis/rotaperfumes-api`, `SH` = `apis/shared`. As linhas citadas são do código antes da refatoração DDD; depois do ARQ-07 o dev deve localizar o ponto equivalente na nova estrutura.
+>
+> **Onde fica hoje (conferido no ARQ-08, 2026-10-16; mapa completo em `docs/arquitetura-ddd.md` §10):**
+> - SEC-14: `http.Server` em `API/internal/bootstrap/server.go`; decode de JSON em `API/internal/httpx/body.go` (`DecodificarJSON`); itens do pedido em `SH/vendas/pedido.go` (`NovoPedido`).
+> - SEC-15: `maskDSN` continua em `SH/db/db.go`.
+> - SEC-16: `SH/kernel/pagina.go` (`Pagina`, `Offset()`).
+> - SEC-17: `API/internal/httpx/cors.go`.
+> - SEC-18: `SH/identidade/identidadecrypto/jwt.go` e `SH/config/config.go`.
+> - SEC-19: `SH/adapters/turnstile/turnstile.go`.
+> - SEC-20: `API/internal/httpx/clientip.go` (`IPDoCliente`).
+> - SEC-21: `API/internal/httpx/cookies.go` (`DefinirCookiesSessao`, `LimparCookiesSessao`).
+> - SEC-22: `SH/identidade/identidadeapp/login.go` (`Login`) e `sessao.go` (refresh).
+> - SEC-23: `deve_trocar_senha` em `SH/identidade/usuario.go` e `SH/identidade/identidademysql/usuarios.go`; autenticação por request em `API/internal/httpx/auth.go`.
+> - SEC-24: enums de ordenação em `SH/catalogo/ordenacao.go`, `SH/comercial/ordenacao.go`, `SH/vendas/filtros.go`, `SH/identidade/usuario.go` e `SH/identidade/historico.go`, traduzidos por `switch` nos adapters `*mysql`; testes em `SH/tests/repositories/sort_test.go`.
+> - SEC-25: buscas `LIKE ?` em `SH/catalogo/catalogomysql/produtos.go`, `SH/comercial/comercialmysql/{clientes,oportunidades,visitas}.go` e `SH/vendas/vendasmysql/pedidos.go`.
 
 ---
 

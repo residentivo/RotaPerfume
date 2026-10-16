@@ -1,6 +1,8 @@
 > **Origem:** 🟣 SecBrain, card ARQ-00, Lote 21 (2026-10-13). Versionado pelo 🔵 SubBrain.
 >
 > **Referência obrigatória** dos cards ARQ-01 a ARQ-07 (reestruturação DDD da API, branch `refactor/ddd`). Cada lote de código deve ser conferido contra as regras globais (R1 a R4) e contra as invariantes da seção correspondente. Os itens marcados **[GAP]** viraram os cards SEC-14 a SEC-25 em `tarefas/afazer.md` e ficam fora do escopo do Lote 21. O GAP 12 (teste de matriz de rotas) é executado pelo 🔴 TestBrain dentro do próprio ARQ-00.
+>
+> **Nota do ARQ-08 (2026-10-16, 🔵 SubBrain):** este documento é o registro da auditoria e foi mantido como estava. Os caminhos e linhas de código de produção citados (`API/handlers/...`, `API/middleware/...`, `API/services/...`, `API/routes/routes.go`, `SH/services/...`, `SH/repositories/...`, `SH/models/...`) são do código **anterior** ao Lote 21; esses pacotes foram removidos no ARQ-07. Para achar o ponto equivalente na estrutura atual, use a seção 10 ("Estado final") de `docs/arquitetura-ddd.md`. As pastas de teste (`AT/...`, `ST/...`) continuam com os mesmos nomes.
 
 ---
 

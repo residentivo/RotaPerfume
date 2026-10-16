@@ -31,7 +31,7 @@
 - **Colunas de FK para clientes:** `cliente_id` das tabelas filhas guarda o `clientes.cliente_id_origem`. Todas as FKs para `clientes` apontam para `cliente_id_origem`.
 - **Booleanos:** `TINYINT(1)` com 0/1. No CSV vêm como S/N.
 - **Valores monetários:** `DECIMAL(15,2)` (totais) ou `DECIMAL(10,2)` (preços unitários). Percentuais: `DECIMAL(5,2)` (ex.: 5.00 = 5%).
-- **Exclusão lógica x física** (conferido nos repositórios em `apis/shared/repositories`):
+- **Exclusão lógica x física** (conferido nos repositórios, hoje os adapters MySQL `apis/shared/<contexto>/<contexto>mysql`, ex.: `apis/shared/catalogo/catalogomysql`; até o Lote 21, `apis/shared/repositories`):
 
 | Tabela | Como é "excluída" |
 | --- | --- |
@@ -311,7 +311,7 @@ Guarda os refresh tokens (hash SHA-256) emitidos no login e no refresh. Cada ref
 | `logout` | `POST /api/auth/logout`. | `auth_handler.go` (Logout) |
 | `revogacao_massa` | Reuso, fora da janela de 30 s, de um token com motivo `rotacao` (possível roubo): todos os tokens ativos do usuário são revogados. | `auth_handler.go` (`tratarTokenRevogadoForaDaJanela`) |
 | `senha` | Troca de senha pelo usuário (`POST /api/auth/reset-password`) ou reset pelo admin (`POST /api/admin/reset-password`). | `auth_handler.go`, `usuario_handler.go` |
-| `inativacao` | Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) ou desligamento do vendedor dele (`DELETE /api/vendedores/{id}`, na mesma transação, via `RevokeAllByVendedorID`). SEC-06. | `usuario_handler.go`, `vendedor_service.go` |
+| `inativacao` | Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) ou desligamento do vendedor dele (`DELETE /api/vendedores/{id}`, na mesma transação, via `RevokeAllByVendedorID`). SEC-06. | `usuario_handler.go`, `apis/shared/comercial/comercialapp/vendedores.go` (`DesligarVendedor`; até o Lote 21, `vendedor_service.go`) |
 
 **Regra de uso (SEC-07, opção B):** só o reuso de um token com motivo `rotacao` fora da janela de graça gera o alerta `[auth][seguranca]` e a revogação em massa. Os demais motivos e o `NULL` legado geram só log informativo. A resposta HTTP é sempre `401` `"refresh token revogado"`.
 
@@ -415,7 +415,7 @@ Auditoria das trocas de senha. Cada linha guarda o hash **anterior** e quem fez 
 
 **FKs:** as duas FKs foram declaradas sem nome, então o MySQL gera os nomes (normalmente `senha_historico_ibfk_1` e `_ibfk_2`; a confirmar no banco). Nenhuma declara `ON UPDATE`: vale o padrão do MySQL (`RESTRICT`/`NO ACTION`).
 
-**Valores de `tipo_reset`** (`apis/rotaperfumes-api/services/senha_historico_service.go`):
+**Valores de `tipo_reset`** (`apis/shared/identidade/historico.go`, tipo `TipoReset`; até o Lote 21, `apis/rotaperfumes-api/services/senha_historico_service.go`):
 
 | Valor | Significado | Gravado hoje? |
 | --- | --- | --- |
@@ -835,11 +835,11 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 | 6 | `senha_historico` | Sem `ENGINE`/charset/collation explícitos: herda do servidor e do banco (esperado InnoDB e `utf8mb4_unicode_ci`). Nomes das FKs gerados pelo MySQL. | `sql/07_ddl_senha_historico.sql` |
 | 7 | `senha_historico` | `created_at` aceita NULL (sem `NOT NULL`); o BUG-12 confirmou `timestamp NULL DEFAULT CURRENT_TIMESTAMP` no banco local. Um `NOT NULL` exigiria migração (decisão de negócio). | BUG-12 em `tarefas/feito.md` |
 | 8 | `senha_historico` | O teste de integração do BUG-12 usa um "registro órfão" (`usuario_id` sem usuário), o que a FK `ON DELETE CASCADE` não deveria permitir. Confirmar se a FK existe no banco local ou se o teste desliga `FOREIGN_KEY_CHECKS`. | `apis/shared/tests/repositories/bug12_senha_historico_null_test.go` |
-| 9 | `senha_historico` | `tipo_reset` `primeiro_acesso` e `esquecimento` estão no ENUM, mas nenhum código fora dos testes os grava. A troca de primeiro acesso é gravada como `usuario`. | `senha_historico_service.go`, `auth_handler.go` |
+| 9 | `senha_historico` | `tipo_reset` `primeiro_acesso` e `esquecimento` estão no ENUM, mas nenhum código fora dos testes os grava. A troca de primeiro acesso é gravada como `usuario`. | `apis/shared/identidade/historico.go`, `apis/shared/identidade/identidadeapp/senha.go` (até o Lote 21, `senha_historico_service.go` e `auth_handler.go`) |
 | 10 | `usuarios` | Valor de `deve_trocar_senha` gravado pelo CLI `resetpassword` (`-all-users`, `-create-admin`) no `db-seed`. | `apis/shared/tools/resetpassword` |
-| 11 | `refresh_tokens` | ~~`CleanupExpired`/`DeleteExpired` existe, mas nada fora dos testes o chama.~~ **Resolvido no CHORE-02 (Lote 12):** limpeza periódica na API, retenção `REFRESH_TOKEN_RETENCAO` (720h) após `expires_at`, intervalo `REFRESH_CLEANUP_INTERVAL` (6h; `0` desativa), lotes de 1000 (seção 7.2). | `refresh_token_service.go`, `refresh_cleanup.go` |
+| 11 | `refresh_tokens` | ~~`CleanupExpired`/`DeleteExpired` existe, mas nada fora dos testes o chama.~~ **Resolvido no CHORE-02 (Lote 12):** limpeza periódica na API, retenção `REFRESH_TOKEN_RETENCAO` (720h) após `expires_at`, intervalo `REFRESH_CLEANUP_INTERVAL` (6h; `0` desativa), lotes de 1000 (seção 7.2). | `apis/shared/identidade/identidadeapp/limpeza.go`, `apis/shared/identidade/identidademysql/refresh_tokens.go` (até o Lote 21, `refresh_token_service.go` e `refresh_cleanup.go`) |
 | 12 | `vendedores` | Não há UNIQUE além da PK (nem em `nome`): dois vendedores homônimos são aceitos pelo banco. Confirmar se é intencional. | `sql/01_ddl_usuarios.sql` |
-| 13 | `vendedores` | Se a reativação do vendedor também reativa os usuários vinculados. | `vendedor_service.go` |
+| 13 | `vendedores` | Se a reativação do vendedor também reativa os usuários vinculados. | `apis/shared/comercial/comercialapp/vendedores.go` (`ReativarVendedor`; até o Lote 21, `vendedor_service.go`) |
 
 ---
 

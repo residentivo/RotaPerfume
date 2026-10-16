@@ -4,6 +4,7 @@
 **Migração:** só a 20 (`sql/20_alter_clientes_cnpj_comment.sql`, DB-02), que troca **apenas o COMMENT** de `clientes.cnpj`. O tipo continua `CHAR(14)` `utf8mb4_unicode_ci`, com o índice `uq_clientes_cnpj`, e nenhum dado é alterado. Conferência no item 4.4.
 **Tempo estimado:** 35 a 45 minutos.
 **Autor:** TestBrain (2026-09-25)
+**Nota (ARQ-08, 2026-10-16):** os caminhos de código de produção citados (`handlers/`, `services/`, `repositories/`, `middleware/`, `models/`) são anteriores ao Lote 21 e foram removidos na reestruturação DDD; o equivalente atual está na seção 10 de `docs/arquitetura-ddd.md`. Os arquivos de teste citados seguem nas mesmas pastas.
 
 Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevTools aberto na aba **Network**. Se algo divergir, anote o caso e encaminhe ao SubBrain.
 

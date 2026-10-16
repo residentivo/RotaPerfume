@@ -236,7 +236,11 @@ cover-combinada: build-shared ## ARQ-01: cobertura combinada API+shared (-coverp
 		apis/rotaperfumes-api/coverage-combinada-api.txt apis/shared/coverage-combinada-shared.txt > apis/rotaperfumes-api/coverage-combinada.txt
 	cd apis/rotaperfumes-api && go tool cover -func=coverage-combinada.txt | tail -1
 
-test-integration: ## Roda testes de integração (requer DB)
+# Integração: além de INTEGRATION=1, os testes precisam das DB_* no ambiente
+# (SEC-11; o "-include .env" + "export" acima as exporta) e devem rodar com
+# "go test -p 1" (os pacotes usam o mesmo banco). Este alvo não passa -p 1:
+# ver os comandos em docs/arquitetura-ddd.md §10.9.
+test-integration: ## Roda testes de integração (requer MySQL e DB_* no .env; prefira -p 1, ver docs/arquitetura-ddd.md §10.9)
 	INTEGRATION=1 $(MAKE) test
 
 test-frontend:
