@@ -3,6 +3,50 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 13 (2026-09-30) e MAIL-01: fechados em 2026-10-16 — 1 card concluído, 1 cancelado
+
+> Fechado pelo 🔵 SubBrain a partir da mensagem do usuário: "DEPLOY-01 e Lote-13 estão ok. O MAIL-01 ainda está cancelado, não poderei hostear o serviço de email".
+>
+> **Lote 13** aberto pelo 🤍 MegaBrain a partir do pedido "implementar o projeto no servidor ivo-inspiron-15-3530 com Docker". **Fluxo:** 🟣 SecBrain (spec de segurança do deploy) → 🟡 BackBrain (infra: API, compose, Caddy, Jenkins, dump) ∥ 🟢 FrontBrain (Dockerfile do frontend) → 🔵 SubBrain (manual e Kanban) → **usuário** (commit/push, servidor, primeira execução) → 🔵 SubBrain (fechamento). Último passo registrado antes do fechamento: código no GitHub (commit 87d79af) e `deploy/setup-servidor.sh` criado.
+
+## DEPLOY-01: implantar o sistema no servidor `ivo-inspiron-15-3530` via Docker + Jenkins — 2026-10-16
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain ∥ 🟢 FrontBrain → 🔵 SubBrain → usuário
+
+**Status:** concluído em 2026-10-16 (aberto no Lote 13, 2026-09-30). Confirmado pelo usuário: deploy no servidor ok.
+**Camadas:** Segurança, Backend (infra), Frontend (infra), Documentação
+**Origem:** pedido do usuário, "implementar o projeto no servidor ivo-inspiron-15-3530 com Docker".
+
+**Decisões do usuário:** deploy por **pipeline Jenkins** (Jenkins em `http://ivo-inspiron-15-3530:8888/`); **MySQL que já existe no servidor**; dados vindos de um **dump do banco local**.
+
+**Arquitetura adotada:** o Jenkins clona `residentivo/RotaPerfume` (branch `main`) e roda `docker compose -p rotaperfumes`. O Caddy (`tls internal`) é a **única** porta publicada (**8443**) e roteia `/api/*` → API Go (`api:8080`) e o resto → Next (`frontend:3000`). O MySQL do host (`192.168.168.106`) é acessado via `host.docker.internal`. HTTPS é obrigatório porque os cookies de auth são `Secure`.
+
+**Entregue:**
+- 🟣 **SecBrain (spec):** segredos só em credenciais Jenkins (Secret file `rotaperfumes-api-env`, Username/password `rotaperfumes-db-admin`), sem `set -x`/eco de segredos e com `api.env` modo 600 apagado no `post`; usuário MySQL da API só com DML (`rotaperfumes_app@172.16.0.0/12`) e admin separado para o import; API e frontend sem porta publicada; `TRUST_PROXY_HEADERS=true` com o Caddy sobrescrevendo `X-Forwarded-For` e removendo `X-Real-IP`; CORS explícito (hostname e IP); containers com `cap_drop: ALL`, `no-new-privileges` e `read_only` (API/Caddy); `JWT_SECRET` novo; truncar `refresh_tokens` após o import; Turnstile com o hostname cadastrado.
+- 🟡 **BackBrain (infra):** `apis/Dockerfile` (multi-stage, distroless nonroot); `deploy/docker-compose.yml`; `deploy/Caddyfile`; `deploy/api.env.example`; `deploy/mysql-setup.sql`; `deploy/dump-local.ps1`; `deploy/setup-servidor.sh`; `Jenkinsfile` (Checkout → Testes Go → Build → Importar dump opcional → Deploy → Smoke test); `.dockerignore` (raiz e `apis/`); `.gitignore` com `deploy/api.env` e `deploy/dumps/`.
+- 🟢 **FrontBrain (Dockerfile):** `frontend/Dockerfile` (Next standalone, `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY` como build-args, usuário `node`); `frontend/.dockerignore`; `next.config.js` com `output: 'standalone'`; `src/lib/{api,apiClient,auth}.ts` removem a barra final do `API_BASE`.
+- 🔵 **SubBrain:** manual `docs/deploy-servidor.md` (pré-requisitos, MySQL, Turnstile, credenciais, job, dump, CA do Caddy, operações, rollback e troubleshooting).
+
+**Validação:** local (`go build`/`go test` da API, `next build`, 1482 testes do frontend) e, no servidor, pelo usuário (build das imagens, compose, Caddy/TLS, pipeline Jenkins e acesso pelo navegador), confirmada em 2026-10-16. As pendências do usuário (push, pré-requisitos do servidor, credenciais Jenkins, import do dump, CA do Caddy) foram cumpridas.
+
+**Observação:** sem servidor de e-mail (MAIL-01 cancelado, abaixo), a API sobe com o envio Noop (`apis/rotaperfumes-api/internal/bootstrap/email.go`).
+
+## MAIL-01: programa de diagnóstico de envio de e-mail (`cmd/testeemail`) — ❌ CANCELADO em 2026-10-16
+**Agentes:** 🟡 BackBrain
+
+**Status:** cancelado pelo usuário: "não poderei hostear o serviço de email". Nenhum envio real bem-sucedido. O código entregue permanece no repositório.
+**Camada:** Backend (ferramenta CLI)
+**Origem:** pedido do usuário (2026-10-09): "o envio de email não está funcionando"; programa que envie um e-mail de `henrique.rodrigues@rotaperfumes.com.br` para `admin@rotaperfumes.com.br`, logando todos os passos e usando o `.env` da raiz.
+
+**Histórico:**
+- 2026-10-09: 🟡 BackBrain entregou `apis/shared/cmd/testeemail` e `apis/shared/tools/testeemail`.
+- 2026-10-11 (Lote 20): diagnóstico real em `192.168.168.106:465` falhou no handshake TLS (certificado autoassinado "rcgen self signed cert", SAN só `localhost`, sem SAN de IP); nenhum e-mail enviado. Correção no código: TLS implícito na 465 e STARTTLS nas demais portas, AUTH obrigatório (PLAIN/LOGIN), verificação de certificado sempre ligada, TLS ≥ 1.2, variáveis `SMTP_TLS_MODE`/`SMTP_TLS_SERVER_NAME`/`SMTP_TLS_CA_FILE`, `testeemail` com `-tls-ca-file` e `-salvar-cert`, 9 testes `TestMAIL01_*`.
+- 2026-10-16 (Lote 21, ARQ-07): código SMTP migrado para `apis/shared/notificacao/notificacaosmtp/` sem mudança de comportamento.
+
+**Passo que ficou pendente (não será executado):** confirmar o fingerprint do certificado, configurar `SMTP_TLS_SERVER_NAME`/`SMTP_TLS_CA_FILE`, rodar o `testeemail` de novo e montar o PEM no deploy.
+
+**Consequência do cancelamento:** sem `SMTP_HOST/USER/PASSWORD/FROM`, a API usa o Noop (`notificacaosmtp.NovoNoop`): senha inicial, reset de senha e alertas de segurança (SEC-09) ficam **só no log** do container da API. Não colocar variáveis SMTP parciais/inválidas no `api.env`: config SMTP inválida derruba a API. Para retomar, abrir um card novo quando houver um servidor de e-mail.
+
+---
 ## Lote 21 de 2026-10-13: 9 cards concluídos (de 9)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Fechado em 2026-10-16 pelo 🔵 SubBrain (ARQ-08).
@@ -11,7 +55,7 @@
 >
 > **Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada card de código: 🟡 BackBrain → 🔴 TestBrain + 🟣 SecBrain → 🟡 BackBrain (ressalvas) → 🤍 MegaBrain (validação e commit).
 >
-> **Commits:** ARQ-00 `cd12d47`, ARQ-01 `0e7e757`, ARQ-02 `17502da`, ARQ-03 `c412d10`, ARQ-04 `fdaa7d9`, ARQ-05 `3e33f6f`, ARQ-06 `adce2b8`, ARQ-07 `719393c`, ARQ-08 `<HASH-ARQ-08>`.
+> **Commits:** ARQ-00 `cd12d47`, ARQ-01 `0e7e757`, ARQ-02 `17502da`, ARQ-03 `c412d10`, ARQ-04 `fdaa7d9`, ARQ-05 `3e33f6f`, ARQ-06 `adce2b8`, ARQ-07 `719393c`, ARQ-08 `5228747`.
 >
 > **Resultado:** contextos Catálogo, Identidade e Acesso, Comercial, Vendas, Analytics e Notificação em `apis/shared/<contexto>{,app,mysql}`; HTTP em `apis/rotaperfumes-api/internal/{httpx,<contexto>http,bootstrap}`; legado (`middleware`, `services`, `routes`, `handlers`, `repositories`, `models`) removido. Testes de topo: API 720 → 847, shared 593 → 796. Cobertura combinada 88,48% → 98,06%. Contrato HTTP inalterado, exceto a X1. Estrutura final, patterns e divergências: `docs/arquitetura-ddd.md` §10; ADR: `docs/adr-001-reestruturacao-ddd.md`.
 >
@@ -22,7 +66,7 @@
 ## ARQ-08: documentação e fechamento do Lote 21 — 2026-10-16
 **Agentes:** 🔵 SubBrain
 
-**Status:** concluído em 2026-10-16. **Commit:** `<HASH-ARQ-08>` (branch `refactor/ddd`).
+**Status:** concluído em 2026-10-16. **Commit:** `5228747` (branch `refactor/ddd`).
 
 **Camada:** Documentação
 

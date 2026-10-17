@@ -3,7 +3,7 @@
 - **Status:** aceito e implementado.
 - **Data da decisão:** 2026-10-13 (ARQ-00). **Implementação:** ARQ-01 a ARQ-07, de 2026-10-13 a 2026-10-16. **Registro:** ARQ-08 (🔵 SubBrain, 2026-10-16).
 - **Decisores:** usuário (pedido, estratégia incremental, P1 e X1); 🤍 MegaBrain (P3, P4, R-a, portões de cobertura); 🟡 BackBrain (desenho); 🟣 SecBrain (invariantes O1 a O9, R-a a R-g); 🔴 TestBrain (matriz de rotas e linha de base).
-- **Branch:** `refactor/ddd`, um commit por card: ARQ-00 `cd12d47`, ARQ-01 `0e7e757`, ARQ-02 `17502da`, ARQ-03 `c412d10`, ARQ-04 `fdaa7d9`, ARQ-05 `3e33f6f`, ARQ-06 `adce2b8`, ARQ-07 `719393c`, ARQ-08 `<HASH-ARQ-08>`.
+- **Branch:** `refactor/ddd`, um commit por card: ARQ-00 `cd12d47`, ARQ-01 `0e7e757`, ARQ-02 `17502da`, ARQ-03 `c412d10`, ARQ-04 `fdaa7d9`, ARQ-05 `3e33f6f`, ARQ-06 `adce2b8`, ARQ-07 `719393c`, ARQ-08 `5228747`.
 - **Documentos relacionados:** `docs/arquitetura-ddd.md` (blueprint e, na seção 10, o estado final), `docs/arq-00-invariantes-seguranca.md` (invariantes de segurança), `docs/logs-verbose.md` (regra de logs em 4 níveis).
 
 ## Contexto
