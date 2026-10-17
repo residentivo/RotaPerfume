@@ -38,6 +38,7 @@ build/
 *.out
 coverage.txt
 coverage.html
+coverage-combinada*.txt
 frontend/coverage/
 
 # IDE

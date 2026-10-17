@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rotaperfumes/shared/comercial/comercialapp"
 	"os"
 	"testing"
 	"time"
@@ -28,10 +29,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
+	"github.com/rotaperfumes/shared/catalogo"
+	"github.com/rotaperfumes/shared/comercial"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
 	"github.com/rotaperfumes/shared/config"
 	shareddb "github.com/rotaperfumes/shared/db"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 func envOr(k, def string) string {
@@ -106,13 +108,12 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 
 				db := abrirDBIntegracao(t)
 				ctx := context.Background()
-				cfg := &config.Config{}
 				sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
 
 				t.Run("vendedor.data_admissao", func(t *testing.T) {
-					svc := services.NewVendedorService(db, cfg)
-					in := services.VendedorInput{Nome: "ZZ-TEST-BUG01-" + sufixo, Regiao: "Teste", UF: "PR", DataAdmissao: data}
-					v, err := svc.CreateVendedor(ctx, db, in)
+					casos := casosComercial(db, 0)
+					in := comercial.DadosVendedor{Nome: "ZZ-TEST-BUG01-" + sufixo, Regiao: "Teste", UF: "PR", DataAdmissao: data}
+					v, err := casos.CriarVendedor(ctx, principalAdmin(), in)
 					require.NoError(t, err)
 					require.NotZero(t, v.ID)
 					t.Cleanup(func() {
@@ -123,7 +124,7 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 					assert.Equal(t, data, dataNoBanco(t, db, "vendedores", "data_admissao", v.ID), "gravação")
 
 					for ciclo := 1; ciclo <= 3; ciclo++ {
-						lido, err := repositories.NewVendedorRepository().GetByID(ctx, db, v.ID)
+						lido, err := comercialmysql.NovoVendedores(db).PorID(ctx, v.ID)
 						require.NoError(t, err)
 						assert.Equal(t, data, lido.DataAdmissao.In(time.Local).Format("2006-01-02"), "leitura ciclo %d", ciclo)
 						assert.Equal(t, data, dataComoAPI(t, lido.DataAdmissao), "JSON ciclo %d", ciclo)
@@ -133,19 +134,19 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 						// altere a linha de fato (o caso "sem alteração" é
 						// coberto por TestIntegracao_UpdateSemAlteracao).
 						in.MetaMensal = float64(ciclo)
-						_, err = svc.UpdateVendedor(ctx, db, v.ID, in)
+						_, err = casos.AtualizarVendedor(ctx, principalAdmin(), v.ID, in)
 						require.NoError(t, err)
 						assert.Equal(t, data, dataNoBanco(t, db, "vendedores", "data_admissao", v.ID), "re-save ciclo %d", ciclo)
 					}
 				})
 
 				t.Run("produto.data_lancamento", func(t *testing.T) {
-					svc := services.NewProdutoService(db, cfg)
-					in := services.ProdutoInput{
+					casos := novosCasosCatalogo(db)
+					in := catalogo.DadosProduto{
 						SKU: "ZZ-TEST-BUG01-" + sufixo, Descricao: "Produto teste BUG-01", Categoria: "Teste",
 						Marca: "Teste", Unidade: "UN", PrecoTabela: 1, CustoUnitario: 1, DataLancamento: data,
 					}
-					p, err := svc.CreateProduto(ctx, db, in)
+					p, err := casos.CriarProduto(ctx, in)
 					require.NoError(t, err)
 					require.NotZero(t, p.ID)
 					t.Cleanup(func() {
@@ -156,14 +157,14 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 					assert.Equal(t, data, dataNoBanco(t, db, "produtos", "data_lancamento", p.ID), "gravação")
 
 					for ciclo := 1; ciclo <= 3; ciclo++ {
-						lido, err := svc.GetProdutoByID(ctx, db, p.ID)
+						lido, err := casos.ObterProduto(ctx, p.ID)
 						require.NoError(t, err)
 						require.NotNil(t, lido.DataLancamento)
 						assert.Equal(t, data, dataComoAPI(t, *lido.DataLancamento), "JSON ciclo %d", ciclo)
 
 						in.DataLancamento = dataComoAPI(t, *lido.DataLancamento)
 						in.PrecoTabela = float64(ciclo + 1) // idem: força linha alterada
-						_, err = svc.UpdateProduto(ctx, db, p.ID, in)
+						_, err = casos.AtualizarProduto(ctx, p.ID, in)
 						require.NoError(t, err)
 						assert.Equal(t, data, dataNoBanco(t, db, "produtos", "data_lancamento", p.ID), "re-save ciclo %d", ciclo)
 					}
@@ -187,37 +188,36 @@ func TestIntegracao_UpdateSemAlteracao(t *testing.T) {
 	}
 	db := abrirDBIntegracao(t)
 	ctx := context.Background()
-	cfg := &config.Config{}
 	sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	t.Run("vendedor", func(t *testing.T) {
-		svc := services.NewVendedorService(db, cfg)
-		in := services.VendedorInput{Nome: "ZZ-TEST-BUG01-" + sufixo, Regiao: "Teste", UF: "PR", DataAdmissao: "2024-01-01", MetaMensal: 1}
-		v, err := svc.CreateVendedor(ctx, db, in)
+		casos := casosComercial(db, 0)
+		in := comercial.DadosVendedor{Nome: "ZZ-TEST-BUG01-" + sufixo, Regiao: "Teste", UF: "PR", DataAdmissao: "2024-01-01", MetaMensal: 1}
+		v, err := casos.CriarVendedor(ctx, principalAdmin(), in)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			_, err := db.Exec("DELETE FROM vendedores WHERE id = ? AND nome LIKE 'ZZ-TEST-BUG01-%'", v.ID)
 			assert.NoError(t, err)
 		})
 
-		_, err = svc.UpdateVendedor(ctx, db, v.ID, in)
+		_, err = casos.AtualizarVendedor(ctx, principalAdmin(), v.ID, in)
 		assert.NoError(t, err)
 	})
 
 	t.Run("produto", func(t *testing.T) {
-		svc := services.NewProdutoService(db, cfg)
-		in := services.ProdutoInput{
+		casos := novosCasosCatalogo(db)
+		in := catalogo.DadosProduto{
 			SKU: "ZZ-TEST-BUG01-" + sufixo, Descricao: "Produto teste", Categoria: "Teste",
 			Marca: "Teste", Unidade: "UN", PrecoTabela: 1, CustoUnitario: 1, DataLancamento: "2024-01-01",
 		}
-		p, err := svc.CreateProduto(ctx, db, in)
+		p, err := casos.CriarProduto(ctx, in)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			_, err := db.Exec("DELETE FROM produtos WHERE id = ? AND sku LIKE 'ZZ-TEST-BUG01-%'", p.ID)
 			assert.NoError(t, err)
 		})
 
-		_, err = svc.UpdateProduto(ctx, db, p.ID, in)
+		_, err = casos.AtualizarProduto(ctx, p.ID, in)
 		assert.NoError(t, err)
 	})
 }
@@ -237,9 +237,9 @@ func TestIntegracao_UpdateSemAlteracao(t *testing.T) {
 
 const bug05Prefixo = "ZZ-TEST-BUG05-"
 
-func bug05CriarVendedor(t *testing.T, ctx context.Context, db *sql.DB, svc *services.VendedorService, nome string) int64 {
+func bug05CriarVendedor(t *testing.T, ctx context.Context, db *sql.DB, casos *comercialapp.Casos, nome string) int64 {
 	t.Helper()
-	v, err := svc.CreateVendedor(ctx, db, services.VendedorInput{
+	v, err := casos.CriarVendedor(ctx, principalAdmin(), comercial.DadosVendedor{
 		Nome: nome, Regiao: "Teste", UF: "PR", DataAdmissao: "2024-01-01", MetaMensal: 1,
 	})
 	require.NoError(t, err)
@@ -294,14 +294,14 @@ func TestIntegracaoBUG05_InativarVendedorInativaUsuarios(t *testing.T) {
 	}
 	db := abrirDBIntegracao(t)
 	ctx := context.Background()
-	svc := services.NewVendedorService(db, &config.Config{})
+	casos := casosComercial(db, 0)
 	sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
 	email := func(n string) string { return fmt.Sprintf("zz-test-bug05-%s-%s@teste.local", sufixo, n) }
 
 	// Vendedores primeiro → seus Cleanups rodam por último (LIFO).
-	vendA := bug05CriarVendedor(t, ctx, db, svc, bug05Prefixo+sufixo+"-A")
-	vendB := bug05CriarVendedor(t, ctx, db, svc, bug05Prefixo+sufixo+"-B")
-	vendC := bug05CriarVendedor(t, ctx, db, svc, bug05Prefixo+sufixo+"-C")
+	vendA := bug05CriarVendedor(t, ctx, db, casos, bug05Prefixo+sufixo+"-A")
+	vendB := bug05CriarVendedor(t, ctx, db, casos, bug05Prefixo+sufixo+"-B")
+	vendC := bug05CriarVendedor(t, ctx, db, casos, bug05Prefixo+sufixo+"-C")
 
 	u1 := bug05CriarUsuario(t, db, email("a1"), vendA)
 	u2 := bug05CriarUsuario(t, db, email("a2"), vendA)
@@ -311,7 +311,7 @@ func TestIntegracaoBUG05_InativarVendedorInativaUsuarios(t *testing.T) {
 	hoje := time.Now().Format("2006-01-02")
 
 	t.Run("DeleteVendedor inativa usuarios vinculados", func(t *testing.T) {
-		v, err := svc.DeleteVendedor(ctx, db, vendA)
+		v, err := casos.DesligarVendedor(ctx, principalAdmin(), vendA)
 		require.NoError(t, err)
 		require.NotNil(t, v)
 		require.NotNil(t, v.DataDesligamento, "retorno do service deve trazer data_desligamento")
@@ -338,7 +338,7 @@ func TestIntegracaoBUG05_InativarVendedorInativaUsuarios(t *testing.T) {
 	})
 
 	t.Run("ReativarVendedor limpa data e NAO reativa usuarios", func(t *testing.T) {
-		v, err := svc.ReativarVendedor(ctx, db, vendA)
+		v, err := casos.ReativarVendedor(ctx, principalAdmin(), vendA)
 		require.NoError(t, err)
 		require.NotNil(t, v)
 		assert.Nil(t, v.DataDesligamento)
@@ -352,7 +352,7 @@ func TestIntegracaoBUG05_InativarVendedorInativaUsuarios(t *testing.T) {
 	})
 
 	t.Run("DeleteVendedor sem usuarios", func(t *testing.T) {
-		v, err := svc.DeleteVendedor(ctx, db, vendC)
+		v, err := casos.DesligarVendedor(ctx, principalAdmin(), vendC)
 		require.NoError(t, err)
 		require.NotNil(t, v)
 		dd := bug05DataDesligamento(t, db, vendC)
@@ -361,8 +361,8 @@ func TestIntegracaoBUG05_InativarVendedorInativaUsuarios(t *testing.T) {
 	})
 
 	t.Run("DeleteVendedor inexistente nao altera usuarios", func(t *testing.T) {
-		_, err := svc.DeleteVendedor(ctx, db, -1)
-		assert.ErrorIs(t, err, services.ErrVendedorNaoEncontrado)
+		_, err := casos.DesligarVendedor(ctx, principalAdmin(), -1)
+		assert.ErrorIs(t, err, comercial.ErrVendedorNaoEncontrado)
 		assert.Equal(t, 1, bug05Ativo(t, db, ctrlOutroVend))
 		assert.Equal(t, 1, bug05Ativo(t, db, ctrlSemVend))
 	})

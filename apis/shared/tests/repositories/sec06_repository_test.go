@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/identidade"
 )
 
 const (
@@ -27,7 +28,7 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 	casos := []struct {
 		nome    string
 		expect  func(m sqlmock.Sqlmock)
-		want    *repositories.UsuarioStatus
+		want    identidade.StatusAcesso
 		wantErr error
 	}{
 		{
@@ -36,7 +37,7 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
 					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(true, "admin", nil))
 			},
-			want: &repositories.UsuarioStatus{Ativo: true, Role: "admin"},
+			want: identidade.StatusAcesso{Ativo: true, Role: "admin"},
 		},
 		{
 			nome: "inativo normal",
@@ -44,7 +45,7 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
 					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(false, "normal", nil))
 			},
-			want: &repositories.UsuarioStatus{Ativo: false, Role: "normal"},
+			want: identidade.StatusAcesso{Ativo: false, Role: "normal"},
 		},
 		{
 			nome: "inexistente → ErrNotFound",
@@ -52,7 +53,7 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
 					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}))
 			},
-			wantErr: repositories.ErrNotFound,
+			wantErr: identidade.ErrUsuarioNaoEncontrado,
 		},
 		{
 			nome: "erro de banco repassado",
@@ -68,11 +69,11 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 			defer db.Close()
 			c.expect(mock)
 
-			st, err := repositories.NewUsuarioRepository().GetStatusByID(context.Background(), db, 4)
+			st, err := identidademysql.NovoUsuarios(db).StatusParaAutenticacao(context.Background(), 4)
 
 			if c.wantErr != nil {
 				assert.ErrorIs(t, err, c.wantErr)
-				assert.Nil(t, st)
+				assert.Zero(t, st, "ARQ-07: em erro, o status volta zerado (era nil)")
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, c.want, st)
@@ -89,7 +90,7 @@ func TestRefreshTokenRevokeAllByVendedorID(t *testing.T) {
 		mock.ExpectExec(reRevokePorVendedor).WithArgs(sqlmock.AnyArg(), "inativacao", int64(9)).
 			WillReturnResult(sqlmock.NewResult(0, 3))
 
-		n, err := repositories.NewRefreshTokenRepository().RevokeAllByVendedorID(context.Background(), db, 9, repositories.RevokeReasonInativacao)
+		n, err := identidademysql.NovoRefreshTokens(db).RevogarDoVendedor(context.Background(), 9, identidade.MotivoInativacao)
 
 		require.NoError(t, err)
 		assert.Equal(t, int64(3), n)
@@ -102,7 +103,7 @@ func TestRefreshTokenRevokeAllByVendedorID(t *testing.T) {
 		mock.ExpectExec(reRevokePorVendedor).WithArgs(sqlmock.AnyArg(), "inativacao", int64(9)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		n, err := repositories.NewRefreshTokenRepository().RevokeAllByVendedorID(context.Background(), db, 9, repositories.RevokeReasonInativacao)
+		n, err := identidademysql.NovoRefreshTokens(db).RevogarDoVendedor(context.Background(), 9, identidade.MotivoInativacao)
 
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), n)
@@ -119,7 +120,7 @@ func TestRefreshTokenRevokeAllByVendedorID(t *testing.T) {
 
 		tx, err := db.Begin()
 		require.NoError(t, err)
-		_, err = repositories.NewRefreshTokenRepository().RevokeAllByVendedorID(context.Background(), tx, 9, repositories.RevokeReasonInativacao)
+		_, err = identidademysql.NovoRefreshTokens(tx).RevogarDoVendedor(context.Background(), 9, identidade.MotivoInativacao)
 		require.NoError(t, err)
 		require.NoError(t, tx.Commit())
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -131,7 +132,7 @@ func TestRefreshTokenRevokeAllByVendedorID(t *testing.T) {
 		errDB := errors.New("falha")
 		mock.ExpectExec(reRevokePorVendedor).WithArgs(sqlmock.AnyArg(), "inativacao", int64(9)).WillReturnError(errDB)
 
-		_, err := repositories.NewRefreshTokenRepository().RevokeAllByVendedorID(context.Background(), db, 9, repositories.RevokeReasonInativacao)
+		_, err := identidademysql.NovoRefreshTokens(db).RevogarDoVendedor(context.Background(), 9, identidade.MotivoInativacao)
 
 		assert.ErrorIs(t, err, errDB)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -144,7 +145,7 @@ func TestRefreshTokenRevokeAllByVendedorID(t *testing.T) {
 		mock.ExpectExec(reRevokePorVendedor).WithArgs(sqlmock.AnyArg(), "inativacao", int64(9)).
 			WillReturnResult(sqlmock.NewErrorResult(errRows))
 
-		n, err := repositories.NewRefreshTokenRepository().RevokeAllByVendedorID(context.Background(), db, 9, repositories.RevokeReasonInativacao)
+		n, err := identidademysql.NovoRefreshTokens(db).RevogarDoVendedor(context.Background(), 9, identidade.MotivoInativacao)
 
 		assert.ErrorIs(t, err, errRows)
 		assert.Zero(t, n)
@@ -157,12 +158,12 @@ func TestRefreshTokenFindByTokenHash_LeMotivoDaRevogacao(t *testing.T) {
 	casos := []struct {
 		nome   string
 		motivo any
-		want   repositories.RevokeReason
+		want   identidade.MotivoRevogacao
 	}{
-		{"rotacao", "rotacao", repositories.RevokeReasonRotacao},
-		{"logout", "logout", repositories.RevokeReasonLogout},
-		{"inativacao", "inativacao", repositories.RevokeReasonInativacao},
-		{"NULL", nil, repositories.RevokeReasonDesconhecido},
+		{"rotacao", "rotacao", identidade.MotivoRotacao},
+		{"logout", "logout", identidade.MotivoLogout},
+		{"inativacao", "inativacao", identidade.MotivoInativacao},
+		{"NULL", nil, identidade.MotivoDesconhecido},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -174,10 +175,10 @@ func TestRefreshTokenFindByTokenHash_LeMotivoDaRevogacao(t *testing.T) {
 				WillReturnRows(sqlmock.NewRows(refreshTokenColumns).
 					AddRow(int64(1), int64(2), "h", agora.Add(time.Hour), agora, "ip", "ua", c.motivo))
 
-			rt, err := repositories.NewRefreshTokenRepository().FindByTokenHash(context.Background(), db, "h")
+			rt, err := identidademysql.NovoRefreshTokens(db).PorHash(context.Background(), "h")
 
 			require.NoError(t, err)
-			assert.Equal(t, c.want, rt.RevokedReason)
+			assert.Equal(t, c.want, rt.Motivo)
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}

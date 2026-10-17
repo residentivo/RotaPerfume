@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Regexes/colunas que espelham as constantes de apis/shared/repositories/pedido_repository.go.
+// Regexes/colunas que espelham as constantes de apis/shared/vendas/vendasmysql (SQL do legado pedido_repository.go).
 const pedidoColunasRegexH = `p\.pedido_id_origem, p\.cliente_id, p\.vendedor_id, p\.data_pedido, p\.canal, p\.status, p\.valor_total, p\.created_at, p\.updated_at, c\.razao_social, v\.nome`
 const pedidoFromRegexH = ` FROM pedidos p JOIN clientes c ON c\.cliente_id_origem = p\.cliente_id JOIN vendedores v ON v\.id = p\.vendedor_id`
 const itemPedidoColunasRegexH = `i\.item_id_origem, i\.pedido_id, i\.produto_id, i\.quantidade, i\.preco_praticado, i\.desconto_pct, i\.valor_bruto, i\.created_at, i\.updated_at, pr\.sku, pr\.descricao`

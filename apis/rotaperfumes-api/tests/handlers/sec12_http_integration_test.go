@@ -158,4 +158,3 @@ func TestIntegracaoHTTP_SEC12_ReusoRepetido(t *testing.T) {
 		assert.Zero(t, c.motivos(uid)["ativo"])
 	})
 }
-

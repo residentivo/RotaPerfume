@@ -8,14 +8,13 @@ package repositories_test
 import (
 	"context"
 	"database/sql/driver"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 func TestSEC10_InvalidarSessoes_TruncaEmSegundos(t *testing.T) {
@@ -38,7 +37,7 @@ func TestSEC10_InvalidarSessoes_TruncaEmSegundos(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 			mock.ExpectExec(reInvalidar).WithArgs(c.want, int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
-			require.NoError(t, repositories.NewUsuarioRepository().InvalidarSessoes(context.Background(), db, 7, c.in))
+			require.NoError(t, identidademysql.NovoUsuarios(db).InvalidarSessoes(context.Background(), 7, c.in))
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -47,7 +46,7 @@ func TestSEC10_InvalidarSessoes_TruncaEmSegundos(t *testing.T) {
 		defer db.Close()
 		agora := time.Now()
 		mock.ExpectExec(reInvalidar).WithArgs(semFracao{}, int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
-		require.NoError(t, repositories.NewUsuarioRepository().InvalidarSessoes(context.Background(), db, 7, agora))
+		require.NoError(t, identidademysql.NovoUsuarios(db).InvalidarSessoes(context.Background(), 7, agora))
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }

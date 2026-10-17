@@ -7,14 +7,14 @@ package middleware_test
 
 import (
 	"errors"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/rotaperfumes/shared/identidade"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 )
 
 func TestUserCheck_CookieAccessToken(t *testing.T) {
@@ -27,11 +27,11 @@ func TestUserCheck_CookieAccessToken(t *testing.T) {
 		wantCalled bool
 		wantMsg    string
 	}{
-		{"ativo", &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "normal"}}, false, http.StatusOK, true, ""},
-		{"inativo", &mockChecker{status: middleware.UserStatus{Ativo: false, Role: "normal"}}, false, http.StatusUnauthorized, false, "usuário inativo"},
-		{"inexistente", &mockChecker{err: middleware.ErrUserNotFound}, false, http.StatusUnauthorized, false, "usuário inativo"},
+		{"ativo", &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "normal"}}, false, http.StatusOK, true, ""},
+		{"inativo", &mockChecker{status: identidade.StatusAcesso{Ativo: false, Role: "normal"}}, false, http.StatusUnauthorized, false, "usuário inativo"},
+		{"inexistente", &mockChecker{err: identidade.ErrUsuarioNaoEncontrado}, false, http.StatusUnauthorized, false, "usuário inativo"},
 		{"erro de banco", &mockChecker{err: errors.New("db down")}, false, http.StatusInternalServerError, false, "erro interno"},
-		{"admin rebaixado em rota admin", &mockChecker{status: middleware.UserStatus{Ativo: true, Role: "normal"}}, true, http.StatusForbidden, false, "acesso restrito a administradores"},
+		{"admin rebaixado em rota admin", &mockChecker{status: identidade.StatusAcesso{Ativo: true, Role: "normal"}}, true, http.StatusForbidden, false, "acesso restrito a administradores"},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -43,7 +43,7 @@ func TestUserCheck_CookieAccessToken(t *testing.T) {
 			req := httptest.NewRequest("GET", "/protected", nil)
 			req.AddCookie(&http.Cookie{Name: "access_token", Value: generateToken(t, cfg, 42, "admin", time.Hour, "")})
 			w := httptest.NewRecorder()
-			middleware.JWTMiddlewareWithUserCheck(cfg, c.checker, true, c.requireAdm)(next).ServeHTTP(w, req)
+			porPolitica(autenticador(cfg, c.checker), politica(true, c.requireAdm))(next).ServeHTTP(w, req)
 
 			assert.Equal(t, c.wantStatus, w.Code)
 			assert.Equal(t, c.wantCalled, called)
@@ -72,7 +72,7 @@ func TestUserCheck_RotaPublica_QualquerTokenSegueSemConsultarBanco(t *testing.T)
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			chk := &mockChecker{status: middleware.UserStatus{Ativo: false}}
+			chk := &mockChecker{status: identidade.StatusAcesso{Ativo: false}}
 			called := false
 			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				called = true
@@ -86,7 +86,7 @@ func TestUserCheck_RotaPublica_QualquerTokenSegueSemConsultarBanco(t *testing.T)
 				req.AddCookie(&http.Cookie{Name: "access_token", Value: c.cookie})
 			}
 			w := httptest.NewRecorder()
-			middleware.JWTMiddlewareWithUserCheck(cfg, chk, false, false)(next).ServeHTTP(w, req)
+			porPolitica(autenticador(cfg, chk), httpx.Public)(next).ServeHTTP(w, req)
 
 			assert.Equal(t, http.StatusOK, w.Code)
 			assert.True(t, called, "rota pública sempre chega ao handler")

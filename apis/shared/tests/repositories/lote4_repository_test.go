@@ -3,6 +3,8 @@ package repositories_test
 import (
 	"context"
 	"errors"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"testing"
 	"time"
 
@@ -11,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/comercial"
+	"github.com/rotaperfumes/shared/identidade"
 )
 
 // Testes do Lote 4: NEG-01 (1062 em uq_clientes_cnpj), SEC-03
@@ -30,15 +32,15 @@ func TestClienteRepository_CNPJDuplicado(t *testing.T) {
 		{"erro genérico", errors.New("db down"), false},
 	}
 	for _, tc := range cases {
-		c := &models.Cliente{CNPJ: "11222333000181", DataCadastro: time.Now()}
+		c := &comercial.Cliente{CNPJ: "11222333000181", DataCadastro: time.Now()}
 		t.Run("create/"+tc.nome, func(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 			mock.ExpectExec(`INSERT INTO clientes`).WillReturnError(tc.err)
 
-			err := repositories.NewClienteRepository().Create(context.Background(), db, c)
+			err := comercialmysql.NovoClientes(db).Inserir(context.Background(), c)
 			require.Error(t, err)
-			assert.Equal(t, tc.wantDup, errors.Is(err, repositories.ErrCNPJDuplicado))
+			assert.Equal(t, tc.wantDup, errors.Is(err, comercial.ErrCNPJDuplicado))
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 		t.Run("update/"+tc.nome, func(t *testing.T) {
@@ -46,9 +48,9 @@ func TestClienteRepository_CNPJDuplicado(t *testing.T) {
 			defer db.Close()
 			mock.ExpectExec(`UPDATE clientes`).WillReturnError(tc.err)
 
-			err := repositories.NewClienteRepository().Update(context.Background(), db, 1, c)
+			err := comercialmysql.NovoClientes(db).Atualizar(context.Background(), 1, c)
 			require.Error(t, err)
-			assert.Equal(t, tc.wantDup, errors.Is(err, repositories.ErrCNPJDuplicado))
+			assert.Equal(t, tc.wantDup, errors.Is(err, comercial.ErrCNPJDuplicado))
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -64,7 +66,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows(cols).AddRow(int64(7), "Sete", "Sul", "PR", nil))
 
-		out, err := repositories.NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		out, err := comercialmysql.NovoVendedores(db).ListarResumo(context.Background(), escopoDe(7))
 		require.NoError(t, err)
 		require.Len(t, out, 1)
 		assert.Equal(t, int64(7), out[0].ID)
@@ -77,7 +79,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows(cols))
 
-		out, err := repositories.NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		out, err := comercialmysql.NovoVendedores(db).ListarResumo(context.Background(), escopoDe(7))
 		require.NoError(t, err)
 		assert.NotNil(t, out)
 		assert.Empty(t, out)
@@ -89,7 +91,7 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WillReturnError(errors.New("db down"))
 
-		_, err = repositories.NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		_, err = comercialmysql.NovoVendedores(db).ListarResumo(context.Background(), escopoDe(7))
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -99,14 +101,14 @@ func TestVendedorRepository_ListResumoByID(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(q).WillReturnRows(sqlmock.NewRows(cols).AddRow("x", "Sete", "Sul", "PR", nil))
 
-		_, err = repositories.NewVendedorRepository().ListResumoByID(context.Background(), db, 7)
+		_, err = comercialmysql.NovoVendedores(db).ListarResumo(context.Background(), escopoDe(7))
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
 
 // TestRefreshTokenRevoke_Condicional_EmTx: o UPDATE só afeta token ainda não
-// revogado e aceita *sql.Tx; 0 linhas → ErrNotFound (já revogado).
+// revogado e aceita *sql.Tx; 0 linhas → identidade.ErrRefreshRevogado (já revogado).
 func TestRefreshTokenRevoke_Condicional_EmTx(t *testing.T) {
 	cases := []struct {
 		nome    string
@@ -114,7 +116,7 @@ func TestRefreshTokenRevoke_Condicional_EmTx(t *testing.T) {
 		wantErr error
 	}{
 		{"revoga", 1, nil},
-		{"já revogado", 0, repositories.ErrNotFound},
+		{"já revogado", 0, identidade.ErrRefreshRevogado},
 	}
 	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
@@ -127,7 +129,7 @@ func TestRefreshTokenRevoke_Condicional_EmTx(t *testing.T) {
 
 			tx, err := db.Begin()
 			require.NoError(t, err)
-			err = repositories.NewRefreshTokenRepository().Revoke(context.Background(), tx, 3, repositories.RevokeReasonRotacao)
+			err = identidademysql.NovoRefreshTokens(tx).Revogar(context.Background(), 3, identidade.MotivoRotacao)
 			_ = tx.Rollback()
 			if tc.wantErr != nil {
 				assert.ErrorIs(t, err, tc.wantErr)
@@ -144,8 +146,8 @@ func TestRefreshTokenRevoke_RowsAffectedErro(t *testing.T) {
 	defer db.Close()
 	mock.ExpectExec(`UPDATE refresh_tokens`).WillReturnResult(sqlmock.NewErrorResult(errors.New("sem rows affected")))
 
-	err := repositories.NewRefreshTokenRepository().Revoke(context.Background(), db, 3, repositories.RevokeReasonRotacao)
+	err := identidademysql.NovoRefreshTokens(db).Revogar(context.Background(), 3, identidade.MotivoRotacao)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, identidade.ErrRefreshRevogado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

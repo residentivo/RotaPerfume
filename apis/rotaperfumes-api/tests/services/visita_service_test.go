@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -50,7 +51,7 @@ func visitaVendedorExistsRows() *sqlmock.Rows {
 func TestVisitaService_ListVisitas(t *testing.T) {
 	testCases := []struct {
 		nome    string
-		filtro  services.VisitaFiltro
+		filtro  comercial.FiltroVisita
 		page    int
 		limit   int
 		mock    func(mock sqlmock.Sqlmock)
@@ -60,7 +61,7 @@ func TestVisitaService_ListVisitas(t *testing.T) {
 	}{
 		{
 			nome:   "sem filtros - sucesso",
-			filtro: services.VisitaFiltro{},
+			filtro: comercial.FiltroVisita{Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -75,7 +76,7 @@ func TestVisitaService_ListVisitas(t *testing.T) {
 		},
 		{
 			nome:   "com filtros cliente/vendedor/resultado - repassa args ao repo",
-			filtro: services.VisitaFiltro{ClienteID: 100, VendedorID: 1, Resultado: "Positiva"},
+			filtro: comercial.FiltroVisita{ClienteID: 100, VendedorID: 1, Resultado: "Positiva", Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			page:   2,
 			limit:  10,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -91,7 +92,7 @@ func TestVisitaService_ListVisitas(t *testing.T) {
 		},
 		{
 			nome:   "erro no count do repo é propagado",
-			filtro: services.VisitaFiltro{},
+			filtro: comercial.FiltroVisita{Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -107,8 +108,8 @@ func TestVisitaService_ListVisitas(t *testing.T) {
 			db, mock := newVisitaTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewVisitaService(db, visitaTestCfg(true))
-			visitas, total, err := svc.ListVisitas(context.Background(), db, tc.page, tc.limit, tc.filtro)
+			casos := casosComercial(db, 0)
+			visitas, total, err := itensETotal(casos.ListarVisitas(context.Background(), principalAdmin(), tc.filtro, kernel.NovaPagina(tc.page, tc.limit)))
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -133,8 +134,8 @@ func TestVisitaService_GetVisitaByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnRows(visitaRows())
 
-		svc := services.NewVisitaService(db, visitaTestCfg(false))
-		v, err := svc.GetVisitaByID(context.Background(), db, 1)
+		casos := casosComercial(db, 0)
+		v, err := casos.ObterVisita(context.Background(), principalAdmin(), 1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), v.VisitaID)
 		assert.Equal(t, "Positiva", v.Resultado)
@@ -147,10 +148,10 @@ func TestVisitaService_GetVisitaByID(t *testing.T) {
 			WithArgs(int64(999)).
 			WillReturnError(sql.ErrNoRows)
 
-		svc := services.NewVisitaService(db, visitaTestCfg(false))
-		v, err := svc.GetVisitaByID(context.Background(), db, 999)
+		casos := casosComercial(db, 0)
+		v, err := casos.ObterVisita(context.Background(), principalAdmin(), 999)
 		assert.Nil(t, v)
-		assert.ErrorIs(t, err, services.ErrVisitaNaoEncontrada)
+		assert.ErrorIs(t, err, comercial.ErrVisitaNaoEncontrada)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -160,11 +161,11 @@ func TestVisitaService_GetVisitaByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewVisitaService(db, visitaTestCfg(false))
-		v, err := svc.GetVisitaByID(context.Background(), db, 1)
+		casos := casosComercial(db, 0)
+		v, err := casos.ObterVisita(context.Background(), principalAdmin(), 1)
 		assert.Nil(t, v)
 		assert.Error(t, err)
-		assert.False(t, err == services.ErrVisitaNaoEncontrada)
+		assert.False(t, err == comercial.ErrVisitaNaoEncontrada)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -173,8 +174,8 @@ func TestVisitaService_GetVisitaByID(t *testing.T) {
 // CreateVisita
 // ---------------------------------------------------------------------------
 
-func validVisitaInput() services.VisitaInput {
-	return services.VisitaInput{
+func validVisitaInput() comercial.DadosVisita {
+	return comercial.DadosVisita{
 		ClienteID:  100,
 		VendedorID: 1,
 		DataVisita: "2024-01-15",
@@ -186,7 +187,7 @@ func validVisitaInput() services.VisitaInput {
 func TestVisitaService_CreateVisita(t *testing.T) {
 	testCases := []struct {
 		nome      string
-		input     func() services.VisitaInput
+		input     func() comercial.DadosVisita
 		mock      func(mock sqlmock.Sqlmock)
 		wantErr   error
 		wantErrIs bool
@@ -208,51 +209,51 @@ func TestVisitaService_CreateVisita(t *testing.T) {
 		},
 		{
 			nome: "cliente_id ausente",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				in := validVisitaInput()
 				in.ClienteID = 0
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrVisitaClienteInvalido,
+			wantErr:   comercial.ErrClienteInvalido,
 			wantErrIs: true,
 		},
 		{
 			nome: "vendedor_id ausente",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				in := validVisitaInput()
 				in.VendedorID = 0
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrVisitaVendedorInvalido,
+			wantErr:   comercial.ErrVendedorInvalido,
 			wantErrIs: true,
 		},
 		{
 			nome: "resultado vazio",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				in := validVisitaInput()
 				in.Resultado = "  "
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrVisitaResultadoInvalido,
+			wantErr:   comercial.ErrResultadoObrigatorio,
 			wantErrIs: true,
 		},
 		{
 			nome: "duracao_min negativa",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				in := validVisitaInput()
 				in.DuracaoMin = -1
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrVisitaDuracaoInvalida,
+			wantErr:   comercial.ErrDuracaoInvalida,
 			wantErrIs: true,
 		},
 		{
 			nome: "duracao_min zero é válida - sucesso",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				in := validVisitaInput()
 				in.DuracaoMin = 0
 				return in
@@ -271,18 +272,18 @@ func TestVisitaService_CreateVisita(t *testing.T) {
 		},
 		{
 			nome: "data_visita vazia é erro (sem default)",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				in := validVisitaInput()
 				in.DataVisita = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrVisitaDataInvalida,
+			wantErr:   comercial.ErrDataVisitaInvalida,
 			wantErrIs: true,
 		},
 		{
 			nome: "data_visita em formato inválido",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				in := validVisitaInput()
 				in.DataVisita = "15/01/2024"
 				return in
@@ -295,12 +296,12 @@ func TestVisitaService_CreateVisita(t *testing.T) {
 					WithArgs(int64(1)).
 					WillReturnRows(visitaVendedorExistsRows())
 			},
-			wantErr:   services.ErrVisitaDataInvalida,
+			wantErr:   comercial.ErrDataVisitaInvalida,
 			wantErrIs: true,
 		},
 		{
 			nome: "cliente inexistente",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				return validVisitaInput()
 			},
 			mock: func(mock sqlmock.Sqlmock) {
@@ -308,12 +309,12 @@ func TestVisitaService_CreateVisita(t *testing.T) {
 					WithArgs(int64(100)).
 					WillReturnError(sql.ErrNoRows)
 			},
-			wantErr:   services.ErrVisitaClienteInvalido,
+			wantErr:   comercial.ErrClienteInvalido,
 			wantErrIs: true,
 		},
 		{
 			nome: "vendedor inexistente",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				return validVisitaInput()
 			},
 			mock: func(mock sqlmock.Sqlmock) {
@@ -324,12 +325,12 @@ func TestVisitaService_CreateVisita(t *testing.T) {
 					WithArgs(int64(1)).
 					WillReturnError(sql.ErrNoRows)
 			},
-			wantErr:   services.ErrVisitaVendedorInvalido,
+			wantErr:   comercial.ErrVendedorInvalido,
 			wantErrIs: true,
 		},
 		{
 			nome: "erro do repo ao checar cliente é propagado",
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				return validVisitaInput()
 			},
 			mock: func(mock sqlmock.Sqlmock) {
@@ -361,8 +362,8 @@ func TestVisitaService_CreateVisita(t *testing.T) {
 			db, mock := newVisitaTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewVisitaService(db, visitaTestCfg(true))
-			v, err := svc.CreateVisita(context.Background(), db, tc.input())
+			casos := casosComercial(db, 0)
+			v, err := casos.CriarVisita(context.Background(), principalAdmin(), fixo(tc.input()))
 
 			if tc.wantErr != nil {
 				assert.Nil(t, v)
@@ -389,7 +390,7 @@ func TestVisitaService_UpdateVisita(t *testing.T) {
 	testCases := []struct {
 		nome      string
 		id        int64
-		input     func() services.VisitaInput
+		input     func() comercial.DadosVisita
 		mock      func(mock sqlmock.Sqlmock)
 		wantErr   error
 		wantErrIs bool
@@ -416,19 +417,19 @@ func TestVisitaService_UpdateVisita(t *testing.T) {
 		{
 			nome: "data_visita vazia é erro na edição (sem default)",
 			id:   1,
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				in := validVisitaInput()
 				in.DataVisita = ""
 				return in
 			},
 			mock:      func(mock sqlmock.Sqlmock) {},
-			wantErr:   services.ErrVisitaDataInvalida,
+			wantErr:   comercial.ErrDataVisitaInvalida,
 			wantErrIs: true,
 		},
 		{
 			nome: "id inexistente retorna ErrVisitaNaoEncontrada",
 			id:   999,
-			input: func() services.VisitaInput {
+			input: func() comercial.DadosVisita {
 				return validVisitaInput()
 			},
 			mock: func(mock sqlmock.Sqlmock) {
@@ -442,7 +443,7 @@ func TestVisitaService_UpdateVisita(t *testing.T) {
 					WithArgs(int64(100), int64(1), sqlmock.AnyArg(), "Positiva", 30, int64(999)).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			},
-			wantErr:   services.ErrVisitaNaoEncontrada,
+			wantErr:   comercial.ErrVisitaNaoEncontrada,
 			wantErrIs: true,
 		},
 		{
@@ -486,10 +487,11 @@ func TestVisitaService_UpdateVisita(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.nome, func(t *testing.T) {
 			db, mock := newVisitaTestDB(t)
+			esperarPosseVisita(mock, tc.id)
 			tc.mock(mock)
 
-			svc := services.NewVisitaService(db, visitaTestCfg(true))
-			v, err := svc.UpdateVisita(context.Background(), db, tc.id, tc.input())
+			casos := casosComercial(db, 0)
+			v, err := casos.AtualizarVisita(context.Background(), principalAdmin(), tc.id, fixo(tc.input()))
 
 			if tc.wantErr != nil {
 				assert.Nil(t, v)
@@ -516,36 +518,39 @@ const deleteVisitaRegex = `DELETE FROM visitas WHERE visita_id = \?`
 
 func TestVisitaService_DeleteVisita_Sucesso(t *testing.T) {
 	db, mock := newVisitaTestDB(t)
+	esperarPosseVisita(mock, 1)
 	mock.ExpectExec(deleteVisitaRegex).
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	svc := services.NewVisitaService(db, visitaTestCfg(true))
-	err := svc.DeleteVisita(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	err := casos.ExcluirVisita(context.Background(), principalAdmin(), 1)
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestVisitaService_DeleteVisita_NaoEncontrada(t *testing.T) {
 	db, mock := newVisitaTestDB(t)
+	esperarPosseVisita(mock, 999)
 	mock.ExpectExec(deleteVisitaRegex).
 		WithArgs(int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	svc := services.NewVisitaService(db, visitaTestCfg(false))
-	err := svc.DeleteVisita(context.Background(), db, 999)
-	assert.ErrorIs(t, err, services.ErrVisitaNaoEncontrada)
+	casos := casosComercial(db, 0)
+	err := casos.ExcluirVisita(context.Background(), principalAdmin(), 999)
+	assert.ErrorIs(t, err, comercial.ErrVisitaNaoEncontrada)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestVisitaService_DeleteVisita_ErroRepo(t *testing.T) {
 	db, mock := newVisitaTestDB(t)
+	esperarPosseVisita(mock, 1)
 	mock.ExpectExec(deleteVisitaRegex).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := services.NewVisitaService(db, visitaTestCfg(false))
-	err := svc.DeleteVisita(context.Background(), db, 1)
+	casos := casosComercial(db, 0)
+	err := casos.ExcluirVisita(context.Background(), principalAdmin(), 1)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

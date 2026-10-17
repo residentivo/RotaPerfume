@@ -3,12 +3,11 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/analytics/analyticsapp"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // TestDashboardService_GetClienteMetrics_ErroEmCadaEtapa injeta erro em cada
@@ -55,9 +54,8 @@ func TestDashboardService_GetClienteMetrics_ErroEmCadaEtapa(t *testing.T) {
 				}
 			}
 
-			svc := services.NewDashboardService(db, dashboardTestCfg(false))
-			metrics, err := svc.GetClienteMetrics(context.Background(), db, "month", 7)
-			assert.Nil(t, metrics)
+			metrics, err := consultasAnalytics(db, 7).MetricasClientes(context.Background(), analyticsapp.ConsultaMetricasClientes{Periodo: periodoDe("month")})
+			assert.Zero(t, metrics, "em erro, o read model volta zerado")
 			assert.ErrorIs(t, err, sql.ErrConnDone)
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})

@@ -3,6 +3,8 @@ package services_test
 
 import (
 	"encoding/base64"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/kernel"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
 
 // newTestConfig retorna uma Config válida para uso em testes.
@@ -29,13 +31,12 @@ func newTestConfig() *config.Config {
 // senha correta → true, senha errada → false, hash inválido → false sem panic.
 func TestVerifyPassword(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
-	argon, err := auth.HashPassword(cfg, "senha-correta")
+	argon, err := identidadecrypto.NovoHasher(cfg.HashSenha).Gerar(identidade.NovaSenha("senha-correta"))
 	require.NoError(t, err, "falha ao gerar hash argon2id para o teste")
 	legado, err := bcrypt.GenerateFromPassword([]byte("senha-correta"), 4)
 	require.NoError(t, err, "falha ao gerar hash bcrypt para o teste")
 
-	hashes := map[string]string{"argon2id": argon, "bcrypt legado": string(legado)}
+	hashes := map[string]identidade.HashSenha{"argon2id": argon, "bcrypt legado": identidade.NovoHashSenha(string(legado))}
 	for nome, hash := range hashes {
 		t.Run(nome, func(t *testing.T) {
 			cases := []struct {
@@ -51,7 +52,7 @@ func TestVerifyPassword(t *testing.T) {
 			}
 			for _, c := range cases {
 				t.Run(c.name, func(t *testing.T) {
-					assert.Equal(t, c.match, auth.VerifyPassword(cfg, hash, c.password))
+					assert.Equal(t, c.match, identidadecrypto.NovoHasher(cfg.HashSenha).Verificar(hash, identidade.NovaSenha(c.password)))
 				})
 			}
 		})
@@ -59,7 +60,7 @@ func TestVerifyPassword(t *testing.T) {
 
 	t.Run("hash inválido retorna false (sem panic)", func(t *testing.T) {
 		assert.NotPanics(t, func() {
-			assert.False(t, auth.VerifyPassword(cfg, "hash-invalido", "qualquer"))
+			assert.False(t, identidadecrypto.NovoHasher(cfg.HashSenha).Verificar(identidade.NovoHashSenha("hash-invalido"), identidade.NovaSenha("qualquer")))
 		})
 	})
 }
@@ -68,33 +69,32 @@ func TestVerifyPassword(t *testing.T) {
 // VerifyPassword.
 func TestHashPassword(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
 
 	t.Run("gera hash argon2id que valida com VerifyPassword", func(t *testing.T) {
-		hash, err := auth.HashPassword(cfg, "minha-senha-123")
+		hash, err := identidadecrypto.NovoHasher(cfg.HashSenha).Gerar(identidade.NovaSenha("minha-senha-123"))
 		require.NoError(t, err)
-		assert.True(t, strings.HasPrefix(hash, "$argon2id$v=19$m=64,t=1,p=1$"), hash)
-		assert.True(t, auth.VerifyPassword(cfg, hash, "minha-senha-123"))
-		assert.False(t, auth.NeedsRehash(cfg, hash))
+		assert.True(t, strings.HasPrefix(hash.Revelar(), "$argon2id$v=19$m=64,t=1,p=1$"), hash.Revelar())
+		assert.True(t, identidadecrypto.NovoHasher(cfg.HashSenha).Verificar(hash, identidade.NovaSenha("minha-senha-123")))
+		assert.False(t, identidadecrypto.NovoHasher(cfg.HashSenha).PrecisaRehash(hash))
 	})
 
 	t.Run("hashes diferentes para a mesma senha (salt aleatório)", func(t *testing.T) {
-		h1, err := auth.HashPassword(cfg, "mesma-senha")
+		h1, err := identidadecrypto.NovoHasher(cfg.HashSenha).Gerar(identidade.NovaSenha("mesma-senha"))
 		require.NoError(t, err)
-		h2, err := auth.HashPassword(cfg, "mesma-senha")
+		h2, err := identidadecrypto.NovoHasher(cfg.HashSenha).Gerar(identidade.NovaSenha("mesma-senha"))
 		require.NoError(t, err)
 		assert.NotEqual(t, h1, h2, "argon2id deve gerar salt aleatório")
-		assert.True(t, auth.VerifyPassword(cfg, h1, "mesma-senha"))
-		assert.True(t, auth.VerifyPassword(cfg, h2, "mesma-senha"))
+		assert.True(t, identidadecrypto.NovoHasher(cfg.HashSenha).Verificar(h1, identidade.NovaSenha("mesma-senha")))
+		assert.True(t, identidadecrypto.NovoHasher(cfg.HashSenha).Verificar(h2, identidade.NovaSenha("mesma-senha")))
 	})
 
 	t.Run("parametrizado: senhas diversas", func(t *testing.T) {
 		senhas := []string{"a", "abc123", "uma senha com espaços e acentos áéíóú", "🔐🔑", strings.Repeat("x", 200)}
 		for _, s := range senhas {
 			t.Run(s, func(t *testing.T) {
-				hash, err := auth.HashPassword(cfg, s)
+				hash, err := identidadecrypto.NovoHasher(cfg.HashSenha).Gerar(identidade.NovaSenha(s))
 				require.NoError(t, err)
-				assert.True(t, auth.VerifyPassword(cfg, hash, s))
+				assert.True(t, identidadecrypto.NovoHasher(cfg.HashSenha).Verificar(hash, identidade.NovaSenha(s)))
 			})
 		}
 	})
@@ -104,15 +104,14 @@ func TestHashPassword(t *testing.T) {
 // e é assinado com HS256.
 func TestGenerateJWT(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
 
 	t.Run("gera token com claims corretos", func(t *testing.T) {
-		tok, err := auth.GenerateJWT(cfg, 42, "admin")
+		tok, err := identidadecrypto.NovoJWT(cfg).Emitir(42, kernel.RoleDoBanco("admin"))
 		require.NoError(t, err)
 		assert.NotEmpty(t, tok)
 
 		// ValidateJWT agora retorna *AuthClaims diretamente.
-		claims, err := auth.ValidateJWT(tok, cfg.JWTSecret)
+		claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
 		require.NoError(t, err)
 		assert.Equal(t, int64(42), claims.UserID)
 		assert.Equal(t, "admin", claims.Role)
@@ -134,9 +133,9 @@ func TestGenerateJWT(t *testing.T) {
 		}
 		for _, c := range cases {
 			t.Run(c.role, func(t *testing.T) {
-				tok, err := auth.GenerateJWT(cfg, c.uid, c.role)
+				tok, err := identidadecrypto.NovoJWT(cfg).Emitir(c.uid, kernel.RoleDoBanco(c.role))
 				require.NoError(t, err)
-				claims, err := auth.ValidateJWT(tok, cfg.JWTSecret)
+				claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
 				require.NoError(t, err)
 				assert.Equal(t, c.uid, claims.UserID)
 				assert.Equal(t, c.role, claims.Role)
@@ -149,12 +148,11 @@ func TestGenerateJWT(t *testing.T) {
 // método de assinatura errado, claims inválidos e segredo errado.
 func TestValidateJWT(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
 
 	t.Run("token válido retorna claims", func(t *testing.T) {
-		tok, err := auth.GenerateJWT(cfg, 7, "normal")
+		tok, err := identidadecrypto.NovoJWT(cfg).Emitir(7, kernel.RoleDoBanco("normal"))
 		require.NoError(t, err)
-		claims, err := auth.ValidateJWT(tok, cfg.JWTSecret)
+		claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
 		require.NoError(t, err)
 		assert.Equal(t, int64(7), claims.UserID)
 		assert.Equal(t, "normal", claims.Role)
@@ -186,11 +184,11 @@ func TestValidateJWT(t *testing.T) {
 		}{{"assinatura", 2}, {"payload", 1}, {"header", 0}} {
 			t.Run(c.nome, func(t *testing.T) {
 				for i := 0; i < 50; i++ { // vários tokens (iat/jti variam) para provar estabilidade
-					tok, err := auth.GenerateJWT(cfg, int64(7+i), "normal")
+					tok, err := identidadecrypto.NovoJWT(cfg).Emitir(int64(7+i), kernel.RoleDoBanco("normal"))
 					require.NoError(t, err)
-					_, err = auth.ValidateJWT(manipular(t, tok, c.parte), cfg.JWTSecret)
+					_, err = identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(manipular(t, tok, c.parte))
 					require.Error(t, err, "token com %s manipulado deve ser rejeitado", c.nome)
-					assert.ErrorIs(t, err, services.ErrInvalidToken)
+					assert.ErrorIs(t, err, identidadecrypto.ErrTokenInvalido)
 				}
 			})
 		}
@@ -199,26 +197,26 @@ func TestValidateJWT(t *testing.T) {
 	t.Run("token expirado é rejeitado", func(t *testing.T) {
 		cfgCurto := *cfg
 		cfgCurto.JWTTTL = -1 * time.Hour // TTL negativo = já expirado
-		tok, err := auth.GenerateJWT(&cfgCurto, 1, "normal")
+		tok, err := identidadecrypto.NovoJWT(&cfgCurto).Emitir(1, kernel.RoleDoBanco("normal"))
 		require.NoError(t, err)
-		_, err = auth.ValidateJWT(tok, cfg.JWTSecret)
+		_, err = identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
 		assert.Error(t, err, "token expirado deve falhar")
 	})
 
 	t.Run("segredo errado é rejeitado", func(t *testing.T) {
-		tok, err := auth.GenerateJWT(cfg, 1, "normal")
+		tok, err := identidadecrypto.NovoJWT(cfg).Emitir(1, kernel.RoleDoBanco("normal"))
 		require.NoError(t, err)
-		_, err = auth.ValidateJWT(tok, "outro-segredo")
+		_, err = identidadecrypto.NovoJWT(&config.Config{JWTSecret: "outro-segredo"}).Ler(tok)
 		assert.Error(t, err)
 	})
 
 	t.Run("token vazio é rejeitado", func(t *testing.T) {
-		_, err := auth.ValidateJWT("", cfg.JWTSecret)
+		_, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler("")
 		assert.Error(t, err)
 	})
 
 	t.Run("string aleatória é rejeitada", func(t *testing.T) {
-		_, err := auth.ValidateJWT("nao-eh-um-jwt", cfg.JWTSecret)
+		_, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler("nao-eh-um-jwt")
 		assert.Error(t, err)
 	})
 }
@@ -226,12 +224,11 @@ func TestValidateJWT(t *testing.T) {
 // TestAuthClaims verifica a extração de UID e Role a partir dos claims.
 func TestAuthClaims(t *testing.T) {
 	cfg := newTestConfig()
-	auth := services.NewAuthService()
 
 	t.Run("extração via claims corretos", func(t *testing.T) {
-		tok, err := auth.GenerateJWT(cfg, 123, "admin")
+		tok, err := identidadecrypto.NovoJWT(cfg).Emitir(123, kernel.RoleDoBanco("admin"))
 		require.NoError(t, err)
-		claims, err := auth.ValidateJWT(tok, cfg.JWTSecret)
+		claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
 		require.NoError(t, err)
 		assert.Equal(t, int64(123), claims.UserID, "uid deve ser extraído corretamente")
 		assert.Equal(t, "admin", claims.Role, "role deve ser extraído corretamente")
@@ -249,9 +246,9 @@ func TestAuthClaims(t *testing.T) {
 		}
 		for _, c := range cases {
 			t.Run(c.role, func(t *testing.T) {
-				tok, err := auth.GenerateJWT(cfg, c.uid, c.role)
+				tok, err := identidadecrypto.NovoJWT(cfg).Emitir(c.uid, kernel.RoleDoBanco(c.role))
 				require.NoError(t, err)
-				claims, err := auth.ValidateJWT(tok, cfg.JWTSecret)
+				claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
 				require.NoError(t, err)
 				assert.Equal(t, c.uid, claims.UserID)
 				assert.Equal(t, c.role, claims.Role)

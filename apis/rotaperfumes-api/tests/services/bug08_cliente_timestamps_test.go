@@ -14,8 +14,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 const reGetClienteByID = `SELECT ` + `cliente_id_origem, cnpj, razao_social, segmento, cidade, uf, COALESCE\(bairro, ''\), data_cadastro, ativo, created_at, updated_at` + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`
@@ -35,8 +33,8 @@ func TestBUG08_CreateCliente_DevolveTimestampsDoBanco(t *testing.T) {
 	mock.ExpectExec(reInsertClienteS).WillReturnResult(sqlmock.NewResult(101, 1))
 	mock.ExpectQuery(reGetClienteByID).WithArgs(int64(101)).WillReturnRows(clienteGravadoRows(101, criado))
 
-	svc := services.NewClienteService(db, clienteTestCfg(false))
-	c, err := svc.CreateCliente(context.Background(), db, inputClienteValido())
+	casos := casosComercial(db, 0)
+	c, err := casos.CriarCliente(context.Background(), principalAdmin(), fixo(inputClienteValido()))
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(101), c.ClienteIDOrigem)
@@ -57,8 +55,7 @@ func TestBUG08_CreateClienteNaCarteira_DevolveTimestampsDoBanco(t *testing.T) {
 	// Releitura só depois do COMMIT (fora da transação).
 	mock.ExpectQuery(reGetClienteByID).WithArgs(int64(555)).WillReturnRows(clienteGravadoRows(555, criado))
 
-	svc := services.NewClienteService(db, clienteTestCfg(false))
-	c, err := svc.CreateClienteNaCarteira(context.Background(), db, inputClienteValido(), 10)
+	c, err := casosComercial(db, 10).CriarCliente(context.Background(), principalRestrito(), fixo(inputClienteValido()))
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(555), c.ClienteIDOrigem)
@@ -73,8 +70,8 @@ func TestBUG08_CreateCliente_FalhaNaReleitura_DevolveObjetoGravadoSemErro(t *tes
 	mock.ExpectExec(reInsertClienteS).WillReturnResult(sqlmock.NewResult(101, 1))
 	mock.ExpectQuery(reGetClienteByID).WithArgs(int64(101)).WillReturnError(errors.New("db down"))
 
-	svc := services.NewClienteService(db, clienteTestCfg(false))
-	c, err := svc.CreateCliente(context.Background(), db, inputClienteValido())
+	casos := casosComercial(db, 0)
+	c, err := casos.CriarCliente(context.Background(), principalAdmin(), fixo(inputClienteValido()))
 
 	require.NoError(t, err, "INSERT confirmado não pode virar erro por falha só na releitura")
 	require.NotNil(t, c)
@@ -90,8 +87,8 @@ func TestBUG08_UpdateCliente_DevolveTimestampsDoBanco(t *testing.T) {
 	mock.ExpectExec(`UPDATE clientes\s+SET cnpj = \?`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(reGetClienteByID).WithArgs(int64(555)).WillReturnRows(clienteGravadoRows(555, criado))
 
-	svc := services.NewClienteService(db, clienteTestCfg(false))
-	c, err := svc.UpdateCliente(context.Background(), db, 555, inputClienteValido())
+	casos := casosComercial(db, 0)
+	c, err := casos.AtualizarCliente(context.Background(), principalAdmin(), 555, fixo(inputClienteValido()))
 
 	require.NoError(t, err)
 	assert.True(t, c.CreatedAt.Equal(criado))

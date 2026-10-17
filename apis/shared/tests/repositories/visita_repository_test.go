@@ -4,15 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 var visitaColumns = []string{
@@ -40,9 +40,8 @@ func TestVisitaList_SemFiltro(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	visitas, total, err := repo.List(ctx, db, 1, 10, repositories.VisitaFiltro{})
+	visitas, total, err := itensETotal(comercialmysql.NovoVisitas(db).Listar(ctx, escopoAdmin(), comercial.FiltroVisita{Ordenacao: comercial.OrdenacaoVisitaPadrao()}, kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
@@ -54,49 +53,49 @@ func TestVisitaList_SemFiltro(t *testing.T) {
 func TestVisitaList_ComFiltros(t *testing.T) {
 	testes := []struct {
 		nome        string
-		filtro      repositories.VisitaFiltro
+		filtro      comercial.FiltroVisita
 		whereRegexp string
 		args        []driver.Value
 	}{
 		{
 			nome:        "filtro por cliente_id",
-			filtro:      repositories.VisitaFiltro{ClienteID: 100},
+			filtro:      comercial.FiltroVisita{ClienteID: 100, Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			whereRegexp: "WHERE cliente_id = \\?",
 			args:        []driver.Value{int64(100)},
 		},
 		{
 			nome:        "filtro por vendedor_id",
-			filtro:      repositories.VisitaFiltro{VendedorID: 5},
+			filtro:      comercial.FiltroVisita{VendedorID: 5, Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			whereRegexp: "WHERE vendedor_id = \\?",
 			args:        []driver.Value{int64(5)},
 		},
 		{
 			nome:        "filtro por resultado",
-			filtro:      repositories.VisitaFiltro{Resultado: "Positiva"},
+			filtro:      comercial.FiltroVisita{Resultado: "Positiva", Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			whereRegexp: "WHERE resultado = \\?",
 			args:        []driver.Value{"Positiva"},
 		},
 		{
 			nome:        "filtro por data_visita_de",
-			filtro:      repositories.VisitaFiltro{DataVisitaDe: "2024-01-01"},
+			filtro:      comercial.FiltroVisita{De: "2024-01-01", Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			whereRegexp: "WHERE data_visita >= \\?",
 			args:        []driver.Value{"2024-01-01"},
 		},
 		{
 			nome:        "filtro por data_visita_ate",
-			filtro:      repositories.VisitaFiltro{DataVisitaAte: "2024-12-31"},
+			filtro:      comercial.FiltroVisita{Ate: "2024-12-31", Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			whereRegexp: "WHERE data_visita <= \\?",
 			args:        []driver.Value{"2024-12-31"},
 		},
 		{
 			nome:        "filtro por busca textual",
-			filtro:      repositories.VisitaFiltro{Q: "Positiva"},
+			filtro:      comercial.FiltroVisita{Busca: "Positiva", Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			whereRegexp: "WHERE resultado LIKE \\?",
 			args:        []driver.Value{"%Positiva%"},
 		},
 		{
 			nome:        "filtros combinados",
-			filtro:      repositories.VisitaFiltro{ClienteID: 100, VendedorID: 5, Resultado: "Positiva"},
+			filtro:      comercial.FiltroVisita{ClienteID: 100, VendedorID: 5, Resultado: "Positiva", Ordenacao: comercial.OrdenacaoVisitaPadrao()},
 			whereRegexp: "WHERE cliente_id = \\? AND vendedor_id = \\? AND resultado = \\?",
 			args:        []driver.Value{int64(100), int64(5), "Positiva"},
 		},
@@ -116,9 +115,8 @@ func TestVisitaList_ComFiltros(t *testing.T) {
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(visitaColumns))
 
-			repo := repositories.NewVisitaRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, tt.filtro)
+			_, _, err := itensETotal(comercialmysql.NovoVisitas(db).Listar(ctx, escopoAdmin(), tt.filtro, kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -151,9 +149,8 @@ func TestVisitaList_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(visitaColumns))
 
-			repo := repositories.NewVisitaRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, repositories.VisitaFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+			_, _, err := itensETotal(comercialmysql.NovoVisitas(db).Listar(ctx, escopoAdmin(), comercial.FiltroVisita{Ordenacao: kernel.ParseOrdenacao(tt.orderBy, tt.orderDir, comercial.CamposOrdenacaoVisita(), comercial.OrdenacaoVisitaPadrao())}, kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -168,9 +165,8 @@ func TestVisitaList_CountError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM visitas").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.VisitaFiltro{})
+	_, _, err := itensETotal(comercialmysql.NovoVisitas(db).Listar(ctx, escopoAdmin(), comercial.FiltroVisita{Ordenacao: comercial.OrdenacaoVisitaPadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -186,9 +182,8 @@ func TestVisitaList_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.VisitaFiltro{})
+	_, _, err := itensETotal(comercialmysql.NovoVisitas(db).Listar(ctx, escopoAdmin(), comercial.FiltroVisita{Ordenacao: comercial.OrdenacaoVisitaPadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -207,9 +202,8 @@ func TestVisitaList_IterError(t *testing.T) {
 			AddRow(visitaRow(1, 100, 1, now, "Positiva", 30, now, now)...).
 			RowError(0, sql.ErrConnDone))
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.VisitaFiltro{})
+	_, _, err := itensETotal(comercialmysql.NovoVisitas(db).Listar(ctx, escopoAdmin(), comercial.FiltroVisita{Ordenacao: comercial.OrdenacaoVisitaPadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -227,9 +221,8 @@ func TestVisitaGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	v, err := repo.GetByID(ctx, db, 1)
+	v, err := comercialmysql.NovoVisitas(db).PorID(ctx, 1)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), v.VisitaID)
@@ -245,12 +238,11 @@ func TestVisitaGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	v, err := repo.GetByID(ctx, db, 999)
+	v, err := comercialmysql.NovoVisitas(db).PorID(ctx, 999)
 
 	assert.Nil(t, v)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrVisitaNaoEncontrada)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -262,13 +254,12 @@ func TestVisitaGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	v, err := repo.GetByID(ctx, db, 1)
+	v, err := comercialmysql.NovoVisitas(db).PorID(ctx, 1)
 
 	assert.Nil(t, v)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, comercial.ErrVisitaNaoEncontrada)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -277,7 +268,7 @@ func TestVisitaCreate_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	v := &models.Visita{
+	v := &comercial.Visita{
 		ClienteID:  100,
 		VendedorID: 1,
 		DataVisita: now,
@@ -289,9 +280,8 @@ func TestVisitaCreate_Success(t *testing.T) {
 		WithArgs(v.ClienteID, v.VendedorID, v.DataVisita, v.Resultado, v.DuracaoMin).
 		WillReturnResult(sqlmock.NewResult(9, 1))
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, v)
+	err := comercialmysql.NovoVisitas(db).Inserir(ctx, v)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(9), v.VisitaID)
@@ -302,13 +292,12 @@ func TestVisitaCreate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	v := &models.Visita{}
+	v := &comercial.Visita{}
 	mock.ExpectExec("INSERT INTO visitas").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, v)
+	err := comercialmysql.NovoVisitas(db).Inserir(ctx, v)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -319,7 +308,7 @@ func TestVisitaUpdate_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	v := &models.Visita{
+	v := &comercial.Visita{
 		ClienteID:  100,
 		VendedorID: 1,
 		DataVisita: now,
@@ -331,9 +320,8 @@ func TestVisitaUpdate_Success(t *testing.T) {
 		WithArgs(v.ClienteID, v.VendedorID, v.DataVisita, v.Resultado, v.DuracaoMin, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, v)
+	err := comercialmysql.NovoVisitas(db).Atualizar(ctx, 1, v)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -343,15 +331,14 @@ func TestVisitaUpdate_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	v := &models.Visita{}
+	v := &comercial.Visita{}
 	mock.ExpectExec("UPDATE visitas").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 999, v)
+	err := comercialmysql.NovoVisitas(db).Atualizar(ctx, 999, v)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrVisitaNaoEncontrada)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -359,13 +346,12 @@ func TestVisitaUpdate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	v := &models.Visita{}
+	v := &comercial.Visita{}
 	mock.ExpectExec("UPDATE visitas").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewVisitaRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, v)
+	err := comercialmysql.NovoVisitas(db).Atualizar(ctx, 1, v)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

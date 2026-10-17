@@ -1,6 +1,6 @@
 package handlers_test
 
-// Integração HTTP ponta a ponta (router real routes.NewMux + handlers reais +
+// Integração HTTP ponta a ponta (router real bootstrap.HandlerHTTP + handlers reais +
 // MySQL local) dos cards SEC-01, BUG-04 e RISCO-01.
 //
 // Só roda com INTEGRATION=1. Credenciais via DB_HOST/DB_PORT/DB_NAME/
@@ -30,12 +30,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
-	"github.com/rotaperfumes/rotaperfumes-api/routes"
-	apisvc "github.com/rotaperfumes/rotaperfumes-api/services"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"github.com/rotaperfumes/shared/config"
 	shareddb "github.com/rotaperfumes/shared/db"
+	"github.com/rotaperfumes/shared/identidade"
 )
 
 // ---------------------------------------------------------------------------
@@ -82,21 +80,11 @@ func novoItCtx(t *testing.T) *itCtx {
 	t.Cleanup(func() { db.Close() })
 
 	cfg := testCfg()
-	authH := handlers.NewAuthHandler(db, cfg)
-	authH.SetCaptchaVerifier(&fakeCaptchaVerifier{})
-	mux := routes.NewMux(cfg, middleware.NewDBUserStatusChecker(db), authH,
-		handlers.NewUsuarioHandler(db, cfg, &fakeEmailService{}),
-		handlers.NewDashboardHandler(db, cfg),
-		handlers.NewSenhaHistoricoHandler(db),
-		handlers.NewVendedorHandler(db, cfg),
-		handlers.NewClienteHandler(db, cfg),
-		handlers.NewProdutoHandler(db, cfg),
-		handlers.NewPedidoHandler(db, cfg),
-		handlers.NewPagamentoHandler(db, cfg),
-		handlers.NewOportunidadeHandler(db, cfg),
-		handlers.NewVisitaHandler(db, cfg),
-		handlers.NewEstoqueHandler(db, cfg),
-	)
+	authH := novaIdentidadeTeste(db, cfg)
+	authH.captcha.trocar(&fakeCaptchaVerifier{})
+	hs := bootstrap.NovosHandlers(db, cfg, &fakeEmailService{})
+	hs.Auth = authH.AuthHandler
+	mux := bootstrap.HandlerHTTP(cfg, bootstrap.NovoVerificadorStatus(db), hs)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -746,12 +734,11 @@ func TestIntegracaoHTTP_RISCO01_Data20181104(t *testing.T) {
 func TestIntegracaoHTTP_RISCO01_RefreshToken(t *testing.T) {
 	c := novoItCtx(t)
 	usu := c.usuario("UREFRESH", 0, true)
-	svc := apisvc.NewRefreshTokenService()
 	ctx := context.Background()
 
 	novoToken := func(t *testing.T, expira time.Time) string {
 		t.Helper()
-		tok, err := svc.GenerateRefreshToken(ctx, c.db, usu, "127.0.0.1", "go-test")
+		tok, err := emitirRefresh(ctx, c.db, usu, "127.0.0.1", "go-test")
 		require.NoError(t, err)
 		_, err = c.db.Exec("UPDATE refresh_tokens SET expires_at = ? WHERE token_hash = ?", expira, hashRefresh(tok))
 		require.NoError(t, err)
@@ -760,13 +747,13 @@ func TestIntegracaoHTTP_RISCO01_RefreshToken(t *testing.T) {
 
 	t.Run("expires_at gravado no fuso -03", func(t *testing.T) {
 		antes := time.Now()
-		tok, err := svc.GenerateRefreshToken(ctx, c.db, usu, "127.0.0.1", "go-test")
+		tok, err := emitirRefresh(ctx, c.db, usu, "127.0.0.1", "go-test")
 		require.NoError(t, err)
 		var gravado string
 		require.NoError(t, c.db.QueryRow("SELECT DATE_FORMAT(expires_at,'%Y-%m-%d %H:%i') FROM refresh_tokens WHERE token_hash = ?",
 			hashRefresh(tok)).Scan(&gravado))
-		esperado := antes.Add(apisvc.RefreshTokenTTL).In(time.FixedZone("-03", -10800))
-		depois := time.Now().Add(apisvc.RefreshTokenTTL).In(time.FixedZone("-03", -10800))
+		esperado := antes.Add(identidade.TTLRefresh).In(time.FixedZone("-03", -10800))
+		depois := time.Now().Add(identidade.TTLRefresh).In(time.FixedZone("-03", -10800))
 		assert.Contains(t, []string{esperado.Format("2006-01-02 15:04"), depois.Format("2006-01-02 15:04")}, gravado)
 	})
 
@@ -780,7 +767,7 @@ func TestIntegracaoHTTP_RISCO01_RefreshToken(t *testing.T) {
 		{"expirado ha 2 horas -> 401", -2 * time.Hour, http.StatusUnauthorized, "refresh token expirado"},
 		{"expirado ha 4 horas -> 401", -4 * time.Hour, http.StatusUnauthorized, "refresh token expirado"},
 		{"valido por mais 2 minutos -> 200", 2 * time.Minute, http.StatusOK, ""},
-		{"valido por mais 7 dias -> 200", apisvc.RefreshTokenTTL, http.StatusOK, ""},
+		{"valido por mais 7 dias -> 200", identidade.TTLRefresh, http.StatusOK, ""},
 	}
 	for _, tc := range casos {
 		t.Run(tc.nome, func(t *testing.T) {

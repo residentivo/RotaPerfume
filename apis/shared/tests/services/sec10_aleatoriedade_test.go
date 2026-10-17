@@ -9,10 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/services"
 )
 
 const (
@@ -39,7 +38,7 @@ func TestSEC10_SenhaAlfanumerica_TamanhoEAlfabeto(t *testing.T) {
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			s, err := services.SenhaAlfanumerica(c.n)
+			s, err := identidadecrypto.SenhaAlfanumerica(c.n)
 			require.NoError(t, err)
 			assert.Len(t, s, c.want)
 			for _, r := range s {
@@ -48,9 +47,9 @@ func TestSEC10_SenhaAlfanumerica_TamanhoEAlfabeto(t *testing.T) {
 		})
 	}
 	t.Run("duas chamadas não se repetem", func(t *testing.T) {
-		a, err := services.SenhaAlfanumerica(32)
+		a, err := identidadecrypto.SenhaAlfanumerica(32)
 		require.NoError(t, err)
-		b, err := services.SenhaAlfanumerica(32)
+		b, err := identidadecrypto.SenhaAlfanumerica(32)
 		require.NoError(t, err)
 		assert.NotEqual(t, a, b)
 	})
@@ -62,7 +61,7 @@ func TestSEC10_SenhaAlfanumerica_TamanhoEAlfabeto(t *testing.T) {
 // uniformidade; o antigo byte%62 daria ~400 em média.
 func TestSEC10_SenhaAlfanumerica_Distribuicao(t *testing.T) {
 	const total = 62000
-	s, err := services.SenhaAlfanumerica(total)
+	s, err := identidadecrypto.SenhaAlfanumerica(total)
 	require.NoError(t, err)
 	require.Len(t, s, total)
 
@@ -93,7 +92,7 @@ func TestSEC10_GerarSenhaAleatoria_TamanhosGrandes(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			var s string
 			var err error
-			require.NotPanics(t, func() { s, err = services.GerarSenhaAleatoria(c.n) })
+			require.NotPanics(t, func() { s, err = identidadecrypto.GerarSenhaAleatoria(c.n) })
 			require.NoError(t, err)
 			assert.Len(t, s, c.want)
 			assert.True(t, strings.ContainsAny(s, sec10Minusculas), "sem minúscula")
@@ -115,7 +114,7 @@ func TestSEC10_GerarSenhaAleatoria_ObrigatoriosEmbaralhados(t *testing.T) {
 	const rodadas = 2000
 	pos0Minuscula, pos3Simbolo := 0, 0
 	for i := 0; i < rodadas; i++ {
-		s, err := services.GerarSenhaAleatoria(12)
+		s, err := identidadecrypto.GerarSenhaAleatoria(12)
 		require.NoError(t, err)
 		if strings.ContainsRune(sec10Minusculas, rune(s[0])) {
 			pos0Minuscula++

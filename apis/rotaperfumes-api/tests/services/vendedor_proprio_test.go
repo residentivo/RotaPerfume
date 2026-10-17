@@ -8,8 +8,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // SEC-03: listagem de vendedores restrita ao próprio vendedor (filtro no SQL).
@@ -38,7 +36,7 @@ func TestVendedorService_ListVendedorProprio(t *testing.T) {
 			db, mock := newVendedorTestDB(t)
 			tc.setup(mock)
 
-			out, err := services.NewVendedorService(db, vendedorTestCfg(tc.verbose)).ListVendedorProprio(context.Background(), db, 7)
+			out, err := casosComercial(db, 7).ListarVendedores(context.Background(), principalRestrito())
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {

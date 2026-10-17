@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/rotaperfumes/shared/kernel"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,8 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
-	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/comercial"
 )
 
 // cnpjCriarCliente chama CreateCliente com o CNPJ informado e devolve o CNPJ
@@ -37,9 +37,9 @@ func cnpjCriarCliente(t *testing.T, raw string) (gravado string, err error) {
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), true).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	// A releitura (BUG-08) não tem expectativa: o service devolve o objeto em memória.
-	c, err := services.NewClienteService(db, &config.Config{}).CreateCliente(context.Background(), db, services.ClienteInput{
+	c, err := casosComercial(db, 0).CriarCliente(context.Background(), principalAdmin(), fixo(comercial.DadosCliente{
 		CNPJ: raw, RazaoSocial: "Cliente", Segmento: "Varejo", Cidade: "Curitiba", UF: "PR",
-	})
+	}))
 	if err == nil {
 		require.NoError(t, mock.ExpectationsWereMet())
 		assert.Equal(t, gravado, c.CNPJ, "objeto devolvido = valor gravado")
@@ -56,7 +56,7 @@ func cnpjTermoBusca(t *testing.T, q string) string {
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE \(razao_social LIKE \? OR cnpj LIKE \?\)`).
 		WithArgs(dlCapturaTexto{&razao}, dlCapturaTexto{&termo}).
 		WillReturnError(errDLParar)
-	_, _, err := services.NewClienteService(db, &config.Config{}).ListClientes(context.Background(), db, 1, 10, services.ClienteFiltro{Q: q})
+	_, _, err := itensETotal(casosComercial(db, 0).ListarClientes(context.Background(), principalAdmin(), comercial.FiltroCliente{Busca: q, Ordenacao: comercial.OrdenacaoClientePadrao()}, kernel.NovaPagina(1, 10)))
 	require.ErrorIs(t, err, errDLParar)
 	require.NoError(t, mock.ExpectationsWereMet())
 	assert.Equal(t, "%"+q+"%", razao, "razão social busca sempre o q original")
@@ -99,7 +99,7 @@ func TestValidacaoCNPJ_CreateCliente(t *testing.T) {
 				assert.Equal(t, tc.normalizado, gravado)
 				return
 			}
-			assert.ErrorIs(t, err, services.ErrCNPJInvalido)
+			assert.ErrorIs(t, err, comercial.ErrCNPJInvalido)
 			assert.Empty(t, gravado, "CNPJ inválido não pode chegar ao INSERT")
 		})
 	}
@@ -109,7 +109,7 @@ func TestValidacaoCNPJ_VazioEhObrigatorio(t *testing.T) {
 	for _, in := range []string{"", "   "} {
 		t.Run("["+in+"]", func(t *testing.T) {
 			gravado, err := cnpjCriarCliente(t, in)
-			assert.ErrorIs(t, err, services.ErrCNPJObrigatorio)
+			assert.ErrorIs(t, err, comercial.ErrCNPJObrigatorio)
 			assert.Empty(t, gravado)
 		})
 	}
@@ -176,7 +176,7 @@ func TestValidacaoCNPJ_MassaCruzada(t *testing.T) {
 				return
 			}
 			require.Error(t, err, "entrada %q", tc.Entrada)
-			assert.True(t, errorsIsAny(err, services.ErrCNPJInvalido, services.ErrCNPJObrigatorio), "entrada %q: %v", tc.Entrada, err)
+			assert.True(t, errorsIsAny(err, comercial.ErrCNPJInvalido, comercial.ErrCNPJObrigatorio), "entrada %q: %v", tc.Entrada, err)
 			assert.Empty(t, gravado)
 		})
 	}

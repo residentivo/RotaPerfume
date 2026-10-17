@@ -21,8 +21,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	sharedsvc "github.com/rotaperfumes/shared/services"
 )
 
 const (
@@ -146,7 +144,7 @@ func TestIntegracaoHTTP_SEC08_CorteDeSessao(t *testing.T) {
 
 		// A senha nova é aleatória (enviada por e-mail); o teste regrava um
 		// hash conhecido direto no banco (sem mexer no corte) para o login.
-		hash, err := sharedsvc.NewAuthService().HashPassword(testCfg(), senhaIT)
+		hash, err := gerarHashSenha(testCfg().HashSenha, senhaIT)
 		require.NoError(t, err)
 		_, err = c.db.Exec(`UPDATE usuarios SET password_hash = ?, deve_trocar_senha = 0 WHERE id = ?`, hash, uid)
 		require.NoError(t, err)

@@ -4,13 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/rotaperfumes/shared/analytics"
+	"github.com/rotaperfumes/shared/analytics/analyticsapp"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -55,15 +57,14 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
 		expectMetricsHappyPath(mock)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
+		metrics, err := consultasAnalytics(db, 0).Metricas(context.Background(), analyticsapp.ConsultaMetricas{Periodo: periodoDe("today")})
 		require.NoError(t, err)
-		assert.Equal(t, "today", metrics["periodo"])
-		assert.Equal(t, 1000.0, metrics["total_vendas"])
-		assert.Equal(t, 10, metrics["total_vendas_qtd"])
-		assert.Equal(t, 10, metrics["total_pedidos"])
-		assert.Equal(t, 100.0, metrics["ticket_medio"])
-		assert.Equal(t, 20000.0, metrics["meta_mes"])
+		assert.Equal(t, "today", metrics.Periodo.String())
+		assert.Equal(t, 1000.0, metrics.TotalVendas)
+		assert.Equal(t, 10, metrics.TotalVendasQtd)
+		assert.Equal(t, 10, metrics.TotalPedidos)
+		assert.Equal(t, 100.0, metrics.TicketMedio)
+		assert.Equal(t, 20000.0, metrics.MetaMes)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -81,11 +82,10 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COALESCE\(SUM\(meta_mensal\), 0\)\s+FROM vendedores\s+WHERE data_desligamento IS NULL`).
 			WillReturnRows(sqlmock.NewRows([]string{"meta_total"}).AddRow(0.0))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "month", 0)
+		metrics, err := consultasAnalytics(db, 0).Metricas(context.Background(), analyticsapp.ConsultaMetricas{Periodo: periodoDe("month")})
 		require.NoError(t, err)
-		assert.Equal(t, 0.0, metrics["ticket_medio"])
-		assert.Equal(t, 0.0, metrics["meta_mes"])
+		assert.Equal(t, 0.0, metrics.TicketMedio)
+		assert.Equal(t, 0.0, metrics.MetaMes)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -94,9 +94,8 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COALESCE\(SUM\(valor_total\), 0\), COUNT\(\*\)\s+FROM pedidos`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
-		assert.Nil(t, metrics)
+		metrics, err := consultasAnalytics(db, 0).Metricas(context.Background(), analyticsapp.ConsultaMetricas{Periodo: periodoDe("today")})
+		assert.Zero(t, metrics, "em erro, o read model volta zerado")
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -108,9 +107,8 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM pedidos\s+WHERE`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
-		assert.Nil(t, metrics)
+		metrics, err := consultasAnalytics(db, 0).Metricas(context.Background(), analyticsapp.ConsultaMetricas{Periodo: periodoDe("today")})
+		assert.Zero(t, metrics, "em erro, o read model volta zerado")
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -125,9 +123,8 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 			WithArgs(10).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
-		assert.Nil(t, metrics)
+		metrics, err := consultasAnalytics(db, 0).Metricas(context.Background(), analyticsapp.ConsultaMetricas{Periodo: periodoDe("today")})
+		assert.Zero(t, metrics, "em erro, o read model volta zerado")
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -144,9 +141,8 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT\s+v\.id,\s+v\.nome,\s+v\.regiao,\s+v\.uf,\s+v\.meta_mensal AS meta\s+FROM vendedores v`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
-		assert.Nil(t, metrics)
+		metrics, err := consultasAnalytics(db, 0).Metricas(context.Background(), analyticsapp.ConsultaMetricas{Periodo: periodoDe("today")})
+		assert.Zero(t, metrics, "em erro, o read model volta zerado")
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -165,9 +161,8 @@ func TestDashboardService_GetMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COALESCE\(SUM\(meta_mensal\), 0\)\s+FROM vendedores\s+WHERE data_desligamento IS NULL`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetMetrics(context.Background(), db, "today", 0)
-		assert.Nil(t, metrics)
+		metrics, err := consultasAnalytics(db, 0).Metricas(context.Background(), analyticsapp.ConsultaMetricas{Periodo: periodoDe("today")})
+		assert.Zero(t, metrics, "em erro, o read model volta zerado")
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -188,19 +183,18 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WithArgs(7).
 			WillReturnRows(sqlmock.NewRows([]string{"dia"}).AddRow("2024-01-01"))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
-		series, err := svc.GetVendasSeries(context.Background(), db, 7, 0)
+		series, err := consultasAnalytics(db, 0).SerieVendas(context.Background(), analyticsapp.ConsultaSerieVendas{Dias: analytics.DiasDe(7)})
 		require.NoError(t, err)
 		require.NotNil(t, series)
 
-		assert.Equal(t, 7, series["dias"])
+		assert.Equal(t, 7, series.Dias.Int())
 
-		pontos, ok := series["pontos"].([]map[string]any)
-		require.True(t, ok, "campo 'pontos' deve ser []map[string]any")
+		pontos := series.Pontos
+		require.NotNil(t, pontos, "pontos nunca é nil (JSON [])")
 		require.Len(t, pontos, 1)
-		assert.Equal(t, "2024-01-01", pontos[0]["dia"])
-		assert.Equal(t, 500.0, pontos[0]["total_vendas"])
-		assert.Equal(t, 3, pontos[0]["total_pedidos"])
+		assert.Equal(t, "2024-01-01", pontos[0].Dia)
+		assert.Equal(t, 500.0, pontos[0].TotalVendas)
+		assert.Equal(t, 3, pontos[0].TotalPedidos)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -210,12 +204,11 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WithArgs(7).
 			WillReturnError(sql.ErrNoRows) // não contém texto "doesn't exist" -> repo retorna erro real
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		series, err := svc.GetVendasSeries(context.Background(), db, 7, 0)
+		series, err := consultasAnalytics(db, 0).SerieVendas(context.Background(), analyticsapp.ConsultaSerieVendas{Dias: analytics.DiasDe(7)})
 		// Como sql.ErrNoRows não é reconhecido como "tabela não existe" pelo
 		// repo, o erro é propagado.
 		assert.Error(t, err)
-		assert.Nil(t, series)
+		assert.Nil(t, series.Pontos, "em erro, nenhum ponto sai")
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -225,11 +218,10 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WithArgs(3).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
 		// sql.ErrConnDone também não contém "doesn't exist" -> erro propagado.
-		series, err := svc.GetVendasSeries(context.Background(), db, 3, 0)
+		series, err := consultasAnalytics(db, 0).SerieVendas(context.Background(), analyticsapp.ConsultaSerieVendas{Dias: analytics.DiasDe(3)})
 		assert.Error(t, err)
-		assert.Nil(t, series)
+		assert.Nil(t, series.Pontos, "em erro, nenhum ponto sai")
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -240,19 +232,18 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 			WithArgs(4).
 			WillReturnError(errTabelaNaoExiste)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		series, err := svc.GetVendasSeries(context.Background(), db, 4, 0)
+		series, err := consultasAnalytics(db, 0).SerieVendas(context.Background(), analyticsapp.ConsultaSerieVendas{Dias: analytics.DiasDe(4)})
 		require.NoError(t, err)
 		require.NotNil(t, series)
 
-		assert.Equal(t, 4, series["dias"])
-		pontos, ok := series["pontos"].([]map[string]any)
-		require.True(t, ok)
+		assert.Equal(t, 4, series.Dias.Int())
+		pontos := series.Pontos
+		require.NotNil(t, pontos)
 		require.Len(t, pontos, 4)
 		for _, p := range pontos {
-			assert.Equal(t, 0.0, p["total_vendas"])
-			assert.Equal(t, 0, p["total_pedidos"])
-			assert.Regexp(t, `^\d{4}-\d{2}-\d{2}$`, p["dia"])
+			assert.Equal(t, 0.0, p.TotalVendas)
+			assert.Equal(t, 0, p.TotalPedidos)
+			assert.Regexp(t, `^\d{4}-\d{2}-\d{2}$`, p.Dia)
 		}
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -271,8 +262,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 			WithArgs(20, 0).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
-		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, 0)
+		ranking, total, err := itensETotal(consultasAnalytics(db, 0).Ranking(context.Background(), analyticsapp.ConsultaRanking{Pagina: kernel.NovaPagina(1, 20)}))
 		require.NoError(t, err)
 		assert.Len(t, ranking, 0)
 		assert.Equal(t, 0, total)
@@ -288,14 +278,13 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}).
 				AddRow(int64(1), "João", "Sudeste", "SP", 10000.0, 5000.0, 5, 50.0))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, 0)
+		ranking, total, err := itensETotal(consultasAnalytics(db, 0).Ranking(context.Background(), analyticsapp.ConsultaRanking{Pagina: kernel.NovaPagina(1, 20)}))
 		require.NoError(t, err)
 		require.Len(t, ranking, 1)
 		assert.Equal(t, 1, total)
-		assert.Equal(t, int64(1), ranking[0]["vendedor_id"])
-		assert.Equal(t, 5000.0, ranking[0]["total_vendas"])
-		assert.Equal(t, 50.0, ranking[0]["atingimento_meta"])
+		assert.Equal(t, int64(1), ranking[0].VendedorID)
+		assert.Equal(t, 5000.0, ranking[0].TotalVendas)
+		assert.Equal(t, 50.0, ranking[0].AtingimentoMeta)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -304,8 +293,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		ranking, total, err := svc.GetVendedoresRanking(context.Background(), db, 1, 20, 0)
+		ranking, total, err := itensETotal(consultasAnalytics(db, 0).Ranking(context.Background(), analyticsapp.ConsultaRanking{Pagina: kernel.NovaPagina(1, 20)}))
 		assert.Nil(t, ranking)
 		assert.Equal(t, 0, total)
 		assert.Error(t, err)
@@ -335,14 +323,13 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT uf, COUNT\(\*\) AS total\s+FROM clientes\s+GROUP BY uf\s+ORDER BY total DESC`).
 			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}).AddRow("SP", 40))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
-		metrics, err := svc.GetClienteMetrics(context.Background(), db, "month", 0)
+		metrics, err := consultasAnalytics(db, 0).MetricasClientes(context.Background(), analyticsapp.ConsultaMetricasClientes{Periodo: periodoDe("month")})
 		require.NoError(t, err)
-		assert.Equal(t, "month", metrics["periodo"])
-		assert.Equal(t, 100, metrics["total_clientes"])
-		assert.Equal(t, 80, metrics["total_ativos"])
-		assert.Equal(t, 20, metrics["total_inativos"])
-		assert.Equal(t, 5, metrics["novos_no_periodo"])
+		assert.Equal(t, "month", metrics.Periodo.String())
+		assert.Equal(t, 100, metrics.TotalClientes)
+		assert.Equal(t, 80, metrics.TotalAtivos)
+		assert.Equal(t, 20, metrics.TotalInativos)
+		assert.Equal(t, 5, metrics.NovosNoPeriodo)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -368,34 +355,28 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 			WithArgs(int64(7)).
 			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}))
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(true))
-		metrics, err := svc.GetClienteMetrics(context.Background(), db, "week", 7)
+		metrics, err := consultasAnalytics(db, 7).MetricasClientes(context.Background(), analyticsapp.ConsultaMetricasClientes{Periodo: periodoDe("week")})
 		require.NoError(t, err)
-		assert.Equal(t, 4, metrics["total_clientes"])
-		assert.Equal(t, 3, metrics["total_ativos"])
-		assert.Equal(t, 1, metrics["total_inativos"])
-		assert.Equal(t, 0, metrics["novos_no_periodo"])
-		_, m := jsonKeys(t, metrics)
-		assert.Equal(t, []any{}, m["por_segmento"])
-		assert.Equal(t, []any{}, m["por_uf"])
+		assert.Equal(t, 4, metrics.TotalClientes)
+		assert.Equal(t, 3, metrics.TotalAtivos)
+		assert.Equal(t, 1, metrics.TotalInativos)
+		assert.Equal(t, 0, metrics.NovosNoPeriodo)
+		// listas vazias e não nil: o DTO serializa [] (nunca null).
+		assert.Equal(t, []analytics.ContagemSegmento{}, metrics.PorSegmento)
+		assert.Equal(t, []analytics.ContagemUF{}, metrics.PorUF)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("EmptyClienteMetrics tem o mesmo formato, zerado e sem queries", func(t *testing.T) {
 		for _, verbose := range []bool{false, true} {
 			db, mock := newDashboardTestDB(t)
-			svc := services.NewDashboardService(db, dashboardTestCfg(verbose))
-			keys, m := jsonKeys(t, svc.EmptyClienteMetrics("today"))
-			assert.ElementsMatch(t, []string{
-				"periodo", "total_clientes", "total_ativos", "total_inativos",
-				"novos_no_periodo", "por_segmento", "por_uf",
-			}, keys)
-			assert.Equal(t, "today", m["periodo"])
-			for _, k := range []string{"total_clientes", "total_ativos", "total_inativos", "novos_no_periodo"} {
-				assert.Equal(t, 0.0, m[k], k)
-			}
-			assert.Equal(t, []any{}, m["por_segmento"])
-			assert.Equal(t, []any{}, m["por_uf"])
+			_ = verbose // ARQ-07: o Verbose não muda a resposta (o log é o vlog global)
+			m, err := consultasSemAcesso(db, false).MetricasClientes(context.Background(), analyticsapp.ConsultaMetricasClientes{Periodo: periodoDe("today")})
+			require.NoError(t, err)
+			assert.Equal(t, "today", m.Periodo.String())
+			assert.Equal(t, [4]int{}, [4]int{m.TotalClientes, m.TotalAtivos, m.TotalInativos, m.NovosNoPeriodo})
+			assert.Equal(t, []analytics.ContagemSegmento{}, m.PorSegmento)
+			assert.Equal(t, []analytics.ContagemUF{}, m.PorUF)
 			assert.NoError(t, mock.ExpectationsWereMet())
 		}
 	})
@@ -405,9 +386,8 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetClienteMetrics(context.Background(), db, "today", 0)
-		assert.Nil(t, metrics)
+		metrics, err := consultasAnalytics(db, 0).MetricasClientes(context.Background(), analyticsapp.ConsultaMetricasClientes{Periodo: periodoDe("today")})
+		assert.Zero(t, metrics, "em erro, o read model volta zerado")
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -427,9 +407,8 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total\s+FROM clientes\s+GROUP BY segmento\s+ORDER BY total DESC`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewDashboardService(db, dashboardTestCfg(false))
-		metrics, err := svc.GetClienteMetrics(context.Background(), db, "today", 0)
-		assert.Nil(t, metrics)
+		metrics, err := consultasAnalytics(db, 0).MetricasClientes(context.Background(), analyticsapp.ConsultaMetricasClientes{Periodo: periodoDe("today")})
+		assert.Zero(t, metrics, "em erro, o read model volta zerado")
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})

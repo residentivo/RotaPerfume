@@ -4,10 +4,9 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/services"
 )
 
 var (
@@ -35,7 +34,7 @@ func TestGerarSenhaAleatoria_TamanhoMinimo(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.nome, func(t *testing.T) {
-			senha, err := services.GerarSenhaAleatoria(tc.tamanho)
+			senha, err := identidadecrypto.GerarSenhaAleatoria(tc.tamanho)
 			require.NoError(t, err)
 			assert.Len(t, senha, tc.wantLength)
 		})
@@ -47,7 +46,7 @@ func TestGerarSenhaAleatoria_TamanhoMinimo(t *testing.T) {
 func TestGerarSenhaAleatoria_PoliticaDeSenha(t *testing.T) {
 	// Gera várias senhas para reduzir a chance de falso-positivo por sorte.
 	for i := 0; i < 50; i++ {
-		senha, err := services.GerarSenhaAleatoria(16)
+		senha, err := identidadecrypto.GerarSenhaAleatoria(16)
 		require.NoError(t, err)
 		assert.True(t, temMinuscula.MatchString(senha), "senha deve conter minúscula: %s", senha)
 		assert.True(t, temMaiuscula.MatchString(senha), "senha deve conter maiúscula: %s", senha)
@@ -59,9 +58,9 @@ func TestGerarSenhaAleatoria_PoliticaDeSenha(t *testing.T) {
 // TestGerarSenhaAleatoria_Aleatoriedade garante que chamadas sucessivas
 // produzem senhas diferentes (crypto/rand não deve ser determinístico).
 func TestGerarSenhaAleatoria_Aleatoriedade(t *testing.T) {
-	senha1, err := services.GerarSenhaAleatoria(16)
+	senha1, err := identidadecrypto.GerarSenhaAleatoria(16)
 	require.NoError(t, err)
-	senha2, err := services.GerarSenhaAleatoria(16)
+	senha2, err := identidadecrypto.GerarSenhaAleatoria(16)
 	require.NoError(t, err)
 	assert.NotEqual(t, senha1, senha2, "duas gerações sucessivas não devem coincidir")
 }

@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
-	"github.com/rotaperfumes/rotaperfumes-api/routes"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"github.com/rotaperfumes/shared/config"
-	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
+	"github.com/rotaperfumes/shared/kernel"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func testCfg() *config.Config {
 	}
 }
 
-// newRouter monta o router real (routes.NewMux) com handlers reais sobre um
+// newRouter monta o router real (bootstrap.HandlerHTTP) com handlers reais sobre um
 // DB sqlmock sem expectativas: qualquer acesso ao banco resulta em erro do
 // handler (nunca 401/403), o que permite distinguir bloqueio do middleware
 // de erro do handler.
@@ -36,26 +37,13 @@ func newRouter(t *testing.T) (http.Handler, sqlmock.Sqlmock) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	mux := routes.NewMux(cfg, fakeUserStatusChecker{},
-		handlers.NewAuthHandler(db, cfg),
-		handlers.NewUsuarioHandler(db, cfg, sharedsvc.NewNoopEmailService()),
-		handlers.NewDashboardHandler(db, cfg),
-		handlers.NewSenhaHistoricoHandler(db),
-		handlers.NewVendedorHandler(db, cfg),
-		handlers.NewClienteHandler(db, cfg),
-		handlers.NewProdutoHandler(db, cfg),
-		handlers.NewPedidoHandler(db, cfg),
-		handlers.NewPagamentoHandler(db, cfg),
-		handlers.NewOportunidadeHandler(db, cfg),
-		handlers.NewVisitaHandler(db, cfg),
-		handlers.NewEstoqueHandler(db, cfg),
-	)
+	mux := bootstrap.HandlerHTTP(cfg, fakeUserStatusChecker{}, bootstrap.NovosHandlers(db, cfg, notificacaosmtp.NovoNoop()))
 	return mux, mock
 }
 
 func token(t *testing.T, uid int64, role string) string {
 	t.Helper()
-	tok, err := sharedsvc.NewAuthService().GenerateJWT(testCfg(), uid, role)
+	tok, err := identidadecrypto.NovoJWT(testCfg()).Emitir(uid, kernel.RoleDoBanco(role))
 	require.NoError(t, err)
 	return tok
 }

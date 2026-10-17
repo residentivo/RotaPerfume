@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 // servidorTLSVersao é um SMTP mínimo (AUTH PLAIN aceita qualquer credencial)
@@ -135,7 +135,7 @@ func TestSEC10_TLS_InsecureSkipVerifyIgnorado(t *testing.T) {
 			host, port := f.start(t)
 			minAntes := c.entra.MinVersion
 
-			svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), c.entra)
+			svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), c.entra)
 			require.NoError(t, err)
 			err = svc.EnviarSenhaInicial(context.Background(), "cliente@exemplo.com", "Maria", "S3nh@Forte!")
 			require.Error(t, err)
@@ -157,7 +157,7 @@ func TestSEC10_TLS_InsecureSkipVerifyIgnorado(t *testing.T) {
 	t.Run("InsecureSkipVerify com a CA correta envia", func(t *testing.T) {
 		f := &fakeSMTP{cert: cert}
 		host, port := f.start(t)
-		svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), &tls.Config{InsecureSkipVerify: true, RootCAs: pool})
+		svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), &tls.Config{InsecureSkipVerify: true, RootCAs: pool})
 		require.NoError(t, err)
 		require.NoError(t, svc.EnviarSenhaInicial(context.Background(), "cliente@exemplo.com", "Maria", "x"))
 	})
@@ -226,7 +226,7 @@ func TestSEC10_TLS_Versoes(t *testing.T) {
 			host, port := s.start(t)
 			minAntes, maxAntes := c.cliente.MinVersion, c.cliente.MaxVersion
 
-			svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), c.cliente)
+			svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), c.cliente)
 			require.NoError(t, err)
 			err = svc.EnviarSenhaInicial(context.Background(), "cliente@exemplo.com", "Maria", "x")
 

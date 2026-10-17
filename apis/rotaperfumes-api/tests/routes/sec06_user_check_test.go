@@ -13,63 +13,50 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
-	"github.com/rotaperfumes/rotaperfumes-api/routes"
-	sharedsvc "github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 // fakeUserStatusChecker segue a convenção dos testes (user_id 1 = admin,
 // demais = normal, todos ativos); status sobrescreve por user_id e err
 // força falha de infraestrutura. calls conta as consultas.
 type fakeUserStatusChecker struct {
-	status map[int64]middleware.UserStatus
+	status map[int64]identidade.StatusAcesso
 	err    error
 	calls  *int
 }
 
-func (f fakeUserStatusChecker) CheckUserStatus(_ context.Context, userID int64) (middleware.UserStatus, error) {
+func (f fakeUserStatusChecker) StatusParaAutenticacao(_ context.Context, userID int64) (identidade.StatusAcesso, error) {
 	if f.calls != nil {
 		*f.calls++
 	}
 	if f.err != nil {
-		return middleware.UserStatus{}, f.err
+		return identidade.StatusAcesso{}, f.err
 	}
 	if st, ok := f.status[userID]; ok {
 		return st, nil
 	}
 	if userID == 1 {
-		return middleware.UserStatus{Ativo: true, Role: "admin"}, nil
+		return identidade.StatusAcesso{Ativo: true, Role: "admin"}, nil
 	}
-	return middleware.UserStatus{Ativo: true, Role: "normal"}, nil
+	return identidade.StatusAcesso{Ativo: true, Role: "normal"}, nil
 }
 
-func newRouterWithChecker(t *testing.T, checker middleware.UserStatusChecker) http.Handler {
+func newRouterWithChecker(t *testing.T, checker httpx.ConsultaStatus) http.Handler {
 	t.Helper()
 	cfg := testCfg()
 	db, _, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	return routes.NewMux(cfg, checker,
-		handlers.NewAuthHandler(db, cfg),
-		handlers.NewUsuarioHandler(db, cfg, sharedsvc.NewNoopEmailService()),
-		handlers.NewDashboardHandler(db, cfg),
-		handlers.NewSenhaHistoricoHandler(db),
-		handlers.NewVendedorHandler(db, cfg),
-		handlers.NewClienteHandler(db, cfg),
-		handlers.NewProdutoHandler(db, cfg),
-		handlers.NewPedidoHandler(db, cfg),
-		handlers.NewPagamentoHandler(db, cfg),
-		handlers.NewOportunidadeHandler(db, cfg),
-		handlers.NewVisitaHandler(db, cfg),
-		handlers.NewEstoqueHandler(db, cfg),
-	)
+	return bootstrap.HandlerHTTP(cfg, checker, bootstrap.NovosHandlers(db, cfg, notificacaosmtp.NovoNoop()))
 }
 
 func TestSEC06_Router_UsuarioInativo_401(t *testing.T) {
 	calls := 0
 	h := newRouterWithChecker(t, fakeUserStatusChecker{
-		status: map[int64]middleware.UserStatus{2: {Ativo: false, Role: "normal"}},
+		status: map[int64]identidade.StatusAcesso{2: {Ativo: false, Role: "normal"}},
 		calls:  &calls,
 	})
 	w := serve(h, "GET", "/api/clientes", token(t, 2, "normal"), "")
@@ -80,7 +67,7 @@ func TestSEC06_Router_UsuarioInativo_401(t *testing.T) {
 
 func TestSEC06_Router_AdminRebaixado_403EmRotaAdmin(t *testing.T) {
 	h := newRouterWithChecker(t, fakeUserStatusChecker{
-		status: map[int64]middleware.UserStatus{1: {Ativo: true, Role: "normal"}},
+		status: map[int64]identidade.StatusAcesso{1: {Ativo: true, Role: "normal"}},
 	})
 	w := serve(h, "GET", "/api/usuarios", token(t, 1, "admin"), "")
 	assert.Equal(t, http.StatusForbidden, w.Code)

@@ -9,18 +9,17 @@ package repositories_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/analytics/analyticsmysql"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 func TestDashboardVendedorFilter(t *testing.T) {
-	repo := repositories.NewDashboardRepository()
 	ctx := context.Background()
 
 	consultas := []struct {
@@ -41,7 +40,7 @@ func TestDashboardVendedorFilter(t *testing.T) {
 					exp.WithArgs()
 				}
 				exp.WillReturnRows(sqlmock.NewRows([]string{"v", "q"}).AddRow(10.5, 2))
-				v, q, err := repo.GetVendasTotais(ctx, db, "month", vendedorID)
+				v, q, err := valorEQtd(analyticsmysql.NovoDashboard(db, time.Now).VendasTotais(ctx, escopoDe(vendedorID), periodoDe("month")))
 				require.NoError(t, err)
 				assert.Equal(t, 10.5, v)
 				assert.Equal(t, 2, q)
@@ -58,7 +57,7 @@ func TestDashboardVendedorFilter(t *testing.T) {
 					exp.WithArgs()
 				}
 				exp.WillReturnRows(sqlmock.NewRows([]string{"m"}).AddRow(1000.0))
-				m, err := repo.GetMetaMensalTotal(ctx, db, vendedorID)
+				m, err := analyticsmysql.NovoDashboard(db, time.Now).MetaMensalTotal(ctx, escopoDe(vendedorID))
 				require.NoError(t, err)
 				assert.Equal(t, 1000.0, m)
 			},
@@ -75,7 +74,7 @@ func TestDashboardVendedorFilter(t *testing.T) {
 				}
 				// Sem linhas: não dispara o enriquecimento com vendas.
 				exp.WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}))
-				out, err := repo.GetTopVendedores(ctx, db, 5, vendedorID)
+				out, err := analyticsmysql.NovoDashboard(db, time.Now).TopVendedores(ctx, escopoDe(vendedorID), 5)
 				require.NoError(t, err)
 				assert.Empty(t, out)
 			},

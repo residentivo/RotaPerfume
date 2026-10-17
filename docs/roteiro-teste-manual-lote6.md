@@ -4,6 +4,7 @@
 **Migração:** a 21 (`sql/21_alter_refresh_tokens_revoked_reason.sql`, `make db-fix-revoked-reason`), que cria `refresh_tokens.revoked_reason`. Já aplicada no banco local em 2026-09-26. Conferência no item 5.1.
 **Tempo estimado:** 30 a 40 minutos.
 **Autor:** SubBrain (2026-09-26)
+**Nota (ARQ-08, 2026-10-16):** os caminhos de código de produção citados (`handlers/`, `services/`, `repositories/`, `middleware/`, `models/`) são anteriores ao Lote 21 e foram removidos na reestruturação DDD; o equivalente atual está na seção 10 de `docs/arquitetura-ddd.md`. Os arquivos de teste citados seguem nas mesmas pastas.
 
 Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevTools aberto na aba **Network**. Se algo divergir, anote o caso e encaminhe ao SubBrain.
 

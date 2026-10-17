@@ -21,7 +21,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/notificacao"
+	"github.com/rotaperfumes/shared/notificacao/notificacaosmtp"
 )
 
 // lerAuthLogin conduz o diálogo AUTH LOGIN do lado do servidor fake.
@@ -44,64 +45,65 @@ func lerAuthLogin(r *bufio.Reader, reply func(string)) (user, pass string, ok bo
 
 func TestMAIL01_ResolverModoTLSSMTP(t *testing.T) {
 	casos := []struct {
-		modo, porta, want string
+		modo, porta string
+		want        notificacao.ModoTLS
 	}{
-		{"", "465", services.SMTPModoTLSImplicito},
-		{"", " 465 ", services.SMTPModoTLSImplicito},
-		{"", "587", services.SMTPModoSTARTTLS},
-		{"", "25", services.SMTPModoSTARTTLS},
-		{"auto", "465", services.SMTPModoTLSImplicito},
-		{"implicit", "587", services.SMTPModoTLSImplicito},
-		{" IMPLICIT ", "25", services.SMTPModoTLSImplicito},
-		{"starttls", "465", services.SMTPModoSTARTTLS},
-		{"STARTTLS", "587", services.SMTPModoSTARTTLS},
+		{"", "465", notificacao.ModoTLSImplicito},
+		{"", " 465 ", notificacao.ModoTLSImplicito},
+		{"", "587", notificacao.ModoSTARTTLS},
+		{"", "25", notificacao.ModoSTARTTLS},
+		{"auto", "465", notificacao.ModoTLSImplicito},
+		{"implicit", "587", notificacao.ModoTLSImplicito},
+		{" IMPLICIT ", "25", notificacao.ModoTLSImplicito},
+		{"starttls", "465", notificacao.ModoSTARTTLS},
+		{"STARTTLS", "587", notificacao.ModoSTARTTLS},
 	}
 	for _, c := range casos {
-		got, err := services.ResolverModoTLSSMTP(c.modo, c.porta)
+		got, err := notificacao.ResolverModoTLS(c.modo, c.porta)
 		require.NoError(t, err, "modo=%q porta=%q", c.modo, c.porta)
 		assert.Equal(t, c.want, got, "modo=%q porta=%q", c.modo, c.porta)
 	}
 
 	for _, invalido := range []string{"ssl", "plain", "none", "tls"} {
-		_, err := services.ResolverModoTLSSMTP(invalido, "465")
-		assert.ErrorIs(t, err, services.ErrSMTPModoTLSInvalido, "modo=%q", invalido)
+		_, err := notificacao.ResolverModoTLS(invalido, "465")
+		assert.ErrorIs(t, err, notificacao.ErrModoTLSInvalido, "modo=%q", invalido)
 	}
 }
 
 func TestMAIL01_ResolverServerNameTLSSMTP(t *testing.T) {
-	assert.Equal(t, "192.168.168.106", services.ResolverServerNameTLSSMTP("192.168.168.106", ""))
-	assert.Equal(t, "192.168.168.106", services.ResolverServerNameTLSSMTP("192.168.168.106", "   "))
-	assert.Equal(t, "mail.exemplo.com", services.ResolverServerNameTLSSMTP("192.168.168.106", " mail.exemplo.com "))
+	assert.Equal(t, "192.168.168.106", notificacaosmtp.ResolverServerName("192.168.168.106", ""))
+	assert.Equal(t, "192.168.168.106", notificacaosmtp.ResolverServerName("192.168.168.106", "   "))
+	assert.Equal(t, "mail.exemplo.com", notificacaosmtp.ResolverServerName("192.168.168.106", " mail.exemplo.com "))
 }
 
 func TestMAIL01_Construtor_ModoEServerName(t *testing.T) {
 	t.Run("porta 465 sem SMTP_TLS_MODE vira implicit; ServerName = host", func(t *testing.T) {
-		svc, err := services.NewSMTPEmailService(smtpCfg("192.168.168.106", "465"))
+		svc, err := notificacaosmtp.Novo(smtpCfg("192.168.168.106", "465"))
 		require.NoError(t, err)
-		assert.Equal(t, services.SMTPModoTLSImplicito, svc.ModoTLS())
+		assert.Equal(t, notificacao.ModoTLSImplicito, svc.ModoTLS())
 		assert.Equal(t, "192.168.168.106", svc.ServerNameTLS())
 	})
 	t.Run("SMTP_TLS_MODE e SMTP_TLS_SERVER_NAME explícitos", func(t *testing.T) {
 		cfg := smtpCfg("192.168.168.106", "465")
 		cfg.SMTPTLSMode = "starttls"
 		cfg.SMTPTLSServerName = "mail.exemplo.com"
-		svc, err := services.NewSMTPEmailService(cfg)
+		svc, err := notificacaosmtp.Novo(cfg)
 		require.NoError(t, err)
-		assert.Equal(t, services.SMTPModoSTARTTLS, svc.ModoTLS())
+		assert.Equal(t, notificacao.ModoSTARTTLS, svc.ModoTLS())
 		assert.Equal(t, "mail.exemplo.com", svc.ServerNameTLS())
 	})
 	t.Run("SMTP_TLS_MODE inválido é erro de configuração (não ErrSMTPNaoConfigurado)", func(t *testing.T) {
 		cfg := smtpCfg("smtp.exemplo.com", "587")
 		cfg.SMTPTLSMode = "plain"
-		svc, err := services.NewSMTPEmailService(cfg)
+		svc, err := notificacaosmtp.Novo(cfg)
 		assert.Nil(t, svc)
-		assert.ErrorIs(t, err, services.ErrSMTPModoTLSInvalido)
-		assert.False(t, errors.Is(err, services.ErrSMTPNaoConfigurado))
+		assert.ErrorIs(t, err, notificacao.ErrModoTLSInvalido)
+		assert.False(t, errors.Is(err, notificacao.ErrSMTPNaoConfigurado))
 	})
 	t.Run("SMTP_TLS_CA_FILE inexistente", func(t *testing.T) {
 		cfg := smtpCfg("smtp.exemplo.com", "587")
 		cfg.SMTPTLSCAFile = filepath.Join(t.TempDir(), "nao-existe.pem")
-		_, err := services.NewSMTPEmailService(cfg)
+		_, err := notificacaosmtp.Novo(cfg)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "SMTP_TLS_CA_FILE")
 	})
@@ -110,14 +112,14 @@ func TestMAIL01_Construtor_ModoEServerName(t *testing.T) {
 		require.NoError(t, os.WriteFile(caminho, []byte("não é um certificado"), 0o600))
 		cfg := smtpCfg("smtp.exemplo.com", "587")
 		cfg.SMTPTLSCAFile = caminho
-		_, err := services.NewSMTPEmailService(cfg)
+		_, err := notificacaosmtp.Novo(cfg)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "nenhum certificado PEM válido")
 	})
 }
 
 // enviarTeste envia uma senha inicial e devolve o erro.
-func enviarTeste(t *testing.T, svc *services.SMTPEmailService) error {
+func enviarTeste(t *testing.T, svc *notificacaosmtp.SMTP) error {
 	t.Helper()
 	return svc.EnviarSenhaInicial(context.Background(), "cliente@exemplo.com", "Maria", "S3nh@Forte!")
 }
@@ -129,7 +131,7 @@ func TestMAIL01_TLSImplicito_Sucesso(t *testing.T) {
 
 	cfg := smtpCfg(host, port)
 	cfg.SMTPTLSMode = "implicit" // porta efêmera: o modo precisa ser explícito
-	svc, err := services.NewSMTPEmailServiceWithTLSConfig(cfg, &tls.Config{RootCAs: pool})
+	svc, err := notificacaosmtp.NovoComTLS(cfg, &tls.Config{RootCAs: pool})
 	require.NoError(t, err)
 	require.NoError(t, enviarTeste(t, svc))
 
@@ -150,7 +152,7 @@ func TestMAIL01_TLSImplicito_ServidorEmTextoPuro(t *testing.T) {
 
 	cfg := smtpCfg(host, port)
 	cfg.SMTPTLSMode = "implicit"
-	svc, err := services.NewSMTPEmailServiceWithTLSConfig(cfg, &tls.Config{RootCAs: pool})
+	svc, err := notificacaosmtp.NovoComTLS(cfg, &tls.Config{RootCAs: pool})
 	require.NoError(t, err)
 	err = enviarTeste(t, svc)
 	require.Error(t, err)
@@ -182,7 +184,7 @@ func TestMAIL01_ServerName(t *testing.T) {
 			cfg := smtpCfg(c.host, port)
 			cfg.SMTPTLSMode = "implicit"
 			cfg.SMTPTLSServerName = c.serverName
-			svc, err := services.NewSMTPEmailServiceWithTLSConfig(cfg, &tls.Config{RootCAs: pool})
+			svc, err := notificacaosmtp.NovoComTLS(cfg, &tls.Config{RootCAs: pool})
 			require.NoError(t, err)
 
 			err = enviarTeste(t, svc)
@@ -213,7 +215,7 @@ func TestMAIL01_CAFile_ConfiaNoCertificadoDoArquivo(t *testing.T) {
 	cfg.SMTPTLSMode = "implicit"
 
 	t.Run("sem SMTP_TLS_CA_FILE o certificado não é confiável", func(t *testing.T) {
-		svc, err := services.NewSMTPEmailService(cfg)
+		svc, err := notificacaosmtp.Novo(cfg)
 		require.NoError(t, err)
 		err = enviarTeste(t, svc)
 		require.Error(t, err)
@@ -222,7 +224,7 @@ func TestMAIL01_CAFile_ConfiaNoCertificadoDoArquivo(t *testing.T) {
 	t.Run("com SMTP_TLS_CA_FILE envia, verificação ligada", func(t *testing.T) {
 		cfg.SMTPTLSCAFile = caminho
 		// InsecureSkipVerify do chamador continua ignorado (SEC-10).
-		svc, err := services.NewSMTPEmailServiceWithTLSConfig(cfg, &tls.Config{InsecureSkipVerify: true})
+		svc, err := notificacaosmtp.NovoComTLS(cfg, &tls.Config{InsecureSkipVerify: true})
 		require.NoError(t, err)
 		require.NoError(t, enviarTeste(t, svc))
 	})
@@ -238,12 +240,12 @@ func TestMAIL01_SemAuth_FalhaSemEnviar(t *testing.T) {
 			if implicito {
 				cfg.SMTPTLSMode = "implicit"
 			}
-			svc, err := services.NewSMTPEmailServiceWithTLSConfig(cfg, &tls.Config{RootCAs: pool})
+			svc, err := notificacaosmtp.NovoComTLS(cfg, &tls.Config{RootCAs: pool})
 			require.NoError(t, err)
 
 			err = enviarTeste(t, svc)
 			require.Error(t, err)
-			assert.ErrorIs(t, err, services.ErrSMTPSemAuth)
+			assert.ErrorIs(t, err, notificacaosmtp.ErrSemAuth)
 			assert.Contains(t, err.Error(), "smtp auth")
 
 			f.mu.Lock()
@@ -260,7 +262,7 @@ func TestMAIL01_AuthLogin_EMecanismoNaoSuportado(t *testing.T) {
 	t.Run("só LOGIN anunciado: usa AUTH LOGIN", func(t *testing.T) {
 		f := &fakeSMTP{cert: cert, mecanismos: "LOGIN"}
 		host, port := f.start(t)
-		svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), &tls.Config{RootCAs: pool})
+		svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), &tls.Config{RootCAs: pool})
 		require.NoError(t, err)
 		require.NoError(t, enviarTeste(t, svc))
 
@@ -273,7 +275,7 @@ func TestMAIL01_AuthLogin_EMecanismoNaoSuportado(t *testing.T) {
 	t.Run("PLAIN e LOGIN: prefere PLAIN", func(t *testing.T) {
 		f := &fakeSMTP{cert: cert, mecanismos: "LOGIN PLAIN"}
 		host, port := f.start(t)
-		svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), &tls.Config{RootCAs: pool})
+		svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), &tls.Config{RootCAs: pool})
 		require.NoError(t, err)
 		require.NoError(t, enviarTeste(t, svc))
 
@@ -285,10 +287,10 @@ func TestMAIL01_AuthLogin_EMecanismoNaoSuportado(t *testing.T) {
 	t.Run("nem PLAIN nem LOGIN: erro claro", func(t *testing.T) {
 		f := &fakeSMTP{cert: cert, mecanismos: "CRAM-MD5 XOAUTH2"}
 		host, port := f.start(t)
-		svc, err := services.NewSMTPEmailServiceWithTLSConfig(smtpCfg(host, port), &tls.Config{RootCAs: pool})
+		svc, err := notificacaosmtp.NovoComTLS(smtpCfg(host, port), &tls.Config{RootCAs: pool})
 		require.NoError(t, err)
 		err = enviarTeste(t, svc)
-		assert.ErrorIs(t, err, services.ErrSMTPMecanismoAuth)
+		assert.ErrorIs(t, err, notificacaosmtp.ErrMecanismoAuth)
 
 		f.mu.Lock()
 		defer f.mu.Unlock()

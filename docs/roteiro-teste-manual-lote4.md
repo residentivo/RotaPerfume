@@ -4,6 +4,7 @@
 **Migração:** `sql/19_alter_clientes_cnpj_unique.sql` (`make db-fix-cnpj-unique`). Ela unifica os 40 CNPJs duplicados e cria o índice UNIQUE `uq_clientes_cnpj`. Reversão: `make db-revert-cnpj-unique`.
 **Tempo estimado:** 40 a 50 minutos.
 **Autor:** TestBrain (2026-09-25)
+**Nota (ARQ-08, 2026-10-16):** os caminhos de código de produção citados (`handlers/`, `services/`, `repositories/`, `middleware/`, `models/`) são anteriores ao Lote 21 e foram removidos na reestruturação DDD; o equivalente atual está na seção 10 de `docs/arquitetura-ddd.md`. Os arquivos de teste citados seguem nas mesmas pastas.
 
 Marque cada checkbox depois de conferir. Use o DevTools aberto na aba **Network** nas partes de navegador. Se algo divergir, anote o caso e encaminhe ao SubBrain.
 

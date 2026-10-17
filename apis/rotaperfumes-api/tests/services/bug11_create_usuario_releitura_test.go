@@ -14,6 +14,8 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 	"log"
 	"sync"
 	"testing"
@@ -23,8 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
-	"github.com/rotaperfumes/shared/models"
+	"github.com/rotaperfumes/shared/vlog"
 )
 
 const (
@@ -112,7 +113,7 @@ func bug11EsperarInsert(mock sqlmock.Sqlmock, linha *bug11Linha, id int64, idVen
 			WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	}
 	mock.ExpectExec(bug11ReInsert).
-		WithArgs(bug11ArgEvento{linha, "insert", "Fulano"}, "fulano@test.com", sqlmock.AnyArg(), models.RoleNormal, vend, true, true).
+		WithArgs(bug11ArgEvento{linha, "insert", "Fulano"}, "fulano@test.com", sqlmock.AnyArg(), "normal", vend, true, true).
 		WillReturnResult(sqlmock.NewResult(id, 1))
 }
 
@@ -140,6 +141,8 @@ func TestBUG11_CreateUsuario_ReleituraOK_DevolveLinhaDoBanco(t *testing.T) {
 		tc := tc
 		t.Run(tc.nome, func(t *testing.T) {
 			logs := bug11CapturarLog(t)
+			vlog.SetEnabled(tc.verbose) // ARQ-03: o log de criação é vlog (nível 3), não mais `if cfg.Verbose`
+			t.Cleanup(func() { vlog.SetEnabled(false) })
 			db, mock := newUsuarioTestDB(t)
 			linha := &bug11Linha{}
 			const id = int64(7)
@@ -152,21 +155,21 @@ func TestBUG11_CreateUsuario_ReleituraOK_DevolveLinhaDoBanco(t *testing.T) {
 			mock.ExpectQuery(bug11ReGetByID).
 				WithArgs(bug11ArgEvento{linha, "select", id}).
 				WillReturnRows(sqlmock.NewRows(usuarioColunasHeader()).
-					AddRow(id, "Fulano", "fulano@test.com", "hash-do-banco", models.RoleNormal, vendCol, true, true, criado, atualizado, nil, tc.vendedorNome))
+					AddRow(id, "Fulano", "fulano@test.com", "hash-do-banco", "normal", vendCol, true, true, criado, atualizado, nil, tc.vendedorNome))
 
 			email := &bug11Email{linha: linha, err: tc.emailErr}
-			svc := services.NewUsuarioService(db, usuarioTestCfg(tc.verbose), email)
-			u, enviado, err := svc.CreateUsuario(context.Background(), db, bug11Input{
-				Nome: "Fulano", Email: "  Fulano@Test.COM ", Role: models.RoleNormal, IDVendedor: tc.idVendedor,
+			casos := novosCasos(db, usuarioTestCfg(tc.verbose), email, time.Now, identidadeapp.Opcoes{})
+			u, enviado, err := casos.CriarUsuario(context.Background(), adminTeste(), identidade.DadosUsuario{
+				Nome: "Fulano", Email: "  Fulano@Test.COM ", Role: "normal", IDVendedor: tc.idVendedor,
 			})
 
 			require.NoError(t, err)
 			require.NotNil(t, u)
 			assert.Equal(t, tc.emailErr == nil, enviado, "email_enviado reflete o envio real")
 			assert.Equal(t, id, u.ID)
-			assert.True(t, u.CreatedAt.Equal(criado), "created_at deve vir do GetByID")
-			assert.True(t, u.UpdatedAt.Equal(atualizado), "updated_at deve vir do GetByID")
-			assert.Equal(t, "hash-do-banco", u.PasswordHash, "resposta deve ser a linha relida")
+			assert.True(t, u.CriadoEm.Equal(criado), "created_at deve vir do GetByID")
+			assert.True(t, u.AtualizadoEm.Equal(atualizado), "updated_at deve vir do GetByID")
+			assert.Equal(t, "hash-do-banco", u.Hash.Revelar(), "resposta deve ser a linha relida")
 			if tc.vendedorNome != nil {
 				require.NotNil(t, u.VendedorNome, "vendedor_nome só existe na releitura (JOIN)")
 				assert.Equal(t, tc.vendedorNome, *u.VendedorNome)
@@ -182,9 +185,10 @@ func TestBUG11_CreateUsuario_ReleituraOK_DevolveLinhaDoBanco(t *testing.T) {
 			assert.NotContains(t, logs.String(), email.senha, "senha nunca vai para o log")
 			assert.NotContains(t, logs.String(), bug11MsgFalha)
 			if tc.verbose {
-				assert.Contains(t, logs.String(), fmt.Sprintf("[usuarios] criado: id=%d email=fulano@test.com role=normal email_enviado=%t", id, enviado))
+				assert.Contains(t, logs.String(), fmt.Sprintf("[usuarios.go] [Identidade.CriarUsuario] decisão criado id=%d email=f***@test.com role=normal email_enviado=%t", id, enviado))
+				assert.NotContains(t, logs.String(), "fulano@test.com", "e-mail só mascarado no log (§6.3)")
 			} else {
-				assert.NotContains(t, logs.String(), "[usuarios] criado:")
+				assert.NotContains(t, logs.String(), "[Identidade.CriarUsuario] decisão criado", "sem verbose, o vlog de criação não sai")
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
@@ -232,9 +236,9 @@ func TestBUG11_CreateUsuario_FalhaNaReleitura_DevolveObjetoEmMemoriaSemErro(t *t
 						WillReturnError(f.err)
 
 					email := &bug11Email{linha: linha, err: e.err}
-					svc := services.NewUsuarioService(db, usuarioTestCfg(false), email)
-					u, enviado, err := svc.CreateUsuario(context.Background(), db, bug11Input{
-						Nome: "Fulano", Email: "fulano@test.com", Role: models.RoleNormal, IDVendedor: v.id,
+					casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
+					u, enviado, err := casos.CriarUsuario(context.Background(), adminTeste(), identidade.DadosUsuario{
+						Nome: "Fulano", Email: "fulano@test.com", Role: "normal", IDVendedor: v.id,
 					})
 
 					require.NoError(t, err, "INSERT confirmado não pode virar erro por falha só na releitura")
@@ -247,12 +251,12 @@ func TestBUG11_CreateUsuario_FalhaNaReleitura_DevolveObjetoEmMemoriaSemErro(t *t
 					assert.Equal(t, id, u.ID, "fallback mantém o id gerado no INSERT")
 					assert.Equal(t, "Fulano", u.Nome)
 					assert.Equal(t, "fulano@test.com", u.Email)
-					assert.Equal(t, models.RoleNormal, u.Role)
+					assert.Equal(t, "normal", u.Role.String())
 					assert.Equal(t, v.id, u.IDVendedor)
 					assert.True(t, u.Ativo)
 					assert.True(t, u.DeveTrocarSenha)
-					assert.True(t, u.CreatedAt.IsZero(), "fallback é o objeto em memória")
-					assert.True(t, u.UpdatedAt.IsZero(), "fallback é o objeto em memória")
+					assert.True(t, u.CriadoEm.IsZero(), "fallback é o objeto em memória")
+					assert.True(t, u.AtualizadoEm.IsZero(), "fallback é o objeto em memória")
 					assert.Nil(t, u.VendedorNome, "sem JOIN no fallback")
 
 					assert.Equal(t, []string{"insert", "email", "select"}, linha.lista(), "ordem INSERT -> e-mail -> SELECT")
@@ -272,19 +276,19 @@ func TestBUG11_CreateUsuario_FalhaNoInsert_NaoEnviaEmailNemRele(t *testing.T) {
 	casos := []struct {
 		nome        string
 		configurar  func(e *sqlmock.ExpectedExec)
-		errEsperado error // nil = qualquer erro que não seja ErrEmailDuplicado
+		errEsperado error // nil = qualquer erro que não seja identidade.ErrEmailDuplicado
 	}{
 		{
 			"duplicado (sentinela do repo)",
 			func(e *sqlmock.ExpectedExec) {
 				e.WillReturnError(errors.New("Error 1062 (23000): Duplicate entry 'fulano@test.com' for key 'usuarios.email'"))
 			},
-			services.ErrEmailDuplicado,
+			identidade.ErrEmailDuplicado,
 		},
 		{
 			"duplicado (só Duplicate entry)",
 			func(e *sqlmock.ExpectedExec) { e.WillReturnError(errors.New("Duplicate entry 'x' for key 'email'")) },
-			services.ErrEmailDuplicado,
+			identidade.ErrEmailDuplicado,
 		},
 		{
 			"erro genérico no INSERT",
@@ -305,26 +309,27 @@ func TestBUG11_CreateUsuario_FalhaNoInsert_NaoEnviaEmailNemRele(t *testing.T) {
 			db, mock := newUsuarioTestDB(t)
 			linha := &bug11Linha{}
 			exp := mock.ExpectExec(bug11ReInsert).
-				WithArgs(bug11ArgEvento{linha, "insert", "Fulano"}, "fulano@test.com", sqlmock.AnyArg(), models.RoleNormal, nil, true, true)
+				WithArgs(bug11ArgEvento{linha, "insert", "Fulano"}, "fulano@test.com", sqlmock.AnyArg(), "normal", nil, true, true)
 			tc.configurar(exp)
 
 			email := &bug11Email{linha: linha}
-			svc := services.NewUsuarioService(db, usuarioTestCfg(true), email)
-			u, enviado, err := svc.CreateUsuario(context.Background(), db, bug11Input{
-				Nome: "Fulano", Email: "fulano@test.com", Role: models.RoleNormal,
+			casos := novosCasos(db, usuarioTestCfg(true), email, time.Now, identidadeapp.Opcoes{})
+			u, enviado, err := casos.CriarUsuario(context.Background(), adminTeste(), identidade.DadosUsuario{
+				Nome: "Fulano", Email: "fulano@test.com", Role: "normal",
 			})
 
 			require.Error(t, err)
 			if tc.errEsperado != nil {
 				assert.ErrorIs(t, err, tc.errEsperado)
 			} else {
-				assert.NotErrorIs(t, err, services.ErrEmailDuplicado)
+				assert.NotErrorIs(t, err, identidade.ErrEmailDuplicado)
 			}
 			assert.Nil(t, u)
 			assert.False(t, enviado)
 			assert.Zero(t, email.chamadas, "sem INSERT confirmado não há e-mail")
 			assert.Equal(t, []string{"insert"}, linha.lista(), "sem releitura após falha no INSERT")
 			assert.NotContains(t, logs.String(), "[usuarios] criado")
+			assert.NotContains(t, logs.String(), "decisão criado", "INSERT falhou: nenhuma decisão de criação no log")
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}

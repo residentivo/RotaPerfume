@@ -3,6 +3,313 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 13 (2026-09-30) e MAIL-01: fechados em 2026-10-16 — 1 card concluído, 1 cancelado
+
+> Fechado pelo 🔵 SubBrain a partir da mensagem do usuário: "DEPLOY-01 e Lote-13 estão ok. O MAIL-01 ainda está cancelado, não poderei hostear o serviço de email".
+>
+> **Lote 13** aberto pelo 🤍 MegaBrain a partir do pedido "implementar o projeto no servidor ivo-inspiron-15-3530 com Docker". **Fluxo:** 🟣 SecBrain (spec de segurança do deploy) → 🟡 BackBrain (infra: API, compose, Caddy, Jenkins, dump) ∥ 🟢 FrontBrain (Dockerfile do frontend) → 🔵 SubBrain (manual e Kanban) → **usuário** (commit/push, servidor, primeira execução) → 🔵 SubBrain (fechamento). Último passo registrado antes do fechamento: código no GitHub (commit 87d79af) e `deploy/setup-servidor.sh` criado.
+
+## DEPLOY-01: implantar o sistema no servidor `ivo-inspiron-15-3530` via Docker + Jenkins — 2026-10-16
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain ∥ 🟢 FrontBrain → 🔵 SubBrain → usuário
+
+**Status:** concluído em 2026-10-16 (aberto no Lote 13, 2026-09-30). Confirmado pelo usuário: deploy no servidor ok.
+**Camadas:** Segurança, Backend (infra), Frontend (infra), Documentação
+**Origem:** pedido do usuário, "implementar o projeto no servidor ivo-inspiron-15-3530 com Docker".
+
+**Decisões do usuário:** deploy por **pipeline Jenkins** (Jenkins em `http://ivo-inspiron-15-3530:8888/`); **MySQL que já existe no servidor**; dados vindos de um **dump do banco local**.
+
+**Arquitetura adotada:** o Jenkins clona `residentivo/RotaPerfume` (branch `main`) e roda `docker compose -p rotaperfumes`. O Caddy (`tls internal`) é a **única** porta publicada (**8443**) e roteia `/api/*` → API Go (`api:8080`) e o resto → Next (`frontend:3000`). O MySQL do host (`192.168.168.106`) é acessado via `host.docker.internal`. HTTPS é obrigatório porque os cookies de auth são `Secure`.
+
+**Entregue:**
+- 🟣 **SecBrain (spec):** segredos só em credenciais Jenkins (Secret file `rotaperfumes-api-env`, Username/password `rotaperfumes-db-admin`), sem `set -x`/eco de segredos e com `api.env` modo 600 apagado no `post`; usuário MySQL da API só com DML (`rotaperfumes_app@172.16.0.0/12`) e admin separado para o import; API e frontend sem porta publicada; `TRUST_PROXY_HEADERS=true` com o Caddy sobrescrevendo `X-Forwarded-For` e removendo `X-Real-IP`; CORS explícito (hostname e IP); containers com `cap_drop: ALL`, `no-new-privileges` e `read_only` (API/Caddy); `JWT_SECRET` novo; truncar `refresh_tokens` após o import; Turnstile com o hostname cadastrado.
+- 🟡 **BackBrain (infra):** `apis/Dockerfile` (multi-stage, distroless nonroot); `deploy/docker-compose.yml`; `deploy/Caddyfile`; `deploy/api.env.example`; `deploy/mysql-setup.sql`; `deploy/dump-local.ps1`; `deploy/setup-servidor.sh`; `Jenkinsfile` (Checkout → Testes Go → Build → Importar dump opcional → Deploy → Smoke test); `.dockerignore` (raiz e `apis/`); `.gitignore` com `deploy/api.env` e `deploy/dumps/`.
+- 🟢 **FrontBrain (Dockerfile):** `frontend/Dockerfile` (Next standalone, `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY` como build-args, usuário `node`); `frontend/.dockerignore`; `next.config.js` com `output: 'standalone'`; `src/lib/{api,apiClient,auth}.ts` removem a barra final do `API_BASE`.
+- 🔵 **SubBrain:** manual `docs/deploy-servidor.md` (pré-requisitos, MySQL, Turnstile, credenciais, job, dump, CA do Caddy, operações, rollback e troubleshooting).
+
+**Validação:** local (`go build`/`go test` da API, `next build`, 1482 testes do frontend) e, no servidor, pelo usuário (build das imagens, compose, Caddy/TLS, pipeline Jenkins e acesso pelo navegador), confirmada em 2026-10-16. As pendências do usuário (push, pré-requisitos do servidor, credenciais Jenkins, import do dump, CA do Caddy) foram cumpridas.
+
+**Observação:** sem servidor de e-mail (MAIL-01 cancelado, abaixo), a API sobe com o envio Noop (`apis/rotaperfumes-api/internal/bootstrap/email.go`).
+
+## MAIL-01: programa de diagnóstico de envio de e-mail (`cmd/testeemail`) — ❌ CANCELADO em 2026-10-16
+**Agentes:** 🟡 BackBrain
+
+**Status:** cancelado pelo usuário: "não poderei hostear o serviço de email". Nenhum envio real bem-sucedido. O código entregue permanece no repositório.
+**Camada:** Backend (ferramenta CLI)
+**Origem:** pedido do usuário (2026-10-09): "o envio de email não está funcionando"; programa que envie um e-mail de `henrique.rodrigues@rotaperfumes.com.br` para `admin@rotaperfumes.com.br`, logando todos os passos e usando o `.env` da raiz.
+
+**Histórico:**
+- 2026-10-09: 🟡 BackBrain entregou `apis/shared/cmd/testeemail` e `apis/shared/tools/testeemail`.
+- 2026-10-11 (Lote 20): diagnóstico real em `192.168.168.106:465` falhou no handshake TLS (certificado autoassinado "rcgen self signed cert", SAN só `localhost`, sem SAN de IP); nenhum e-mail enviado. Correção no código: TLS implícito na 465 e STARTTLS nas demais portas, AUTH obrigatório (PLAIN/LOGIN), verificação de certificado sempre ligada, TLS ≥ 1.2, variáveis `SMTP_TLS_MODE`/`SMTP_TLS_SERVER_NAME`/`SMTP_TLS_CA_FILE`, `testeemail` com `-tls-ca-file` e `-salvar-cert`, 9 testes `TestMAIL01_*`.
+- 2026-10-16 (Lote 21, ARQ-07): código SMTP migrado para `apis/shared/notificacao/notificacaosmtp/` sem mudança de comportamento.
+
+**Passo que ficou pendente (não será executado):** confirmar o fingerprint do certificado, configurar `SMTP_TLS_SERVER_NAME`/`SMTP_TLS_CA_FILE`, rodar o `testeemail` de novo e montar o PEM no deploy.
+
+**Consequência do cancelamento:** sem `SMTP_HOST/USER/PASSWORD/FROM`, a API usa o Noop (`notificacaosmtp.NovoNoop`): senha inicial, reset de senha e alertas de segurança (SEC-09) ficam **só no log** do container da API. Não colocar variáveis SMTP parciais/inválidas no `api.env`: config SMTP inválida derruba a API. Para retomar, abrir um card novo quando houver um servidor de e-mail.
+
+---
+## Lote 21 de 2026-10-13: 9 cards concluídos (de 9)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido "revise todo o código da API e adicione Design Patterns em todos os locais possíveis para simplificar o código. Use o padrão DDD e Clean Code para reestruturar o código da API". Fechado em 2026-10-16 pelo 🔵 SubBrain (ARQ-08).
+>
+> **Decisões do usuário:** estratégia **incremental por bounded context**: cada card de código termina com build e testes verdes e um commit na branch `refactor/ddd`. Escopo: API (`apis/rotaperfumes-api`) + módulo `apis/shared` (repositories, models, services, importers e CLIs). P1 (vlog em 4 níveis) e X1 (método fixo em 13 rotas e parse estrito de `/api/senha-historico/{user_id...}`) aprovados pelo usuário.
+>
+> **Fluxo:** ARQ-00 (🟣 SecBrain → 🟡 BackBrain: blueprint) → ARQ-01 (fundação/shared kernel) → ARQ-02 (Catálogo, piloto) → ARQ-03 (Identidade e Acesso) → ARQ-04 (Comercial) → ARQ-05 (Vendas) → ARQ-06 (Analytics) → ARQ-07 (Notificação, importadores, CLIs e remoção do legado) → ARQ-08 (🔵 SubBrain: documentação e fechamento). Em cada card de código: 🟡 BackBrain → 🔴 TestBrain + 🟣 SecBrain → 🟡 BackBrain (ressalvas) → 🤍 MegaBrain (validação e commit).
+>
+> **Commits:** ARQ-00 `cd12d47`, ARQ-01 `0e7e757`, ARQ-02 `17502da`, ARQ-03 `c412d10`, ARQ-04 `fdaa7d9`, ARQ-05 `3e33f6f`, ARQ-06 `adce2b8`, ARQ-07 `719393c`, ARQ-08 `5228747`.
+>
+> **Resultado:** contextos Catálogo, Identidade e Acesso, Comercial, Vendas, Analytics e Notificação em `apis/shared/<contexto>{,app,mysql}`; HTTP em `apis/rotaperfumes-api/internal/{httpx,<contexto>http,bootstrap}`; legado (`middleware`, `services`, `routes`, `handlers`, `repositories`, `models`) removido. Testes de topo: API 720 → 847, shared 593 → 796. Cobertura combinada 88,48% → 98,06%. Contrato HTTP inalterado, exceto a X1. Estrutura final, patterns e divergências: `docs/arquitetura-ddd.md` §10; ADR: `docs/adr-001-reestruturacao-ddd.md`.
+>
+> **Pendência opcional (não é card):** o race detector (`go test -race`) está indisponível nesta máquina porque falta gcc/MinGW (cgo). Sugestão ao usuário: instalar o MinGW-w64 localmente ou rodar `go test -race ./...` no Jenkins (Linux).
+>
+> **Saíram do lote (em `afazer.md`):** ARQ-09, BUG-14 a BUG-18, SEC-14 a SEC-28, TST-06, TST-07 e CHORE-03 a CHORE-06.
+
+## ARQ-08: documentação e fechamento do Lote 21 — 2026-10-16
+**Agentes:** 🔵 SubBrain
+
+**Status:** concluído em 2026-10-16. **Commit:** `5228747` (branch `refactor/ddd`).
+
+**Camada:** Documentação
+
+**Entregue:**
+- **ADR** da reestruturação: `docs/adr-001-reestruturacao-ddd.md` (contexto, decisão, alternativas rejeitadas, consequências, X1, N-7 e pendências).
+- **`docs/arquitetura-ddd.md`:** cabeçalho com o estado final e nova seção 10, conferida no código: estrutura real dos dois módulos; contextos e camadas (domínio, `*app`, adapters `*mysql`/`*crypto`/`*smtp`); `internal/bootstrap` como composition root (tabela das 60 rotas em `rotas.go`); `internal/httpx`; `kernel` (incluindo `rota.go`/`SanearRota`); `shared/db` (`tx.go`, `consulta.go`, `linhas.go`, `duplicada.go`); `importkit` (Template Method) e CLIs com `main` fino (`cmdutil.Executar`); testes de arquitetura; como rodar a integração; tabela "pattern → onde no código" (21 entradas, caminhos conferidos); divergências do desenho; estado da N-7. Notas nos §2.1, §3.8, §3.9, §4.3, §6.4 e §7.5 e registro no §7.6.
+- **`docs/logs-verbose.md`:** a regra LOG-02 (Lote 17, "linha a linha") foi substituída pelo modelo de 4 níveis aprovado no ARQ-00 (P1): rota (`httpx.Trace`, automático), caso de uso (`defer vlog.Trace`), decisão e query; tabela do que cada nível pode logar; `vlog.OcultarEmail` (`[email-usuario]`); `rota=` saneado por `kernel.SanearRota`; CLIs ligando o vlog via `cmdutil.Configurar`; testes de AST. O formato da linha e as proibições não mudaram. O comentário de pacote de `apis/shared/vlog/vlog.go` já estava atualizado pelo 🟡 BackBrain. O histórico do LOG-02 neste arquivo não foi reescrito.
+- **Testes de integração documentados** (`docs/arquitetura-ddd.md` §10.9): exigem `INTEGRATION=1` **e** as `DB_*` do `.env` no ambiente (SEC-11), com `go test -p 1`; comandos para Git Bash e PowerShell. Comentário e texto de ajuda do alvo `test-integration` do `Makefile` atualizados (sem mudar o comando).
+- **Postman:** contrato conferido. Todas as requisições das 13 rotas da X1 já usam o método documentado e nenhuma chama `/api/senha-historico/{id}` com subcaminho, `0` ou negativo, então nenhuma requisição mudou. Seção "Mudanças do Lote 21" no `postman/README.md` e na descrição da `postman/collection.json`; referências a arquivos legados atualizadas nos dois.
+- **Caminhos que deixaram de existir:** atualizados em `docs/manual-base-de-dados.md`, `docs/roteiro-teste-manual-clientes.md`, `postman/` e no histórico do MAIL-01 em `fazendo.md` (código SMTP agora em `apis/shared/notificacao/notificacaosmtp/`; `apis/shared/tests/services/mail01_smtp_tls_test.go` continua existindo). Registros históricos (`docs/arq-00-invariantes-seguranca.md` e roteiros dos Lotes 4, 5 e 6) receberam uma nota apontando para o §10, sem reescrita.
+- **Ressalva N-7 (pendência n do ARQ-07):** conferida no código. Não tratada no código, aceita e documentada (`apis/shared/analytics/analyticsapp/consultas.go`, comentário de `Novo`); o bootstrap só monta adapters reais (`analyticsmysql.NovoDashboard`/`NovoClientes`, `comercialCasos.Escopo()`), então não há ponteiro nil tipado em produção. Opção de fechar no código registrada no §10.12, sem card.
+- **Kanban:** bloco do Lote 21 fechado em `fazendo.md` e resumo movido para cá; ARQ-08 saiu de `afazer.md`. MAIL-01 e DEPLOY-01 seguem em `fazendo.md`.
+
+**Não alterado (aguarda o usuário):** `.claude/agents/backend.md` (seção "Estrutura esperada" ainda cita `models`, `middleware`, `handlers`, `services` e `routes`) e `.claude/agents/tester.md` (exemplo `NewRefreshTokenServiceWithClock`). São arquivos de configuração dos agentes; a mudança proposta foi entregue ao 🤍 MegaBrain para aprovação do usuário. O `CLAUDE.md` não cita caminhos removidos.
+
+**Validação:** só documentação, Kanban, Postman (texto de descrição) e comentários do `Makefile`; nenhum código Go alterado. Os critérios de build/teste do card valem pelo estado do ARQ-07 (`719393c`): `go build`, `go vet` e `go test ./...` verdes nos dois módulos.
+
+## ARQ-07: Notificação/SMTP, importadores, CLIs e remoção do legado — 2026-10-16
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain + 🟣 SecBrain → 🟡 BackBrain (NB-A a NB-F) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-16. **Commit:** `719393c` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend
+
+**Entregue:**
+- Contexto `apis/shared/notificacao` (+ `notificacaoapp` com o notifier de alerta de segurança e `notificacaosmtp` com o transporte SMTP, preservando o comportamento do MAIL-01: TLS implícito/STARTTLS, AUTH obrigatório, verificação de certificado), substituindo `services/email_service.go` e `services/email_smtp.go`.
+- Importadores com Template Method em `apis/shared/importers/importkit` (+ `cli.go` por importador).
+- CLIs com `main` fino (composition root) e lógica testável: `apis/shared/cmd/*`, `tools/*/cli.go`, `cmdutil/cli.go` e `apis/rotaperfumes-api/internal/resetsenhas`. `tools/testeemail` dividido em `diagnostico.go`, `comandos_smtp.go` e `conexao_tls.go`.
+- `kernel/rota.go`; helpers SQL compartilhados em `apis/shared/db/linhas.go` (pendência h: `execPorID`, `existe`, `inserir` e `lerUma` deixam de estar duplicados em `comercialmysql`/`vendasmysql`).
+- Remoção de todo o legado: `rotaperfumes-api/{middleware,services,routes}` e `shared/{repositories,services,models}`, inclusive `middleware/principal_legado.go` e o legado encolhido de usuário/refresh token (pendência b). `UpsertPorDataSku` removido do `catalogomysql` (pendência j).
+- Pendências de segurança resolvidas: NB-1 (c, e-mail oculto no log de erro SMTP), NB-6 (d, `Run` espera os alertas em andamento antes do `pool.Close`), NB-7 (e, `resetsenhas`/`seedusers` sem e-mail nem hash expostos) e N4 (f, `rota=` restaurado no log `[escopo] bloqueado vendedor_desligado`).
+
+**Testes (🔴 TestBrain):**
+- Shims `helpers_*_test.go` removidos nos dois módulos (pendências a, i, m). Os testes antes tautológicos (`TestUserCheck_RotaPublica_*` e `TestSEC08_CorteDeSessao_RotaPublicaIgnoraCorte`) agora passam pelo `httpx.Router` real.
+- Teste de AST de concatenação SQL (pendência k): `apis/rotaperfumes-api/tests/arquitetura/arq07_sql_concat_test.go`, cobrindo `analyticsmysql` (extensão aos demais adapters virou card, ver abaixo).
+- `TestARQ_Varredura_DoisModulos` atualizado (pendência l).
+- Os 8 testes internos de `tools/testeemail` movidos para `tests/tools/testeemail` (achado do ARQ-00 fechado, sem perda de testes).
+- Pendência (g) feita em `tests/comercial/arq07_escopo_404_403_test.go` (404×403 e checagem de carteira na escrita na suíte do shared).
+- Corrigido o teste instável `TestARQ07_NB6_AguardarEsperaOsEnviosEmAndamento` (prazo de 1 ms insuficiente no Windows).
+- Integração (`INTEGRATION=1` + DB_* do `.env`, `-p 1`): shared 2930 e API 4096 aprovados, 0 falhas. Observação: só `INTEGRATION=1` não basta; as variáveis DB_* precisam estar no ambiente (SEC-11).
+
+**Segurança (🟣 SecBrain):** aprovado sem bloqueantes; MAIL-01 sem regressão; nenhum SQL montado com dados externos; a remoção do legado não abriu rota sem auth/escopo. 6 achados não bloqueantes corrigidos no próprio lote pelo 🟡 BackBrain:
+- **NB-A:** `vlog.OcultarEmail` apara espaços e ignora caixa; agora é variádica.
+- **NB-B:** oculta também o e-mail do admin; flag `fechado` no notifier evita `Notificar` concorrente com `Aguardar` no shutdown; caminho rápido em `Aguardar`.
+- **NB-C:** `kernel.SanearRota` escapa caracteres de controle no `rota=` e nos logs `[auth]`/`[http]`.
+- **NB-D:** `resetpassword` mascara o e-mail; a listagem mostra só o algoritmo do hash (coluna `ALGORITMO`).
+- **NB-E:** `testeemail` recusa AUTH com `-inseguro`, e o `authLogin` confere o host.
+- **NB-F:** `seedusers` sem `--local-infile=1`.
+
+**Patterns aplicados:** Template Method (`importkit`); Composition root / `main` fino nos CLIs; Porta/Adapter de notificação (transporte SMTP atrás de interface); Strategy de modo TLS (implícito/STARTTLS); helpers SQL compartilhados (DRY) em `shared/db`.
+
+**Métricas:**
+- `go build`, `go vet` e `gofmt -l` limpos.
+- `go test -count=1 ./...`: shared 2883 aprovados / 0 falhas / 8 pulados; API 3823 / 0 / 28 pulados (integração).
+- Cobertura combinada 89,42% → 98,06% (statements descobertos 852 → 133; o restante é sobretudo `main` fino e `internal/bootstrap/server.go`). Portão do 🤍 MegaBrain (cobertura não cai, descobertos não sobem) cumprido com folga.
+- Contrato HTTP inalterado: mudaram só linhas de log e a saída dos CLIs.
+
+**Achados que viraram cards (em `afazer.md`, BAIXA):** SEC-28 (remover `--local-infile=1` do `MYSQL_OPTS` do `Makefile` da raiz, mesmo vetor do NB-F) e TST-07 (estender o teste de AST de concatenação SQL aos demais adapters, com allowlist).
+
+**Validação:** 🟣 SecBrain aprovou (0 bloqueantes); 🔴 TestBrain aprovou. Race detector indisponível nesta máquina (sem gcc).
+
+## ARQ-06: contexto Analytics (Dashboard como read model) — 2026-10-15
+**Agentes:** 🟡 BackBrain → 🟣 SecBrain + 🔴 TestBrain → 🟡 BackBrain (ressalvas #2 e #6) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-15. **Commit:** `adce2b8` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend
+
+**Entregue:**
+- Dashboard migrado como read model para `apis/shared/analytics{,app,mysql}` e `apis/rotaperfumes-api/internal/analyticshttp`.
+- Pacote `apis/rotaperfumes-api/handlers` legado removido por inteiro (incluindo `dashboard_handler.go`, `response.go` e a ponte de escopo `scope.go`, cujo último consumidor era o dashboard); removidos também `services/{dashboard_service,paginacao}.go` e `shared/repositories/{cliente,dashboard}_repository.go`.
+- Escopo por carteira via `Filtro()` (zero value = restrito); ranking do perfil restrito igual ao legado.
+- Teste de arquitetura `TestARQ_SprintfSQLSoConstantes` (SQL com `Sprintf` só a partir de constantes).
+- Ressalvas do 🟣 SecBrain aplicadas pelo 🟡 BackBrain: #2 (Ranking com uma única chamada a `Filtro()`, sem erro ignorado) e #6 (relógio injetado no adapter no lugar de `time.Now()` na série; teste `TestAnalyticsmysql_SerieZeradaUsaORelogioInjetado`).
+
+**Patterns aplicados:** Query object / CQRS leve (consulta sem passar pelos agregados de escrita); read models tipados; Value Object `Dias`; enum `Periodo` tipado e validado antes do SQL; Porta/Adapter `EscopoAnalytics`; Mapper/DTO; Facade no bootstrap; testes de AST com controle negativo.
+
+**Métricas:**
+- Testes de topo: shared 740 → 762; API 833 → 839.
+- Cobertura combinada 89,416% → 89,42% (linhas descobertas 881 → 852).
+- Mutações: 31/31 mortas pelos testes existentes.
+
+**Incidente de mutação:** o script de mutação do 🔴 TestBrain deixou arquivos alterados; a mudança foi revertida, a integridade foi verificada por md5 do perfil de cobertura e o 🟡 BackBrain confirmou a integridade dos 7 arquivos afetados antes do commit.
+
+**Achados que viraram cards/notas (fora do Lote 21):** BUG-18 (IN sem limite nas metas e detecção de tabela ausente por texto, em `afazer.md`) e nota no SEC-16 (overflow do offset no ranking). Pendências (k)–(n) registradas no ARQ-07.
+
+**Validação:** 🟣 SecBrain aprovou (0 bloqueantes); 🔴 TestBrain aprovou. 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos (762 testes de topo no shared, 839 na API). Race detector indisponível nesta máquina (sem gcc).
+
+## ARQ-05: contexto Vendas (Pedido + itens, Pagamento) — 2026-10-15
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain + 🟣 SecBrain → 🟡 BackBrain (ressalvas) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-15. **Commit:** `3e33f6f` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend
+
+**Entregue:**
+- Pedido (aggregate root com ItemPedido) e Pagamento migrados para `apis/shared/vendas{,app,mysql}` e `apis/rotaperfumes-api/internal/vendashttp`.
+- `AjustarSaldoPorFaturamento` movido para a mesma tx do pedido (baixa de estoque no Unit of Work); `apis/shared/repositories/estoque_repository.go` apagado (`UpsertPorDataSku` foi para `catalogomysql`, sem chamador de produção; ver ARQ-07).
+- Ponte `apis/rotaperfumes-api/handlers/scope.go` removida para pedido/pagamento (segue só para o dashboard, até o ARQ-06).
+- NB-3 do Catálogo: 1062 de SKU e de `(data_snapshot, sku)` traduzido para `KindConflito`, sem o valor do driver no log; status HTTP inalterado (ver CHORE-06).
+- Ressalvas aplicadas pelo 🟡 BackBrain: `faturamento.go` via `db.SemValorDuplicado` (🟣 SecBrain #7) e teste `TestARQ05_ListagemRestrita_IgnoraVendedorDaQuery`.
+
+**Patterns aplicados:** Aggregate root + Factory `NovoPedido`; Value Objects de status, canal, forma de pagamento e desconto; Specification como dado; Repository com escopo via `Filtro()`; Unit of Work `TxPedido` com baixa de estoque na mesma tx; portas entre contextos (`EscopoCarteira`, `BaixaEstoque`); `Leitor[T]`; Strategy de ordenação; Error mapper; Facade no bootstrap.
+
+**Métricas:**
+- Testes de topo: shared 712 → 740; API 823 → 833.
+- Cobertura combinada 89,39% → 89,42% (linhas descobertas 958 → 881).
+- Mutações: 40; as 7 sobreviventes (V-03 valores do payload; zero value do escopo fail-open na checagem de posse; upsert do faturamento sobrescrevendo saldo/ruptura; 1062 no UPDATE de produto) passaram a ser mortas pelos testes `TestARQ05_*`.
+
+**Decisão do usuário (teste interno):** autorizada a remoção de `apis/shared/db/db_internal_test.go` (teste interno em pacote de produção, contra a convenção). O 🤍 MegaBrain removeu o arquivo e o substituiu por `apis/shared/tests/db/mask_dsn_test.go` (teste externo, com asserções mais fortes). O hash do commit do ARQ-05 é `3e33f6f`.
+
+**Achados que viraram cards (em `afazer.md`, fora do Lote 21):** BUG-16 (baixa de estoque dupla no ciclo Faturado → outro → Faturado, ALTA, decisão de produto), SEC-26 (TOCTOU de posse no PUT/DELETE de pedido), SEC-27 (pagamento quitado editável e `taxa_pct` sem teto), TST-06 (asserções de tipo sem checagem nos testes de handler), BUG-17 (toggle de produto concorrente, NB-5). Notas acrescentadas a SEC-14 (itens do pedido sem limite), SEC-25 (busca de pedidos) e ARQ-07 (helpers duplicados e `helpers_vendas_test.go`).
+
+**Validação:** 🟣 SecBrain aprovou (0 bloqueantes); 🔴 TestBrain aprovou com ressalvas (resolvidas acima). 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos (740 testes de topo no shared, 833 na API). Race detector indisponível nesta máquina (sem gcc).
+
+## ARQ-04: contexto Comercial e escopo por carteira — 2026-10-15
+**Agentes:** 🟡 BackBrain → 🟣 SecBrain + 🔴 TestBrain → 🟡 BackBrain (ressalvas N1/N2/N3/N5/N6) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-15. **Commit:** `fdaa7d9` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend
+
+**Entregue:**
+- Vendedor e Carteira, Cliente (CNPJ como value object), Visita e Oportunidade migrados para `apis/shared/comercial{,app,mysql}` e `apis/rotaperfumes-api/internal/comercialhttp`.
+- Escopo de acesso por carteira: `kernel.Escopo` substitui a sentinela `VendedorID <= 0`; `AutorizadorEscopo` sem cache; desligamento de vendedor em tx única; adapter `vendedoresLegado` do bootstrap trocado pela implementação de `comercialmysql` (pendência do ARQ-03 fechada).
+- Ponte `apis/rotaperfumes-api/handlers/scope.go` para pedido/pagamento/dashboard (sai no ARQ-05/ARQ-06).
+- 1062 de CNPJ/carteira traduzido para erro de domínio sem o valor do driver no log (N-8 do ARQ-01 fechada).
+- Ressalvas do 🟣 SecBrain aplicadas: **N1** zero value da ponte = restrito, derivado de `Filtro()`; **N2** `db.SemValorDuplicado` para 1062 de outro índice, sem a mensagem do driver; **N3** log `[escopo] principal invalido`; **N5** escopo inválido → 500 em `VendedorDaEscrita`; **N6** panic na montagem dos handlers legados com escopo nil.
+
+**Patterns aplicados:** Specification/Escopo via `Filtro()`; política de escrita como função pura; Unit of Work no desligamento de vendedor e em cliente+carteira; Repository + Adapter (incluindo as portas para Identidade); Factory/Value Object CNPJ; Command adiado `Leitor[T]` ("autoriza antes do decode"); Template de releitura (`appkit`); Mapper/DTO; Error mapper.
+
+**Destaque de segurança:** fechados os riscos críticos do ARQ-00 **E-02** (sentinela 0 = acesso global) e **O1** (SemAcesso → consulta global).
+
+**Métricas:**
+- Testes de topo: API 806 → 823; shared 687 → 712.
+- Cobertura combinada 89,35% → 89,39% (linhas descobertas 1.110 → 958); código novo 100% coberto.
+- Cerca de 21% menos lógica.
+- Mutações: 40; as 6 sobreviventes (passos do desligamento e de cliente+carteira fora da tx; ponte sem Principal virando global) passaram a ser mortas pelos testes `TestARQ04_*`. Nenhuma asserção removida ou enfraquecida.
+
+**Decisões:** duplicidade preserva o status HTTP atual (padronização para 409 → CHORE-06); NB-3 do Catálogo → ARQ-05; N4 (log `[escopo] bloqueado vendedor_desligado` sem `rota=`) → ARQ-07; N7 já coberta pelo BUG-14 (TOCTOU V-02).
+
+**Validação:** 🟣 SecBrain aprovou (0 bloqueantes) e 🔴 TestBrain aprovou. 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos (712 testes de topo no shared, 823 na API). Race detector indisponível nesta máquina (sem gcc).
+
+## ARQ-03: contexto Identidade e Acesso — 2026-10-14
+**Agentes:** 🟡 BackBrain → 🟣 SecBrain (revisão aprofundada pós-implementação) + 🔴 TestBrain → 🟡 BackBrain (ajustes finais) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-14. **Commit:** `c412d10` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend
+
+**Entregue:**
+- Auth/JWT, Usuário, RefreshToken (rotação e detecção de reuso), SenhaHistórico, hash/política/gerador de senha, Turnstile, alerta de segurança e os middlewares auth, user_status e ratelimit migrados para `apis/shared/identidade{,app,mysql,crypto}` e `apis/rotaperfumes-api/internal/identidadehttp`.
+- Autenticador nativo (role lida do banco), substituindo o adapter de transição do ARQ-01; singletons de rate limit, notifier e Turnstile; fronteiras transacionais idênticas às atuais; testes SEC portados.
+- Legado removido: `handlers/{auth,senha_historico,usuario}_handler.go`, `middleware/{auth_middleware,ratelimit_middleware,user_status}.go` e `services/{refresh_cleanup,refresh_token_service,reset_senhas_ativos_service,senha_historico_service,usuario_service}.go`. Pontes de transição (shims de teste, `middleware/principal_legado.go`, legado encolhido de usuário/refresh token, adapter `vendedoresLegado`) ficam até o ARQ-04/ARQ-07.
+- Ajustes finais: asserção do `bug11` não-verbose corrigida para o formato novo; `HashPassword_Erros` com `EqualError` exato; teste de arquitetura `arq03_allowlist_test.go` (`ResetarSenhasAtivos` só em `cmd/resetsenhas`; `RegistrarReuso`/`DesfazerReuso` só em `identidadeapp`), ressalva #2 do 🟣 SecBrain; registro no blueprint.
+
+**Patterns aplicados:** Repository; Unit of Work na rotação do refresh token (`db.Transactor`, I-06); Strategy de hash (bcrypt/Argon2id); Adapter para JWT, Turnstile e rate limit; Observer reuso → notificador; Null Object `SemPublicador`; Value Objects de segredo; Factory; estado por enum; Mapper/DTO; Composition Root.
+
+**Métricas:**
+- Testes de topo: API 793 → 808; shared 652 → 687.
+- Cobertura combinada 89,07% → 89,35% (linhas descobertas 1.248 → 1.110).
+- Mutações de segurança: 18; as 6 que sobreviviam passaram a ser mortas pelos testes `TestARQ03_*`.
+
+**Decisões:** especificação prévia do 🟣 SecBrain dispensada (coberta por I-01..I-16), com revisão aprofundada pós-implementação; troca de senha fora da UoW (→ BUG-15); detecção de reuso mantém `RegistrarReuso` atômico + `DesfazerReuso` compensatório; GAPs SEC-18, SEC-20, SEC-21 e SEC-22 preservados (regra "não piorar"); logs `por admin=<role>` → CHORE-05; NB-1, NB-6 e NB-7 anotados no ARQ-07.
+
+**Validação:** 🟣 SecBrain e 🔴 TestBrain aprovaram com ressalvas (sem bloqueantes; ressalvas resolvidas nos ajustes finais). 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos (687 testes de topo no shared, 808 na API). Race detector indisponível nesta máquina (sem gcc).
+
+## ARQ-02: contexto Catálogo (Produto, Estoque), piloto — 2026-10-14
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → 🟣 SecBrain (checklist ARQ-02, C-01..C-03) → 🟡 BackBrain (NB-1/NB-2/NB-8 e teste de ordenação apertado) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-14. **Commit:** `17502da` (branch `refactor/ddd`).
+
+**Camada:** Backend
+
+**Entregue:**
+- Produto e Estoque migrados para `apis/shared/catalogo` (domínio), `apis/shared/catalogoapp` (casos de uso), `apis/shared/catalogomysql` (adapter MySQL) e `apis/rotaperfumes-api/internal/catalogohttp` (handlers), mais `internal/httpx/body.go`.
+- Legado do contexto removido: `handlers/produto_handler.go`, `handlers/estoque_handler.go`, `services/produto_service.go`, `services/estoque_service.go`, `shared/models/produto.go`, `shared/models/estoque.go` e `shared/repositories/produto_repository.go`.
+- `apis/shared/repositories/estoque_repository.go` fica encolhido (126 linhas) até o ARQ-05/ARQ-07.
+- Ajustes finais: NB-1 (`%q` no SKU nos logs), NB-2 (§6.3), NB-8 (comentários do `estoque_repository.go`) e teste de ordenação apertado.
+
+**Patterns aplicados:** Repository (porta no domínio + adapter MySQL), Factory com validação, Value Object `SKU`, Strategy/enum de ordenação com `switch` (sem texto livre no SQL), Query object de filtros, Mapper/DTO com create e update separados, vlog P1 via `defer vlog.Trace` nos casos de uso.
+
+**Métricas:**
+- Testes de topo: API 781 → 793; shared 626 → 652.
+- Cobertura combinada 89,00% → 89,07% (linhas descobertas 1.297 → 1.248); pacotes novos 100% cobertos.
+- Mutações: 11/11 pegas.
+- Código: −21% de linhas físicas (−24% sem comentários/brancos). Contrato HTTP conferido byte a byte.
+
+**Decisões do 🤍 MegaBrain:**
+- A meta de −40% de linhas foi substituída, para ARQ-03..ARQ-07, por: "código novo ≤ lógica legada sem vlog; handlers ≤ 30 linhas; código novo 100% coberto".
+- NB-3 → ARQ-04, NB-5 → ARQ-05, NB-6 → SEC-16 (com N-3), NB-7 → SEC-25, NB-4 → CHORE-05; cards novos CHORE-03 e CHORE-04 (todos em `afazer.md`).
+
+**Validação:** 🟣 SecBrain e 🔴 TestBrain aprovaram (sem bloqueantes). 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos (652 testes de topo no shared, 793 na API). Race detector indisponível nesta máquina (sem gcc).
+
+## ARQ-01: fundação / shared kernel — 2026-10-13
+**Agentes:** 🟡 BackBrain → 🟣 SecBrain (checklist ARQ-01) → 🔴 TestBrain → 🟡 BackBrain (ressalvas) → 🤍 MegaBrain (validação e commit) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-13. **Commit:** `0e7e757` (branch `refactor/ddd`).
+
+**Camada:** Backend
+
+**Entregue:**
+- `apis/shared/kernel`: shared kernel (paginação e ordenação, erros de domínio, interfaces de repositório).
+- `apis/shared/db/tx.go`: `db.Transactor` (Unit of Work / transação).
+- `apis/rotaperfumes-api/internal/httpx`: router com política tipada por rota, cadeia de middlewares, CORS, mapper de erros de domínio para HTTP, envelope de resposta e Autenticador delegando ao legado.
+- `apis/rotaperfumes-api/internal/bootstrap`: composition root usado por `cmd/server/main.go`.
+- Testes de arquitetura, matriz de rotas do ARQ-00 adaptada à X1, `tests/routes/arq01_ordem_cors_test.go` e `apis/shared/tests/db/tx_rollback_test.go`.
+- Log automático de rota no router (nível 1 da regra P1/LOG-02).
+
+**Patterns aplicados:** Value Object, Unit of Work, Builder de rotas com política tipada, Chain of Responsibility (middlewares), Decorator de logging/trace, Error mapper, Adapter de transição (Autenticador sobre o legado), Composition Root, Strangler, Null Object.
+
+**Mudanças de comportamento:**
+- **X1 (aprovada pelo usuário):** as 13 rotas sem método passam a aceitar só o método documentado (405 nos demais); `/api/senha-historico/2/extra`, `/0` e `/-1` passam a 400.
+- Muda a ordem das chaves no JSON do `writeError`; os valores continuam os mesmos.
+- Principal inválido no contexto agora gera 500 e a requisição não segue (fail-closed).
+
+**Validação:**
+- 🟣 SecBrain aprovou, sem bloqueantes. As ressalvas N-2, N-4, N-5 e N-6 foram aplicadas pelo 🟡 BackBrain. N-3, N-8 e N-9 foram anotadas em SEC-16, ARQ-04 e ARQ-09.
+- 🔴 TestBrain aprovou, com mutações pegas e nenhum teste removido.
+- 🤍 MegaBrain conferiu `go build`, `go vet` e `go test` verdes nos dois módulos. Testes de topo: API 720 → 783 e shared 593 → 627.
+- Cobertura combinada de 88,48% para 89,00%.
+- O race detector não roda nesta máquina porque falta gcc.
+
+## ARQ-00: blueprint arquitetural DDD + Clean Code + Design Patterns — 2026-10-13
+**Agentes:** 🟣 SecBrain → 🔴 TestBrain → 🟡 BackBrain → 🟣 SecBrain (revisão) → 🟡 BackBrain (ajustes) → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-13. **Commit:** `cd12d47` (branch `refactor/ddd`).
+
+**Camadas:** Segurança, Backend (arquitetura), Documentação
+
+**Entregue:**
+- `docs/arquitetura-ddd.md` (🟡 BackBrain), versão final: domínio/aplicação/infra em `apis/shared/<contexto>/` (pacotes `<ctx>`, `<ctx>app`, `<ctx>mysql`), shared kernel em `apis/shared/kernel`, HTTP em `apis/rotaperfumes-api/internal/` (`httpx`, `<ctx>http`, `bootstrap`), bounded contexts (Catálogo, Identidade e Acesso, Comercial, Vendas, Analytics, Notificação), regras de dependência, catálogo de Design Patterns e migração strangler por contexto. Incorpora os ajustes obrigatórios O1 a O9 e as ressalvas R-a a R-g do 🟣 SecBrain e as decisões P1 a P4.
+- `docs/arq-00-invariantes-seguranca.md` (🟣 SecBrain): regras globais R1 a R4 e invariantes por card ARQ-01 a ARQ-07; GAPs 1 a 11 viraram os cards SEC-14 a SEC-24 (e SEC-25) em `afazer.md`.
+- `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (🔴 TestBrain): 60 rotas, 868 subtestes (regra R2). Linha de base (R1): API 720 testes de topo / 91,5%; shared 593 / 85,6%.
+
+**Decisões:**
+- **P1 (usuário):** `vlog` em 4 níveis (altera a regra LOG-02; documentação no ARQ-08).
+- **X1 (usuário):** 13 rotas passam a aceitar só o método documentado (405) e `/api/senha-historico/2/extra` passa a 400. Pelo parse estrito de `{user_id...}` (R-f), `/api/senha-historico/0` e `/-1` também passam a 400 (incluídos na X1; o 🤍 MegaBrain informa o usuário). Aplicado no ARQ-01.
+- **P3:** `Dinheiro` segue `float64` encapsulado; centavos viraram o card ARQ-09.
+- **P4:** `VincularCliente` sem transação virou o BUG-14; da revisão saiu também o BUG-15 (troca/reset de senha sem transação).
+- **R-a:** role desconhecido continua com acesso restrito (O1 crítico corrigido: `SemAcesso` não vira consulta global).
+
+---
 ## Lote 20 de 2026-10-11: 3 cards concluídos (de 3)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido "seguir com as tarefas a fazer e fazendo". DEP-01, DEP-02 e TST-05 vieram de `afazer.md`. Fora da contagem: o **MAIL-01** avançou (diagnóstico real e correção TLS/AUTH no envio SMTP), mas continua em `fazendo.md` até um envio real bem-sucedido; o **TST-04** avançou parcialmente (3.x e 4.x executados) e continua em `afazer.md` só com 1.1, 1.2 e 1.7; o DEPLOY-01 não mudou (aguardando o usuário).

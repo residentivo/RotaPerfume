@@ -16,8 +16,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // bug09Resultado normaliza o retorno dos 6 creates para as asserções comuns.
@@ -63,8 +61,8 @@ func bug09Casos() []bug09Caso {
 					AddRow(id, "Vendedor Do Banco", "Sudeste", "SP", criado, nil, 5000.0, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				v, err := services.NewVendedorService(db, vendedorTestCfg(verbose)).
-					CreateVendedor(context.Background(), db, validVendedorInput())
+				v, err := casosComercial(db, 0).
+					CriarVendedor(context.Background(), principalAdmin(), validVendedorInput())
 				if err != nil || v == nil {
 					return nil, err
 				}
@@ -88,8 +86,8 @@ func bug09Casos() []bug09Caso {
 						99.90, 45.00, "UN", criado, true, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				p, err := services.NewProdutoService(db, produtoTestCfg(verbose)).
-					CreateProduto(context.Background(), db, validProdutoInput())
+				// ARQ-02: catalogoapp.CriarProduto (verbose vira vlog, sem cfg).
+				p, err := novosCasosCatalogo(db).CriarProduto(context.Background(), validProdutoInput())
 				if err != nil || p == nil {
 					return nil, err
 				}
@@ -115,8 +113,8 @@ func bug09Casos() []bug09Caso {
 					AddRow(id, int64(1), "Boleto", uint8(1), 100.0, 0.0, 100.0, criado, nil, "Em aberto", criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				p, err := services.NewPagamentoService(db, pagamentoTestCfg(verbose)).
-					CreatePagamento(context.Background(), db, validPagamentoInput())
+				p, err := casosVendas(db, 0).
+					CriarPagamento(context.Background(), principalAdmin(), lerFixo(validPagamentoInput()))
 				if err != nil || p == nil {
 					return nil, err
 				}
@@ -148,8 +146,8 @@ func bug09Casos() []bug09Caso {
 				}).AddRow(id, int64(100), int64(1), "Origem Do Banco", criado, "Prospeccao", 10.0, 1000.0, nil, nil, nil, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				o, err := services.NewOportunidadeService(db, oportunidadeTestCfg(verbose)).
-					CreateOportunidade(context.Background(), db, validOportunidadeInput())
+				o, err := casosComercial(db, 0).
+					CriarOportunidade(context.Background(), principalAdmin(), fixo(validOportunidadeInput()))
 				if err != nil || o == nil {
 					return nil, err
 				}
@@ -180,8 +178,8 @@ func bug09Casos() []bug09Caso {
 				}).AddRow(id, int64(100), int64(1), criado, "Negativa", 30, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				v, err := services.NewVisitaService(db, visitaTestCfg(verbose)).
-					CreateVisita(context.Background(), db, validVisitaInput())
+				v, err := casosComercial(db, 0).
+					CriarVisita(context.Background(), principalAdmin(), fixo(validVisitaInput()))
 				if err != nil || v == nil {
 					return nil, err
 				}
@@ -208,8 +206,8 @@ func bug09Casos() []bug09Caso {
 					AddRow(id, criado, "SKU-001", "Perfume Teste", 10, false, criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
-				e, err := services.NewEstoqueService(db, estoqueTestCfg(verbose)).
-					CreateEstoque(context.Background(), db, validEstoqueInput())
+				// ARQ-02: catalogoapp.AjustarEstoque (verbose vira vlog, sem cfg).
+				e, err := novosCasosCatalogo(db).AjustarEstoque(context.Background(), validEstoqueInput())
 				if err != nil || e == nil {
 					return nil, err
 				}

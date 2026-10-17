@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
 	"regexp"
 	"strings"
 	"testing"
@@ -23,8 +24,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 var reEspacos = regexp.MustCompile(`\s+`)
@@ -69,7 +68,7 @@ func TestSEC12_MarcarReusoDetectado(t *testing.T) {
 	}{
 		{"1 linha → marcou (corta)", func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 1)) }, true, "", nil},
 		{"0 linhas → suprimido", func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 0)) }, false, "", nil},
-		{"erro no Exec é propagado (envolvido)", func(e *sqlmock.ExpectedExec) { e.WillReturnError(errBancoSEC12) }, false, "repositories: marcar reuso refresh_token", errBancoSEC12},
+		{"erro no Exec é propagado (envolvido)", func(e *sqlmock.ExpectedExec) { e.WillReturnError(errBancoSEC12) }, false, "identidademysql: marcar reuso refresh_token", errBancoSEC12},
 		{"erro no RowsAffected é propagado", func(e *sqlmock.ExpectedExec) {
 			e.WillReturnResult(sqlmock.NewErrorResult(errBancoSEC12))
 		}, false, "marcar reuso refresh_token rows affected", errBancoSEC12},
@@ -79,7 +78,7 @@ func TestSEC12_MarcarReusoDetectado(t *testing.T) {
 			db, mock := newMockSQLExato(t)
 			c.setup(mock.ExpectExec(sqlMarcarReuso).WithArgs(agora, int64(10), limite))
 
-			ok, err := repositories.NewRefreshTokenRepository().MarcarReusoDetectado(context.Background(), db, 10, agora, limite)
+			ok, err := identidademysql.NovoRefreshTokens(db).MarcarReuso(context.Background(), 10, agora, limite)
 			assert.Equal(t, c.want, ok)
 			if c.wantErr != "" {
 				require.Error(t, err)
@@ -103,7 +102,7 @@ func TestSEC12_MarcarReusoDetectado_EmTransacao(t *testing.T) {
 
 	tx, err := db.Begin()
 	require.NoError(t, err)
-	ok, err := repositories.NewRefreshTokenRepository().MarcarReusoDetectado(context.Background(), tx, 7, agora, agora.Add(-time.Minute))
+	ok, err := identidademysql.NovoRefreshTokens(tx).MarcarReuso(context.Background(), 7, agora, agora.Add(-time.Minute))
 	require.NoError(t, err)
 	assert.True(t, ok)
 	require.NoError(t, tx.Commit())
@@ -126,11 +125,11 @@ func TestSEC12_DesfazerReusoDetectado(t *testing.T) {
 			db, mock := newMockSQLExato(t)
 			c.setup(mock.ExpectExec(sqlDesfazerReuso).WithArgs(int64(10), marca))
 
-			err := repositories.NewRefreshTokenRepository().DesfazerReusoDetectado(context.Background(), db, 10, marca)
+			err := identidademysql.NovoRefreshTokens(db).DesfazerReuso(context.Background(), 10, marca)
 			if c.wantErr {
 				require.Error(t, err)
 				assert.ErrorIs(t, err, errBancoSEC12)
-				assert.Contains(t, err.Error(), "repositories: desfazer reuso refresh_token")
+				assert.Contains(t, err.Error(), "identidademysql: desfazer reuso refresh_token")
 			} else {
 				assert.NoError(t, err)
 			}
@@ -152,7 +151,7 @@ func TestCHORE02_DeleteExpired(t *testing.T) {
 		{"lote parcial", 1000, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 3)) }, 3, ""},
 		{"nada a apagar", 1000, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 0)) }, 0, ""},
 		{"lote 1", 1, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 1)) }, 1, ""},
-		{"erro no Exec", 1000, func(e *sqlmock.ExpectedExec) { e.WillReturnError(errBancoSEC12) }, 0, "repositories: delete expired refresh_tokens"},
+		{"erro no Exec", 1000, func(e *sqlmock.ExpectedExec) { e.WillReturnError(errBancoSEC12) }, 0, "identidademysql: delete expired refresh_tokens"},
 		{"erro no RowsAffected", 1000, func(e *sqlmock.ExpectedExec) {
 			e.WillReturnResult(sqlmock.NewErrorResult(errBancoSEC12))
 		}, 0, "delete expired refresh_tokens rows affected"},
@@ -162,7 +161,7 @@ func TestCHORE02_DeleteExpired(t *testing.T) {
 			db, mock := newMockSQLExato(t)
 			c.setup(mock.ExpectExec(sqlDeleteExpired).WithArgs(corte, c.lote))
 
-			n, err := repositories.NewRefreshTokenRepository().DeleteExpired(context.Background(), db, corte, c.lote)
+			n, err := identidademysql.NovoRefreshTokens(db).ApagarExpirados(context.Background(), corte, c.lote)
 			assert.Equal(t, c.wantN, n)
 			if c.wantErr != "" {
 				require.Error(t, err)

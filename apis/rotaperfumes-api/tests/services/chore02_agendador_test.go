@@ -1,6 +1,7 @@
 package services_test
 
-// CHORE-02 (Lote 12): IniciarLimpezaRefreshTokens.
+// CHORE-02 (Lote 12): IniciarLimpezaRefreshTokens (ARQ-07: o agendador de
+// produção, identidadeapp.IniciarLimpezaPeriodica, sem repassador).
 //   - roda o CleanupExpired uma vez no início e a cada intervalo;
 //   - cancel() fecha o canal done rapidamente (< 1s);
 //   - intervalo <= 0 → canal já fechado, nada executa;
@@ -10,6 +11,7 @@ package services_test
 
 import (
 	"context"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 	"strings"
 	"testing"
 	"time"
@@ -17,8 +19,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // esperarAte faz polling de cond até o prazo.
@@ -48,7 +48,7 @@ func TestCHORE02_Agendador_IntervaloDesativado(t *testing.T) {
 		t.Run(intervalo.String(), func(t *testing.T) {
 			logs := sec09CapturarLog(t)
 			db, mock := newRefreshTokenTestDB(t)
-			done := services.IniciarLimpezaRefreshTokens(context.Background(), db, chore02Svc(), intervalo)
+			done := identidadeapp.IniciarLimpezaPeriodica(context.Background(), chore02Casos(db, identidadeapp.Opcoes{}), intervalo)
 			require.True(t, fechaEm(done, time.Millisecond), "canal já fechado")
 			time.Sleep(30 * time.Millisecond)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -67,7 +67,7 @@ func TestCHORE02_Agendador_ExecutaNoInicioEEncerraNoCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	done := services.IniciarLimpezaRefreshTokens(ctx, db, chore02Svc(), time.Hour)
+	done := identidadeapp.IniciarLimpezaPeriodica(ctx, chore02Casos(db, identidadeapp.Opcoes{}), time.Hour)
 
 	esperarAte(t, 2*time.Second, func() bool { return mock.ExpectationsWereMet() == nil }, "execução imediata")
 	esperarAte(t, time.Second, func() bool { return strings.Contains(logs.String(), "7 tokens removidos") }, "log da execução")
@@ -91,7 +91,7 @@ func TestCHORE02_Agendador_IntervaloCurtoExecutaMaisVezes(t *testing.T) {
 		mock.ExpectExec(chore02DeleteSQL).WillReturnResult(sqlmock.NewResult(0, 0))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	done := services.IniciarLimpezaRefreshTokens(ctx, db, chore02Svc(), 20*time.Millisecond)
+	done := identidadeapp.IniciarLimpezaPeriodica(ctx, chore02Casos(db, identidadeapp.Opcoes{}), 20*time.Millisecond)
 
 	esperarAte(t, 3*time.Second, func() bool { return mock.ExpectationsWereMet() == nil }, "4 execuções com intervalo de 20ms")
 	cancel()
@@ -106,7 +106,7 @@ func TestCHORE02_Agendador_ErroNaoPara(t *testing.T) {
 	mock.ExpectExec(chore02DeleteSQL).WillReturnError(assert.AnError)
 	mock.ExpectExec(chore02DeleteSQL).WillReturnResult(sqlmock.NewResult(0, 2))
 	ctx, cancel := context.WithCancel(context.Background())
-	done := services.IniciarLimpezaRefreshTokens(ctx, db, chore02Svc(), 20*time.Millisecond)
+	done := identidadeapp.IniciarLimpezaPeriodica(ctx, chore02Casos(db, identidadeapp.Opcoes{}), 20*time.Millisecond)
 
 	esperarAte(t, 3*time.Second, func() bool { return mock.ExpectationsWereMet() == nil }, "erro e depois sucesso")
 	cancel()
@@ -120,9 +120,8 @@ func TestCHORE02_Agendador_ErroNaoPara(t *testing.T) {
 // recupera, loga e continua nas próximas execuções.
 func TestCHORE02_Agendador_PanicNaoDerrubaProcesso(t *testing.T) {
 	logs := sec09CapturarLog(t)
-	db, _ := newRefreshTokenTestDB(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	done := services.IniciarLimpezaRefreshTokens(ctx, db, nil, 20*time.Millisecond)
+	done := identidadeapp.IniciarLimpezaPeriodica(ctx, (*identidadeapp.Casos)(nil), 20*time.Millisecond)
 
 	esperarAte(t, 3*time.Second, func() bool {
 		return strings.Count(logs.String(), "[refresh] cleanup: panic recuperado") >= 3
@@ -138,7 +137,7 @@ func TestCHORE02_Agendador_ContextoJaCancelado(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	done := services.IniciarLimpezaRefreshTokens(ctx, db, chore02Svc(), time.Hour)
+	done := identidadeapp.IniciarLimpezaPeriodica(ctx, chore02Casos(db, identidadeapp.Opcoes{}), time.Hour)
 	require.True(t, fechaEm(done, time.Second))
 	assert.NoError(t, mock.ExpectationsWereMet(), "nenhum DELETE com ctx cancelado")
 	assert.NotContains(t, logs.String(), "tokens removidos")

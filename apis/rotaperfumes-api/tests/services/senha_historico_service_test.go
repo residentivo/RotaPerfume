@@ -3,14 +3,15 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 func newSenhaHistoricoTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
@@ -61,47 +62,47 @@ func TestSenhaHistoricoService_Registrar(t *testing.T) {
 		{
 			nome:          "sucesso - reset feito pelo próprio usuário (resetadoPorID nil)",
 			resetadoPorID: nil,
-			tipo:          services.TipoResetUsuario,
+			tipo:          string(identidade.TipoResetUsuario),
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
-					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", services.TipoResetUsuario).
+					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", string(identidade.TipoResetUsuario)).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
 		},
 		{
 			nome:          "sucesso - reset feito por admin",
 			resetadoPorID: &adminID,
-			tipo:          services.TipoResetAdmin,
+			tipo:          string(identidade.TipoResetAdmin),
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
-					WithArgs(int64(10), adminID, "hash-antigo", "127.0.0.1", "curl/8.0", services.TipoResetAdmin).
+					WithArgs(int64(10), adminID, "hash-antigo", "127.0.0.1", "curl/8.0", string(identidade.TipoResetAdmin)).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
 		},
 		{
 			nome:          "sucesso - tipo primeiro acesso",
 			resetadoPorID: nil,
-			tipo:          services.TipoResetPrimeiroAcesso,
+			tipo:          string(identidade.TipoResetPrimeiroAcesso),
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
-					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", services.TipoResetPrimeiroAcesso).
+					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", string(identidade.TipoResetPrimeiroAcesso)).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
 		},
 		{
 			nome:          "sucesso - tipo esquecimento",
 			resetadoPorID: nil,
-			tipo:          services.TipoResetEsquecimento,
+			tipo:          string(identidade.TipoResetEsquecimento),
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
-					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", services.TipoResetEsquecimento).
+					WithArgs(int64(10), nil, "hash-antigo", "127.0.0.1", "curl/8.0", string(identidade.TipoResetEsquecimento)).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
 		},
 		{
 			nome:          "erro do repo é propagado",
 			resetadoPorID: nil,
-			tipo:          services.TipoResetUsuario,
+			tipo:          string(identidade.TipoResetUsuario),
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO senha_historico \(usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset\)`).
 					WillReturnError(sql.ErrConnDone)
@@ -115,8 +116,7 @@ func TestSenhaHistoricoService_Registrar(t *testing.T) {
 			db, mock := newSenhaHistoricoTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewSenhaHistoricoService()
-			err := svc.Registrar(context.Background(), db, 10, tc.resetadoPorID, "hash-antigo", "127.0.0.1", "curl/8.0", tc.tipo)
+			err := identidademysql.NovoHistoricoSenhas(db).Registrar(context.Background(), &identidade.RegistroSenha{UsuarioID: 10, ResetadoPorID: tc.resetadoPorID, HashAnterior: identidade.NovoHashSenha("hash-antigo"), IP: "127.0.0.1", UserAgent: "curl/8.0", Tipo: identidade.TipoReset(tc.tipo)})
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -182,8 +182,7 @@ func TestSenhaHistoricoService_ListarPorUsuario(t *testing.T) {
 			db, mock := newSenhaHistoricoTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewSenhaHistoricoService()
-			historico, total, err := svc.ListarPorUsuario(context.Background(), db, 10, 1, 20, "", "")
+			historico, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(context.Background(), 10, ordemHistorico("", ""), kernel.NovaPagina(1, 20)))
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -252,8 +251,7 @@ func TestSenhaHistoricoService_ListarTodos(t *testing.T) {
 			db, mock := newSenhaHistoricoTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewSenhaHistoricoService()
-			historico, total, err := svc.ListarTodos(context.Background(), db, 1, 20, "", "")
+			historico, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(context.Background(), ordemHistorico("", ""), kernel.NovaPagina(1, 20)))
 
 			if tc.wantErr {
 				assert.Error(t, err)

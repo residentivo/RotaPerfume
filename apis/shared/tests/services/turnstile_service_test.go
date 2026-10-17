@@ -18,8 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rotaperfumes/shared/adapters/turnstile"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 )
 
 // siteverifyResp espelha o payload do Cloudflare (success + error-codes).
@@ -35,12 +36,12 @@ func writeSiteverify(w http.ResponseWriter, r siteverifyResp) {
 
 // newTurnstileServer sobe um httptest.Server e devolve um TurnstileService
 // apontado para ele, com a secret informada.
-func newTurnstileServer(t *testing.T, secret string, handler http.HandlerFunc) *services.TurnstileService {
+func newTurnstileServer(t *testing.T, secret string, handler http.HandlerFunc) *turnstile.Verificador {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	cfg := &config.Config{TurnstileSecretKey: secret}
-	return services.NewTurnstileServiceWithEndpoint(cfg, srv.URL, &http.Client{Timeout: 2 * time.Second})
+	return turnstile.NovoComEndpoint(cfg.TurnstileSecretKey, srv.URL, &http.Client{Timeout: 2 * time.Second})
 }
 
 func TestTurnstileService_Verify_FalhaAntesDeChamarRede(t *testing.T) {
@@ -50,10 +51,10 @@ func TestTurnstileService_Verify_FalhaAntesDeChamarRede(t *testing.T) {
 		token   string
 		wantErr error
 	}{
-		{"token vazio", "secret-teste", "", services.ErrCaptchaTokenAusente},
-		{"token só com espaços", "secret-teste", "   ", services.ErrCaptchaTokenAusente},
-		{"secret não configurada", "", "token-valido", services.ErrCaptchaInvalido},
-		{"token vazio tem precedência sobre secret ausente", "", "", services.ErrCaptchaTokenAusente},
+		{"token vazio", "secret-teste", "", turnstile.ErrCaptchaTokenAusente},
+		{"token só com espaços", "secret-teste", "   ", turnstile.ErrCaptchaTokenAusente},
+		{"secret não configurada", "", "token-valido", turnstile.ErrCaptchaInvalido},
+		{"token vazio tem precedência sobre secret ausente", "", "", turnstile.ErrCaptchaTokenAusente},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -64,7 +65,7 @@ func TestTurnstileService_Verify_FalhaAntesDeChamarRede(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			})
 
-			err := svc.Verify(context.Background(), c.token, "1.2.3.4")
+			err := svc.Verificar(context.Background(), c.token, "1.2.3.4")
 
 			require.Error(t, err)
 			assert.ErrorIs(t, err, c.wantErr)
@@ -97,7 +98,7 @@ func TestTurnstileService_Verify_Sucesso(t *testing.T) {
 				writeSiteverify(w, siteverifyResp{Success: true})
 			})
 
-			assert.NoError(t, svc.Verify(context.Background(), "token-valido", c.remoteIP))
+			assert.NoError(t, svc.Verificar(context.Background(), "token-valido", c.remoteIP))
 		})
 	}
 }
@@ -125,11 +126,11 @@ func TestTurnstileService_Verify_RespostasDeFalha(t *testing.T) {
 			t.Parallel()
 			svc := newTurnstileServer(t, "secret-teste", c.handler)
 
-			err := svc.Verify(context.Background(), "token-qualquer", "1.2.3.4")
+			err := svc.Verificar(context.Background(), "token-qualquer", "1.2.3.4")
 
 			require.Error(t, err)
-			assert.ErrorIs(t, err, services.ErrCaptchaInvalido)
-			assert.False(t, errors.Is(err, services.ErrCaptchaTokenAusente))
+			assert.ErrorIs(t, err, turnstile.ErrCaptchaInvalido)
+			assert.False(t, errors.Is(err, turnstile.ErrCaptchaTokenAusente))
 		})
 	}
 }
@@ -145,22 +146,22 @@ func TestTurnstileService_Verify_ErrosDeRede(t *testing.T) {
 		t.Cleanup(srv.Close)
 		t.Cleanup(func() { close(release) })
 
-		svc := services.NewTurnstileServiceWithEndpoint(cfg, srv.URL, &http.Client{Timeout: 50 * time.Millisecond})
-		err := svc.Verify(context.Background(), "token-qualquer", "1.2.3.4")
-		assert.ErrorIs(t, err, services.ErrCaptchaInvalido)
+		svc := turnstile.NovoComEndpoint(cfg.TurnstileSecretKey, srv.URL, &http.Client{Timeout: 50 * time.Millisecond})
+		err := svc.Verificar(context.Background(), "token-qualquer", "1.2.3.4")
+		assert.ErrorIs(t, err, turnstile.ErrCaptchaInvalido)
 	})
 
 	t.Run("conexão recusada", func(t *testing.T) {
-		svc := services.NewTurnstileServiceWithEndpoint(cfg, "http://127.0.0.1:1", nil)
-		err := svc.Verify(context.Background(), "token-qualquer", "1.2.3.4")
-		assert.ErrorIs(t, err, services.ErrCaptchaInvalido)
+		svc := turnstile.NovoComEndpoint(cfg.TurnstileSecretKey, "http://127.0.0.1:1", nil)
+		err := svc.Verificar(context.Background(), "token-qualquer", "1.2.3.4")
+		assert.ErrorIs(t, err, turnstile.ErrCaptchaInvalido)
 	})
 
 	t.Run("URL inválida falha ao montar a requisição", func(t *testing.T) {
-		svc := services.NewTurnstileServiceWithEndpoint(cfg, "http://[::1", nil)
-		err := svc.Verify(context.Background(), "token-qualquer", "1.2.3.4")
+		svc := turnstile.NovoComEndpoint(cfg.TurnstileSecretKey, "http://[::1", nil)
+		err := svc.Verificar(context.Background(), "token-qualquer", "1.2.3.4")
 		require.Error(t, err)
-		assert.ErrorIs(t, err, services.ErrCaptchaInvalido)
+		assert.ErrorIs(t, err, turnstile.ErrCaptchaInvalido)
 		assert.Contains(t, err.Error(), "montar requisição")
 	})
 
@@ -170,22 +171,22 @@ func TestTurnstileService_Verify_ErrosDeRede(t *testing.T) {
 		})
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		err := svc.Verify(ctx, "token-qualquer", "1.2.3.4")
+		err := svc.Verificar(ctx, "token-qualquer", "1.2.3.4")
 		require.Error(t, err)
-		assert.ErrorIs(t, err, services.ErrCaptchaInvalido)
-		assert.False(t, errors.Is(err, services.ErrCaptchaTokenAusente))
+		assert.ErrorIs(t, err, turnstile.ErrCaptchaInvalido)
+		assert.False(t, errors.Is(err, turnstile.ErrCaptchaTokenAusente))
 	})
 }
 
 func TestNewTurnstileService_UsaSecretDaConfig(t *testing.T) {
 	// NewTurnstileService aponta para o Cloudflare real; sem secret ele falha
 	// fechado antes de qualquer acesso à rede, então é seguro testá-lo aqui.
-	svc := services.NewTurnstileService(&config.Config{TurnstileSecretKey: ""})
+	svc := turnstile.Novo((&config.Config{TurnstileSecretKey: ""}).TurnstileSecretKey)
 	require.NotNil(t, svc)
-	err := svc.Verify(context.Background(), "token", "1.2.3.4")
-	assert.ErrorIs(t, err, services.ErrCaptchaInvalido)
+	err := svc.Verificar(context.Background(), "token", "1.2.3.4")
+	assert.ErrorIs(t, err, turnstile.ErrCaptchaInvalido)
 
-	var _ services.CaptchaVerifier = svc
+	var _ identidadeapp.VerificadorCaptcha = svc
 }
 
 func TestNewTurnstileServiceWithEndpoint_PropagaSecretDaConfig(t *testing.T) {
@@ -194,7 +195,7 @@ func TestNewTurnstileServiceWithEndpoint_PropagaSecretDaConfig(t *testing.T) {
 		assert.Equal(t, "minha-secret", r.FormValue("secret"))
 		writeSiteverify(w, siteverifyResp{Success: true})
 	})
-	assert.NoError(t, svc.Verify(context.Background(), "token-valido", "1.2.3.4"))
+	assert.NoError(t, svc.Verificar(context.Background(), "token-valido", "1.2.3.4"))
 }
 
 func TestNewTurnstileServiceWithEndpoint_ClientNilUsaDefault(t *testing.T) {
@@ -203,6 +204,6 @@ func TestNewTurnstileServiceWithEndpoint_ClientNilUsaDefault(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	svc := services.NewTurnstileServiceWithEndpoint(&config.Config{TurnstileSecretKey: "s"}, srv.URL, nil)
-	assert.NoError(t, svc.Verify(context.Background(), "token-valido", ""))
+	svc := turnstile.NovoComEndpoint("s", srv.URL, nil)
+	assert.NoError(t, svc.Verificar(context.Background(), "token-valido", ""))
 }

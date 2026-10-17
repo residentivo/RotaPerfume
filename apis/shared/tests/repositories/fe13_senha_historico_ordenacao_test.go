@@ -12,6 +12,9 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"strings"
 	"testing"
 	"time"
@@ -19,34 +22,31 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 type fe13Metodo struct {
 	nome     string
 	count    string
 	listArgs []any
-	chamar   func(db *sql.DB, orderBy, orderDir string) ([]repositories.SenhaHistorico, int, error)
+	chamar   func(db *sql.DB, orderBy, orderDir string) ([]identidade.RegistroSenha, int, error)
 }
 
 func fe13Metodos() []fe13Metodo {
-	repo := repositories.NewSenhaHistoricoRepository()
 	return []fe13Metodo{
 		{
 			nome:     "FindAll",
 			count:    `SELECT COUNT\(\*\) FROM senha_historico$`,
 			listArgs: []any{20, 0},
-			chamar: func(db *sql.DB, orderBy, orderDir string) ([]repositories.SenhaHistorico, int, error) {
-				return repo.FindAll(context.Background(), db, 1, 20, orderBy, orderDir)
+			chamar: func(db *sql.DB, orderBy, orderDir string) ([]identidade.RegistroSenha, int, error) {
+				return itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(context.Background(), ordemHistorico(orderBy, orderDir), kernel.NovaPagina(1, 20)))
 			},
 		},
 		{
 			nome:     "FindByUsuario",
 			count:    `SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`,
 			listArgs: []any{int64(9), 20, 0},
-			chamar: func(db *sql.DB, orderBy, orderDir string) ([]repositories.SenhaHistorico, int, error) {
-				return repo.FindByUsuario(context.Background(), db, 9, 1, 20, orderBy, orderDir)
+			chamar: func(db *sql.DB, orderBy, orderDir string) ([]identidade.RegistroSenha, int, error) {
+				return itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(context.Background(), 9, ordemHistorico(orderBy, orderDir), kernel.NovaPagina(1, 20)))
 			},
 		},
 	}
@@ -163,7 +163,6 @@ func TestFE13_SenhaHistorico_ForaDaWhitelist_SemDesempateDuplicado(t *testing.T)
 func TestIntegracaoFE13_OrdenacaoReal(t *testing.T) {
 	db := abrirDBSEC08(t)
 	ctx := context.Background()
-	repo := repositories.NewSenhaHistoricoRepository()
 	sufixo := time.Now().UnixNano()
 
 	criarUsuario := func(tag string) int64 {
@@ -198,12 +197,12 @@ func TestIntegracaoFE13_OrdenacaoReal(t *testing.T) {
 	}
 	ids := make([]int64, len(linhas))
 	for i, l := range linhas {
-		h := &repositories.SenhaHistorico{UsuarioID: alvo, SenhaHashAnterior: "x", IPOrigem: l.ip, UserAgent: "fe13", TipoReset: "usuario"}
+		h := &identidade.RegistroSenha{UsuarioID: alvo, HashAnterior: identidade.NovoHashSenha("x"), IP: l.ip, UserAgent: "fe13", Tipo: "usuario"}
 		if l.resetadoPor != nil {
-			h.ResetadoPorID = sql.NullInt64{Int64: *l.resetadoPor, Valid: true}
-			h.TipoReset = "admin"
+			h.ResetadoPorID = ptrInt64(*l.resetadoPor)
+			h.Tipo = "admin"
 		}
-		require.NoError(t, repo.Create(ctx, db, h))
+		require.NoError(t, identidademysql.NovoHistoricoSenhas(db).Registrar(ctx, h))
 		ids[i] = h.ID
 	}
 	r1, r2, r3, r4, r5 := ids[0], ids[1], ids[2], ids[3], ids[4]
@@ -224,7 +223,7 @@ func TestIntegracaoFE13_OrdenacaoReal(t *testing.T) {
 		{"invalida", "asc", []int64{r1, r2, r3, r4, r5}},
 	}
 
-	idsDe := func(hs []repositories.SenhaHistorico) []int64 {
+	idsDe := func(hs []identidade.RegistroSenha) []int64 {
 		out := make([]int64, 0, len(hs))
 		for _, h := range hs {
 			out = append(out, h.ID)
@@ -236,15 +235,15 @@ func TestIntegracaoFE13_OrdenacaoReal(t *testing.T) {
 	for _, tc := range casos {
 		tc := tc
 		t.Run("FindByUsuario/"+tc.orderBy+"/"+tc.orderDir, func(t *testing.T) {
-			hs, total, err := repo.FindByUsuario(ctx, db, alvo, 1, 20, tc.orderBy, tc.orderDir)
+			hs, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, alvo, ordemHistorico(tc.orderBy, tc.orderDir), kernel.NovaPagina(1, 20)))
 			require.NoError(t, err)
 			assert.Equal(t, 5, total)
 			assert.Equal(t, tc.want, idsDe(hs))
 			for _, h := range hs {
 				if h.ID == r1 || h.ID == r4 {
-					assert.False(t, h.ResetadoPorNome.Valid, "reset pelo próprio usuário: resetado_por_nome NULL")
+					assert.Nil(t, h.ResetadoPorNome, "reset pelo próprio usuário: resetado_por_nome NULL")
 				} else {
-					assert.True(t, h.ResetadoPorNome.Valid)
+					assert.NotNil(t, h.ResetadoPorNome)
 				}
 			}
 		})
@@ -253,7 +252,7 @@ func TestIntegracaoFE13_OrdenacaoReal(t *testing.T) {
 			// Páginas de 2: o desempate impede repetir/pular linhas.
 			var got []int64
 			for page := 1; page <= 3; page++ {
-				hs, _, err := repo.FindByUsuario(ctx, db, alvo, page, 2, tc.orderBy, tc.orderDir)
+				hs, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, alvo, ordemHistorico(tc.orderBy, tc.orderDir), kernel.NovaPagina(page, 2)))
 				require.NoError(t, err)
 				got = append(got, idsDe(hs)...)
 			}
@@ -268,7 +267,7 @@ func TestIntegracaoFE13_OrdenacaoReal(t *testing.T) {
 			// usuários não interferem entre os nossos (mesmo u1.nome).
 			var sub []int64
 			for page := 1; ; page++ {
-				hs, total, err := repo.FindAll(ctx, db, page, 100, tc.orderBy, tc.orderDir)
+				hs, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico(tc.orderBy, tc.orderDir), kernel.NovaPagina(page, 100)))
 				require.NoError(t, err)
 				for _, id := range idsDe(hs) {
 					if nossos[id] {

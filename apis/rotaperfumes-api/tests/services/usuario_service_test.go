@@ -3,6 +3,13 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadeapp"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -10,10 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 func usuarioTestCfg(verbose bool) *config.Config {
@@ -58,7 +62,7 @@ func usuarioColunasHeader() []string {
 func usuarioRows() *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows(usuarioColunasHeader()).
-		AddRow(int64(1), "Fulano", "fulano@test.com", "hash-bcrypt", models.RoleNormal, nil, true, false, now, now, nil, nil)
+		AddRow(int64(1), "Fulano", "fulano@test.com", "hash-bcrypt", "normal", nil, true, false, now, now, nil, nil)
 }
 
 func emptyUsuarioRows() *sqlmock.Rows {
@@ -76,8 +80,7 @@ func TestUsuarioService_GetUsuarioByEmail(t *testing.T) {
 			WithArgs("fulano@test.com").
 			WillReturnRows(usuarioRows())
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, err := svc.GetUsuarioByEmail(context.Background(), db, "fulano@test.com")
+		u, err := identidademysql.NovoUsuarios(db).PorEmail(context.Background(), "fulano@test.com")
 		require.NoError(t, err)
 		assert.Equal(t, "Fulano", u.Nome)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -89,10 +92,9 @@ func TestUsuarioService_GetUsuarioByEmail(t *testing.T) {
 			WithArgs("naoexiste@test.com").
 			WillReturnError(sql.ErrNoRows)
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, err := svc.GetUsuarioByEmail(context.Background(), db, "naoexiste@test.com")
+		u, err := identidademysql.NovoUsuarios(db).PorEmail(context.Background(), "naoexiste@test.com")
 		assert.Nil(t, u)
-		assert.ErrorIs(t, err, services.ErrUsuarioNaoEncontrado)
+		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -102,8 +104,7 @@ func TestUsuarioService_GetUsuarioByEmail(t *testing.T) {
 			WithArgs("fulano@test.com").
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, err := svc.GetUsuarioByEmail(context.Background(), db, "fulano@test.com")
+		u, err := identidademysql.NovoUsuarios(db).PorEmail(context.Background(), "fulano@test.com")
 		assert.Nil(t, u)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -117,8 +118,7 @@ func TestUsuarioService_GetUsuarioByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, err := svc.GetUsuarioByID(context.Background(), db, 1)
+		u, err := identidademysql.NovoUsuarios(db).PorID(context.Background(), 1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), u.ID)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -130,10 +130,9 @@ func TestUsuarioService_GetUsuarioByID(t *testing.T) {
 			WithArgs(int64(999)).
 			WillReturnError(sql.ErrNoRows)
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, err := svc.GetUsuarioByID(context.Background(), db, 999)
+		u, err := identidademysql.NovoUsuarios(db).PorID(context.Background(), 999)
 		assert.Nil(t, u)
-		assert.ErrorIs(t, err, services.ErrUsuarioNaoEncontrado)
+		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -177,8 +176,8 @@ func TestUsuarioService_ListUsuarios(t *testing.T) {
 			db, mock := newUsuarioTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewUsuarioService(db, usuarioTestCfg(true), &fakeEmailService{})
-			usuarios, total, err := svc.ListUsuarios(context.Background(), db, 1, 20, "", "")
+			casos := novosCasos(db, usuarioTestCfg(true), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+			usuarios, total, err := itensETotal(casos.ListarUsuarios(context.Background(), adminTeste(), ordemUsuario("", ""), kernel.NovaPagina(1, 20)))
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -203,8 +202,11 @@ func TestUsuarioService_ResetSenha(t *testing.T) {
 			WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		err := svc.ResetSenha(context.Background(), db, 1, "nova-senha-123")
+		// ARQ-07: o ResetSenha legado (sem chamador de produção) era hash + UPDATE;
+		// aqui, o hasher e o adapter de produção.
+		h, errHash := identidadecrypto.NovoHasher(usuarioTestCfg(false).HashSenha).Gerar(identidade.NovaSenha("nova-senha-123"))
+		require.NoError(t, errHash)
+		err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 1, h, false)
 		require.NoError(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -215,9 +217,12 @@ func TestUsuarioService_ResetSenha(t *testing.T) {
 			WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(999)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		err := svc.ResetSenha(context.Background(), db, 999, "nova-senha-123")
-		assert.ErrorIs(t, err, services.ErrUsuarioNaoEncontrado)
+		// ARQ-07: o ResetSenha legado (sem chamador de produção) era hash + UPDATE;
+		// aqui, o hasher e o adapter de produção.
+		h, errHash := identidadecrypto.NovoHasher(usuarioTestCfg(false).HashSenha).Gerar(identidade.NovaSenha("nova-senha-123"))
+		require.NoError(t, errHash)
+		err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 999, h, false)
+		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -226,8 +231,11 @@ func TestUsuarioService_ResetSenha(t *testing.T) {
 		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		err := svc.ResetSenha(context.Background(), db, 1, "nova-senha-123")
+		// ARQ-07: o ResetSenha legado (sem chamador de produção) era hash + UPDATE;
+		// aqui, o hasher e o adapter de produção.
+		h, errHash := identidadecrypto.NovoHasher(usuarioTestCfg(false).HashSenha).Gerar(identidade.NovaSenha("nova-senha-123"))
+		require.NoError(t, errHash)
+		err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 1, h, false)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -242,16 +250,18 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
 		// AdminResetPassword agora busca o usuário-alvo primeiro (para
 		// comparar a senha gerada com o hash atual e evitar colisão).
+		esperarLeituraAlvo(mock) // ARQ-03: leitura do alvo para a auditoria (antes, no handler)
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
 		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
 			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
+		esperarAuditoriaReset(mock)
 
 		email := &fakeEmailService{}
-		svc := services.NewUsuarioService(db, usuarioTestCfg(true), email)
-		enviado, err := svc.AdminResetPassword(context.Background(), db, 1, "fulano@test.com", "Fulano")
+		casos := novosCasos(db, usuarioTestCfg(true), email, time.Now, identidadeapp.Opcoes{})
+		enviado, err := casos.AdminResetarSenha(context.Background(), adminTeste(), identidadeapp.ComandoAdminResetarSenha{UsuarioID: 1})
 		require.NoError(t, err)
 		assert.True(t, enviado)
 		assert.Equal(t, 1, email.chamadas)
@@ -261,16 +271,18 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 
 	t.Run("sucesso - falha no envio de email não desfaz o reset", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
+		esperarLeituraAlvo(mock) // ARQ-03: leitura do alvo para a auditoria (antes, no handler)
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
 		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
 			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
+		esperarAuditoriaReset(mock)
 
 		email := &fakeEmailService{err: assertError()}
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), email)
-		enviado, err := svc.AdminResetPassword(context.Background(), db, 1, "fulano@test.com", "Fulano")
+		casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
+		enviado, err := casos.AdminResetarSenha(context.Background(), adminTeste(), identidadeapp.ComandoAdminResetarSenha{UsuarioID: 1})
 		require.NoError(t, err)
 		assert.False(t, enviado)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -282,10 +294,10 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 			WithArgs(int64(999)).
 			WillReturnError(sql.ErrNoRows)
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		enviado, err := svc.AdminResetPassword(context.Background(), db, 999, "fulano@test.com", "Fulano")
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		enviado, err := casos.AdminResetarSenha(context.Background(), adminTeste(), identidadeapp.ComandoAdminResetarSenha{UsuarioID: 999})
 		assert.False(t, enviado)
-		assert.ErrorIs(t, err, services.ErrUsuarioNaoEncontrado)
+		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -295,8 +307,8 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		enviado, err := svc.AdminResetPassword(context.Background(), db, 1, "fulano@test.com", "Fulano")
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		enviado, err := casos.AdminResetarSenha(context.Background(), adminTeste(), identidadeapp.ComandoAdminResetarSenha{UsuarioID: 1})
 		assert.False(t, enviado)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -304,6 +316,7 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 
 	t.Run("usuário desaparece entre a busca e o update (corrida)", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
+		esperarLeituraAlvo(mock) // ARQ-03: leitura do alvo para a auditoria (antes, no handler)
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
@@ -311,10 +324,10 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		enviado, err := svc.AdminResetPassword(context.Background(), db, 1, "fulano@test.com", "Fulano")
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		enviado, err := casos.AdminResetarSenha(context.Background(), adminTeste(), identidadeapp.ComandoAdminResetarSenha{UsuarioID: 1})
 		assert.False(t, enviado)
-		assert.ErrorIs(t, err, services.ErrUsuarioNaoEncontrado)
+		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -339,46 +352,31 @@ func TestUsuarioService_CreateUsuario(t *testing.T) {
 
 	t.Run("nome vazio", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, enviado, err := svc.CreateUsuario(context.Background(), db, struct {
-			Nome       string
-			Email      string
-			Role       string
-			IDVendedor *int64
-		}{Nome: "", Email: "a@test.com", Role: models.RoleNormal})
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, enviado, err := casos.CriarUsuario(context.Background(), adminTeste(), identidade.DadosUsuario{Nome: "", Email: "a@test.com", Role: "normal"})
 		assert.Nil(t, u)
 		assert.False(t, enviado)
-		assert.ErrorIs(t, err, services.ErrNomeObrigatorio)
+		assert.ErrorIs(t, err, identidade.ErrNomeObrigatorio)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("email vazio", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, enviado, err := svc.CreateUsuario(context.Background(), db, struct {
-			Nome       string
-			Email      string
-			Role       string
-			IDVendedor *int64
-		}{Nome: "Fulano", Email: "", Role: models.RoleNormal})
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, enviado, err := casos.CriarUsuario(context.Background(), adminTeste(), identidade.DadosUsuario{Nome: "Fulano", Email: "", Role: "normal"})
 		assert.Nil(t, u)
 		assert.False(t, enviado)
-		assert.ErrorIs(t, err, services.ErrEmailInvalido)
+		assert.ErrorIs(t, err, identidade.ErrEmailObrigatorio)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("role inválido", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, enviado, err := svc.CreateUsuario(context.Background(), db, struct {
-			Nome       string
-			Email      string
-			Role       string
-			IDVendedor *int64
-		}{Nome: "Fulano", Email: "a@test.com", Role: "gerente"})
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, enviado, err := casos.CriarUsuario(context.Background(), adminTeste(), identidade.DadosUsuario{Nome: "Fulano", Email: "a@test.com", Role: "gerente"})
 		assert.Nil(t, u)
 		assert.False(t, enviado)
-		assert.ErrorIs(t, err, services.ErrRoleInvalido)
+		assert.ErrorIs(t, err, identidade.ErrRoleInvalido)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -388,55 +386,40 @@ func TestUsuarioService_CreateUsuario(t *testing.T) {
 			WithArgs(idVendedor).
 			WillReturnError(sql.ErrNoRows)
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, enviado, err := svc.CreateUsuario(context.Background(), db, struct {
-			Nome       string
-			Email      string
-			Role       string
-			IDVendedor *int64
-		}{Nome: "Fulano", Email: "a@test.com", Role: models.RoleNormal, IDVendedor: &idVendedor})
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, enviado, err := casos.CriarUsuario(context.Background(), adminTeste(), identidade.DadosUsuario{Nome: "Fulano", Email: "a@test.com", Role: "normal", IDVendedor: &idVendedor})
 		assert.Nil(t, u)
 		assert.False(t, enviado)
-		assert.ErrorIs(t, err, services.ErrVendedorNaoEncontrado)
+		assert.ErrorIs(t, err, identidade.ErrVendedorInexistente)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("email duplicado", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
 		mock.ExpectExec(`INSERT INTO usuarios \(nome, email, password_hash, role, id_vendedor, ativo, deve_trocar_senha\)`).
-			WillReturnError(repositories.ErrEmailDuplicado)
+			WillReturnError(errors.New("Error 1062 (23000): Duplicate entry 'a@test.com' for key 'usuarios.email'"))
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, enviado, err := svc.CreateUsuario(context.Background(), db, struct {
-			Nome       string
-			Email      string
-			Role       string
-			IDVendedor *int64
-		}{Nome: "Fulano", Email: "a@test.com", Role: models.RoleNormal})
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, enviado, err := casos.CriarUsuario(context.Background(), adminTeste(), identidade.DadosUsuario{Nome: "Fulano", Email: "a@test.com", Role: "normal"})
 		assert.Nil(t, u)
 		assert.False(t, enviado)
-		assert.ErrorIs(t, err, services.ErrEmailDuplicado)
+		assert.ErrorIs(t, err, identidade.ErrEmailDuplicado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("sucesso - email enviado", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
 		mock.ExpectExec(`INSERT INTO usuarios \(nome, email, password_hash, role, id_vendedor, ativo, deve_trocar_senha\)`).
-			WithArgs("Fulano", "a@test.com", sqlmock.AnyArg(), models.RoleNormal, nil, true, true).
+			WithArgs("Fulano", "a@test.com", sqlmock.AnyArg(), "normal", nil, true, true).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(sqlmock.NewRows(usuarioColunasHeader()).
-				AddRow(int64(1), "Fulano", "a@test.com", "hash-bcrypt", models.RoleNormal, nil, true, true, time.Now(), time.Now(), nil, nil))
+				AddRow(int64(1), "Fulano", "a@test.com", "hash-bcrypt", "normal", nil, true, true, time.Now(), time.Now(), nil, nil))
 
 		email := &fakeEmailService{}
-		svc := services.NewUsuarioService(db, usuarioTestCfg(true), email)
-		u, enviado, err := svc.CreateUsuario(context.Background(), db, struct {
-			Nome       string
-			Email      string
-			Role       string
-			IDVendedor *int64
-		}{Nome: "Fulano", Email: "A@Test.com", Role: models.RoleNormal})
+		casos := novosCasos(db, usuarioTestCfg(true), email, time.Now, identidadeapp.Opcoes{})
+		u, enviado, err := casos.CriarUsuario(context.Background(), adminTeste(), identidade.DadosUsuario{Nome: "Fulano", Email: "A@Test.com", Role: "normal"})
 		require.NoError(t, err)
 		require.NotNil(t, u)
 		assert.True(t, enviado)
@@ -464,39 +447,39 @@ func TestUsuarioService_UpdateUsuario(t *testing.T) {
 		{
 			nome:       "nome vazio",
 			usuarioNom: "",
-			role:       models.RoleNormal,
+			role:       "normal",
 			mock:       func(mock sqlmock.Sqlmock) {},
-			wantErr:    services.ErrNomeObrigatorio,
+			wantErr:    identidade.ErrNomeObrigatorio,
 		},
 		{
 			nome:       "role inválido",
 			usuarioNom: "Fulano",
 			role:       "gerente",
 			mock:       func(mock sqlmock.Sqlmock) {},
-			wantErr:    services.ErrRoleInvalido,
+			wantErr:    identidade.ErrRoleInvalido,
 		},
 		{
 			nome:       "vendedor inexistente",
 			usuarioNom: "Fulano",
-			role:       models.RoleNormal,
+			role:       "normal",
 			idVendedor: &idVendedor,
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(`SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`).
 					WithArgs(idVendedor).
 					WillReturnError(sql.ErrNoRows)
 			},
-			wantErr: services.ErrVendedorNaoEncontrado,
+			wantErr: identidade.ErrVendedorInexistente,
 		},
 		{
 			nome:       "usuário não encontrado",
 			usuarioNom: "Fulano",
-			role:       models.RoleNormal,
+			role:       "normal",
 			mock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`UPDATE usuarios SET nome = \?, role = \?, id_vendedor = \? WHERE id = \?`).
-					WithArgs("Fulano", models.RoleNormal, nil, int64(1)).
+					WithArgs("Fulano", "normal", nil, int64(1)).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			},
-			wantErr: services.ErrUsuarioNaoEncontrado,
+			wantErr: identidade.ErrUsuarioNaoEncontrado,
 		},
 	}
 
@@ -505,8 +488,8 @@ func TestUsuarioService_UpdateUsuario(t *testing.T) {
 			db, mock := newUsuarioTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-			u, err := svc.UpdateUsuario(context.Background(), db, 1, tc.usuarioNom, tc.role, tc.idVendedor)
+			casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+			u, err := casos.AtualizarUsuario(context.Background(), adminTeste(), 1, identidade.DadosUsuario{Nome: tc.usuarioNom, Role: tc.role, IDVendedor: tc.idVendedor})
 			assert.Nil(t, u)
 			assert.ErrorIs(t, err, tc.wantErr)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -516,14 +499,14 @@ func TestUsuarioService_UpdateUsuario(t *testing.T) {
 	t.Run("sucesso", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
 		mock.ExpectExec(`UPDATE usuarios SET nome = \?, role = \?, id_vendedor = \? WHERE id = \?`).
-			WithArgs("Fulano Editado", models.RoleAdmin, nil, int64(1)).
+			WithArgs("Fulano Editado", "admin", nil, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(true), &fakeEmailService{})
-		u, err := svc.UpdateUsuario(context.Background(), db, 1, "Fulano Editado", models.RoleAdmin, nil)
+		casos := novosCasos(db, usuarioTestCfg(true), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, err := casos.AtualizarUsuario(context.Background(), adminTeste(), 1, identidade.DadosUsuario{Nome: "Fulano Editado", Role: "admin", IDVendedor: nil})
 		require.NoError(t, err)
 		require.NotNil(t, u)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -532,14 +515,14 @@ func TestUsuarioService_UpdateUsuario(t *testing.T) {
 	t.Run("erro no GetByID pós-update é propagado", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
 		mock.ExpectExec(`UPDATE usuarios SET nome = \?, role = \?, id_vendedor = \? WHERE id = \?`).
-			WithArgs("Fulano", models.RoleNormal, nil, int64(1)).
+			WithArgs("Fulano", "normal", nil, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, err := svc.UpdateUsuario(context.Background(), db, 1, "Fulano", models.RoleNormal, nil)
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, err := casos.AtualizarUsuario(context.Background(), adminTeste(), 1, identidade.DadosUsuario{Nome: "Fulano", Role: "normal", IDVendedor: nil})
 		assert.Nil(t, u)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -560,8 +543,8 @@ func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
 			WithArgs(false, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(true), &fakeEmailService{})
-		u, err := svc.ToggleAtivoUsuario(context.Background(), db, 1, nil)
+		casos := novosCasos(db, usuarioTestCfg(true), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, err := casos.AlternarAtivoUsuario(context.Background(), adminTeste(), 1, nil)
 		require.NoError(t, err)
 		assert.False(t, u.Ativo)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -576,9 +559,9 @@ func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
 			WithArgs(true, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
 		ativo := true
-		u, err := svc.ToggleAtivoUsuario(context.Background(), db, 1, &ativo)
+		u, err := casos.AlternarAtivoUsuario(context.Background(), adminTeste(), 1, &ativo)
 		require.NoError(t, err)
 		assert.True(t, u.Ativo)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -590,10 +573,10 @@ func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
 			WithArgs(int64(999)).
 			WillReturnError(sql.ErrNoRows)
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, err := svc.ToggleAtivoUsuario(context.Background(), db, 999, nil)
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, err := casos.AlternarAtivoUsuario(context.Background(), adminTeste(), 999, nil)
 		assert.Nil(t, u)
-		assert.ErrorIs(t, err, services.ErrUsuarioNaoEncontrado)
+		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -606,10 +589,10 @@ func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
 			WithArgs(false, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
-		svc := services.NewUsuarioService(db, usuarioTestCfg(false), &fakeEmailService{})
-		u, err := svc.ToggleAtivoUsuario(context.Background(), db, 1, nil)
+		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		u, err := casos.AlternarAtivoUsuario(context.Background(), adminTeste(), 1, nil)
 		assert.Nil(t, u)
-		assert.ErrorIs(t, err, services.ErrUsuarioNaoEncontrado)
+		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -636,9 +619,25 @@ func TestParsePagination(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.nome, func(t *testing.T) {
-			page, limit := services.ParsePagination(tc.pageStr, tc.limitStr)
+			p := httpx.PaginaDaQueryStrings(tc.pageStr, tc.limitStr) // ARQ-07: a regra única (F-10), sem repassador
+			page, limit := p.Numero(), p.Limite()
 			assert.Equal(t, tc.wantPage, page)
 			assert.Equal(t, tc.wantLimit, limit)
 		})
 	}
+}
+
+// esperarLeituraAlvo: o caso de uso AdminResetarSenha lê o alvo (hash
+// anterior para a auditoria) e relê no passo de gerar a senha, como o
+// handler + service legados faziam (mesma sequência de SQL).
+func esperarLeituraAlvo(mock sqlmock.Sqlmock) {
+	mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).WithArgs(int64(1)).WillReturnRows(usuarioRows())
+}
+
+// esperarAuditoriaReset: depois de gravar a senha, o reset administrativo
+// registra o histórico (tipo admin) e revoga as sessões (I-09).
+func esperarAuditoriaReset(mock sqlmock.Sqlmock) {
+	mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), "senha", int64(1)).WillReturnResult(sqlmock.NewResult(0, 0))
 }

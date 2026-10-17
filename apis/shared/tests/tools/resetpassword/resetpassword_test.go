@@ -18,7 +18,8 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/rotaperfumes/shared/config"
-	"github.com/rotaperfumes/shared/services"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/rotaperfumes/shared/tools/resetpassword"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,7 +45,7 @@ var (
 	reListar      = "SELECT id, nome, email, role, ativo"
 )
 
-var colunasLista = []string{"id", "nome", "email", "role", "ativo", "preview", "status"}
+var colunasLista = []string{"id", "nome", "email", "role", "ativo", "algoritmo", "status"}
 
 // hashDe é um sqlmock.Argument que só casa com um hash Argon2id da senha
 // informada, gerado com o pepper e os parâmetros de hsTeste.
@@ -52,7 +53,7 @@ type hashDe string
 
 func (s hashDe) Match(v driver.Value) bool {
 	h, ok := v.(string)
-	return ok && strings.HasPrefix(h, "$argon2id$v=19$m=64,t=1,p=1$") && services.VerificarSenha(hsTeste, h, string(s))
+	return ok && strings.HasPrefix(h, "$argon2id$v=19$m=64,t=1,p=1$") && verificarSenha(hsTeste, h, string(s))
 }
 
 func novoMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
@@ -91,9 +92,9 @@ func geradorProibido(t *testing.T) resetpassword.PasswordGenerator {
 
 func listaComAdmin() *sqlmock.Rows {
 	return sqlmock.NewRows(colunasLista).
-		AddRow(1, "Admin", resetpassword.AdminEmail, "admin", 1, "$argon2id$v=19$m=65536", "OK").
-		AddRow(2, "Vendedor", "vend@x.com", "normal", 1, "$2a$12$XXXXPLACEHOLDER", "PLACEHOLDER").
-		AddRow(3, "Antigo", "antigo@x.com", "normal", 1, "$2a$12$abc", "BCRYPT_LEGADO")
+		AddRow(1, "Admin", resetpassword.AdminEmail, "admin", 1, "$argon2id", "OK").
+		AddRow(2, "Vendedor", "vend@x.com", "normal", 1, "$2a", "PLACEHOLDER").
+		AddRow(3, "Antigo", "antigo@x.com", "normal", 1, "$2a", "BCRYPT_LEGADO")
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +344,7 @@ func TestGravacao_SemPepperNaoToca(t *testing.T) {
 	for nome, fn := range casos {
 		t.Run(nome, func(t *testing.T) {
 			err := fn()
-			require.ErrorIs(t, err, services.ErrPepperNaoConfigurado)
+			require.ErrorIs(t, err, identidadecrypto.ErrPepperNaoConfigurado)
 			assert.Contains(t, err.Error(), "argon2id")
 		})
 	}
@@ -469,4 +470,10 @@ func TestGetEnvEDSN(t *testing.T) {
 	assert.True(t, strings.HasPrefix(dsn, "u:s@tcp(db:3307)/rp?"), dsn)
 	assert.Contains(t, dsn, "clientFoundRows=true", "mesma regra de config.DSN (BUG-04)")
 	assert.Contains(t, dsn, "loc=Local")
+}
+
+// verificarSenha confere com a Strategy de hash da API (ARQ-03:
+// identidadecrypto no lugar de services.VerificarSenha).
+func verificarSenha(hs config.HashSenha, hash, senha string) bool {
+	return identidadecrypto.NovoHasher(hs).Verificar(identidade.NovoHashSenha(hash), identidade.NovaSenha(senha))
 }

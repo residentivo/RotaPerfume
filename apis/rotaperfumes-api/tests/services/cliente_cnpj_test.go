@@ -8,10 +8,9 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-sql-driver/mysql"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 // NEG-01: validação e duplicidade de CNPJ no ClienteService.
@@ -63,22 +62,22 @@ func TestClienteService_CreateCliente_CNPJ(t *testing.T) {
 			},
 			wantCNPJ: "12ABC34501DE35",
 		},
-		{nome: "13 dígitos", cnpj: "1122233300018", wantErr: services.ErrCNPJInvalido},
-		{nome: "15 dígitos", cnpj: "112223330001810", wantErr: services.ErrCNPJInvalido},
-		{nome: "alfanumérico com DV errado", cnpj: "12ABC34501DE36", wantErr: services.ErrCNPJInvalido},
-		{nome: "letra na posição do DV", cnpj: "12ABC34501DEA5", wantErr: services.ErrCNPJInvalido},
-		{nome: "símbolo fora da máscara", cnpj: "12ABC34501DE3#", wantErr: services.ErrCNPJInvalido},
-		{nome: "todos iguais", cnpj: "11.111.111/1111-11", wantErr: services.ErrCNPJInvalido},
-		{nome: "DV inválido", cnpj: "12345678000199", wantErr: services.ErrCNPJInvalido},
-		{nome: "só máscara vira vazio de dígitos", cnpj: "../-", wantErr: services.ErrCNPJInvalido},
-		{nome: "vazio continua obrigatório", cnpj: "  ", wantErr: services.ErrCNPJObrigatorio},
+		{nome: "13 dígitos", cnpj: "1122233300018", wantErr: comercial.ErrCNPJInvalido},
+		{nome: "15 dígitos", cnpj: "112223330001810", wantErr: comercial.ErrCNPJInvalido},
+		{nome: "alfanumérico com DV errado", cnpj: "12ABC34501DE36", wantErr: comercial.ErrCNPJInvalido},
+		{nome: "letra na posição do DV", cnpj: "12ABC34501DEA5", wantErr: comercial.ErrCNPJInvalido},
+		{nome: "símbolo fora da máscara", cnpj: "12ABC34501DE3#", wantErr: comercial.ErrCNPJInvalido},
+		{nome: "todos iguais", cnpj: "11.111.111/1111-11", wantErr: comercial.ErrCNPJInvalido},
+		{nome: "DV inválido", cnpj: "12345678000199", wantErr: comercial.ErrCNPJInvalido},
+		{nome: "só máscara vira vazio de dígitos", cnpj: "../-", wantErr: comercial.ErrCNPJInvalido},
+		{nome: "vazio continua obrigatório", cnpj: "  ", wantErr: comercial.ErrCNPJObrigatorio},
 		{
 			nome: "duplicado (1062 uq_clientes_cnpj) vira ErrCNPJDuplicado",
 			cnpj: "11222333000181",
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectExec(reInsertClienteCNPJ).WillReturnError(erroDuplicadoCNPJ())
 			},
-			wantErr: services.ErrCNPJDuplicado,
+			wantErr: comercial.ErrCNPJDuplicado,
 		},
 	}
 	for _, tc := range cases {
@@ -90,7 +89,7 @@ func TestClienteService_CreateCliente_CNPJ(t *testing.T) {
 			in := validClienteInput()
 			in.CNPJ = tc.cnpj
 
-			c, err := services.NewClienteService(db, clienteTestCfg(true)).CreateCliente(context.Background(), db, in)
+			c, err := casosComercial(db, 0).CriarCliente(context.Background(), principalAdmin(), fixo(in))
 			if tc.wantErr != nil {
 				assert.ErrorIs(t, err, tc.wantErr)
 				assert.Nil(t, c)
@@ -110,9 +109,9 @@ func TestClienteService_CreateCliente_OutroDuplicadoNaoViraCNPJ(t *testing.T) {
 	mock.ExpectExec(reInsertClienteCNPJ).
 		WillReturnError(&mysql.MySQLError{Number: 1062, Message: "Duplicate entry 'x' for key 'clientes.PRIMARY'"})
 
-	_, err := services.NewClienteService(db, clienteTestCfg(false)).CreateCliente(context.Background(), db, validClienteInput())
+	_, err := casosComercial(db, 0).CriarCliente(context.Background(), principalAdmin(), fixo(validClienteInput()))
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, services.ErrCNPJDuplicado)
+	assert.NotErrorIs(t, err, comercial.ErrCNPJDuplicado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -122,8 +121,8 @@ func TestClienteService_CreateClienteNaCarteira_CNPJDuplicadoFazRollback(t *test
 	mock.ExpectExec(reInsertClienteCNPJ).WillReturnError(erroDuplicadoCNPJ())
 	mock.ExpectRollback()
 
-	c, err := services.NewClienteService(db, clienteTestCfg(false)).CreateClienteNaCarteira(context.Background(), db, validClienteInput(), 10)
-	assert.ErrorIs(t, err, services.ErrCNPJDuplicado)
+	c, err := casosComercial(db, 10).CriarCliente(context.Background(), principalRestrito(), fixo(validClienteInput()))
+	assert.ErrorIs(t, err, comercial.ErrCNPJDuplicado)
 	assert.Nil(t, c)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -133,8 +132,8 @@ func TestClienteService_CreateClienteNaCarteira_DVInvalidoAntesDoBegin(t *testin
 	in := validClienteInput()
 	in.CNPJ = "12345678000199"
 
-	_, err := services.NewClienteService(db, clienteTestCfg(false)).CreateClienteNaCarteira(context.Background(), db, in, 10)
-	assert.ErrorIs(t, err, services.ErrCNPJInvalido)
+	_, err := casosComercial(db, 10).CriarCliente(context.Background(), principalRestrito(), fixo(in))
+	assert.ErrorIs(t, err, comercial.ErrCNPJInvalido)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -155,15 +154,15 @@ func TestClienteService_UpdateCliente_CNPJ(t *testing.T) {
 			// Os casos sem expect e sem wantArgUp provam, via
 			// ExpectationsWereMet + ErrorIs, que nenhuma query foi feita.
 			nome: "mesmo CNPJ legado com DV inválido (sem máscara) é recusado sem query", cnpj: "29401965569816",
-			wantErr: services.ErrCNPJInvalido,
+			wantErr: comercial.ErrCNPJInvalido,
 		},
 		{
 			nome: "mesmo CNPJ legado com DV inválido (com máscara) é recusado sem query", cnpj: "29.401.965/5698-16",
-			wantErr: services.ErrCNPJInvalido,
+			wantErr: comercial.ErrCNPJInvalido,
 		},
 		{
 			nome: "CNPJ com DV inválido é recusado sem query", cnpj: "12345678000199",
-			wantErr: services.ErrCNPJInvalido,
+			wantErr: comercial.ErrCNPJInvalido,
 		},
 		{
 			nome: "CNPJ com DV válido (com máscara) grava só dígitos", cnpj: "11.444.777/0001-61",
@@ -175,18 +174,18 @@ func TestClienteService_UpdateCliente_CNPJ(t *testing.T) {
 		},
 		{
 			nome: "NEG-02: alfanumérico com DV errado é recusado sem query", cnpj: "12.ABC.345/01DE-36",
-			wantErr: services.ErrCNPJInvalido,
+			wantErr: comercial.ErrCNPJInvalido,
 		},
 		{
 			nome: "formato inválido é recusado antes de consultar o banco", cnpj: "123",
-			wantErr: services.ErrCNPJInvalido,
+			wantErr: comercial.ErrCNPJInvalido,
 		},
 		{
 			nome: "cliente inexistente (UPDATE com 0 linhas) retorna ErrClienteNaoEncontrado", cnpj: "11222333000181",
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectExec(reUpdateClienteCNPJ).WillReturnResult(sqlmock.NewResult(0, 0))
 			},
-			wantErr: services.ErrClienteNaoEncontrado,
+			wantErr: comercial.ErrClienteNaoEncontrado,
 		},
 		{
 			nome: "erro no UPDATE é propagado", cnpj: "11222333000181",
@@ -199,7 +198,7 @@ func TestClienteService_UpdateCliente_CNPJ(t *testing.T) {
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectExec(reUpdateClienteCNPJ).WillReturnError(erroDuplicadoCNPJ())
 			},
-			wantErr: services.ErrCNPJDuplicado,
+			wantErr: comercial.ErrCNPJDuplicado,
 		},
 	}
 	for _, tc := range cases {
@@ -217,15 +216,15 @@ func TestClienteService_UpdateCliente_CNPJ(t *testing.T) {
 			in := validClienteInput()
 			in.CNPJ = tc.cnpj
 
-			c, err := services.NewClienteService(db, clienteTestCfg(true)).UpdateCliente(context.Background(), db, 1, in)
+			c, err := casosComercial(db, 0).AtualizarCliente(context.Background(), principalAdmin(), 1, fixo(in))
 			switch {
 			case tc.wantErr != nil:
 				assert.ErrorIs(t, err, tc.wantErr)
 				assert.Nil(t, c)
 			case tc.wantArgUp == "":
 				assert.Error(t, err)
-				assert.NotErrorIs(t, err, services.ErrCNPJDuplicado)
-				assert.NotErrorIs(t, err, services.ErrClienteNaoEncontrado)
+				assert.NotErrorIs(t, err, comercial.ErrCNPJDuplicado)
+				assert.NotErrorIs(t, err, comercial.ErrClienteNaoEncontrado)
 				assert.Nil(t, c)
 			default:
 				require.NoError(t, err)
@@ -243,9 +242,9 @@ func TestClienteService_UpdateCliente_DVInvalidoTemPrecedenciaSobre404(t *testin
 	in := validClienteInput()
 	in.CNPJ = "29401965569816"
 
-	c, err := services.NewClienteService(db, clienteTestCfg(false)).UpdateCliente(context.Background(), db, 999999, in)
-	assert.ErrorIs(t, err, services.ErrCNPJInvalido)
-	assert.NotErrorIs(t, err, services.ErrClienteNaoEncontrado)
+	c, err := casosComercial(db, 0).AtualizarCliente(context.Background(), principalAdmin(), 999999, fixo(in))
+	assert.ErrorIs(t, err, comercial.ErrCNPJInvalido)
+	assert.NotErrorIs(t, err, comercial.ErrClienteNaoEncontrado)
 	assert.Nil(t, c)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

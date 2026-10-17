@@ -2,7 +2,7 @@ package repositories_test
 
 // Operações de escrita/consulta pontual dos repositórios que não tinham
 // cobertura: Delete (oportunidade, pagamento, visita), SetAtivo/Update/
-// SetDeveTrocarSenha (usuário e cliente), ReativarVinculo (carteira),
+// SetDeveTrocarSenha (cliente; o de usuário não tinha chamador e saiu no ARQ-03), ReativarVinculo (carteira),
 // Exists* (cliente, pagamento, produto), GetByID de cliente,
 // GetVinculoByClienteVendedorData (carteira), UsuarioRepository.Create e
 // PedidoRepository.DeleteComItens. Tudo com sqlmock e casos parametrizados.
@@ -12,6 +12,11 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
+	"github.com/rotaperfumes/shared/kernel"
+	"github.com/rotaperfumes/shared/vendas/vendasapp"
+	"github.com/rotaperfumes/shared/vendas/vendasmysql"
 	"testing"
 	"time"
 
@@ -20,8 +25,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
+	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
+	"github.com/rotaperfumes/shared/comercial"
+	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/vendas"
 )
 
 // ---------------------------------------------------------------------------
@@ -36,83 +43,82 @@ type opExec struct {
 	// ignora e trata como 0 linhas, isto é, ErrNotFound (false).
 	checaRowsAffected bool
 	chama             func(ctx context.Context, db *sql.DB) error
+	// naoEncontrado: sentinela de "nenhuma linha" (obrigatório desde o ARQ-07, que
+	// removeu o repositories.ErrNotFound legado;
+	// os adapters de identidade devolvem identidade.ErrUsuarioNaoEncontrado, ARQ-03;
+	// os de comercial, o sentinela da entidade, ARQ-04; os de vendas, idem,
+	// ARQ-05).
+	naoEncontrado error
 }
 
 func TestRepositorios_ExecComNotFound(t *testing.T) {
 	ctx := context.Background()
 	vend := int64(3)
-	cli := &models.Cliente{CNPJ: "11222333000181", RazaoSocial: "ACME", UF: "SP", DataCadastro: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}
+	cli := &comercial.Cliente{CNPJ: "11222333000181", RazaoSocial: "ACME", UF: "SP", DataCadastro: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}
 
 	ops := []opExec{
 		{
 			nome: "OportunidadeRepository.Delete", sqlRe: `DELETE FROM oportunidades WHERE oportunidade_id = \?`,
-			args: []driver.Value{int64(5)}, checaRowsAffected: true,
+			args: []driver.Value{int64(5)}, checaRowsAffected: true, naoEncontrado: comercial.ErrOportunidadeNaoEncontrada,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewOportunidadeRepository().Delete(ctx, db, 5)
+				return comercialmysql.NovoOportunidades(db).Excluir(ctx, 5)
 			},
 		},
 		{
 			nome: "PagamentoRepository.Delete", sqlRe: `DELETE FROM pagamentos WHERE pagamento_id = \?`,
-			args: []driver.Value{int64(5)}, checaRowsAffected: true,
+			args: []driver.Value{int64(5)}, checaRowsAffected: true, naoEncontrado: vendas.ErrPagamentoNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewPagamentoRepository().Delete(ctx, db, 5)
+				return vendasmysql.NovoPagamentos(db).Excluir(ctx, 5)
 			},
 		},
 		{
 			nome: "VisitaRepository.Delete", sqlRe: `DELETE FROM visitas WHERE visita_id = \?`,
-			args: []driver.Value{int64(5)}, checaRowsAffected: true,
+			args: []driver.Value{int64(5)}, checaRowsAffected: true, naoEncontrado: comercial.ErrVisitaNaoEncontrada,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewVisitaRepository().Delete(ctx, db, 5)
+				return comercialmysql.NovoVisitas(db).Excluir(ctx, 5)
 			},
 		},
 		{
 			nome: "CarteiraRepository.ReativarVinculo", sqlRe: `UPDATE carteiras SET data_fim = NULL WHERE carteira_id_origem = \?`,
-			args: []driver.Value{int64(5)}, checaRowsAffected: true,
+			args: []driver.Value{int64(5)}, checaRowsAffected: true, naoEncontrado: comercial.ErrVinculoNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewCarteiraRepository().ReativarVinculo(ctx, db, 5)
+				return comercialmysql.NovoCarteiras(db).Reabrir(ctx, 5)
 			},
 		},
 		{
 			nome: "ClienteRepository.Update", sqlRe: `UPDATE clientes\s+SET cnpj = \?, razao_social = \?, segmento = \?, cidade = \?, uf = \?, bairro = \?, data_cadastro = \?\s+WHERE cliente_id_origem = \?`,
 			args:              []driver.Value{cli.CNPJ, cli.RazaoSocial, "", "", "SP", "", cli.DataCadastro, int64(5)},
-			checaRowsAffected: true,
+			checaRowsAffected: true, naoEncontrado: comercial.ErrClienteNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewClienteRepository().Update(ctx, db, 5, cli)
+				return comercialmysql.NovoClientes(db).Atualizar(ctx, 5, cli)
 			},
 		},
 		{
 			nome: "ClienteRepository.SetAtivo", sqlRe: `UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`,
-			args: []driver.Value{false, int64(5)},
+			args: []driver.Value{false, int64(5)}, naoEncontrado: comercial.ErrClienteNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewClienteRepository().SetAtivo(ctx, db, 5, false)
+				return comercialmysql.NovoClientes(db).DefinirAtivo(ctx, 5, false)
 			},
 		},
 		{
 			nome: "UsuarioRepository.SetAtivo", sqlRe: `UPDATE usuarios SET ativo = \? WHERE id = \?`,
-			args: []driver.Value{true, int64(5)},
+			args: []driver.Value{true, int64(5)}, naoEncontrado: identidade.ErrUsuarioNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewUsuarioRepository().SetAtivo(ctx, db, 5, true)
+				return identidademysql.NovoUsuarios(db).DefinirAtivo(ctx, 5, true)
 			},
 		},
 		{
 			nome: "UsuarioRepository.Update com vendedor", sqlRe: `UPDATE usuarios SET nome = \?, role = \?, id_vendedor = \? WHERE id = \?`,
-			args: []driver.Value{"Ana", "normal", int64(3), int64(5)},
+			args: []driver.Value{"Ana", "normal", int64(3), int64(5)}, naoEncontrado: identidade.ErrUsuarioNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewUsuarioRepository().Update(ctx, db, 5, "Ana", "normal", &vend)
+				return identidademysql.NovoUsuarios(db).Atualizar(ctx, 5, identidade.UsuarioValidado{Nome: "Ana", Role: kernel.RoleDoBanco("normal"), IDVendedor: &vend})
 			},
 		},
 		{
 			nome: "UsuarioRepository.Update sem vendedor (NULL)", sqlRe: `UPDATE usuarios SET nome = \?, role = \?, id_vendedor = \? WHERE id = \?`,
-			args: []driver.Value{"Adm", "admin", nil, int64(5)},
+			args: []driver.Value{"Adm", "admin", nil, int64(5)}, naoEncontrado: identidade.ErrUsuarioNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewUsuarioRepository().Update(ctx, db, 5, "Adm", "admin", nil)
-			},
-		},
-		{
-			nome: "UsuarioRepository.SetDeveTrocarSenha", sqlRe: `UPDATE usuarios SET deve_trocar_senha = \? WHERE id = \?`,
-			args: []driver.Value{true, int64(5)},
-			chama: func(ctx context.Context, db *sql.DB) error {
-				return repositories.NewUsuarioRepository().SetDeveTrocarSenha(ctx, db, 5, true)
+				return identidademysql.NovoUsuarios(db).Atualizar(ctx, 5, identidade.UsuarioValidado{Nome: "Adm", Role: kernel.RoleDoBanco("admin"), IDVendedor: nil})
 			},
 		},
 	}
@@ -121,16 +127,18 @@ func TestRepositorios_ExecComNotFound(t *testing.T) {
 	errRA := errors.New("falha no rowsAffected")
 
 	for _, op := range ops {
+		naoEncontrado := op.naoEncontrado
+		require.NotNil(t, naoEncontrado, "ARQ-07: toda operação declara o sentinela do domínio (%s)", op.nome)
 		casos := []struct {
 			nome      string
 			resultado func(e *sqlmock.ExpectedExec)
 			wantErrIs error
 		}{
 			{"sucesso", func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 1)) }, nil},
-			{"nenhuma linha vira ErrNotFound", func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 0)) }, repositories.ErrNotFound},
+			{"nenhuma linha vira ErrNotFound", func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 0)) }, naoEncontrado},
 			{"erro do exec é propagado", func(e *sqlmock.ExpectedExec) { e.WillReturnError(errExec) }, errExec},
 			{"erro de RowsAffected", func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewErrorResult(errRA)) },
-				map[bool]error{true: errRA, false: repositories.ErrNotFound}[op.checaRowsAffected]},
+				map[bool]error{true: errRA, false: naoEncontrado}[op.checaRowsAffected]},
 		}
 		for _, c := range casos {
 			t.Run(op.nome+"/"+c.nome, func(t *testing.T) {
@@ -166,9 +174,9 @@ func TestClienteUpdate_CNPJDuplicado(t *testing.T) {
 			defer db.Close()
 			mock.ExpectExec(`UPDATE clientes`).WillReturnError(c.err)
 
-			err := repositories.NewClienteRepository().Update(context.Background(), db, 5, &models.Cliente{CNPJ: "1"})
+			err := comercialmysql.NovoClientes(db).Atualizar(context.Background(), 5, &comercial.Cliente{CNPJ: "1"})
 			require.Error(t, err)
-			assert.Equal(t, c.wantDup, errors.Is(err, repositories.ErrCNPJDuplicado))
+			assert.Equal(t, c.wantDup, errors.Is(err, comercial.ErrCNPJDuplicado))
 			if !c.wantDup {
 				var myErr *mysql.MySQLError
 				assert.True(t, errors.As(err, &myErr), "o erro original deve continuar embrulhado")
@@ -190,14 +198,15 @@ func TestRepositorios_Exists(t *testing.T) {
 		chama func(db *sql.DB) (bool, error)
 	}{
 		{"ClienteRepository.ExistsByID", `SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`, int64(9),
-			func(db *sql.DB) (bool, error) { return repositories.NewClienteRepository().ExistsByID(ctx, db, 9) }},
+			func(db *sql.DB) (bool, error) { return comercialmysql.NovoClientes(db).Existe(ctx, 9) }},
 		{"PagamentoRepository.ExistsByPedidoID", `SELECT 1 FROM pagamentos WHERE pedido_id = \? LIMIT 1`, int64(9),
 			func(db *sql.DB) (bool, error) {
-				return repositories.NewPagamentoRepository().ExistsByPedidoID(ctx, db, 9)
+				return vendasmysql.NovoPagamentos(db).ExistePorPedido(ctx, 9)
 			}},
 		{"ProdutoRepository.ExistsBySKU", `SELECT 1 FROM produtos WHERE sku = \? LIMIT 1`, "SKU-9",
 			func(db *sql.DB) (bool, error) {
-				return repositories.NewProdutoRepository().ExistsBySKU(ctx, db, "SKU-9")
+				// ARQ-02: exercita catalogomysql.Produtos.ExisteSKU (mesmo SQL).
+				return catalogomysql.NovoProdutos(db).ExisteSKU(ctx, "SKU-9")
 			}},
 	}
 	errBanco := errors.New("timeout")
@@ -248,7 +257,7 @@ func TestClienteGetByID(t *testing.T) {
 			e.WillReturnRows(sqlmock.NewRows(clienteRepoColumns).
 				AddRow(int64(9), "11222333000181", "ACME", "Varejo", "Campinas", "SP", "Centro", agora, true, agora, agora))
 		}, nil},
-		{"não encontrado", func(e *sqlmock.ExpectedQuery) { e.WillReturnRows(sqlmock.NewRows(clienteRepoColumns)) }, repositories.ErrNotFound},
+		{"não encontrado", func(e *sqlmock.ExpectedQuery) { e.WillReturnRows(sqlmock.NewRows(clienteRepoColumns)) }, comercial.ErrClienteNaoEncontrado},
 		{"erro do banco", func(e *sqlmock.ExpectedQuery) { e.WillReturnError(errBanco) }, errBanco},
 	}
 	for _, c := range casos {
@@ -257,7 +266,7 @@ func TestClienteGetByID(t *testing.T) {
 			defer db.Close()
 			c.prepara(mock.ExpectQuery(`SELECT ` + clienteColunasRegexp + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).WithArgs(int64(9)))
 
-			got, err := repositories.NewClienteRepository().GetByID(context.Background(), db, 9)
+			got, err := comercialmysql.NovoClientes(db).PorID(context.Background(), 9)
 			if c.wantErrIs != nil {
 				assert.ErrorIs(t, err, c.wantErrIs)
 				assert.Nil(t, got)
@@ -291,7 +300,7 @@ func TestCarteiraGetVinculoByClienteVendedorData(t *testing.T) {
 		{"vínculo encerrado", func(e *sqlmock.ExpectedQuery) {
 			e.WillReturnRows(sqlmock.NewRows(carteiraColumns).AddRow(int64(4), int64(10), int64(3), dataInicio, agora, agora, agora))
 		}, nil, true},
-		{"não encontrado", func(e *sqlmock.ExpectedQuery) { e.WillReturnRows(sqlmock.NewRows(carteiraColumns)) }, repositories.ErrNotFound, false},
+		{"não encontrado", func(e *sqlmock.ExpectedQuery) { e.WillReturnRows(sqlmock.NewRows(carteiraColumns)) }, comercial.ErrVinculoNaoEncontrado, false},
 		{"erro do banco", func(e *sqlmock.ExpectedQuery) { e.WillReturnError(errBanco) }, errBanco, false},
 	}
 	for _, c := range casos {
@@ -301,7 +310,7 @@ func TestCarteiraGetVinculoByClienteVendedorData(t *testing.T) {
 			c.prepara(mock.ExpectQuery(`FROM carteiras\s+WHERE cliente_id = \? AND vendedor_id = \? AND data_inicio = \?`).
 				WithArgs(int64(10), int64(3), "2026-09-26"))
 
-			got, err := repositories.NewCarteiraRepository().GetVinculoByClienteVendedorData(context.Background(), db, 10, 3, dataInicio)
+			got, err := comercialmysql.NovoCarteiras(db).VinculoDoDia(context.Background(), 10, 3, dataInicio)
 			if c.wantErrIs != nil {
 				assert.ErrorIs(t, err, c.wantErrIs)
 				assert.Nil(t, got)
@@ -340,10 +349,10 @@ func TestUsuarioCreate(t *testing.T) {
 		}, nil, false},
 		{"email duplicado (Error 1062)", func(m sqlmock.Sqlmock) {
 			m.ExpectExec(insertRe).WillReturnError(errors.New("Error 1062 (23000): Duplicate entry 'ana@rp.com' for key 'usuarios.email'"))
-		}, repositories.ErrEmailDuplicado, true},
+		}, identidade.ErrEmailDuplicado, true},
 		{"email duplicado (só Duplicate entry)", func(m sqlmock.Sqlmock) {
 			m.ExpectExec(insertRe).WillReturnError(errors.New("Duplicate entry 'ana@rp.com'"))
-		}, repositories.ErrEmailDuplicado, true},
+		}, identidade.ErrEmailDuplicado, true},
 		{"erro genérico no insert", func(m sqlmock.Sqlmock) {
 			m.ExpectExec(insertRe).WillReturnError(errBanco)
 		}, errBanco, true},
@@ -357,8 +366,8 @@ func TestUsuarioCreate(t *testing.T) {
 			defer db.Close()
 			c.prepara(mock)
 
-			u := &models.Usuario{Nome: "Ana", Email: "ana@rp.com", PasswordHash: "hash", Role: "normal", IDVendedor: &vend, Ativo: true, DeveTrocarSenha: true}
-			err := repositories.NewUsuarioRepository().Create(context.Background(), db, u)
+			u := &identidade.Usuario{Nome: "Ana", Email: "ana@rp.com", Hash: identidade.NovoHashSenha("hash"), Role: kernel.RoleNormal, IDVendedor: &vend, Ativo: true, DeveTrocarSenha: true}
+			err := identidademysql.NovoUsuarios(db).Inserir(context.Background(), u)
 			if c.wantErr {
 				assert.ErrorIs(t, err, c.wantErrIs)
 				assert.Zero(t, u.ID, "o usuário não deve ser populado em caso de erro")
@@ -366,7 +375,7 @@ func TestUsuarioCreate(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, int64(42), u.ID)
 				assert.Equal(t, "Ana", u.Nome, "os campos informados permanecem em memória")
-				assert.True(t, u.CreatedAt.IsZero(), "created_at só vem da releitura no service")
+				assert.True(t, u.CriadoEm.IsZero(), "created_at só vem da releitura no service")
 				assert.Nil(t, u.VendedorNome, "vendedor_nome só vem da releitura no service")
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -403,7 +412,7 @@ func TestPedidoDeleteComItens(t *testing.T) {
 		}, nil, ""},
 		{"falha no begin", func(m sqlmock.Sqlmock) {
 			m.ExpectBegin().WillReturnError(errX)
-		}, errX, "begin tx delete pedido"},
+		}, errX, "db: begin"},
 		{"falha ao remover itens faz rollback", func(m sqlmock.Sqlmock) {
 			m.ExpectBegin()
 			m.ExpectExec(delItens).WillReturnError(errX)
@@ -426,13 +435,13 @@ func TestPedidoDeleteComItens(t *testing.T) {
 			m.ExpectExec(delItens).WillReturnResult(sqlmock.NewResult(0, 0))
 			m.ExpectExec(delPedido).WillReturnResult(sqlmock.NewResult(0, 0))
 			m.ExpectRollback()
-		}, repositories.ErrNotFound, ""},
+		}, vendas.ErrPedidoNaoEncontrado, ""},
 		{"falha no commit", func(m sqlmock.Sqlmock) {
 			m.ExpectBegin()
 			m.ExpectExec(delItens).WillReturnResult(sqlmock.NewResult(0, 1))
 			m.ExpectExec(delPedido).WillReturnResult(sqlmock.NewResult(0, 1))
 			m.ExpectCommit().WillReturnError(errX)
-		}, errX, "commit delete pedido"},
+		}, errX, "db: commit"},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -440,7 +449,7 @@ func TestPedidoDeleteComItens(t *testing.T) {
 			defer db.Close()
 			c.prepara(mock)
 
-			err := repositories.NewPedidoRepository().DeleteComItens(context.Background(), db, 7)
+			err := txPedido(db).WithTx(context.Background(), func(r vendasapp.TxPedido) error { return r.Pedidos.Excluir(context.Background(), 7) })
 			if c.wantErrIs == nil {
 				assert.NoError(t, err)
 			} else {

@@ -16,8 +16,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
 )
 
 type sec09NotificarCall struct {
@@ -45,7 +43,7 @@ func (f *sec09FakeNotificador) chamadas() []sec09NotificarCall {
 	return append([]sec09NotificarCall(nil), f.calls...)
 }
 
-var _ handlers.AlertaSegurancaNotificador = (*sec09FakeNotificador)(nil)
+var _ assinanteReuso = (*sec09FakeNotificador)(nil)
 
 const sec09UA = "Mozilla/5.0 (SEC-09 teste)"
 
@@ -109,7 +107,7 @@ func TestSEC09_Refresh_ReusoNotificaAlerta(t *testing.T) {
 			defer db.Close()
 			capturarLog(t)
 			fake := &sec09FakeNotificador{mock: mock}
-			h.SetAlertaSeguranca(fake)
+			h.alerta.trocar(fake)
 
 			expectRefreshRevogadoComMotivo(mock, time.Now().Add(c.revokedAt), c.motivo)
 			if c.setupDB != nil {
@@ -142,7 +140,7 @@ func TestSEC09_Refresh_ReusoRepetido_NotificaCadaVez(t *testing.T) {
 	defer db.Close()
 	capturarLog(t)
 	fake := &sec09FakeNotificador{mock: mock}
-	h.SetAlertaSeguranca(fake)
+	h.alerta.trocar(fake)
 
 	for i := 0; i < 3; i++ {
 		expectRefreshRevogadoComMotivo(mock, time.Now().Add(-time.Minute), "rotacao")
@@ -162,13 +160,13 @@ func TestSEC09_Refresh_ReusoRepetido_NotificaCadaVez(t *testing.T) {
 func TestSEC09_Refresh_AlertaNil_MantemComportamento(t *testing.T) {
 	casos := []struct {
 		nome  string
-		setup func(h *handlers.AuthHandler, mock sqlmock.Sqlmock) *sec09FakeNotificador
+		setup func(h *identidadeTeste, mock sqlmock.Sqlmock) *sec09FakeNotificador
 	}{
-		{"nunca configurado", func(*handlers.AuthHandler, sqlmock.Sqlmock) *sec09FakeNotificador { return nil }},
-		{"redefinido para nil", func(h *handlers.AuthHandler, mock sqlmock.Sqlmock) *sec09FakeNotificador {
+		{"nunca configurado", func(*identidadeTeste, sqlmock.Sqlmock) *sec09FakeNotificador { return nil }},
+		{"redefinido para nil", func(h *identidadeTeste, mock sqlmock.Sqlmock) *sec09FakeNotificador {
 			f := &sec09FakeNotificador{mock: mock}
-			h.SetAlertaSeguranca(f)
-			h.SetAlertaSeguranca(nil)
+			h.alerta.trocar(f)
+			h.alerta.trocar(nil)
 			return f
 		}},
 	}

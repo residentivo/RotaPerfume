@@ -72,7 +72,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 > Resumo das mudanças. O detalhe está em cada endpoint abaixo e nos exemplos marcados com `(SEC-02 | SEC-03 | BUG-06 | NEG-01, 2026-09-25)` na collection. Os cards continuam em `tarefas/fazendo.md` até a validação do usuário.
 >
-> **Envelope de erro:** `{"success": false, "error": "..."}`. O `writeJSON` (`handlers/response.go`) omite `data` quando é nulo, então as respostas de erro **não** trazem `"data": null`.
+> **Envelope de erro:** `{"success": false, "error": "..."}`. O envelope (na época, `writeJSON` em `handlers/response.go`; desde o Lote 21, `apis/rotaperfumes-api/internal/httpx/respond.go`) omite `data` quando é nulo, então as respostas de erro **não** trazem `"data": null`.
 
 | Card | Endpoint | Mudança |
 |------|----------|---------|
@@ -157,6 +157,16 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | CHORE-02 | (API, tarefa de fundo) | Limpeza periódica de `refresh_tokens`: na partida e a cada `REFRESH_CLEANUP_INTERVAL` (padrão `6h`; `0` desativa), apaga em lotes de 1000 os tokens com `expires_at` há mais de `REFRESH_TOKEN_RETENCAO` (padrão `720h`). Token ainda não expirado nunca é apagado. Logs `[refresh] cleanup: ...`. |
 | SEC-11 | `Makefile`, `config.Load()` | `DB_USUARIO`/`DB_SENHA` obrigatórios no `.env`, sem o default `golang/golang`: a API e os importadores não sobem sem eles, e os alvos `db-*` param no `db-check-env`. O `make` passa a senha ao `mysql` por `MYSQL_PWD` (não mais `-p...` no argv) e lê o `.env` com `-include .env` (ver "Subindo o ambiente"). |
 | DB-01 | `make db-up` | Passa a criar a tabela `estoque` (`sql/17_ddl_estoque.sql`, já sem `origem`), depois de `visitas`. Bancos antigos com `estoque.origem`: `make db-fix-estoque-origem` (idempotente). |
+
+## Mudanças do Lote 21 (2026-10-13 a 2026-10-16): reestruturação DDD da API
+
+> Refatoração interna (DDD + Clean Code + Design Patterns; ver `docs/arquitetura-ddd.md` e `docs/adr-001-reestruturacao-ddd.md`). Rotas, payloads, status e mensagens **não mudaram**, com uma única exceção aprovada pelo usuário (X1, aplicada no ARQ-01). Nenhuma requisição desta collection dependia do comportamento antigo: todas já usam o método documentado e nenhuma chama `/api/senha-historico/{id}` com subcaminho, `0` ou negativo. A collection não foi alterada, salvo a referência ao arquivo do handler de clientes na descrição.
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| X1 | `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `POST /api/auth/reset-password`, `GET /api/auth/me`, `GET /api/senha-historico`, `GET /api/senha-historico/{user_id...}`, `GET /api/dashboard/metrics`, `GET /api/dashboard/vendas`, `GET /api/dashboard/vendedores`, `GET /api/dashboard/clientes`, `GET /health` | Essas rotas aceitavam qualquer método. Agora só aceitam o método indicado: outro método recebe **`405`** com o header `Allow` (corpo em texto do `ServeMux`, sem o envelope JSON), antes da autenticação e sem consultar o banco. `HEAD` continua aceito nas rotas `GET` (`HEAD /health` → `200`; `HEAD /api/auth/me` sem token → `401`). `OPTIONS` continua `204` no CORS. |
+| X1 | `GET /api/senha-historico/{user_id...}` | Parse estrito do id: só dígitos e maior que zero. `/api/senha-historico/2/extra` (antes `200` com o histórico do usuário 2), `/0` e `/-1` passam a **`400`** `{"success":false,"error":"usuario_id inválido"}`. `/api/senha-historico/` (vazio) continua `400` `"usuario_id é obrigatório na URL"`. |
+| ARQ-01 | Respostas de erro | A ordem das chaves no JSON de erro pode mudar; os valores são os mesmos. |
 
 ## Endpoints
 
@@ -255,7 +265,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 ### Bloqueio de vendedor desligado nas rotas da carteira (2026-09-24)
 
-> **Decisão do usuário (2026-09-24):** o usuário `normal` vinculado a um vendedor desligado (`vendedores.data_desligamento` preenchida) fica bloqueado em **todas as rotas da carteira**, na leitura e na escrita. Contrato definido pelo 🟣 SecBrain e aplicado pelo 🟡 BackBrain em `apis/rotaperfumes-api/handlers/scope.go` (`resolverVendedorScope(r, db)` + `responderErroEscopo`).
+> **Decisão do usuário (2026-09-24):** o usuário `normal` vinculado a um vendedor desligado (`vendedores.data_desligamento` preenchida) fica bloqueado em **todas as rotas da carteira**, na leitura e na escrita. Contrato definido pelo 🟣 SecBrain e aplicado pelo 🟡 BackBrain em `apis/rotaperfumes-api/handlers/scope.go` (`resolverVendedorScope(r, db)` + `responderErroEscopo`). Desde o Lote 21 (ARQ-04 a ARQ-06), a regra está no `AutorizadorEscopo` (`apis/shared/comercial/comercialapp/escopo.go`), usado por Comercial, Vendas e Analytics; o pacote `handlers` não existe mais.
 >
 > **Resposta de bloqueio:** `403` com corpo
 > ```json
@@ -345,7 +355,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 >
 > **Vendedor desligado (2026-09-24):** as 5 rotas `/api/clientes*` respondem `403` `"acesso bloqueado: vendedor desligado"` para o usuário `normal` com vendedor desligado. Ver a seção "Bloqueio de vendedor desligado nas rotas da carteira".
 >
-> **Acesso comum com escopo por carteira:** todas as rotas `/api/clientes*` usam `JWTMiddleware(cfg, true, false)` (qualquer usuário autenticado). O escopo é aplicado no handler (`apis/rotaperfumes-api/handlers/cliente_handler.go`). O admin não sofre restrições.
+> **Acesso comum com escopo por carteira:** todas as rotas `/api/clientes*` têm a política `Authenticated` (qualquer usuário autenticado; tabela de rotas em `apis/rotaperfumes-api/internal/bootstrap/rotas.go`). O escopo é resolvido pelo `AutorizadorEscopo` (`apis/shared/comercial/comercialapp/escopo.go`) e aplicado nos casos de uso de `comercialapp`; o handler fica em `apis/rotaperfumes-api/internal/comercialhttp/cliente_handler.go` (até o Lote 21, `apis/rotaperfumes-api/handlers/cliente_handler.go`). O admin não sofre restrições.
 >
 > **Escopo nas escritas (SEC-01, 2026-09-24):** antes, qualquer usuário `normal` conseguia editar ou inativar qualquer cliente pelo id. Agora (helper `autorizarEscritaCliente`, checado antes de ler o body):
 >
@@ -409,7 +419,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Body inválido (BUG-06, 2026-09-25):** vazio, `null`, `{}` ou `{"ativo":null}` → toggle; `{"ativo":true|false}` → define o valor; body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`. O body só é lido **depois** da checagem de escopo: sem acesso ao registro, a resposta continua `404` (SEC-01).
 
 #### GET /api/dashboard/clientes
-- **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira do vendedor para o normal). A rota usa `JWTMiddleware(cfg, true, false)`, então não há `403`.
+- **Auth:** Bearer Token (qualquer usuário autenticado; escopo pela carteira do vendedor para o normal). A rota tem a política `Authenticated` (antes do Lote 21, `JWTMiddleware(cfg, true, false)`), então não há `403`.
 - **Query:** `?periodo=today|week|month` (padrão: `month`)
 - **Descrição:** Métricas agregadas da base de clientes: `total_clientes`, `total_ativos`, `total_inativos`, `novos_no_periodo`, `por_segmento` (array `{segmento, total}`) e `por_uf` (array `{uf, total}`)
 - **Escopo (decisão do usuário, 2026-09-24):**
@@ -455,7 +465,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 > Tela master-detail: lista de pedidos + sub-lista de itens (produtos) de cada pedido. Base importada de `dados/erp/pedidos.csv` (28.729 linhas) e `dados/erp/itens_pedido.csv` (197.724 linhas) para as tabelas `pedidos`/`itens_pedido` (ver seção "Importação de pedidos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pedidos"** da collection.
 >
-> **Escopo por carteira em Create/Update (2026-09-23):** todas as rotas de Pedidos usam a cadeia `middleware.JWTMiddleware(cfg, true, false)` (qualquer usuário autenticado). A restrição de dono é aplicada no handler (`apis/rotaperfumes-api/handlers/pedido_handler.go`, mesmo padrão `vendedorScope`/`resolverVendedorScope` de Oportunidades/Visitas). Para usuário `normal`:
+> **Escopo por carteira em Create/Update (2026-09-23):** todas as rotas de Pedidos têm a política `Authenticated` (qualquer usuário autenticado). A restrição de dono é aplicada pelo escopo de carteira (na época, no handler `apis/rotaperfumes-api/handlers/pedido_handler.go`; desde o Lote 21, ARQ-05, nos casos de uso de `apis/shared/vendas/vendasapp`, com o handler em `apis/rotaperfumes-api/internal/vendashttp/pedido_handler.go`; mesma regra de Oportunidades/Visitas). Para usuário `normal`:
 > - **`POST /api/pedidos`:** `403` (`"usuário sem vendedor vinculado"`) se o usuário não tiver vendedor vinculado; `vendedor_id` do payload é **ignorado** e forçado ao vendedor do usuário logado; `cliente_id` precisa pertencer à carteira ativa (`data_fim IS NULL`) desse vendedor, senão `400` (`"cliente não pertence à carteira deste vendedor"`).
 > - **`PUT /api/pedidos/{id}`:** `404` (`"pedido não encontrado"`, corpo idêntico ao de pedido inexistente) se o usuário não tiver vendedor vinculado ou se o pedido pertencer a outro vendedor — evita enumeração de IDs; `vendedor_id` do payload é forçado ao vendedor do usuário (não é possível reatribuir o pedido); `cliente_id` fora da carteira → `400`.
 > - **Efeito colateral aceito:** se o cliente de um pedido antigo tiver sido transferido para outro vendedor, o usuário `normal` não consegue mais editar esse pedido (`400` de carteira). Admin não é afetado.
@@ -491,7 +501,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 ### Pagamentos (`/api/pagamentos/*`) — **acesso comum, com escopo por carteira**
 
-> **Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`**, como Clientes, Pedidos, Oportunidades e Visitas. A cadeia de middleware usada é `middleware.JWTMiddleware(cfg, true, false)` (`requireAuth=true`, `requireAdmin=false`); as rotas admin only (Usuários, Estoque, escrita de Produtos, gestão de Vendedores) usam `(cfg, true, true)`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum.
+> **Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`**, como Clientes, Pedidos, Oportunidades e Visitas. A política da rota é `Authenticated` (antes do Lote 21, `middleware.JWTMiddleware(cfg, true, false)`); as rotas admin only (Usuários, Estoque, escrita de Produtos, gestão de Vendedores) usam `AdminOnly` (antes, `(cfg, true, true)`). Tabela de rotas: `apis/rotaperfumes-api/internal/bootstrap/rotas.go`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum.
 >
 > **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/pagamentos/{id}` — hard delete (sem exclusão lógica). Ver detalhes abaixo.
 >
@@ -531,7 +541,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 ### Vendedores (`/api/vendedores/*`) — admin only, exceto 2 GETs (atualizado em 2026-09-23)
 
-> Até 2026-09-22 todas as rotas `/api/vendedores*` usavam `JWTMiddleware(cfg, true, false)` (acesso comum) — a restrição a admin existia só no frontend. O 🟣 SecBrain identificou que um usuário `normal` podia gerenciar vendedores via API, ler a carteira de qualquer vendedor (`GET /api/vendedores/{id}`) e — crítico — transferir clientes de outros vendedores para a própria carteira (`POST /api/vendedores/{id}/clientes`). Desde 2026-09-23 (`routes/routes.go`):
+> Até 2026-09-22 todas as rotas `/api/vendedores*` usavam `JWTMiddleware(cfg, true, false)` (acesso comum) — a restrição a admin existia só no frontend. O 🟣 SecBrain identificou que um usuário `normal` podia gerenciar vendedores via API, ler a carteira de qualquer vendedor (`GET /api/vendedores/{id}`) e — crítico — transferir clientes de outros vendedores para a própria carteira (`POST /api/vendedores/{id}/clientes`). Desde 2026-09-23 (na época em `routes/routes.go`; desde o Lote 21, na tabela de rotas de `apis/rotaperfumes-api/internal/bootstrap/rotas.go`):
 
 | Método | Rota | Acesso | Usuário `normal` |
 |--------|------|--------|------------------|
@@ -565,7 +575,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 >
 > **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/oportunidades/{id}` — hard delete (sem exclusão lógica), sem restrição extra de negócio. Ver detalhes abaixo.
 >
-> **Mudança de acesso (2026-09-22):** `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` deixaram de ser `admin only` e passaram a **acesso comum com escopo por carteira** — mesma cadeia de middleware usada em Pagamentos (`cfg, true, false`), com a restrição de dono aplicada no handler via `vendedorScope`/`resolverVendedorScope` (`apis/rotaperfumes-api/handlers/scope.go`), o mesmo padrão já usado em Pedidos/Clientes/Pagamentos:
+> **Mudança de acesso (2026-09-22):** `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` deixaram de ser `admin only` e passaram a **acesso comum com escopo por carteira** — mesma cadeia de middleware usada em Pagamentos (`cfg, true, false`), com a restrição de dono aplicada no handler via `vendedorScope`/`resolverVendedorScope` (`apis/rotaperfumes-api/handlers/scope.go`; desde o Lote 21, pelo `AutorizadorEscopo` de `apis/shared/comercial/comercialapp/escopo.go`), o mesmo padrão já usado em Pedidos/Clientes/Pagamentos:
 > - **Listagem (`GET /api/oportunidades`):** usuário `admin` enxerga tudo; usuário `normal` só enxerga oportunidades da própria carteira — qualquer `vendedor_id` informado na query é **ignorado** e forçado ao vendedor vinculado ao usuário logado (nunca confia em input do cliente).
 > - **Detalhe/edição por ID (`GET`/`PUT /api/oportunidades/{id}`):** usuário `normal` tentando acessar/editar uma oportunidade de outro vendedor recebe **`404`** (não `403`) — decisão deliberada para não expor, por enumeração de ID, a existência do registro a quem não tem acesso a ele.
 > - **Criação/edição (`POST`/`PUT`):** o `vendedor_id` do payload é **ignorado** para usuário `normal` — é sempre forçado ao vendedor vinculado ao usuário logado, mesmo que o body envie outro valor (impede forjar/reatribuir o registro a outro vendedor). Além disso, `cliente_id` precisa pertencer à carteira ativa (`data_fim IS NULL`) desse vendedor — se não pertencer, retorna `400` (`"cliente não pertence à carteira deste vendedor"`).
@@ -1010,7 +1020,7 @@ Desde o Lote 11 (SEC-09), o mesmo SMTP envia o alerta de reuso de refresh token 
 
 ### CAPTCHA (Cloudflare Turnstile) em Login e Troca de Senha
 
-`POST /api/auth/login` e `POST /api/auth/reset-password` exigem o campo `captchaToken` no body — um token gerado pelo widget Cloudflare Turnstile, validado server-side (fail-closed, timeout 4s) contra `https://challenges.cloudflare.com/turnstile/v0/siteverify`. O serviço fica em `apis/shared/services/turnstile_service.go`.
+`POST /api/auth/login` e `POST /api/auth/reset-password` exigem o campo `captchaToken` no body — um token gerado pelo widget Cloudflare Turnstile, validado server-side (fail-closed, timeout 4s) contra `https://challenges.cloudflare.com/turnstile/v0/siteverify`. O verificador fica em `apis/shared/adapters/turnstile/turnstile.go` (até o Lote 21, `apis/shared/services/turnstile_service.go`).
 
 Para configurar:
 1. Crie um site no [dashboard do Cloudflare Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile) e copie a **Site Key** (pública) e a **Secret Key** (privada).

@@ -4,15 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"github.com/rotaperfumes/shared/comercial/comercialmysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/models"
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 var oportunidadeColumns = []string{
@@ -41,9 +41,8 @@ func TestOportunidadeList_SemFiltro(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnRows(rows)
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	oportunidades, total, err := repo.List(ctx, db, 1, 10, repositories.OportunidadeFiltro{})
+	oportunidades, total, err := itensETotal(comercialmysql.NovoOportunidades(db).Listar(ctx, escopoAdmin(), comercial.FiltroOportunidade{Ordenacao: comercial.OrdenacaoOportunidadePadrao()}, kernel.NovaPagina(1, 10)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
@@ -55,55 +54,55 @@ func TestOportunidadeList_SemFiltro(t *testing.T) {
 func TestOportunidadeList_ComFiltros(t *testing.T) {
 	testes := []struct {
 		nome        string
-		filtro      repositories.OportunidadeFiltro
+		filtro      comercial.FiltroOportunidade
 		whereRegexp string
 		args        []driver.Value
 	}{
 		{
 			nome:        "filtro por cliente_id",
-			filtro:      repositories.OportunidadeFiltro{ClienteID: 100},
+			filtro:      comercial.FiltroOportunidade{ClienteID: 100, Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			whereRegexp: "WHERE cliente_id = \\?",
 			args:        []driver.Value{int64(100)},
 		},
 		{
 			nome:        "filtro por vendedor_id",
-			filtro:      repositories.OportunidadeFiltro{VendedorID: 5},
+			filtro:      comercial.FiltroOportunidade{VendedorID: 5, Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			whereRegexp: "WHERE vendedor_id = \\?",
 			args:        []driver.Value{int64(5)},
 		},
 		{
 			nome:        "filtro por etapa",
-			filtro:      repositories.OportunidadeFiltro{Etapa: "Fechado ganho"},
+			filtro:      comercial.FiltroOportunidade{Etapa: "Fechado ganho", Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			whereRegexp: "WHERE etapa = \\?",
 			args:        []driver.Value{"Fechado ganho"},
 		},
 		{
 			nome:        "filtro por origem",
-			filtro:      repositories.OportunidadeFiltro{Origem: "Site"},
+			filtro:      comercial.FiltroOportunidade{Origem: "Site", Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			whereRegexp: "WHERE origem = \\?",
 			args:        []driver.Value{"Site"},
 		},
 		{
 			nome:        "filtro por data_abertura_de",
-			filtro:      repositories.OportunidadeFiltro{DataAberturaDe: "2024-01-01"},
+			filtro:      comercial.FiltroOportunidade{De: "2024-01-01", Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			whereRegexp: "WHERE data_abertura >= \\?",
 			args:        []driver.Value{"2024-01-01"},
 		},
 		{
 			nome:        "filtro por data_abertura_ate",
-			filtro:      repositories.OportunidadeFiltro{DataAberturaAte: "2024-12-31"},
+			filtro:      comercial.FiltroOportunidade{Ate: "2024-12-31", Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			whereRegexp: "WHERE data_abertura <= \\?",
 			args:        []driver.Value{"2024-12-31"},
 		},
 		{
 			nome:        "filtro por busca textual",
-			filtro:      repositories.OportunidadeFiltro{Q: "Site"},
+			filtro:      comercial.FiltroOportunidade{Busca: "Site", Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			whereRegexp: "WHERE \\(origem LIKE \\? OR etapa LIKE \\?\\)",
 			args:        []driver.Value{"%Site%", "%Site%"},
 		},
 		{
 			nome:        "filtros combinados",
-			filtro:      repositories.OportunidadeFiltro{ClienteID: 100, VendedorID: 5, Etapa: "Negociacao"},
+			filtro:      comercial.FiltroOportunidade{ClienteID: 100, VendedorID: 5, Etapa: "Negociacao", Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
 			whereRegexp: "WHERE cliente_id = \\? AND vendedor_id = \\? AND etapa = \\?",
 			args:        []driver.Value{int64(100), int64(5), "Negociacao"},
 		},
@@ -123,9 +122,8 @@ func TestOportunidadeList_ComFiltros(t *testing.T) {
 				WithArgs(allArgs...).
 				WillReturnRows(sqlmock.NewRows(oportunidadeColumns))
 
-			repo := repositories.NewOportunidadeRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, tt.filtro)
+			_, _, err := itensETotal(comercialmysql.NovoOportunidades(db).Listar(ctx, escopoAdmin(), tt.filtro, kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -158,9 +156,8 @@ func TestOportunidadeList_OrderBy(t *testing.T) {
 				WithArgs(10, 0).
 				WillReturnRows(sqlmock.NewRows(oportunidadeColumns))
 
-			repo := repositories.NewOportunidadeRepository()
 			ctx := context.Background()
-			_, _, err := repo.List(ctx, db, 1, 10, repositories.OportunidadeFiltro{OrderBy: tt.orderBy, OrderDir: tt.orderDir})
+			_, _, err := itensETotal(comercialmysql.NovoOportunidades(db).Listar(ctx, escopoAdmin(), comercial.FiltroOportunidade{Ordenacao: kernel.ParseOrdenacao(tt.orderBy, tt.orderDir, comercial.CamposOrdenacaoOportunidade(), comercial.OrdenacaoOportunidadePadrao())}, kernel.NovaPagina(1, 10)))
 
 			require.NoError(t, err)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -175,9 +172,8 @@ func TestOportunidadeList_CountError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM oportunidades").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.OportunidadeFiltro{})
+	_, _, err := itensETotal(comercialmysql.NovoOportunidades(db).Listar(ctx, escopoAdmin(), comercial.FiltroOportunidade{Ordenacao: comercial.OrdenacaoOportunidadePadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -193,9 +189,8 @@ func TestOportunidadeList_QueryError(t *testing.T) {
 		WithArgs(10, 0).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.OportunidadeFiltro{})
+	_, _, err := itensETotal(comercialmysql.NovoOportunidades(db).Listar(ctx, escopoAdmin(), comercial.FiltroOportunidade{Ordenacao: comercial.OrdenacaoOportunidadePadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -214,9 +209,8 @@ func TestOportunidadeList_IterError(t *testing.T) {
 			AddRow(oportunidadeRow(1, 100, 1, "Site", now, "Prospeccao", 10, 1000, nil, nil, nil, now, now)...).
 			RowError(0, sql.ErrConnDone))
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	_, _, err := repo.List(ctx, db, 1, 10, repositories.OportunidadeFiltro{})
+	_, _, err := itensETotal(comercialmysql.NovoOportunidades(db).Listar(ctx, escopoAdmin(), comercial.FiltroOportunidade{Ordenacao: comercial.OrdenacaoOportunidadePadrao()}, kernel.NovaPagina(1, 10)))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -234,9 +228,8 @@ func TestOportunidadeGetByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(rows)
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	o, err := repo.GetByID(ctx, db, 1)
+	o, err := comercialmysql.NovoOportunidades(db).PorID(ctx, 1)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), o.OportunidadeID)
@@ -252,12 +245,11 @@ func TestOportunidadeGetByID_NotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	o, err := repo.GetByID(ctx, db, 999)
+	o, err := comercialmysql.NovoOportunidades(db).PorID(ctx, 999)
 
 	assert.Nil(t, o)
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrOportunidadeNaoEncontrada)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -269,13 +261,12 @@ func TestOportunidadeGetByID_DBError(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	o, err := repo.GetByID(ctx, db, 1)
+	o, err := comercialmysql.NovoOportunidades(db).PorID(ctx, 1)
 
 	assert.Nil(t, o)
 	assert.Error(t, err)
-	assert.NotErrorIs(t, err, repositories.ErrNotFound)
+	assert.NotErrorIs(t, err, comercial.ErrOportunidadeNaoEncontrada)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -284,7 +275,7 @@ func TestOportunidadeCreate_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	o := &models.Oportunidade{
+	o := &comercial.Oportunidade{
 		ClienteID:        100,
 		VendedorID:       1,
 		Origem:           "Site",
@@ -298,9 +289,8 @@ func TestOportunidadeCreate_Success(t *testing.T) {
 		WithArgs(o.ClienteID, o.VendedorID, o.Origem, o.DataAbertura, o.Etapa, o.ProbabilidadePct, o.ValorEstimado, o.DataFechamento, o.CicloDias, o.MotivoPerda).
 		WillReturnResult(sqlmock.NewResult(9, 1))
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, o)
+	err := comercialmysql.NovoOportunidades(db).Inserir(ctx, o)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(9), o.OportunidadeID)
@@ -311,13 +301,12 @@ func TestOportunidadeCreate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	o := &models.Oportunidade{}
+	o := &comercial.Oportunidade{}
 	mock.ExpectExec("INSERT INTO oportunidades").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	err := repo.Create(ctx, db, o)
+	err := comercialmysql.NovoOportunidades(db).Inserir(ctx, o)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -328,7 +317,7 @@ func TestOportunidadeUpdate_Success(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	o := &models.Oportunidade{
+	o := &comercial.Oportunidade{
 		ClienteID:        100,
 		VendedorID:       1,
 		Origem:           "Site",
@@ -342,9 +331,8 @@ func TestOportunidadeUpdate_Success(t *testing.T) {
 		WithArgs(o.ClienteID, o.VendedorID, o.Origem, o.DataAbertura, o.Etapa, o.ProbabilidadePct, o.ValorEstimado, o.DataFechamento, o.CicloDias, o.MotivoPerda, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, o)
+	err := comercialmysql.NovoOportunidades(db).Atualizar(ctx, 1, o)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -354,15 +342,14 @@ func TestOportunidadeUpdate_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	o := &models.Oportunidade{}
+	o := &comercial.Oportunidade{}
 	mock.ExpectExec("UPDATE oportunidades").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 999, o)
+	err := comercialmysql.NovoOportunidades(db).Atualizar(ctx, 999, o)
 
-	assert.ErrorIs(t, err, repositories.ErrNotFound)
+	assert.ErrorIs(t, err, comercial.ErrOportunidadeNaoEncontrada)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -370,13 +357,12 @@ func TestOportunidadeUpdate_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	o := &models.Oportunidade{}
+	o := &comercial.Oportunidade{}
 	mock.ExpectExec("UPDATE oportunidades").
 		WillReturnError(sql.ErrConnDone)
 
-	repo := repositories.NewOportunidadeRepository()
 	ctx := context.Background()
-	err := repo.Update(ctx, db, 1, o)
+	err := comercialmysql.NovoOportunidades(db).Atualizar(ctx, 1, o)
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

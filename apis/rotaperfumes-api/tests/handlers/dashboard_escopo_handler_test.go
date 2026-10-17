@@ -9,6 +9,7 @@ package handlers_test
 
 import (
 	"database/sql"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,9 +18,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/handlers"
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
 )
 
 const (
@@ -644,7 +642,7 @@ func TestDashboardEscopo_Verbose_SemVendedor(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	h := handlers.NewDashboardHandler(db, cfg)
+	h := bootstrap.NovoAnalyticsHTTP(bootstrap.NovoAnalytics(db, bootstrap.NovoComercial(db).Escopo()))
 	chains := []struct {
 		nome string
 		h    http.HandlerFunc
@@ -661,7 +659,7 @@ func TestDashboardEscopo_Verbose_SemVendedor(t *testing.T) {
 			mock.ExpectQuery(reUsuarioVendedor).WithArgs(escopoUsuarioNormal).
 				WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
 
-			handler := middleware.JWTMiddleware(cfg, true, false)(c.h)
+			handler := exigirAutenticado(cfg, c.h)
 			req := httptest.NewRequest("GET", c.path, nil)
 			req.Header.Set("Authorization", "Bearer "+token)
 			rec := httptest.NewRecorder()

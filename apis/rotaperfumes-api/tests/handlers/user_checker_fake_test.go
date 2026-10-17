@@ -3,7 +3,7 @@ package handlers_test
 import (
 	"context"
 
-	"github.com/rotaperfumes/rotaperfumes-api/middleware"
+	"github.com/rotaperfumes/shared/identidade"
 )
 
 // fakeUserStatusChecker é o UserStatusChecker (SEC-06) dos testes de
@@ -12,9 +12,9 @@ import (
 // user_id 1 é admin, os demais são normal, todos ativos.
 type fakeUserStatusChecker struct{}
 
-func (fakeUserStatusChecker) CheckUserStatus(_ context.Context, userID int64) (middleware.UserStatus, error) {
+func (fakeUserStatusChecker) StatusParaAutenticacao(_ context.Context, userID int64) (identidade.StatusAcesso, error) {
 	if userID == 1 {
-		return middleware.UserStatus{Ativo: true, Role: "admin"}, nil
+		return identidade.StatusAcesso{Ativo: true, Role: "admin"}, nil
 	}
-	return middleware.UserStatus{Ativo: true, Role: "normal"}, nil
+	return identidade.StatusAcesso{Ativo: true, Role: "normal"}, nil
 }

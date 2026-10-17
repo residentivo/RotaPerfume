@@ -1,6 +1,6 @@
 .PHONY: help reset-senhas-simular reset-senhas-ativos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
 	build build-api run-api dev-api stop-api \
-	test-api cover-api test-shared cover-shared gen-hash fix-hash \
+	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
 	audit deps-audit deps-audit-go deps-audit-frontend
 
@@ -221,7 +221,26 @@ cover-api: build-shared ## Cobertura da API: total + relatório HTML (apis/rotap
 	cd apis/rotaperfumes-api && go tool cover -func=coverage.txt | tail -1
 	cd apis/rotaperfumes-api && go tool cover -html=coverage.txt -o coverage.html
 
-test-integration: ## Roda testes de integração (requer DB)
+arch-check: ## ARQ-01: testes de arquitetura (dependências entre camadas, allowlists e AST, nos dois módulos)
+	cd apis/shared && go test ./tests/arquitetura/...
+	cd apis/rotaperfumes-api && go test ./tests/arquitetura/...
+
+# ARQ-01 (§7.1, portão 4): o código migra da API para shared, então a
+# cobertura é medida com os testes da API cobrindo também os pacotes de
+# shared, somada à do módulo shared (blocos mesclados: um bloco conta como
+# coberto se algum dos dois perfis o cobrir).
+cover-combinada: build-shared ## ARQ-01: cobertura combinada API+shared (-coverpkg cobrindo os dois módulos, blocos mesclados)
+	cd apis/shared && go test ./... -coverpkg=./... -coverprofile=coverage-combinada-shared.txt
+	cd apis/rotaperfumes-api && go test ./... -coverpkg=./...,github.com/rotaperfumes/shared/... -coverprofile=coverage-combinada-api.txt
+	awk 'NR == 1 { print; next } FNR == 1 { next } { chave = $$1 " " $$2; if (!(chave in n) || $$3 > n[chave]) n[chave] = $$3 } END { for (c in n) print c, n[c] }' \
+		apis/rotaperfumes-api/coverage-combinada-api.txt apis/shared/coverage-combinada-shared.txt > apis/rotaperfumes-api/coverage-combinada.txt
+	cd apis/rotaperfumes-api && go tool cover -func=coverage-combinada.txt | tail -1
+
+# Integração: além de INTEGRATION=1, os testes precisam das DB_* no ambiente
+# (SEC-11; o "-include .env" + "export" acima as exporta) e devem rodar com
+# "go test -p 1" (os pacotes usam o mesmo banco). Este alvo não passa -p 1:
+# ver os comandos em docs/arquitetura-ddd.md §10.9.
+test-integration: ## Roda testes de integração (requer MySQL e DB_* no .env; prefira -p 1, ver docs/arquitetura-ddd.md §10.9)
 	INTEGRATION=1 $(MAKE) test
 
 test-frontend:

@@ -12,10 +12,9 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/shared/comercial"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 )
 
 const (
@@ -38,8 +37,8 @@ func (meiaNoiteDeHoje) Match(v driver.Value) bool {
 	return y == ty && m == tm && d == td && t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0
 }
 
-func inputClienteValido() services.ClienteInput {
-	return services.ClienteInput{
+func inputClienteValido() comercial.DadosCliente {
+	return comercial.DadosCliente{
 		CNPJ: "11222333000181", RazaoSocial: "Empresa", Segmento: "varejo",
 		Cidade: "Curitiba", UF: "pr", Bairro: "Centro", DataCadastro: "2024-02-10",
 	}
@@ -49,7 +48,7 @@ func TestClienteService_CreateClienteNaCarteira(t *testing.T) {
 	errDB := errors.New("falha simulada")
 	casos := []struct {
 		nome    string
-		input   func() services.ClienteInput
+		input   func() comercial.DadosCliente
 		expect  func(m sqlmock.Sqlmock)
 		wantErr error // errors.Is
 		algum   bool  // qualquer erro
@@ -70,15 +69,15 @@ func TestClienteService_CreateClienteNaCarteira(t *testing.T) {
 		},
 		{
 			nome:    "validacao falha antes do BEGIN",
-			input:   func() services.ClienteInput { in := inputClienteValido(); in.UF = "PRR"; return in },
+			input:   func() comercial.DadosCliente { in := inputClienteValido(); in.UF = "PRR"; return in },
 			expect:  func(m sqlmock.Sqlmock) {},
-			wantErr: services.ErrUFInvalida,
+			wantErr: comercial.ErrUFInvalida,
 		},
 		{
 			nome:    "data_cadastro invalida falha antes do BEGIN",
-			input:   func() services.ClienteInput { in := inputClienteValido(); in.DataCadastro = "10/02/2024"; return in },
+			input:   func() comercial.DadosCliente { in := inputClienteValido(); in.DataCadastro = "10/02/2024"; return in },
 			expect:  func(m sqlmock.Sqlmock) {},
-			wantErr: services.ErrDataCadastroInvalida,
+			wantErr: comercial.ErrDataCadastroInvalida,
 		},
 		{
 			nome:    "erro no BEGIN",
@@ -132,13 +131,12 @@ func TestClienteService_CreateClienteNaCarteira(t *testing.T) {
 	}
 
 	for _, tc := range casos {
-		for _, verbose := range []bool{false, true} {
+		for range []bool{false, true} { // ARQ-07: o Verbose não muda o resultado (o log é o vlog global)
 			t.Run(tc.nome, func(t *testing.T) {
 				db, mock := newClienteTestDB(t)
 				tc.expect(mock)
 
-				svc := services.NewClienteService(db, clienteTestCfg(verbose))
-				c, err := svc.CreateClienteNaCarteira(context.Background(), db, tc.input(), 10)
+				c, err := casosComercial(db, 10).CriarCliente(context.Background(), principalRestrito(), fixo(tc.input()))
 
 				switch {
 				case tc.wantErr != nil:
@@ -164,8 +162,8 @@ func TestClienteService_CreateCliente_SemCarteiraNemTransacao(t *testing.T) {
 	db, mock := newClienteTestDB(t)
 	mock.ExpectExec(reInsertClienteS).WillReturnResult(sqlmock.NewResult(556, 1))
 
-	c, err := services.NewClienteService(db, clienteTestCfg(false)).
-		CreateCliente(context.Background(), db, inputClienteValido())
+	c, err := casosComercial(db, 0).
+		CriarCliente(context.Background(), principalAdmin(), fixo(inputClienteValido()))
 	require.NoError(t, err)
 	assert.Equal(t, int64(556), c.ClienteIDOrigem)
 	assert.NoError(t, mock.ExpectationsWereMet())

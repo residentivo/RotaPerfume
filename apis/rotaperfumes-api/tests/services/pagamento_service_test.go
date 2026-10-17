@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -10,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
 	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/vendas"
 )
 
 func pagamentoTestCfg(verbose bool) *config.Config {
@@ -27,7 +28,7 @@ func newPagamentoTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 
 // ---------------------------------------------------------------------------
 // Regexes/colunas que espelham as constantes de
-// apis/shared/repositories/pagamento_repository.go.
+// apis/shared/vendas/vendasmysql (SQL do legado pagamento_repository.go).
 // ---------------------------------------------------------------------------
 
 const pagamentoColunasRegex = `pagamento_id, pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento, created_at, updated_at`
@@ -51,9 +52,8 @@ func emptyPagamentoRows() *sqlmock.Rows {
 }
 
 // validPagamentoInput retorna um input válido para create/update.
-func validPagamentoInput() services.PagamentoInput {
-	return services.PagamentoInput{
-		PedidoID:        1,
+func validPagamentoInput() vendas.DadosNovoPagamento {
+	return vendas.DadosNovoPagamento{PedidoID: 1, DadosPagamento: vendas.DadosPagamento{
 		FormaPagamento:  "PIX",
 		Parcelas:        1,
 		Valor:           100.0,
@@ -61,7 +61,7 @@ func validPagamentoInput() services.PagamentoInput {
 		ValorLiquido:    100.0,
 		DataVencimento:  "2024-01-15",
 		StatusPagamento: "Em aberto",
-	}
+	}}
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ func validPagamentoInput() services.PagamentoInput {
 func TestPagamentoService_ListPagamentos(t *testing.T) {
 	testCases := []struct {
 		nome    string
-		filtro  services.PagamentoFiltro
+		filtro  vendas.FiltroPagamento
 		page    int
 		limit   int
 		mock    func(mock sqlmock.Sqlmock)
@@ -81,7 +81,7 @@ func TestPagamentoService_ListPagamentos(t *testing.T) {
 	}{
 		{
 			nome:   "sem filtros - sucesso",
-			filtro: services.PagamentoFiltro{},
+			filtro: vendas.FiltroPagamento{Ordenacao: vendas.OrdenacaoPagamentoPadrao()},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -96,12 +96,13 @@ func TestPagamentoService_ListPagamentos(t *testing.T) {
 		},
 		{
 			nome: "com todos os filtros - repassa args ao repo",
-			filtro: services.PagamentoFiltro{
+			filtro: vendas.FiltroPagamento{
 				StatusPagamento: "Pago",
 				FormaPagamento:  "PIX",
 				PedidoID:        5,
 				VencimentoDe:    "2024-01-01",
 				VencimentoAte:   "2024-01-31",
+				Ordenacao:       vendas.OrdenacaoPagamentoPadrao(),
 			},
 			page:  2,
 			limit: 10,
@@ -119,7 +120,7 @@ func TestPagamentoService_ListPagamentos(t *testing.T) {
 		},
 		{
 			nome:   "erro no count do repo é propagado",
-			filtro: services.PagamentoFiltro{},
+			filtro: vendas.FiltroPagamento{Ordenacao: vendas.OrdenacaoPagamentoPadrao()},
 			page:   1,
 			limit:  20,
 			mock: func(mock sqlmock.Sqlmock) {
@@ -135,8 +136,8 @@ func TestPagamentoService_ListPagamentos(t *testing.T) {
 			db, mock := newPagamentoTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
-			pagamentos, total, err := svc.ListPagamentos(context.Background(), db, tc.page, tc.limit, tc.filtro)
+			casos := casosVendas(db, 0)
+			pagamentos, total, err := itensETotal(casos.ListarPagamentos(context.Background(), principalAdmin(), lerFixo(tc.filtro), kernel.NovaPagina(tc.page, tc.limit)))
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -161,8 +162,8 @@ func TestPagamentoService_GetPagamentoByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnRows(pagamentoRows(1, 1, 100.0))
 
-		svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-		p, err := svc.GetPagamentoByID(context.Background(), db, 1)
+		casos := casosVendas(db, 0)
+		p, err := casos.ObterPagamento(context.Background(), principalAdmin(), 1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), p.PagamentoID)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -174,10 +175,10 @@ func TestPagamentoService_GetPagamentoByID(t *testing.T) {
 			WithArgs(int64(999)).
 			WillReturnError(sql.ErrNoRows)
 
-		svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-		p, err := svc.GetPagamentoByID(context.Background(), db, 999)
+		casos := casosVendas(db, 0)
+		p, err := casos.ObterPagamento(context.Background(), principalAdmin(), 999)
 		assert.Nil(t, p)
-		assert.ErrorIs(t, err, services.ErrPagamentoNaoEncontrado)
+		assert.ErrorIs(t, err, vendas.ErrPagamentoNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -187,11 +188,11 @@ func TestPagamentoService_GetPagamentoByID(t *testing.T) {
 			WithArgs(int64(1)).
 			WillReturnError(sql.ErrConnDone)
 
-		svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-		p, err := svc.GetPagamentoByID(context.Background(), db, 1)
+		casos := casosVendas(db, 0)
+		p, err := casos.ObterPagamento(context.Background(), principalAdmin(), 1)
 		assert.Nil(t, p)
 		assert.Error(t, err)
-		assert.False(t, err == services.ErrPagamentoNaoEncontrado)
+		assert.False(t, err == vendas.ErrPagamentoNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 	_ = emptyPagamentoRows // usado em outros testes de repositório equivalentes
@@ -203,94 +204,94 @@ func TestPagamentoService_GetPagamentoByID(t *testing.T) {
 
 func pagamentoValidacaoTestCases() []struct {
 	nome    string
-	input   func() services.PagamentoInput
+	input   func() vendas.DadosNovoPagamento
 	wantErr error
 } {
 	return []struct {
 		nome    string
-		input   func() services.PagamentoInput
+		input   func() vendas.DadosNovoPagamento
 		wantErr error
 	}{
 		{
 			nome: "forma_pagamento inválida",
-			input: func() services.PagamentoInput {
+			input: func() vendas.DadosNovoPagamento {
 				in := validPagamentoInput()
 				in.FormaPagamento = "Bitcoin"
 				return in
 			},
-			wantErr: services.ErrFormaPagamentoInvalida,
+			wantErr: vendas.ErrFormaPagamentoInvalida,
 		},
 		{
 			nome: "status_pagamento inválido",
-			input: func() services.PagamentoInput {
+			input: func() vendas.DadosNovoPagamento {
 				in := validPagamentoInput()
 				in.StatusPagamento = "Cancelado"
 				return in
 			},
-			wantErr: services.ErrStatusPagamentoInvalido,
+			wantErr: vendas.ErrStatusPagamentoInvalido,
 		},
 		{
 			nome: "parcelas menor que 1",
-			input: func() services.PagamentoInput {
+			input: func() vendas.DadosNovoPagamento {
 				in := validPagamentoInput()
 				in.Parcelas = 0
 				return in
 			},
-			wantErr: services.ErrParcelasInvalidas,
+			wantErr: vendas.ErrParcelasInvalidas,
 		},
 		{
 			nome: "valor negativo",
-			input: func() services.PagamentoInput {
+			input: func() vendas.DadosNovoPagamento {
 				in := validPagamentoInput()
 				in.Valor = -0.01
 				return in
 			},
-			wantErr: services.ErrValorInvalido,
+			wantErr: vendas.ErrValorInvalido,
 		},
 		{
 			nome: "taxa_pct negativa",
-			input: func() services.PagamentoInput {
+			input: func() vendas.DadosNovoPagamento {
 				in := validPagamentoInput()
 				in.TaxaPct = -1
 				return in
 			},
-			wantErr: services.ErrTaxaPctInvalida,
+			wantErr: vendas.ErrTaxaPctInvalida,
 		},
 		{
 			nome: "valor_liquido negativo",
-			input: func() services.PagamentoInput {
+			input: func() vendas.DadosNovoPagamento {
 				in := validPagamentoInput()
 				in.ValorLiquido = -1
 				return in
 			},
-			wantErr: services.ErrValorLiquidoInvalido,
+			wantErr: vendas.ErrValorLiquidoInvalido,
 		},
 		{
 			nome: "data_vencimento ausente",
-			input: func() services.PagamentoInput {
+			input: func() vendas.DadosNovoPagamento {
 				in := validPagamentoInput()
 				in.DataVencimento = ""
 				return in
 			},
-			wantErr: services.ErrDataVencimentoObrigatoria,
+			wantErr: vendas.ErrDataVencimentoObrigatoria,
 		},
 		{
 			nome: "data_vencimento em formato inválido",
-			input: func() services.PagamentoInput {
+			input: func() vendas.DadosNovoPagamento {
 				in := validPagamentoInput()
 				in.DataVencimento = "15/01/2024"
 				return in
 			},
-			wantErr: services.ErrDataVencimentoInvalida,
+			wantErr: vendas.ErrDataVencimentoInvalida,
 		},
 		{
 			nome: "data_pagamento em formato inválido",
-			input: func() services.PagamentoInput {
+			input: func() vendas.DadosNovoPagamento {
 				in := validPagamentoInput()
 				in.DataPagamento = "15/01/2024"
 				return in
 			},
-			wantErr: services.ErrDataPagamentoInvalida,
+			wantErr: vendas.ErrDataPagamentoInvalida,
 		},
 	}
 }
@@ -302,13 +303,13 @@ func pagamentoValidacaoTestCases() []struct {
 func TestPagamentoService_CreatePagamento_PedidoIDObrigatorio(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
 	// nenhuma query esperada: validação falha antes de tocar o repo.
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
+	casos := casosVendas(db, 0)
 
 	in := validPagamentoInput()
 	in.PedidoID = 0
-	p, err := svc.CreatePagamento(context.Background(), db, in)
+	p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(in))
 	assert.Nil(t, p)
-	assert.ErrorIs(t, err, services.ErrPedidoIDObrigatorio)
+	assert.ErrorIs(t, err, vendas.ErrPedidoIDObrigatorio)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -318,12 +319,12 @@ func TestPagamentoService_CreatePagamento_PedidoNaoEncontrado(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
+	casos := casosVendas(db, 0)
 	in := validPagamentoInput()
 	in.PedidoID = 999
-	p, err := svc.CreatePagamento(context.Background(), db, in)
+	p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(in))
 	assert.Nil(t, p)
-	assert.ErrorIs(t, err, services.ErrPedidoNaoEncontrado)
+	assert.ErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -333,8 +334,8 @@ func TestPagamentoService_CreatePagamento_ErroExistsByID(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-	p, err := svc.CreatePagamento(context.Background(), db, validPagamentoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(validPagamentoInput()))
 	assert.Nil(t, p)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -348,8 +349,8 @@ func TestPagamentoService_CreatePagamento_Validacoes(t *testing.T) {
 				WithArgs(int64(1)).
 				WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 
-			svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
-			p, err := svc.CreatePagamento(context.Background(), db, tc.input())
+			casos := casosVendas(db, 0)
+			p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(tc.input()))
 			assert.Nil(t, p)
 			assert.ErrorIs(t, err, tc.wantErr)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -366,8 +367,8 @@ func TestPagamentoService_CreatePagamento_Sucesso(t *testing.T) {
 		WithArgs(int64(1), "PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
-	p, err := svc.CreatePagamento(context.Background(), db, validPagamentoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(validPagamentoInput()))
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	assert.Equal(t, int64(1), p.PagamentoID)
@@ -384,8 +385,8 @@ func TestPagamentoService_CreatePagamento_ErroCreateRepo(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO pagamentos`).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-	p, err := svc.CreatePagamento(context.Background(), db, validPagamentoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(validPagamentoInput()))
 	assert.Nil(t, p)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -401,8 +402,8 @@ func TestPagamentoService_UpdatePagamento_Validacoes(t *testing.T) {
 			db, mock := newPagamentoTestDB(t)
 			// nenhuma query esperada: validação falha antes de tocar o repo
 			// (UpdatePagamento não valida pedido_id — não é editável).
-			svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
-			p, err := svc.UpdatePagamento(context.Background(), db, 1, tc.input())
+			casos := casosVendas(db, 0)
+			p, err := casos.AtualizarPagamento(context.Background(), principalAdmin(), 1, lerFixo(tc.input().DadosPagamento))
 			assert.Nil(t, p)
 			assert.ErrorIs(t, err, tc.wantErr)
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -411,7 +412,7 @@ func TestPagamentoService_UpdatePagamento_Validacoes(t *testing.T) {
 }
 
 func TestPagamentoService_UpdatePagamento_IgnoraPedidoIDEPagamentoIDDoInput(t *testing.T) {
-	// input.PedidoID/PagamentoID não fazem parte de PagamentoInput usado por
+	// input.PedidoID/PagamentoID não fazem parte de vendas.DadosNovoPagamento usado por
 	// UpdatePagamento (o handler nem os aceita no DTO de update) — o teste
 	// documenta que o Update usa exclusivamente o pagamentoID do path.
 	db, mock := newPagamentoTestDB(t)
@@ -422,10 +423,10 @@ func TestPagamentoService_UpdatePagamento_IgnoraPedidoIDEPagamentoIDDoInput(t *t
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRows(1, 1, 100.0))
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
+	casos := casosVendas(db, 0)
 	in := validPagamentoInput()
-	in.PedidoID = 999 // ignorado: PagamentoInput.PedidoID não é lido pelo Update
-	p, err := svc.UpdatePagamento(context.Background(), db, 1, in)
+	in.PedidoID = 999 // ignorado: vendas.DadosNovoPagamento.PedidoID não é lido pelo Update
+	p, err := casos.AtualizarPagamento(context.Background(), principalAdmin(), 1, lerFixo(in.DadosPagamento))
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	assert.Equal(t, int64(1), p.PedidoID) // permanece o do banco, não o do input
@@ -438,10 +439,10 @@ func TestPagamentoService_UpdatePagamento_NaoEncontrado(t *testing.T) {
 		WithArgs("PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto", int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-	p, err := svc.UpdatePagamento(context.Background(), db, 999, validPagamentoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.AtualizarPagamento(context.Background(), principalAdmin(), 999, lerFixo(validPagamentoInput().DadosPagamento))
 	assert.Nil(t, p)
-	assert.ErrorIs(t, err, services.ErrPagamentoNaoEncontrado)
+	assert.ErrorIs(t, err, vendas.ErrPagamentoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -450,11 +451,11 @@ func TestPagamentoService_UpdatePagamento_ErroGenericoDoRepo(t *testing.T) {
 	mock.ExpectExec(`UPDATE pagamentos`).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-	p, err := svc.UpdatePagamento(context.Background(), db, 1, validPagamentoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.AtualizarPagamento(context.Background(), principalAdmin(), 1, lerFixo(validPagamentoInput().DadosPagamento))
 	assert.Nil(t, p)
 	assert.Error(t, err)
-	assert.False(t, err == services.ErrPagamentoNaoEncontrado)
+	assert.False(t, err == vendas.ErrPagamentoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -467,8 +468,8 @@ func TestPagamentoService_UpdatePagamento_ErroGetByIDAposUpdate(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-	p, err := svc.UpdatePagamento(context.Background(), db, 1, validPagamentoInput())
+	casos := casosVendas(db, 0)
+	p, err := casos.AtualizarPagamento(context.Background(), principalAdmin(), 1, lerFixo(validPagamentoInput().DadosPagamento))
 	assert.Nil(t, p)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -483,11 +484,11 @@ func TestPagamentoService_UpdatePagamento_ComDataPagamento(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRows(1, 1, 100.0))
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
+	casos := casosVendas(db, 0)
 	in := validPagamentoInput()
 	in.StatusPagamento = "Pago"
 	in.DataPagamento = "2024-01-20"
-	p, err := svc.UpdatePagamento(context.Background(), db, 1, in)
+	p, err := casos.AtualizarPagamento(context.Background(), principalAdmin(), 1, lerFixo(in.DadosPagamento))
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -509,6 +510,7 @@ const deletePagamentoRegex = `DELETE FROM pagamentos WHERE pagamento_id = \?`
 
 func TestPagamentoService_DeletePagamento_Sucesso(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
+	esperarPossePagamento(mock, 1)
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRows(1, 1, 100.0))
@@ -516,21 +518,22 @@ func TestPagamentoService_DeletePagamento_Sucesso(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(true))
-	err := svc.DeletePagamento(context.Background(), db, 1)
+	casos := casosVendas(db, 0)
+	err := casos.ExcluirPagamento(context.Background(), principalAdmin(), 1)
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestPagamentoService_DeletePagamento_NaoEncontrado(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
+	esperarPossePagamento(mock, 999)
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-	err := svc.DeletePagamento(context.Background(), db, 999)
-	assert.ErrorIs(t, err, services.ErrPagamentoNaoEncontrado)
+	casos := casosVendas(db, 0)
+	err := casos.ExcluirPagamento(context.Background(), principalAdmin(), 999)
+	assert.ErrorIs(t, err, vendas.ErrPagamentoNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -542,13 +545,14 @@ func TestPagamentoService_DeletePagamento_JaQuitado_409(t *testing.T) {
 	for _, status := range statusQuitados {
 		t.Run(status, func(t *testing.T) {
 			db, mock := newPagamentoTestDB(t)
+			esperarPossePagamento(mock, 1)
 			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
 				WithArgs(int64(1)).
 				WillReturnRows(pagamentoRowsComStatus(1, 1, 100.0, status))
 
-			svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-			err := svc.DeletePagamento(context.Background(), db, 1)
-			assert.ErrorIs(t, err, services.ErrPagamentoJaQuitadoNaoPodeSerExcluido)
+			casos := casosVendas(db, 0)
+			err := casos.ExcluirPagamento(context.Background(), principalAdmin(), 1)
+			assert.ErrorIs(t, err, vendas.ErrPagamentoJaQuitadoNaoPodeSerExcluido)
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -556,6 +560,7 @@ func TestPagamentoService_DeletePagamento_JaQuitado_409(t *testing.T) {
 
 func TestPagamentoService_DeletePagamento_ErroDeleteRepo(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
+	esperarPossePagamento(mock, 1)
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRows(1, 1, 100.0))
@@ -563,8 +568,8 @@ func TestPagamentoService_DeletePagamento_ErroDeleteRepo(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
 
-	svc := services.NewPagamentoService(db, pagamentoTestCfg(false))
-	err := svc.DeletePagamento(context.Background(), db, 1)
+	casos := casosVendas(db, 0)
+	err := casos.ExcluirPagamento(context.Background(), principalAdmin(), 1)
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"database/sql"
+	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 	"time"
 
@@ -10,13 +11,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/rotaperfumes-api/services"
-	"github.com/rotaperfumes/shared/config"
+	"github.com/rotaperfumes/shared/catalogo"
+	"github.com/rotaperfumes/shared/catalogo/catalogoapp"
 )
 
-func estoqueTestCfg(verbose bool) *config.Config {
-	return &config.Config{Verbose: verbose}
-}
+// ARQ-02: TestEstoqueService_* exercitam catalogoapp (ListarEstoque,
+// ObterEstoque, AjustarEstoque, AtualizarSaldo) com o adapter real sobre
+// sqlmock; os nomes são identificadores históricos (R1).
 
 func newEstoqueTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
@@ -52,8 +53,8 @@ func TestEstoqueService_ListEstoque_Padrao_UsaUltimaPosicao(t *testing.T) {
 		WithArgs(20, 0).
 		WillReturnRows(estoqueRows(1, 10, false))
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(true))
-	registros, total, err := svc.ListEstoque(context.Background(), db, 1, 20, services.EstoqueFiltro{})
+	casos := novosCasosCatalogo(db)
+	registros, total, err := itensETotal(casos.ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{}, kernel.NovaPagina(1, 20)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
@@ -70,8 +71,8 @@ func TestEstoqueService_ListEstoque_Historico_UsaListSimples(t *testing.T) {
 		WithArgs(20, 0).
 		WillReturnRows(estoqueRows(1, 10, false))
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
-	_, total, err := svc.ListEstoque(context.Background(), db, 1, 20, services.EstoqueFiltro{Historico: true})
+	casos := novosCasosCatalogo(db)
+	_, total, err := itensETotal(casos.ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{Historico: true}, kernel.NovaPagina(1, 20)))
 
 	require.NoError(t, err)
 	assert.Equal(t, 3, total)
@@ -81,20 +82,20 @@ func TestEstoqueService_ListEstoque_Historico_UsaListSimples(t *testing.T) {
 func TestEstoqueService_ListEstoque_DataDeInvalida(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
-	_, _, err := svc.ListEstoque(context.Background(), db, 1, 20, services.EstoqueFiltro{DataDe: "31/12/2024"})
+	casos := novosCasosCatalogo(db)
+	_, _, err := itensETotal(casos.ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{DataDe: "31/12/2024"}, kernel.NovaPagina(1, 20)))
 
-	assert.ErrorIs(t, err, services.ErrEstoqueDataInvalida)
+	assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestEstoqueService_ListEstoque_DataAteInvalida(t *testing.T) {
 	db, mock := newEstoqueTestDB(t)
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
-	_, _, err := svc.ListEstoque(context.Background(), db, 1, 20, services.EstoqueFiltro{DataAte: "31/12/2024"})
+	casos := novosCasosCatalogo(db)
+	_, _, err := itensETotal(casos.ListarEstoque(context.Background(), catalogoapp.ConsultaEstoque{DataAte: "31/12/2024"}, kernel.NovaPagina(1, 20)))
 
-	assert.ErrorIs(t, err, services.ErrEstoqueDataInvalida)
+	assert.ErrorIs(t, err, catalogo.ErrEstoqueDataInvalida)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -109,8 +110,8 @@ func TestEstoqueService_GetEstoqueByID_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(estoqueRows(1, 10, false))
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
-	e, err := svc.GetEstoqueByID(context.Background(), db, 1)
+	casos := novosCasosCatalogo(db)
+	e, err := casos.ObterEstoque(context.Background(), 1)
 
 	require.NoError(t, err)
 	require.NotNil(t, e)
@@ -125,11 +126,11 @@ func TestEstoqueService_GetEstoqueByID_NaoEncontrado(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnRows(emptyEstoqueRows())
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
-	e, err := svc.GetEstoqueByID(context.Background(), db, 999)
+	casos := novosCasosCatalogo(db)
+	e, err := casos.ObterEstoque(context.Background(), 999)
 
 	assert.Nil(t, e)
-	assert.ErrorIs(t, err, services.ErrEstoqueNaoEncontrado)
+	assert.ErrorIs(t, err, catalogo.ErrEstoqueNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -137,8 +138,8 @@ func TestEstoqueService_GetEstoqueByID_NaoEncontrado(t *testing.T) {
 // CreateEstoque — validações
 // ---------------------------------------------------------------------------
 
-func validEstoqueInput() services.EstoqueInput {
-	return services.EstoqueInput{
+func validEstoqueInput() catalogo.DadosEstoque {
+	return catalogo.DadosEstoque{
 		SKU:          "SKU-001",
 		DataSnapshot: "2024-06-01",
 		Saldo:        10,
@@ -148,59 +149,59 @@ func validEstoqueInput() services.EstoqueInput {
 func TestEstoqueService_CreateEstoque_Validacoes(t *testing.T) {
 	testCases := []struct {
 		nome    string
-		input   func() services.EstoqueInput
+		input   func() catalogo.DadosEstoque
 		mock    func(mock sqlmock.Sqlmock)
 		wantErr error
 	}{
 		{
 			nome: "sku obrigatório (vazio)",
-			input: func() services.EstoqueInput {
+			input: func() catalogo.DadosEstoque {
 				in := validEstoqueInput()
 				in.SKU = "   "
 				return in
 			},
 			mock:    func(mock sqlmock.Sqlmock) {},
-			wantErr: services.ErrEstoqueSKUObrigatorio,
+			wantErr: catalogo.ErrSKUObrigatorio,
 		},
 		{
 			nome: "data_snapshot obrigatória (vazia)",
-			input: func() services.EstoqueInput {
+			input: func() catalogo.DadosEstoque {
 				in := validEstoqueInput()
 				in.DataSnapshot = ""
 				return in
 			},
 			mock:    func(mock sqlmock.Sqlmock) {},
-			wantErr: services.ErrEstoqueDataObrigatoria,
+			wantErr: catalogo.ErrEstoqueDataObrigatoria,
 		},
 		{
 			nome: "data_snapshot em formato inválido",
-			input: func() services.EstoqueInput {
+			input: func() catalogo.DadosEstoque {
 				in := validEstoqueInput()
 				in.DataSnapshot = "01/06/2024"
 				return in
 			},
 			mock:    func(mock sqlmock.Sqlmock) {},
-			wantErr: services.ErrEstoqueDataInvalida,
+			wantErr: catalogo.ErrEstoqueDataInvalida,
 		},
 		{
 			nome: "data_snapshot futura",
-			input: func() services.EstoqueInput {
+			input: func() catalogo.DadosEstoque {
 				in := validEstoqueInput()
 				in.DataSnapshot = time.Now().AddDate(0, 0, 5).Format("2006-01-02")
 				return in
 			},
 			mock:    func(mock sqlmock.Sqlmock) {},
-			wantErr: services.ErrEstoqueDataFutura,
+			wantErr: catalogo.ErrEstoqueDataFutura,
 		},
 		{
 			nome: "saldo negativo",
-			input: func() services.EstoqueInput {
+			input: func() catalogo.DadosEstoque {
 				in := validEstoqueInput()
 				in.Saldo = -1
 				return in
 			},
 			mock:    func(mock sqlmock.Sqlmock) {},
-			wantErr: services.ErrEstoqueSaldoInvalido,
+			wantErr: catalogo.ErrEstoqueSaldoInvalido,
 		},
 		{
 			nome:  "sku inexistente em produtos",
@@ -210,7 +211,7 @@ func TestEstoqueService_CreateEstoque_Validacoes(t *testing.T) {
 					WithArgs("SKU-001").
 					WillReturnError(sql.ErrNoRows)
 			},
-			wantErr: services.ErrEstoqueSKUInexistente,
+			wantErr: catalogo.ErrEstoqueSKUInexistente,
 		},
 	}
 
@@ -219,8 +220,8 @@ func TestEstoqueService_CreateEstoque_Validacoes(t *testing.T) {
 			db, mock := newEstoqueTestDB(t)
 			tc.mock(mock)
 
-			svc := services.NewEstoqueService(db, estoqueTestCfg(false))
-			e, err := svc.CreateEstoque(context.Background(), db, tc.input())
+			casos := novosCasosCatalogo(db)
+			e, err := casos.AjustarEstoque(context.Background(), tc.input())
 
 			assert.Nil(t, e)
 			assert.ErrorIs(t, err, tc.wantErr)
@@ -257,8 +258,8 @@ func TestEstoqueService_CreateEstoque_RupturaSempreDerivadaDoSaldo(t *testing.T)
 			in := validEstoqueInput()
 			in.Saldo = tc.saldo
 
-			svc := services.NewEstoqueService(db, estoqueTestCfg(true))
-			e, err := svc.CreateEstoque(context.Background(), db, in)
+			casos := novosCasosCatalogo(db)
+			e, err := casos.AjustarEstoque(context.Background(), in)
 
 			require.NoError(t, err)
 			require.NotNil(t, e)
@@ -278,8 +279,8 @@ func TestEstoqueService_CreateEstoque_Success(t *testing.T) {
 		WithArgs("2024-06-01", "SKU-001", 10, false).
 		WillReturnResult(sqlmock.NewResult(7, 1))
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(true))
-	e, err := svc.CreateEstoque(context.Background(), db, validEstoqueInput())
+	casos := novosCasosCatalogo(db)
+	e, err := casos.AjustarEstoque(context.Background(), validEstoqueInput())
 
 	require.NoError(t, err)
 	require.NotNil(t, e)
@@ -304,8 +305,8 @@ func TestEstoqueService_UpdateEstoque_Success(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(estoqueRows(1, 20, false))
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(true))
-	e, err := svc.UpdateEstoque(context.Background(), db, 1, services.EstoqueInput{Saldo: 20})
+	casos := novosCasosCatalogo(db)
+	e, err := casos.AtualizarSaldo(context.Background(), 1, 20)
 
 	require.NoError(t, err)
 	require.NotNil(t, e)
@@ -320,11 +321,11 @@ func TestEstoqueService_UpdateEstoque_NaoEncontrado(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnRows(emptyEstoqueRows())
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
-	e, err := svc.UpdateEstoque(context.Background(), db, 999, services.EstoqueInput{Saldo: 20})
+	casos := novosCasosCatalogo(db)
+	e, err := casos.AtualizarSaldo(context.Background(), 999, 20)
 
 	assert.Nil(t, e)
-	assert.ErrorIs(t, err, services.ErrEstoqueNaoEncontrado)
+	assert.ErrorIs(t, err, catalogo.ErrEstoqueNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -335,11 +336,11 @@ func TestEstoqueService_UpdateEstoque_SaldoNegativo(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(estoqueRows(1, 10, false))
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
-	e, err := svc.UpdateEstoque(context.Background(), db, 1, services.EstoqueInput{Saldo: -5})
+	casos := novosCasosCatalogo(db)
+	e, err := casos.AtualizarSaldo(context.Background(), 1, -5)
 
 	assert.Nil(t, e)
-	assert.ErrorIs(t, err, services.ErrEstoqueSaldoInvalido)
+	assert.ErrorIs(t, err, catalogo.ErrEstoqueSaldoInvalido)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -356,8 +357,8 @@ func TestEstoqueService_UpdateEstoque_RupturaDerivadaDoSaldoZero(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(estoqueRows(1, 0, true))
 
-	svc := services.NewEstoqueService(db, estoqueTestCfg(false))
-	e, err := svc.UpdateEstoque(context.Background(), db, 1, services.EstoqueInput{Saldo: 0})
+	casos := novosCasosCatalogo(db)
+	e, err := casos.AtualizarSaldo(context.Background(), 1, 0)
 
 	require.NoError(t, err)
 	require.NotNil(t, e)

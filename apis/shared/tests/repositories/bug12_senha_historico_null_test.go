@@ -15,15 +15,16 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"github.com/rotaperfumes/shared/identidade/identidademysql"
+	"github.com/rotaperfumes/shared/kernel"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/rotaperfumes/shared/identidade"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rotaperfumes/shared/repositories"
 )
 
 // bug12Linha descreve uma linha do SELECT da listagem. Ponteiros nil
@@ -58,7 +59,7 @@ func (l bug12Linha) valores(usuarioID int64) []driver.Value {
 
 // conferir valida o registro lido contra a linha de origem: NULL vira o
 // valor zero; valor preenchido chega intacto.
-func (l bug12Linha) conferir(t *testing.T, h repositories.SenhaHistorico) {
+func (l bug12Linha) conferir(t *testing.T, h identidade.RegistroSenha) {
 	t.Helper()
 	deref := func(p *string) string {
 		if p == nil {
@@ -67,22 +68,22 @@ func (l bug12Linha) conferir(t *testing.T, h repositories.SenhaHistorico) {
 		return *p
 	}
 	assert.Equal(t, l.id, h.ID)
-	assert.Equal(t, deref(l.ip), h.IPOrigem, "ip_origem")
+	assert.Equal(t, deref(l.ip), h.IP, "ip_origem")
 	assert.Equal(t, deref(l.userAgent), h.UserAgent, "user_agent")
 	assert.Equal(t, deref(l.usuarioNome), h.UsuarioNome, "usuario_nome")
 	if l.createdAt == nil {
-		assert.True(t, h.CreatedAt.IsZero(), "created_at NULL deve virar time.Time{}")
+		assert.True(t, h.CriadoEm.IsZero(), "created_at NULL deve virar time.Time{}")
 	} else {
-		assert.True(t, l.createdAt.Equal(h.CreatedAt), "created_at preenchido deve chegar intacto")
+		assert.True(t, l.createdAt.Equal(h.CriadoEm), "created_at preenchido deve chegar intacto")
 	}
-	assert.Equal(t, l.resetadoPor != nil, h.ResetadoPorID.Valid)
+	assert.Equal(t, l.resetadoPor != nil, (h.ResetadoPorID != nil))
 	if l.resetadoPor != nil {
-		assert.Equal(t, *l.resetadoPor, h.ResetadoPorID.Int64)
+		assert.Equal(t, *l.resetadoPor, *h.ResetadoPorID)
 	}
-	assert.Equal(t, l.resetNome != nil, h.ResetadoPorNome.Valid)
-	assert.Equal(t, deref(l.resetNome), h.ResetadoPorNome.String)
-	assert.Equal(t, "hash", h.SenhaHashAnterior)
-	assert.Equal(t, "usuario", h.TipoReset)
+	assert.Equal(t, l.resetNome != nil, (h.ResetadoPorNome != nil))
+	assert.Equal(t, deref(l.resetNome), deref(h.ResetadoPorNome))
+	assert.Equal(t, "hash", h.HashAnterior.Revelar())
+	assert.Equal(t, "usuario", string(h.Tipo))
 }
 
 type bug12Metodo struct {
@@ -90,21 +91,20 @@ type bug12Metodo struct {
 	count  string
 	lista  string
 	args   []driver.Value
-	chamar func(db *sql.DB) ([]repositories.SenhaHistorico, int, error)
+	chamar func(db *sql.DB) ([]identidade.RegistroSenha, int, error)
 }
 
 const bug12UsuarioID = int64(7)
 
 func bug12Metodos() []bug12Metodo {
-	repo := repositories.NewSenhaHistoricoRepository()
 	return []bug12Metodo{
 		{
 			nome:  "FindAll",
 			count: `SELECT COUNT\(\*\) FROM senha_historico$`,
 			lista: `FROM senha_historico sh LEFT JOIN usuarios u1 ON u1\.id = sh\.usuario_id LEFT JOIN usuarios u2 ON u2\.id = sh\.resetado_por_id ORDER BY sh\.id DESC LIMIT \? OFFSET \?`,
 			args:  []driver.Value{20, 0},
-			chamar: func(db *sql.DB) ([]repositories.SenhaHistorico, int, error) {
-				return repo.FindAll(context.Background(), db, 1, 20, "", "")
+			chamar: func(db *sql.DB) ([]identidade.RegistroSenha, int, error) {
+				return itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(context.Background(), ordemHistorico("", ""), kernel.NovaPagina(1, 20)))
 			},
 		},
 		{
@@ -112,8 +112,8 @@ func bug12Metodos() []bug12Metodo {
 			count: `SELECT COUNT\(\*\) FROM senha_historico WHERE usuario_id = \?`,
 			lista: `FROM senha_historico sh LEFT JOIN usuarios u1 ON u1\.id = sh\.usuario_id LEFT JOIN usuarios u2 ON u2\.id = sh\.resetado_por_id WHERE sh\.usuario_id = \? ORDER BY sh\.id DESC LIMIT \? OFFSET \?`,
 			args:  []driver.Value{bug12UsuarioID, 20, 0},
-			chamar: func(db *sql.DB) ([]repositories.SenhaHistorico, int, error) {
-				return repo.FindByUsuario(context.Background(), db, bug12UsuarioID, 1, 20, "", "")
+			chamar: func(db *sql.DB) ([]identidade.RegistroSenha, int, error) {
+				return itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(context.Background(), bug12UsuarioID, ordemHistorico("", ""), kernel.NovaPagina(1, 20)))
 			},
 		},
 	}
@@ -215,8 +215,8 @@ func TestBUG12_SenhaHistorico_ScanTipoInvalido(t *testing.T) {
 				lista, total, err := m.chamar(db)
 
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), "repositories: scan senha_historico")
-				assert.NotErrorIs(t, err, repositories.ErrNotFound)
+				assert.Contains(t, err.Error(), "identidademysql: scan senha_historico")
+				assert.NotErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 				assert.Nil(t, lista)
 				assert.Equal(t, 0, total)
 			})
@@ -236,7 +236,6 @@ func TestBUG12_SenhaHistorico_ScanTipoInvalido(t *testing.T) {
 func TestIntegracaoBUG12_NullReal(t *testing.T) {
 	db := abrirDBSEC08(t)
 	ctx := context.Background()
-	repo := repositories.NewSenhaHistoricoRepository()
 	sufixo := time.Now().UnixNano()
 
 	criarUsuario := func(tag string) int64 {
@@ -318,18 +317,18 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 		ids[4]:  {"10.0.0.3", "ua-bug12", "ZZ-BUG12-ALVO-" + fmt.Sprint(sufixo), true, true},
 		orfaoID: {"", "", "", true, false},
 	}
-	conferir := func(t *testing.T, h repositories.SenhaHistorico) {
+	conferir := func(t *testing.T, h identidade.RegistroSenha) {
 		t.Helper()
 		e := esperado[h.ID]
-		assert.Equal(t, e.ip, h.IPOrigem, "ip_origem id=%d", h.ID)
+		assert.Equal(t, e.ip, h.IP, "ip_origem id=%d", h.ID)
 		assert.Equal(t, e.ua, h.UserAgent, "user_agent id=%d", h.ID)
 		assert.Equal(t, e.nome, h.UsuarioNome, "usuario_nome id=%d", h.ID)
-		assert.Equal(t, e.createdZero, h.CreatedAt.IsZero(), "created_at id=%d", h.ID)
+		assert.Equal(t, e.createdZero, h.CriadoEm.IsZero(), "created_at id=%d", h.ID)
 		if !e.createdZero {
-			assert.True(t, criado.Equal(h.CreatedAt), "created_at id=%d: %v", h.ID, h.CreatedAt)
+			assert.True(t, criado.Equal(h.CriadoEm), "created_at id=%d: %v", h.ID, h.CriadoEm)
 		}
-		assert.Equal(t, e.resetado, h.ResetadoPorID.Valid, "resetado_por_id id=%d", h.ID)
-		assert.Equal(t, e.resetado, h.ResetadoPorNome.Valid, "resetado_por_nome id=%d", h.ID)
+		assert.Equal(t, e.resetado, (h.ResetadoPorID != nil), "resetado_por_id id=%d", h.ID)
+		assert.Equal(t, e.resetado, (h.ResetadoPorNome != nil), "resetado_por_nome id=%d", h.ID)
 	}
 
 	ordenacoes := []struct{ orderBy, orderDir string }{
@@ -346,13 +345,13 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 			vistos := map[int64]bool{}
 			var subIPs []string
 			for page := 1; ; page++ {
-				hs, total, err := repo.FindAll(ctx, db, page, 100, o.orderBy, o.orderDir)
+				hs, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico(o.orderBy, o.orderDir), kernel.NovaPagina(page, 100)))
 				require.NoError(t, err, "FindAll não pode falhar com NULLs no banco")
 				for _, h := range hs {
 					if _, nosso := esperado[h.ID]; nosso {
 						vistos[h.ID] = true
 						conferir(t, h)
-						subIPs = append(subIPs, h.IPOrigem)
+						subIPs = append(subIPs, h.IP)
 					}
 				}
 				if page*100 >= total || len(hs) == 0 {
@@ -372,10 +371,10 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 
 	t.Run("FindAll/ip_origem/asc/paginado", func(t *testing.T) {
 		// Páginas pequenas: um NULL em qualquer página não pode derrubar a listagem.
-		_, total, err := repo.FindAll(ctx, db, 1, 1, "ip_origem", "asc")
+		_, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico("ip_origem", "asc"), kernel.NovaPagina(1, 1)))
 		require.NoError(t, err)
 		for page := 1; (page-1)*5 < total; page++ {
-			_, _, err := repo.FindAll(ctx, db, page, 5, "ip_origem", "asc")
+			_, _, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).Todos(ctx, ordemHistorico("ip_origem", "asc"), kernel.NovaPagina(page, 5)))
 			require.NoError(t, err, "página %d", page)
 		}
 	})
@@ -383,7 +382,7 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 	for _, o := range ordenacoes {
 		o := o
 		t.Run("FindByUsuario/"+o.orderBy+"/"+o.orderDir, func(t *testing.T) {
-			hs, total, err := repo.FindByUsuario(ctx, db, alvo, 1, 20, o.orderBy, o.orderDir)
+			hs, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, alvo, ordemHistorico(o.orderBy, o.orderDir), kernel.NovaPagina(1, 20)))
 			require.NoError(t, err)
 			assert.Equal(t, len(regs), total)
 			require.Len(t, hs, len(regs))
@@ -394,7 +393,7 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 	}
 
 	t.Run("FindByUsuario/orfao", func(t *testing.T) {
-		hs, total, err := repo.FindByUsuario(ctx, db, orfaoUsuario, 1, 20, "", "")
+		hs, total, err := itensETotal(identidademysql.NovoHistoricoSenhas(db).DoUsuario(ctx, orfaoUsuario, ordemHistorico("", ""), kernel.NovaPagina(1, 20)))
 		require.NoError(t, err)
 		assert.Equal(t, 1, total)
 		require.Len(t, hs, 1)
