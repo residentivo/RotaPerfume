@@ -60,6 +60,8 @@ make test-frontend # rodar testes frontend
 make deps-audit    # auditar dependências Go + frontend (vulns e pacotes desatualizados)
 ```
 
+Banco: **MariaDB 11.4 LTS**. Os alvos `make db-*` (inclusive `db-seed`) exigem o cliente `mariadb` no `PATH`; o driver Go é o `go-sql-driver/mysql` (compatível).
+
 ## Auditoria de dependências
 
 - **Quando:** rodar `make deps-audit` **mensalmente** e **antes de cada deploy**.

@@ -56,7 +56,7 @@ func NovoNotificadorAlerta(pool *sql.DB, enviador notificacaoapp.EnviadorAlerta,
 	})
 }
 
-// NovosContatos é a porta notificacaoapp.Contatos sobre o adapter MySQL de
+// NovosContatos é a porta notificacaoapp.Contatos sobre o adapter MariaDB de
 // Identidade (anti-corrupção: Notificação não conhece o Usuario).
 func NovosContatos(pool *sql.DB) notificacaoapp.Contatos {
 	return contatosIdentidade{usuarios: identidademysql.NovoUsuarios(pool)}

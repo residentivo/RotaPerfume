@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// LayoutData é o formato de data aceito na API (mesmo do DATE do MySQL).
+// LayoutData é o formato de data aceito na API (mesmo do DATE do MariaDB).
 const LayoutData = "2006-01-02"
 
 // Data é uma data de calendário (AAAA-MM-DD), sem hora. O zero value é a

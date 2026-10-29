@@ -7,7 +7,7 @@ const AjudaDryRun = "faz parsing e validação sem gravar no banco"
 
 // CLI monta o comando de um importador de um CSV só (flags -csv e -dry-run):
 // lê as flags, carrega o .env e a config (com as credenciais do banco, como
-// sempre foi) e chama run com a conexão MySQL. O `main` só faz
+// sempre foi) e chama run com a conexão MariaDB. O `main` só faz
 // os.Exit(cmdutil.Executar(...)).
 func CLI(tag, ajudaCSV string, run func(csv string, dryRun bool, open cmdutil.Opener) error) cmdutil.Comando {
 	return func(args []string, amb cmdutil.Ambiente) error {

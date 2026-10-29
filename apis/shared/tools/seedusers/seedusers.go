@@ -1,6 +1,6 @@
 // Package seedusers implementa o comando cmd/seedusers: gera hashes Argon2id (com pepper)
 // para os placeholders dos SQLs de seed, grava cópias renderizadas em
-// <raiz>/tmp/seed e executa essas cópias contra o MySQL. Os arquivos de sql/
+// <raiz>/tmp/seed e executa essas cópias contra o MariaDB (cliente mariadb). Os arquivos de sql/
 // nunca são alterados (SEC-10).
 //
 // Uso (via comando):
@@ -80,7 +80,7 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 	out := deps.Out
 	vaiExecutar := !opts.NoExec && !opts.DryRun
 	if vaiExecutar {
-		// Falha cedo, antes do hash: sem credenciais explícitas o mysql
+		// Falha cedo, antes do hash: sem credenciais explícitas o mariadb
 		// rodaria com um usuário/senha padrão (SEC-10).
 		if err := exigirCredenciaisDB(); err != nil {
 			return err
@@ -150,7 +150,7 @@ func Run(cfg *config.Config, opts Options, deps Deps) error {
 	for _, f := range renderizados {
 		log.Printf("seedusers: executando %s", filepath.Base(f))
 		if err := deps.RunSQL(cfg, f); err != nil {
-			return fmt.Errorf("mysql falhou em %s: %w", f, err)
+			return fmt.Errorf("mariadb falhou em %s: %w", f, err)
 		}
 	}
 
@@ -285,9 +285,10 @@ func RenderSeedFile(src, dstDir string, repl map[string]string) (dst string, n i
 	return dst, n, nil
 }
 
-// RunMySQL executa um arquivo SQL via cliente mysql, lendo o conteúdo via stdin.
+// RunMySQL executa um arquivo SQL no MariaDB via cliente `mariadb` (exigido no
+// PATH, sem fallback para o binário `mysql`), lendo o conteúdo via stdin.
 // A senha do banco é passada via variável de ambiente MYSQL_PWD (lida
-// nativamente pelo cliente mysql) em vez de argumento de linha de comando
+// nativamente pelo cliente mariadb) em vez de argumento de linha de comando
 // (-p senha), que ficaria visível para outros processos/usuários do sistema
 // via `ps`/Task Manager e no histórico de shell.
 func RunMySQL(cfg *config.Config, file string) error {
@@ -295,7 +296,7 @@ func RunMySQL(cfg *config.Config, file string) error {
 	if err != nil {
 		return fmt.Errorf("leitura de %s: %w", file, err)
 	}
-	cmd := exec.Command("mysql", MySQLArgs(cfg)...)
+	cmd := exec.Command("mariadb", MySQLArgs(cfg)...)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("MYSQL_PWD=%s", cfg.DBSenha))
 	cmd.Stdin = strings.NewReader(string(sqlBytes))
 	cmd.Stdout = os.Stdout
@@ -303,7 +304,7 @@ func RunMySQL(cfg *config.Config, file string) error {
 	return cmd.Run()
 }
 
-// MySQLArgs monta os argumentos do cliente mysql (sem a senha, que vai via
+// MySQLArgs monta os argumentos do cliente mariadb (sem a senha, que vai via
 // MYSQL_PWD). ARQ-07 NB-F: sem --local-infile (o seed não usa LOAD DATA
 // LOCAL; ligado, um servidor malicioso poderia pedir arquivos locais).
 func MySQLArgs(cfg *config.Config) []string {

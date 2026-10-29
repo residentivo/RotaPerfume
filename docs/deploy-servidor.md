@@ -1,6 +1,6 @@
 # Deploy no servidor da LAN (`ivo-inspiron-15-3530`) com Docker + Jenkins
 
-> Card **DEPLOY-01** (Lote 13, 2026-09-30). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/Dockerfile.caddy`, `deploy/api.env.example`, `deploy/mysql-setup.sql`, `deploy/dump-local.ps1`, `deploy/setup-servidor.sh`, `apis/Dockerfile`, `frontend/Dockerfile`.
+> Card **DEPLOY-01** (Lote 13, 2026-09-30). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/Dockerfile.caddy`, `deploy/api.env.example`, `deploy/mariadb-setup.sql`, `deploy/dump-local.ps1`, `deploy/setup-servidor.sh`, `apis/Dockerfile`, `frontend/Dockerfile`.
 
 ## 0. Instalação automática (recomendado)
 
@@ -18,11 +18,11 @@ O script `deploy/setup-servidor.sh` faz, no servidor, tudo o que as seções 2, 
    sudo bash setup-servidor.sh --env /tmp/.env --dump /tmp/rotaperfumes-AAAAMMDD-HHMMSS.sql.gz \
      --turnstile-site-key SUA_SITE_KEY --remove-inputs
    ```
-   Opções: `--site-host` (padrão `ivo-inspiron-15-3530`), `--site-ip` (`192.168.168.106`), `--https-port` (`8443`), `--jenkins-url` (`http://localhost:8888`), `--skip-mysql` (não mexe em banco/usuários e pede a senha atual do `rotaperfumes_app`), `--skip-build` e `--remove-inputs` (apaga o `.env` e o dump do `/tmp` no final). Veja `bash setup-servidor.sh --help`.
+   Opções: `--site-host` (padrão `ivo-inspiron-15-3530`), `--site-ip` (`192.168.168.106`), `--https-port` (`8443`), `--jenkins-url` (`http://localhost:8888`), `--skip-mysql` (o nome da opção foi mantido; não mexe em banco/usuários do MariaDB e pede a senha atual do `rotaperfumes_app`), `--skip-build` e `--remove-inputs` (apaga o `.env` e o dump do `/tmp` no final). Veja `bash setup-servidor.sh --help`.
 3. O script executa 11 etapas e mostra o andamento como `[n/11]`:
-   1. **Pré-checagens:** root via `sudo`, `docker compose` ≥ 2.17, integridade do dump (`gzip -t`), Jenkins nativo, MySQL ou MariaDB e acesso root ao banco. Se o acesso root por socket falhar, o script pede a senha do root.
+   1. **Pré-checagens:** root via `sudo`, `docker compose` ≥ 2.17, integridade do dump (`gzip -t`), Jenkins nativo, servidor MariaDB (recomendado: MariaDB ≥ 11.4 LTS; o script ainda aceita MySQL por compatibilidade) e acesso root ao banco. O script usa o cliente `mariadb` quando ele existe. Se o acesso root por socket falhar, o script pede a senha do root.
    2. Coloca o usuário `jenkins` no grupo `docker`. O Jenkins só é reiniciado se o grupo mudou.
-   3. **bind-address:** se o banco escuta só em loopback, grava `zz-rotaperfumes.cnf` com `bind-address = 0.0.0.0` e reinicia o banco.
+   3. **bind-address:** se o banco escuta só em loopback, grava `zz-rotaperfumes.cnf` com `bind-address = 0.0.0.0`, `local_infile = 0`, `sql_mode` estrito (`STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION`) e charset/collation `utf8mb4`/`utf8mb4_unicode_ci`, e reinicia o banco. Se o banco **já** escutava fora do loopback, esse arquivo não é gravado: aplique essas três configurações à mão (card pendente no Kanban).
    4. **ufw:** se estiver ativo, libera a porta do banco só para `172.16.0.0/12`, nega o resto e libera a 8443. Se estiver inativo, **só avisa** e sugere os comandos. O script nunca ativa o ufw.
    5. **Banco e usuários:** cria o banco `rotaperfumes` e os usuários `rotaperfumes_app` e `rotaperfumes_admin`. A senha do app é gerada automaticamente. A senha do admin é **você** que escolhe, com no mínimo 12 caracteres, e a digita depois no Jenkins. Se os usuários já existirem, o script pergunta se deve redefinir as senhas.
    6. Instala o dump em `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` (dono `root:jenkins`, modo 640).
@@ -60,7 +60,7 @@ Navegador (LAN)                          Navegador (internet)
 └──────────────────────────┬─────────────────────────────┘
                            │ host.docker.internal:3306
                            ▼
-                 MySQL do HOST (fora do Docker), banco rotaperfumes
+                 MariaDB do HOST (fora do Docker), banco rotaperfumes
 ```
 
 - O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `golang:1.26-alpine`) → `Build` (imagens do compose) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy, acessando direto `https://SITE_IP:HTTPS_PORT`, e `/api/health` no mesmo endereço com um Host qualquer, como faz o tunnel).
@@ -77,7 +77,7 @@ Navegador (LAN)                          Navegador (internet)
 | `SITE_IP` | `192.168.168.106` | IP da LAN (o Caddy também aceita esse IP; usado no smoke test) |
 | `HTTPS_PORT` | `8443` | Porta HTTPS publicada pelo Caddy |
 | `TURNSTILE_SITE_KEY` | `0x4AAAAAAFACjc-LtM9NWlvP` | Site key **pública** do Turnstile, embutida no bundle |
-| `IMPORTAR_DUMP` | `false` | Importa o dump no MySQL. **Sobrescreve as tabelas** |
+| `IMPORTAR_DUMP` | `false` | Importa o dump no MariaDB. **Sobrescreve as tabelas** |
 | `DUMP_PATH` | `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` | Caminho do dump no servidor |
 
 ### Credenciais Jenkins exigidas
@@ -85,7 +85,7 @@ Navegador (LAN)                          Navegador (internet)
 | ID | Tipo | Conteúdo |
 |---|---|---|
 | `rotaperfumes-api-env` | Secret file | `.env` de produção da API (modelo: `deploy/api.env.example`) |
-| `rotaperfumes-db-admin` | Username with password | Usuário MySQL com DDL no banco `rotaperfumes` (usado só quando `IMPORTAR_DUMP=true`) |
+| `rotaperfumes-db-admin` | Username with password | Usuário MariaDB com DDL no banco `rotaperfumes` (usado só quando `IMPORTAR_DUMP=true`) |
 
 ---
 
@@ -116,17 +116,28 @@ Rode no servidor (via SSH ou no terminal local dele):
 
 ---
 
-## 3. Preparar o MySQL do servidor
+## 3. Preparar o MariaDB do servidor
 
-A API roda em container e acessa o MySQL do host por `host.docker.internal` (IP da bridge `docker0`, normalmente `172.17.0.1`). As redes do compose ficam em `172.16.0.0/12`.
+O banco do projeto é o **MariaDB 11.4 LTS** (DB-03). A API roda em container e acessa o MariaDB do host por `host.docker.internal` (IP da bridge `docker0`, normalmente `172.17.0.1`). As redes do compose ficam em `172.16.0.0/12`.
 
-1. **bind-address.** Por padrão, o MySQL do Ubuntu escuta só em `127.0.0.1`, que os containers não alcançam. Edite `/etc/mysql/mysql.conf.d/mysqld.cnf`, seção `[mysqld]`, e escolha **uma** opção:
-   - `bind-address = 0.0.0.0` (todas as interfaces). Nesse caso, bloqueie a 3306 para a LAN no firewall (passo 4).
-   - `bind-address = 127.0.0.1,172.17.0.1` (MySQL ≥ 8.0.13). O MySQL precisa subir **depois** do Docker, senão falha no bind.
+> **Driver Go:** a API continua usando o `go-sql-driver/mysql`, que é compatível com o MariaDB (mesmo protocolo). Os pacotes `<ctx>mysql` mantêm o nome.
+
+1. **bind-address e configurações do servidor.** Por padrão, o MariaDB do Ubuntu escuta só em `127.0.0.1`, que os containers não alcançam. Crie um drop-in, por exemplo `/etc/mysql/mariadb.conf.d/zz-rotaperfumes.cnf` (o diretório `/etc/mysql` é o padrão do pacote), seção `[mysqld]`:
+   ```ini
+   [mysqld]
+   bind-address = 0.0.0.0
+   local_infile = 0
+   sql_mode = STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+   character_set_server = utf8mb4
+   collation_server = utf8mb4_unicode_ci
+   ```
+   - Com `bind-address = 0.0.0.0` (todas as interfaces), bloqueie a 3306 para a LAN no firewall (passo 4).
+   - `local_infile = 0`: o projeto não usa `LOAD DATA LOCAL INFILE` (SEC-28).
+   - A collation explícita evita o padrão do MariaDB 11.4 (`utf8mb4_uca1400_ai_ci`), diferente da usada pelo projeto.
 
    Depois reinicie:
    ```bash
-   sudo systemctl restart mysql
+   sudo systemctl restart mariadb
    ```
 2. **Usuários e banco.** Gere senhas fortes, sem `$`, `#`, aspas nem espaços:
    ```bash
@@ -135,14 +146,14 @@ A API roda em container e acessa o MySQL do host por `host.docker.internal` (IP 
    ```
    Edite uma **cópia temporária** do script. Não altere nem versione o arquivo do repositório com a senha.
    ```bash
-   cp deploy/mysql-setup.sql /tmp/mysql-setup.sql
-   nano /tmp/mysql-setup.sql
+   cp deploy/mariadb-setup.sql /tmp/mariadb-setup.sql
+   nano /tmp/mariadb-setup.sql
    ```
    - Troque `<TROCAR>` pela senha do `rotaperfumes_app`. Esse usuário tem só SELECT/INSERT/UPDATE/DELETE e é o que a API usa.
    - **Descomente** o bloco do `rotaperfumes_admin` e troque `<TROCAR_ADMIN>`. Esse usuário tem ALL PRIVILEGES no banco, porque o dump faz DROP/CREATE TABLE e o pipeline roda `TRUNCATE refresh_tokens`. Ele será a credencial `rotaperfumes-db-admin`. O `root` via socket **não** serve, porque o import sai por um container na rede docker.
    ```bash
-   sudo mysql < /tmp/mysql-setup.sql
-   shred -u /tmp/mysql-setup.sql
+   sudo mariadb < /tmp/mariadb-setup.sql
+   shred -u /tmp/mariadb-setup.sql
    ```
    O script cria o banco `rotaperfumes` (utf8mb4) e os usuários `@'172.16.0.0/255.240.0.0'`.
 3. Guarde as duas senhas para os passos 5.1 (`DB_SENHA`) e 5.2 (admin).
@@ -227,7 +238,7 @@ Kind **Username with password**: o usuário do GitHub e um **Personal Access Tok
    ```powershell
    powershell -ExecutionPolicy Bypass -File deploy\dump-local.ps1
    ```
-   O script lê `DB_*` do `.env` da raiz, roda `mysqldump` e grava `deploy\dumps\rotaperfumes-AAAAMMDD-HHMMSS.sql.gz`. A pasta é ignorada pelo git.
+   O script lê `DB_*` do `.env` da raiz, roda `mariadb-dump.exe` (se não encontrar, usa o `mysqldump` como fallback) e grava `deploy\dumps\rotaperfumes-AAAAMMDD-HHMMSS.sql.gz`. A pasta é ignorada pelo git.
 2. **No servidor**, prepare a pasta. O Jenkins precisa conseguir **ler** o arquivo:
    ```bash
    sudo mkdir -p /opt/rotaperfumes/dumps
@@ -249,7 +260,7 @@ Kind **Username with password**: o usuário do GitHub e um **Personal Access Tok
 5. O estágio **Importar dump**:
    - valida o gzip;
    - para o container da API;
-   - importa via container `mysql:8.4` com o usuário `rotaperfumes-db-admin`;
+   - importa via container `mariadb:11.4` (variável `DB_CLIENT_IMAGE` do `Jenkinsfile`), com o comando `mariadb --local-infile=0` e o usuário `rotaperfumes-db-admin`;
    - roda `TRUNCATE TABLE refresh_tokens`, porque as sessões do ambiente local não valem no servidor.
 
    Em seguida vêm `Deploy` e `Smoke test`.
@@ -327,7 +338,7 @@ As imagens são sempre `:latest`, sem tag por versão. Para voltar:
 
 1. No repositório, `git revert <commit-problemático>` e push no `main`. Evite reescrever o histórico.
 2. Rode o job de novo.
-3. Se o problema for de dados, reimporte um dump bom (seção 7) com `IMPORTAR_DUMP=true`. O MySQL do host não é versionado pelo pipeline, então faça backup antes de importar.
+3. Se o problema for de dados, reimporte um dump bom (seção 7) com `IMPORTAR_DUMP=true`. O MariaDB do host não é versionado pelo pipeline, então faça backup antes de importar.
 
 ---
 
@@ -341,12 +352,12 @@ As imagens são sempre `:latest`, sem tag por versão. Para voltar:
 | Frontend chama URL errada da API | `PUBLIC_URL` definido no ambiente do build (o padrão `/` usa a mesma origem) | Remova `PUBLIC_URL` e rode o job de novo |
 | Site não abre pelo Cloudflare Tunnel | `cloudflared` com origem errada ou validando o certificado | Origem na porta 8443 do servidor com `noTLSVerify: true`; teste no servidor com `curl -k https://192.168.168.106:8443/api/health` |
 | Smoke test: `tunnel=000` com `/api/health=200` usando `localhost` | O Jenkins roda em container: o `localhost` dele é o próprio container, não o servidor | O smoke test testa o site curinga pelo `SITE_IP` com um `Host` qualquer, como o `cloudflared` faz |
-| API não conecta no MySQL (logs com `connection refused`/`timeout`) | `bind-address` em 127.0.0.1; ufw bloqueando a faixa docker | Seção 3.1 e 3.4, depois `sudo systemctl restart mysql` |
-| API: `Access denied for user 'rotaperfumes_app'` | Senha diferente entre o MySQL e o `DB_SENHA`; usuário criado com outro host | Confira o `mysql-setup.sql` aplicado (host `172.16.0.0/255.240.0.0`) e a credencial `rotaperfumes-api-env` |
+| API não conecta no MariaDB (logs com `connection refused`/`timeout`) | `bind-address` em 127.0.0.1; ufw bloqueando a faixa docker | Seção 3.1 e 3.4, depois `sudo systemctl restart mariadb` |
+| API: `Access denied for user 'rotaperfumes_app'` | Senha diferente entre o MariaDB e o `DB_SENHA`; usuário criado com outro host | Confira o `mariadb-setup.sql` aplicado (host `172.16.0.0/255.240.0.0`) e a credencial `rotaperfumes-api-env` |
 | Estágio **Importar dump** falha com "Dump nao encontrado/legivel" | Arquivo fora do `DUMP_PATH` ou sem permissão para o usuário `jenkins` | Seção 7.2/7.3 (`chown`/`chmod`) |
 | Import falha com `Access denied` ou erro de DDL | Credencial `rotaperfumes-db-admin` sem ALL no banco, ou usuário com host `localhost` | Crie o `rotaperfumes_admin@'172.16.0.0/255.240.0.0'` (seção 3.2) |
 | `permission denied ... docker.sock` no build | Usuário `jenkins` fora do grupo `docker`, ou Jenkins não reiniciado | Seção 2.2 |
 | Erro de schema do compose | Compose < 2.17 | Atualize o plugin `docker-compose-plugin` |
 | `Bind for 0.0.0.0:8443 failed: port is already allocated` | Outra aplicação usa a 8443 | `sudo ss -ltnp \| grep 8443`. Libere a porta ou rode o job com outro `HTTPS_PORT` e ajuste `CORS_ALLOWED_ORIGINS` no Secret file |
-| Smoke test falha após 30 tentativas | API caiu na subida (env inválido, MySQL inacessível) | O próprio job imprime as últimas 80 linhas de `api`, `frontend` e `caddy`. Veja também a seção 9 |
+| Smoke test falha após 30 tentativas | API caiu na subida (env inválido, MariaDB inacessível) | O próprio job imprime as últimas 80 linhas de `api`, `frontend` e `caddy`. Veja também a seção 9 |
 | `compose` reclama de `api.env` não encontrado em comando manual | Falta `API_ENV_FILE=/dev/null` | Prefixe o comando com a variável (seção 9) |

@@ -1,6 +1,6 @@
 // Command seedusers gera hashes Argon2id (com pepper) para os placeholders dos SQLs de seed,
 // grava cópias renderizadas em <raiz>/tmp/seed (sql/ nunca é alterado) e as
-// executa contra o MySQL. A lógica fica em tools/seedusers; este main é só a
+// executa contra o MariaDB (via cliente mariadb). A lógica fica em tools/seedusers; este main é só a
 // composition root.
 //
 // Uso:

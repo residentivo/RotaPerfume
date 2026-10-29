@@ -27,7 +27,7 @@
 -- Uso:
 --   make db-fix-estoque-origem
 --   ou
---   MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
+--   MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
 --     --default-character-set=utf8mb4 $DB_NAME < sql/18_alter_estoque_drop_origem.sql
 -- ============================================================
 

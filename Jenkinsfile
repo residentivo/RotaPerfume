@@ -33,14 +33,16 @@ pipeline {
         string(name: 'SITE_IP', defaultValue: '192.168.168.106', description: 'IP do servidor na LAN (tambem aceito pelo Caddy)')
         string(name: 'HTTPS_PORT', defaultValue: '8443', description: 'Porta HTTPS publicada pelo Caddy')
         string(name: 'TURNSTILE_SITE_KEY', defaultValue: '0x4AAAAAAFACjc-LtM9NWlvP', description: 'Site key PUBLICA do Cloudflare Turnstile (embutida no bundle do frontend)')
-        booleanParam(name: 'IMPORTAR_DUMP', defaultValue: false, description: 'Importa o dump (.sql.gz) no MySQL do servidor - SOBRESCREVE as tabelas')
+        booleanParam(name: 'IMPORTAR_DUMP', defaultValue: false, description: 'Importa o dump (.sql.gz) no MariaDB do servidor - SOBRESCREVE as tabelas')
         string(name: 'DUMP_PATH', defaultValue: '/opt/rotaperfumes/dumps/rotaperfumes.sql.gz', description: 'Caminho do dump no servidor (visivel para o agente Jenkins)')
     }
 
     environment {
         COMPOSE_PROJECT_NAME = 'rotaperfumes'
         GO_IMAGE             = 'golang:1.26-alpine'
-        MYSQL_CLIENT_IMAGE   = 'mysql:8.4'
+        // Cliente do MariaDB 11.4 LTS (mesma versao do servidor); a imagem 11.x
+        // so tem o comando "mariadb" (sem o symlink "mysql").
+        DB_CLIENT_IMAGE      = 'mariadb:11.4'
         DB_NAME              = 'rotaperfumes'
         // Sem PUBLIC_URL: o compose usa "/" e o frontend chama "/api/..." na
         // mesma origem, o que vale para a LAN e para o dominio do Cloudflare Tunnel.
@@ -57,7 +59,7 @@ pipeline {
             steps {
                 // Codigo enviado por stdin (tar) em vez de bind mount: funciona
                 // tambem com Jenkins em container. Testes de integracao so rodam
-                // com INTEGRATION=1, entao aqui sao pulados (sem MySQL).
+                // com INTEGRATION=1, entao aqui sao pulados (sem MariaDB).
                 // O layout do repositorio e preservado (apis/..., sql/, Makefile):
                 // cmdutil.FindProjectRoot procura apis/shared/go.mod e os testes
                 // de config leem o Makefile e os .sql da raiz.
@@ -104,12 +106,14 @@ pipeline {
 
                             mysql_cli() {
                               # -e MYSQL_PWD (sem valor) repassa a variavel do ambiente,
-                              # sem expor a senha na linha de comando.
+                              # sem expor a senha na linha de comando (o cliente
+                              # mariadb le MYSQL_PWD). --local-infile=0: o dump
+                              # nao usa LOAD DATA LOCAL.
                               docker run --rm -i \
                                 --add-host host.docker.internal:host-gateway \
                                 -e MYSQL_PWD \
-                                "$MYSQL_CLIENT_IMAGE" \
-                                mysql -h host.docker.internal -u "$DB_ADMIN_USER" \
+                                "$DB_CLIENT_IMAGE" \
+                                mariadb --local-infile=0 -h host.docker.internal -u "$DB_ADMIN_USER" \
                                       --default-character-set=utf8mb4 "$@"
                             }
 

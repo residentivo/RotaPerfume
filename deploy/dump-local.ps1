@@ -4,8 +4,15 @@
 
 .DESCRIPTION
   Le DB_HOST/DB_PORT/DB_NAME/DB_USUARIO/DB_SENHA do .env da raiz do projeto
-  (a senha nunca e exibida; vai para o mysqldump via variavel MYSQL_PWD),
-  roda o mysqldump e compacta em deploy/dumps/<db>-<data>.sql.gz.
+  (a senha nunca e exibida; vai para o cliente via variavel MYSQL_PWD),
+  roda o mariadb-dump (fallback: mysqldump) e compacta em
+  deploy/dumps/<db>-<data>.sql.gz. O dump e importado no MariaDB 11.4 do
+  servidor pelo Jenkinsfile (container mariadb:11.4).
+
+  Procura, nesta ordem: -DumpExe <caminho>; mariadb-dump.exe no PATH;
+  C:\Program Files\MariaDB *\bin\mariadb-dump.exe; mysqldump.exe no PATH;
+  MySQL Server/Workbench. --set-gtid-purged=OFF so e passado ao mysqldump do
+  MySQL (o mariadb-dump nao aceita a opcao).
 
   Depois copie para o servidor, por exemplo:
     scp deploy\dumps\rotaperfumes-AAAAMMDD-HHMMSS.sql.gz usuario@192.168.168.106:/opt/rotaperfumes/dumps/rotaperfumes.sql.gz
@@ -18,7 +25,8 @@
 param(
     [string]$EnvFile = '',
     [string]$OutDir = '',
-    [string]$MysqlDump = ''
+    [Alias('MysqlDump')]
+    [string]$DumpExe = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,18 +59,36 @@ function Get-EnvValue([hashtable]$Vars, [string]$Key, [string]$Default = '') {
     return $Default
 }
 
-function Find-MysqlDump([string]$Explicit) {
+function Find-DumpExe([string]$Explicit) {
     if ($Explicit) {
         if (Test-Path -LiteralPath $Explicit) { return $Explicit }
-        throw "mysqldump informado nao existe: $Explicit"
+        throw "Executavel de dump informado nao existe: $Explicit"
     }
+    # Alvo: mariadb-dump (PATH; depois a instalacao do MariaDB Server).
+    $cmd = Get-Command mariadb-dump.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @(Get-ChildItem -Path 'C:\Program Files\MariaDB *\bin\mariadb-dump.exe' -ErrorAction SilentlyContinue |
+                    Sort-Object FullName -Descending)
+    if ($candidates.Count -gt 0) { return $candidates[0].FullName }
+    # Fallback: mysqldump (PATH; depois MySQL Server/Workbench).
     $cmd = Get-Command mysqldump.exe -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
-    # Prefere o do Server (mesma versao do banco); depois Workbench.
     $candidates = @(Get-ChildItem -Path 'C:\Program Files\MySQL\MySQL Server*\bin\mysqldump.exe' -ErrorAction SilentlyContinue) +
                   @(Get-ChildItem -Path 'C:\Program Files\MySQL\MySQL Workbench*\mysqldump.exe' -ErrorAction SilentlyContinue)
     if ($candidates.Count -gt 0) { return $candidates[0].FullName }
-    throw 'mysqldump.exe nao encontrado (instale o MySQL Server/Workbench ou use -MysqlDump <caminho>).'
+    throw 'mariadb-dump.exe (ou mysqldump.exe) nao encontrado (instale o MariaDB Server ou use -DumpExe <caminho>).'
+}
+
+# True se o executavel e do MariaDB (mariadb-dump, ou mysqldump.exe antigo do
+# MariaDB): esses nao aceitam --set-gtid-purged.
+function Test-DumpIsMariaDB([string]$Exe) {
+    if ([System.IO.Path]::GetFileName($Exe) -ieq 'mariadb-dump.exe') { return $true }
+    $prev = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $ver = (& $Exe --version 2>&1 | Out-String)
+    } finally { $ErrorActionPreference = $prev }
+    return ($ver -match 'MariaDB')
 }
 
 function Compress-Gzip([string]$Source, [string]$Destination) {
@@ -84,34 +110,38 @@ $dbUser = Get-EnvValue $vars 'DB_USUARIO'
 $dbPass = Get-EnvValue $vars 'DB_SENHA'
 if (-not $dbUser -or -not $dbPass) { throw 'DB_USUARIO/DB_SENHA ausentes no .env' }
 
-$dumpExe = Find-MysqlDump $MysqlDump
+$dumpExe = Find-DumpExe $DumpExe
+$isMariaDB = Test-DumpIsMariaDB $dumpExe
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $sqlFile = Join-Path $OutDir "$dbName-$stamp.sql"
 $gzFile = "$sqlFile.gz"
 
-Write-Host "mysqldump: $dumpExe"
+Write-Host "dump: $dumpExe"
 Write-Host "Banco: $dbName em ${dbHost}:$dbPort (usuario $dbUser)"
 
 $dumpArgs = @(
     "--host=$dbHost", "--port=$dbPort", "--user=$dbUser",
     '--single-transaction', '--routines', '--triggers', '--no-tablespaces',
-    '--set-gtid-purged=OFF', '--default-character-set=utf8mb4',
+    '--default-character-set=utf8mb4',
     '--hex-blob', '--quick',
-    "--result-file=$sqlFile",
-    $dbName
+    "--result-file=$sqlFile"
 )
+# So o mysqldump do MySQL: evita SET @@GLOBAL.GTID_PURGED no dump, que o
+# MariaDB do servidor rejeitaria.
+if (-not $isMariaDB) { $dumpArgs += '--set-gtid-purged=OFF' }
+$dumpArgs += $dbName
 
 $prevPwd = $env:MYSQL_PWD
 $prevEap = $ErrorActionPreference
 try {
     $env:MYSQL_PWD = $dbPass
-    # stderr do mysqldump (avisos) nao deve virar exception; checamos o exit code.
+    # stderr do dump (avisos) nao deve virar exception; checamos o exit code.
     $ErrorActionPreference = 'Continue'
     & $dumpExe @dumpArgs
     $code = $LASTEXITCODE
     $ErrorActionPreference = $prevEap
-    if ($code -ne 0) { throw "mysqldump falhou (exit $code)" }
+    if ($code -ne 0) { throw "dump falhou (exit $code): $dumpExe" }
 
     Compress-Gzip $sqlFile $gzFile
 } finally {

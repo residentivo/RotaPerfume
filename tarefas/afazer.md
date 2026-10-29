@@ -1,6 +1,8 @@
 # A Fazer
 
-> Atualizado em 2026-10-29. O **Lote 22** (DASH-01, funil de vendas no Dashboard) foi concluído e está em `feito.md`. Da revisão do DASH-01 saíram três cards BAIXA, no bloco "Achados do DASH-01", logo após o TST-07: **DOC-06** (comentário "escopo por carteira" em `rotas.go`, do 🟣 SecBrain), **BUG-19** (`arredondar2` com negativos, do 🔴 TestBrain) e **FE-15** (aviso de desligado e seleção da janela após erro no `FunilVendas`, do 🔴 TestBrain). A limitação do setup local em disco sem symlink (`npm ci --no-bin-links`) ficou só documentada em `postman/README.md` ("Subindo o ambiente"), sem card.
+> Atualizado em 2026-10-29. O **Lote 23** (DB-03, MySQL → MariaDB 11.4) foi concluído e está em `feito.md`. Da avaliação de riscos do DB-03 saíram cinco cards no bloco "Achados do DB-03", logo após o FE-15: **SEC-29** (TLS Go ↔ MariaDB, MÉDIA), **SEC-30** (ed25519, BAIXA), **SEC-31** (imagem do Jenkins por digest, BAIXA), **DB-04** (`ONLY_FULL_GROUP_BY`, BAIXA) e **DEPLOY-02** (hardening do servidor mesmo com bind já aberto, MÉDIA). O SEC-28 foi resolvido pelo DB-03 e saiu desta lista (está em `feito.md`, Lote 23).
+>
+> O **Lote 22** (DASH-01, funil de vendas no Dashboard) foi concluído e está em `feito.md`. Da revisão do DASH-01 saíram três cards BAIXA, no bloco "Achados do DASH-01", logo após o TST-07: **DOC-06** (comentário "escopo por carteira" em `rotas.go`, do 🟣 SecBrain), **BUG-19** (`arredondar2` com negativos, do 🔴 TestBrain) e **FE-15** (aviso de desligado e seleção da janela após erro no `FunilVendas`, do 🔴 TestBrain). A limitação do setup local em disco sem symlink (`npm ci --no-bin-links`) ficou só documentada em `postman/README.md` ("Subindo o ambiente"), sem card.
 >
 > Em 2026-10-16: o Lote 21 (2026-10-13 a 2026-10-16, reestruturação da API em DDD + Clean Code + Design Patterns) foi **concluído**: ARQ-00 a ARQ-08 estão em `feito.md` (estrutura final em `docs/arquitetura-ddd.md` §10; ADR em `docs/adr-001-reestruturacao-ddd.md`). Os cards abaixo saíram do lote e ficam fora do escopo dele. Os cards SEC-14 a SEC-25 são GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), no topo da lista. Do ARQ-05 (2026-10-15) saíram BUG-16, SEC-26, SEC-27, TST-06 e BUG-17, no bloco "Achados do ARQ-05", logo após o BUG-15. Do ARQ-06 (2026-10-15) saiu o BUG-18, logo após o BUG-17. Do ARQ-07 (2026-10-16) saíram SEC-28 e TST-07, logo após o BUG-18.
 >
@@ -161,21 +163,6 @@
 
 ---
 
-## SEC-28: remover `--local-infile=1` do `MYSQL_OPTS` do `Makefile` da raiz — prioridade BAIXA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend (infra/banco)
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
-**Origem:** 🟡 BackBrain, Lote 21 ARQ-07 (2026-10-16); mesmo vetor do NB-F do 🟣 SecBrain (corrigido no `seedusers`).
-
-**Descrição:** o `MYSQL_OPTS` do `Makefile` da raiz (linha ~36) passa `--local-infile=1` ao cliente `mysql`. Nenhum `.sql` do repositório usa `LOAD DATA`, então a opção só amplia a superfície de ataque (um servidor malicioso ou comprometido pode pedir a leitura de arquivos locais do cliente).
-
-**Ação esperada:** remover `--local-infile=1` do `MYSQL_OPTS` e ajustar `apis/shared/tests/config/sec11_makefile_sql_test.go:~162`, que hoje espera a opção. Conferir que `make db-reset` e os demais alvos SQL continuam funcionando.
-
-**Critério de aceite:** nenhum `--local-infile=1` no `Makefile`; teste SEC-11 ajustado (de preferência asserindo a ausência da opção) e verde; alvos `make` de banco funcionando.
-
----
-
 ## TST-07: estender o teste de AST de concatenação SQL aos demais adapters — prioridade BAIXA
 
 **Status:** pendente (fora do escopo do Lote 21)
@@ -241,6 +228,87 @@
 **Ação esperada:** (1) definir a regra do aviso quando o componente não recebe `forcarZeros` (ex.: só pelo `vendedor_desligado` do payload, ou um prop explícito); (2) depois do erro, voltar a seleção para a janela dos dados exibidos, ou indicar de qual janela são os dados. Testes para os dois casos.
 
 **Critério de aceite:** comportamento definido e testado nos dois pontos; nenhuma regressão no Dashboard (testes DASH-01 e FE-02 verdes); `tsc` e `eslint` limpos.
+
+---
+
+## Achados do DB-03 (SEC-29, SEC-30, SEC-31, DB-04, DEPLOY-02)
+
+> Origem comum: avaliação de riscos do 🟣 SecBrain no DB-03 (troca de MySQL para MariaDB 11.4 LTS, Lote 23, 2026-10-29). Nenhum deles bloqueia o fechamento do DB-03. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário.
+
+---
+
+## SEC-29: TLS na conexão Go ↔ MariaDB — prioridade MÉDIA
+
+**Status:** pendente
+**Camadas:** Backend (config/DSN), Database (servidor), Testes
+**Responsável:** 🌸 DataBrain (certificados no servidor) → 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, DB-03 (Lote 23, 2026-10-29).
+
+**Descrição:** a API conecta no MariaDB do host (`host.docker.internal:3306`) sem TLS: credenciais e dados trafegam em claro pela bridge docker. O driver `go-sql-driver/mysql` suporta TLS com CA própria via `mysql.RegisterTLSConfig` e `tls=custom` no DSN.
+
+**Ação esperada:** habilitar TLS no servidor MariaDB (`ssl_cert`/`ssl_key`/`ssl_ca`; opcionalmente `require_secure_transport=ON` ou `REQUIRE SSL` nos usuários `rotaperfumes_app`/`rotaperfumes_admin`); na API, nova variável (ex.: `DB_TLS_CA`) lida em `apis/shared/config/config.go`, registrar a config com `mysql.RegisterTLSConfig("custom", ...)` e acrescentar `tls=custom` ao DSN quando definida; o import do `Jenkinsfile` (`mariadb --ssl`) também. Ajustar os testes que comparam o DSN literal (ex.: `apis/shared/tests/config` e `apis/shared/tests/db/mask_dsn_test.go`) e documentar em `docs/deploy-servidor.md` e `deploy/api.env.example`.
+
+**Critério de aceite:** com a variável definida, a conexão usa TLS e falha se o certificado não bater com a CA; sem ela, comportamento atual (dev local); testes de DSN ajustados e verdes; `maskDSN` sem vazar nada novo; docs atualizadas.
+
+---
+
+## SEC-30: autenticação ed25519 nas contas do banco — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Database (deploy), Testes
+**Responsável:** 🌸 DataBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, DB-03 (Lote 23, 2026-10-29).
+
+**Descrição:** `deploy/mariadb-setup.sql` e `deploy/setup-servidor.sh` criam `rotaperfumes_app` e `rotaperfumes_admin` com o plugin padrão (`mysql_native_password`, hash SHA1). O MariaDB oferece o plugin `ed25519`, mais forte.
+
+**Ação esperada:** avaliar `INSTALL SONAME 'auth_ed25519'` e `IDENTIFIED VIA ed25519 USING PASSWORD('...')` nas duas contas; confirmar que o `go-sql-driver/mysql` (versão do `go.mod`) e o cliente `mariadb:11.4` do Jenkins autenticam com ed25519; manter a idempotência do setup (usuário já existente) e documentar a migração das contas atuais.
+
+**Critério de aceite:** contas da API e do admin com ed25519 no servidor; API e estágio "Importar dump" funcionando; procedimento documentado em `docs/deploy-servidor.md`.
+
+---
+
+## SEC-31: fixar a imagem `mariadb:11.4` do Jenkins por digest — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Infra (CI/CD)
+**Responsável:** 🌸 DataBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, DB-03 (Lote 23, 2026-10-29).
+
+**Descrição:** o `Jenkinsfile` usa `DB_CLIENT_IMAGE = 'mariadb:11.4'` no estágio "Importar dump". A tag é mutável: uma imagem trocada no registry rodaria com a senha do `rotaperfumes_admin` no ambiente.
+
+**Ação esperada:** fixar a imagem por digest (`mariadb:11.4@sha256:...`), registrar no comentário do `Jenkinsfile` como atualizar o digest e incluir essa atualização na rotina do `make deps-audit` (mensal e antes de deploy). Avaliar fazer o mesmo com `golang:1.26-alpine`.
+
+**Critério de aceite:** imagem referenciada por digest; procedimento de atualização documentado; pipeline verde.
+
+---
+
+## DB-04: avaliar `ONLY_FULL_GROUP_BY` no `sql_mode` — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Database, Backend (SQL dos adapters), Testes
+**Responsável:** 🌸 DataBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, DB-03 (Lote 23, 2026-10-29).
+
+**Descrição:** o drop-in do `deploy/setup-servidor.sh` grava `sql_mode = STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION`, sem `ONLY_FULL_GROUP_BY` (que o MySQL 8 tinha por padrão). Sem ele, um `GROUP BY` incompleto devolve valores arbitrários em vez de erro.
+
+**Ação esperada:** revisar as consultas com `GROUP BY` (principalmente `analyticsmysql` e as métricas de clientes), rodar a suíte de integração com `ONLY_FULL_GROUP_BY` ligado e, se tudo passar, incluí-lo no drop-in e na documentação. Se alguma consulta falhar, corrigi-la antes.
+
+**Critério de aceite:** decisão registrada (incluir ou não, com motivo); se incluído, consultas compatíveis, testes de integração verdes e `docs/deploy-servidor.md` atualizado.
+
+---
+
+## DEPLOY-02: aplicar `local_infile`/`sql_mode`/collation também em servidores já abertos — prioridade MÉDIA
+
+**Status:** pendente
+**Camadas:** Infra (deploy)
+**Responsável:** 🌸 DataBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, DB-03 (Lote 23, 2026-10-29).
+
+**Descrição:** em `deploy/setup-servidor.sh`, o drop-in `zz-rotaperfumes.cnf` (`gravar_dropin_bind`) só é gravado quando o banco escuta em loopback. Num servidor cujo `bind-address` já está aberto, `local_infile = 0`, o `sql_mode` estrito e `utf8mb4_unicode_ci` nunca são aplicados, e o servidor pode seguir com `local_infile` ligado e a collation padrão do MariaDB 11.4 (`utf8mb4_uca1400_ai_ci`).
+
+**Ação esperada:** separar o drop-in de hardening (local_infile, sql_mode, charset/collation) do ajuste de `bind-address`: gravar o de hardening sempre (idempotente, reiniciando o serviço só se o conteúdo mudar) e o de bind só quando necessário. Conferir os valores efetivos com `SHOW GLOBAL VARIABLES` ao final e avisar se divergirem.
+
+**Critério de aceite:** em servidor com bind já aberto, as três configurações ficam aplicadas após o script; reexecução sem restart desnecessário; `docs/deploy-servidor.md` (etapa 3 da seção 0) atualizado.
 
 ---
 

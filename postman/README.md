@@ -155,7 +155,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 |------|------|---------|
 | SEC-12 | `POST /api/auth/refresh` | Reenviar um refresh token já rotacionado derruba as sessões do usuário **uma vez** por token: novos reusos do **mesmo** token dentro de `REFRESH_REUSE_SUPPRESS_WINDOW` (padrão 30 min) não revogam as sessões de novo nem enviam outro e-mail, e o re-login da vítima sobrevive. A resposta continua **idêntica** nos dois casos (`401` `{"success":false,"error":"refresh token revogado"}`, sem `Set-Cookie`, contando no rate limit): o cliente não distingue o reuso suprimido. Coluna nova `refresh_tokens.reuso_detectado_em` (migração 23, `make db-fix-reuso-detectado`). |
 | CHORE-02 | (API, tarefa de fundo) | Limpeza periódica de `refresh_tokens`: na partida e a cada `REFRESH_CLEANUP_INTERVAL` (padrão `6h`; `0` desativa), apaga em lotes de 1000 os tokens com `expires_at` há mais de `REFRESH_TOKEN_RETENCAO` (padrão `720h`). Token ainda não expirado nunca é apagado. Logs `[refresh] cleanup: ...`. |
-| SEC-11 | `Makefile`, `config.Load()` | `DB_USUARIO`/`DB_SENHA` obrigatórios no `.env`, sem o default `golang/golang`: a API e os importadores não sobem sem eles, e os alvos `db-*` param no `db-check-env`. O `make` passa a senha ao `mysql` por `MYSQL_PWD` (não mais `-p...` no argv) e lê o `.env` com `-include .env` (ver "Subindo o ambiente"). |
+| SEC-11 | `Makefile`, `config.Load()` | `DB_USUARIO`/`DB_SENHA` obrigatórios no `.env`, sem o default `golang/golang`: a API e os importadores não sobem sem eles, e os alvos `db-*` param no `db-check-env`. O `make` passa a senha ao cliente do banco (`mysql` no Lote 12; `mariadb` desde o DB-03) por `MYSQL_PWD` (não mais `-p...` no argv) e lê o `.env` com `-include .env` (ver "Subindo o ambiente"). |
 | DB-01 | `make db-up` | Passa a criar a tabela `estoque` (`sql/17_ddl_estoque.sql`, já sem `origem`), depois de `visitas`. Bancos antigos com `estoque.origem`: `make db-fix-estoque-origem` (idempotente). |
 
 ## Mudanças do Lote 21 (2026-10-13 a 2026-10-16): reestruturação DDD da API
@@ -300,7 +300,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 >
 > **Fuso fixo (RISCO-01, 2026-09-24):** o processo da API (e o `resetpassword`) passou a usar `time.Local` = fuso fixo `-03:00`, sem horário de verão (pacote `apis/shared/tz`). O formato das datas nas respostas **não mudou**. Datas históricas de início de horário de verão (ex.: `2018-11-04`) não recuam mais um dia em Linux/Docker com `TZ=America/Sao_Paulo`.
 >
-> **Salvar sem alterações (BUG-04, 2026-09-24):** qualquer `PUT`/`PATCH` que envie os mesmos valores já gravados responde `200` com o registro. Antes respondia `404` "não encontrado", porque o MySQL devolvia `RowsAffected=0`. O DSN agora usa `clientFoundRows=true`. Id inexistente continua `404`. `DELETE /api/vendedores/{id}` em vendedor já desligado responde `200` e preserva a `data_desligamento` original.
+> **Salvar sem alterações (BUG-04, 2026-09-24):** qualquer `PUT`/`PATCH` que envie os mesmos valores já gravados responde `200` com o registro. Antes respondia `404` "não encontrado", porque o banco (MySQL na época; hoje MariaDB, mesmo comportamento) devolvia `RowsAffected=0`. O DSN agora usa `clientFoundRows=true`. Id inexistente continua `404`. `DELETE /api/vendedores/{id}` em vendedor já desligado responde `200` e preserva a `data_desligamento` original.
 
 ### Dashboard (`/api/dashboard/*`) — acesso comum com escopo por vendedor
 
@@ -417,7 +417,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Auth:** Bearer Token (qualquer usuário autenticado; `normal` precisa ter vendedor vinculado)
 - **Escopo (SEC-01):** usuário `normal` sem vendedor → `403` `"usuário sem vendedor vinculado"`. Com vendedor → `201`, e o cliente é vinculado automaticamente à carteira do vendedor. Admin: sem mudança.
 - **Body:** `{ "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro", "data_cadastro" (opcional, "AAAA-MM-DD", default hoje) }`
-- **Descrição:** Cria um novo cliente. `cliente_id_origem` é a PK `BIGINT AUTO_INCREMENT` da tabela, gerada nativamente pelo MySQL (não é aceita no body), e `ativo` é sempre `true` na criação. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação. Não existe mais campo `id` — `cliente_id_origem` é o único identificador.
+- **Descrição:** Cria um novo cliente. `cliente_id_origem` é a PK `BIGINT AUTO_INCREMENT` da tabela, gerada nativamente pelo MariaDB (não é aceita no body), e `ativo` é sempre `true` na criação. Campos obrigatórios: `razao_social`, `cnpj`, `segmento`, `cidade`, `uf` (2 letras). Retorna `201` com o cliente criado; `400` em caso de validação. Não existe mais campo `id` — `cliente_id_origem` é o único identificador.
 - **Timestamps (BUG-08, Lote 6, 2026-09-26):** o `201` traz `created_at` e `updated_at` preenchidos, porque o cliente é relido do banco depois do INSERT (`relerClienteCriado`, com ou sem vínculo de carteira). Antes vinham `0001-01-01T00:00:00Z`. Os demais creates (vendedores, produtos, pagamentos, oportunidades, visitas e estoque) passaram a reler no Lote 8 (BUG-09); o de usuários já relia no repositório.
 - **CNPJ (NEG-01 + NEG-02, 2026-09-25):** aceita o CNPJ numérico e o **alfanumérico** da Receita (vigente desde julho de 2026).
   - **Envio:** com ou sem máscara (`.`, `/`, `-` e espaço), em maiúsculas ou minúsculas. Ex.: `12ABC34501DE35`, `12.ABC.345/01DE-35`, `12.abc.345/01de-35`, `11222333000181` ou `11.222.333/0001-81`.
@@ -426,7 +426,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
   - **Retorno e gravação:** sempre 14 caracteres, sem máscara e em **maiúsculas** (ex.: enviar `12.abc.345/01de-35` grava e devolve `12ABC34501DE35`).
   - **Erros (sem mudança):** `400` `"cnpj inválido"` para caractere fora de `[0-9A-Za-z]` e da máscara (ex.: `#`, `_`, acentos), letra nas posições do DV, tamanho diferente de 14, todos os caracteres iguais ou DV errado. `409` `"cnpj já cadastrado"` se outro cliente já usa o CNPJ (a comparação ignora máscara e caixa, porque o valor é normalizado antes); a mensagem é genérica e não revela qual cliente.
   - **Exemplos:** `12ABC34501DE35` → `201`; `12ABC34501DE36` (DV errado) → `400`; `12ABC34501DEA5` (letra no DV) → `400`; `12ABC34501DE3#` → `400`.
-- **Nota histórica (resolvida):** versões anteriores geravam `cliente_id_origem` via `MAX(cliente_id_origem) + 1` sem transação/lock explícito, com risco teórico de colisão em criações concorrentes. Esse débito técnico foi eliminado na tarefa "Promover colunas \*_id_origem a PK autoincremento" (2026-09-15) — a geração agora é feita nativamente pelo MySQL via `AUTO_INCREMENT`.
+- **Nota histórica (resolvida):** versões anteriores geravam `cliente_id_origem` via `MAX(cliente_id_origem) + 1` sem transação/lock explícito, com risco teórico de colisão em criações concorrentes. Esse débito técnico foi eliminado na tarefa "Promover colunas \*_id_origem a PK autoincremento" (2026-09-15) — a geração agora é feita nativamente pelo banco (MariaDB desde o DB-03) via `AUTO_INCREMENT`.
 
 #### GET /api/clientes/{id}
 - **Auth:** Bearer Token (qualquer usuário autenticado; `404` fora da carteira para o `normal`)
@@ -512,7 +512,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 #### POST /api/pedidos
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
 - **Body:** `{ "cliente_id", "vendedor_id", "data_pedido" ("AAAA-MM-DD"), "canal", "status", "itens": [{ "produto_id", "quantidade", "preco_praticado", "desconto_pct" }] }`
-- **Descrição:** Cria um novo pedido com seus itens. `valor_bruto` de cada item e `valor_total` do pedido são calculados no backend (não aceitos no body). `pedido_id_origem` é a PK `BIGINT AUTO_INCREMENT` gerada nativamente pelo MySQL. Exige ao menos um item. Retorna `201` com o pedido criado (incluindo itens); `400` em caso de validação. Não existe mais campo `id` — `pedido_id_origem`/`item_id_origem` são os identificadores.
+- **Descrição:** Cria um novo pedido com seus itens. `valor_bruto` de cada item e `valor_total` do pedido são calculados no backend (não aceitos no body). `pedido_id_origem` é a PK `BIGINT AUTO_INCREMENT` gerada nativamente pelo MariaDB. Exige ao menos um item. Retorna `201` com o pedido criado (incluindo itens); `400` em caso de validação. Não existe mais campo `id` — `pedido_id_origem`/`item_id_origem` são os identificadores.
 - **Escopo (usuário `normal`, 2026-09-23):** `403` `"usuário sem vendedor vinculado"` se não houver vendedor vinculado; `vendedor_id` do body é ignorado e forçado ao vendedor do usuário; `400` `"cliente não pertence à carteira deste vendedor"` se `cliente_id` estiver fora da carteira ativa.
 
 #### GET /api/pedidos/{id}
@@ -1036,9 +1036,11 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 ## Subindo o ambiente
 
+**Banco (DB-03, 2026-10-29):** MariaDB 11.4 LTS. Os alvos `make db-*`, inclusive o `make db-seed` (o `seedusers` chama o binário `mariadb`, sem fallback), exigem o cliente `mariadb` (MariaDB ≥ 11.4) no `PATH`. A API usa o driver Go `go-sql-driver/mysql`, compatível com o MariaDB.
+
 Antes, copie `.env.example` para `.env` na raiz e preencha **`DB_USUARIO` e `DB_SENHA`** (obrigatórios desde o SEC-11, Lote 12, sem default). Sem eles, os alvos `db-*` param com `SEC-11: defina DB_USUARIO/DB_SENHA no .env` e a API não sobe (`config: defina DB_USUARIO/DB_SENHA no .env`).
 
-> **Formato do `.env` (SEC-11):** o `make` lê o arquivo inteiro (`-include .env`) e exporta todas as variáveis. Em **qualquer** valor, evite `$`, `#`, aspas, espaços nas pontas e começar com `/`, e salve o arquivo com final de linha LF. Precedência: `make DB_SENHA=x` na linha de comando > `.env` > variável do shell. A senha chega ao `mysql` por `MYSQL_PWD`, nunca por `-p` na linha de comando. Para rodar um script de `sql/` à mão: `MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT --default-character-set=utf8mb4 $DB_NAME < sql/<script>.sql`.
+> **Formato do `.env` (SEC-11):** o `make` lê o arquivo inteiro (`-include .env`) e exporta todas as variáveis. Em **qualquer** valor, evite `$`, `#`, aspas, espaços nas pontas e começar com `/`, e salve o arquivo com final de linha LF. Precedência: `make DB_SENHA=x` na linha de comando > `.env` > variável do shell. A senha chega ao cliente `mariadb` por `MYSQL_PWD`, nunca por `-p` na linha de comando. Para rodar um script de `sql/` à mão: `MYSQL_PWD="$DB_SENHA" mariadb --local-infile=0 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT --default-character-set=utf8mb4 $DB_NAME < sql/<script>.sql`.
 
 ```bash
 # 1. Recriar o banco com seed (cria todas as tabelas, inclusive estoque)

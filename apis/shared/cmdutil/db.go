@@ -10,7 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	_ "github.com/go-sql-driver/mysql" // driver MySQL usado por OpenMySQL
+	_ "github.com/go-sql-driver/mysql" // driver MySQL/MariaDB (go-sql-driver/mysql) usado por OpenMySQL
 )
 
 // DB é o subconjunto de *sql.DB usado pelas funções de leitura (lookups) e
@@ -32,8 +32,8 @@ type Conn interface {
 // quando não é --dry-run (mesma ordem dos comandos originais).
 type Opener func() (Conn, error)
 
-// OpenMySQL devolve um Opener que faz sql.Open("mysql", dsn). O Ping fica a
-// cargo do Run do importador.
+// OpenMySQL devolve um Opener que faz sql.Open("mysql", dsn) contra o
+// MariaDB (protocolo MySQL). O Ping fica a cargo do Run do importador.
 func OpenMySQL(dsn string) Opener {
 	return func() (Conn, error) {
 		db, err := sql.Open("mysql", dsn)

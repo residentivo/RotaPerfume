@@ -68,7 +68,7 @@ func TestOpen_Integracao(t *testing.T) {
 	assert.Equal(t, 25, conn.Stats().MaxOpenConnections)
 
 	logado := buf.String()
-	assert.Contains(t, logado, "[db] conexão MySQL estabelecida")
+	assert.Contains(t, logado, "[db] conexão MariaDB estabelecida")
 	assert.Contains(t, logado, cfg.DBUsuario+":****@tcp(")
 	if cfg.DBSenha != "" && !strings.Contains(cfg.DBUsuario, cfg.DBSenha) {
 		assert.NotContains(t, logado, ":"+cfg.DBSenha+"@", "a senha nunca deve ser logada")

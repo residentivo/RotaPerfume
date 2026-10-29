@@ -1,4 +1,5 @@
-// Package catalogomysql implementa as portas de catalogoapp sobre MySQL
+// Package catalogomysql implementa as portas de catalogoapp sobre MariaDB
+// (protocolo MySQL)
 // (ARQ-02). O SQL é o do repositório legado, copiado sem alteração; a
 // ordenação sai de switch sobre os enums do domínio (C-02) e todo valor vai
 // por placeholder (C-03).

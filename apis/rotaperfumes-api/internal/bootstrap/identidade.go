@@ -38,7 +38,7 @@ type ExtIdentidade struct {
 	Email      identidadeapp.EnviadorSenhaInicial
 }
 
-// NovaIdentidade liga o contexto Identidade sobre o pool: adapters MySQL,
+// NovaIdentidade liga o contexto Identidade sobre o pool: adapters MariaDB,
 // crypto, os três limitadores e o UoW da rotação. Chamar UMA vez por
 // processo: os limitadores são singletons (I-14).
 func NovaIdentidade(pool *sql.DB, cfg *config.Config, ext ExtIdentidade) *identidadeapp.Casos {
@@ -91,7 +91,7 @@ func NovoIdentidadeHTTP(c *identidadeapp.Casos, cfg *config.Config) IdentidadeHT
 }
 
 // NovoVerificadorStatus é a consulta de status direto no banco (o adapter
-// MySQL satisfaz httpx.ConsultaStatus); em produção o checker é o próprio
+// MariaDB satisfaz httpx.ConsultaStatus); em produção o checker é o próprio
 // caso de uso StatusParaAutenticacao.
 func NovoVerificadorStatus(pool *sql.DB) httpx.ConsultaStatus {
 	return identidademysql.NovoUsuarios(pool)

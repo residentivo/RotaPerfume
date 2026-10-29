@@ -66,7 +66,7 @@ func NovosHandlersCom(pool *sql.DB, cfg *config.Config, identidade *identidadeap
 	}
 }
 
-// NovoCatalogoHTTP liga o contexto Catálogo (ARQ-02): adapters MySQL sobre o
+// NovoCatalogoHTTP liga o contexto Catálogo (ARQ-02): adapters MariaDB sobre o
 // pool → casos de uso → handlers HTTP.
 func NovoCatalogoHTTP(pool *sql.DB) (*catalogohttp.ProdutoHandler, *catalogohttp.EstoqueHandler) {
 	casos := catalogoapp.Novo(catalogomysql.NovoProdutos(pool), catalogomysql.NovoEstoques(pool))

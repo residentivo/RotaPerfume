@@ -27,13 +27,13 @@ DB_HOST    := $(strip $(subst $(CR),,$(DB_HOST)))
 DB_PORT    := $(strip $(subst $(CR),,$(DB_PORT)))
 DB_NAME    := $(strip $(subst $(CR),,$(DB_NAME)))
 
-# Senha só pelo ambiente (lida nativamente pelo mysql/mysql.exe), nunca no argv.
+# Senha só pelo ambiente (lida nativamente pelo mariadb/mariadb.exe), nunca no argv.
 MYSQL_PWD = $(DB_SENHA)
 # Git Bash/MSYS: impede a conversão de caminho POSIX no valor da senha.
 MSYS2_ENV_CONV_EXCL = MYSQL_PWD
 export
 
-MYSQL_OPTS = --local-infile=1 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4
+MYSQL_OPTS = --local-infile=0 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4
 
 help: ## Mostra esta ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -41,46 +41,46 @@ help: ## Mostra esta ajuda
 # =============================================================================
 # Banco de dados
 # =============================================================================
-# SEC-11: pré-requisito de todo alvo que chama o mysql (db-create, db-down,
+# SEC-11: pré-requisito de todo alvo que chama o mariadb (db-create, db-down,
 # db-fix-*, db-revert-*; db-up/db-seed herdam via db-create). Fica depois do
 # "help" para não virar o alvo padrão do make.
 db-check-env: ## Confere se DB_USUARIO/DB_SENHA estão definidos no .env (SEC-11)
 	@test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD" || { echo "SEC-11: defina DB_USUARIO/DB_SENHA no .env"; exit 1; }
 
 db-create: db-check-env ## Cria o banco de dados se não existir
-	mysql $(MYSQL_OPTS) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+	mariadb $(MYSQL_OPTS) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 db-up: db-create ## Cria o schema (tabelas vazias)
 	@echo "=== Aplicando DDL de usuarios (vendedores + usuarios) ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/01_ddl_usuarios.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/01_ddl_usuarios.sql
 	@echo "=== Aplicando DDL de refresh_tokens ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/06_ddl_refresh_tokens.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/06_ddl_refresh_tokens.sql
 	@echo "=== Aplicando DDL de senha_historico ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/07_ddl_senha_historico.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/07_ddl_senha_historico.sql
 	@echo "=== Aplicando DDL de clientes ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/09_ddl_clientes.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/09_ddl_clientes.sql
 	@echo "=== Aplicando DDL de produtos ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/10_ddl_produtos.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/10_ddl_produtos.sql
 	@echo "=== Aplicando DDL de pedidos (depende de clientes + vendedores) ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/04_ddl_pedidos.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/04_ddl_pedidos.sql
 	@echo "=== Aplicando DDL de itens_pedido (depende de pedidos + produtos) ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/11_ddl_itens_pedido.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/11_ddl_itens_pedido.sql
 	@echo "=== Aplicando DDL de pagamentos (depende de pedidos) ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/12_ddl_pagamentos.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/12_ddl_pagamentos.sql
 	@echo "=== Aplicando DDL de carteiras (depende de clientes + vendedores) ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/14_ddl_carteiras.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/14_ddl_carteiras.sql
 	@echo "=== Aplicando DDL de oportunidades (depende de clientes + vendedores) ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/15_ddl_oportunidades.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/15_ddl_oportunidades.sql
 	@echo "=== Aplicando DDL de visitas (depende de clientes + vendedores) ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/16_ddl_visitas.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/16_ddl_visitas.sql
 	@echo "=== Aplicando DDL de estoque (depende de produtos; ja sem a coluna origem da migracao 18) ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/17_ddl_estoque.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/17_ddl_estoque.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/02_seed_admin.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/02_seed_admin.sql
 	@echo "=== Seed: usuarios dos 42 vendedores ==="
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/03_seed_vendedores.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/03_seed_vendedores.sql
 	@echo ""
 	@echo "=== Corrigindo hashes (placeholder -> argon2id real) + criando admin ==="
 	cd apis/shared && go run ./cmd/resetpassword -list
@@ -91,51 +91,51 @@ db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Admin: admin@rotaperfumes.com.br / Admin@123 ==="
 
 db-down: db-check-env ## Dropa o banco de dados (CUIDADO!)
-	mysql $(MYSQL_OPTS) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
+	mariadb $(MYSQL_OPTS) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
 
 db-reset: db-down db-seed ## Recria o banco do zero com hashes validos
 
 db-fix-deve-trocar-senha: db-check-env ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
 
 db-fix-tipo-reset: db-check-env ## Corrige o ENUM de senha_historico.tipo_reset em bancos existentes (nao destrutivo, sem apagar dados)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/13_alter_senha_historico_tipo_reset.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/13_alter_senha_historico_tipo_reset.sql
 
 db-fix-estoque-origem: db-check-env ## Remove estoque.origem (migracao 18) em bancos criados com o 17 antigo (idempotente; perde o rastreio de origem)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/18_alter_estoque_drop_origem.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/18_alter_estoque_drop_origem.sql
 
 db-revert-estoque-origem: db-check-env ## Reverte db-fix-estoque-origem (recria estoque.origem; linhas existentes voltam como import_csv)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/18_revert_estoque_drop_origem.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/18_revert_estoque_drop_origem.sql
 
 db-fix-cnpj-unique: db-check-env ## Unifica clientes com CNPJ duplicado no menor id e cria UNIQUE uq_clientes_cnpj (APAGA as copias; backup em clientes_merge_backup_20260925*)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/19_alter_clientes_cnpj_unique.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/19_alter_clientes_cnpj_unique.sql
 
 db-revert-cnpj-unique: db-check-env ## Reverte db-fix-cnpj-unique a partir das tabelas clientes_merge_backup_20260925*
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/19_revert_clientes_cnpj_unique.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/19_revert_clientes_cnpj_unique.sql
 
 db-fix-cnpj-comment: db-check-env ## Atualiza o COMMENT de clientes.cnpj para o formato alfanumerico (so metadado, sem apagar dados)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/20_alter_clientes_cnpj_comment.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/20_alter_clientes_cnpj_comment.sql
 
 db-revert-cnpj-comment: db-check-env ## Reverte db-fix-cnpj-comment (volta o COMMENT antigo "somente digitos")
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/20_revert_clientes_cnpj_comment.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/20_revert_clientes_cnpj_comment.sql
 
 db-fix-revoked-reason: db-check-env ## Adiciona refresh_tokens.revoked_reason (SEC-07) em bancos existentes (nao destrutivo, legado fica NULL)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/21_alter_refresh_tokens_revoked_reason.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/21_alter_refresh_tokens_revoked_reason.sql
 
 db-revert-revoked-reason: db-check-env ## Reverte db-fix-revoked-reason (remove a coluna; perde os motivos gravados)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/21_revert_refresh_tokens_revoked_reason.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/21_revert_refresh_tokens_revoked_reason.sql
 
 db-fix-tokens-validos-desde: db-check-env ## Adiciona usuarios.tokens_validos_desde (SEC-08) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/22_alter_usuarios_tokens_validos_desde.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/22_alter_usuarios_tokens_validos_desde.sql
 
 db-revert-tokens-validos-desde: db-check-env ## Reverte db-fix-tokens-validos-desde (remove a coluna; perde os cortes de token gravados)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/22_revert_usuarios_tokens_validos_desde.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/22_revert_usuarios_tokens_validos_desde.sql
 
 db-fix-reuso-detectado: db-check-env ## Adiciona refresh_tokens.reuso_detectado_em (SEC-12) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/23_alter_refresh_tokens_reuso_detectado_em.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/23_alter_refresh_tokens_reuso_detectado_em.sql
 
 db-revert-reuso-detectado: db-check-env ## Reverte db-fix-reuso-detectado (remove a coluna; perde as marcas de reuso gravadas)
-	mysql $(MYSQL_OPTS) $(DB_NAME) < sql/23_revert_refresh_tokens_reuso_detectado_em.sql
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/23_revert_refresh_tokens_reuso_detectado_em.sql
 
 db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
 	cd apis/shared && go run ./cmd/importclientes
@@ -240,7 +240,7 @@ cover-combinada: build-shared ## ARQ-01: cobertura combinada API+shared (-coverp
 # (SEC-11; o "-include .env" + "export" acima as exporta) e devem rodar com
 # "go test -p 1" (os pacotes usam o mesmo banco). Este alvo não passa -p 1:
 # ver os comandos em docs/arquitetura-ddd.md §10.9.
-test-integration: ## Roda testes de integração (requer MySQL e DB_* no .env; prefira -p 1, ver docs/arquitetura-ddd.md §10.9)
+test-integration: ## Roda testes de integração (requer MariaDB e DB_* no .env; prefira -p 1, ver docs/arquitetura-ddd.md §10.9)
 	INTEGRATION=1 $(MAKE) test
 
 test-frontend:

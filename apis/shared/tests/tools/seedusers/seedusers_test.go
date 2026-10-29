@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ import (
 	"github.com/rotaperfumes/shared/tools/seedusers"
 )
 
-var errMySQL = errors.New("mysql saiu com código 1")
+var errMySQL = errors.New("mariadb saiu com código 1")
 
 const (
 	sqlAdmin = "INSERT INTO usuarios VALUES ('admin', '" + seedusers.PlaceholderAdmin + "');\n"
@@ -142,7 +143,7 @@ func TestRun_ShowPasswordENoExec(t *testing.T) {
 		Out: &out, ProjectRoot: func() (string, error) { return root, nil }, RunSQL: ex.runner(""),
 	})
 	require.NoError(t, err)
-	assert.Empty(t, ex.arquivos, "--no-exec não roda o mysql")
+	assert.Empty(t, ex.arquivos, "--no-exec não roda o mariadb")
 	assert.Contains(t, out.String(), "ADMIN_PASSWORD=Admin@Env1")
 	assert.Contains(t, out.String(), "USER_PASSWORD =User@Env1")
 	assert.NotContains(t, ler(t, filepath.Join(root, "tmp", "seed", "02_seed_admin.sql")), "PLACEHOLDER")
@@ -214,11 +215,11 @@ func TestRun_Erros(t *testing.T) {
 			errSub: "02_seed_admin.sql",
 		},
 		{
-			nome:   "mysql falha no segundo arquivo",
+			nome:   "mariadb falha no segundo arquivo",
 			root:   func(t *testing.T) (string, error) { return raizFalsa(t), nil },
 			falhar: "03_seed_vendedores.sql",
 			errIs:  errMySQL,
-			errSub: "mysql falhou em",
+			errSub: "mariadb falhou em",
 		},
 	}
 	for _, c := range casos {
@@ -317,11 +318,29 @@ func TestRunMySQL(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "leitura de")
 	})
-	t.Run("cliente mysql fora do PATH", func(t *testing.T) {
+	t.Run("cliente mariadb fora do PATH", func(t *testing.T) {
 		p := filepath.Join(t.TempDir(), "x.sql")
 		require.NoError(t, os.WriteFile(p, []byte("SELECT 1;"), 0o600))
 		t.Setenv("PATH", t.TempDir())
 		assert.Error(t, seedusers.RunMySQL(cfg, p))
+	})
+	// DB-03: o binário é o `mariadb`, sem fallback para `mysql`.
+	t.Run("usa o binário mariadb, sem fallback para mysql", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("cliente falso em shell script")
+		}
+		p := filepath.Join(t.TempDir(), "x.sql")
+		require.NoError(t, os.WriteFile(p, []byte("SELECT 1;"), 0o600))
+
+		soMysql := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(soMysql, "mysql"), []byte("#!/bin/sh\nexit 0\n"), 0o700))
+		t.Setenv("PATH", soMysql)
+		assert.Error(t, seedusers.RunMySQL(cfg, p), "só `mysql` no PATH não basta")
+
+		comMariadb := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(comMariadb, "mariadb"), []byte("#!/bin/sh\nexit 0\n"), 0o700))
+		t.Setenv("PATH", comMariadb)
+		assert.NoError(t, seedusers.RunMySQL(cfg, p))
 	})
 }
 

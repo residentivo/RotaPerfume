@@ -13,7 +13,7 @@
 #                      origem (URLs relativas): serve a LAN e o dominio do tunnel.
 #   TURNSTILE_SITE_KEY chave PUBLICA do Turnstile (embutida no bundle)
 #
-# O MySQL roda no HOST (fora do compose): a API acessa via host.docker.internal.
+# O MariaDB roda no HOST (fora do compose): a API acessa via host.docker.internal.
 # Segredos da API ficam em ./api.env (gerado pelo Jenkins, nunca versionado).
 
 name: rotaperfumes

@@ -20,7 +20,7 @@ const estoqueColunas = `e.id, e.data_snapshot, e.sku, COALESCE(p.descricao, '') 
 const estoqueFrom = ` FROM estoque e LEFT JOIN produtos p ON p.sku = e.sku`
 
 // estoqueRanked numera os snapshots de cada SKU do mais recente para o mais
-// antigo (window function, MySQL 8.0+); rn = 1 é a última posição.
+// antigo (window function, MariaDB 10.2+); rn = 1 é a última posição.
 const estoqueRanked = `
 		SELECT ` + estoqueColunas + `,
 			ROW_NUMBER() OVER (PARTITION BY e.sku ORDER BY e.data_snapshot DESC, e.id DESC) AS rn

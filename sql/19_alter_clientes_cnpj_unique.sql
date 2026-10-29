@@ -48,11 +48,11 @@
 --
 -- Idempotente: pode ser rodado de novo. Se não houver duplicados, só
 -- garante o índice UNIQUE. Os DDLs (CREATE TABLE/ALTER) fazem commit
--- implícito no MySQL, por isso a parte DML (log + transferência + delete)
+-- implícito no MariaDB, por isso a parte DML (log + transferência + delete)
 -- fica isolada em uma única transação.
 --
 -- Uso:
---   MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
+--   MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
 --     --default-character-set=utf8mb4 $DB_NAME < sql/19_alter_clientes_cnpj_unique.sql
 -- ============================================================
 
@@ -61,7 +61,7 @@ SET NAMES utf8mb4;
 -- ------------------------------------------------------------
 -- 1) Mapa de grupos: cada cliente de CNPJ duplicado -> sobrevivente.
 --    Inclui o próprio sobrevivente (cliente_id = sobrevivente_id).
---    Duas cópias idênticas porque o MySQL não permite referenciar a mesma
+--    Duas cópias idênticas porque o MariaDB não permite referenciar a mesma
 --    TEMPORARY TABLE duas vezes na mesma query.
 -- ------------------------------------------------------------
 DROP TEMPORARY TABLE IF EXISTS `tmp_merge_grupo`;
@@ -70,7 +70,7 @@ CREATE TEMPORARY TABLE `tmp_merge_grupo` (
     `sobrevivente_id` BIGINT NOT NULL,
     PRIMARY KEY (`cliente_id`),
     KEY (`sobrevivente_id`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `tmp_merge_grupo` (`cliente_id`, `sobrevivente_id`)
 SELECT c.`cliente_id_origem`, d.`sobrevivente_id`
@@ -91,7 +91,7 @@ DROP TEMPORARY TABLE IF EXISTS `tmp_merge_carteiras_descartar`;
 CREATE TEMPORARY TABLE `tmp_merge_carteiras_descartar` (
     `carteira_id_origem` BIGINT NOT NULL,
     PRIMARY KEY (`carteira_id_origem`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO `tmp_merge_carteiras_descartar` (`carteira_id_origem`)
 SELECT cc.`carteira_id_origem`

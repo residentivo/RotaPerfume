@@ -1,4 +1,5 @@
-// Package vendasmysql implementa as portas de vendasapp sobre MySQL
+// Package vendasmysql implementa as portas de vendasapp sobre MariaDB
+// (protocolo MySQL)
 // (ARQ-05). O SQL é o dos repositórios legados de pedido e pagamento,
 // copiado sem alteração; a ordenação sai de switch sobre os enums do
 // domínio (C-02); todo valor vai por placeholder (C-03); e o escopo de

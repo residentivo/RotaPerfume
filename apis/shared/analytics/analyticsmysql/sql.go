@@ -1,4 +1,4 @@
-// Package analyticsmysql tem os adapters MySQL das consultas do Dashboard
+// Package analyticsmysql tem os adapters MariaDB (protocolo MySQL) das consultas do Dashboard
 // (ARQ-06): o SQL agregador do legado (dashboard_repository.go e as
 // métricas de cliente do cliente_repository.go), copiado BYTE A BYTE.
 //

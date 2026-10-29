@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql" // driver do AbrirMySQL
+	_ "github.com/go-sql-driver/mysql" // driver MySQL/MariaDB (go-sql-driver/mysql) do AbrirMySQL
 	"golang.org/x/term"
 
 	"github.com/rotaperfumes/shared/cmdutil"
@@ -41,7 +41,7 @@ type DepsCLI struct {
 	Gerador       PasswordGenerator
 }
 
-// DepsPadrao liga o terminal real (stdin), o MySQL e o gerador aleatório.
+// DepsPadrao liga o terminal real (stdin), o MariaDB e o gerador aleatório.
 func DepsPadrao() DepsCLI {
 	fd := int(os.Stdin.Fd())
 	return DepsCLI{
@@ -55,7 +55,7 @@ func DepsPadrao() DepsCLI {
 	}
 }
 
-// AbrirMySQL faz o sql.Open("mysql", dsn); o Ping fica a cargo do CLI.
+// AbrirMySQL faz o sql.Open("mysql", dsn) (MariaDB); o Ping fica a cargo do CLI.
 func AbrirMySQL(dsn string) (Conexao, error) {
 	return sql.Open("mysql", dsn)
 }

@@ -156,7 +156,7 @@ func UnificarPorCNPJ(rows []Row) (mantidas []Row, unificadas int) {
 	return mantidas, unificadas
 }
 
-// IsDuplicateCNPJ reporta se err é o MySQL 1062 no índice uq_clientes_cnpj
+// IsDuplicateCNPJ reporta se err é o 1062 do MariaDB/MySQL no índice uq_clientes_cnpj
 // (o CNPJ do CSV já pertence a outro cliente no banco, ex.: criado pela API).
 func IsDuplicateCNPJ(err error) bool {
 	var myErr *mysql.MySQLError

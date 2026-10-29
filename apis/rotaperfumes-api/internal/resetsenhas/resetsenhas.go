@@ -39,7 +39,7 @@ type Deps struct {
 	Email func(cfg *config.Config) (identidadeapp.EnviadorSenhaInicial, error)
 }
 
-// DepsPadrao liga o MySQL e o SMTP reais.
+// DepsPadrao liga o MariaDB e o SMTP reais.
 func DepsPadrao() Deps {
 	return Deps{
 		AbrirBanco: db.Open,

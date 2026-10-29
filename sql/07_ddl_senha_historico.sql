@@ -17,4 +17,4 @@ CREATE TABLE IF NOT EXISTS senha_historico (
     FOREIGN KEY (resetado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL,
     INDEX idx_usuario (usuario_id),
     INDEX idx_data (created_at)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

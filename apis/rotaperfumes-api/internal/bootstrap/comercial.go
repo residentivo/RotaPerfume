@@ -16,7 +16,7 @@ import (
 )
 
 // NovoComercial liga o contexto Comercial (ARQ-04) sobre o pool: adapters
-// MySQL, as portas para Identidade (vínculo do usuário e a parte de
+// MariaDB, as portas para Identidade (vínculo do usuário e a parte de
 // Identidade da tx do desligamento, I-09) e os dois UoW.
 func NovoComercial(pool *sql.DB) *comercialapp.Casos {
 	return comercialapp.Novo(comercialapp.Deps{

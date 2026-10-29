@@ -1,4 +1,4 @@
-// Package db encapsula a abertura e configuração da conexão MySQL.
+// Package db encapsula a abertura e configuração da conexão MariaDB.
 //
 // Seguindo o padrão Clean Code, este package expõe apenas Open() e Close().
 // Cada handler/service abre conexões curtas via db.Conn() conforme necessário,
@@ -12,15 +12,15 @@ import (
 	"log"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql" // driver MySQL
+	_ "github.com/go-sql-driver/mysql" // driver MySQL/MariaDB (go-sql-driver/mysql)
 
 	"github.com/rotaperfumes/shared/vlog"
 )
 
-// Open abre a conexão com o MySQL e valida com Ping.
+// Open abre a conexão com o MariaDB e valida com Ping.
 // Retorna *sql.DB pronto para uso e fecha qualquer erro na própria inicialização.
 func Open(dsn string) (*sql.DB, error) {
-	vlog.Printf("db.go", "Open", "abrindo handle MySQL via sql.Open")
+	vlog.Printf("db.go", "Open", "abrindo handle MariaDB via sql.Open")
 	conn, err := sql.Open("mysql", dsn)
 	vlog.Printf("db.go", "Open", "verificando se err != nil após sql.Open")
 	if err != nil {
@@ -43,12 +43,12 @@ func Open(dsn string) (*sql.DB, error) {
 	defer cancel()
 	vlog.Printf("db.go", "Open", "executando PingContext e verificando erro")
 	if err := conn.PingContext(ctx); err != nil {
-		vlog.Printf("db.go", "Open", "ping falhou; fechando handle MySQL")
+		vlog.Printf("db.go", "Open", "ping falhou; fechando handle MariaDB")
 		_ = conn.Close()
 		return nil, fmt.Errorf("db: ping falhou: %w", err)
 	}
 
-	log.Printf("[db] conexão MySQL estabelecida (host=%s)", maskDSN(dsn))
+	log.Printf("[db] conexão MariaDB estabelecida (host=%s)", maskDSN(dsn))
 	return conn, nil
 }
 

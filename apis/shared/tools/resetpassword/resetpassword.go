@@ -495,7 +495,7 @@ func GetEnv(key, fallback string) string {
 
 // corteDeSessaoAgora é o valor gravado em tokens_validos_desde (SEC-08) ao
 // trocar a senha de um usuário existente: access tokens com iat até esse
-// instante deixam de valer. Gerado pelo Go (nunca NOW() do MySQL) e
+// instante deixam de valer. Gerado pelo Go (nunca NOW() do MariaDB) e
 // truncado em segundos, mesma precisão do iat do JWT.
 func corteDeSessaoAgora() time.Time {
 	return time.Now().Truncate(time.Second)

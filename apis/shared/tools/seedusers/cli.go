@@ -9,7 +9,7 @@ import "github.com/rotaperfumes/shared/cmdutil"
 func CLI(args []string, amb cmdutil.Ambiente) error {
 	var opts Options
 	fs := cmdutil.NovasFlags(Tag, amb)
-	fs.BoolVar(&opts.NoExec, "no-exec", false, "apenas grava os SQLs com hash em tmp/seed (mantidos; apague depois); não executa no MySQL")
+	fs.BoolVar(&opts.NoExec, "no-exec", false, "apenas grava os SQLs com hash em tmp/seed (mantidos; apague depois); não executa no MariaDB")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "imprime hashes gerados sem gravar arquivos (hash completo só com -show-password)")
 	fs.BoolVar(&opts.ShowPassword, "show-password", false, "exibe as senhas de seed geradas/usadas e os hashes completos no console (cuidado: evite em ambientes compartilhados)")
 	if err := cmdutil.LerFlags(fs, args); err != nil {

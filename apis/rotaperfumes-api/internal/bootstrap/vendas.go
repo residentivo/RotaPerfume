@@ -11,7 +11,7 @@ import (
 	"github.com/rotaperfumes/shared/vendas/vendasmysql"
 )
 
-// NovoVendas liga o contexto Vendas (ARQ-05) sobre o pool: adapters MySQL,
+// NovoVendas liga o contexto Vendas (ARQ-05) sobre o pool: adapters MariaDB,
 // o escopo de carteira de Comercial (o AutorizadorEscopo, a mesma regra de
 // todo o sistema) e o UoW do pedido. Na tx do pedido, o cabeçalho, os itens
 // e a baixa de estoque do faturamento (porta para Catálogo) usam o MESMO

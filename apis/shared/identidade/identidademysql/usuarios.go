@@ -1,4 +1,5 @@
-// Package identidademysql implementa as portas de identidadeapp sobre MySQL
+// Package identidademysql implementa as portas de identidadeapp sobre MariaDB
+// (protocolo MySQL)
 // (ARQ-03). O SQL é o dos repositórios legados (usuario_repository.go,
 // refresh_token_repository.go, senha_historico_repository.go), copiado sem
 // alteração; as condições ficam no WHERE (F-07), a ordenação sai de switch
@@ -135,7 +136,7 @@ func (r *Usuarios) Inserir(ctx context.Context, u *identidade.Usuario) error {
 	return nil
 }
 
-// chaveDuplicada: MySQL 1062. O texto do legado ("Error 1062"/"Duplicate
+// chaveDuplicada: MariaDB/MySQL 1062. O texto do legado ("Error 1062"/"Duplicate
 // entry") continua aceito, com o mesmo resultado.
 func chaveDuplicada(err error) bool {
 	var me *mysql.MySQLError
@@ -171,7 +172,7 @@ func (r *Usuarios) AtualizarSenha(ctx context.Context, id int64, h identidade.Ha
 }
 
 // InvalidarSessoes grava o corte de sessão (SEC-08), truncado ao segundo
-// aqui: o MySQL arredondaria a fração e derrubaria um token emitido no
+// aqui: o banco poderia arredondar a fração e derrubar um token emitido no
 // segundo seguinte.
 func (r *Usuarios) InvalidarSessoes(ctx context.Context, id int64, corte time.Time) error {
 	const q = `UPDATE usuarios SET tokens_validos_desde = ? WHERE id = ?`

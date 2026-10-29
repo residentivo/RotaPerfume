@@ -3,6 +3,54 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 23 de 2026-10-29: 2 cards concluídos (DB-03 e SEC-28, este resolvido pelo DB-03)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "mude a conexão de todo o projeto para o mariadb ao invés de mysql". Escopo "Infra + docs" aprovado pelo usuário. Fechado em 2026-10-29 pelo 🔵 SubBrain.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (riscos) → 🌸 DataBrain (infra de banco) → 🟡 BackBrain (comentários/logs Go) → 🔴 TestBrain (testes) → 🔵 SubBrain (docs e fechamento). Sem mudança de schema e sem mudança de contrato HTTP; o 🟢 FrontBrain não participou.
+>
+> **Commit:** código e docs **não commitados** no fechamento (pendente do 🤍 MegaBrain/usuário).
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados do DB-03"):** SEC-29 (TLS Go ↔ MariaDB, MÉDIA), SEC-30 (ed25519, BAIXA), SEC-31 (imagem do Jenkins por digest, BAIXA), DB-04 (`ONLY_FULL_GROUP_BY`, BAIXA) e DEPLOY-02 (hardening do servidor com bind já aberto, MÉDIA).
+
+## DB-03: trocar a conexão do projeto de MySQL para MariaDB (infra + docs) — 2026-10-29
+**Agentes:** 🟣 SecBrain → 🌸 DataBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-29 (Lote 23, aberto e fechado em 2026-10-29).
+**Camadas:** Segurança, Database (infra), Backend (comentários/logs), Testes, Documentação
+**Origem:** pedido do usuário, decomposto pelo 🤍 MegaBrain (2026-10-29).
+
+**Descrição:** o projeto passa a usar MariaDB 11.4 LTS no lugar do MySQL em toda a infraestrutura, scripts e documentação.
+
+**Decisões do escopo (aprovadas pelo usuário):** o driver Go continua `github.com/go-sql-driver/mysql` (compatível com MariaDB) e o DSN não muda funcionalmente; os pacotes Go `*mysql` e `cmdutil.OpenMySQL` **não** foram renomeados; `MYSQL_PWD`/`MYSQL_OPTS` continuam (o cliente `mariadb` lê `MYSQL_PWD`).
+
+**Entregue:**
+- 🟣 **SecBrain (riscos):** avaliação da troca de cliente/imagem/serviço; recomendou `--local-infile=0` no cliente e `local_infile=0`, sql_mode estrito e `utf8mb4_unicode_ci` no servidor (aplicados pelo DataBrain). As sugestões fora do escopo viraram os cards SEC-29, SEC-30, SEC-31, DB-04 e DEPLOY-02.
+- 🌸 **DataBrain (infra de banco):**
+  - `Makefile`: chama o cliente `mariadb`; `MYSQL_OPTS` com `--local-infile=0` (resolve o SEC-28).
+  - `Jenkinsfile`: imagem `mariadb:11.4` (variável `DB_CLIENT_IMAGE`) e comando `mariadb --local-infile=0` no estágio "Importar dump".
+  - `deploy/mysql-setup.sql` renomeado para `deploy/mariadb-setup.sql`; `deploy/setup-servidor.sh` prefere o `mariadb` e o drop-in `zz-rotaperfumes.cnf` grava `local_infile = 0`, sql_mode estrito e `utf8mb4_unicode_ci` (só quando o bind está em loopback; ver DEPLOY-02); `deploy/dump-local.ps1` usa `mariadb-dump.exe` (fallback `mysqldump`); `deploy/docker-compose.yml` e `deploy/api.env.example` com referências a MariaDB.
+  - `sql/`: scripts validados para MariaDB 11.4; cabeçalhos de execução manual com `MYSQL_PWD="$DB_SENHA" mariadb ...`.
+- 🟡 **BackBrain (comentários/logs Go):** citações a MySQL trocadas por MariaDB em comentários e mensagens (ex.: `apis/shared/db`, `config`, `cmdutil`, bootstrap, adapters, importadores e CLIs), sem renomear pacotes nem identificadores. O `seedusers` chama o binário `mariadb` **sem fallback**: `make db-seed` exige o cliente `mariadb` no PATH.
+- 🔴 **TestBrain:** `apis/shared/tests/config/sec11_makefile_sql_test.go` ajustado (`MYSQL_OPTS` exige `--local-infile=0` e proíbe `--local-infile=1`; cabeçalhos de sql/08, 13, 18 a 23 exigem `MYSQL_PWD="$DB_SENHA" mariadb`; receitas que chamam o cliente do banco casam `(mysql|mariadb)(-dump)?(\.exe)?` com contagem > 0 e nenhuma pode chamar o `mysql` puro). gofmt, `go vet` e `go test ./...` verdes em `apis/shared` e `apis/rotaperfumes-api`.
+- 🔵 **SubBrain (documentação):** `.env.example` e `.env` (só o comentário "Banco de dados (MariaDB)"); `docs/deploy-servidor.md` (seção 3 reescrita para MariaDB, `sudo mariadb <`, `systemctl restart mariadb`, import com `mariadb:11.4`, `mariadb-dump.exe`, troubleshooting); `docs/manual-base-de-dados.md` (requisito do cliente `mariadb` ≥ 11.4 no PATH para `make db-*`/`db-seed`, nota do driver, seções 4 e 23); `docs/arquitetura-ddd.md` (nota DB-03); `docs/arq-00-invariantes-seguranca.md`; `CLAUDE.md` (linha sobre MariaDB 11.4 e o cliente `mariadb`); `postman/README.md` ("Subindo o ambiente" e menções ao servidor); `FalhasEncontradas.md`; `.claude/agents/database.md`. Os roteiros de teste dos lotes antigos não foram alterados (registros históricos com o cliente MySQL).
+
+**Não executado:** os testes de integração (`INTEGRATION=1`) contra um banco **MariaDB real** e o `make db-reset` com o cliente `mariadb` **não** foram rodados neste lote. Validar antes do próximo deploy.
+
+**Contrato HTTP:** inalterado. **Schema:** inalterado.
+
+---
+
+## SEC-28: remover `--local-infile=1` do `MYSQL_OPTS` do `Makefile` da raiz — 2026-10-29
+**Agentes:** 🌸 DataBrain → 🔴 TestBrain (🟣 SecBrain revisou)
+
+**Status:** concluído em 2026-10-29, **resolvido pelo DB-03** (Lote 23). Card aberto pelo 🟡 BackBrain no Lote 21 ARQ-07 (2026-10-16).
+
+**Entregue:** `--local-infile=0` no `MYSQL_OPTS` do `Makefile` e no `mysql_cli` do `Jenkinsfile` (comando `mariadb --local-infile=0`), e `local_infile = 0` no drop-in do servidor gravado pelo `deploy/setup-servidor.sh`. O teste `apis/shared/tests/config/sec11_makefile_sql_test.go` passou a exigir `--local-infile=0` e a proibir `--local-infile=1` (verde).
+
+**Ressalva:** o drop-in só é gravado quando o bind do banco está em loopback; servidores já abertos ficam para o DEPLOY-02.
+
+---
 ## Lote 22 de 2026-10-29: 1 card concluído (de 1)
 
 > Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário de exibir o funil de vendas no Dashboard. Fechado em 2026-10-29 pelo 🔵 SubBrain.

@@ -9,6 +9,8 @@
 > - matriz de rotas do 🔴 TestBrain: `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 35 Authenticated, 21 AdminOnly; corrigido no ARQ-01, N-6; desde o DASH-01, Lote 22, 2026-10-29, são **61**: 4 Public, 36 Authenticated, 21 AdminOnly, com `GET /api/dashboard/funil`);
 > - linha de base de testes e cobertura (2026-10-13): API **720** testes de topo, cobertura **91,5%**; shared **593** testes de topo, cobertura **85,6%** (ver §7.1).
 >
+> **Banco (DB-03, 2026-10-29):** o servidor passou de MySQL para **MariaDB 11.4 LTS**. O driver Go continua sendo o `go-sql-driver/mysql` (compatível com o MariaDB) e os pacotes de adapter mantêm o sufixo `<ctx>mysql` (decisão de escopo: nenhum pacote foi renomeado). Nas seções abaixo, "MySQL" no nome de pacote, do driver ou de tipo (`*mysql.MySQLError`) continua valendo; onde o texto fala do comportamento do servidor (InnoDB, isolamento, erro 1062), vale igualmente para o MariaDB. Para os alvos `make db-*` e `db-seed`, o cliente `mariadb` (MariaDB ≥ 11.4) precisa estar no `PATH`.
+>
 > No ARQ-00 este documento era **só desenho** (nenhum código foi movido naquele card). O código foi migrado do ARQ-01 ao ARQ-07; ver a seção 10.
 >
 > **Status (2026-10-13):** revisado pelo 🟣 SecBrain, **aprovado com ressalvas**. Os obrigatórios O1 a O9 e os recomendados R-a a R-g já estão incorporados (ver §0.2). Decisões P1 a P4 tomadas (ver §0.1).
@@ -577,7 +579,7 @@ func NovoProdutos(q db.Querier) *Produtos { return &Produtos{q: q} }
 - **Simplifica:** acaba com os 5 `BeginTx`/`defer Rollback`/`Commit` espalhados (`vendedor_service.go:345`, `cliente_service.go:312`, `refresh_token_service.go:284`, `pedido_repository.go:305,364`) e com `RefreshRotation` (`refresh_token_service.go:270-340`).
 - **Regras do `WithTx` (O8-ii, R-d):**
   1. dentro da `fn`, use **só** os repositórios de `R` (ligados à tx). É proibido usar o pool, outro caso de uso ou um repositório capturado de fora da closure. O tipo `R` só contém o que a operação precisa, e a revisão confere que a closure não referencia campos `uc.repo*`;
-  2. `BeginTx(ctx, nil)` usa o isolamento padrão do MySQL/InnoDB (**REPEATABLE READ**), o mesmo de hoje. Nenhum lote muda o nível de isolamento;
+  2. `BeginTx(ctx, nil)` usa o isolamento padrão do MariaDB/InnoDB (**REPEATABLE READ**, igual ao do MySQL), o mesmo de hoje. Nenhum lote muda o nível de isolamento;
   3. a tx é **cancelada pelo `ctx`** da requisição: se o cliente desconectar ou o timeout de 15 s estourar, o `database/sql` faz rollback. É o comportamento atual dos `BeginTx(ctx, nil)` existentes;
   4. nada de efeito externo (e-mail, evento, cookie) dentro da `fn`: eles acontecem depois do commit.
 
@@ -953,7 +955,7 @@ type VerificadorCaptcha interface {
 
 ### 5.11 Facade / Composition Root
 
-- **Onde:** `rotaperfumes-api/internal/bootstrap`. É o **único** lugar que conhece `config`, `*sql.DB`, os adapters MySQL e os singletons (3 limitadores, notifier, hasher, emissor JWT, Turnstile), criados **uma vez por processo** (I-14, risco do SecBrain).
+- **Onde:** `rotaperfumes-api/internal/bootstrap`. É o **único** lugar que conhece `config`, `*sql.DB`, os adapters de banco (`<ctx>mysql`, servidor MariaDB) e os singletons (3 limitadores, notifier, hasher, emissor JWT, Turnstile), criados **uma vez por processo** (I-14, risco do SecBrain).
 - **Simplifica:** o `main.go` cai de 248 para ~30 linhas. Somem a injeção por setter (A4) e os construtores que ignoram dependências (A2).
 
 ```go
@@ -1761,7 +1763,7 @@ Referência: `docs/arq-00-invariantes-seguranca.md`. Marcar no PR de cada lote. 
 - **Erros:**
   - sentinela `var ErrX = kernel.NovoErro(kernel.KindY, "mensagem pública")` no domínio, com Kind constante e mensagem literal (§4.3);
   - a infra embrulha com `fmt.Errorf("catalogomysql: listar produtos: %w", err)`: o texto do wrap leva **só o nome da operação**, nunca valores (CNPJ, e-mail, busca, ids de terceiros) (O6-iv);
-  - erro de chave duplicada do MySQL (1062, `Duplicate entry '<valor>'`) é traduzido **no adapter** para o sentinela, devolvido sem embrulhar o erro do driver;
+  - erro de chave duplicada do MariaDB (1062, mesmo código do MySQL, `Duplicate entry '<valor>'`) é traduzido **no adapter** para o sentinela, devolvido sem embrulhar o erro do driver;
   - `errors.Join` de infra com sentinela é proibido (R-c);
   - ninguém compara strings de erro.
 - **Contexto:** `ctx` é sempre o 1º parâmetro; o `Principal` vai **explícito** como parâmetro para a aplicação (nunca lido do `ctx` fora de `httpx`). No handler: `p, ok := httpx.PrincipalFrom(r)`; em rota protegida, `!ok` → 500 "erro interno" (O5).

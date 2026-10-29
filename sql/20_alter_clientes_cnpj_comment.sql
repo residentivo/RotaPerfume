@@ -15,7 +15,7 @@
 --   - CHARACTER SET utf8mb4 / COLLATE utf8mb4_unicode_ci;
 --   - índice UNIQUE `uq_clientes_cnpj` (não é tocado);
 --   - dados (nenhuma linha é alterada).
--- ALGORITHM=INPLACE, LOCK=NONE: troca de COMMENT é só metadado. Se o MySQL
+-- ALGORITHM=INPLACE, LOCK=NONE: troca de COMMENT é só metadado. Se o MariaDB
 -- precisar copiar a tabela (ou seja, se algo além do COMMENT mudasse), o
 -- ALTER falha em vez de reconstruir a tabela.
 --
@@ -33,7 +33,7 @@
 -- Reversão: sql/20_revert_clientes_cnpj_comment.sql (make db-revert-cnpj-comment)
 --
 -- Uso:
---   MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
+--   MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
 --     --default-character-set=utf8mb4 $DB_NAME < sql/20_alter_clientes_cnpj_comment.sql
 -- ============================================================
 

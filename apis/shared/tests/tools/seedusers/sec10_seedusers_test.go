@@ -148,8 +148,8 @@ func TestSEC10_Run_ApagaTmpSeed(t *testing.T) {
 		wantErr string
 	}{
 		{nome: "sucesso"},
-		{nome: "RunSQL falha no 1º arquivo", falhar: "02_seed_admin.sql", wantErr: "mysql falhou"},
-		{nome: "RunSQL falha no 2º arquivo", falhar: "03_seed_vendedores.sql", wantErr: "mysql falhou"},
+		{nome: "RunSQL falha no 1º arquivo", falhar: "02_seed_admin.sql", wantErr: "mariadb falhou"},
+		{nome: "RunSQL falha no 2º arquivo", falhar: "03_seed_vendedores.sql", wantErr: "mariadb falhou"},
 		{
 			nome: "2º SQL sem placeholder (1º já renderizado)",
 			prepara: func(t *testing.T, root string) {

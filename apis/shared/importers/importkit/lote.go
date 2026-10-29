@@ -16,7 +16,7 @@ type Contagem struct {
 }
 
 // Registrar classifica o resultado de um INSERT … ON DUPLICATE KEY UPDATE.
-// Com clientFoundRows=true no DSN (BUG-04), o MySQL devolve 1 = INSERT novo
+// Com clientFoundRows=true no DSN (BUG-04), o MariaDB devolve 1 = INSERT novo
 // OU linha já existente sem alteração (por isso "inseridos_ou_inalterados")
 // e 2 = UPDATE com alteração real. 0 não ocorre com clientFoundRows=true e,
 // por robustez, conta como atualizado.

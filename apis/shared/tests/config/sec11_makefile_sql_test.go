@@ -4,7 +4,8 @@ package config_test
 // cmdutil.FindProjectRoot).
 //   - MYSQL_OPTS sem -p (senha só por MYSQL_PWD no ambiente); sem default
 //     DB_USUARIO?=/DB_SENHA?= nem "golang"; "-include .env" antes do export.
-//   - Todo alvo que chama o mysql depende (direta ou transitivamente) de
+//   - DB-03/SEC-28: cliente mariadb (nunca o mysql puro) com --local-infile=0.
+//   - Todo alvo que chama o mariadb depende (direta ou transitivamente) de
 //     db-check-env; db-create/db-down/db-fix-*/db-revert-* diretamente.
 //   - help/build/test/lint/dev-frontend não exigem credenciais; help continua
 //     sendo o alvo padrão (db-check-env vem depois dele).
@@ -159,7 +160,10 @@ func TestSEC11_Makefile_MysqlOptsSemSenha(t *testing.T) {
 	assert.NotRegexp(t, `(^|\s)-p`, strings.SplitN(opts, "=", 2)[1], "MYSQL_OPTS não pode levar -p (senha no argv)")
 	assert.NotContains(t, opts, "DB_SENHA")
 	assert.Contains(t, opts, "-u $(DB_USUARIO)")
-	assert.Contains(t, opts, "--local-infile=1")
+	// SEC-28 (DB-03): LOAD DATA LOCAL desligado no cliente mariadb.
+	assert.Contains(t, opts, "--local-infile=0")
+	assert.NotContains(t, opts, "--local-infile=1")
+	assert.NotContains(t, mk.texto, "--local-infile=1", "nenhuma receita reabilita o LOCAL INFILE")
 
 	casos := []struct{ nome, re string }{
 		{"-p$(DB_SENHA)", `-p\$\(DB_SENHA\)`},
@@ -255,14 +259,28 @@ func TestSEC11_Makefile_AlvosDeBancoDependemDeDbCheckEnv(t *testing.T) {
 		})
 	}
 
-	// Regra geral: toda receita que chama o cliente mysql exige db-check-env.
-	reMysql := regexp.MustCompile(`(^|[\s;&|(])mysql(\.exe)?\s`)
+	// Regra geral: toda receita que chama o cliente do banco (mariadb, mysql,
+	// *-dump, com ou sem .exe) exige db-check-env. Ao menos uma receita precisa
+	// casar, senão o teste ficaria verde vazio (o que aconteceu ao trocar
+	// mysql por mariadb no DB-03).
+	reCliente := regexp.MustCompile(`(^|[\s;&|(@])(mysql|mariadb)(-dump)?(\.exe)?\s`)
+	casaram := 0
 	for _, a := range mk.ordem {
 		for _, l := range mk.regras[a].receita {
-			if reMysql.MatchString(l) {
-				assert.True(t, mk.dependeDe(a, "db-check-env"), "alvo %s chama o mysql sem db-check-env: %s", a, l)
+			if reCliente.MatchString(l) {
+				casaram++
+				assert.True(t, mk.dependeDe(a, "db-check-env"), "alvo %s chama o cliente do banco sem db-check-env: %s", a, l)
 				break
 			}
+		}
+	}
+	assert.Greater(t, casaram, 0, "nenhuma receita chama o cliente mariadb: regex desatualizado?")
+
+	// DB-03: o projeto usa o cliente mariadb; nenhuma receita chama o mysql puro.
+	reMysqlPuro := regexp.MustCompile(`(^|[\s;&|(@])mysql(dump|-dump)?(\.exe)?(\s|$)`)
+	for _, a := range mk.ordem {
+		for _, l := range mk.regras[a].receita {
+			assert.NotRegexp(t, reMysqlPuro, l, "alvo %s chama o cliente mysql (use mariadb)", a)
 		}
 	}
 }
@@ -352,12 +370,15 @@ func TestSEC11_SQL_NenhumEnsinaSenhaNoArgv(t *testing.T) {
 	}
 }
 
-// Os cabeçalhos que ensinam a rodar o arquivo pelo mysql usam MYSQL_PWD.
+// Os cabeçalhos que ensinam a rodar o arquivo pelo cliente mariadb usam
+// MYSQL_PWD (senha fora do argv) e não reabilitam o LOCAL INFILE (SEC-28).
 func TestSEC11_SQL_CabecalhosUsamMysqlPwd(t *testing.T) {
 	root := raizProjeto(t)
 	for _, nome := range []string{
 		"08_alter_usuarios_deve_trocar_senha.sql",
 		"13_alter_senha_historico_tipo_reset.sql",
+		"18_alter_estoque_drop_origem.sql",
+		"18_revert_estoque_drop_origem.sql",
 		"19_alter_clientes_cnpj_unique.sql",
 		"19_revert_clientes_cnpj_unique.sql",
 		"20_alter_clientes_cnpj_comment.sql",
@@ -371,9 +392,29 @@ func TestSEC11_SQL_CabecalhosUsamMysqlPwd(t *testing.T) {
 	} {
 		t.Run(nome, func(t *testing.T) {
 			texto := lerTexto(t, filepath.Join(root, "sql", nome))
-			assert.Contains(t, texto, `MYSQL_PWD="$DB_SENHA" mysql`)
+			assert.Contains(t, texto, `MYSQL_PWD="$DB_SENHA" mariadb`)
+			assert.NotContains(t, texto, `MYSQL_PWD="$DB_SENHA" mysql`, "DB-03: cliente mariadb")
+			uso := cabecalhoUso(texto)
+			require.NotEmpty(t, uso, "cabeçalho sem bloco Uso:")
+			assert.NotRegexp(t, `(^|\s)-p\S`, uso, "sem -p<senha> no cabeçalho")
+			assert.NotContains(t, texto, "--password=")
+			assert.NotContains(t, texto, "--local-infile=1", "SEC-28")
 		})
 	}
+}
+
+// cabecalhoUso devolve as linhas de comentário do bloco "Uso:" (até a linha
+// "-- ====" seguinte), onde ficam os comandos de exemplo.
+func cabecalhoUso(texto string) string {
+	i := strings.Index(texto, "Uso:")
+	if i < 0 {
+		return ""
+	}
+	resto := texto[i:]
+	if f := strings.Index(resto, "-- ===="); f >= 0 {
+		resto = resto[:f]
+	}
+	return resto
 }
 
 // SEC-12: DDL da coluna reuso_detectado_em.

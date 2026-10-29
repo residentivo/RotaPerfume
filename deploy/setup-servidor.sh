@@ -2,7 +2,7 @@
 # =============================================================================
 # Instalacao automatica do rotaperfumes no servidor da LAN (card DEPLOY-01).
 #
-# Prepara o servidor (Docker/Jenkins/MySQL/ufw), cria o banco e os usuarios,
+# Prepara o servidor (Docker/Jenkins/MariaDB/ufw), cria o banco e os usuarios,
 # gera o api.env de producao, cria/atualiza o job Jenkins "rotaperfumes-deploy"
 # e dispara o primeiro build.
 #
@@ -105,8 +105,8 @@ Opcoes:
   --https-port PORTA          Porta HTTPS do Caddy (padrao 8443)
   --jenkins-url URL           URL do Jenkins vista do servidor
                               (padrao http://localhost:8888)
-  --skip-mysql                Nao cria banco/usuarios (pede a senha atual do
-                              rotaperfumes_app para o api.env).
+  --skip-mysql                Nao cria banco/usuarios no MariaDB (pede a senha
+                              atual do rotaperfumes_app para o api.env).
   --skip-build                Nao dispara o build no final.
   --remove-inputs             Apaga o --env e o --dump originais no final.
   -h, --help                  Mostra esta ajuda.
@@ -359,7 +359,7 @@ EOF
   xml_param_string SITE_IP 'IP do servidor na LAN (tambem aceito pelo Caddy)' "$SITE_IP"
   xml_param_string HTTPS_PORT 'Porta HTTPS publicada pelo Caddy' "$HTTPS_PORT"
   xml_param_string TURNSTILE_SITE_KEY 'Site key PUBLICA do Cloudflare Turnstile (embutida no bundle do frontend)' "$TURNSTILE_SITE_KEY"
-  xml_param_bool IMPORTAR_DUMP 'Importa o dump (.sql.gz) no MySQL do servidor - SOBRESCREVE as tabelas' false
+  xml_param_bool IMPORTAR_DUMP 'Importa o dump (.sql.gz) no MariaDB do servidor - SOBRESCREVE as tabelas' false
   xml_param_string DUMP_PATH 'Caminho do dump no servidor (visivel para o agente Jenkins)' "$DUMP_DESTINO"
   cat <<EOF
       </parameterDefinitions>
@@ -486,13 +486,15 @@ checar_jenkins() {
   falhar "Jenkins nao encontrado como servico systemd 'jenkins'."
 }
 
+# Alvo: MariaDB 11.4 (cliente "mariadb"; a partir do 11.x o pacote pode nao
+# trazer mais o symlink "mysql"). O cliente "mysql" fica so como fallback.
 detectar_mysql_bin() {
-  if command -v mysql >/dev/null 2>&1; then
-    MYSQL_BIN=mysql
-  elif command -v mariadb >/dev/null 2>&1; then
+  if command -v mariadb >/dev/null 2>&1; then
     MYSQL_BIN=mariadb
+  elif command -v mysql >/dev/null 2>&1; then
+    MYSQL_BIN=mysql
   else
-    falhar "Cliente mysql/mariadb nao encontrado no servidor."
+    falhar "Cliente mariadb (ou mysql) nao encontrado no servidor. Instale: sudo apt install mariadb-server"
   fi
 }
 
@@ -513,7 +515,7 @@ checar_acesso_mysql() {
     return 0
   fi
   info "Acesso root via socket falhou."
-  IFS= read -rsp "    Senha do root do MySQL/MariaDB: " MYSQL_ROOT_SENHA
+  IFS= read -rsp "    Senha do root do MariaDB: " MYSQL_ROOT_SENHA
   echo >&2
   mysql_root -e 'SELECT 1' >/dev/null 2>&1 || falhar "Nao foi possivel acessar o banco como root."
   ok "acesso root ao banco com senha"
@@ -535,7 +537,7 @@ detectar_sabor_e_servico() {
       break
     fi
   done
-  [[ -n "$MYSQL_SERVICO" ]] || falhar "Servico systemd do banco nao encontrado (mysql/mysqld/mariadb)."
+  [[ -n "$MYSQL_SERVICO" ]] || falhar "Servico systemd do banco nao encontrado (mariadb/mysql/mysqld)."
   ok "$MYSQL_SABOR $versao (servico $MYSQL_SERVICO)"
 }
 
@@ -611,12 +613,23 @@ aguardar_mysql() {
   falhar "O banco nao voltou apos o restart (journalctl -u $MYSQL_SERVICO)."
 }
 
+# Drop-in [mysqld] (secao lida tambem pelo MariaDB): alem do bind-address,
+# fixa local_infile = 0 (nenhum LOAD DATA no projeto), sql_mode estrito e o
+# charset/collation padrao do projeto (o padrao do MariaDB 11.4 seria
+# utf8mb4_uca1400_ai_ci).
 gravar_dropin_bind() {
   local dir arq tmp
   dir=$(diretorio_dropin) || falhar "Diretorio de configuracao do banco nao encontrado."
   arq="$dir/zz-rotaperfumes.cnf"
   tmp="$TMP_DIR/zz-rotaperfumes.cnf"
-  printf '# Gerado por deploy/setup-servidor.sh (rotaperfumes)\n[mysqld]\nbind-address = 0.0.0.0\n' >"$tmp"
+  {
+    printf '# Gerado por deploy/setup-servidor.sh (rotaperfumes)\n[mysqld]\n'
+    printf 'bind-address = 0.0.0.0\n'
+    printf 'local_infile = 0\n'
+    printf 'sql_mode = STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION\n'
+    printf 'character_set_server = utf8mb4\n'
+    printf 'collation_server = utf8mb4_unicode_ci\n'
+  } >"$tmp"
   install -m 644 -o root -g root "$tmp" "$arq"
   info "Gravado $arq; reiniciando $MYSQL_SERVICO..."
   systemctl restart "$MYSQL_SERVICO"
@@ -690,7 +703,7 @@ usuario_db_existe() {
 
 pedir_senha_admin() {
   local s1 s2
-  info "Escolha a senha do usuario MySQL $DB_ADMIN (voce a digitara no Jenkins depois)."
+  info "Escolha a senha do usuario MariaDB $DB_ADMIN (voce a digitara no Jenkins depois)."
   while true; do
     IFS= read -rsp "    Senha (min. 12 caracteres): " s1
     echo >&2
@@ -707,7 +720,7 @@ pedir_senha_admin() {
 }
 
 pedir_senha_app_existente() {
-  IFS= read -rsp "    Senha ATUAL do usuario MySQL $DB_APP (vai para o api.env): " SENHA_APP
+  IFS= read -rsp "    Senha ATUAL do usuario MariaDB $DB_APP (vai para o api.env): " SENHA_APP
   echo >&2
   [[ -n "$SENHA_APP" ]] || falhar "Senha vazia."
 }

@@ -10,7 +10,7 @@ import (
 )
 
 // NovoAnalytics liga o contexto Analytics (ARQ-06) sobre o pool: os
-// adapters MySQL do Dashboard (e o do funil de oportunidades, DASH-01) e o
+// adapters MariaDB do Dashboard (e o do funil de oportunidades, DASH-01) e o
 // escopo de carteira de Comercial (o AutorizadorEscopo.ResolverParaAnalytics,
 // a mesma regra de todo o sistema, D-01).
 func NovoAnalytics(pool *sql.DB, escopo analyticsapp.EscopoAnalytics) *analyticsapp.Consultas {

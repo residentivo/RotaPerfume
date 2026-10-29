@@ -423,7 +423,8 @@ func parseAllowedOrigins(raw string) []string {
 	return origins
 }
 
-// DSN monta a connection string para o driver go-sql-driver/mysql.
+// DSN monta a connection string para o driver go-sql-driver/mysql, que
+// conecta ao MariaDB (protocolo MySQL).
 // Inclui parseTime=true para que colunas TIMESTAMP sejam tipadas como time.Time.
 //
 // loc=Local: time.Local é fixado em -03:00 pelo pacote tz (import em branco

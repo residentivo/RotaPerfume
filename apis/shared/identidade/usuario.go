@@ -140,7 +140,7 @@ type ClaimsAcesso struct {
 }
 
 // CorteDeSessao é o instante gravado em usuarios.tokens_validos_desde:
-// sempre do relógio do Go (nunca NOW() do MySQL) e truncado ao segundo, a
+// sempre do relógio do Go (nunca NOW() do MariaDB) e truncado ao segundo, a
 // precisão do iat do JWT (SEC-08).
 func CorteDeSessao(agora time.Time) time.Time { return agora.Truncate(time.Second) }
 

@@ -127,7 +127,7 @@ func TestF08_MaskDSN(t *testing.T) {
 			require.NoError(t, conn.Close())
 
 			linha := strings.TrimSpace(buf.String())
-			assert.Equal(t, "[db] conexão MySQL estabelecida (host="+c.want+")", linha)
+			assert.Equal(t, "[db] conexão MariaDB estabelecida (host="+c.want+")", linha)
 			assert.NotContains(t, linha, "segredo", "a senha nunca vai para o log")
 		})
 	}

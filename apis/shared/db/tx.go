@@ -27,7 +27,7 @@ var (
 // Regras do WithTx (O8-ii, R-d):
 //  1. dentro da fn use SÓ os repositórios de R (nada do pool nem capturado de
 //     fora da closure);
-//  2. isolamento padrão do MySQL/InnoDB (REPEATABLE READ), o mesmo de hoje;
+//  2. isolamento padrão do MariaDB/InnoDB (REPEATABLE READ), o mesmo de hoje;
 //  3. a tx é cancelada pelo ctx da requisição (rollback pelo database/sql);
 //  4. nenhum efeito externo (e-mail, evento, cookie) dentro da fn.
 //

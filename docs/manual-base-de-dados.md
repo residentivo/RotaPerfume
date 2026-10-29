@@ -1,6 +1,7 @@
 # Manual da base de dados
 
-**Banco:** MySQL, schema `rotaperfumes` (padrão do `Makefile`: `DB_NAME?=rotaperfumes`), charset `utf8mb4`, collation `utf8mb4_unicode_ci` (definidos no `make db-create`).
+**Banco:** MariaDB 11.4 LTS (desde o DB-03; antes, MySQL), schema `rotaperfumes` (padrão do `Makefile`: `DB_NAME?=rotaperfumes`), charset `utf8mb4`, collation `utf8mb4_unicode_ci` (definidos no `make db-create`).
+**Requisitos:** cliente `mariadb` (MariaDB ≥ 11.4) no `PATH` para todos os alvos `make db-*`, inclusive o `make db-seed` (o `seedusers` em Go chama o binário `mariadb`, sem fallback para `mysql`). A API e os importadores usam o driver Go `go-sql-driver/mysql`, compatível com o MariaDB; por isso os pacotes de adapter continuam com o sufixo `mysql` (`<contexto>mysql`).
 **Fonte da verdade:** os scripts em `sql/` (DDLs mais as migrações de alteração, em ordem numérica). Em caso de divergência entre este manual e um script, vale o script.
 **Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no Lote 5 com o NEG-02, CNPJ alfanumérico, no Lote 6 com a migração 21 e `refresh_tokens.revoked_reason`, no Lote 8 com a migração 22 e `usuarios.tokens_validos_desde` e, no Lote 11, 2026-09-26, card DOC-04, com o detalhamento de todas as tabelas; no Lote 12, 2026-09-27, com DB-01 (`estoque` no `db-up`), SEC-11 (credenciais do banco), SEC-12 (migração 23, `refresh_tokens.reuso_detectado_em`) e CHORE-02 (limpeza de `refresh_tokens`)).
 
@@ -19,7 +20,7 @@
 7. ERP: [`produtos`](#13-tabela-produtos), [`pedidos`](#14-tabela-pedidos), [`itens_pedido`](#15-tabela-itens_pedido), [`pagamentos`](#16-tabela-pagamentos), [`estoque`](#17-tabela-estoque)
 8. Migração 19 e backups: [migração 19](#18-migração-19-unificação-dos-cnpjs-duplicados), [tabelas de backup](#19-tabelas-de-backup-da-migração-19), [reversão](#20-reversão-make-db-revert-cnpj-unique), [consultas](#21-consultas-de-verificação-da-migração-19)
 9. [Pontos a confirmar](#22-pontos-a-confirmar)
-10. [Credenciais do banco e uso do `mysql` (SEC-11)](#23-credenciais-do-banco-e-uso-do-mysql-sec-11-lote-12-2026-09-27)
+10. [Credenciais do banco e uso do cliente `mariadb` (SEC-11; DB-03)](#23-credenciais-do-banco-e-uso-do-cliente-mariadb-sec-11-lote-12-2026-09-27-db-03)
 
 ---
 
@@ -31,7 +32,7 @@
 - **Colunas de FK para clientes:** `cliente_id` das tabelas filhas guarda o `clientes.cliente_id_origem`. Todas as FKs para `clientes` apontam para `cliente_id_origem`.
 - **Booleanos:** `TINYINT(1)` com 0/1. No CSV vêm como S/N.
 - **Valores monetários:** `DECIMAL(15,2)` (totais) ou `DECIMAL(10,2)` (preços unitários). Percentuais: `DECIMAL(5,2)` (ex.: 5.00 = 5%).
-- **Exclusão lógica x física** (conferido nos repositórios, hoje os adapters MySQL `apis/shared/<contexto>/<contexto>mysql`, ex.: `apis/shared/catalogo/catalogomysql`; até o Lote 21, `apis/shared/repositories`):
+- **Exclusão lógica x física** (conferido nos repositórios, hoje os adapters de banco `apis/shared/<contexto>/<contexto>mysql`, ex.: `apis/shared/catalogo/catalogomysql`; até o Lote 21, `apis/shared/repositories`):
 
 | Tabela | Como é "excluída" |
 | --- | --- |
@@ -168,7 +169,7 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 23 | `23_alter_refresh_tokens_reuso_detectado_em.sql` | Adiciona `refresh_tokens.reuso_detectado_em` (SEC-12, idempotente) | `db-fix-reuso-detectado` | Sim: `23_revert_...`, `db-revert-reuso-detectado` (perde as marcas de reuso) |
 
 - As migrações de alteração (08, 13, 18 a 23) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
-- Todos os alvos que chamam o `mysql` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed`/`db-reset` herdam via `db-create`) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h ...`, sem `-p` no argv.
+- Todos os alvos que chamam o cliente `mariadb` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed`/`db-reset` herdam via `db-create`) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23) e o `mariadb` (MariaDB ≥ 11.4) no `PATH` (DB-03). O `Makefile` passa `--local-infile=0` (SEC-28). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h ...`, sem `-p` no argv.
 - Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`apis/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por Argon2id real (com o `PASSWORD_PEPPER` do `.env`).
 - Importadores (`db-import-*`, `apis/shared/cmd/import*`): upsert idempotente a partir de `dados/crm/*.csv` e `dados/erp/*.csv`. Ordem de dependência: clientes e produtos, depois pedidos (e itens), pagamentos, carteiras, oportunidades, visitas e estoque.
 
@@ -242,7 +243,7 @@ Corte de sessão por usuário. Revogar refresh tokens não invalida os access to
 
 #### Quando o corte é gravado
 
-O valor vem do Go (`time.Now().Truncate(time.Second)`), nunca do `NOW()` do MySQL (o DSN usa `loc=Local`, fuso fixo `-03:00`).
+O valor vem do Go (`time.Now().Truncate(time.Second)`), nunca do `NOW()` do MariaDB (o DSN usa `loc=Local`, fuso fixo `-03:00`).
 
 | Evento | Onde no código |
 | --- | --- |
@@ -352,7 +353,7 @@ Referências: cards SEC-06 e SEC-07 em `tarefas/feito.md` (Lote 6); roteiro `doc
 **Regra:** a supressão é **por token** (`id`), nunca por usuário. Assim, um atacante com **outro** refresh roubado continua sendo detectado depois do re-login da vítima.
 
 - No reuso de um token `rotacao` fora da janela de graça de 30 s, o backend roda um UPDATE condicional atômico pela PK:
-  `UPDATE refresh_tokens SET reuso_detectado_em = ? WHERE id = ? AND revoked_reason = 'rotacao' AND (reuso_detectado_em IS NULL OR reuso_detectado_em <= ?)`, com `agora` e `limite = agora - janela` vindos do relógio do Go (truncados no segundo), nunca do `NOW()` do MySQL.
+  `UPDATE refresh_tokens SET reuso_detectado_em = ? WHERE id = ? AND revoked_reason = 'rotacao' AND (reuso_detectado_em IS NULL OR reuso_detectado_em <= ?)`, com `agora` e `limite = agora - janela` vindos do relógio do Go (truncados no segundo), nunca do `NOW()` do MariaDB.
 - 1 linha afetada → corta as sessões (`RevokeAllUserTokens` com `revogacao_massa`, `InvalidarSessoes`) e envia o alerta do SEC-09. 0 linha → reuso repetido dentro da janela: **não** corta de novo e não envia e-mail; log `[auth][seguranca] refresh: reuso repetido de token rotacionado dentro da janela de supressão — sessões NÃO revogadas de novo`.
 - Depois da janela, o próximo reuso do mesmo token volta a cortar.
 - **Fail-closed:** erro ao gravar a marca → corta assim mesmo. Se o corte falhar (`RevokeAllUserTokens` ou `InvalidarSessoes`), a marca é desfeita (`UPDATE ... SET reuso_detectado_em = NULL WHERE id = ? AND reuso_detectado_em = ?`), para o próximo reuso tentar de novo.
@@ -392,7 +393,7 @@ SELECT id, usuario_id, revoked_reason, revoked_at, reuso_detectado_em
 | `REFRESH_CLEANUP_INTERVAL` | `6h` | `0` ou `>= 1m` | `0` desativa (log `limpeza periódica desativada`). `30s` → a API não sobe. |
 
 - **Logs:** `[refresh] cleanup: limpeza periódica iniciada (intervalo=6h0m0s)`, `[refresh] cleanup: N tokens removidos (corte=...)`, `[refresh] cleanup: limpeza periódica encerrada` (shutdown) e `[server] tarefas de fundo encerradas`.
-- **Sem alvo no Makefile:** um DELETE via `mysql` usaria o `NOW()` do servidor e duplicaria a regra. Um `cmd/cleanuprefresh` em Go fica como opção futura (seção 23.4).
+- **Sem alvo no Makefile:** um DELETE via `mariadb` usaria o `NOW()` do servidor e duplicaria a regra. Um `cmd/cleanuprefresh` em Go fica como opção futura (seção 23.4).
 
 ---
 
@@ -413,7 +414,7 @@ Auditoria das trocas de senha. Cada linha guarda o hash **anterior** e quem fez 
 
 **Índices:** `PRIMARY` (`id`), `idx_usuario` (`usuario_id`), `idx_data` (`created_at`).
 
-**FKs:** as duas FKs foram declaradas sem nome, então o MySQL gera os nomes (normalmente `senha_historico_ibfk_1` e `_ibfk_2`; a confirmar no banco). Nenhuma declara `ON UPDATE`: vale o padrão do MySQL (`RESTRICT`/`NO ACTION`).
+**FKs:** as duas FKs foram declaradas sem nome, então o MariaDB gera os nomes (normalmente `senha_historico_ibfk_1` e `_ibfk_2`; a confirmar no banco). Nenhuma declara `ON UPDATE`: vale o padrão do MariaDB (`RESTRICT`/`NO ACTION`).
 
 **Valores de `tipo_reset`** (`apis/shared/identidade/historico.go`, tipo `TipoReset`; até o Lote 21, `apis/rotaperfumes-api/services/senha_historico_service.go`):
 
@@ -472,7 +473,7 @@ Base de clientes do CRM, importada de `dados/crm/clientes.csv` (`make db-import-
 - Substitui o antigo índice simples `idx_clientes_cnpj`, que não impedia CNPJ repetido. Depois da migração, o `idx_clientes_cnpj` não existe mais.
 - Decisão do usuário (NEG-01): bloquear CNPJ duplicado no banco.
 - Em bancos novos, o `sql/09_ddl_clientes.sql` já cria a tabela com o `uq_clientes_cnpj`. Em bancos que já existiam, quem cria o índice é a migração 19 (seção 18).
-- Um INSERT/UPDATE com CNPJ repetido falha com o erro MySQL **1062** (`ER_DUP_ENTRY`). A API converte esse erro em `409` genérico "cnpj já cadastrado", sem revelar o vendedor dono do cliente. Um CNPJ com formato ou DV inválido é recusado antes, com `400` "cnpj inválido" (NEG-03 e NEG-04), então a checagem de duplicidade só se aplica a CNPJ válido.
+- Um INSERT/UPDATE com CNPJ repetido falha com o erro **1062** do MariaDB (mesmo código do MySQL) (`ER_DUP_ENTRY`). A API converte esse erro em `409` genérico "cnpj já cadastrado", sem revelar o vendedor dono do cliente. Um CNPJ com formato ou DV inválido é recusado antes, com `400` "cnpj inválido" (NEG-03 e NEG-04), então a checagem de duplicidade só se aplica a CNPJ válido.
 - **Importação:** como o CSV tem CNPJs repetidos, os importadores unificam os duplicados antes de gravar (`apis/shared/importers/clientesdedup`; até o Lote 6 ficava em `cmd/internal/clientesdedup`). Fica a primeira ocorrência de cada CNPJ, que é o menor `cliente_id`, igual à regra da migração. O `importclientes` não grava as cópias, e os importadores de carteiras, pedidos, oportunidades e visitas redirecionam o `cliente_id` da cópia para o sobrevivente. Sem isso, a importação falharia com 1062.
 - **Collation:** `cnpj` herda `utf8mb4_unicode_ci`, que ignora maiúsculas e minúsculas. No índice único, valores que só diferem na caixa colidem. O Backend grava em maiúsculas. Detalhes no cabeçalho de `sql/09_ddl_clientes.sql` (nota do NEG-02, CNPJ alfanumérico).
 
@@ -716,7 +717,7 @@ SHOW COLUMNS FROM estoque LIKE 'origem';   -- vazio = schema atual
 ## 18. Migração 19: unificação dos CNPJs duplicados
 
 **Script:** `sql/19_alter_clientes_cnpj_unique.sql`
-**Comando:** `make db-fix-cnpj-unique` (roda `mysql $(MYSQL_OPTS) $(DB_NAME) < sql/19_alter_clientes_cnpj_unique.sql`)
+**Comando:** `make db-fix-cnpj-unique` (roda `mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/19_alter_clientes_cnpj_unique.sql`)
 **Reversão:** `make db-revert-cnpj-unique` (`sql/19_revert_clientes_cnpj_unique.sql`)
 **Situação:** aplicada no banco local em 2026-09-25. Ela não faz parte do `db-up`/`db-seed`: é para bancos que já existiam antes do NEG-01.
 
@@ -742,7 +743,7 @@ O `dados/crm/clientes.csv` tinha **40 CNPJs duplicados (80 linhas)**: o original
    2. apaga as carteiras equivalentes;
    3. transfere pedidos, oportunidades, visitas e carteiras para o sobrevivente;
    4. apaga as cópias, **só as que não têm mais nenhum filho**. As FKs de `carteiras`, `oportunidades` e `visitas` são `ON DELETE CASCADE`, e essa guarda impede que um filho seja apagado sem aviso.
-4. Troca o índice (DDL fora da transação, porque DDL faz commit implícito no MySQL).
+4. Troca o índice (DDL fora da transação, porque DDL faz commit implícito no MariaDB).
 
 Se sobrar alguma cópia, o `ADD UNIQUE` falha com **1062** e nenhum dado é perdido. O script é **idempotente**: rodar de novo sem duplicados só garante o índice.
 
@@ -832,7 +833,7 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 | 3 | `estoque` | ~~A migração 18 não é idempotente e não tem alvo no Makefile.~~ **Resolvido no DB-01:** idempotente, com `db-fix-estoque-origem` e reversão `db-revert-estoque-origem`. | `sql/18_*.sql` |
 | 4 | `estoque` | ~~`postman/README.md` diz que o `db-up` cria `estoque`; o Makefile não criava.~~ **Resolvido no DB-01:** agora o `db-up` cria, e o README foi revisto no Lote 12. | `postman/README.md` |
 | 5 | `estoque` | **Aberto.** `ruptura`: o DDL diz que vem do S/N do CSV; o card de criação diz "derivado de `saldo <= 0`". Regra efetiva a confirmar no código. | `sql/17`, `tarefas/feito.md` |
-| 6 | `senha_historico` | Sem `ENGINE`/charset/collation explícitos: herda do servidor e do banco (esperado InnoDB e `utf8mb4_unicode_ci`). Nomes das FKs gerados pelo MySQL. | `sql/07_ddl_senha_historico.sql` |
+| 6 | `senha_historico` | Sem `ENGINE`/charset/collation explícitos: herda do servidor e do banco (esperado InnoDB e `utf8mb4_unicode_ci`). Nomes das FKs gerados pelo MariaDB. | `sql/07_ddl_senha_historico.sql` |
 | 7 | `senha_historico` | `created_at` aceita NULL (sem `NOT NULL`); o BUG-12 confirmou `timestamp NULL DEFAULT CURRENT_TIMESTAMP` no banco local. Um `NOT NULL` exigiria migração (decisão de negócio). | BUG-12 em `tarefas/feito.md` |
 | 8 | `senha_historico` | O teste de integração do BUG-12 usa um "registro órfão" (`usuario_id` sem usuário), o que a FK `ON DELETE CASCADE` não deveria permitir. Confirmar se a FK existe no banco local ou se o teste desliga `FOREIGN_KEY_CHECKS`. | `apis/shared/tests/repositories/bug12_senha_historico_null_test.go` |
 | 9 | `senha_historico` | `tipo_reset` `primeiro_acesso` e `esquecimento` estão no ENUM, mas nenhum código fora dos testes os grava. A troca de primeiro acesso é gravada como `usuario`. | `apis/shared/identidade/historico.go`, `apis/shared/identidade/identidadeapp/senha.go` (até o Lote 21, `senha_historico_service.go` e `auth_handler.go`) |
@@ -843,7 +844,9 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 
 ---
 
-## 23. Credenciais do banco e uso do `mysql` (SEC-11, Lote 12, 2026-09-27)
+## 23. Credenciais do banco e uso do cliente `mariadb` (SEC-11, Lote 12, 2026-09-27; DB-03)
+
+> **DB-03 (2026-10-29):** o banco passou a ser o **MariaDB 11.4 LTS**. O `Makefile`, o `seedusers` e os cabeçalhos de `sql/` chamam o cliente `mariadb` (que continua lendo `MYSQL_PWD`); o `MYSQL_OPTS` agora usa `--local-infile=0` (SEC-28). O driver Go segue sendo o `go-sql-driver/mysql`.
 
 ### 23.1 Credenciais obrigatórias, sem default
 
@@ -854,12 +857,12 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 
 ### 23.2 Senha fora da linha de comando (`MYSQL_PWD`)
 
-- O `MYSQL_OPTS` não tem mais `-p$(DB_SENHA)`: fica só `--local-infile=1 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4`. A senha vai pela variável de ambiente `MYSQL_PWD`, que o Makefile exporta e que o `mysql`/`mysql.exe` lê nativamente. Assim ela não aparece no argv do `mysql` (lista de processos) nem no eco das linhas `mysql ...` do `make`. O `db-check-env` também testa só o ambiente (`$$DB_USUARIO`/`$$MYSQL_PWD`), sem expandir a senha (seção 23.4, item 6, resolvido).
+- O `MYSQL_OPTS` não tem mais `-p$(DB_SENHA)`: fica só `--local-infile=0 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4` (era `--local-infile=1` até o DB-03). A senha vai pela variável de ambiente `MYSQL_PWD`, que o Makefile exporta e que o `mariadb`/`mariadb.exe` lê nativamente. Assim ela não aparece no argv do `mariadb` (lista de processos) nem no eco das linhas `mariadb ...` do `make`. O `db-check-env` também testa só o ambiente (`$$DB_USUARIO`/`$$MYSQL_PWD`), sem expandir a senha (seção 23.4, item 6, resolvido).
 - `MSYS2_ENV_CONV_EXCL = MYSQL_PWD` impede o Git Bash/MSYS de converter a senha como se fosse um caminho POSIX.
 - Execução manual de um script (padrão dos cabeçalhos em `sql/`):
 
   ```bash
-  MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
+  MYSQL_PWD="$DB_SENHA" mariadb --local-infile=0 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
     --default-character-set=utf8mb4 $DB_NAME < sql/<script>.sql
   ```
 
@@ -867,7 +870,7 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 
 ### 23.3 Como o `make` lê o `.env`
 
-- **`-include .env`:** o `make` lê o `.env` **inteiro** como sintaxe de Makefile e, por causa do `export` sem argumentos, exporta **todas** as variáveis dele para as receitas (inclusive `make dev-api`, `go run` dos importadores e o `mysql`). Como o `godotenv` da API não sobrescreve variáveis já definidas, sob `make` valem os valores lidos pelo `make`.
+- **`-include .env`:** o `make` lê o `.env` **inteiro** como sintaxe de Makefile e, por causa do `export` sem argumentos, exporta **todas** as variáveis dele para as receitas (inclusive `make dev-api`, `go run` dos importadores e o `mariadb`). Como o `godotenv` da API não sobrescreve variáveis já definidas, sob `make` valem os valores lidos pelo `make`.
 - **Precedência:** `make DB_SENHA=x` na linha de comando ganha de tudo; depois vem o `.env`; a variável do shell (`export DB_SENHA=...`) perde para o `.env`.
 - **Restrições de formato, para TODOS os valores do `.env`** (não só `DB_SENHA`; valem também para `JWT_SECRET`, `SMTP_PASSWORD`, `TURNSTILE_SECRET_KEY` etc.), porque o `make` interpretaria:
   - `$` (expansão de variável do make);
@@ -885,7 +888,7 @@ Registradas para lotes futuros (não corrigidas no SEC-11):
 | --- | --- | --- |
 | 1 | `fix-hash` e `fix-admin` passam `-password=Admin@123` no argv (visível na lista de processos e no eco do `make`; o `-password` está depreciado desde o SEC-10). | `Makefile` |
 | 2 | `db-seed` imprime `Admin@123` no console (`=== Admin: admin@rotaperfumes.com.br / Admin@123 ===`). | `Makefile` |
-| 3 | O usuário local do MySQL (banco de dev) ainda é `golang/golang`; trocar a senha do usuário no servidor e no `.env`. | MySQL local |
-| 4 | `MYSQL_PWD` é considerado obsoleto (inseguro) pelo cliente MySQL e pode sair em versões futuras. Próximo passo: `mysql_config_editor set --login-path=...` e `--login-path` no `MYSQL_OPTS`. | `Makefile` |
+| 3 | O usuário local do banco de dev (MariaDB) ainda é `golang/golang`; trocar a senha do usuário no servidor e no `.env`. | MariaDB local |
+| 4 | `MYSQL_PWD` é considerado obsoleto (inseguro) pelo cliente MySQL e pode sair em versões futuras. Com o MariaDB (DB-03), o cliente `mariadb` continua lendo `MYSQL_PWD`; a alternativa futura é um arquivo de opções (`--defaults-extra-file`), já descartado na seção 23.2 pelo risco de senha em disco. | `Makefile` |
 | 5 | Opcional: `cmd/cleanuprefresh` em Go para rodar a limpeza de `refresh_tokens` sob demanda (hoje só a API faz, seção 7.2). | `apis/shared/cmd` |
 | 6 | ~~A receita do `db-check-env` era `@test -n "$(DB_USUARIO)" -a -n "$(DB_SENHA)"`: o `make` expandia a senha no argv do `test` e no `make -n`.~~ **Resolvido no Lote 12 (commit `069d708`, conferido em 2026-10-07):** a receita testa as variáveis de ambiente já exportadas (`@test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD"`, `Makefile` linha 48), então a senha não aparece no argv nem no eco do `make -n`. | `Makefile`, alvo `db-check-env` |

@@ -7,10 +7,10 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-// codigoChaveDuplicada é o ER_DUP_ENTRY do MySQL.
+// codigoChaveDuplicada é o ER_DUP_ENTRY do MariaDB/MySQL.
 const codigoChaveDuplicada = 1062
 
-// ChaveDuplicada informa se err é um 1062 do MySQL. Com indice != "", exige
+// ChaveDuplicada informa se err é um 1062 do MariaDB/MySQL. Com indice != "", exige
 // também que a violação seja daquele índice (o nome aparece na mensagem:
 // "Duplicate entry '…' for key 'clientes.uq_clientes_cnpj'").
 //

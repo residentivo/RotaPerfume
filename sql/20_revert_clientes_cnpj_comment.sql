@@ -11,7 +11,7 @@
 -- alfanumérico). Use só se precisar desfazer a migração 20.
 --
 -- Uso:
---   MYSQL_PWD="$DB_SENHA" mysql --local-infile=1 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
+--   MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h $DB_HOST -P $DB_PORT \
 --     --default-character-set=utf8mb4 $DB_NAME < sql/20_revert_clientes_cnpj_comment.sql
 -- ============================================================
 

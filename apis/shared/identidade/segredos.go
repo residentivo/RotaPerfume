@@ -32,7 +32,7 @@ func (Senha) MarshalJSON() ([]byte, error) { return nil, ErrSerializarSegredo }
 func (Senha) MarshalText() ([]byte, error) { return nil, ErrSerializarSegredo }
 
 // HashSenha é o hash gravado em usuarios.password_hash (Argon2id com pepper
-// ou bcrypt legado). Opaco: só o adapter MySQL e o hasher leem o valor.
+// ou bcrypt legado). Opaco: só o adapter MariaDB e o hasher leem o valor.
 type HashSenha struct{ valor string }
 
 // NovoHashSenha embrulha o valor lido do banco ou gerado pelo hasher.

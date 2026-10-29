@@ -1,4 +1,5 @@
-// Package comercialmysql implementa as portas de comercialapp sobre MySQL
+// Package comercialmysql implementa as portas de comercialapp sobre MariaDB
+// (protocolo MySQL)
 // (ARQ-04). O SQL é o dos repositórios legados, copiado sem alteração; a
 // ordenação sai de switch sobre os enums do domínio (C-02); todo valor vai
 // por placeholder (C-03); e o escopo de carteira só vira SQL por
