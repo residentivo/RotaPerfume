@@ -168,6 +168,14 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | X1 | `GET /api/senha-historico/{user_id...}` | Parse estrito do id: só dígitos e maior que zero. `/api/senha-historico/2/extra` (antes `200` com o histórico do usuário 2), `/0` e `/-1` passam a **`400`** `{"success":false,"error":"usuario_id inválido"}`. `/api/senha-historico/` (vazio) continua `400` `"usuario_id é obrigatório na URL"`. |
 | ARQ-01 | Respostas de erro | A ordem das chaves no JSON de erro pode mudar; os valores são os mesmos. |
 
+## Mudanças do Lote 22 (2026-10-29)
+
+> **Endpoint novo**, sem mudança nos contratos existentes. A API passa de 60 para **61 rotas** (4 Public, 36 Authenticated, 21 AdminOnly). Na collection, pasta **"Dashboard — Funil de vendas (DASH-01, Lote 22)"** (default, `30d`, `90d`, `365d` e `400`). Teste manual: seção 7 de `docs/roteiro-teste-manual-dashboard.md`.
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| DASH-01 | `GET /api/dashboard/funil?janela=30d\|90d\|365d\|all` | Funil de vendas das oportunidades por etapa (cumulativo), com conversão em relação à etapa anterior e ao topo, perdidas, taxa de ganho e total. Acesso autenticado com escopo por `oportunidades.vendedor_id`; sem acesso ou vendedor desligado → `200` zerado. Janela fora do enum → `400`. Detalhe em "GET /api/dashboard/funil" abaixo. No frontend, seção "Funil de vendas" do Dashboard. |
+
 ## Endpoints
 
 ### Healthcheck
@@ -302,6 +310,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 > - **normal sem vendedor vinculado:** recebe `200` com tudo zerado ou vazio (não é erro). `/metrics` volta zerado, com `top_vendedores: []` e `metas_vendedores: []`. `/vendas` volta com os N dias, todos zerados. `/vendedores` volta com `data: []` e `total=0`, `pages=0`.
 > - **normal com vendedor desligado ou inexistente (2026-09-24, decisão do usuário: bloquear o acesso):** se o vendedor vinculado tem `vendedores.data_desligamento` preenchida (ou não existe mais), os quatro endpoints (`/metrics`, `/vendas`, `/vendedores`, `/clientes`) respondem como no caso "sem vendedor vinculado", zerados ou vazios. `/metrics` traz `vendedor_desligado: true` para o frontend mostrar o aviso. Se a checagem do vendedor falhar no banco, a resposta é `500`.
 > - **Campo `vendedor_desligado` (bool, só em `/metrics`):** `true` apenas para o usuário normal com vendedor desligado. É `false` em todos os outros casos, inclusive admin, normal com vendedor ativo e normal sem vendedor.
+> - **`/api/dashboard/funil` (DASH-01, Lote 22, 2026-10-29):** mesmo esquema de escopo, mas sobre `oportunidades.vendedor_id` (igual a `/api/oportunidades`). Sem vendedor, vendedor desligado ou inexistente → `200` com o funil zerado, sem executar SQL; traz `vendedor_desligado: true` só para o desligado. Ver "GET /api/dashboard/funil" abaixo.
 > - **`/api/dashboard/clientes` com escopo da carteira (2026-09-24):** o admin continua com a visão global. O normal vê só os clientes da carteira ativa do próprio vendedor (`carteiras.data_fim IS NULL`). Ver a seção "Clientes" abaixo.
 > - **Contrato das listas e dos valores (2026-09-24):** `top_vendedores`, `metas_vendedores`, `por_segmento` e `por_uf` vêm sempre como `[]` quando vazios, nunca `null`. `total_vendas` (no topo, em `top_vendedores[]` e no ranking) e `metas_vendedores[].realizado` são `float64` com centavos, e os percentuais são calculados a partir desse valor.
 >
@@ -333,6 +342,27 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Descrição:** Ranking de vendedores (total de vendas, meta, percentual). O normal recebe no máximo a própria linha.
 - **Ordenação:** por `meta_mensal DESC`, com desempate por `atingimento_meta DESC` (calculado no SQL, antes da paginação).
 - **Normal sem vendedor ou com vendedor desligado:** `200` com `data: []` e paginação `total=0`, `pages=0`.
+
+#### GET /api/dashboard/funil
+- **Desde:** DASH-01, Lote 22 (2026-10-29). Handler `DashboardHandler.GetFunil` (`apis/rotaperfumes-api/internal/analyticshttp/dashboard_handler.go`), caso de uso `Consultas.Funil` (`apis/shared/analytics/analyticsapp/consultas.go`), domínio `apis/shared/analytics/{janela,funil}.go`, SQL em `apis/shared/analytics/analyticsmysql/oportunidades.go`.
+- **Auth:** Bearer Token (qualquer usuário autenticado, Policy `Authenticated`; escopo por vendedor para o normal).
+- **Query:** `?janela=30d|90d|365d|all` (padrão: `all`; vazio também vale `all`).
+  - Filtra por `oportunidades.data_abertura` relativa a `CURDATE()`, incluindo hoje: `30d` = `INTERVAL 29 DAY`, `90d` = `INTERVAL 89 DAY`, `365d` = `INTERVAL 364 DAY`; `all` não tem cláusula de data.
+  - Qualquer outro valor (inclusive maiúsculas, como `30D`) → `400` `{"success":false,"error":"janela deve ser '30d', '90d', '365d' ou 'all'"}`, sem consultar o banco.
+  - A janela é um enum tipado traduzido para constantes SQL; o texto do usuário nunca entra no SQL. Não reusa o `periodo` dos outros endpoints porque a base de oportunidades vai até 2026-08-31 (`today`/`week`/`month` ficariam vazios).
+- **Escopo:**
+  - **admin:** todas as oportunidades.
+  - **normal com vendedor ativo:** só as oportunidades do próprio vendedor (`oportunidades.vendedor_id`), resolvido pelo `AutorizadorEscopo` e traduzido só por `Escopo.Filtro()`. Não há `vendedor_id` na query.
+  - **normal sem vendedor, com vendedor desligado ou inexistente:** `200` com o funil zerado (5 etapas com zero), **sem executar SQL**. `vendedor_desligado: true` só para o desligado.
+  - Erro ao resolver o escopo → `500` `"erro interno"` (fail-closed). Sem cache: o escopo é resolvido a cada requisição.
+- **Resposta:** `data: { janela, total_oportunidades, etapas: [{ etapa, quantidade, valor_estimado, conversao_anterior_pct, conversao_topo_pct }], perdidas: { quantidade, valor_estimado }, taxa_ganho_pct, vendedor_desligado }`.
+  - `etapas`: sempre 5, na ordem Prospecção → Qualificação → Proposta enviada → Negociação → Fechado ganho. Funil **cumulativo**: cada etapa conta as oportunidades cuja etapa atual está nela ou adiante (Fechado perdido não entra).
+  - `conversao_anterior_pct` e `conversao_topo_pct`: na primeira etapa, `100` com dados e `0` sem dados. Base zero → `0`. Duas casas decimais.
+  - `perdidas`: oportunidades em Fechado perdido.
+  - `taxa_ganho_pct` = ganhas / (ganhas + perdidas) × 100; `0` sem oportunidades fechadas.
+  - `total_oportunidades`: todas as oportunidades da janela, inclusive perdidas e etapas desconhecidas. Etapas desconhecidas só entram no total.
+- **Exemplo (admin, `janela=90d`):** `{"data":{"janela":"90d","total_oportunidades":112,"etapas":[{"etapa":"Prospecção","quantidade":97,"valor_estimado":325000.75,"conversao_anterior_pct":100,"conversao_topo_pct":100},{"etapa":"Qualificação","quantidade":57,"valor_estimado":225000.25,"conversao_anterior_pct":58.76,"conversao_topo_pct":58.76},{"etapa":"Proposta enviada","quantidade":32,"valor_estimado":145000,"conversao_anterior_pct":56.14,"conversao_topo_pct":32.99},{"etapa":"Negociação","quantidade":17,"valor_estimado":85000,"conversao_anterior_pct":53.13,"conversao_topo_pct":17.53},{"etapa":"Fechado ganho","quantidade":7,"valor_estimado":35000,"conversao_anterior_pct":41.18,"conversao_topo_pct":7.22}],"perdidas":{"quantidade":13,"valor_estimado":42000.1},"taxa_ganho_pct":35,"vendedor_desligado":false},"success":true}`. Aqui, 112 = 97 no funil + 13 perdidas + 2 em etapa desconhecida.
+- **Erros:** `400` janela inválida; `401` não autenticado; `405` outro método (com `Allow`); `500` erro interno (mensagem genérica).
 
 ### Histórico de Senhas (`/api/senha-historico/*`) — admin only
 
@@ -759,6 +789,10 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Paginação presente`
 - `Cada vendedor tem métricas`
 
+### Dashboard — Funil de vendas (DASH-01, Lote 22)
+- **Default (sem janela), `30d`, `90d`, `365d`:** `Status 200`, `Funil com as 5 etapas, perdidas e taxa de ganho` e `Janela ecoada` (no default, `Janela default é all`). O default tem ainda `Etapas na ordem do funil`.
+- **Janela inválida (`?janela=7d`):** `Status 400` e `Erro com a mensagem do contrato`.
+
 > Os testes de Dashboard usam `{{admin_token}}`. Se forem executados com `{{vendedor_token}}` (normal), os números vêm restritos ao próprio vendedor, e o ranking tem no máximo 1 linha. Se o usuário normal não tiver vendedor vinculado, ou se o vendedor estiver desligado, os números vêm zerados e as listas vazias, e os testes continuam passando, porque a estrutura da resposta é a mesma. No caso do vendedor desligado, `/metrics` traz `vendedor_desligado: true`. O teste "Dashboard — Clientes" também passa com `{{vendedor_token}}` (desde 2026-09-24 a rota é de acesso comum, com escopo da carteira).
 
 ### Histórico de Senhas — Todos
@@ -945,6 +979,11 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Dashboard — Métricas | 3 | — |
 | Dashboard — Vendas | 3 | — |
 | Dashboard — Vendedores | 4 | — |
+| Funil de vendas — default | 4 | — |
+| Funil de vendas — 30d | 3 | — |
+| Funil de vendas — 90d | 3 | — |
+| Funil de vendas — 365d | 3 | — |
+| Funil de vendas — janela inválida | 2 | — |
 | Histórico — Todos | 3 | — |
 | Histórico — Por Usuário | 3 | — |
 | Listar Clientes | 2 | — |
@@ -1077,7 +1116,7 @@ O importador (`apis/shared/cmd/importpagamentos`) é idempotente (upsert por `pa
 make db-up && make db-import-oportunidades
 ```
 
-O importador (`apis/shared/cmd/importoportunidades`) é idempotente (upsert por `oportunidade_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto oportunidades criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam.
+O importador (`apis/shared/cmd/importoportunidades`) é idempotente (upsert por `oportunidade_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto oportunidades criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam. O mesmo vale para `GET /api/dashboard/funil` (DASH-01, Lote 22): sem a importação, o funil vem zerado.
 
 ### Visitas (CRM)
 
@@ -1107,3 +1146,24 @@ make dev-frontend
 ```
 
 A API ficará disponível em `http://localhost:8080` e o frontend em `http://localhost:3000`.
+
+### Frontend em disco sem suporte a symlink (registrado no DASH-01, Lote 22, 2026-10-29)
+
+Em discos que não aceitam links simbólicos (ex.: pendrive/HD externo em exFAT/FAT32 ou NTFS montado sem suporte a symlink), `npm ci`/`npm install` falham ao criar `node_modules/.bin`. Nesse caso:
+
+```bash
+cd frontend
+npm ci --no-bin-links
+```
+
+Sem `node_modules/.bin`, os scripts do `package.json` (`npm test`, `npm run lint`, `npm run dev`) e os alvos do `make` que os usam (`make test-frontend`, `make dev-frontend`) **não rodam direto**. Chame os pacotes pelo caminho do JS:
+
+```bash
+cd frontend
+node node_modules/vitest/vitest.mjs run          # testes (equivale a npm test)
+node node_modules/typescript/bin/tsc --noEmit    # checagem de tipos
+node node_modules/eslint/bin/eslint.js .         # lint
+node node_modules/next/dist/bin/next dev         # servidor de desenvolvimento
+```
+
+Alternativa: manter o clone do projeto num disco com sistema de arquivos Linux (ext4) e usar os comandos normais. Isso é só do ambiente local: o build em Docker (`frontend/Dockerfile`, `npm ci`) não é afetado.

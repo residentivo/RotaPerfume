@@ -3,6 +3,52 @@
 > Histórico de tarefas finalizadas.
 
 ---
+## Lote 22 de 2026-10-29: 1 card concluído (de 1)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário de exibir o funil de vendas no Dashboard. Fechado em 2026-10-29 pelo 🔵 SubBrain.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (requisitos de segurança) → 🟡 BackBrain (endpoint) → 🟢 FrontBrain (tela) → 🔴 TestBrain (testes) → 🔵 SubBrain (docs, Postman e fechamento). Sem mudança de schema (os dados já estão em `oportunidades.etapa`, `sql/15_ddl_oportunidades.sql`), então o 🌸 DataBrain não participou.
+>
+> **Commit:** código e docs **não commitados** no fechamento (pendente do 🤍 MegaBrain/usuário).
+>
+> **Saíram do lote (em `afazer.md`):** DOC-06, BUG-19 e FE-15 (todos BAIXA).
+
+## DASH-01: Funil de vendas no Dashboard — 2026-10-29
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído em 2026-10-29 (Lote 22, aberto e fechado em 2026-10-29).
+**Camadas:** Segurança, Backend, Frontend, Testes, Documentação
+**Origem:** pedido do usuário, decomposto pelo 🤍 MegaBrain (2026-10-29).
+
+**Descrição:** seção "Funil de vendas" no Dashboard com as oportunidades por etapa, conversão entre etapas, perdidas e taxa de ganho, com seletor de janela.
+
+**Entregue:**
+- 🟣 **SecBrain (requisitos):** filtro por `oportunidades.vendedor_id` (igual a `/api/oportunidades`); escopo traduzido só por `Escopo.Filtro()` (O1); fail-closed (desligado/SemAcesso → resposta zerada **sem SQL**; erro do autorizador → `500`); janela como enum tipado traduzido para constantes SQL; sem cache (R4); sem `vendedor_id` na query; mensagens de erro genéricas; no front, `etapa` renderizada como texto e só usada como rótulo/cor se estiver na whitelist.
+- 🟡 **BackBrain:** `GET /api/dashboard/funil?janela=30d|90d|365d|all` (default `all`; inválido → `400` `"janela deve ser '30d', '90d', '365d' ou 'all'"`), Policy `Authenticated`.
+  - Novos: `apis/shared/analytics/janela.go` (enum `Janela`, `ParseJanela`), `apis/shared/analytics/funil.go` (read model `Funil`, `NovoFunil`, `FunilZerado`), `apis/shared/analytics/analyticsmysql/oportunidades.go`.
+  - Alterados: `analyticsapp/portas.go` (porta `IndicadoresFunil`), `analyticsapp/consultas.go` (`ConsultaFunil`, `Consultas.Funil`), `analyticsmysql/filtros.go`, `apis/rotaperfumes-api/internal/analyticshttp/dashboard_handler.go` (`GetFunil`) e `dto.go`, `internal/bootstrap/analytics.go` e `rotas.go`.
+  - Rotas: **61** (4 Public, 36 Authenticated, 21 AdminOnly; eram 60).
+  - Janelas: `INTERVAL 29/89/364 DAY` sobre `data_abertura` relativa a `CURDATE()`; `all` sem cláusula.
+  - Semântica: funil cumulativo nas 5 etapas (Prospecção → Qualificação → Proposta enviada → Negociação → Fechado ganho); Fechado perdido e etapas desconhecidas só no total; conversão do topo = 100 com dados e 0 sem dados; `taxa_ganho_pct` = ganhas / (ganhas + perdidas).
+- 🟢 **FrontBrain:** componente `frontend/src/components/dashboard/FunilVendas.tsx` (seletor 30 dias / 90 dias / 12 meses / Tudo; barras decrescentes acessíveis com `aria-label`; rodapé Oportunidades / Taxa de ganho / Perdidas; estados vazio, loading, erro genérico e desligado); tipos em `src/lib/types.ts`; `apiDashboardFunil` em `src/lib/api.ts`; inserido em `src/app/dashboard/page.tsx` entre os gráficos e o ranking, zerado nos mesmos casos dos demais blocos (`forcarZeros`); o botão "Atualizar" recarrega o funil.
+- 🔴 **TestBrain:**
+  - Go: 23 funções novas (95 testes/subtestes) em `apis/shared/tests/analytics/funil_dominio_test.go`, `funil_consultas_test.go`, `funil_mysql_test.go` e `apis/rotaperfumes-api/tests/handlers/dashboard_funil_test.go`. `TestNovoRouter_SessentaRotas` renomeado para `TestNovoRouter_ContagemEMetodosDasRotas`. Cobertura 100% em `analytics`, `analyticsapp`, `analyticsmysql` (módulo) e `analyticshttp`. TST-05 verde.
+  - Frontend: 94 testes novos (`frontend/tests/components/dashboard/FunilVendas.test.tsx`, `tests/lib/apiDashboardFunil.test.ts` e bloco DASH-01 em `tests/app/dashboard/page.test.tsx`). Suíte com 38 arquivos / 1589 testes verde; `FunilVendas.tsx` com 100%; `tsc` e `eslint` limpos.
+- 🔵 **SubBrain (documentação):**
+  - `postman/collection.json`: pasta "Dashboard — Funil de vendas (DASH-01, Lote 22)" logo após "Dashboard — Ranking Vendedores", com 5 requisições (default, `30d`, `90d`, `365d` e `400` com `janela=7d`), testes e exemplos de resposta (inclusive o zerado do vendedor desligado); nota "Mudanças do Lote 22" na descrição da collection.
+  - `postman/README.md`: seção "Mudanças do Lote 22", nota de escopo do `/funil` na seção Dashboard, endpoint "GET /api/dashboard/funil", testes da pasta e linhas no resumo de testes; nota na seção "Oportunidades (CRM)" e nova subseção "Frontend em disco sem suporte a symlink" em "Subindo o ambiente".
+  - `docs/roteiro-teste-manual-dashboard.md`: nova seção 7 (como usar o funil passo a passo e checklist 7.1 a 7.12, com query de referência).
+  - `docs/arquitetura-ddd.md`: contagem de rotas (61) no cabeçalho e no §10.3; árvore do §10.1 com `janela.go`, `funil.go` e `oportunidades.go`; VO `Janela` e `ConsultaFunil` na tabela de patterns (§10.10). Registros históricos com "60 rotas" (ARQ-00/ARQ-01, ADR) não foram alterados.
+
+**Contrato:** endpoint novo; os contratos de `/metrics`, `/vendas`, `/vendedores` e `/clientes` não mudaram.
+
+**Ambiente (registrado, sem card):** a máquina não tem Go nem Node instalados; os toolchains foram baixados só no scratchpad da sessão. O disco KINGSTONE não aceita symlinks: o `npm ci` precisou de `--no-bin-links`, e por isso `npm test`, `npm run lint` e `make test-frontend` não rodam direto nesse disco (usar `node node_modules/vitest/vitest.mjs run` etc.). Como é só uma limitação do ambiente local (o build Docker não é afetado), ficou só na documentação (`postman/README.md`, "Subindo o ambiente"), sem card DEV/OPS.
+
+**Validação JSON da collection:** feita pelo 🤍 MegaBrain em 2026-10-29 (`json.load` ok, 26 pastas). Reexecução final: `go test ./...` verde em `apis/shared` e `apis/rotaperfumes-api`; vitest 1589/1589.
+
+**Achados que viraram cards (BAIXA, em `afazer.md`):** DOC-06 (comentário "escopo por carteira" em `rotas.go`, do 🟣 SecBrain), BUG-19 (`arredondar2` com negativos, do 🔴 TestBrain) e FE-15 (aviso de desligado sem `forcarZeros` e seleção da janela após erro, do 🔴 TestBrain).
+
+---
 ## Lote 13 (2026-09-30) e MAIL-01: fechados em 2026-10-16 — 1 card concluído, 1 cancelado
 
 > Fechado pelo 🔵 SubBrain a partir da mensagem do usuário: "DEPLOY-01 e Lote-13 estão ok. O MAIL-01 ainda está cancelado, não poderei hostear o serviço de email".

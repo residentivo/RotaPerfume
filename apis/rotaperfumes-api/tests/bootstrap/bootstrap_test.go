@@ -134,18 +134,28 @@ func TestMontar_CheckerDoBanco(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestNovoRouter_SessentaRotas(t *testing.T) {
+// TestNovoRouter_ContagemEMetodosDasRotas: o total de rotas registradas
+// (61 desde o DASH-01, que somou GET /api/dashboard/funil) e o método de
+// cada uma. O nome não carrega o número para não envelhecer a cada rota.
+func TestNovoRouter_ContagemEMetodosDasRotas(t *testing.T) {
 	pool, _, err := sqlmock.New()
 	require.NoError(t, err)
 	defer pool.Close()
 	cfg := testCfg()
 	hs := bootstrap.NovosHandlers(pool, cfg, notificacaosmtp.NovoNoop())
 	rotas := bootstrap.NovoRouter(cfg, checkerNulo{}, hs).Rotas()
-	assert.Len(t, rotas, 60)
+	assert.Len(t, rotas, 61) // 60 + /api/dashboard/funil (DASH-01)
 	re := regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE)$`)
+	funil := 0
 	for _, rt := range rotas {
 		assert.Regexp(t, re, rt.Metodo, rt.Padrao)
+		if rt.Padrao == "/api/dashboard/funil" {
+			funil++
+			assert.Equal(t, "GET", rt.Metodo)
+			assert.Equal(t, "DashboardHandler.GetFunil", rt.Funcao)
+		}
 	}
+	assert.Equal(t, 1, funil, "GET /api/dashboard/funil registrada uma vez (DASH-01)")
 }
 
 func TestHandlerHTTP_CheckerNilPanica(t *testing.T) {

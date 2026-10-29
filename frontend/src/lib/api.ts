@@ -9,6 +9,8 @@ import {
   VendasSeries,
   VendedorRanking,
   DashboardPeriodo,
+  FunilJanela,
+  FunilVendas,
   SenhaHistoricoResponse,
   TipoReset,
   Vendedor,
@@ -294,6 +296,21 @@ export async function apiDashboardVendas(dias = 30): Promise<VendasSeries> {
   const qs = new URLSearchParams({ dias: String(dias) });
   return fetchWithAuth<VendasSeries>(
     `/api/dashboard/vendas?${qs.toString()}`,
+    {
+      method: "GET",
+    }
+  );
+}
+
+// DASH-01: so os valores fixos do enum sao enviados (nunca vendedor_id; o
+// escopo e aplicado pelo backend).
+export async function apiDashboardFunil(
+  janela: FunilJanela = "all"
+): Promise<FunilVendas> {
+  vlog(F, "apiDashboardFunil", "montando query string (janela=%s)", janela);
+  const qs = new URLSearchParams({ janela });
+  return fetchWithAuth<FunilVendas>(
+    `/api/dashboard/funil?${qs.toString()}`,
     {
       method: "GET",
     }

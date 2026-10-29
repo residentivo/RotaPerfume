@@ -6,6 +6,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { FunilVendas } from "@/components/dashboard/FunilVendas";
 import { useSessionUser, useVendedorDesligado } from "@/lib/session";
 import {
   apiDashboardMetrics,
@@ -905,6 +906,10 @@ function DashboardContent() {
             </div>
           </Card>
         </div>
+
+        {/* DASH-01: Funil de vendas (seletor de janela proprio; o escopo e
+            aplicado pelo backend). Zerado nos mesmos casos dos demais blocos. */}
+        <FunilVendas isAdmin={isAdmin} forcarZeros={forcarZeros} recarga={recarga} />
 
         {/* Ranking Table (admin) / Meu Desempenho (normal) */}
         <Card>

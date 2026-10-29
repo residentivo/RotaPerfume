@@ -52,6 +52,11 @@ func (f *vendasFake) Ranking(_ context.Context, _ kernel.Escopo, p kernel.Pagina
 	return kernel.NovoResultado([]analytics.LinhaRanking{{VendedorID: 1}}, p, 1), f.passo()
 }
 
+// Funil faz o vendasFake satisfazer também IndicadoresFunil (DASH-01).
+func (f *vendasFake) Funil(context.Context, kernel.Escopo, analytics.Janela) ([]analytics.ContagemEtapa, error) {
+	return nil, f.passo()
+}
+
 type clientesFake struct{ vendasFake }
 
 func (f *clientesFake) Total(context.Context, kernel.Escopo) (int, error) { return 10, f.passo() }
@@ -84,7 +89,7 @@ func (f escopoFake) ResolverParaAnalytics(context.Context, kernel.Principal) (ke
 var hojeFixo = time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
 
 func novasConsultas(v *vendasFake, c *clientesFake, e escopoFake) *analyticsapp.Consultas {
-	return analyticsapp.Novo(analyticsapp.Deps{Vendas: v, Clientes: c, Escopo: e, Relogio: func() time.Time { return hojeFixo }})
+	return analyticsapp.Novo(analyticsapp.Deps{Vendas: v, Clientes: c, Funil: v, Escopo: e, Relogio: func() time.Time { return hojeFixo }})
 }
 
 func irrestrito(t *testing.T) kernel.Escopo {
@@ -100,10 +105,11 @@ func TestAnalyticsapp_Novo_ExigeDependencias(t *testing.T) {
 	v, c, e := &vendasFake{}, &clientesFake{}, escopoFake{}
 	relogio := func() time.Time { return hojeFixo }
 	for nome, d := range map[string]analyticsapp.Deps{
-		"vendas":   {Clientes: c, Escopo: e, Relogio: relogio},
-		"clientes": {Vendas: v, Escopo: e, Relogio: relogio},
-		"escopo":   {Vendas: v, Clientes: c, Relogio: relogio},
-		"relógio":  {Vendas: v, Clientes: c, Escopo: e},
+		"vendas":   {Clientes: c, Funil: v, Escopo: e, Relogio: relogio},
+		"clientes": {Vendas: v, Funil: v, Escopo: e, Relogio: relogio},
+		"funil":    {Vendas: v, Clientes: c, Escopo: e, Relogio: relogio},
+		"escopo":   {Vendas: v, Clientes: c, Funil: v, Relogio: relogio},
+		"relógio":  {Vendas: v, Clientes: c, Funil: v, Escopo: e},
 	} {
 		assert.Panics(t, func() { analyticsapp.Novo(d) }, nome)
 	}

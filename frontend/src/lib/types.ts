@@ -179,6 +179,36 @@ export interface VendedorRanking {
   posicao?: number;
 }
 
+// === Dashboard: Funil de vendas (DASH-01) ===
+
+// Janela do funil: enum proprio (nao reusa DashboardPeriodo) porque os dados
+// de oportunidades vao ate 2026-08-31 e today/week/month ficariam vazios.
+export type FunilJanela = "30d" | "90d" | "365d" | "all";
+
+export interface FunilEtapa {
+  etapa: string; // texto livre vindo do banco: renderizar so como texto
+  quantidade: number;
+  valor_estimado: number;
+  conversao_anterior_pct: number; // 0..100
+  conversao_topo_pct: number; // 0..100
+}
+
+export interface FunilPerdidas {
+  quantidade: number;
+  valor_estimado: number;
+}
+
+// GET /api/dashboard/funil. Funil cumulativo; sempre 5 etapas (zeradas
+// quando o usuario nao tem acesso).
+export interface FunilVendas {
+  janela: FunilJanela;
+  total_oportunidades: number;
+  etapas: FunilEtapa[];
+  perdidas: FunilPerdidas;
+  taxa_ganho_pct: number; // 0..100
+  vendedor_desligado?: boolean;
+}
+
 // === Clientes ===
 
 export interface Cliente {

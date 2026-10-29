@@ -143,6 +143,43 @@ func metricasClientesJSON(m analytics.MetricasClientes) metricasClientesResposta
 	}
 }
 
+// funilResposta é o contrato de /funil (DASH-01, endpoint novo, sem
+// legado): campos na ordem do contrato.
+type funilResposta struct {
+	Janela             string           `json:"janela"`
+	TotalOportunidades int              `json:"total_oportunidades"`
+	Etapas             []etapaFunilJSON `json:"etapas"`
+	Perdidas           totalEtapaJSON   `json:"perdidas"`
+	TaxaGanhoPct       float64          `json:"taxa_ganho_pct"`
+	VendedorDesligado  bool             `json:"vendedor_desligado"`
+}
+
+// etapaFunilJSON é uma etapa do funil cumulativo.
+type etapaFunilJSON struct {
+	Etapa                string  `json:"etapa"`
+	Quantidade           int     `json:"quantidade"`
+	ValorEstimado        float64 `json:"valor_estimado"`
+	ConversaoAnteriorPct float64 `json:"conversao_anterior_pct"`
+	ConversaoTopoPct     float64 `json:"conversao_topo_pct"`
+}
+
+// totalEtapaJSON são as perdidas (quantidade e valor estimado).
+type totalEtapaJSON struct {
+	Quantidade    int     `json:"quantidade"`
+	ValorEstimado float64 `json:"valor_estimado"`
+}
+
+func funilJSON(f analytics.Funil) funilResposta {
+	return funilResposta{
+		Janela:             f.Janela.String(),
+		TotalOportunidades: f.TotalOportunidades,
+		Etapas:             lista(f.Etapas, func(e analytics.EtapaFunil) etapaFunilJSON { return etapaFunilJSON(e) }),
+		Perdidas:           totalEtapaJSON(f.Perdidas),
+		TaxaGanhoPct:       f.TaxaGanhoPct,
+		VendedorDesligado:  f.VendedorDesligado,
+	}
+}
+
 // lista converte os itens; o resultado nunca é nil (o contrato é []).
 func lista[T, D any](itens []T, conv func(T) D) []D {
 	out := make([]D, 0, len(itens))

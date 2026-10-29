@@ -29,6 +29,7 @@ const api = vi.hoisted(() => ({
   apiDashboardVendas: vi.fn(),
   apiDashboardVendedores: vi.fn(),
   apiDashboardClientes: vi.fn(),
+  apiDashboardFunil: vi.fn(),
 }));
 vi.mock("@/lib/api", () => api);
 
@@ -485,5 +486,104 @@ describe("Dashboard - FE-09 (erro de carga)", () => {
     expect(screen.getByText("Failed to fetch")).toBeInTheDocument();
     expect(screen.getByText("Nenhum dado de vendas no periodo")).toBeInTheDocument();
     expect(screen.getByText("Nenhum dado de desempenho encontrado")).toBeInTheDocument();
+  });
+});
+
+// ─── DASH-01: funil de vendas integrado à página ──────────────────────────────
+
+describe("Dashboard - funil de vendas (DASH-01)", () => {
+  const AVISO_DESLIGADO_FUNIL = /Vendedor desligado\. Nao ha oportunidades/;
+  const funil = {
+    janela: "all",
+    total_oportunidades: 4321,
+    etapas: [
+      { etapa: "Prospecção", quantidade: 10, valor_estimado: 100, conversao_anterior_pct: 100, conversao_topo_pct: 100 },
+      { etapa: "Qualificação", quantidade: 5, valor_estimado: 50, conversao_anterior_pct: 50, conversao_topo_pct: 50 },
+      { etapa: "Proposta enviada", quantidade: 4, valor_estimado: 40, conversao_anterior_pct: 80, conversao_topo_pct: 40 },
+      { etapa: "Negociação", quantidade: 2, valor_estimado: 20, conversao_anterior_pct: 50, conversao_topo_pct: 20 },
+      { etapa: "Fechado ganho", quantidade: 1, valor_estimado: 10, conversao_anterior_pct: 50, conversao_topo_pct: 10 },
+    ],
+    perdidas: { quantidade: 3, valor_estimado: 30 },
+    taxa_ganho_pct: 25,
+    vendedor_desligado: false,
+  };
+
+  function totalFunil(): string | null {
+    return screen.queryByText("Oportunidades", { selector: "dt" })?.nextElementSibling?.textContent ?? null;
+  }
+
+  it.each<[MeResponse["role"], string]>([
+    ["admin", "Funil de vendas"],
+    ["normal", "Meu funil de vendas"],
+  ])("%s: seção aparece com os dados e busca a janela 'all'", async (role, titulo) => {
+    useSessionUserMock.mockReturnValue(user({ role, id_vendedor: 7 }));
+    mockApiCheia();
+    api.apiDashboardFunil.mockResolvedValue(funil);
+    await renderLoaded();
+    expect(screen.getByRole("heading", { name: titulo })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Janela do funil" })).toBeInTheDocument();
+    await waitFor(() => expect(totalFunil()).toBe("4.321"));
+    expect(api.apiDashboardFunil).toHaveBeenCalledWith("all");
+  });
+
+  it("'Atualizar' recarrega o funil na janela selecionada", async () => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin" }));
+    mockApiCheia();
+    api.apiDashboardFunil.mockResolvedValue(funil);
+    await renderLoaded();
+    const grupo = screen.getByRole("group", { name: "Janela do funil" });
+    await userEvent.click(within(grupo).getByRole("button", { name: "90 dias" }));
+    await waitFor(() => expect(api.apiDashboardFunil).toHaveBeenCalledTimes(2));
+
+    api.apiDashboardFunil.mockResolvedValue({ ...funil, total_oportunidades: 8 });
+    await userEvent.click(screen.getByRole("button", { name: "Atualizar" }));
+    await waitFor(() => expect(totalFunil()).toBe("8"));
+    expect(api.apiDashboardFunil).toHaveBeenCalledTimes(3);
+    expect(api.apiDashboardFunil).toHaveBeenLastCalledWith("90d");
+  });
+
+  it("trocar a janela do funil não recarrega os demais blocos", async () => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin" }));
+    mockApiCheia();
+    api.apiDashboardFunil.mockResolvedValue(funil);
+    await renderLoaded();
+    const antes = api.apiDashboardMetrics.mock.calls.length;
+    await userEvent.click(screen.getByRole("button", { name: "30 dias" }));
+    await waitFor(() => expect(api.apiDashboardFunil).toHaveBeenLastCalledWith("30d"));
+    expect(api.apiDashboardMetrics).toHaveBeenCalledTimes(antes);
+  });
+
+  it.each<[string, Partial<MeResponse>, boolean]>([
+    ["sem vendedor vinculado", {}, false],
+    ["desligado na sessão", { id_vendedor: 7 }, true],
+  ])("normal %s: funil zerado ignorando o payload, sem o aviso próprio do funil", async (_nome, extra, desligado) => {
+    useSessionUserMock.mockReturnValue(user(extra));
+    useVendedorDesligadoMock.mockReturnValue(desligado);
+    mockApiZerada();
+    api.apiDashboardFunil.mockResolvedValue(funil);
+    await renderLoaded();
+    await waitFor(() => expect(screen.getByText("Nenhuma oportunidade na janela selecionada")).toBeInTheDocument());
+    expect(screen.queryByText("4.321")).not.toBeInTheDocument();
+    expect(screen.queryByText(AVISO_DESLIGADO_FUNIL)).not.toBeInTheDocument();
+  });
+
+  it("desligado vindo das métricas também zera o funil", async () => {
+    useSessionUserMock.mockReturnValue(user({ id_vendedor: 7 }));
+    mockApiZerada(zeroMetrics({ vendedor_desligado: true } as Partial<DashboardMetrics>));
+    api.apiDashboardFunil.mockResolvedValue(funil);
+    await renderLoaded();
+    expect(screen.getByText(AVISO_DESLIGADO)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Nenhuma oportunidade na janela selecionada")).toBeInTheDocument());
+    expect(screen.queryByText(AVISO_DESLIGADO_FUNIL)).not.toBeInTheDocument();
+  });
+
+  it("erro do funil mostra só o alerta genérico e não afeta os KPIs", async () => {
+    useSessionUserMock.mockReturnValue(user({ role: "admin" }));
+    mockApiCheia();
+    api.apiDashboardFunil.mockRejectedValue(new Error("sql: Table 'oportunidades' doesn't exist"));
+    await renderLoaded();
+    expect(await screen.findByText("Nao foi possivel carregar o funil de vendas. Tente novamente.")).toBeInTheDocument();
+    expect(screen.queryByText(/doesn't exist/)).not.toBeInTheDocument();
+    expect(kpiValue("Total de Vendas")).toMatch(/^R\$\s1\.500,50$/);
   });
 });

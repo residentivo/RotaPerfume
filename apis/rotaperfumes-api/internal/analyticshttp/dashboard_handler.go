@@ -66,6 +66,20 @@ func (h *DashboardHandler) GetClientes(w http.ResponseWriter, r *http.Request) {
 	httpx.Responder(w, tag, http.StatusOK, &m, err, metricasClientesJSON)
 }
 
+// GetFunil GET /api/dashboard/funil?janela=30d|90d|365d|all (DASH-01;
+// default all; inválido → 400 antes de resolver o escopo). O escopo vem só
+// do Principal: não há ?vendedor_id=.
+func (h *DashboardHandler) GetFunil(w http.ResponseWriter, r *http.Request) {
+	const tag = "[dashboard] GetFunil"
+	janela, err := analytics.ParseJanela(r.URL.Query().Get("janela"))
+	if err != nil {
+		httpx.ResponderErro(w, tag, err)
+		return
+	}
+	f, err := h.consultas.Funil(r.Context(), analyticsapp.ConsultaFunil{Principal: principalDoEscopo(r), Janela: janela})
+	httpx.Responder(w, tag, http.StatusOK, &f, err, funilJSON)
+}
+
 // principalDoEscopo é o Principal das rotas com escopo de carteira. A falta
 // dele NÃO vira 500 aqui: o autorizador trata o Principal inválido como
 // SemAcesso, sem consulta (lição 2 do ARQ-04; resposta zerada).

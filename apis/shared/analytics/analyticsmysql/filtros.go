@@ -13,6 +13,9 @@ const (
 	filtroPedidoDoVendedor = " AND vendedor_id = ?" // pedidos.vendedor_id
 	filtroVendedorPorID    = " AND id = ?"          // vendedores.id
 	filtroVendedorAlias    = " AND v.id = ?"        // vendedores v
+	// filtroOportunidadeDoVendedor é o dono da oportunidade (DASH-01), o
+	// mesmo de /api/oportunidades; não a carteira.
+	filtroOportunidadeDoVendedor = " AND vendedor_id = ?" // oportunidades.vendedor_id
 )
 
 // filtroVendedor traduz o escopo (O1, só por Filtro()): Irrestrito → sem
@@ -82,6 +85,29 @@ func clausulaPeriodoCadastro(p analytics.Periodo) string {
 		return periodoCadastroSemana
 	default:
 		return periodoCadastroMes
+	}
+}
+
+// Cláusulas da janela do funil (DASH-01) sobre oportunidades.data_abertura,
+// incluindo hoje (29 dias atrás + hoje = 30 dias). "all" não tem cláusula.
+const (
+	janelaAbertura30d  = " AND data_abertura >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)"
+	janelaAbertura90d  = " AND data_abertura >= DATE_SUB(CURDATE(), INTERVAL 89 DAY)"
+	janelaAbertura365d = " AND data_abertura >= DATE_SUB(CURDATE(), INTERVAL 364 DAY)"
+)
+
+// clausulaJanelaAbertura traduz o enum em constante (D-02); fora do enum,
+// sem cláusula (o default "all").
+func clausulaJanelaAbertura(j analytics.Janela) string {
+	switch j {
+	case analytics.Janela30d:
+		return janelaAbertura30d
+	case analytics.Janela90d:
+		return janelaAbertura90d
+	case analytics.Janela365d:
+		return janelaAbertura365d
+	default:
+		return ""
 	}
 }
 

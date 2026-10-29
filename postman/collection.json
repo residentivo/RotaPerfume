@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "RotaPerfumes API — Autenticação",
-    "description": "Coleção de endpoints da API de autenticação do SistemaCompleto.\n\n## Credenciais padrão\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedores (seed): a senha **não** é fixa. O `make db-seed` grava o valor de `SEED_USER_PASSWORD` do `.env` ou, se ela não estiver definida, uma senha aleatória impressa no console (`USER_PASSWORD=...`), a mesma para todos os usuários do seed (ver o cabeçalho de `sql/03_seed_vendedores.sql`). Preencha a variável `{{senha_vendedor}}` da coleção com essa senha (DOC-03, 2026-09-26). O nome `@HASH_MUDAR_123` no SQL é legado. **A partir de agora, usuários criados via `POST /api/usuarios` ou resetados via `POST /api/admin/reset-password` NÃO usam mais senha fixa**: a senha é gerada aleatoriamente (crypto/rand, mín. 12 caracteres) e enviada por email (SMTP) ao endereço cadastrado — nunca é retornada pela API.\n\n## Configuração\n1. Importe esta coleção no Postman.\n2. Defina a variável `{{base_url}}` como `http://localhost:8080`.\n3. Para endpoints protegidos, primeiro faça login (POST /api/auth/login) e copie o `access_token` da resposta para a variável `{{token}}` — ou use o botão **Authorize** com o tipo Bearer Token.\n4. Para reset-password e listar usuarios, o token deve ser de um usuário com role=`admin`.\n5. Configure as variáveis `SMTP_*` (ver `.env.example` na raiz) para que a API realmente envie os emails de senha inicial/reset — sem elas, a API usa um serviço \"noop\" que apenas loga o envio (útil em dev).\n\n## Inicialização\n```bash\nmake db-reset && make gen-hash && make dev-api\n```\n\n## Mudanças de contrato transversais (2026-09-24)\n- **BUG-04 — salvar sem alterações:** qualquer `PUT`/`PATCH` que envie os mesmos valores já gravados responde `200` com o registro. Antes respondia `404` \"não encontrado\" (o DSN agora usa `clientFoundRows=true`). `404` continua valendo para id inexistente.\n- **BUG-04 — vendedor já desligado:** `DELETE /api/vendedores/{id}` em um vendedor já desligado responde `200` e preserva a `data_desligamento` original.\n- **RISCO-01 — datas:** o formato das datas nas respostas não mudou. O processo da API passou a usar fuso fixo `-03:00` (sem horário de verão), então datas históricas de início de horário de verão (ex.: `2018-11-04`) não recuam mais um dia.\n- **SEC-01 — clientes:** ver a descrição da pasta \"Clientes\" (escopo por carteira em `POST`/`PUT`/`PATCH`).\n\n## Mudanças de contrato do Lote 4 (2026-09-25)\n- **SEC-02 — `POST /api/auth/refresh`:** novo `401` `\"refresh token revogado\"` quando uma requisição concorrente já usou o mesmo token (contava no rate limit; deixou de contar no SEC-04, Lote 5); falha ao revogar ou gravar o novo refresh token → `500` `\"erro interno\"`, sem cookie (antes: `200` sem refresh).\n- **SEC-03 — `GET /api/vendedores`:** admin vê todos; `normal` com vínculo vê só o próprio vendedor; sem vínculo recebe `data: []`; vendedor desligado recebe `403`. Ver pasta \"Vendedores\".\n- **BUG-06 — `PATCH /api/clientes|produtos|usuarios/{id}/inativar`:** body preenchido e inválido → `400` `\"body JSON inválido\"`; vazio/`null`/`{}`/`{\"ativo\":null}` → toggle; `{\"ativo\":true|false}` → define o valor. Em clientes, sem acesso ao registro continua `404` antes do `400`.\n- **NEG-01 — `POST`/`PUT /api/clientes`:** CNPJ validado (`400` `\"cnpj inválido\"`), único (`409` `\"cnpj já cadastrado\"`), aceita máscara e grava/devolve sem máscara (no Lote 4, só dígitos; o NEG-02 do Lote 5 passou a aceitar letras). Exemplo de CNPJ válido usado na coleção: `11222333000181`.\n- **NEG-04 — `PUT /api/clientes/{id}`:** o dígito verificador é exigido em **toda** gravação, mesmo quando o CNPJ enviado é igual ao atual (antes só era exigido se o CNPJ mudasse). CNPJ com DV inválido → `400` `\"cnpj inválido\"` antes de qualquer consulta ao banco, inclusive para id inexistente (antes: `404`). `PATCH /api/clientes/{id}/inativar` não valida o CNPJ.\n- **Formato de erro:** o envelope de erro é `{\"success\": false, \"error\": \"...\"}`. O envelope (na época, `writeJSON` em `handlers/response.go`; desde o Lote 21, `apis/rotaperfumes-api/internal/httpx/respond.go`) omite o campo `data` quando ele é nulo, então as respostas de erro **não** trazem `\"data\": null`.\n\n## Mudanças de contrato do Lote 5 (2026-09-25)\n- **NEG-02 — `POST`/`PUT /api/clientes` e `GET /api/clientes?q=`:** aceita o CNPJ **alfanumérico** da Receita. Envio com ou sem máscara, em maiúsculas ou minúsculas; as 12 primeiras posições são `[0-9A-Z]` e os 2 DVs são numéricos; DV por módulo 11 com valor ASCII − 48 por caractere. Retorno com 14 caracteres, sem máscara e em maiúsculas. A busca `?q=` aceita máscara e não diferencia maiúsculas de minúsculas. Erros `400`/`409` sem mudança. Exemplo oficial: `12ABC34501DE35` (`12.ABC.345/01DE-35`).\n- **SEC-04 — `POST /api/auth/refresh`:** token revogado há no máximo 30 s (janela de graça) e a corrida na rotação (`BeginRotation`) **não contam** no rate limit por IP. O reuso fora da janela continua contando e gera log `[auth][seguranca]`. A resposta HTTP não muda.\n- **FE-06 (frontend):** falha de rede no retry após o refresh não faz logout; a fila recebe o mesmo erro de rede. Sem mudança na API.\n\n## Mudanças de contrato do Lote 6 (2026-09-26)\n- **SEC-06 — todas as rotas protegidas (Bearer):** o middleware JWT consulta `usuarios.ativo` e `usuarios.role` no banco a cada requisição, sem cache. Usuário inativo ou inexistente → `401` `{\"success\":false,\"error\":\"usuário inativo\"}`, mesmo com access token dentro da validade; erro de banco na checagem → `500` `\"erro interno\"` (fail-closed). A role usada na autorização é a do banco: um rebaixamento `admin` → `normal` vale na próxima requisição, sem novo login (rota admin → `403`). Inativar um usuário (`PATCH /api/usuarios/{id}/inativar`) revoga os refresh tokens dele; desligar um vendedor (`DELETE /api/vendedores/{id}`) revoga os refresh tokens dos usuários vinculados, na mesma transação.\n- **SEC-07 — `POST /api/auth/refresh`:** cada revogação grava o motivo em `refresh_tokens.revoked_reason` (`rotacao`, `logout`, `revogacao_massa`, `senha`, `inativacao`). O reuso, fora da janela de 30 s, de um token revogado por `rotacao` gera o alerta `[auth][seguranca]` (com `user_id`, `token_id`, IP e user agent) e revoga **todos** os refresh tokens do usuário (`revogacao_massa`): as outras sessões precisam fazer login de novo quando o access token expirar. Tokens revogados por outro motivo ou legados (`NULL`) só geram log informativo. A resposta continua idêntica: `401` `\"refresh token revogado\"`.\n- **BUG-08 — `POST /api/clientes`:** a resposta `201` traz `created_at` e `updated_at` preenchidos (o registro é relido do banco depois do INSERT). Antes vinham `0001-01-01T00:00:00Z`.\n- **FE-07 (frontend):** falha de rede, timeout ou falha do Web Lock no próprio refresh não faz logout nem chama `/api/auth/logout`; a fila recebe o mesmo erro de rede. `401`, `429` e `500` no refresh continuam deslogando. Sem mudança na API.\n- **DOC-03:** a senha dos vendedores de seed vem da variável `{{senha_vendedor}}` (ver \"Credenciais padrão\").\n\n## Mudanças de contrato do Lote 8 (2026-09-26)\n- **SEC-08 — todas as rotas protegidas (Bearer):** novo corte de sessão por usuário (`usuarios.tokens_validos_desde`, migração 22). Um access token emitido **no segundo do corte ou antes** (`iat <= tokens_validos_desde`), ou sem `iat` quando há corte, recebe `401` `{\"success\":false,\"error\":\"sessão encerrada — faça login novamente\"}`, mesmo dentro das 24h de validade. O corte é gravado na inativação do usuário (`PATCH /api/usuarios/{id}/inativar`), no desligamento do vendedor (`DELETE /api/vendedores/{id}`, para os usuários vinculados), na troca de senha pelo próprio usuário (`POST /api/auth/reset-password`), no reset pelo admin (`POST /api/admin/reset-password`), na revogação em massa por reuso de refresh token (SEC-07) e na CLI `resetpassword`. Reativação e logout **não** gravam corte. Efeito: o access token antigo não volta a valer depois de reativar o usuário, e depois de trocar ou resetar a senha todas as sessões abertas precisam de novo login. Um login feito no mesmo segundo de um corte gera token recusado (aceito). O frontend não mudou: no `401` ele tenta o refresh (revogado nesses casos) e vai para o login.\n- **BUG-09 — `POST /api/produtos`, `/api/pagamentos`, `/api/oportunidades`, `/api/visitas`, `/api/estoque` e `/api/vendedores`:** o `201` traz `created_at`/`updated_at` reais e os campos preenchidos pelo banco (ex.: `produto_descricao` no estoque, via JOIN), porque o registro é relido depois do INSERT. Mesmo envelope. `POST /api/usuarios` já relia. O `POST /api/vendedores` não tem requisição nesta coleção.\n\n## Mudanças de contrato do Lote 9 (2026-09-26)\n- **FE-13 — `GET /api/senha-historico` e `GET /api/senha-historico/{usuario_id}`:** `order_by` passa a aceitar também `usuario_nome`, `resetado_por_nome` e `ip_origem` (além de `id`, `usuario_id`, `tipo_reset`, `created_at`). Quando a coluna não é `id`, a ordenação ganha desempate por `id DESC`, inclusive nas chaves antigas (paginação estável). `resetado_por_nome` nulo (troca pelo próprio usuário) vem primeiro em `asc` e por último em `desc`. Chave fora da lista → `id` na direção pedida, sem erro 400. A tela `admin/senha-historico` passou a enviar as três chaves.\n- **BUG-11 — `POST /api/usuarios`:** se o INSERT der certo e só a releitura falhar, a resposta é `201` (antes: erro, com o usuário gravado e sem e-mail), com `email_enviado` correto, timestamps zerados e `vendedor_nome` vazio. A ordem passou a ser INSERT → e-mail com a senha inicial → releitura. Falha no INSERT continua com erro e sem e-mail.\n- **CHORE-01 (repositório):** `*.tsbuildinfo` no `.gitignore`. Sem mudança na API.\n\n## Mudanças de contrato do Lote 10 (2026-09-26)\n- **BUG-12 — `GET /api/senha-historico` e `/api/senha-historico/{usuario_id}`:** não muda o formato, só a robustez. Registro com NULL no banco não derruba mais a listagem (antes: `500`). `ip_origem`/`user_agent` NULL saem `\"\"`, `created_at` NULL sai `\"0001-01-01T00:00:00Z\"` e `usuario_nome` de usuário inexistente sai `\"\"`.\n\n## Mudanças do Lote 21 (2026-10-13 a 2026-10-16)\n- **Reestruturação DDD da API:** refatoração interna, sem mudança de rotas, payloads, status ou mensagens, exceto a X1 abaixo (aprovada pelo usuário). Detalhes em `postman/README.md` e `docs/arquitetura-ddd.md`.\n- **X1 — método fixo:** `/api/auth/login|refresh|logout|reset-password` (POST), `/api/auth/me`, `/api/senha-historico`, `/api/senha-historico/{user_id...}`, `/api/dashboard/metrics|vendas|vendedores|clientes` e `/health` (GET) passam a aceitar só o método indicado; outro método → `405` com header `Allow` (corpo em texto, sem envelope JSON). `HEAD` continua aceito nas rotas GET e `OPTIONS` continua `204`.\n- **X1 — `GET /api/senha-historico/{user_id...}`:** `/2/extra`, `/0` e `/-1` → `400` `\"usuario_id inválido\"` (antes `/2/extra` devolvia o histórico do usuário 2). Nenhuma requisição desta coleção foi afetada.",
+    "description": "Coleção de endpoints da API de autenticação do SistemaCompleto.\n\n## Credenciais padrão\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedores (seed): a senha **não** é fixa. O `make db-seed` grava o valor de `SEED_USER_PASSWORD` do `.env` ou, se ela não estiver definida, uma senha aleatória impressa no console (`USER_PASSWORD=...`), a mesma para todos os usuários do seed (ver o cabeçalho de `sql/03_seed_vendedores.sql`). Preencha a variável `{{senha_vendedor}}` da coleção com essa senha (DOC-03, 2026-09-26). O nome `@HASH_MUDAR_123` no SQL é legado. **A partir de agora, usuários criados via `POST /api/usuarios` ou resetados via `POST /api/admin/reset-password` NÃO usam mais senha fixa**: a senha é gerada aleatoriamente (crypto/rand, mín. 12 caracteres) e enviada por email (SMTP) ao endereço cadastrado — nunca é retornada pela API.\n\n## Configuração\n1. Importe esta coleção no Postman.\n2. Defina a variável `{{base_url}}` como `http://localhost:8080`.\n3. Para endpoints protegidos, primeiro faça login (POST /api/auth/login) e copie o `access_token` da resposta para a variável `{{token}}` — ou use o botão **Authorize** com o tipo Bearer Token.\n4. Para reset-password e listar usuarios, o token deve ser de um usuário com role=`admin`.\n5. Configure as variáveis `SMTP_*` (ver `.env.example` na raiz) para que a API realmente envie os emails de senha inicial/reset — sem elas, a API usa um serviço \"noop\" que apenas loga o envio (útil em dev).\n\n## Inicialização\n```bash\nmake db-reset && make gen-hash && make dev-api\n```\n\n## Mudanças de contrato transversais (2026-09-24)\n- **BUG-04 — salvar sem alterações:** qualquer `PUT`/`PATCH` que envie os mesmos valores já gravados responde `200` com o registro. Antes respondia `404` \"não encontrado\" (o DSN agora usa `clientFoundRows=true`). `404` continua valendo para id inexistente.\n- **BUG-04 — vendedor já desligado:** `DELETE /api/vendedores/{id}` em um vendedor já desligado responde `200` e preserva a `data_desligamento` original.\n- **RISCO-01 — datas:** o formato das datas nas respostas não mudou. O processo da API passou a usar fuso fixo `-03:00` (sem horário de verão), então datas históricas de início de horário de verão (ex.: `2018-11-04`) não recuam mais um dia.\n- **SEC-01 — clientes:** ver a descrição da pasta \"Clientes\" (escopo por carteira em `POST`/`PUT`/`PATCH`).\n\n## Mudanças de contrato do Lote 4 (2026-09-25)\n- **SEC-02 — `POST /api/auth/refresh`:** novo `401` `\"refresh token revogado\"` quando uma requisição concorrente já usou o mesmo token (contava no rate limit; deixou de contar no SEC-04, Lote 5); falha ao revogar ou gravar o novo refresh token → `500` `\"erro interno\"`, sem cookie (antes: `200` sem refresh).\n- **SEC-03 — `GET /api/vendedores`:** admin vê todos; `normal` com vínculo vê só o próprio vendedor; sem vínculo recebe `data: []`; vendedor desligado recebe `403`. Ver pasta \"Vendedores\".\n- **BUG-06 — `PATCH /api/clientes|produtos|usuarios/{id}/inativar`:** body preenchido e inválido → `400` `\"body JSON inválido\"`; vazio/`null`/`{}`/`{\"ativo\":null}` → toggle; `{\"ativo\":true|false}` → define o valor. Em clientes, sem acesso ao registro continua `404` antes do `400`.\n- **NEG-01 — `POST`/`PUT /api/clientes`:** CNPJ validado (`400` `\"cnpj inválido\"`), único (`409` `\"cnpj já cadastrado\"`), aceita máscara e grava/devolve sem máscara (no Lote 4, só dígitos; o NEG-02 do Lote 5 passou a aceitar letras). Exemplo de CNPJ válido usado na coleção: `11222333000181`.\n- **NEG-04 — `PUT /api/clientes/{id}`:** o dígito verificador é exigido em **toda** gravação, mesmo quando o CNPJ enviado é igual ao atual (antes só era exigido se o CNPJ mudasse). CNPJ com DV inválido → `400` `\"cnpj inválido\"` antes de qualquer consulta ao banco, inclusive para id inexistente (antes: `404`). `PATCH /api/clientes/{id}/inativar` não valida o CNPJ.\n- **Formato de erro:** o envelope de erro é `{\"success\": false, \"error\": \"...\"}`. O envelope (na época, `writeJSON` em `handlers/response.go`; desde o Lote 21, `apis/rotaperfumes-api/internal/httpx/respond.go`) omite o campo `data` quando ele é nulo, então as respostas de erro **não** trazem `\"data\": null`.\n\n## Mudanças de contrato do Lote 5 (2026-09-25)\n- **NEG-02 — `POST`/`PUT /api/clientes` e `GET /api/clientes?q=`:** aceita o CNPJ **alfanumérico** da Receita. Envio com ou sem máscara, em maiúsculas ou minúsculas; as 12 primeiras posições são `[0-9A-Z]` e os 2 DVs são numéricos; DV por módulo 11 com valor ASCII − 48 por caractere. Retorno com 14 caracteres, sem máscara e em maiúsculas. A busca `?q=` aceita máscara e não diferencia maiúsculas de minúsculas. Erros `400`/`409` sem mudança. Exemplo oficial: `12ABC34501DE35` (`12.ABC.345/01DE-35`).\n- **SEC-04 — `POST /api/auth/refresh`:** token revogado há no máximo 30 s (janela de graça) e a corrida na rotação (`BeginRotation`) **não contam** no rate limit por IP. O reuso fora da janela continua contando e gera log `[auth][seguranca]`. A resposta HTTP não muda.\n- **FE-06 (frontend):** falha de rede no retry após o refresh não faz logout; a fila recebe o mesmo erro de rede. Sem mudança na API.\n\n## Mudanças de contrato do Lote 6 (2026-09-26)\n- **SEC-06 — todas as rotas protegidas (Bearer):** o middleware JWT consulta `usuarios.ativo` e `usuarios.role` no banco a cada requisição, sem cache. Usuário inativo ou inexistente → `401` `{\"success\":false,\"error\":\"usuário inativo\"}`, mesmo com access token dentro da validade; erro de banco na checagem → `500` `\"erro interno\"` (fail-closed). A role usada na autorização é a do banco: um rebaixamento `admin` → `normal` vale na próxima requisição, sem novo login (rota admin → `403`). Inativar um usuário (`PATCH /api/usuarios/{id}/inativar`) revoga os refresh tokens dele; desligar um vendedor (`DELETE /api/vendedores/{id}`) revoga os refresh tokens dos usuários vinculados, na mesma transação.\n- **SEC-07 — `POST /api/auth/refresh`:** cada revogação grava o motivo em `refresh_tokens.revoked_reason` (`rotacao`, `logout`, `revogacao_massa`, `senha`, `inativacao`). O reuso, fora da janela de 30 s, de um token revogado por `rotacao` gera o alerta `[auth][seguranca]` (com `user_id`, `token_id`, IP e user agent) e revoga **todos** os refresh tokens do usuário (`revogacao_massa`): as outras sessões precisam fazer login de novo quando o access token expirar. Tokens revogados por outro motivo ou legados (`NULL`) só geram log informativo. A resposta continua idêntica: `401` `\"refresh token revogado\"`.\n- **BUG-08 — `POST /api/clientes`:** a resposta `201` traz `created_at` e `updated_at` preenchidos (o registro é relido do banco depois do INSERT). Antes vinham `0001-01-01T00:00:00Z`.\n- **FE-07 (frontend):** falha de rede, timeout ou falha do Web Lock no próprio refresh não faz logout nem chama `/api/auth/logout`; a fila recebe o mesmo erro de rede. `401`, `429` e `500` no refresh continuam deslogando. Sem mudança na API.\n- **DOC-03:** a senha dos vendedores de seed vem da variável `{{senha_vendedor}}` (ver \"Credenciais padrão\").\n\n## Mudanças de contrato do Lote 8 (2026-09-26)\n- **SEC-08 — todas as rotas protegidas (Bearer):** novo corte de sessão por usuário (`usuarios.tokens_validos_desde`, migração 22). Um access token emitido **no segundo do corte ou antes** (`iat <= tokens_validos_desde`), ou sem `iat` quando há corte, recebe `401` `{\"success\":false,\"error\":\"sessão encerrada — faça login novamente\"}`, mesmo dentro das 24h de validade. O corte é gravado na inativação do usuário (`PATCH /api/usuarios/{id}/inativar`), no desligamento do vendedor (`DELETE /api/vendedores/{id}`, para os usuários vinculados), na troca de senha pelo próprio usuário (`POST /api/auth/reset-password`), no reset pelo admin (`POST /api/admin/reset-password`), na revogação em massa por reuso de refresh token (SEC-07) e na CLI `resetpassword`. Reativação e logout **não** gravam corte. Efeito: o access token antigo não volta a valer depois de reativar o usuário, e depois de trocar ou resetar a senha todas as sessões abertas precisam de novo login. Um login feito no mesmo segundo de um corte gera token recusado (aceito). O frontend não mudou: no `401` ele tenta o refresh (revogado nesses casos) e vai para o login.\n- **BUG-09 — `POST /api/produtos`, `/api/pagamentos`, `/api/oportunidades`, `/api/visitas`, `/api/estoque` e `/api/vendedores`:** o `201` traz `created_at`/`updated_at` reais e os campos preenchidos pelo banco (ex.: `produto_descricao` no estoque, via JOIN), porque o registro é relido depois do INSERT. Mesmo envelope. `POST /api/usuarios` já relia. O `POST /api/vendedores` não tem requisição nesta coleção.\n\n## Mudanças de contrato do Lote 9 (2026-09-26)\n- **FE-13 — `GET /api/senha-historico` e `GET /api/senha-historico/{usuario_id}`:** `order_by` passa a aceitar também `usuario_nome`, `resetado_por_nome` e `ip_origem` (além de `id`, `usuario_id`, `tipo_reset`, `created_at`). Quando a coluna não é `id`, a ordenação ganha desempate por `id DESC`, inclusive nas chaves antigas (paginação estável). `resetado_por_nome` nulo (troca pelo próprio usuário) vem primeiro em `asc` e por último em `desc`. Chave fora da lista → `id` na direção pedida, sem erro 400. A tela `admin/senha-historico` passou a enviar as três chaves.\n- **BUG-11 — `POST /api/usuarios`:** se o INSERT der certo e só a releitura falhar, a resposta é `201` (antes: erro, com o usuário gravado e sem e-mail), com `email_enviado` correto, timestamps zerados e `vendedor_nome` vazio. A ordem passou a ser INSERT → e-mail com a senha inicial → releitura. Falha no INSERT continua com erro e sem e-mail.\n- **CHORE-01 (repositório):** `*.tsbuildinfo` no `.gitignore`. Sem mudança na API.\n\n## Mudanças de contrato do Lote 10 (2026-09-26)\n- **BUG-12 — `GET /api/senha-historico` e `/api/senha-historico/{usuario_id}`:** não muda o formato, só a robustez. Registro com NULL no banco não derruba mais a listagem (antes: `500`). `ip_origem`/`user_agent` NULL saem `\"\"`, `created_at` NULL sai `\"0001-01-01T00:00:00Z\"` e `usuario_nome` de usuário inexistente sai `\"\"`.\n\n## Mudanças do Lote 21 (2026-10-13 a 2026-10-16)\n- **Reestruturação DDD da API:** refatoração interna, sem mudança de rotas, payloads, status ou mensagens, exceto a X1 abaixo (aprovada pelo usuário). Detalhes em `postman/README.md` e `docs/arquitetura-ddd.md`.\n- **X1 — método fixo:** `/api/auth/login|refresh|logout|reset-password` (POST), `/api/auth/me`, `/api/senha-historico`, `/api/senha-historico/{user_id...}`, `/api/dashboard/metrics|vendas|vendedores|clientes` e `/health` (GET) passam a aceitar só o método indicado; outro método → `405` com header `Allow` (corpo em texto, sem envelope JSON). `HEAD` continua aceito nas rotas GET e `OPTIONS` continua `204`.\n- **X1 — `GET /api/senha-historico/{user_id...}`:** `/2/extra`, `/0` e `/-1` → `400` `\"usuario_id inválido\"` (antes `/2/extra` devolvia o histórico do usuário 2). Nenhuma requisição desta coleção foi afetada.\n\n## Mudanças do Lote 22 (2026-10-29)\n- **DASH-01 — endpoint novo `GET /api/dashboard/funil?janela=30d|90d|365d|all`:** funil de vendas das oportunidades por etapa (cumulativo), com conversões, perdidas e taxa de ganho. Acesso autenticado, escopo por `oportunidades.vendedor_id`; janela inválida → `400`. Ver a pasta \"Dashboard — Funil de vendas (DASH-01, Lote 22)\". Os demais endpoints não mudaram.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -2196,6 +2196,445 @@
           ],
           "cookie": [],
           "body": "{\n  \"success\": true,\n  \"data\": [],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 0,\n    \"pages\": 0\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "Dashboard — Funil de vendas (DASH-01, Lote 22)",
+      "description": "Funil de vendas das oportunidades por etapa (DASH-01, Lote 22, 2026-10-29). Endpoint novo `GET /api/dashboard/funil?janela=30d|90d|365d|all`; os endpoints antigos do Dashboard não mudaram.\n\n**Acesso:** qualquer usuário autenticado (Policy `Authenticated`), com escopo por vendedor, como `/api/oportunidades`:\n- admin: todas as oportunidades;\n- normal com vendedor ativo: só as oportunidades do próprio vendedor (`oportunidades.vendedor_id`);\n- normal sem vendedor, com vendedor desligado ou inexistente: `200` com o funil zerado (5 etapas com zero), sem executar SQL; `vendedor_desligado: true` só para o desligado.\n\n**Janela (`?janela=`):** filtra por `data_abertura` relativa a `CURDATE()`, incluindo hoje: `30d` (últimos 30 dias), `90d`, `365d` (o seletor do frontend chama de \"12 meses\") e `all` (sem filtro, **default** quando o parâmetro é omitido ou vazio). Qualquer outro valor (inclusive maiúsculas, como `30D`) → `400` `\"janela deve ser '30d', '90d', '365d' ou 'all'\"`. O valor é um enum tipado traduzido para constantes SQL (nunca concatenado). A base importada vai até 2026-08-31, então `30d` costuma vir zerado.\n\n**Semântica:**\n- `etapas`: sempre as 5 etapas na ordem Prospecção → Qualificação → Proposta enviada → Negociação → Fechado ganho. É um funil **cumulativo**: `quantidade` e `valor_estimado` de cada etapa somam as oportunidades cuja etapa atual está nela ou adiante (Fechado perdido não entra).\n- `conversao_anterior_pct` (em relação à etapa anterior) e `conversao_topo_pct` (em relação à Prospecção): na primeira etapa valem `100` quando há dados e `0` quando não há. Percentuais e valores com 2 casas.\n- `perdidas`: quantidade e valor estimado das oportunidades em Fechado perdido.\n- `taxa_ganho_pct` = ganhas / (ganhas + perdidas) × 100; `0` sem oportunidades fechadas.\n- `total_oportunidades`: todas as oportunidades da janela, inclusive perdidas e etapas desconhecidas (que não entram no funil).\n\n**Erros:** `400` janela inválida; `401` não autenticado; `500` erro interno genérico (inclui falha ao resolver o escopo do vendedor). Sem cache: o escopo é resolvido a cada requisição.\n\nOs exemplos de `all` e `365d` são ilustrativos; o de `90d` foi capturado pelo 🟡 BackBrain.",
+      "item": [
+        {
+          "name": "Funil de vendas — default (sem janela = all)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Funil com as 5 etapas, perdidas e taxa de ganho', function() {",
+                  "    pm.expect(jsonData.data.total_oportunidades).to.be.a('number');",
+                  "    pm.expect(jsonData.data.etapas).to.be.an('array').with.lengthOf(5);",
+                  "    pm.expect(jsonData.data.perdidas).to.have.property('quantidade');",
+                  "    pm.expect(jsonData.data.perdidas).to.have.property('valor_estimado');",
+                  "    pm.expect(jsonData.data.taxa_ganho_pct).to.be.a('number');",
+                  "    pm.expect(jsonData.data.vendedor_desligado).to.be.a('boolean');",
+                  "});",
+                  "pm.test('Janela default é all', function() {",
+                  "    pm.expect(jsonData.data.janela).to.eql('all');",
+                  "});",
+                  "pm.test('Etapas na ordem do funil', function() {",
+                  "    pm.expect(jsonData.data.etapas.map(function(e) { return e.etapa; })).to.eql(['Prospecção', 'Qualificação', 'Proposta enviada', 'Negociação', 'Fechado ganho']);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/funil",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "funil"]
+            },
+            "description": "Funil sem `?janela=`: equivale a `janela=all` (todas as oportunidades do escopo). Use `{{vendedor_token}}` para ver o funil restrito ao próprio vendedor."
+          },
+          "response": [
+            {
+              "name": "200 OK — Admin, todas as oportunidades (ilustrativo)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/dashboard/funil",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "dashboard", "funil"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"janela\": \"all\",\n    \"total_oportunidades\": 5979,\n    \"etapas\": [\n      { \"etapa\": \"Prospecção\", \"quantidade\": 4400, \"valor_estimado\": 19400000, \"conversao_anterior_pct\": 100, \"conversao_topo_pct\": 100 },\n      { \"etapa\": \"Qualificação\", \"quantidade\": 3200, \"valor_estimado\": 14800000, \"conversao_anterior_pct\": 72.73, \"conversao_topo_pct\": 72.73 },\n      { \"etapa\": \"Proposta enviada\", \"quantidade\": 2300, \"valor_estimado\": 11000000, \"conversao_anterior_pct\": 71.88, \"conversao_topo_pct\": 52.27 },\n      { \"etapa\": \"Negociação\", \"quantidade\": 1600, \"valor_estimado\": 7900000, \"conversao_anterior_pct\": 69.57, \"conversao_topo_pct\": 36.36 },\n      { \"etapa\": \"Fechado ganho\", \"quantidade\": 1100, \"valor_estimado\": 5500000, \"conversao_anterior_pct\": 68.75, \"conversao_topo_pct\": 25 }\n    ],\n    \"perdidas\": { \"quantidade\": 1579, \"valor_estimado\": 6950000.5 },\n    \"taxa_ganho_pct\": 41.06,\n    \"vendedor_desligado\": false\n  }\n}"
+            },
+            {
+              "name": "200 OK — Normal com vendedor desligado (funil zerado)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/dashboard/funil",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "dashboard", "funil"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"janela\": \"all\",\n    \"total_oportunidades\": 0,\n    \"etapas\": [\n      { \"etapa\": \"Prospecção\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 },\n      { \"etapa\": \"Qualificação\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 },\n      { \"etapa\": \"Proposta enviada\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 },\n      { \"etapa\": \"Negociação\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 },\n      { \"etapa\": \"Fechado ganho\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 }\n    ],\n    \"perdidas\": { \"quantidade\": 0, \"valor_estimado\": 0 },\n    \"taxa_ganho_pct\": 0,\n    \"vendedor_desligado\": true\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Funil de vendas — últimos 30 dias (janela=30d)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Funil com as 5 etapas, perdidas e taxa de ganho', function() {",
+                  "    pm.expect(jsonData.data.total_oportunidades).to.be.a('number');",
+                  "    pm.expect(jsonData.data.etapas).to.be.an('array').with.lengthOf(5);",
+                  "    pm.expect(jsonData.data.perdidas).to.have.property('quantidade');",
+                  "    pm.expect(jsonData.data.taxa_ganho_pct).to.be.a('number');",
+                  "    pm.expect(jsonData.data.vendedor_desligado).to.be.a('boolean');",
+                  "});",
+                  "pm.test('Janela ecoada (30d)', function() {",
+                  "    pm.expect(jsonData.data.janela).to.eql('30d');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/funil?janela=30d",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "funil"],
+              "query": [
+                {
+                  "key": "janela",
+                  "value": "30d",
+                  "description": "30d | 90d | 365d | all (default: all)"
+                }
+              ]
+            },
+            "description": "Oportunidades com `data_abertura` nos últimos 30 dias (`CURDATE() - INTERVAL 29 DAY` até hoje). Como a base importada vai até 2026-08-31, sem oportunidades novas o funil vem zerado (`total_oportunidades: 0`, conversões 0, `vendedor_desligado: false`); a tela mostra \"Nenhuma oportunidade na janela selecionada\"."
+          },
+          "response": [
+            {
+              "name": "200 OK — Janela sem oportunidades",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/dashboard/funil?janela=30d",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "dashboard", "funil"],
+                  "query": [
+                    {
+                      "key": "janela",
+                      "value": "30d"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"janela\": \"30d\",\n    \"total_oportunidades\": 0,\n    \"etapas\": [\n      { \"etapa\": \"Prospecção\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 },\n      { \"etapa\": \"Qualificação\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 },\n      { \"etapa\": \"Proposta enviada\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 },\n      { \"etapa\": \"Negociação\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 },\n      { \"etapa\": \"Fechado ganho\", \"quantidade\": 0, \"valor_estimado\": 0, \"conversao_anterior_pct\": 0, \"conversao_topo_pct\": 0 }\n    ],\n    \"perdidas\": { \"quantidade\": 0, \"valor_estimado\": 0 },\n    \"taxa_ganho_pct\": 0,\n    \"vendedor_desligado\": false\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Funil de vendas — últimos 90 dias (janela=90d)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Funil com as 5 etapas, perdidas e taxa de ganho', function() {",
+                  "    pm.expect(jsonData.data.total_oportunidades).to.be.a('number');",
+                  "    pm.expect(jsonData.data.etapas).to.be.an('array').with.lengthOf(5);",
+                  "    pm.expect(jsonData.data.perdidas).to.have.property('quantidade');",
+                  "    pm.expect(jsonData.data.taxa_ganho_pct).to.be.a('number');",
+                  "    pm.expect(jsonData.data.vendedor_desligado).to.be.a('boolean');",
+                  "});",
+                  "pm.test('Janela ecoada (90d)', function() {",
+                  "    pm.expect(jsonData.data.janela).to.eql('90d');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/funil?janela=90d",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "funil"],
+              "query": [
+                {
+                  "key": "janela",
+                  "value": "90d",
+                  "description": "30d | 90d | 365d | all (default: all)"
+                }
+              ]
+            },
+            "description": "Oportunidades com `data_abertura` nos últimos 90 dias (`CURDATE() - INTERVAL 89 DAY` até hoje). No exemplo, `total_oportunidades` (112) = 97 no funil + 13 perdidas + 2 em etapa desconhecida (só entram no total)."
+          },
+          "response": [
+            {
+              "name": "200 OK — Admin, 90 dias",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/dashboard/funil?janela=90d",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "dashboard", "funil"],
+                  "query": [
+                    {
+                      "key": "janela",
+                      "value": "90d"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"janela\": \"90d\",\n    \"total_oportunidades\": 112,\n    \"etapas\": [\n      { \"etapa\": \"Prospecção\", \"quantidade\": 97, \"valor_estimado\": 325000.75, \"conversao_anterior_pct\": 100, \"conversao_topo_pct\": 100 },\n      { \"etapa\": \"Qualificação\", \"quantidade\": 57, \"valor_estimado\": 225000.25, \"conversao_anterior_pct\": 58.76, \"conversao_topo_pct\": 58.76 },\n      { \"etapa\": \"Proposta enviada\", \"quantidade\": 32, \"valor_estimado\": 145000, \"conversao_anterior_pct\": 56.14, \"conversao_topo_pct\": 32.99 },\n      { \"etapa\": \"Negociação\", \"quantidade\": 17, \"valor_estimado\": 85000, \"conversao_anterior_pct\": 53.13, \"conversao_topo_pct\": 17.53 },\n      { \"etapa\": \"Fechado ganho\", \"quantidade\": 7, \"valor_estimado\": 35000, \"conversao_anterior_pct\": 41.18, \"conversao_topo_pct\": 7.22 }\n    ],\n    \"perdidas\": { \"quantidade\": 13, \"valor_estimado\": 42000.1 },\n    \"taxa_ganho_pct\": 35,\n    \"vendedor_desligado\": false\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Funil de vendas — últimos 12 meses (janela=365d)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Funil com as 5 etapas, perdidas e taxa de ganho', function() {",
+                  "    pm.expect(jsonData.data.total_oportunidades).to.be.a('number');",
+                  "    pm.expect(jsonData.data.etapas).to.be.an('array').with.lengthOf(5);",
+                  "    pm.expect(jsonData.data.perdidas).to.have.property('quantidade');",
+                  "    pm.expect(jsonData.data.taxa_ganho_pct).to.be.a('number');",
+                  "    pm.expect(jsonData.data.vendedor_desligado).to.be.a('boolean');",
+                  "});",
+                  "pm.test('Janela ecoada (365d)', function() {",
+                  "    pm.expect(jsonData.data.janela).to.eql('365d');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/funil?janela=365d",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "funil"],
+              "query": [
+                {
+                  "key": "janela",
+                  "value": "365d",
+                  "description": "30d | 90d | 365d | all (default: all)"
+                }
+              ]
+            },
+            "description": "Oportunidades com `data_abertura` nos últimos 365 dias (`CURDATE() - INTERVAL 364 DAY` até hoje). No frontend, o botão se chama \"12 meses\"."
+          },
+          "response": [
+            {
+              "name": "200 OK — Admin, 365 dias (ilustrativo)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/dashboard/funil?janela=365d",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "dashboard", "funil"],
+                  "query": [
+                    {
+                      "key": "janela",
+                      "value": "365d"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"janela\": \"365d\",\n    \"total_oportunidades\": 2000,\n    \"etapas\": [\n      { \"etapa\": \"Prospecção\", \"quantidade\": 1480, \"valor_estimado\": 7300000, \"conversao_anterior_pct\": 100, \"conversao_topo_pct\": 100 },\n      { \"etapa\": \"Qualificação\", \"quantidade\": 1080, \"valor_estimado\": 5350000, \"conversao_anterior_pct\": 72.97, \"conversao_topo_pct\": 72.97 },\n      { \"etapa\": \"Proposta enviada\", \"quantidade\": 780, \"valor_estimado\": 3870000, \"conversao_anterior_pct\": 72.22, \"conversao_topo_pct\": 52.7 },\n      { \"etapa\": \"Negociação\", \"quantidade\": 530, \"valor_estimado\": 2620000, \"conversao_anterior_pct\": 67.95, \"conversao_topo_pct\": 35.81 },\n      { \"etapa\": \"Fechado ganho\", \"quantidade\": 380, \"valor_estimado\": 1900000, \"conversao_anterior_pct\": 71.7, \"conversao_topo_pct\": 25.68 }\n    ],\n    \"perdidas\": { \"quantidade\": 520, \"valor_estimado\": 2480000 },\n    \"taxa_ganho_pct\": 42.22,\n    \"vendedor_desligado\": false\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Funil de vendas — janela inválida (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', function() {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Erro com a mensagem do contrato', function() {",
+                  "    pm.expect(jsonData.success).to.eql(false);",
+                  "    pm.expect(jsonData.error).to.eql(\"janela deve ser '30d', '90d', '365d' ou 'all'\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard/funil?janela=7d",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard", "funil"],
+              "query": [
+                {
+                  "key": "janela",
+                  "value": "7d",
+                  "description": "Valor fora do enum: 400"
+                }
+              ]
+            },
+            "description": "Qualquer valor de `janela` fora de `30d`, `90d`, `365d` e `all` (ex.: `7d`, `30D`, `month`) responde `400` antes de consultar o banco. O envelope de erro não traz `data`."
+          },
+          "response": [
+            {
+              "name": "400 Bad Request — Janela inválida",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/dashboard/funil?janela=7d",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "dashboard", "funil"],
+                  "query": [
+                    {
+                      "key": "janela",
+                      "value": "7d"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"janela deve ser '30d', '90d', '365d' ou 'all'\"\n}"
+            }
+          ]
         }
       ]
     },

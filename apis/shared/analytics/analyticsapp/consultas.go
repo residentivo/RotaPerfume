@@ -20,6 +20,7 @@ const limiteTopVendedores = 10
 type Deps struct {
 	Vendas   IndicadoresVendas
 	Clientes IndicadoresClientes
+	Funil    IndicadoresFunil
 	Escopo   EscopoAnalytics
 	// Relogio é a fonte de "hoje" da série zerada.
 	Relogio func() time.Time
@@ -36,7 +37,7 @@ type Consultas struct{ d Deps }
 // um ponteiro nil tipado passa por esta checagem, como no legado; a proteção
 // é o bootstrap montar sempre os adapters reais (analyticsmysql/comercialapp).
 func Novo(d Deps) *Consultas {
-	for _, dep := range []any{d.Vendas, d.Clientes, d.Escopo} {
+	for _, dep := range []any{d.Vendas, d.Clientes, d.Funil, d.Escopo} {
 		if dep == nil {
 			panic("analyticsapp: Novo exige todas as dependências")
 		}
@@ -65,6 +66,10 @@ type (
 	ConsultaMetricasClientes struct {
 		Principal kernel.Principal
 		Periodo   analytics.Periodo
+	}
+	ConsultaFunil struct {
+		Principal kernel.Principal
+		Janela    analytics.Janela
 	}
 )
 
@@ -179,6 +184,25 @@ func (c *Consultas) clientesDoEscopo(ctx context.Context, e kernel.Escopo, p ana
 		return analytics.MetricasClientes{}, err
 	}
 	return analytics.NovasMetricasClientes(m), nil
+}
+
+// Funil responde /funil (DASH-01): o funil cumulativo do escopo na janela;
+// sem acesso, as 5 etapas zeradas com o aviso vendedor_desligado (D-01,
+// sem SQL).
+func (c *Consultas) Funil(ctx context.Context, q ConsultaFunil) (f analytics.Funil, err error) {
+	defer vlog.Trace(arqConsultas, "Analytics.Funil", "janela=%s", q.Janela.String())(&err)
+	a, err := c.acessar(ctx, q.Principal, "Funil")
+	if err != nil {
+		return f, err
+	}
+	if !a.liberado {
+		return analytics.FunilZerado(q.Janela, a.desligado), nil
+	}
+	contagens, err := c.d.Funil.Funil(ctx, a.escopo, q.Janela)
+	if err != nil {
+		return f, err
+	}
+	return analytics.NovoFunil(q.Janela, contagens), nil
 }
 
 // acesso é o escopo resolvido de uma consulta. liberado=false responde

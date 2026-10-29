@@ -1,6 +1,8 @@
 # A Fazer
 
-> Atualizado em 2026-10-16. O Lote 21 (2026-10-13 a 2026-10-16, reestruturação da API em DDD + Clean Code + Design Patterns) foi **concluído**: ARQ-00 a ARQ-08 estão em `feito.md` (estrutura final em `docs/arquitetura-ddd.md` §10; ADR em `docs/adr-001-reestruturacao-ddd.md`). Os cards abaixo saíram do lote e ficam fora do escopo dele. Os cards SEC-14 a SEC-25 são GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), no topo da lista. Do ARQ-05 (2026-10-15) saíram BUG-16, SEC-26, SEC-27, TST-06 e BUG-17, no bloco "Achados do ARQ-05", logo após o BUG-15. Do ARQ-06 (2026-10-15) saiu o BUG-18, logo após o BUG-17. Do ARQ-07 (2026-10-16) saíram SEC-28 e TST-07, logo após o BUG-18.
+> Atualizado em 2026-10-29. O **Lote 22** (DASH-01, funil de vendas no Dashboard) foi concluído e está em `feito.md`. Da revisão do DASH-01 saíram três cards BAIXA, no bloco "Achados do DASH-01", logo após o TST-07: **DOC-06** (comentário "escopo por carteira" em `rotas.go`, do 🟣 SecBrain), **BUG-19** (`arredondar2` com negativos, do 🔴 TestBrain) e **FE-15** (aviso de desligado e seleção da janela após erro no `FunilVendas`, do 🔴 TestBrain). A limitação do setup local em disco sem symlink (`npm ci --no-bin-links`) ficou só documentada em `postman/README.md` ("Subindo o ambiente"), sem card.
+>
+> Em 2026-10-16: o Lote 21 (2026-10-13 a 2026-10-16, reestruturação da API em DDD + Clean Code + Design Patterns) foi **concluído**: ARQ-00 a ARQ-08 estão em `feito.md` (estrutura final em `docs/arquitetura-ddd.md` §10; ADR em `docs/adr-001-reestruturacao-ddd.md`). Os cards abaixo saíram do lote e ficam fora do escopo dele. Os cards SEC-14 a SEC-25 são GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), no topo da lista. Do ARQ-05 (2026-10-15) saíram BUG-16, SEC-26, SEC-27, TST-06 e BUG-17, no bloco "Achados do ARQ-05", logo após o BUG-15. Do ARQ-06 (2026-10-15) saiu o BUG-18, logo após o BUG-17. Do ARQ-07 (2026-10-16) saíram SEC-28 e TST-07, logo após o BUG-18.
 >
 > **Regras do Lote 21 (decisões de 2026-10-13, ver ARQ-00 em `feito.md`), que continuam valendo para o código daqui em diante:**
 > - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. Regra no código: comentário de `apis/shared/vlog/vlog.go`; documentação: `docs/logs-verbose.md` (atualizada no ARQ-08).
@@ -186,6 +188,59 @@
 **Ação esperada:** estender a varredura aos demais adapters MySQL (`catalogomysql`, `comercialmysql`, `vendasmysql`, identidade etc.), com allowlist dos helpers que recebem SQL pronto do chamador: `apis/shared/db/linhas.go`, `apis/shared/db/consulta.go`, `paginar` em `comercialmysql/linhas.go` e em `vendasmysql/linhas.go`, e `vinculo` em `comercialmysql/carteiras.go`. Manter um controle negativo (caso que o teste precisa reprovar).
 
 **Critério de aceite:** todos os adapters MySQL cobertos; allowlist explícita e mínima; controle negativo reprovando; testes verdes.
+
+---
+
+## Achados do DASH-01 (DOC-06, BUG-19, FE-15)
+
+> Origem comum: revisão do DASH-01 (Funil de vendas no Dashboard) pelo 🟣 SecBrain e pelo 🔴 TestBrain, Lote 22 (2026-10-29). Nenhum deles bloqueou o fechamento do DASH-01 (em `feito.md`). Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário.
+
+---
+
+## DOC-06: comentário "escopo por carteira" das rotas de Oportunidades em `rotas.go` — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Backend (só comentário)
+**Responsável:** 🟡 BackBrain
+**Origem:** 🟣 SecBrain, revisão do DASH-01 (Lote 22, 2026-10-29).
+
+**Descrição:** em `apis/rotaperfumes-api/internal/bootstrap/rotas.go:130`, o comentário do bloco de Oportunidades diz "acesso comum, escopo por carteira", mas o código filtra por vendedor (`oportunidades.vendedor_id`), não pela carteira ativa do cliente. O DASH-01 usou o mesmo filtro por vendedor. O comentário engana quem for revisar o escopo.
+
+**Ação esperada:** corrigir o comentário para "escopo por vendedor (`oportunidades.vendedor_id`)". Aproveitar e conferir se os comentários equivalentes das linhas 116 (Pedidos) e 137 (Visitas) descrevem o filtro real; corrigir só o texto, sem mudar código.
+
+**Critério de aceite:** comentários de `rotas.go` batem com o filtro aplicado em cada contexto; build e testes verdes (nenhuma mudança de comportamento).
+
+---
+
+## BUG-19: `arredondar2` trunca em direção a zero com valores negativos — prioridade BAIXA
+
+**Status:** pendente (**exige decisão**: o comportamento foi mantido de propósito no ARQ-06)
+**Camada:** Backend
+**Responsável:** 🤍 MegaBrain/usuário (decisão) → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🔴 TestBrain, testes do DASH-01 (Lote 22, 2026-10-29).
+
+**Descrição:** `apis/shared/analytics/ranking.go:53-56` arredonda com `float64(int(val*100+0.5)) / 100`. Como a conversão para `int` trunca em direção a zero, valores negativos arredondam errado: −1,555 → −1,55 (o esperado seria −1,56). O comentário da função diz que o comportamento legado foi mantido "inclusive com valores negativos" para nenhum número do ranking mudar na migração. Hoje o funil (DASH-01) e o ranking só produzem valores ≥ 0, então o efeito é teórico, mas a função é reutilizada no pacote.
+
+**Ação esperada:** decidir se corrige (ex.: `math.Round(val*100) / 100`, com cuidado com o comportamento em `x,xx5` positivo, que deve continuar igual) ou se só documenta que a função não aceita negativos. Se corrigir: testes de tabela com positivos, negativos e zero, e conferência de que nenhum número do ranking, das metas e do funil muda nos testes existentes.
+
+**Critério de aceite:** decisão registrada no card; arredondamento correto para negativos (ou restrição documentada e testada); contrato HTTP inalterado; testes verdes.
+
+---
+
+## FE-15: `FunilVendas`, aviso de desligado sem `forcarZeros` e seleção da janela após erro — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Frontend
+**Responsável:** 🟢 FrontBrain → 🔴 TestBrain
+**Origem:** 🔴 TestBrain, testes do DASH-01 (Lote 22, 2026-10-29).
+
+**Descrição:** dois pontos em `frontend/src/components/dashboard/FunilVendas.tsx`:
+1. **Aviso de desligado (linha ~252):** o aviso próprio do componente ("Vendedor desligado. Nao ha oportunidades no funil...") também dispara pela sessão (`useVendedorDesligado`) quando o componente é usado **sem** `forcarZeros`. No Dashboard isso não acontece, porque a página passa `forcarZeros` nesses casos e mostra o aviso dela. Mas, se o componente for reutilizado em outra tela, o aviso pode aparecer duplicado ou fora de contexto.
+2. **Erro na troca de janela:** depois de um erro ao trocar a janela, o botão novo fica marcado (`aria-pressed`), mas as barras continuam com os dados da janela anterior, sem indicar isso.
+
+**Ação esperada:** (1) definir a regra do aviso quando o componente não recebe `forcarZeros` (ex.: só pelo `vendedor_desligado` do payload, ou um prop explícito); (2) depois do erro, voltar a seleção para a janela dos dados exibidos, ou indicar de qual janela são os dados. Testes para os dois casos.
+
+**Critério de aceite:** comportamento definido e testado nos dois pontos; nenhuma regressão no Dashboard (testes DASH-01 e FE-02 verdes); `tsc` e `eslint` limpos.
 
 ---
 

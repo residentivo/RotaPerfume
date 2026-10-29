@@ -2,8 +2,8 @@
 
 **Card:** "Teste manual do Dashboard no navegador (normal com vendedor, normal sem vendedor, admin)" (`tarefas/fazendo.md`). Cobre também os cards do lote de 2026-09-24: vendedor desligado, `/api/dashboard/clientes` com escopo da carteira, valores com centavos e listas vazias como `[]`.
 **Tela:** `frontend/src/app/dashboard/page.tsx`
-**Endpoints envolvidos:** `GET /api/dashboard/metrics?periodo=`, `GET /api/dashboard/vendas?dias=`, `GET /api/dashboard/vendedores?page=&limit=`, `GET /api/dashboard/clientes?periodo=`
-**Autor:** TestBrain (2026-09-24)
+**Endpoints envolvidos:** `GET /api/dashboard/metrics?periodo=`, `GET /api/dashboard/vendas?dias=`, `GET /api/dashboard/vendedores?page=&limit=`, `GET /api/dashboard/clientes?periodo=`, `GET /api/dashboard/funil?janela=` (DASH-01, Lote 22, 2026-10-29; ver a seção 7)
+**Autor:** TestBrain (2026-09-24); seção 7 (Funil de vendas) pelo 🔵 SubBrain em 2026-10-29
 
 Marque cada checkbox depois de conferir no navegador. Os números de referência abaixo foram obtidos em 2026-09-24 e **mudam com o tempo** (período "Mês" = mês corrente). Para conferir no dia do teste, use as queries SQL de cada seção.
 
@@ -138,6 +138,45 @@ Desde o FE-02, para o usuário `normal` **sem vendedor** ou com **vendedor desli
 - [ ] 6.1 Usuário temporário removido.
 - [ ] 6.2 `data_desligamento` restaurada se o item 3.8 foi executado.
 - [ ] 6.3 Local Overrides e bloqueios de URL do DevTools desativados (seção 5b).
+
+## 7. Funil de vendas (DASH-01, Lote 22, 2026-10-29)
+
+**Onde fica:** no Dashboard, entre o gráfico de vendas/metas e o ranking de vendedores. O título é **"Funil de vendas"** para o admin e **"Meu funil de vendas"** para o normal, com o subtítulo "Oportunidades por etapa (cumulativo)". Endpoint: `GET /api/dashboard/funil?janela=30d|90d|365d|all`.
+
+### Como usar a seção
+
+1. Abra o Dashboard. O funil carrega com a janela **Tudo** selecionada (todas as oportunidades do seu escopo).
+2. Use o seletor no canto do card para trocar a janela: **30 dias**, **90 dias**, **12 meses** ou **Tudo**. O botão marcado fica azul. Cada clique refaz a busca só do funil.
+3. Leia as barras de cima para baixo: Prospecção → Qualificação → Proposta enviada → Negociação → Fechado ganho. Cada barra mostra a etapa e a quantidade; abaixo dela aparecem o valor estimado e o percentual em relação à etapa anterior. A largura da barra é proporcional à conversão em relação ao topo (com largura mínima para não sumir). Passe o mouse sobre a barra para ver o resumo completo (quantidade, valor, % do topo e % da etapa anterior).
+4. O funil é **cumulativo**: uma oportunidade em Negociação conta também em Prospecção, Qualificação e Proposta enviada. Por isso as barras sempre diminuem de cima para baixo.
+5. O rodapé mostra **Oportunidades** (total da janela, inclusive perdidas e etapas desconhecidas), **Taxa de ganho** (ganhas ÷ (ganhas + perdidas)) e **Perdidas** (quantidade e valor estimado).
+6. O botão **Atualizar** do topo do Dashboard também recarrega o funil, mantendo a janela escolhida.
+
+### Checklist
+
+Preparação: a tabela `oportunidades` precisa estar importada (`make db-up && make db-import-oportunidades`). A base vai até 2026-08-31, então em 2026-10-29 a janela **30 dias** deve vir vazia. Query de referência (troque o filtro de data e acrescente `AND vendedor_id = 4` para o normal):
+
+```sql
+SELECT etapa, COUNT(*) qtd, SUM(valor_estimado) valor
+  FROM oportunidades
+ WHERE data_abertura >= DATE_SUB(CURDATE(), INTERVAL 89 DAY)   -- 90d; 29 = 30d, 364 = 365d; sem WHERE = Tudo
+ GROUP BY etapa;
+```
+
+- [ ] 7.1 **Admin:** título "Funil de vendas". Com **Tudo**, o total de "Oportunidades" bate com `SELECT COUNT(*) FROM oportunidades`.
+- [ ] 7.2 **Admin, 90 dias:** a quantidade de "Fechado ganho" bate com a query; a de "Negociação" é Negociação + Fechado ganho; e assim por diante até Prospecção (soma das 5 etapas). "Perdidas" bate com a linha "Fechado perdido".
+- [ ] 7.3 A primeira barra mostra a maior quantidade e as seguintes nunca são maiores que a anterior. A primeira etapa não mostra "% da etapa anterior".
+- [ ] 7.4 **Taxa de ganho** = ganhas ÷ (ganhas + perdidas), com 1 casa decimal e ponto como separador, como nos outros percentuais do funil (ex.: 7 ganhas e 13 perdidas → "35.0%").
+- [ ] 7.5 **30 dias:** aparece "Nenhuma oportunidade na janela selecionada", sem erro vermelho.
+- [ ] 7.6 Trocar entre 30 dias / 90 dias / 12 meses / Tudo atualiza o funil e o botão marcado. Os outros blocos do Dashboard não mudam.
+- [ ] 7.7 **Normal com vendedor (Rafael Carvalho, vendedor 4):** título "Meu funil de vendas"; os números batem com a query filtrada por `vendedor_id = 4` e não com o total da empresa.
+- [ ] 7.8 **Normal sem vendedor:** o funil aparece zerado ("Nenhuma oportunidade na janela selecionada"), junto com o aviso amarelo de "sem vendedor" da página. Nenhuma oportunidade da empresa aparece.
+- [ ] 7.9 **Normal com vendedor desligado (Thiago Silva):** o funil aparece zerado, com o aviso amarelo de desligado da página (o aviso aparece uma vez só, no topo).
+- [ ] 7.10 **Erro:** bloqueie `funil` no DevTools (Network → botão direito → **Block request URL**) e troque a janela: aparece "Nao foi possivel carregar o funil de vendas. Tente novamente.", sem detalhes técnicos. Desbloqueie e clique em **Atualizar**: o erro some. (Limitação conhecida, card FE-15 em `tarefas/afazer.md`: depois do erro, o botão novo fica marcado, mas as barras ainda são da janela anterior.)
+- [ ] 7.11 **API direto (opcional):** `GET /api/dashboard/funil?janela=7d` responde `400` `"janela deve ser '30d', '90d', '365d' ou 'all'"`. Requisições prontas na pasta "Dashboard — Funil de vendas (DASH-01, Lote 22)" do Postman.
+- [ ] 7.12 Desbloqueie a URL `funil` no DevTools ao terminar.
+
+**Testes automatizados:** `frontend/tests/components/dashboard/FunilVendas.test.tsx`, `frontend/tests/lib/apiDashboardFunil.test.ts` e o bloco DASH-01 de `frontend/tests/app/dashboard/page.test.tsx`; no Go, `apis/shared/tests/analytics/funil_dominio_test.go`, `funil_consultas_test.go`, `funil_mysql_test.go` e `apis/rotaperfumes-api/tests/handlers/dashboard_funil_test.go`.
 
 ---
 

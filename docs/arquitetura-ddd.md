@@ -6,7 +6,7 @@
 > **Escopo (no ARQ-00):** `apis/rotaperfumes-api` (handlers, services, middleware, routes, cmd) e `apis/shared` (repositories, models, services, config, db, cnpj, tz, vlog, importers, cmd, tools, cmdutil).
 > **Referências obrigatórias:**
 > - invariantes de segurança do 🟣 SecBrain: `docs/arq-00-invariantes-seguranca.md` (IDs R-, F-, C-, I-, E-, V-, D-, M-);
-> - matriz de rotas do 🔴 TestBrain: `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 35 Authenticated, 21 AdminOnly; corrigido no ARQ-01, N-6);
+> - matriz de rotas do 🔴 TestBrain: `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 35 Authenticated, 21 AdminOnly; corrigido no ARQ-01, N-6; desde o DASH-01, Lote 22, 2026-10-29, são **61**: 4 Public, 36 Authenticated, 21 AdminOnly, com `GET /api/dashboard/funil`);
 > - linha de base de testes e cobertura (2026-10-13): API **720** testes de topo, cobertura **91,5%**; shared **593** testes de topo, cobertura **85,6%** (ver §7.1).
 >
 > No ARQ-00 este documento era **só desenho** (nenhum código foi movido naquele card). O código foi migrado do ARQ-01 ao ARQ-07; ver a seção 10.
@@ -1796,9 +1796,9 @@ apis/
 │   ├── vendas/          pedido.go pagamento.go filtros.go erros.go
 │   │   ├── vendasapp/       casos.go portas.go uow.go pedidos.go pagamentos.go
 │   │   └── vendasmysql/     pedidos.go pagamentos.go linhas.go
-│   ├── analytics/       periodo.go dias.go metricas.go serie.go ranking.go clientes.go           (read models)
+│   ├── analytics/       periodo.go dias.go janela.go metricas.go serie.go ranking.go clientes.go funil.go  (read models)
 │   │   ├── analyticsapp/    consultas.go portas.go
-│   │   └── analyticsmysql/  dashboard.go clientes.go filtros.go sql.go
+│   │   └── analyticsmysql/  dashboard.go clientes.go oportunidades.go filtros.go sql.go
 │   ├── notificacao/     notificacao.go destinatario.go modo_tls.go mensagem.go
 │   │   ├── notificacaoapp/  notifier.go portas.go
 │   │   └── notificacaosmtp/ smtp.go transporte.go conexao.go auth.go noop.go
@@ -1855,7 +1855,7 @@ Regras de dependência efetivas (verificadas pelos testes do §10.8):
 ### 10.3 Composition root (`rotaperfumes-api/internal/bootstrap`)
 
 - `server.go`: `Run(cfg)` abre o pool (`db.Open`, DSN mascarado), chama `Montar`, sobe a limpeza periódica de refresh tokens (`identidadeapp.IniciarLimpezaPeriodica`) e o `http.Server` (timeouts 15/15/60 s) e, no SIGINT/SIGTERM, desliga na ordem servidor (10 s) → tarefas de fundo (até 10 s, `background.go`) → alertas de segurança em andamento (até 10 s, `Notificador.Aguardar`) → pool. `Montar(cfg, pool)` liga e-mail (`NovoEmail`: SMTP ou Noop; config SMTP inválida → `log.Fatalf`), notificador de alerta, Identidade (captcha Turnstile, publicador de eventos, e-mail), os handlers e a cadeia `Logging → CORS → SecurityHeaders → mux`. O próprio `identidadeapp.Casos` é o checker de status por request (SEC-06).
-- `rotas.go`: `HandlerHTTP` (CORS → SecurityHeaders → mux, usado também pelos testes), `NovoRouter` e a **tabela declarativa das 60 rotas**, cada uma com `Metodo`, `Padrao`, `Policy` (`Public`, `Authenticated`, `AdminOnly`), `Arquivo` e `Funcao` (rótulo do vlog nível 1). `Rotas()` do router é a fonte da matriz `tests/routes/arq00_matriz_rotas_test.go`.
+- `rotas.go`: `HandlerHTTP` (CORS → SecurityHeaders → mux, usado também pelos testes), `NovoRouter` e a **tabela declarativa das 61 rotas** (4 Public, 36 Authenticated, 21 AdminOnly; eram 60 até o DASH-01, Lote 22, que acrescentou `GET /api/dashboard/funil`), cada uma com `Metodo`, `Padrao`, `Policy` (`Public`, `Authenticated`, `AdminOnly`), `Arquivo` e `Funcao` (rótulo do vlog nível 1). `Rotas()` do router é a fonte da matriz `tests/routes/arq00_matriz_rotas_test.go`.
 - `handlers.go`, `identidade.go`, `comercial.go`, `vendas.go`, `analytics.go`, `email.go`: uma função `Novo<Contexto>` (casos de uso sobre o pool) e `Novo<Contexto>HTTP` (handlers) por contexto. O escopo de carteira é um só para Vendas e Analytics (`comercialCasos.Escopo()`).
 - `cmd/server/main.go` só carrega `.env` e config, liga o `vlog` e chama `bootstrap.Run`.
 
@@ -1946,7 +1946,7 @@ Todos têm controle negativo (fonte sintética que a regra precisa reprovar).
 | Repository | portas em `catalogoapp/portas.go`, `identidadeapp/portas.go`, `comercialapp/portas.go`, `vendasapp/portas.go`, `analyticsapp/portas.go`; adapters em `catalogomysql/produtos.go`, `identidademysql/usuarios.go`, `comercialmysql/clientes.go`, `vendasmysql/pedidos.go` etc. | Fim do `*sql.DB` em toda assinatura e dos repositórios `struct{}`. |
 | Unit of Work | `shared/db/tx.go` (`Transactor[R]`, `NewTransactor`); `vendasapp/uow.go` + `vendasapp/portas.go` (`TxPedido`: pedido, itens e baixa de estoque na mesma tx); `comercialapp/portas.go` e `identidadeapp/portas.go` (`Transactor`) | Transação decidida pelo caso de uso, não pelo repositório. |
 | Factory com validação | `catalogo/produto.go` (`NovoProduto`), `vendas/pedido.go` (`NovoPedido`), `comercial/cnpj.go` (`NovoCNPJ`), `kernel/email.go` (`NovoEmail`), `kernel/principal.go` (`NovoPrincipal`) | Entidade nasce válida; fim das validações que devolviam 6 a 8 valores. |
-| Value Object | `kernel/{pagina,ordenacao,data,email,dinheiro,escopo}.go`, `catalogo/sku.go`, `comercial/cnpj.go`, `analytics/{periodo,dias}.go`, `identidade/segredos.go`, `notificacao/{destinatario,modo_tls}.go` | Regra do valor num lugar só (CNPJ, paginação, janela de dias, segredo sem JSON). |
+| Value Object | `kernel/{pagina,ordenacao,data,email,dinheiro,escopo}.go`, `catalogo/sku.go`, `comercial/cnpj.go`, `analytics/{periodo,dias,janela}.go`, `identidade/segredos.go`, `notificacao/{destinatario,modo_tls}.go` | Regra do valor num lugar só (CNPJ, paginação, janela de dias, segredo sem JSON). |
 | Aggregate root | `vendas/pedido.go` (Pedido com itens; valores calculados no domínio, V-03) | Totais nunca vêm do payload. |
 | Specification (escopo) | `kernel/escopo.go` (`Escopo.Filtro`), `comercial/politica.go` (`VendedorDaEscrita`), `comercialapp/escopo.go` (`AutorizadorEscopo.Resolver`) | Fim da sentinela `vendedorID <= 0`; SemAcesso nunca vira consulta global (E-02, O1). |
 | Strategy | hash em `identidadecrypto/hasher.go` (Argon2id; bcrypt só verifica e marca rehash); TLS em `notificacaosmtp/conexao.go` (`tlsImplicito`, `startTLS`); ordenação por enum em `catalogo/ordenacao.go`, `comercial/ordenacao.go` + `kernel/ordenacao.go` | Sem `if` espalhado por modo; coluna de ordenação nunca é texto livre. |
@@ -1958,7 +1958,7 @@ Todos têm controle negativo (fonte sintética que a regra precisa reprovar).
 | Observer / evento de domínio | evento `identidade.ReusoDeRefreshDetectado` (`identidade/refresh.go`); `PublicadorLocal`/`NovoPublicadorLocal` (`identidadeapp/casos.go`); assinante ligado em `bootstrap/email.go` (`assinanteAlerta`) e `bootstrap/server.go` | Identidade não conhece e-mail; o notificador assina o evento. |
 | Null Object | `identidadeapp/casos.go` (`SemPublicador`), `notificacaosmtp/noop.go` (`Noop`) | Sem `if notifier != nil`; sem SMTP, só log mascarado. |
 | Template Method | `shared/importers/importkit/importkit.go` (`Executar`, `Etapas`) + `importkit/lote.go` (`Upsert[R]`); `shared/appkit/releitura.go` (releitura padronizada depois de criar/atualizar) | 8 importadores com o mesmo pipeline; mesma regra de releitura (BUG-08/09) em todos os contextos. |
-| Query object / CQRS leve | `analyticsapp/consultas.go` (`ConsultaMetricas`, `ConsultaSerieVendas`, `ConsultaRanking`, `ConsultaMetricasClientes`); read models em `analytics/{metricas,serie,ranking,clientes}.go` | Dashboard sem passar pelos agregados de escrita; respostas tipadas no lugar de `map[string]any`. |
+| Query object / CQRS leve | `analyticsapp/consultas.go` (`ConsultaMetricas`, `ConsultaSerieVendas`, `ConsultaRanking`, `ConsultaMetricasClientes`, `ConsultaFunil` desde o DASH-01); read models em `analytics/{metricas,serie,ranking,clientes,funil}.go` | Dashboard sem passar pelos agregados de escrita; respostas tipadas no lugar de `map[string]any`. |
 | Command adiado (`Leitor[T]`) | `comercialapp/casos.go` e `vendasapp/portas.go` (`Leitor[T]`); `internal/httpx/casos.go` (`LeitorJSON`) | "Autoriza antes do decode" (E-05) sem lógica no handler. |
 | Mapper / DTO | `internal/<ctx>http/dto.go`; `internal/httpx/casos.go` (`Responder`, `ResponderPaginado`) | Domínio sem tags JSON; contrato HTTP isolado. |
 | Error mapper | `kernel/erros.go` (`Kind`, `Erro`, `NovoErro`); `internal/httpx/errmap.go` (`ResponderErro`); `shared/db/duplicada.go` (`SemValorDuplicado`) | Fim dos ~12 `xxxErroParaStatus`; mensagem pública fixa; 1062 sem valor no log. |

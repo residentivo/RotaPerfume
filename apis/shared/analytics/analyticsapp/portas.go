@@ -43,6 +43,15 @@ type IndicadoresClientes interface {
 	PorUF(ctx context.Context, e kernel.Escopo) ([]analytics.ContagemUF, error)
 }
 
+// IndicadoresFunil é a contagem de oportunidades por etapa do funil
+// (DASH-01). O escopo de vendedor restringe a oportunidades.vendedor_id
+// (o dono da oportunidade, como /api/oportunidades), não à carteira.
+// SemAcesso/zero value → erro SEM SQL (O1).
+type IndicadoresFunil interface {
+	// Funil: uma linha por etapa presente na janela (lista vazia, nunca nil).
+	Funil(ctx context.Context, e kernel.Escopo, j analytics.Janela) ([]analytics.ContagemEtapa, error)
+}
+
 // EscopoAnalytics é a porta para Comercial (comercialapp.AutorizadorEscopo
 // a satisfaz): o escopo do Dashboard resolvido A CADA chamada, sem cache
 // (R4). Principal inválido → SemAcesso; admin → Irrestrito; restrito → o

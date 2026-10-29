@@ -21,7 +21,7 @@ func HandlerHTTP(cfg *config.Config, checker httpx.ConsultaStatus, h Handlers) h
 	)
 }
 
-// NovoRouter registra as 60 rotas da API com método e política obrigatórios.
+// NovoRouter registra as 61 rotas da API com método e política obrigatórios.
 // Rotas() do router devolvido é a fonte da matriz ARQ-00.
 func NovoRouter(cfg *config.Config, checker httpx.ConsultaStatus, h Handlers) *httpx.Router {
 	r := httpx.NovoRouter(httpx.NovoAutenticador(identidadecrypto.NovoJWT(cfg), checker))
@@ -86,6 +86,7 @@ func rotas(h Handlers) []httpx.Rota {
 		{Metodo: get, Padrao: "/api/dashboard/vendas", Policy: autent, Arquivo: fDash, Funcao: "DashboardHandler.GetVendas", Handler: h.Dashboard.GetVendas},
 		{Metodo: get, Padrao: "/api/dashboard/vendedores", Policy: autent, Arquivo: fDash, Funcao: "DashboardHandler.GetVendedores", Handler: h.Dashboard.GetVendedores},
 		{Metodo: get, Padrao: "/api/dashboard/clientes", Policy: autent, Arquivo: fDash, Funcao: "DashboardHandler.GetClientes", Handler: h.Dashboard.GetClientes},
+		{Metodo: get, Padrao: "/api/dashboard/funil", Policy: autent, Arquivo: fDash, Funcao: "DashboardHandler.GetFunil", Handler: h.Dashboard.GetFunil},
 
 		// Vendedores (leitura comum; gestão admin).
 		{Metodo: get, Padrao: "/api/vendedores", Policy: autent, Arquivo: fVend, Funcao: "VendedorHandler.ListVendedores", Handler: h.Vendedor.ListVendedores},
