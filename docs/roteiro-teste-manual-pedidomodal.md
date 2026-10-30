@@ -55,7 +55,7 @@ Marque cada checkbox depois de conferir o resultado esperado no navegador. Se al
    ```sql
    DELETE FROM usuarios WHERE email = 'qa.semvendedor@rotaperfumes.test';
    ```
-   Crie os pedidos de teste com status **"Em separação"**. Pedido "Faturado" baixa estoque e não pode ser excluído.
+   Crie os pedidos de teste com status **"Em separação"**. Pedido "Faturado" baixa estoque e não pode ser excluído; desde o Lote 25 (BUG-16), pedido "Entregue" também não pode ser excluído, e um pedido Faturado só pode ir para Entregue. Pedidos levados a Faturado na seção 2b ficam na base (não há como excluí-los pela API).
 
 ---
 
@@ -77,6 +77,20 @@ Login como `admin@rotaperfumes.com.br` e abra Pedidos, depois **Novo Pedido**.
 - [ ] 2.2 Troque o cliente para outro da carteira, altere a quantidade para 2 e salve. A lista reflete a mudança (total 21,10).
 - [ ] 2.3 Ao abrir Editar no **pedido 500** (cliente 57, fora da carteira do vendedor 4), o cliente aparece como `#57 - Loja Requinte EIRELI (fora da carteira)` e continua selecionado.
 - [ ] 2.4 Salvar o pedido 500 como admin, sem mudar nada, funciona. O admin não tem checagem de carteira. **Cancele** se não quiser alterar o registro.
+
+## 2b. Regras de status (BUG-16 e BUG-20, Lote 25, 2026-10-30)
+
+Regra: Faturado só vai para Entregue; Entregue é terminal; Entregue só depois de Faturado; nenhum pedido nasce como Entregue. Use um pedido de teste próprio, porque um pedido Faturado ou Entregue **não pode ser excluído** depois (use uma base de teste, ou anote o id para limpeza por SQL). Anote o saldo de estoque do SKU do item antes de começar (tela Estoque).
+
+- [ ] 2b.1 **Novo Pedido:** o select Status oferece "Em separação", "Faturado" e "Cancelado". "Entregue" **não** aparece.
+- [ ] 2b.2 **Criar já como Faturado (BUG-20):** crie um pedido com 1 item e status "Faturado". O saldo do SKU cai na quantidade do item (uma vez só), no snapshot de hoje.
+- [ ] 2b.3 **Editar pedido Em separação ou Cancelado:** o select não oferece "Entregue". Pela API, `PUT` para Entregue responde `400` "pedido só pode ser marcado como Entregue depois de Faturado".
+- [ ] 2b.4 **Editar pedido Faturado:** o select oferece só "Faturado" e "Entregue", com o texto de ajuda "Pedido faturado so pode ser alterado para Entregue.". Os itens ficam desabilitados.
+- [ ] 2b.5 **Faturado → Entregue:** salve como "Entregue" sem mexer nos itens. Salva, e o saldo do estoque **não** muda de novo.
+- [ ] 2b.6 **Editar pedido Entregue:** o select Status fica desabilitado, com o texto "Pedido entregue nao pode ter o status alterado."; os itens ficam desabilitados. Salvar sem mudar nada funciona (idempotente).
+- [ ] 2b.7 **Lista de Pedidos:** em pedido Faturado ou Entregue, o botão **Excluir** fica desabilitado, com a dica "Pedido faturado ou entregue nao pode ser excluido". Pela API, `DELETE` de Entregue responde `409` "pedido entregue não pode ser excluído" (com pagamento vinculado, o `409` de pagamentos vem primeiro).
+- [ ] 2b.8 **Mensagens amigáveis (forçando pela API ou com a tela aberta em duas abas):** se o status gravado mudar para Faturado com o modal aberto e você tentar salvar "Em separação", o alerta mostra "Pedido faturado so pode ter o status alterado para Entregue.". Itens diferentes em Faturado/Entregue mostram "Pedido ja faturado: nao e possivel alterar os itens, apenas o status.".
+- [ ] 2b.9 **Sem baixa dupla:** confira o saldo final do SKU: ele caiu uma única vez desde o 2b.2 (antes do BUG-16, o ciclo Faturado → Em separação → Faturado baixava duas vezes).
 
 ## 3. Normal com vendedor: criar pedido
 

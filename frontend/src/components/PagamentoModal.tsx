@@ -14,6 +14,7 @@ import {
   Pedido,
 } from "@/lib/types";
 import { useResetOnOpen } from "@/lib/useResetOnOpen";
+import { useSessionUser } from "@/lib/session";
 import { formatarData } from "@/lib/formatarData";
 import { vlog } from "@/lib/vlog";
 
@@ -57,6 +58,16 @@ const STATUS_PAGAMENTO_OPTIONS = [
   { value: "Pago com atraso", label: "Pago com atraso" },
 ];
 
+// SEC-27: teto da taxa (%) aceito pelo backend (400 fora de 0..30).
+export const TAXA_PCT_MAXIMA = 30;
+
+// SEC-27: pagamento quitado ("Pago" / "Pago com atraso") so pode ser editado
+// por admin; o perfil normal recebe 409 do backend.
+export function pagamentoQuitado(status: string | null | undefined): boolean {
+  vlog(F, "pagamentoQuitado", "verificando status gravado:", status);
+  return status === "Pago" || status === "Pago com atraso";
+}
+
 export function PagamentoModal({
   open,
   mode,
@@ -96,6 +107,19 @@ export function PagamentoModal({
   const [submitting, setSubmitting] = useState(false);
   vlog(F, "PagamentoModal", "criando estado error");
   const [error, setError] = useState<string | null>(null);
+
+  // SEC-27: nao-admin ve pagamento quitado em modo leitura (o backend recusa
+  // o PUT com 409). Usa o status gravado, nao o valor do select.
+  vlog(F, "PagamentoModal", "lendo usuário da sessão");
+  const sessionUser = useSessionUser();
+  vlog(F, "PagamentoModal", "verificando se é admin");
+  const isAdmin = sessionUser?.role === "admin";
+  vlog(F, "PagamentoModal", "calculando modo leitura (quitado e não-admin)");
+  const somenteLeitura =
+    mode === "edit" &&
+    !!pagamento &&
+    !isAdmin &&
+    pagamentoQuitado(pagamento.status_pagamento);
 
   // Reseta o formulario ao abrir (ou quando as props mudam com o modal
   // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
@@ -203,6 +227,12 @@ export function PagamentoModal({
     vlog(F, "PagamentoModal.handleSubmit", "limpando erro");
     setError(null);
 
+    vlog(F, "PagamentoModal.handleSubmit", "verificando modo leitura:", somenteLeitura);
+    if (somenteLeitura) {
+      vlog(F, "PagamentoModal.handleSubmit", "pagamento quitado em modo leitura: envio ignorado");
+      return;
+    }
+
     vlog(F, "PagamentoModal.handleSubmit", "convertendo id do pedido");
     const pedidoIdNum = Number(pedidoId);
     vlog(F, "PagamentoModal.handleSubmit", "validando pedido na criação, id:", pedidoIdNum);
@@ -230,9 +260,14 @@ export function PagamentoModal({
     vlog(F, "PagamentoModal.handleSubmit", "convertendo taxa");
     const taxaPctNum = Number(taxaPct);
     vlog(F, "PagamentoModal.handleSubmit", "validando taxa:", taxaPctNum);
-    if (taxaPct.trim() === "" || Number.isNaN(taxaPctNum) || taxaPctNum < 0) {
+    if (
+      taxaPct.trim() === "" ||
+      Number.isNaN(taxaPctNum) ||
+      taxaPctNum < 0 ||
+      taxaPctNum > TAXA_PCT_MAXIMA
+    ) {
       vlog(F, "PagamentoModal.handleSubmit", "taxa inválida");
-      setError("Taxa (%) deve ser um numero maior ou igual a zero.");
+      setError(`Taxa (%) deve estar entre 0 e ${TAXA_PCT_MAXIMA}.`);
       return;
     }
     vlog(F, "PagamentoModal.handleSubmit", "convertendo valor líquido");
@@ -304,11 +339,20 @@ export function PagamentoModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={mode === "create" ? "Novo Pagamento" : "Editar Pagamento"}
+      title={
+        mode === "create"
+          ? "Novo Pagamento"
+          : somenteLeitura
+          ? "Ver Pagamento"
+          : "Editar Pagamento"
+      }
       size="md"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert variant="error">{error}</Alert>}
+        {somenteLeitura && (
+          <Alert variant="warning">Pagamento quitado nao pode ser editado.</Alert>
+        )}
 
         {mode === "edit" && pagamento && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -366,12 +410,14 @@ export function PagamentoModal({
             options={FORMA_PAGAMENTO_OPTIONS}
             value={formaPagamento}
             onChange={(e) => setFormaPagamento(e.target.value)}
+            disabled={somenteLeitura}
           />
           <Select
             label="Status"
             options={STATUS_PAGAMENTO_OPTIONS}
             value={statusPagamento}
             onChange={(e) => setStatusPagamento(e.target.value)}
+            disabled={somenteLeitura}
           />
         </div>
 
@@ -383,6 +429,7 @@ export function PagamentoModal({
             step="1"
             value={parcelas}
             onChange={(e) => setParcelas(e.target.value)}
+            disabled={somenteLeitura}
             required
           />
           <Input
@@ -392,6 +439,7 @@ export function PagamentoModal({
             min="0"
             value={valor}
             onChange={(e) => setValor(e.target.value)}
+            disabled={somenteLeitura}
             placeholder="0,00"
             required
           />
@@ -400,8 +448,10 @@ export function PagamentoModal({
             type="number"
             step="0.01"
             min="0"
+            max={String(TAXA_PCT_MAXIMA)}
             value={taxaPct}
             onChange={(e) => setTaxaPct(e.target.value)}
+            disabled={somenteLeitura}
             placeholder="0,00"
             required
           />
@@ -414,6 +464,7 @@ export function PagamentoModal({
           min="0"
           value={valorLiquido}
           onChange={(e) => setValorLiquido(e.target.value)}
+          disabled={somenteLeitura}
           placeholder="0,00"
           helperText="Informado explicitamente, nao e calculado automaticamente"
           required
@@ -425,6 +476,7 @@ export function PagamentoModal({
             type="date"
             value={dataVencimento}
             onChange={(e) => setDataVencimento(e.target.value)}
+            disabled={somenteLeitura}
             required
           />
           <Input
@@ -432,17 +484,20 @@ export function PagamentoModal({
             type="date"
             value={dataPagamento}
             onChange={(e) => setDataPagamento(e.target.value)}
+            disabled={somenteLeitura}
             helperText="Opcional"
           />
         </div>
 
         <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
-            Cancelar
+            {somenteLeitura ? "Fechar" : "Cancelar"}
           </Button>
-          <Button type="submit" loading={submitting}>
-            {mode === "create" ? "Criar pagamento" : "Salvar alteracoes"}
-          </Button>
+          {!somenteLeitura && (
+            <Button type="submit" loading={submitting}>
+              {mode === "create" ? "Criar pagamento" : "Salvar alteracoes"}
+            </Button>
+          )}
         </div>
       </form>
     </Modal>

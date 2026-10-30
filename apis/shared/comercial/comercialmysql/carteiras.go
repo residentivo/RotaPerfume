@@ -100,7 +100,7 @@ func (r *Carteiras) vinculo(ctx context.Context, rotulo, q string, args ...any) 
 
 // Inserir grava o vínculo e preenche c.CarteiraIDOrigem. O 1062 (chave
 // cliente+vendedor+data) vira ErrVinculoDuplicado SEM o erro do driver
-// (N-8); continua 500, como no legado.
+// (N-8): 409 desde o CHORE-06.
 func (r *Carteiras) Inserir(ctx context.Context, c *comercial.Carteira) error {
 	const q = `
 		INSERT INTO carteiras (cliente_id, vendedor_id, data_inicio, data_fim)

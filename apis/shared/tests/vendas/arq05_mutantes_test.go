@@ -129,10 +129,12 @@ func nilSeVazio(r any) any {
 
 // A baixa por faturamento SOMA a contribuição (-delta) ao saldo existente
 // (nunca sobrescreve o saldo do dia) e recalcula a ruptura sobre o saldo
-// resultante; o SELECT … FOR UPDATE vem antes, na mesma conexão.
+// resultante; o SELECT … FOR UPDATE vem antes, na mesma conexão. BUG-21: a
+// ruptura é atribuída ANTES do saldo (o MariaDB avalia da esquerda para a
+// direita), para não aplicar a baixa duas vezes.
 func TestARQ05_AjusteFaturamento_UpsertSomaAoSaldo(t *testing.T) {
 	const upsertRe = `INSERT INTO estoque \(data_snapshot, sku, saldo, ruptura\)\s+VALUES \(\?, \?, \?, \?\)\s+` +
-		`ON DUPLICATE KEY UPDATE\s+saldo = saldo \+ VALUES\(saldo\),\s+ruptura = \(saldo \+ VALUES\(saldo\)\) <= 0\s*$`
+		`ON DUPLICATE KEY UPDATE\s+ruptura = \(saldo \+ VALUES\(saldo\)\) <= 0,\s+saldo = saldo \+ VALUES\(saldo\)\s*$`
 	dia := time.Date(2024, 3, 9, 15, 4, 5, 0, time.Local)
 	casos := []struct {
 		nome         string

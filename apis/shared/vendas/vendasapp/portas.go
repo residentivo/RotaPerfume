@@ -38,6 +38,10 @@ type Pagamentos interface {
 	// Atualizar grava os campos editáveis (nunca pedido_id, V-02);
 	// ErrPagamentoNaoEncontrado se nenhuma linha casar.
 	Atualizar(ctx context.Context, id int64, p *vendas.Pagamento) error
+	// AtualizarSeNaoQuitado é o Atualizar condicionado a status_pagamento
+	// fora de Pago/Pago com atraso (SEC-27, perfil restrito);
+	// ErrPagamentoNaoEncontrado se nenhuma linha casar (inexistente ou quitado).
+	AtualizarSeNaoQuitado(ctx context.Context, id int64, p *vendas.Pagamento) error
 	Excluir(ctx context.Context, id int64) error
 	ExistePorPedido(ctx context.Context, pedidoID int64) (bool, error)
 }

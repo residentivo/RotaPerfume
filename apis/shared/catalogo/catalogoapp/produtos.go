@@ -2,6 +2,8 @@ package catalogoapp
 
 import (
 	"context"
+	"errors"
+	"log"
 
 	"github.com/rotaperfumes/shared/appkit"
 	"github.com/rotaperfumes/shared/catalogo"
@@ -32,6 +34,9 @@ func (c *Casos) CriarProduto(ctx context.Context, d catalogo.DadosProduto) (p *c
 		return nil, err
 	}
 	if err = c.produtos.Inserir(ctx, p); err != nil {
+		if errors.Is(err, catalogo.ErrSKUDuplicado) {
+			log.Printf("[produtos] sku duplicado recusado (uk_produtos_sku)")
+		}
 		return nil, err
 	}
 	return appkit.RelerCriado(ctx, "[produtos] criado, mas falhou a releitura: id", p.ID, p, c.produtos.PorID), nil
@@ -52,15 +57,20 @@ func (c *Casos) AtualizarProduto(ctx context.Context, id int64, d catalogo.Dados
 }
 
 // AlternarAtivoProduto aplica o PATCH /inativar (exclusão lógica): ativo nil
-// inverte o status atual; um valor o define.
+// inverte o status no próprio UPDATE (BUG-17: dois toggles simultâneos não
+// se anulam por ler-inverter-gravar); um valor o define. A resposta é o
+// produto relido depois da escrita (com o updated_at real).
 func (c *Casos) AlternarAtivoProduto(ctx context.Context, id int64, ativo *bool) (p *catalogo.Produto, err error) {
 	defer vlog.Trace(arqProdutos, "Catalogo.AlternarAtivoProduto", "id=%d toggle=%t", id, ativo == nil)(&err)
-	p, err = c.produtos.PorID(ctx, id)
+	if ativo == nil {
+		err = c.produtos.AlternarAtivo(ctx, id)
+	} else {
+		err = c.produtos.DefinirAtivo(ctx, id, *ativo)
+	}
 	if err != nil {
 		return nil, err
 	}
-	p.DefinirAtivo(ativo)
-	if err = c.produtos.DefinirAtivo(ctx, id, p.Ativo); err != nil {
+	if p, err = c.produtos.PorID(ctx, id); err != nil {
 		return nil, err
 	}
 	vlog.Printf(arqProdutos, "Catalogo.AlternarAtivoProduto", "decisão ativo=%t id=%d", p.Ativo, id)

@@ -40,8 +40,8 @@ func (c *Casos) RenovarSessao(ctx context.Context, token identidade.TokenOpaco, 
 		return nil, fmt.Errorf("identidadeapp: refresh: ler usuário: %v", err) // sem %w: inexistente aqui é 500
 	}
 	if !u.Ativo {
-		log.Printf("[auth] refresh: usuário inativo: user_id=%d", u.ID)
-		return nil, identidade.ErrUsuarioInativo
+		c.recusarRefreshInativo(ctx, rt, u.ID, chave)
+		return nil, identidade.ErrRefreshRevogado
 	}
 	s, err = c.rotacionar(ctx, rt, u, o)
 	if err != nil {
@@ -50,6 +50,17 @@ func (c *Casos) RenovarSessao(ctx context.Context, token identidade.TokenOpaco, 
 	c.d.Limites.Refresh.RegistrarSucesso(chave)
 	log.Printf("[auth] refresh OK: user_id=%d", u.ID)
 	return s, nil
+}
+
+// recusarRefreshInativo trata o refresh de usuário inativo (SEC-22): revoga
+// o token apresentado (best-effort) e conta falha no rate limit por IP. A
+// resposta é a de token revogado, sem revelar que a conta está inativa.
+func (c *Casos) recusarRefreshInativo(ctx context.Context, rt *identidade.RefreshToken, usuarioID int64, chave string) {
+	log.Printf("[auth] refresh: usuário inativo, token revogado: user_id=%d", usuarioID)
+	if err := c.d.Tokens.Revogar(ctx, rt.ID, identidade.MotivoInativacao); err != nil {
+		log.Printf("[auth] refresh: revogar token de usuário inativo user_id=%d: %v", usuarioID, err)
+	}
+	c.d.Limites.Refresh.RegistrarFalha(chave)
 }
 
 // errRevogadoForaDaJanela distingue, só para o rate limit, o revogado fora

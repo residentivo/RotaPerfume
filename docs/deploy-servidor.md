@@ -26,7 +26,7 @@ O script `deploy/setup-servidor.sh` faz, no servidor, tudo o que as seções 2, 
    4. **ufw:** se estiver ativo, libera a porta do banco só para `172.16.0.0/12`, nega o resto e libera a 8443. Se estiver inativo, **só avisa** e sugere os comandos. O script nunca ativa o ufw.
    5. **Banco e usuários:** cria o banco `rotaperfumes` e os usuários `rotaperfumes_app` e `rotaperfumes_admin`. A senha do app é gerada automaticamente. A senha do admin é **você** que escolhe, com no mínimo 12 caracteres, e a digita depois no Jenkins. Se os usuários já existirem, o script pergunta se deve redefinir as senhas.
    6. Instala o dump em `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` (dono `root:jenkins`, modo 640).
-   7. Gera `~/rotaperfumes-api.env` (modo 600) a partir do seu `.env`. Substitui `DB_*`, gera um `JWT_SECRET` novo e define `CORS_ALLOWED_ORIGINS` e `TRUST_PROXY_HEADERS=true`. As demais chaves, inclusive `PASSWORD_PEPPER`, vêm do seu `.env`: o pepper precisa ser o mesmo que gerou os hashes do dump. Se algum valor tiver `$` sem aspas simples, o script avisa (mostra só o nome da chave).
+   7. Gera `~/rotaperfumes-api.env` (modo 600) a partir do seu `.env`. Substitui `DB_*`, gera um `JWT_SECRET` novo (48 bytes aleatórios em base64) e define `CORS_ALLOWED_ORIGINS`, `TRUST_PROXY_HEADERS=true` e `COOKIE_SECURE=true` (SEC-21, Lote 24: sempre `true` no servidor, mesmo que o seu `.env` traga `false`). As demais chaves, inclusive `PASSWORD_PEPPER`, vêm do seu `.env`: o pepper precisa ser o mesmo que gerou os hashes do dump. Se algum valor tiver `$` sem aspas simples, o script avisa (mostra só o nome da chave).
    8. Pede seu usuário e um **API token** do Jenkins (Jenkins → seu usuário → Security → API Token), confere os plugins e cria ou atualiza o job `rotaperfumes-deploy`.
    9. **Pausa para as credenciais manuais.** Siga as instruções que aparecem na tela:
       1. No Windows: `scp SEU_USUARIO@ivo-inspiron-15-3530:rotaperfumes-api.env .`
@@ -38,6 +38,7 @@ O script `deploy/setup-servidor.sh` faz, no servidor, tudo o que as seções 2, 
    10. Dispara o build com `IMPORTAR_DUMP=true` (quando há `--dump`) e mostra o log ao vivo. Se o build não terminar em `SUCCESS`, o script sai com erro.
    11. **Resumo:** mostra a URL de acesso, exporta a CA do Caddy para `~/rotaperfumes-caddy-root.crt` (instale no Windows como na seção 8) e lembra de cadastrar o hostname no Turnstile.
 4. **Reexecução:** o script pode ser rodado de novo sem problemas. Se ele **redefinir as senhas** ou gerar um `api.env` novo, que sempre traz um `JWT_SECRET` novo, **atualize** as credenciais no Jenkins: abra a credencial → **Update** → envie o arquivo novo ou digite a senha nova. O script só confere se as credenciais existem, não o conteúdo delas.
+5. **Confira o `JWT_SECRET` do Secret file (SEC-18, Lote 24, 2026-10-29):** desde o Lote 24 a API **não sobe** com `JWT_SECRET` menor que 32 bytes ou igual ao placeholder do `.env.example` (log `config: JWT_SECRET é obrigatório (mínimo de 32 bytes)`), nem com `JWT_TTL` menor ou igual a zero. O `api.env` gerado pelo script já atende. Se o Secret file `rotaperfumes-api-env` do Jenkins foi criado antes do Lote 24 ou editado à mão, confira antes do próximo deploy que o `JWT_SECRET` dele tem 32 bytes ou mais (para gerar um: `openssl rand -base64 48`). Trocar o `JWT_SECRET` derruba as sessões abertas. Confira também que `COOKIE_SECURE` não está `false` nesse arquivo.
 
 As seções abaixo descrevem o mesmo processo **manualmente**, como alternativa ou para diagnóstico.
 
@@ -66,7 +67,7 @@ Navegador (LAN)                          Navegador (internet)
 - O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `golang:1.26-alpine`) → `Build` (imagens do compose) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy, acessando direto `https://SITE_IP:HTTPS_PORT`, e `/api/health` no mesmo endereço com um Host qualquer, como faz o tunnel).
 - A API e o frontend **não** publicam porta no host. Só o Caddy publica a `HTTPS_PORT` (8443), que atende a LAN, `https://localhost:8443` no próprio servidor e o **Cloudflare Tunnel**.
 - **Cloudflare Tunnel:** no `cloudflared` do host, aponte o hostname público para a porta 8443 do servidor (hoje `https://192.168.168.106:8443`) com **No TLS Verify** ligado (`noTLSVerify: true`), porque o certificado é da CA interna do Caddy. Hosts desconhecidos caem no site curinga do Caddy. O Caddy só aceita o header `CF-Connecting-IP` (IP real do visitante) de conexões vindas do próprio servidor (o `SITE_IP` ou o gateway docker `172.16.0.0/12`). Cadastre também o domínio do tunnel no Turnstile.
-- **HTTPS é obrigatório:** os cookies de autenticação são `Secure`. Por HTTP o login "funciona", mas a sessão não se mantém. (Pelo tunnel o navegador fala HTTPS com a Cloudflare, então funciona.)
+- **HTTPS é obrigatório:** os cookies de autenticação são `Secure` (`COOKIE_SECURE=true`, o default; desde o SEC-21 a decisão não depende mais do `Host` da requisição). Por HTTP o login "funciona", mas a sessão não se mantém. (Pelo tunnel o navegador fala HTTPS com a Cloudflare, então funciona.)
 - O frontend e a API ficam na **mesma origem**. O frontend chama `/api/...` com URL relativa (`PUBLIC_URL` padrão `/`, embutido no bundle **no build**), então o mesmo build serve a LAN e o domínio do tunnel.
 
 ### Parâmetros do job (definidos no `Jenkinsfile`)
@@ -193,6 +194,8 @@ Caminho: **Gerenciar Jenkins → Credentials → System → Global credentials (
      ```bash
      openssl rand -base64 48
      ```
+     Com menos de 32 bytes, ou com o placeholder do exemplo, a API não sobe (SEC-18, Lote 24).
+   - `COOKIE_SECURE=true` (SEC-21, Lote 24; é o default se a chave faltar). Nunca `false` no servidor: com `false` os cookies de sessão saem sem `Secure`.
    - `TURNSTILE_SECRET_KEY` = secret key do Turnstile.
    - `PASSWORD_PEPPER` = pepper das senhas (SEC-13). Use **o mesmo do `.env` que gerou os hashes do dump importado**: com outro valor, nenhuma senha Argon2id do dump funciona (hashes bcrypt antigos continuam valendo e migram no próximo login). Num banco novo, gere com `openssl rand -base64 48`. Sem ele, ou com menos de 32 bytes, a API não sobe. Depois de definido, **não troque**.
    - `SMTP_*` e `SECURITY_ALERT_EMAILS`, se for enviar e-mails. Se ficarem vazios, os e-mails vão só para o log.

@@ -80,6 +80,12 @@ func TestARQ05_Bootstrap_CriarPedidoCabecalhoEItensNaMesmaTx(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO pedidos`).WithArgs(int64(1), int64(2), sqlmock.AnyArg(), "App", "Faturado", 30.0).
 		WillReturnResult(sqlmock.NewResult(9, 1))
 	mock.ExpectExec(`INSERT INTO itens_pedido`).WithArgs(int64(9), int64(10), 3, 10.0, 0.0, 30.0).WillReturnResult(sqlmock.NewResult(5, 1))
+	// BUG-20: criado como Faturado, baixa o estoque na MESMA tx.
+	mock.ExpectQuery(`SELECT sku FROM produtos WHERE id = \? LIMIT 1`).WithArgs(int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"sku"}).AddRow("SKU-10"))
+	mock.ExpectQuery(`SELECT id FROM estoque WHERE data_snapshot = \? AND sku = \? FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(77)))
+	mock.ExpectExec(`INSERT INTO estoque`).WithArgs(sqlmock.AnyArg(), "SKU-10", -3, true).WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectCommit()
 	mock.ExpectQuery(`FROM pedidos p .+ WHERE p\.pedido_id_origem = \? LIMIT 1`).WithArgs(int64(9)).
 		WillReturnRows(sqlmock.NewRows(colunasPedido).AddRow(int64(9), int64(1), int64(2), agora, "App", "Faturado", 30.0, agora, agora, "C", "V"))
@@ -88,7 +94,7 @@ func TestARQ05_Bootstrap_CriarPedidoCabecalhoEItensNaMesmaTx(t *testing.T) {
 	casos := bootstrap.NovoVendas(db, bootstrap.NovoComercial(db).Escopo())
 	p, err := casos.CriarPedido(ctx, adminARQ05(t), pedidoFaturado())
 
-	require.NoError(t, err, "cabeçalho e itens devem usar a conexão da tx (C9)")
+	require.NoError(t, err, "cabeçalho, itens e baixa de estoque devem usar a conexão da tx (C9, BUG-20)")
 	require.NotNil(t, p)
 	assert.Equal(t, int64(9), p.PedidoIDOrigem)
 	assert.NoError(t, mock.ExpectationsWereMet())

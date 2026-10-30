@@ -130,9 +130,11 @@ func TestRefresh_Cenarios(t *testing.T) {
 				mock.ExpectQuery(usuarioByIDSQL).WithArgs(int64(3)).
 					WillReturnRows(sqlmock.NewRows(usuarioCols).
 						AddRow(int64(3), "Inativo", "i@test.com", "hash", "normal", nil, false, false, agora, agora, nil, nil))
+				// SEC-22: o token apresentado é revogado com motivo inativacao.
+				mock.ExpectExec(revokeCondSQL).WithArgs(sqlmock.AnyArg(), "inativacao", int64(10)).WillReturnResult(sqlmock.NewResult(0, 1))
 			},
 			wantStatus: http.StatusUnauthorized,
-			wantErr:    "usuário inativo",
+			wantErr:    "refresh token revogado",
 		},
 	}
 

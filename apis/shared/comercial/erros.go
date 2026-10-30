@@ -31,8 +31,8 @@ var (
 	ErrVinculoNaoEncontrado  = kernel.NovoErro(kernel.KindNaoEncontrado, "vínculo entre cliente e vendedor não encontrado")
 	ErrClienteIDObrigatorio  = kernel.NovoErro(kernel.KindInvalido, "cliente_id é obrigatório")
 	// ErrVinculoDuplicado: 1062 em carteiras (corrida no vínculo do dia).
-	// Continua 500 como no legado, mas sem o valor do driver no log (N-8).
-	ErrVinculoDuplicado = kernel.NovoErro(kernel.KindInterno, "erro interno")
+	// 409 desde o CHORE-06 (era 500), sem o valor do driver no log (N-8).
+	ErrVinculoDuplicado = kernel.NovoErro(kernel.KindConflito, "vínculo entre cliente e vendedor já cadastrado nesta data")
 )
 
 // Erros de Cliente (mensagens do cliente_service.go legado).

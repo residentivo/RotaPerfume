@@ -63,7 +63,7 @@ func (h *UsuarioHandler) CreateUsuario(w http.ResponseWriter, r *http.Request) {
 // UpdateUsuario PUT /api/usuarios/{id} (nome, role e vendedor).
 func (h *UsuarioHandler) UpdateUsuario(w http.ResponseWriter, r *http.Request) {
 	const tag = "[usuarios] UpdateUsuario"
-	id, err := httpx.IDDoPathPermissivo(r, "id")
+	id, err := httpx.IDDoPath(r, "id")
 	if err != nil {
 		httpx.ResponderErro(w, tag, err)
 		return
@@ -87,7 +87,7 @@ func (h *UsuarioHandler) UpdateUsuario(w http.ResponseWriter, r *http.Request) {
 // {"ativo": bool} (omitido = toggle). Inativar revoga as sessões.
 func (h *UsuarioHandler) ToggleAtivoUsuario(w http.ResponseWriter, r *http.Request) {
 	const tag = "[usuarios] ToggleAtivoUsuario"
-	id, err := httpx.IDDoPathPermissivo(r, "id")
+	id, err := httpx.IDDoPath(r, "id")
 	if err != nil {
 		httpx.ResponderErro(w, tag, err)
 		return

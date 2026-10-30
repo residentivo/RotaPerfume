@@ -33,7 +33,7 @@ Marque cada checkbox depois de conferir no navegador, com o DevTools aberto na a
     WHERE u.email = 'thiago.silva@rotaperfumes.com.br';
    ```
 
-   Esperado: `id` = 4, `ativo` = 1, `id_vendedor` = 3, `data_desligamento` = 2025-07-26. Se `ativo` = 0 (por exemplo, porque alguém desligou o vendedor 3 pela tela de Vendedores), o login responde `401 "usuário inativo"` e o roteiro não pode ser executado com esse usuário. Nesse caso, reative o usuário 4 na tela de Usuários (o vendedor 3 continua desligado) e anote isso para desfazer no fim.
+   Esperado: `id` = 4, `ativo` = 1, `id_vendedor` = 3, `data_desligamento` = 2025-07-26. Se `ativo` = 0 (por exemplo, porque alguém desligou o vendedor 3 pela tela de Vendedores), o login responde `401 "credenciais inválidas"` (desde o SEC-22, Lote 24, a mesma resposta de senha errada; antes era `"usuário inativo"`) e o roteiro não pode ser executado com esse usuário. Nesse caso, reative o usuário 4 na tela de Usuários (o vendedor 3 continua desligado) e anote isso para desfazer no fim.
 
 4. Para os cenários de troca de vínculo (seção 5), use **dois navegadores** (ou uma janela anônima): um com o admin e outro com o usuário normal.
 5. Anote o vínculo original do usuário 5 para desfazer no fim: `SELECT id_vendedor, ativo FROM usuarios WHERE id = 5;` (esperado: `id_vendedor` = 4, `ativo` = 1).
@@ -89,14 +89,14 @@ for (const p of ["/api/clientes", "/api/pedidos", "/api/pagamentos", "/api/oport
 - [ ] 4.1 `/dashboard` abre normalmente e mostra o aviso "Vendedor desligado. O vendedor vinculado ao seu usuario possui data de desligamento...".
 - [ ] 4.2 Os KPIs (Minhas Vendas R$ 0,00, Meus Pedidos 0, Meu Ticket Medio R$ 0,00, Minha Meta "-") e o gráfico ("Minhas Vendas nos Últimos N Dias", "Total: R$ 0,00") continuam **visíveis e zerados** (UI-02 opção b). Os clientes também aparecem zerados.
 - [ ] 4.3 `/trocar-senha` abre e permite trocar a senha (`POST /api/auth/reset-password` responde 200). A troca apaga os cookies e exige novo login: entre com a nova senha e **restaure a senha original**.
-- [ ] 4.4 "Sair" funciona e leva para `/login`. O login do `thiago.silva` continua permitido, porque o usuário está com `ativo = 1`. Um vendedor desligado **pela tela de Vendedores** depois do BUG-05 tem os usuários inativados, e esses usuários recebem `401 "usuário inativo"` no login (veja a nota da seção 5).
+- [ ] 4.4 "Sair" funciona e leva para `/login`. O login do `thiago.silva` continua permitido, porque o usuário está com `ativo = 1`. Um vendedor desligado **pela tela de Vendedores** depois do BUG-05 tem os usuários inativados, e esses usuários recebem `401 "credenciais inválidas"` no login (SEC-22, Lote 24; antes era `"usuário inativo"`; veja a nota da seção 5).
 
 ## 5. Desligamento sem novo login (bloqueio reativo)
 
 1. Navegador A: faça login com o normal **ativo** (`rafael.carvalho@...`) e abra `/admin/clientes`. A lista aparece.
 2. Preencha a data de desligamento do vendedor 4 **só por SQL**: `UPDATE vendedores SET data_desligamento = CURDATE() WHERE id = 4;`.
 
-> **Não use a tela de Vendedores neste passo.** Depois do BUG-05, desligar o vendedor pela tela (`DELETE /api/vendedores/4`) também grava `ativo = 0` no usuário 5, e reativar o vendedor não reativa o usuário. Pelo código, o que acontece nesse caso é o seguinte (não foi validado no navegador): o access token que já foi emitido continua valendo até expirar, porque o middleware de autenticação não consulta `ativo`. Enquanto isso, o comportamento é o dos itens 5.1 a 5.3. Quando o token expira, o `POST /api/auth/refresh` responde `401 "usuário inativo"`, o front faz logout e vai para `/login`, e um novo login responde `401 "usuário inativo"`. Se isso acontecer por engano, reative o usuário 5 na tela de Usuários (item 8.2).
+> **Não use a tela de Vendedores neste passo.** Depois do BUG-05, desligar o vendedor pela tela (`DELETE /api/vendedores/4`) também grava `ativo = 0` no usuário 5, e reativar o vendedor não reativa o usuário. Pelo código, o que acontece nesse caso é o seguinte (não foi validado no navegador): o access token que já foi emitido continua valendo até expirar, porque o middleware de autenticação não consulta `ativo`. Enquanto isso, o comportamento é o dos itens 5.1 a 5.3. Quando o token expira, o `POST /api/auth/refresh` responde `401 "refresh token revogado"` (SEC-22, Lote 24; antes era `"usuário inativo"`), o front faz logout e vai para `/login`, e um novo login responde `401 "credenciais inválidas"` (SEC-22, Lote 24; antes era `"usuário inativo"`). Se isso acontecer por engano, reative o usuário 5 na tela de Usuários (item 8.2).
 
 - [ ] 5.1 Navegador A: troque de aba e volte (evento de foco). O menu esconde ERP/CRM e a tela de Clientes passa a mostrar o aviso + o link para o Dashboard, **sem** novo login.
 - [ ] 5.2 Navegador A, sem trocar de aba: clicar em "Buscar" ou mudar de página na lista dispara uma requisição que volta 403. A tela troca para o aviso na hora, sem ir para `/login` e sem chamar `/api/auth/refresh`.

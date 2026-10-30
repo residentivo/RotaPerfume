@@ -1,12 +1,32 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Pagamento, Pedido } from "@/lib/types";
+import type { MeResponse, Pagamento, Pedido } from "@/lib/types";
 
-const api = vi.hoisted(() => ({ apiListPedidos: vi.fn() }));
+// apiMe alimenta a sessao real (/me), usada para decidir o modo leitura.
+const api = vi.hoisted(() => ({ apiListPedidos: vi.fn(), apiMe: vi.fn() }));
 vi.mock("@/lib/api", () => api);
 
 import { PagamentoModal } from "@/components/PagamentoModal";
+import { clearSession, refreshSessionUser } from "@/lib/session";
+
+function me(role: "admin" | "normal"): MeResponse {
+  return {
+    id: role === "admin" ? 1 : 2,
+    nome: role,
+    email: `${role}@x`,
+    role,
+    ativo: true,
+    id_vendedor: role === "admin" ? null : 7,
+  };
+}
+
+async function logar(role: "admin" | "normal") {
+  api.apiMe.mockResolvedValue(me(role));
+  await act(async () => {
+    await refreshSessionUser();
+  });
+}
 
 type Props = Parameters<typeof PagamentoModal>[0];
 
@@ -87,8 +107,11 @@ const NOVO = {
   "Data de pagamento": "",
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
+  clearSession();
+  // Padrao: admin (edita qualquer pagamento, inclusive quitado).
+  await logar("admin");
   api.apiListPedidos.mockReset();
   api.apiListPedidos.mockImplementation(async (_p: number, _l: number, f: { q?: string }) =>
     pagina(f.q ? [pedido(900, `Busca ${f.q}`)] : [pedido(12), pedido(13)])
@@ -251,7 +274,27 @@ describe("PagamentoModal (FE-03)", () => {
         await u.type(screen.getByLabelText("Valor"), "1");
         await u.clear(screen.getByLabelText("Taxa (%)"));
       },
-      "Taxa (%) deve ser um numero maior ou igual a zero.",
+      "Taxa (%) deve estar entre 0 e 30.",
+    ],
+    [
+      "taxa acima de 30",
+      async (u) => {
+        await u.selectOptions(screen.getByLabelText("Pedido"), "12");
+        await u.type(screen.getByLabelText("Valor"), "1");
+        await u.clear(screen.getByLabelText("Taxa (%)"));
+        await u.type(screen.getByLabelText("Taxa (%)"), "30.01");
+      },
+      "Taxa (%) deve estar entre 0 e 30.",
+    ],
+    [
+      "taxa negativa",
+      async (u) => {
+        await u.selectOptions(screen.getByLabelText("Pedido"), "12");
+        await u.type(screen.getByLabelText("Valor"), "1");
+        await u.clear(screen.getByLabelText("Taxa (%)"));
+        await u.type(screen.getByLabelText("Taxa (%)"), "-1");
+      },
+      "Taxa (%) deve estar entre 0 e 30.",
     ],
     [
       "sem valor liquido",
@@ -290,5 +333,120 @@ describe("PagamentoModal (FE-03)", () => {
     m.set({ open: false });
     m.set({ open: true });
     expect(screen.queryByText("pagamento recusado")).not.toBeInTheDocument();
+  });
+});
+
+describe("PagamentoModal - SEC-27 (taxa e quitado por perfil)", () => {
+  const CAMPOS = [
+    "Forma de pagamento",
+    "Status",
+    "Parcelas",
+    "Valor",
+    "Taxa (%)",
+    "Valor liquido",
+    "Data de vencimento",
+    "Data de pagamento",
+  ];
+
+  it("campo Taxa (%) tem max=30 para qualquer perfil", async () => {
+    await logar("normal");
+    montar();
+    expect(screen.getByLabelText("Taxa (%)")).toHaveAttribute("max", "30");
+    expect(screen.getByLabelText("Taxa (%)")).toHaveAttribute("min", "0");
+  });
+
+  it("taxa 30 (limite) e aceita e enviada", async () => {
+    const m = montar({ mode: "edit", pagamento: { ...pagamento, status_pagamento: "Em aberto" } });
+    const u = userEvent.setup();
+    await u.clear(screen.getByLabelText("Taxa (%)"));
+    await u.type(screen.getByLabelText("Taxa (%)"), "30");
+    await u.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
+    await waitFor(() => expect(m.props.onSubmit).toHaveBeenCalledTimes(1));
+    expect(m.props.onSubmit).toHaveBeenCalledWith(expect.objectContaining({ taxa_pct: 30 }));
+  });
+
+  it("admin edita taxa acima de 30: bloqueado no front com a mensagem", async () => {
+    const m = montar({ mode: "edit", pagamento });
+    const u = userEvent.setup();
+    await u.clear(screen.getByLabelText("Taxa (%)"));
+    await u.type(screen.getByLabelText("Taxa (%)"), "100");
+    const form = screen.getByRole("button", { name: "Salvar alteracoes" }).closest("form")!;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(await screen.findByText("Taxa (%) deve estar entre 0 e 30.")).toBeInTheDocument();
+    expect(m.props.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it.each(["Pago", "Pago com atraso"])(
+    "normal + %s: modo leitura (campos desabilitados, sem salvar, com aviso)",
+    async (status) => {
+      await logar("normal");
+      const m = montar({ mode: "edit", pagamento: { ...pagamento, status_pagamento: status } });
+      expect(screen.getByText("Ver Pagamento")).toBeInTheDocument();
+      expect(screen.getByText("Pagamento quitado nao pode ser editado.")).toBeInTheDocument();
+      for (const c of CAMPOS) expect(screen.getByLabelText(c)).toBeDisabled();
+      expect(valor("Status")).toBe(status);
+      expect(screen.queryByRole("button", { name: "Salvar alteracoes" })).not.toBeInTheDocument();
+      // Submit forcado (ex.: Enter) nao chama o onSubmit.
+      // O "Fechar" do rodape substitui o "Cancelar" (o X do Modal tambem se chama "Fechar").
+      const fecharRodape = screen.getAllByRole("button", { name: "Fechar" }).at(-1)!;
+      expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
+      const form = fecharRodape.closest("form")!;
+      await act(async () => {
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+      expect(m.props.onSubmit).not.toHaveBeenCalled();
+      await userEvent.click(fecharRodape);
+      expect(m.props.onClose).toHaveBeenCalled();
+    }
+  );
+
+  it.each(["Em aberto", "Inadimplente"])(
+    "normal + %s: edita normalmente (inclusive para Pago)",
+    async (status) => {
+      await logar("normal");
+      const m = montar({ mode: "edit", pagamento: { ...pagamento, status_pagamento: status } });
+      expect(screen.getByText("Editar Pagamento")).toBeInTheDocument();
+      expect(screen.queryByText("Pagamento quitado nao pode ser editado.")).not.toBeInTheDocument();
+      for (const c of CAMPOS) expect(screen.getByLabelText(c)).toBeEnabled();
+      // Trocar o status no select para Pago nao trava o formulario (vale o gravado).
+      await userEvent.selectOptions(screen.getByLabelText("Status"), "Pago");
+      expect(screen.getByLabelText("Valor")).toBeEnabled();
+      await userEvent.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
+      await waitFor(() => expect(m.props.onSubmit).toHaveBeenCalledTimes(1));
+      expect(m.props.onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ status_pagamento: "Pago" })
+      );
+    }
+  );
+
+  it.each(["Pago", "Pago com atraso"])("admin + %s: editavel", async (status) => {
+    const m = montar({ mode: "edit", pagamento: { ...pagamento, status_pagamento: status } });
+    expect(screen.getByText("Editar Pagamento")).toBeInTheDocument();
+    expect(screen.queryByText("Pagamento quitado nao pode ser editado.")).not.toBeInTheDocument();
+    for (const c of CAMPOS) expect(screen.getByLabelText(c)).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
+    await waitFor(() => expect(m.props.onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it("sessao ainda vazia + quitado: modo leitura (fail-safe ate o /me)", () => {
+    clearSession();
+    montar({ mode: "edit", pagamento });
+    expect(screen.queryByRole("button", { name: "Salvar alteracoes" })).not.toBeInTheDocument();
+  });
+
+  it("normal em criacao: formulario editavel", async () => {
+    await logar("normal");
+    montar();
+    for (const c of CAMPOS) expect(screen.getByLabelText(c)).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Criar pagamento" })).toBeInTheDocument();
+  });
+
+  it("409 do backend (quitado) aparece no modal", async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error("pagamento já quitado não pode ser editado"));
+    montar({ mode: "edit", pagamento, onSubmit });
+    await userEvent.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
+    expect(await screen.findByText("pagamento já quitado não pode ser editado")).toBeInTheDocument();
   });
 });

@@ -25,7 +25,10 @@ import (
 	"github.com/rotaperfumes/shared/kernel"
 )
 
-var cfgJWT = &config.Config{JWTSecret: "segredo-infra", JWTIssuer: "rp", JWTTTL: time.Hour}
+// segredoJWTTeste tem o tamanho mínimo de JWT_SECRET (SEC-18: 32 bytes).
+const segredoJWTTeste = "segredo-infra-de-teste-com-32-by"
+
+var cfgJWT = &config.Config{JWTSecret: segredoJWTTeste, JWTIssuer: "rp", JWTTTL: time.Hour}
 
 func TestJWT_MontagemTTLEClaimsOpcionais(t *testing.T) {
 	assert.Panics(t, func() { identidadecrypto.NovoJWT(nil) })
@@ -43,7 +46,7 @@ func TestJWT_MontagemTTLEClaimsOpcionais(t *testing.T) {
 
 	// Token válido sem iat: EmitidoEm nil (o corte de sessão recusa, I-04).
 	semIat, err := jwt.NewWithClaims(jwt.SigningMethodHS256, identidadecrypto.Claims{UserID: 7, Role: "normal",
-		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}}).SignedString([]byte(cfgJWT.JWTSecret))
+		RegisteredClaims: jwt.RegisteredClaims{Issuer: cfgJWT.JWTIssuer, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}}).SignedString([]byte(cfgJWT.JWTSecret))
 	require.NoError(t, err)
 	c, err = j.ValidarAcesso(semIat)
 	require.NoError(t, err)

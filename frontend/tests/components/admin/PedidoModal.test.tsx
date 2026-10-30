@@ -570,3 +570,140 @@ describe("PedidoModal - FE-03 (reset ao abrir e cascata)", () => {
     expect(screen.getByRole("option", { name: "#9 - Vend 9" })).toBeInTheDocument();
   });
 });
+
+// ─── BUG-16: status Faturado/Entregue e itens travados ───────────────────────
+
+describe("PedidoModal - BUG-16 (transicoes de status e itens travados)", () => {
+  function pedidoCom(status: string): PedidoDetalhe {
+    return {
+      pedido_id_origem: 5,
+      cliente_id: 700,
+      cliente_nome: "Cliente 700",
+      vendedor_id: 7,
+      data_pedido: "2026-09-01T00:00:00Z",
+      canal: "App",
+      status,
+      valor_total: 20,
+      itens: [
+        { item_id_origem: 1, produto_id: 50, quantidade: 2, preco_praticado: 10, desconto_pct: 0 },
+      ],
+    } as unknown as PedidoDetalhe;
+  }
+
+  function opcoesStatus(): string[] {
+    const sel = screen.getByLabelText("Status") as HTMLSelectElement;
+    return Array.from(sel.options).map((o) => o.value);
+  }
+
+  function itensHabilitados(habilitado: boolean) {
+    const check = (el: HTMLElement) =>
+      habilitado ? expect(el).toBeEnabled() : expect(el).toBeDisabled();
+    check(screen.getByLabelText("Produto"));
+    check(screen.getByLabelText("Qtd"));
+    check(screen.getByLabelText("Preco"));
+    check(screen.getByLabelText("Desc. %"));
+    check(screen.getByRole("button", { name: "+ Adicionar item" }));
+  }
+
+  beforeEach(async () => {
+    api.apiMe.mockResolvedValue(me({ id_vendedor: 7 }));
+    await refreshSessionUser();
+  });
+
+  it("criacao: Entregue nao aparece", async () => {
+    renderModal();
+    await screen.findByRole("option", { name: "#50 - Perfume 50" });
+    expect(opcoesStatus()).toEqual(["Em separação", "Faturado", "Cancelado"]);
+    expect(screen.getByLabelText("Status")).toBeEnabled();
+    itensHabilitados(true);
+  });
+
+  it.each(["Em separação", "Cancelado"])(
+    "edicao de pedido %s: Entregue nao aparece e itens editaveis",
+    async (status) => {
+      renderModal({ mode: "edit", pedido: pedidoCom(status) });
+      await screen.findByRole("option", { name: "#50 - Perfume 50" });
+      expect(opcoesStatus()).toEqual(["Em separação", "Faturado", "Cancelado"]);
+      expect((screen.getByLabelText("Status") as HTMLSelectElement).value).toBe(status);
+      itensHabilitados(true);
+      expect(screen.queryByText(/nao e possivel alterar os itens/)).not.toBeInTheDocument();
+    }
+  );
+
+  it("edicao de pedido Faturado: so Faturado e Entregue, itens travados, envia Entregue", async () => {
+    const { onSubmit } = renderModal({ mode: "edit", pedido: pedidoCom("Faturado") });
+    await screen.findByRole("option", { name: "#50 - Perfume 50" });
+    await screen.findByRole("option", { name: /^#700 - Cliente 700/ });
+    expect(opcoesStatus()).toEqual(["Faturado", "Entregue"]);
+    expect(screen.getByLabelText("Status")).toBeEnabled();
+    expect(screen.getByText("Pedido faturado so pode ser alterado para Entregue.")).toBeInTheDocument();
+    itensHabilitados(false);
+    expect(screen.getByTitle("Remover item")).toBeDisabled();
+    expect(
+      screen.getByText(/Pedido ja faturado: nao e possivel alterar os itens, apenas o\s+status\./)
+    ).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Status"), "Entregue");
+    // Mudar o select nao destrava os itens (vale o status gravado).
+    itensHabilitados(false);
+    await userEvent.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "Entregue",
+        itens: [{ produto_id: 50, quantidade: 2, preco_praticado: 10, desconto_pct: 0 }],
+      })
+    );
+  });
+
+  it("edicao de pedido Entregue: select desabilitado com aviso e itens travados", async () => {
+    renderModal({ mode: "edit", pedido: pedidoCom("Entregue") });
+    await screen.findByRole("option", { name: "#50 - Perfume 50" });
+    const sel = screen.getByLabelText("Status") as HTMLSelectElement;
+    expect(sel).toBeDisabled();
+    expect(sel.value).toBe("Entregue");
+    expect(opcoesStatus()).toEqual(["Entregue"]);
+    const helper = screen.getByText("Pedido entregue nao pode ter o status alterado.");
+    expect(sel).toHaveAttribute("aria-describedby", helper.id);
+    itensHabilitados(false);
+  });
+
+  it("reabrir de Faturado para novo volta as opcoes da criacao", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const props = { open: true, mode: "edit" as const, pedido: pedidoCom("Faturado"), onClose: vi.fn(), onSubmit };
+    const r = render(<PedidoModal {...props} />);
+    expect(opcoesStatus()).toEqual(["Faturado", "Entregue"]);
+    r.rerender(<PedidoModal {...props} open={false} />);
+    r.rerender(<PedidoModal {...props} open mode="create" pedido={null} />);
+    expect(opcoesStatus()).toEqual(["Em separação", "Faturado", "Cancelado"]);
+    await screen.findByRole("option", { name: "#50 - Perfume 50" });
+    itensHabilitados(true);
+  });
+
+  it.each<[string, string]>([
+    [
+      "pedido faturado só pode ter o status alterado para Entregue",
+      "Pedido faturado so pode ter o status alterado para Entregue.",
+    ],
+    [
+      "pedido entregue não pode ter o status alterado",
+      "Pedido entregue nao pode ter o status alterado.",
+    ],
+    [
+      "pedido só pode ser marcado como Entregue depois de Faturado",
+      "O pedido so pode ser marcado como Entregue depois de Faturado.",
+    ],
+    [
+      "pedido já faturado: não é possível alterar os itens, apenas o status",
+      "Pedido ja faturado: nao e possivel alterar os itens, apenas o status.",
+    ],
+  ])("erro do backend '%s' vira mensagem amigavel", async (backend, amigavel) => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error(backend));
+    renderModal({ mode: "edit", pedido: pedidoCom("Em separação"), onSubmit });
+    await screen.findByRole("option", { name: "#50 - Perfume 50" });
+    await screen.findByRole("option", { name: /^#700 - Cliente 700/ });
+    await userEvent.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
+    const alerta = await screen.findByText(amigavel);
+    expect(alerta).toBeInTheDocument();
+  });
+});

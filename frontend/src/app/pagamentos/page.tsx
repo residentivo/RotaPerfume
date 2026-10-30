@@ -20,7 +20,8 @@ import { Select } from "@/components/ui/Select";
 import { Table, Column, Badge } from "@/components/ui/Table";
 import { Paginador } from "@/components/ui/Paginador";
 import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
-import { PagamentoModal } from "@/components/PagamentoModal";
+import { PagamentoModal, pagamentoQuitado } from "@/components/PagamentoModal";
+import { useSessionUser } from "@/lib/session";
 import {
   apiListPagamentos,
   apiCreatePagamento,
@@ -106,6 +107,9 @@ function PagamentosContent() {
   const [error, setError] = useState<string | null>(null);
   vlog(FILE, "PagamentosContent", "inicializando estado de erro de carga");
   const [erroCarga, setErroCarga] = useState(false);
+  // SEC-27: nao-admin so visualiza pagamento quitado ("Editar" vira "Ver").
+  vlog(FILE, "PagamentosContent", "verificando se o usuario e admin");
+  const admin = useSessionUser()?.role === "admin";
   vlog(FILE, "PagamentosContent", "obtendo controle de mensagem temporaria de sucesso");
   const {
     mensagem: success,
@@ -499,9 +503,13 @@ function PagamentosContent() {
             size="sm"
             variant="secondary"
             onClick={() => openEdit(p)}
-            title="Editar pagamento"
+            title={
+              !admin && pagamentoQuitado(p.status_pagamento)
+                ? "Ver pagamento (quitado)"
+                : "Editar pagamento"
+            }
           >
-            Editar
+            {!admin && pagamentoQuitado(p.status_pagamento) ? "Ver" : "Editar"}
           </Button>
           <Button
             size="sm"

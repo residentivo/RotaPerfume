@@ -210,20 +210,21 @@ func TestARQ05_ChaveDuplicadaSemValorDoDriver(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// NB-3 (SecBrain, movida do ARQ-04): o 1062 de SKU (produto) e de
-// (data_snapshot, sku) (estoque) no Catálogo continua 500 (CHORE-06), mas o
-// valor do driver não chega ao log.
+// NB-3 (SecBrain, movida do ARQ-04) + CHORE-06: o 1062 de SKU (produto) e
+// de (data_snapshot, sku) (estoque) no Catálogo vira o sentinela 409 do
+// domínio, devolvido SEM embrulhar o erro do driver (o valor não chega ao log).
 func TestARQ05_NB3_DuplicadaDoCatalogoSemValor(t *testing.T) {
 	ctx := context.Background()
 	casos := map[string]struct {
-		re     string
-		dup    *mysql.MySQLError
-		gravar func(db *sql.DB) error
+		re        string
+		dup       *mysql.MySQLError
+		gravar    func(db *sql.DB) error
+		sentinela error
 	}{
 		"SKU": {`INSERT INTO produtos`, &mysql.MySQLError{Number: 1062, Message: "Duplicate entry 'SKU-SECRETO' for key 'produtos.uk_produtos_sku'"},
-			func(db *sql.DB) error { return catalogomysql.NovoProdutos(db).Inserir(ctx, novoProdutoMinimo(t)) }},
+			func(db *sql.DB) error { return catalogomysql.NovoProdutos(db).Inserir(ctx, novoProdutoMinimo(t)) }, catalogo.ErrSKUDuplicado},
 		"(data_snapshot, sku)": {`INSERT INTO estoque`, &mysql.MySQLError{Number: 1062, Message: "Duplicate entry '2024-01-01-SKU-SECRETO' for key 'estoque.uk_estoque_data_sku'"},
-			func(db *sql.DB) error { return catalogomysql.NovoEstoques(db).Inserir(ctx, novoEstoqueMinimo(t)) }},
+			func(db *sql.DB) error { return catalogomysql.NovoEstoques(db).Inserir(ctx, novoEstoqueMinimo(t)) }, catalogo.ErrEstoqueDuplicado},
 	}
 	for nome, c := range casos {
 		t.Run(nome, func(t *testing.T) {
@@ -232,11 +233,12 @@ func TestARQ05_NB3_DuplicadaDoCatalogoSemValor(t *testing.T) {
 			err := c.gravar(db)
 			require.Error(t, err)
 			assert.NotContains(t, err.Error(), "SKU-SECRETO")
+			assert.Same(t, c.sentinela, err, "sentinela sem embrulhar (CHORE-06)")
 			var e *kernel.Erro
-			assert.False(t, errors.As(err, &e), "status HTTP preservado: 500 (CHORE-06)")
+			require.True(t, errors.As(err, &e))
+			assert.Equal(t, kernel.KindConflito, e.Kind(), "409 (CHORE-06)")
 			var me *mysql.MySQLError
-			require.ErrorAs(t, err, &me)
-			assert.Equal(t, uint16(1062), me.Number)
+			assert.False(t, errors.As(err, &me), "o erro do driver não é embrulhado")
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}

@@ -36,7 +36,7 @@ func cfgTeste() *config.Config {
 	return &config.Config{
 		DBName: "rotaperfumes", DBHost: "db.local", DBPort: "3306",
 		SMTPHost: "smtp.exemplo.test", SMTPFrom: "remetente@rotaperfumes.com.br",
-		JWTSecret: "segredo", JWTTTL: time.Hour,
+		JWTSecret: "segredo-resetsenhas-com-pelo-menos-32-bytes", JWTIssuer: "rotaperfumes-test", JWTTTL: time.Hour,
 		HashSenha: config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1},
 	}
 }

@@ -1,6 +1,269 @@
 # Concluídas ✅
 
 > Histórico de tarefas finalizadas.
+>
+> Atualizado em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## Lote 25 de 2026-10-30: 8 cards concluídos
+
+> Cards: BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21. Lote aberto pelo 🤍 MegaBrain em 2026-10-29, depois de o usuário tomar as decisões de produto pendentes em BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03 e CHORE-06. BUG-20 e BUG-21 nasceram dos riscos R2 e R3 da especificação do 🟣 SecBrain e entraram no mesmo lote. A implementação começou depois do fechamento do Lote 24. Fechado em 2026-10-30 pelo 🔵 SubBrain.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (especificação e riscos R1 a R6) → 🌸 DataBrain (CHECK de `taxa_pct`) → 🟡 BackBrain (APIs) → 🟢 FrontBrain (telas) → 🔴 TestBrain (testes) → 🔵 SubBrain (Postman, docs e fechamento).
+>
+> **Mudanças de contrato HTTP (aprovadas pelo usuário em 2026-10-29):** CHORE-03 (id de path ≤ 0 ou não numérico → 400) e CHORE-06 (duplicidade → 409). BUG-16, BUG-20 e SEC-27 trazem respostas de erro novas. Detalhe em `postman/README.md`, seção "Mudanças de contrato do Lote 25". **Schema:** CHECK novo `chk_pagamentos_taxa_pct` (migração 24).
+>
+> **Commit:** não commitado (pendente do usuário).
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados do Lote 25"):** TST-09 (testes de integração e conferência do CHECK pendentes por credencial do banco, MÉDIA), TST-10 (`make test-frontend`/`make frontend-deps` em disco exFAT e Node 18, MÉDIA), CHORE-08 (4 observações do 🔴 TestBrain, BAIXA) e FE-16 (rodar o `next build`, BAIXA). Da especificação já tinham saído UX-02, CHORE-07 e BUG-22 (ainda em `afazer.md`).
+
+### Decisões do usuário (2026-10-29)
+
+- **BUG-16, original:** "depois de Faturado, o pedido não pode mais mudar de status (transição inválida → erro de validação)". **Refinada** depois do risco R1 do 🟣 SecBrain (a original eliminava o fluxo natural Faturado → Entregue): a única transição a partir de Faturado é **Faturado → Entregue**; **Entregue é terminal**; nenhuma transição volta para Faturado; erro `KindInvalido` (400).
+- **SEC-27, original:** "pagamento quitado não é editável (por ninguém); teto de `taxa_pct` = 30". **Refinada** depois do risco R5 (sem fluxo de correção, um "Pago" lançado por engano só seria corrigido no banco): quitado é editável **só por admin**; o perfil normal recebe 409; o teto de 30 vale para todos.
+- **BUG-17:** bloqueio do botão no frontend contra duplo clique. **Complemento** (recomendação do 🟣 SecBrain aceita pelo 🤍 MegaBrain): também o `UPDATE ... SET ativo = NOT ativo` atômico no backend; PUT de estoque sem mudança (só documentar).
+- **BUG-19:** corrigir o arredondamento (negativos corretos; positivos sem mudança).
+- **CHORE-03 e CHORE-06:** aprovada a mudança de contrato HTTP, com propagação para frontend, Postman e docs.
+- **R4 e R6:** ficam só como cards de backlog (UX-02 e CHORE-07).
+
+### Extensões do 🤍 MegaBrain (fora do texto das decisões do usuário, para impedir burlar a baixa de estoque)
+
+- **Em separação ou Cancelado → Entregue** recusado com 400 "pedido só pode ser marcado como Entregue depois de Faturado" (sem isso, o pedido chegaria a Entregue sem nunca baixar o estoque).
+- **POST de pedido já como Entregue** recusado com a mesma mensagem (BUG-20, adendo item 3).
+- **DELETE de pedido Entregue** recusado com 409 "pedido entregue não pode ser excluído" (o estoque já foi baixado). Ordem: pagamentos vinculados primeiro.
+- **Itens travados também em Entregue** (409 com o texto antigo "pedido já faturado: não é possível alterar os itens, apenas o status").
+
+---
+
+## BUG-16: baixa de estoque dupla no ciclo Faturado → outro → Faturado — 2026-10-30
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 25, aberto em 2026-10-29, fechado em 2026-10-30).
+**Camadas:** Backend (shared), Frontend, Testes, Documentação
+**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15). Prioridade ALTA.
+
+**Contrato final:** Faturado → qualquer status que não seja Entregue: 400 "pedido faturado só pode ter o status alterado para Entregue". Entregue → outro status: 400 "pedido entregue não pode ter o status alterado". Em separação ou Cancelado → Entregue, e POST já como Entregue: 400 "pedido só pode ser marcado como Entregue depois de Faturado" (extensões do 🤍 MegaBrain). Itens diferentes em Faturado ou Entregue: 409 com o texto antigo. DELETE de Entregue: 409 "pedido entregue não pode ser excluído" (extensão do 🤍 MegaBrain), depois da checagem de pagamentos vinculados. Reenviar o mesmo status é idempotente.
+
+**Entregue:**
+- 🟡 **BackBrain:** máquina de status em `SH/vendas/pedido.go` (`validarTransicao`, chamada por `PlanejarAtualizacao` **antes** da regra de itens, dentro do `TxPedido.Atualizar`, sob `SELECT status … FOR UPDATE`); `PodeExcluir` recusa Entregue; erros novos em `SH/vendas/erros.go` (`ErrPedidoFaturadoSoPodeIrParaEntregue`, `ErrPedidoEntregueNaoPodeMudarStatus`, `ErrPedidoEntregueSemFaturamento`, `ErrPedidoEntregueNaoPodeSerExcluido`); textos antigos preservados (CHORE-07); vlog de decisão só com o id.
+- 🟢 **FrontBrain:** `components/admin/PedidoModal.tsx` (`opcoesStatusPedido`: criação sem Entregue; Faturado → só Faturado/Entregue; Entregue com o select desabilitado e `helperText`; itens travados em Faturado e Entregue; `friendlyPedidoError` com as mensagens novas); `app/admin/pedidos/page.tsx` (Excluir desabilitado em Faturado e Entregue); prop `helperText` nova em `components/ui/Select.tsx`.
+- 🔴 **TestBrain:** `apis/shared/tests/vendas/bug16_maquina_status_test.go`, `bug16_bug20_casos_test.go` e `apis/rotaperfumes-api/tests/handlers/bug16_bug20_pedido_http_test.go` (todas as transições, mensagens exatas, `ExpectRollback` sem UPDATE, ciclo sem segunda baixa, ordem do DELETE); `dominio_test.go` ajustado.
+
+---
+
+## SEC-27: pagamento quitado editável só por admin e teto de `taxa_pct` — 2026-10-30
+**Agentes:** 🟣 SecBrain → 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 25, aberto em 2026-10-29, fechado em 2026-10-30), com a conferência final do CHECK no banco pendente (card TST-09).
+**Camadas:** Database, Backend (shared), Frontend, Testes, Documentação
+**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15).
+
+**Contrato final:** `taxa_pct` fora de 0..30 → 400 "taxa_pct deve estar entre 0 e 30" (admin e normal). PUT de quitado pelo perfil normal → 409 "pagamento já quitado não pode ser editado"; admin → 200. Inexistente → 404. Corrida (UPDATE condicional com 0 linhas e releitura quitada) → 409.
+
+**Entregue:**
+- 🌸 **DataBrain:** CHECK `chk_pagamentos_taxa_pct` (`taxa_pct >= 0 AND taxa_pct <= 30`) em `sql/24_alter_pagamentos_taxa_pct_check.sql` e `sql/24_revert_pagamentos_taxa_pct_check.sql` (idempotentes, com checagem prévia dos dados), inline em `sql/12_ddl_pagamentos.sql`; alvos `make db-fix-taxa-pct-check` e `make db-revert-taxa-pct-check`; `docs/manual-base-de-dados.md` (§16.1 e tabela de migrações). **Aplicado no banco do `.env` (MariaDB 11.8.8) em 2026-10-29**, com a tabela `pagamentos` vazia (0 linhas). A conferência final ficou pendente: o banco passou a recusar o login (`Access denied for user 'casaos'`).
+- 🟡 **BackBrain:** `SH/vendas/pagamento.go` (`TaxaPctMaxima = 30.0`, `(*Pagamento).PodeEditar()`); `SH/vendas/erros.go` (mensagem nova da taxa e `ErrPagamentoJaQuitadoNaoPodeSerEditado`, `KindConflito`); UPDATE condicional só para o não-admin em `vendasmysql/pagamentos.go` (`status_pagamento NOT IN (?, ?)` com `vendas.StatusPago`/`StatusPagoComAtraso`), releitura com `PorID` para decidir 404/409; ordem posse → decode → validação → UPDATE; log `[pagamentos] edição bloqueada: pagamento_id=%d quitado`.
+- 🟢 **FrontBrain:** `components/PagamentoModal.tsx` (quitado em modo leitura para o não-admin: campos desabilitados, sem Salvar, Alert "Pagamento quitado nao pode ser editado."; admin edita; Taxa com `max=30` e validação "Taxa (%) deve estar entre 0 e 30."); `app/pagamentos/page.tsx` ("Editar" vira "Ver" para o não-admin em quitado).
+- 🔴 **TestBrain:** `apis/shared/tests/vendas/sec27_pagamento_quitado_test.go` e `apis/rotaperfumes-api/tests/handlers/sec27_pagamento_http_test.go` (30 aceito; 30.01, 100 e 999.99 recusados; quitado 409/200 por perfil; Em aberto → Pago 200; inexistente 404; corrida 409); `WithArgs` dos UPDATE ajustados nas suítes antigas.
+
+---
+
+## BUG-17: toggle de ativo do produto atômico e bloqueio do botão — 2026-10-30
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 25, aberto em 2026-10-29, fechado em 2026-10-30), com o teste de integração concorrente pendente (card TST-09).
+**Camadas:** Backend (shared), Frontend, Testes, Documentação
+**Origem:** NB-5 do 🟣 SecBrain (revisão do ARQ-02, 2026-10-14), avaliada no ARQ-05.
+
+**Contrato final:** PATCH `/api/produtos/{id}/inativar` sem body usa `SET ativo = NOT ativo` atômico; com body, `SET ativo = ?`; nos dois casos relê para a resposta (o `updated_at` agora é o real). Contrato inalterado (200, 404, body opcional). PUT de estoque sem mudança: sobrescrita absoluta (nota no Postman).
+
+**Entregue:**
+- 🟡 **BackBrain:** `Produtos.AlternarAtivo(ctx, id)` na porta `catalogoapp/portas.go` e em `catalogomysql/produtos.go` (0 linhas → `ErrProdutoNaoEncontrado`); caso de uso em `catalogoapp/produtos.go` sem leitura prévia (`AlternarAtivo` ou `DefinirAtivo`, depois `PorID`).
+- 🟢 **FrontBrain:** `app/admin/produtos/page.tsx`: bloqueio por produto de 1500 ms (`TOGGLE_BLOQUEIO_MS`) depois do `finally`, com `setTimeout` limpo no unmount; valor explícito mantido no envio.
+- 🔴 **TestBrain:** `apis/shared/tests/catalogo/bug17_chore06_test.go`, `apis/rotaperfumes-api/tests/handlers/bug17_toggle_produto_http_test.go` e `apis/shared/tests/catalogo/bug17_bug21_integration_test.go` (dois toggles concorrentes voltam ao valor original; **não rodou**, ver TST-09); ordem do SQL (UPDATE e depois SELECT) ajustada nas suítes de sqlmock; teste de frontend do duplo clique com fake timers.
+
+---
+
+## BUG-19: `arredondar2` com `math.Round` — 2026-10-30
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 25, aberto em 2026-10-29, fechado em 2026-10-30).
+**Camadas:** Backend (shared), Testes
+**Origem:** 🔴 TestBrain, testes do DASH-01 (Lote 22, 2026-10-29).
+
+**Entregue:**
+- 🟡 **BackBrain:** `apis/shared/analytics/ranking.go` (`arredondar2`): `math.Round(val*100) / 100`, NaN e ±Inf → 0, nunca `-0`; comentário atualizado. Usado também pelo funil (`funil.go`).
+- 🔴 **TestBrain:** `apis/shared/tests/analytics/bug19_arredondar2_test.go` (1.005 → 1.00, 2.675 → 2.68, 0.125 → 0.13, −1.555 → −1.56, −0.004 → +0 sem `Signbit`, NaN/±Inf → 0, JSON sem `-0`); suítes de ranking, metas e funil sem alteração de números. Contrato HTTP inalterado.
+
+---
+
+## CHORE-03: parse estrito de id de path na API inteira — 2026-10-30
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 25, aberto em 2026-10-29, fechado em 2026-10-30).
+**Camadas:** Backend, Testes, Documentação (o frontend não muda: os ids vêm da API)
+**Origem:** piloto ARQ-02 (Lote 21, 2026-10-14), decisão do 🤍 MegaBrain.
+
+**Contrato final:** toda rota `{id}` (29 rotas) responde 400 "id inválido" para id ≤ 0 ou não numérico (0, -1, +1, abc, 1.5, " 1", overflow), sem SQL; `{clienteId}` responde "cliente id inválido".
+
+**Entregue:**
+- 🟡 **BackBrain:** `API/internal/httpx/casos.go` (`IDOuErro` com `IDDoPath`); `IDDoPath` em `catalogohttp/produto_handler.go`, `catalogohttp/estoque_handler.go`, `identidadehttp/usuario_handler.go` e `comercialhttp/vendedor_handler.go`; `IDDoPathPermissivo` removido de `httpx/body.go`.
+- 🔴 **TestBrain:** `apis/rotaperfumes-api/tests/routes/chore03_id_estrito_test.go` (todas as rotas `{id}` × valores inválidos → 400 sem SQL) e `tests/arquitetura/chore03_parse_estrito_test.go` (sem `IDDoPathPermissivo` nem `strconv.ParseInt(r.PathValue` em `internal/`); `body_test.go`, `catalogo_arq02_test.go` e `scope_test.go` ajustados.
+
+---
+
+## CHORE-06: duplicidade → 409 Conflict, sem o valor no log — 2026-10-30
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 25, aberto em 2026-10-29, fechado em 2026-10-30).
+**Camadas:** Backend (shared), Frontend, Testes, Documentação
+**Origem:** decisão do 🤍 MegaBrain no ARQ-04 (Lote 21, 2026-10-14), a partir da NB-3 do 🟣 SecBrain.
+
+**Contrato final:** 409 "sku já cadastrado", "registro de estoque já cadastrado para este sku nesta data" e "vínculo entre cliente e vendedor já cadastrado nesta data" (os três eram 500). CNPJ e e-mail continuam 409. Os logs não levam o valor.
+
+**Entregue:**
+- 🟡 **BackBrain:** sentinelas `catalogo.ErrSKUDuplicado` e `catalogo.ErrEstoqueDuplicado` (`KindConflito`) detectados com `db.ChaveDuplicada(err, "uk_produtos_sku")` e `(err, "uk_estoque_data_sku")` em `catalogomysql/produtos.go` e `estoques.go` (1062 de outro índice continua 500); `comercial.ErrVinculoDuplicado` como `KindConflito` (`comercialmysql/carteiras.go`); logs na camada app sem o valor (`[produtos] sku duplicado recusado (uk_produtos_sku)`, `[estoque] registro duplicado recusado (uk_estoque_data_sku)`, `[carteiras] vinculo duplicado recusado`, `[usuarios] email duplicado recusado (uk_usuarios_email)`).
+- 🟢 **FrontBrain:** `app/admin/estoque/page.tsx`: no 409, a mensagem ganha a orientação "Edite o registro existente." (parte do UX-02, que continua no backlog para o atalho ao registro).
+- 🔴 **TestBrain:** `apis/shared/tests/catalogo/bug17_chore06_test.go`, `apis/shared/tests/comercial/chore06_vinculo_duplicado_test.go`, `apis/shared/tests/identidade/chore06_email_log_test.go` e `apis/rotaperfumes-api/tests/handlers/chore06_duplicidade_http_test.go` (SKU, estoque e vínculo 409; 1062 em PRIMARY de produto e de estoque → 500; log sem o valor).
+
+---
+
+## BUG-20: pedido criado já como Faturado baixa o estoque — 2026-10-30
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 25, aberto em 2026-10-29, fechado em 2026-10-30).
+**Camadas:** Backend (shared), Frontend, Testes, Documentação
+**Origem:** 🟣 SecBrain, risco R2 da especificação do Lote 25 (2026-10-29); card aberto pelo 🤍 MegaBrain.
+
+**Relato do comportamento anterior:** o `CriarPedido` só fazia o INSERT; a baixa só acontecia na transição para Faturado no PUT. Criar já como Faturado (ou como Entregue) nunca baixava o estoque, e com o BUG-16 o pedido não passaria mais pela transição.
+
+**Entregue:**
+- 🟡 **BackBrain:** `vendas.PlanejarCriacao` (`SH/vendas/pedido.go`): Faturado → baixa na mesma tx do INSERT, reaproveitando a baixa do `PlanejarAtualizacao` (falha → rollback do pedido); Entregue → 400 "pedido só pode ser marcado como Entregue depois de Faturado" (extensão do 🤍 MegaBrain); demais status sem baixa.
+- 🟢 **FrontBrain:** a criação no `PedidoModal` não oferece Entregue.
+- 🔴 **TestBrain:** `apis/shared/tests/vendas/bug16_bug20_casos_test.go` e `apis/rotaperfumes-api/tests/handlers/bug16_bug20_pedido_http_test.go` (upsert de estoque na mesma tx, rollback na falha, 400 em Entregue sem gravar nada).
+
+---
+
+## BUG-21: ruptura do upsert de faturamento na ordem certa — 2026-10-30
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 25, aberto em 2026-10-29, fechado em 2026-10-30), com o teste de integração pendente (card TST-09).
+**Camadas:** Backend (shared), Testes
+**Origem:** 🟣 SecBrain, risco R3 da especificação do Lote 25 (2026-10-29); card aberto pelo 🤍 MegaBrain.
+
+**Entregue:**
+- 🟡 **BackBrain:** `SH/catalogo/catalogomysql/faturamento.go`: a ruptura do `ON DUPLICATE KEY UPDATE` é calculada sobre o saldo já atualizado (`ruptura = saldo <= 0`), na ordem de atribuição do MariaDB, com comentário no SQL explicando a dependência da ordem.
+- 🔴 **TestBrain:** sqlmock com o SQL novo; integração em `apis/shared/tests/catalogo/bug17_bug21_integration_test.go` (saldo 10, baixa 6 → saldo 4, ruptura 0; saldo 5, baixa 6 → saldo −1, ruptura 1) **não rodou**, ver TST-09. Contrato HTTP inalterado.
+
+---
+
+### Testes e cobertura do Lote 25
+
+- **Go:** 14 arquivos novos (`bug16_*`, `bug16_bug20_*`, `sec27_*`, `bug17_*`, `bug19_*`, `bug17_bug21_integration_test.go`, `chore03_*`, `chore06_*`), em `apis/shared/tests/{vendas,catalogo,comercial,identidade,analytics}` e `apis/rotaperfumes-api/tests/{handlers,routes,arquitetura}`. Os dois módulos estão verdes.
+- **Cobertura:** shared 91,2%; API 96,1%; combinada, os pacotes tocados ficam em 100% e o total em 98,6%.
+- **Integração pendente:** os 3 testes de integração (BUG-17 concorrente e BUG-21 upsert real) **não rodaram**, porque o banco recusou o login (`Access denied for user 'casaos'`). Card TST-09.
+- **Frontend:** 1630/1630 testes, `tsc` e `eslint` limpos, rodados num espelho com Node 22 (o repositório está em disco exFAT, sem symlinks, e o Node do sistema é o 18; card TST-10). O `next build` **não** foi rodado (card FE-16).
+- Testes antigos ajustados: `dominio_test.go` (Faturado → Entregue), `WithArgs` dos `UPDATE pagamentos` (+2 args), ordem do SQL do toggle, `body_test.go`/`catalogo_arq02_test.go`/`scope_test.go` (CHORE-03) e comentários de `infra_test.go` (CHORE-06).
+
+### Observações do 🔴 TestBrain (não bloqueiam; card CHORE-08)
+
+- log "quitado" impreciso na corrida (`vendasapp/pagamentos.go:164`);
+- rótulo `status_faturado` do vlog ambíguo (`vendasapp/uow.go:67-72`);
+- `TaxaPct` NaN aceito no domínio (`vendas/pagamento.go:147`);
+- 1062 em qualquer índice de carteiras, inclusive PRIMARY, vira 409 (`comercialmysql/carteiras.go:28`).
+
+### Documentação do Lote 25 (🔵 SubBrain)
+
+- `postman/collection.json`: seção "Mudanças de contrato do Lote 25" na descrição; exemplos "400 Bad Request — id inválido (CHORE-03, Lote 25)" em Usuários (PUT), Clientes, Produtos, Pedidos, Pagamentos, Oportunidades, Visitas, Estoque e Vendedores; Criar Pedido com o 400 de Entregue e a nota do BUG-20; Editar Pedido com a tabela de transições, três 400 e o 409 de itens (o exemplo principal agora leva o pedido `100001` de Faturado a Entregue com os mesmos itens); Excluir Pedido com o 409 de Entregue e a mensagem de pagamentos vinculados corrigida ("pedido possui pagamentos vinculados"); Editar Pagamento com o 409 do quitado (normal), o 200 do admin e o 400 da taxa; Criar Pagamento com o teto; Criar Produto com o 409 de SKU; Toggle de Produto com a nota do BUG-17; Criar Estoque com o 409 (a doc dizia 400); Editar Estoque com a nota "sobrescrita absoluta"; requisições novas "Vincular Cliente ao Vendedor" (201, 409, 400) e "Encerrar Vínculo Cliente-Vendedor" (200, 400 "cliente id inválido"). As descrições "`400` — `id` inválido (não numérico)" passaram a citar o CHORE-03.
+- `postman/README.md`: seção "Mudanças de contrato do Lote 25"; POST/PUT/DELETE de pedidos (BUG-20, tabela do BUG-16, mensagens corrigidas), PUT/POST de pagamentos (SEC-27), POST e PATCH de produtos (CHORE-06, BUG-17), tabela de Vendedores, hook de faturamento (BUG-16/20/21), POST de estoque (409) e PUT de estoque (sobrescrita absoluta), tabela de testes e de códigos de erro.
+- `docs/arquitetura-ddd.md`: `IDDoPathPermissivo` removido da §10.4 e da tabela de divergências (§10.11, convergiu no CHORE-03); notas do Lote 25 no registro do ARQ-02 e do ARQ-05 (NB-3/NB-5) e na §10.13.
+- `docs/roteiro-teste-manual-pedidomodal.md`: pré-condição atualizada e seção nova "2b. Regras de status (BUG-16 e BUG-20)". Não há roteiro manual próprio de pagamentos; o `roteiro-teste-manual-lote4.md` não cita regra que mudou.
+- `docs/manual-base-de-dados.md`: conferido, já atualizado pelo 🌸 DataBrain (CHECK na tabela `pagamentos`, §16.1, migração 24 na tabela de migrações). Sem alteração do 🔵 SubBrain.
+- `CLAUDE.md`: não alterado (os alvos `db-fix-taxa-pct-check`/`db-revert-taxa-pct-check` aparecem no `make help`).
+
+---
+## Lote 24 de 2026-10-29: 4 cards concluídos (SEC-18, SEC-20, SEC-21 e SEC-22)
+
+> Lote aberto pelo 🤍 MegaBrain a partir do pedido do usuário: "pode continuar com as tarefas a serem feitas". Escopo: os 4 GAPs de segurança de prioridade ALTA da auditoria ARQ-00 (GAPs 5, 7, 8 e 9), todos Backend, sem mudança de schema. Aberto em 2026-10-29 e fechado em 2026-10-30 pelo 🔵 SubBrain.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (riscos e especificação) → 🟡 BackBrain (implementação) → 🔴 TestBrain (testes) → 🔵 SubBrain (docs e fechamento). Sem mudança de schema, então o 🌸 DataBrain não participou. O 🟢 FrontBrain também não: o frontend não trata a mensagem "usuário inativo" (conferido em `frontend/src` no fechamento), então a troca para "credenciais inválidas" não exige mudança de tela.
+>
+> **Decisão do 🤍 MegaBrain (SEC-22):** não informar "conta inativa" em caso algum; login com resposta idêntica para inexistente, inativo e senha errada; refresh de inativo com resposta genérica.
+>
+> **Mudança de contrato HTTP:** só a mensagem do login de usuário inativo (`"usuário inativo"` → `"credenciais inválidas"`) e a resposta do refresh de inativo (`"refresh token revogado"`). **Schema:** inalterado.
+>
+> **Commit:** não commitado (pendente do usuário).
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados do Lote 24"):** SEC-32 (hash vazio ou malformado sem custo de Argon2, BAIXA), SEC-33 (prefixo `__Host-` nos cookies, BAIXA), BUG-23 (refresh de usuário apagado responde 500, BAIXA) e TST-08 (`make test` falha por falta do `covdata` no toolchain, MÉDIA).
+
+## SEC-18: JWT com issuer, `exp` e HS256 obrigatórios e `JWT_SECRET` com tamanho mínimo — 2026-10-29
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 24, aberto em 2026-10-29, fechado em 2026-10-30).
+**Camadas:** Segurança, Backend (shared), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 5; invariantes I-01 e F-06).
+
+**Entregue:**
+- 🟡 **BackBrain:** `SH/config/config.go` exige `JWT_SECRET` com 32 bytes ou mais e recusa o placeholder (erro `config: JWT_SECRET é obrigatório (mínimo de 32 bytes)`, sem o valor); `JWT_ISSUER` aparado, vazio vira `rotaperfumes`; `JWT_TTL <= 0` dá erro. `SH/identidade/identidadecrypto/jwt.go` exige `iss`, `exp` e HS256 e recusa `iat` no futuro. `.env.example` e `deploy/api.env.example` comentados.
+- 🔴 **TestBrain:** `apis/shared/tests/identidade/sec18_jwt_test.go` e `apis/shared/tests/config/sec18_jwt_config_test.go` (issuer, `exp`, HS256 e `iat` futuro no token; segredo curto e placeholder, `JWT_ISSUER` aparado/vazio e `JWT_TTL <= 0` na config); parte HTTP em `apis/rotaperfumes-api/tests/httpx/sec18_sec20_sec21_test.go`.
+
+---
+
+## SEC-20: IP do cliente pelo item mais à direita do `X-Forwarded-For` — 2026-10-29
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 24, aberto em 2026-10-29, fechado em 2026-10-30).
+**Camadas:** Segurança, Backend, Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 7; invariante I-14).
+
+**Entregue:**
+- 🟡 **BackBrain:** `API/internal/httpx/clientip.go` (`IPDoCliente`): com `TRUST_PROXY_HEADERS=true`, usa o item mais à direita do XFF, validado e normalizado; inválido cai no `RemoteAddr`. O `X-Real-IP` deixou de ser lido. Sem env nova.
+- 🔴 **TestBrain:** `apis/rotaperfumes-api/tests/httpx/sec18_sec20_sec21_test.go` e `tests/handlers/sec20_sec21_http_test.go` (XFF de vários saltos, valores inválidos com fallback para o `RemoteAddr` e `X-Real-IP` ignorado).
+
+---
+
+## SEC-21: `Secure` do cookie por configuração e limpeza com os mesmos atributos — 2026-10-29
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 24, aberto em 2026-10-29, fechado em 2026-10-30).
+**Camadas:** Segurança, Backend, Deploy, Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 8; invariante I-15).
+
+**Entregue:**
+- 🟡 **BackBrain:** env nova `COOKIE_SECURE` (default `true`) em `SH/config/config.go`, usada por `API/internal/httpx/cookies.go` no lugar de `r.Host`; `LimparCookiesSessao` com os mesmos atributos da criação (`HttpOnly`, `Secure`, `SameSite`, `Path`); ligação em `API/internal/bootstrap/identidade.go` e `identidadehttp/auth_handler.go`. `Makefile`: `dev-api`/`run-api` exportam `COOKIE_SECURE ?= false`. `deploy/setup-servidor.sh` força `COOKIE_SECURE=true` no `api.env`; `deploy/api.env.example` e `.env.example` atualizados.
+- 🔴 **TestBrain:** `apis/shared/tests/config/sec21_cookie_secure_config_test.go`, `sec21_makefile_setup_test.go`, `apis/rotaperfumes-api/tests/bootstrap/sec21_cookie_secure_test.go`, `tests/httpx/sec18_sec20_sec21_test.go` e `tests/handlers/sec20_sec21_http_test.go` (Host forjado não desliga `Secure`; Set-Cookie de logout com os atributos corretos; Makefile e setup do servidor).
+
+---
+
+## SEC-22: login e refresh não revelam usuário inativo — 2026-10-29
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 24, aberto em 2026-10-29, fechado em 2026-10-30).
+**Camadas:** Segurança, Backend (shared), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 9; invariante I-16).
+
+**Entregue:**
+- 🟡 **BackBrain:** `SH/identidade/identidadeapp/login.go` verifica a senha (ou roda o hash descartável) sempre, inclusive para inativo, e responde `401` `"credenciais inválidas"` com o mesmo custo e o mesmo corpo. `sessao.go`: refresh de inativo revoga o token com motivo `inativacao` e responde `401` `"refresh token revogado"`. `ErrUsuarioInativo` removido de `SH/identidade/erros.go`. O `401` `"usuário inativo"` do middleware, nas rotas autenticadas, continua.
+- 🔴 **TestBrain:** `apis/shared/tests/identidade/sec22_inativo_test.go` e `apis/rotaperfumes-api/tests/handlers/sec22_inativo_http_test.go` (mensagem e corpo idênticos nos três casos, hash executado nos três, refresh de inativo com revogação `inativacao`). Observação: o corpo de erro real serializa `{"error":"...","success":false}` (chaves em ordem alfabética).
+
+---
+
+### Testes e cobertura do Lote 24
+
+- `go test -count=1 ./...` verde nas duas suítes (`apis/shared` e `apis/rotaperfumes-api`); nenhum bug encontrado pelo 🔴 TestBrain.
+- Cobertura dos pacotes tocados: `shared/config` 100%, `httpx` 100%, `identidadehttp` 100%, `identidadecrypto` 94,6%, `identidadeapp` 93,4%.
+- `make test` falha só pelo `covdata` do toolchain (card TST-08), não pelos testes.
+- Testes de suítes antigas ajustados à nova mensagem do inativo e às novas regras de config (ex.: `tests/handlers/auth_handler_test.go`, `auth_refresh_logout_test.go`, `identidade_arq03_test.go`, `tests/routes/routes_test.go`, `apis/shared/tests/config/config_test.go`, `apis/shared/tests/services/auth_service_test.go`).
+
+### Documentação do Lote 24 (🔵 SubBrain)
+
+- `postman/collection.json`: exemplo "401 Unauthorized — Usuário inativo" do Login passou a `"credenciais inválidas"`; novo exemplo "401 Unauthorized — Refresh de usuário inativo" no Refresh Token; nota SEC-22 na descrição do Refresh; seção "Mudanças de contrato do Lote 24" na descrição da collection.
+- `postman/README.md`: seção "Mudanças do Lote 24", notas no login, no refresh e na credencial do `henrique.rodrigues`.
+- `docs/arquitetura-ddd.md`: linha de erros da Identidade sem `ErrUsuarioInativo`.
+- `docs/arq-00-invariantes-seguranca.md`: I-01, F-06, I-14, I-15 e I-16 com "Resolvido no Lote 24"; GAPs 5, 7, 8 e 9 marcados como resolvidos no mapeamento.
+- `docs/deploy-servidor.md`: `COOKIE_SECURE=true` forçado pelo script, item 5 (conferir `JWT_SECRET` ≥ 32 bytes e `COOKIE_SECURE` no Secret file do Jenkins) e notas na seção 5.1 e em "HTTPS é obrigatório".
+- `docs/roteiro-teste-manual-lote6.md` (1.6) e `docs/roteiro-teste-manual-vendedor-desligado.md` (passo de pré-checagem, 4.4 e nota da seção 5): login de inativo com `"credenciais inválidas"` e refresh com `"refresh token revogado"`.
+- `CLAUDE.md`: não alterado (sem comando novo; o `COOKIE_SECURE` já é tratado pelos alvos do `make`). `docs/manual-base-de-dados.md` não foi tocado (em edição pelo 🌸 DataBrain no Lote 25; sem mudança de schema neste lote).
 
 ---
 ## Lote 23 de 2026-10-29: 2 cards concluídos (DB-03 e SEC-28, este resolvido pelo DB-03)
@@ -9,7 +272,7 @@
 >
 > **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (riscos) → 🌸 DataBrain (infra de banco) → 🟡 BackBrain (comentários/logs Go) → 🔴 TestBrain (testes) → 🔵 SubBrain (docs e fechamento). Sem mudança de schema e sem mudança de contrato HTTP; o 🟢 FrontBrain não participou.
 >
-> **Commit:** código e docs **não commitados** no fechamento (pendente do 🤍 MegaBrain/usuário).
+> **Commit:** commitado pelo usuário (commits `c87a30d` "troca de servidor sql" e `186b15f` "mudanoca de sql"; informado ao 🤍 MegaBrain em 2026-10-29).
 >
 > **Saíram do lote (em `afazer.md`, bloco "Achados do DB-03"):** SEC-29 (TLS Go ↔ MariaDB, MÉDIA), SEC-30 (ed25519, BAIXA), SEC-31 (imagem do Jenkins por digest, BAIXA), DB-04 (`ONLY_FULL_GROUP_BY`, BAIXA) e DEPLOY-02 (hardening do servidor com bind já aberto, MÉDIA).
 
@@ -57,7 +320,7 @@
 >
 > **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (requisitos de segurança) → 🟡 BackBrain (endpoint) → 🟢 FrontBrain (tela) → 🔴 TestBrain (testes) → 🔵 SubBrain (docs, Postman e fechamento). Sem mudança de schema (os dados já estão em `oportunidades.etapa`, `sql/15_ddl_oportunidades.sql`), então o 🌸 DataBrain não participou.
 >
-> **Commit:** código e docs **não commitados** no fechamento (pendente do 🤍 MegaBrain/usuário).
+> **Commit:** commitado pelo usuário (commit `4b7ec21` "Dashboard com funil"; conferido pelo 🤍 MegaBrain no git em 2026-10-29). No fechamento, código e docs estavam sem commit.
 >
 > **Saíram do lote (em `afazer.md`):** DOC-06, BUG-19 e FE-15 (todos BAIXA).
 

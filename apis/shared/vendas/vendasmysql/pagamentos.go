@@ -161,6 +161,21 @@ func (r *Pagamentos) Atualizar(ctx context.Context, id int64, p *vendas.Pagament
 		nullTime(p.DataPagamento), p.StatusPagamento, id)
 }
 
+// AtualizarSeNaoQuitado é o Atualizar do perfil restrito (SEC-27): o
+// UPDATE só casa se o pagamento NÃO estiver quitado, no mesmo statement
+// (sem janela entre ler e gravar). Nenhuma linha casada (inexistente ou
+// quitado) vira ErrPagamentoNaoEncontrado; o caso de uso relê para
+// distinguir o 404 do 409.
+func (r *Pagamentos) AtualizarSeNaoQuitado(ctx context.Context, id int64, p *vendas.Pagamento) error {
+	const q = `
+		UPDATE pagamentos
+		SET forma_pagamento = ?, parcelas = ?, valor = ?, taxa_pct = ?, valor_liquido = ?, data_vencimento = ?, data_pagamento = ?, status_pagamento = ?
+		WHERE pagamento_id = ? AND status_pagamento NOT IN (?, ?)`
+	return db.ExecPorID(ctx, r.q, arqPagamentos, "Pagamentos.AtualizarSeNaoQuitado", "vendasmysql: update pagamento nao quitado", vendas.ErrPagamentoNaoEncontrado,
+		q, p.FormaPagamento, p.Parcelas, p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento,
+		nullTime(p.DataPagamento), p.StatusPagamento, id, string(vendas.StatusPago), string(vendas.StatusPagoComAtraso))
+}
+
 // ExistePorPedido informa se há pagamento do pedido (trava V-01 da exclusão).
 func (r *Pagamentos) ExistePorPedido(ctx context.Context, pedidoID int64) (bool, error) {
 	return db.Existe(ctx, r.q, arqPagamentos, "Pagamentos.ExistePorPedido", "vendasmysql: exists pagamento por pedido_id",

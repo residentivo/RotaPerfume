@@ -185,30 +185,20 @@ func TestARQ02_PUT_IgnoraCamposNaoEditaveis(t *testing.T) {
 	}
 }
 
-// TestARQ02_IDNegativoOuZero_Vira404: o parse legado (ParseInt) aceita
-// negativo e zero; a consulta não acha e a resposta é 404, não 400.
-func TestARQ02_IDNegativoOuZero_Vira404(t *testing.T) {
+// TestARQ02_IDNegativoOuZero_Vira400 (CHORE-03): o parse estrito recusa
+// negativo e zero com 400 "id inválido" antes de qualquer SQL (era 404).
+func TestARQ02_IDNegativoOuZero_Vira400(t *testing.T) {
 	admin := generateToken(t, testCfg(), 1, "admin")
-	casos := []struct {
-		path, sqlRe, msg string
-		id               int64
-		vazio            func() *sqlmock.Rows
-	}{
-		{"/api/produtos/-1", `FROM produtos WHERE id = \?`, "produto não encontrado", -1, emptyProdutoRowsForHandler},
-		{"/api/produtos/0", `FROM produtos WHERE id = \?`, "produto não encontrado", 0, emptyProdutoRowsForHandler},
-		{"/api/estoque/-3", `FROM estoque.+WHERE e\.id = \?`, "registro de estoque não encontrado", -3, emptyEstoqueRowsForHandler},
-	}
-	for _, c := range casos {
-		t.Run(c.path, func(t *testing.T) {
+	for _, path := range []string{"/api/produtos/-1", "/api/produtos/0", "/api/estoque/-3"} {
+		t.Run(path, func(t *testing.T) {
 			server, db, mock := setupTestServer(t)
 			defer server.Close()
 			defer db.Close()
-			mock.ExpectQuery(c.sqlRe).WithArgs(c.id).WillReturnRows(c.vazio())
 
-			status, corpo := arq02Get(t, server, c.path, admin)
-			assert.Equal(t, http.StatusNotFound, status)
-			assert.Equal(t, c.msg, decodeResponse(t, []byte(corpo))["error"])
-			assert.NoError(t, mock.ExpectationsWereMet())
+			status, corpo := arq02Get(t, server, path, admin)
+			assert.Equal(t, http.StatusBadRequest, status)
+			assert.Equal(t, "id inválido", decodeResponse(t, []byte(corpo))["error"])
+			assert.NoError(t, mock.ExpectationsWereMet(), "nenhum SQL")
 		})
 	}
 }

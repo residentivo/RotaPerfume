@@ -64,8 +64,8 @@ func TestIPDoCliente(t *testing.T) {
 		want   string
 	}{
 		{"sem proxy: RemoteAddr sem porta", "10.0.0.1:5555", "1.1.1.1", "2.2.2.2", false, "10.0.0.1"},
-		{"proxy confiável: 1º do XFF", "10.0.0.1:5555", " 1.1.1.1 , 9.9.9.9", "2.2.2.2", true, "1.1.1.1"},
-		{"proxy confiável sem XFF: X-Real-IP", "10.0.0.1:5555", "", "2.2.2.2", true, "2.2.2.2"},
+		{"proxy confiável: item mais à direita do XFF (SEC-20)", "10.0.0.1:5555", " 1.1.1.1 , 9.9.9.9", "2.2.2.2", true, "9.9.9.9"},
+		{"proxy confiável sem XFF: X-Real-IP ignorado, RemoteAddr (SEC-20)", "10.0.0.1:5555", "", "2.2.2.2", true, "10.0.0.1"},
 		{"proxy confiável sem headers: RemoteAddr", "10.0.0.1:5555", "", "", true, "10.0.0.1"},
 		{"RemoteAddr sem porta fica como está", "10.0.0.1", "", "", false, "10.0.0.1"},
 	}
@@ -86,8 +86,7 @@ func TestIPDoCliente(t *testing.T) {
 
 func TestCookiesDeSessao(t *testing.T) {
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "https://api.exemplo.com/x", nil)
-	httpx.DefinirCookiesSessao(w, r, "acesso", "refresh", time.Hour)
+	httpx.DefinirCookiesSessao(w, "acesso", "refresh", time.Hour, true)
 	cs := w.Result().Cookies()
 	if assert.Len(t, cs, 2) {
 		assert.Equal(t, httpx.CookieAcesso, cs[0].Name)
@@ -99,8 +98,8 @@ func TestCookiesDeSessao(t *testing.T) {
 	}
 	local := httptest.NewRequest("POST", "http://localhost:8080/x", nil)
 	w = httptest.NewRecorder()
-	httpx.DefinirCookiesSessao(w, local, "a", "r", time.Hour)
-	assert.False(t, w.Result().Cookies()[0].Secure, "SEC-21 preservado: Secure por r.Host")
+	httpx.DefinirCookiesSessao(w, "a", "r", time.Hour, true)
+	assert.True(t, w.Result().Cookies()[0].Secure, "SEC-21: Secure vem de COOKIE_SECURE, não de r.Host")
 	assert.Equal(t, "", httpx.CookieRefreshDe(local))
 }
 

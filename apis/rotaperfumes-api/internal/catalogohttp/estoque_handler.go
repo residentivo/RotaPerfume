@@ -35,7 +35,7 @@ func (h *EstoqueHandler) ListEstoque(w http.ResponseWriter, r *http.Request) {
 // GetEstoque GET /api/estoque/{id}
 func (h *EstoqueHandler) GetEstoque(w http.ResponseWriter, r *http.Request) {
 	const tag = "[estoque] GetEstoque"
-	id, err := httpx.IDDoPathPermissivo(r, "id")
+	id, err := httpx.IDDoPath(r, "id")
 	if err != nil {
 		httpx.ResponderErro(w, tag, err)
 		return
@@ -76,7 +76,7 @@ func (h *EstoqueHandler) UpdateEstoque(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, err := httpx.IDDoPathPermissivo(r, "id")
+	id, err := httpx.IDDoPath(r, "id")
 	if err != nil {
 		httpx.ResponderErro(w, tag, err)
 		return

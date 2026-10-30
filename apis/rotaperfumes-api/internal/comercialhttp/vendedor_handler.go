@@ -122,7 +122,7 @@ func (h *VendedorHandler) DesvincularCliente(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	clienteID, err := httpx.IDDoPathPermissivo(r, "clienteId")
+	clienteID, err := httpx.IDDoPath(r, "clienteId")
 	if err != nil {
 		httpx.ResponderErro(w, tag, errClienteIDPathInvalido)
 		return

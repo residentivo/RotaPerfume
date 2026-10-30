@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"database/sql"
+	"log"
 	"time"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
@@ -81,10 +82,14 @@ type IdentidadeHTTP struct {
 	SenhaHistorico *identidadehttp.SenhaHistoricoHandler
 }
 
-// NovoIdentidadeHTTP monta os handlers sobre os casos de uso.
+// NovoIdentidadeHTTP monta os handlers sobre os casos de uso. Com
+// COOKIE_SECURE=false loga um aviso (cookies sem Secure, SEC-21).
 func NovoIdentidadeHTTP(c *identidadeapp.Casos, cfg *config.Config) IdentidadeHTTP {
+	if !cfg.CookieSecure {
+		log.Printf("[config] COOKIE_SECURE=false: cookies de sessão sem Secure (somente dev em HTTP)")
+	}
 	return IdentidadeHTTP{
-		Auth:           identidadehttp.NovoAuthHandler(c, cfg.JWTTTL, cfg.TrustProxyHeaders),
+		Auth:           identidadehttp.NovoAuthHandler(c, cfg.JWTTTL, cfg.TrustProxyHeaders, cfg.CookieSecure),
 		Usuario:        identidadehttp.NovoUsuarioHandler(c, cfg.TrustProxyHeaders),
 		SenhaHistorico: identidadehttp.NovoSenhaHistoricoHandler(c),
 	}

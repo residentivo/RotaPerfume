@@ -35,10 +35,15 @@ func produtoColunasHeader() []string {
 }
 
 func produtoRows() *sqlmock.Rows {
+	return produtoRowsAtivo(true)
+}
+
+// produtoRowsAtivo é o produto 1 com o ativo informado (releitura do toggle).
+func produtoRowsAtivo(ativo bool) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows(produtoColunasHeader()).
 		AddRow(int64(1), "SKU-001", "Perfume Teste", "Perfumaria", "Marca X", "Cítrico",
-			99.90, 45.00, "UN", nil, true, now, now)
+			99.90, 45.00, "UN", nil, ativo, now, now)
 }
 
 func emptyProdutoRows() *sqlmock.Rows {
@@ -176,15 +181,14 @@ func TestProdutoService_GetProdutoByID(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProdutoService_ToggleAtivoProduto(t *testing.T) {
-	t.Run("ativo nil - inverte status atual (toggle)", func(t *testing.T) {
+	selectProduto := `SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`
+
+	t.Run("ativo nil - inverte no próprio UPDATE e relê (BUG-17)", func(t *testing.T) {
 		db, mock := newProdutoTestDB(t)
-		// produto atual está ativo=true
-		mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
+		mock.ExpectExec(`UPDATE produtos SET ativo = NOT ativo WHERE id = \?`).
 			WithArgs(int64(1)).
-			WillReturnRows(produtoRows())
-		mock.ExpectExec(`UPDATE produtos SET ativo = \? WHERE id = \?`).
-			WithArgs(false, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectQuery(selectProduto).WithArgs(int64(1)).WillReturnRows(produtoRowsAtivo(false))
 
 		casos := novosCasosCatalogo(db)
 		p, err := casos.AlternarAtivoProduto(context.Background(), 1, nil)
@@ -195,12 +199,10 @@ func TestProdutoService_ToggleAtivoProduto(t *testing.T) {
 
 	t.Run("ativo explícito - define valor informado", func(t *testing.T) {
 		db, mock := newProdutoTestDB(t)
-		mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
-			WithArgs(int64(1)).
-			WillReturnRows(produtoRows())
 		mock.ExpectExec(`UPDATE produtos SET ativo = \? WHERE id = \?`).
 			WithArgs(true, int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectQuery(selectProduto).WithArgs(int64(1)).WillReturnRows(produtoRowsAtivo(true))
 
 		casos := novosCasosCatalogo(db)
 		ativo := true
@@ -210,11 +212,11 @@ func TestProdutoService_ToggleAtivoProduto(t *testing.T) {
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("produto não encontrado no GetByID", func(t *testing.T) {
+	t.Run("produto não encontrado - UPDATE sem linha", func(t *testing.T) {
 		db, mock := newProdutoTestDB(t)
-		mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
+		mock.ExpectExec(`UPDATE produtos SET ativo = NOT ativo WHERE id = \?`).
 			WithArgs(int64(999)).
-			WillReturnRows(emptyProdutoRows())
+			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		casos := novosCasosCatalogo(db)
 		p, err := casos.AlternarAtivoProduto(context.Background(), 999, nil)
@@ -223,14 +225,12 @@ func TestProdutoService_ToggleAtivoProduto(t *testing.T) {
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("produto some entre GetByID e SetAtivo (corrida) - ErrNotFound no SetAtivo", func(t *testing.T) {
+	t.Run("produto some entre o UPDATE e a releitura (corrida) - 404", func(t *testing.T) {
 		db, mock := newProdutoTestDB(t)
-		mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
+		mock.ExpectExec(`UPDATE produtos SET ativo = NOT ativo WHERE id = \?`).
 			WithArgs(int64(1)).
-			WillReturnRows(produtoRows())
-		mock.ExpectExec(`UPDATE produtos SET ativo = \? WHERE id = \?`).
-			WithArgs(false, int64(1)).
-			WillReturnResult(sqlmock.NewResult(0, 0))
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectQuery(selectProduto).WithArgs(int64(1)).WillReturnRows(emptyProdutoRows())
 
 		casos := novosCasosCatalogo(db)
 		p, err := casos.AlternarAtivoProduto(context.Background(), 1, nil)

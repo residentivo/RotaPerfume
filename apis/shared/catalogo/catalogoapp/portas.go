@@ -17,12 +17,16 @@ type Produtos interface {
 	// PorID devolve catalogo.ErrProdutoNaoEncontrado se o id não existir.
 	PorID(ctx context.Context, id int64) (*catalogo.Produto, error)
 	ExisteSKU(ctx context.Context, sku catalogo.SKU) (bool, error)
-	// Inserir grava o produto e preenche p.ID.
+	// Inserir grava o produto e preenche p.ID; catalogo.ErrSKUDuplicado se
+	// o SKU já existir (uk_produtos_sku).
 	Inserir(ctx context.Context, p *catalogo.Produto) error
 	// Atualizar e DefinirAtivo devolvem catalogo.ErrProdutoNaoEncontrado se
 	// nenhuma linha casar com o id.
 	Atualizar(ctx context.Context, id int64, c catalogo.CamposProduto) error
 	DefinirAtivo(ctx context.Context, id int64, ativo bool) error
+	// AlternarAtivo inverte o status no próprio UPDATE (BUG-17: atômico sob
+	// concorrência); catalogo.ErrProdutoNaoEncontrado sem linha.
+	AlternarAtivo(ctx context.Context, id int64) error
 }
 
 // Estoques é o repositório de registros de estoque.
@@ -33,7 +37,8 @@ type Estoques interface {
 	UltimaPosicao(ctx context.Context, f catalogo.FiltroEstoque, p kernel.Pagina) (kernel.Resultado[catalogo.RegistroEstoque], error)
 	// PorID devolve catalogo.ErrEstoqueNaoEncontrado se o id não existir.
 	PorID(ctx context.Context, id int64) (*catalogo.RegistroEstoque, error)
-	// Inserir grava o registro e preenche e.ID.
+	// Inserir grava o registro e preenche e.ID; catalogo.ErrEstoqueDuplicado
+	// se já houver registro do sku na data (uk_estoque_data_sku).
 	Inserir(ctx context.Context, e *catalogo.RegistroEstoque) error
 	// AtualizarSaldo devolve catalogo.ErrEstoqueNaoEncontrado se nenhuma
 	// linha casar com o id.

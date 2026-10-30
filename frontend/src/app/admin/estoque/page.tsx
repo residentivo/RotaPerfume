@@ -21,6 +21,7 @@ import { EstoqueModal } from "@/components/admin/EstoqueModal";
 import { apiListEstoque, apiCreateEstoque, apiUpdateEstoque } from "@/lib/api";
 import { Estoque, EstoqueInput } from "@/lib/types";
 import { useSessionUser } from "@/lib/session";
+import { ApiError } from "@/lib/apiError";
 import { formatarData } from "@/lib/formatarData";
 import { vlog } from "@/lib/vlog";
 
@@ -303,7 +304,13 @@ function EstoquePageContent() {
       const message =
         err instanceof Error ? err.message : "Erro ao salvar registro de estoque.";
       vlog(FILE, "EstoquePageContent.handleModalSubmit", "convertendo para mensagem amigavel se for erro de permissao");
-      const friendly = /403|forbidden|permiss|acesso negado/i.test(message)
+      // CHORE-06: 409 de duplicidade (mesmo sku na mesma data) mostra a
+      // mensagem do backend e orienta a editar o registro existente.
+      vlog(FILE, "EstoquePageContent.handleModalSubmit", "verificando se e conflito 409 de duplicidade");
+      const conflito = err instanceof ApiError && err.status === 409;
+      const friendly = conflito
+        ? `${message.replace(/\.?\s*$/, ".")} Edite o registro existente.`
+        : /403|forbidden|permiss|acesso negado/i.test(message)
         ? "Voce nao tem permissao para criar ou editar registros de estoque (acao restrita a administradores)."
         : message;
       // Relancado com mensagem amigavel: o EstoqueModal exibe este erro no

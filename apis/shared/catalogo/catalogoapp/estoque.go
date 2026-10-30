@@ -2,6 +2,8 @@ package catalogoapp
 
 import (
 	"context"
+	"errors"
+	"log"
 
 	"github.com/rotaperfumes/shared/appkit"
 	"github.com/rotaperfumes/shared/catalogo"
@@ -62,6 +64,9 @@ func (c *Casos) AjustarEstoque(ctx context.Context, d catalogo.DadosEstoque) (e 
 		return nil, catalogo.ErrEstoqueSKUInexistente
 	}
 	if err = c.estoques.Inserir(ctx, e); err != nil {
+		if errors.Is(err, catalogo.ErrEstoqueDuplicado) {
+			log.Printf("[estoque] registro duplicado recusado (uk_estoque_data_sku)")
+		}
 		return nil, err
 	}
 	return appkit.RelerCriado(ctx, "[estoque] criado, mas falhou a releitura: id", e.ID, e, c.estoques.PorID), nil

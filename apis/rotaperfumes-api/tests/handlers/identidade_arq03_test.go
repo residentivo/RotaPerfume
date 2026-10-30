@@ -92,7 +92,7 @@ func TestARQ03_ContratoJSON_ListUsuarios_ByteAByte(t *testing.T) {
 }
 
 func TestARQ03_Handlers_MontagemSemCasosPanica(t *testing.T) {
-	assert.Panics(t, func() { identidadehttp.NovoAuthHandler(nil, time.Hour, false) })
+	assert.Panics(t, func() { identidadehttp.NovoAuthHandler(nil, time.Hour, false, true) })
 	assert.Panics(t, func() { identidadehttp.NovoUsuarioHandler(nil, false) })
 	assert.Panics(t, func() { identidadehttp.NovoSenhaHistoricoHandler(nil) })
 }
@@ -143,7 +143,7 @@ func TestARQ03_FalhaAoEmitirJWT_MensagensDoLegado(t *testing.T) {
 		Limites:    identidadeapp.Limites{Login: ratelimit.Nova(5, time.Minute, time.Minute), Refresh: ratelimit.Nova(5, time.Minute, time.Minute), Reset: ratelimit.Nova(5, time.Minute, time.Minute)},
 		Publicador: identidadeapp.SemPublicador{}, Email: &fakeEmailService{}, Vendedores: vendedoresNenhum{}, Relogio: time.Now,
 	}, identidadeapp.Opcoes{})
-	h := identidadehttp.NovoAuthHandler(casos, cfg.JWTTTL, false)
+	h := identidadehttp.NovoAuthHandler(casos, cfg.JWTTTL, false, cfg.CookieSecure)
 
 	hash, err := gerarHashSenha(cfg.HashSenha, "senha-correta")
 	require.NoError(t, err)

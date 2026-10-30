@@ -1,4 +1,4 @@
-.PHONY: help reset-senhas-simular reset-senhas-ativos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
+.PHONY: help reset-senhas-simular reset-senhas-ativos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
@@ -137,6 +137,12 @@ db-fix-reuso-detectado: db-check-env ## Adiciona refresh_tokens.reuso_detectado_
 db-revert-reuso-detectado: db-check-env ## Reverte db-fix-reuso-detectado (remove a coluna; perde as marcas de reuso gravadas)
 	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/23_revert_refresh_tokens_reuso_detectado_em.sql
 
+db-fix-taxa-pct-check: db-check-env ## Cria o CHECK chk_pagamentos_taxa_pct (0 a 30) em bancos existentes (SEC-27; aborta sem alterar dados se houver taxa_pct fora da faixa)
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/24_alter_pagamentos_taxa_pct_check.sql
+
+db-revert-taxa-pct-check: db-check-env ## Reverte db-fix-taxa-pct-check (remove o CHECK; o teto de taxa_pct fica so no dominio)
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/24_revert_pagamentos_taxa_pct_check.sql
+
 db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
 	cd apis/shared && go run ./cmd/importclientes
 
@@ -182,13 +188,18 @@ build-all: build
 # =============================================================================
 # Run (binários compilados)
 # =============================================================================
-run-api: build-api ## Sobe a API na porta 8080
+# SEC-21: dev roda em HTTP, então só run-api e dev-api desligam o Secure dos
+# cookies de sessão. "?=": o valor do .env ou do shell continua ganhando.
+# Sem o make (go run ./cmd/server, binário, Docker) o padrão é true.
+dev-api run-api: export COOKIE_SECURE ?= false
+
+run-api: build-api ## Sobe a API na porta 8080 (COOKIE_SECURE=false se não definido)
 	./bin/rotaperfumes-api
 
 # =============================================================================
 # Dev (go run direto)
 # =============================================================================
-dev-api: ## go run API (modo desenvolvimento)
+dev-api: ## go run API (modo desenvolvimento; COOKIE_SECURE=false se não definido)
 	cd apis/rotaperfumes-api && go run ./cmd/server
 
 # =============================================================================

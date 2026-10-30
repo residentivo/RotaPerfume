@@ -111,7 +111,7 @@ func TestGenerateJWT(t *testing.T) {
 		assert.NotEmpty(t, tok)
 
 		// ValidateJWT agora retorna *AuthClaims diretamente.
-		claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
+		claims, err := identidadecrypto.NovoJWT(cfg).Ler(tok)
 		require.NoError(t, err)
 		assert.Equal(t, int64(42), claims.UserID)
 		assert.Equal(t, "admin", claims.Role)
@@ -135,7 +135,7 @@ func TestGenerateJWT(t *testing.T) {
 			t.Run(c.role, func(t *testing.T) {
 				tok, err := identidadecrypto.NovoJWT(cfg).Emitir(c.uid, kernel.RoleDoBanco(c.role))
 				require.NoError(t, err)
-				claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
+				claims, err := identidadecrypto.NovoJWT(cfg).Ler(tok)
 				require.NoError(t, err)
 				assert.Equal(t, c.uid, claims.UserID)
 				assert.Equal(t, c.role, claims.Role)
@@ -152,7 +152,7 @@ func TestValidateJWT(t *testing.T) {
 	t.Run("token válido retorna claims", func(t *testing.T) {
 		tok, err := identidadecrypto.NovoJWT(cfg).Emitir(7, kernel.RoleDoBanco("normal"))
 		require.NoError(t, err)
-		claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
+		claims, err := identidadecrypto.NovoJWT(cfg).Ler(tok)
 		require.NoError(t, err)
 		assert.Equal(t, int64(7), claims.UserID)
 		assert.Equal(t, "normal", claims.Role)
@@ -186,7 +186,7 @@ func TestValidateJWT(t *testing.T) {
 				for i := 0; i < 50; i++ { // vários tokens (iat/jti variam) para provar estabilidade
 					tok, err := identidadecrypto.NovoJWT(cfg).Emitir(int64(7+i), kernel.RoleDoBanco("normal"))
 					require.NoError(t, err)
-					_, err = identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(manipular(t, tok, c.parte))
+					_, err = identidadecrypto.NovoJWT(cfg).Ler(manipular(t, tok, c.parte))
 					require.Error(t, err, "token com %s manipulado deve ser rejeitado", c.nome)
 					assert.ErrorIs(t, err, identidadecrypto.ErrTokenInvalido)
 				}
@@ -199,24 +199,24 @@ func TestValidateJWT(t *testing.T) {
 		cfgCurto.JWTTTL = -1 * time.Hour // TTL negativo = já expirado
 		tok, err := identidadecrypto.NovoJWT(&cfgCurto).Emitir(1, kernel.RoleDoBanco("normal"))
 		require.NoError(t, err)
-		_, err = identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
+		_, err = identidadecrypto.NovoJWT(cfg).Ler(tok)
 		assert.Error(t, err, "token expirado deve falhar")
 	})
 
 	t.Run("segredo errado é rejeitado", func(t *testing.T) {
 		tok, err := identidadecrypto.NovoJWT(cfg).Emitir(1, kernel.RoleDoBanco("normal"))
 		require.NoError(t, err)
-		_, err = identidadecrypto.NovoJWT(&config.Config{JWTSecret: "outro-segredo"}).Ler(tok)
+		_, err = identidadecrypto.NovoJWT(&config.Config{JWTSecret: "outro-segredo-de-teste-com-mais-de-32-bytes", JWTIssuer: cfg.JWTIssuer}).Ler(tok)
 		assert.Error(t, err)
 	})
 
 	t.Run("token vazio é rejeitado", func(t *testing.T) {
-		_, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler("")
+		_, err := identidadecrypto.NovoJWT(cfg).Ler("")
 		assert.Error(t, err)
 	})
 
 	t.Run("string aleatória é rejeitada", func(t *testing.T) {
-		_, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler("nao-eh-um-jwt")
+		_, err := identidadecrypto.NovoJWT(cfg).Ler("nao-eh-um-jwt")
 		assert.Error(t, err)
 	})
 }
@@ -228,7 +228,7 @@ func TestAuthClaims(t *testing.T) {
 	t.Run("extração via claims corretos", func(t *testing.T) {
 		tok, err := identidadecrypto.NovoJWT(cfg).Emitir(123, kernel.RoleDoBanco("admin"))
 		require.NoError(t, err)
-		claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
+		claims, err := identidadecrypto.NovoJWT(cfg).Ler(tok)
 		require.NoError(t, err)
 		assert.Equal(t, int64(123), claims.UserID, "uid deve ser extraído corretamente")
 		assert.Equal(t, "admin", claims.Role, "role deve ser extraído corretamente")
@@ -248,7 +248,7 @@ func TestAuthClaims(t *testing.T) {
 			t.Run(c.role, func(t *testing.T) {
 				tok, err := identidadecrypto.NovoJWT(cfg).Emitir(c.uid, kernel.RoleDoBanco(c.role))
 				require.NoError(t, err)
-				claims, err := identidadecrypto.NovoJWT(&config.Config{JWTSecret: cfg.JWTSecret}).Ler(tok)
+				claims, err := identidadecrypto.NovoJWT(cfg).Ler(tok)
 				require.NoError(t, err)
 				assert.Equal(t, c.uid, claims.UserID)
 				assert.Equal(t, c.role, claims.Role)

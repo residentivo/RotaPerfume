@@ -43,9 +43,9 @@
 	}
 
 	# X-Forwarded-For = {client_ip} (IP do cliente, ou CF-Connecting-IP vindo do
-	# host): a API le o valor mais a esquerda com TRUST_PROXY_HEADERS=true e
+	# host): a API le o valor mais a direita com TRUST_PROXY_HEADERS=true e
 	# nada que o cliente mande em X-Forwarded-For passa adiante. X-Real-IP nao
-	# e gerado pelo Caddy: remove o que vier do cliente.
+	# e gerado pelo Caddy (e a API o ignora): remove o que vier do cliente.
 	handle /api/* {
 		reverse_proxy api:8080 {
 			header_up X-Forwarded-For {client_ip}

@@ -145,7 +145,7 @@ func esperarPosseOportunidade(m sqlmock.Sqlmock, id int64) {
 // casos de uso sobre os adapters reais e o sqlmock) ----
 
 var cfgIdentidadeTeste = &config.Config{
-	JWTSecret: "segredo-teste-servicos", JWTIssuer: "rotaperfumes-test", JWTTTL: time.Hour,
+	JWTSecret: "segredo-teste-servicos-com-pelo-menos-32-bytes", JWTIssuer: "rotaperfumes-test", JWTTTL: time.Hour,
 	HashSenha: config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1},
 }
 

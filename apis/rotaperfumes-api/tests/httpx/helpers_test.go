@@ -22,7 +22,7 @@ import (
 
 func testCfg() *config.Config {
 	return &config.Config{
-		JWTSecret: "test-secret-httpx",
+		JWTSecret: "test-secret-httpx-com-pelo-menos-32-bytes",
 		JWTIssuer: "rotaperfumes-test",
 		JWTTTL:    time.Hour,
 	}

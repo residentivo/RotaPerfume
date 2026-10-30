@@ -59,7 +59,7 @@ func capturarLog(t *testing.T) *saida {
 
 func testCfg() *config.Config {
 	return &config.Config{
-		JWTSecret:          "test-secret-bootstrap",
+		JWTSecret:          "test-secret-bootstrap-com-pelo-menos-32-bytes",
 		JWTIssuer:          "rotaperfumes-test",
 		JWTTTL:             time.Hour,
 		CORSAllowedOrigins: []string{"http://app.test"},

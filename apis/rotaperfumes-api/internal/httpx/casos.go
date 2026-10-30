@@ -10,11 +10,11 @@ import (
 // comercialhttp, lição 4 do ARQ-02): ler o {id}, adiar o decode do body e
 // responder o resultado do caso de uso pelo mapper.
 
-// IDOuErro lê o {nome} com o parse permissivo do legado (IDDoPathPermissivo:
-// -1 e 0 seguem e dão 404); não numérico → responde 400 "id inválido" e
-// devolve ok=false.
+// IDOuErro lê o {nome} com o parse estrito de IDDoPath (CHORE-03): zero,
+// negativo, sinal, espaço, não numérico ou overflow → responde 400 "id
+// inválido" (antes do escopo e de qualquer SQL) e devolve ok=false.
 func IDOuErro(w http.ResponseWriter, r *http.Request, tag, nome string) (int64, bool) {
-	id, err := IDDoPathPermissivo(r, nome)
+	id, err := IDDoPath(r, nome)
 	if err != nil {
 		ResponderErro(w, tag, err)
 		return 0, false

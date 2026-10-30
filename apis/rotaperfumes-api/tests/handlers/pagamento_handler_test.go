@@ -515,7 +515,7 @@ func TestCreatePagamento_ValidacaoNegocio(t *testing.T) {
 				p["taxa_pct"] = -1.0
 				return p
 			},
-			wantMsg: "taxa_pct deve ser maior ou igual a zero",
+			wantMsg: "taxa_pct deve estar entre 0 e 30",
 		},
 		{
 			nome: "valor_liquido negativo",

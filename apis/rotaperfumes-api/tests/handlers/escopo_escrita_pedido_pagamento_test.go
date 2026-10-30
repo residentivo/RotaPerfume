@@ -99,6 +99,8 @@ func TestCreatePedido_Normal_ForcaVendedorDoUsuario(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(insertItemRegexH).WithArgs(int64(100), int64(11), 1, 50.0, 0.0, 50.0).
 		WillReturnResult(sqlmock.NewResult(2, 1))
+	expectBaixaEstoquePorItemH(mock, 10, "SKU-010") // BUG-20: nasce Faturado
+	expectBaixaEstoquePorItemH(mock, 11, "SKU-011")
 	mock.ExpectCommit()
 	mock.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(100)).WillReturnRows(pedidoRowsVendedorH(100, 7))
 	mock.ExpectQuery(itensByPedidoRegexH).WithArgs(int64(100)).WillReturnRows(itemPedidoRowsForHandler(100))
@@ -588,8 +590,9 @@ func TestUpdatePagamento_Normal_ProprioEscopo(t *testing.T) {
 	expectEscopoUsuarioH(mock, 2, 2)
 	mock.ExpectQuery(pagamentoByIDRegexH).WithArgs(int64(1)).WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 	mock.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(pedidoRowsVendedorH(1, 2))
-	mock.ExpectExec(updatePagamentoRegH).
-		WithArgs("PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto", int64(1)).
+	// SEC-27: o perfil normal grava com o UPDATE condicionado a "não quitado".
+	mock.ExpectExec(updatePagamentoRegH+`.*AND status_pagamento NOT IN \(\?, \?\)`).
+		WithArgs("PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto", int64(1), "Pago", "Pago com atraso").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(pagamentoByIDRegexH).WithArgs(int64(1)).WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 

@@ -35,7 +35,7 @@ A coleção inclui variáveis pré-definidas. Ajuste `{{base_url}}` se sua API e
 1. Abra a requisição **Login** (`POST /api/auth/login`) — usa `admin@rotaperfumes.com.br` por padrão.
 2. Clique em **Send**.
 3. Os tokens serão salvos automaticamente nas variáveis `token`, `admin_token` e `refresh_token` via script de testes.
-4. Para logar como vendedor, use a requisição **Login — Vendedor** (`POST /api/auth/login` com `rafael.carvalho@rotaperfumes.com.br`, usuário id 5, vinculado ao vendedor 4 ativo). Antes, preencha a variável `senha_vendedor` com a senha de seed (ver a nota abaixo). A requisição salva o token em `vendedor_token` e confere só que `trocar_senha` é booleano: o valor depende de `usuarios.deve_trocar_senha` (`true` se o usuário ainda não trocou a senha; `false` depois da troca, que é o estado do id 5 no banco local em 2026-09-26). O `henrique.rodrigues@...` (id 2), usado antes, está com `ativo = 0` e recebe `401 "usuário inativo"` (DOC-03, 2026-09-26).
+4. Para logar como vendedor, use a requisição **Login — Vendedor** (`POST /api/auth/login` com `rafael.carvalho@rotaperfumes.com.br`, usuário id 5, vinculado ao vendedor 4 ativo). Antes, preencha a variável `senha_vendedor` com a senha de seed (ver a nota abaixo). A requisição salva o token em `vendedor_token` e confere só que `trocar_senha` é booleano: o valor depende de `usuarios.deve_trocar_senha` (`true` se o usuário ainda não trocou a senha; `false` depois da troca, que é o estado do id 5 no banco local em 2026-09-26). O `henrique.rodrigues@...` (id 2), usado antes, está com `ativo = 0` e recebe `401 "credenciais inválidas"` no login (DOC-03, 2026-09-26; até o Lote 24 a mensagem era `"usuário inativo"`, ver SEC-22).
 
 ### 4. Acessar endpoints protegidos
 
@@ -176,6 +176,40 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 |------|----------|---------|
 | DASH-01 | `GET /api/dashboard/funil?janela=30d\|90d\|365d\|all` | Funil de vendas das oportunidades por etapa (cumulativo), com conversão em relação à etapa anterior e ao topo, perdidas, taxa de ganho e total. Acesso autenticado com escopo por `oportunidades.vendedor_id`; sem acesso ou vendedor desligado → `200` zerado. Janela fora do enum → `400`. Detalhe em "GET /api/dashboard/funil" abaixo. No frontend, seção "Funil de vendas" do Dashboard. |
 
+## Mudanças do Lote 24 (2026-10-29): GAPs de segurança ALTA da auditoria ARQ-00
+
+> Muda **uma** mensagem de erro (login de usuário inativo) e o comportamento do refresh de usuário inativo. Rotas e payloads de sucesso não mudaram. Na collection: o exemplo "401 Unauthorized — Usuário inativo" do Login passou a mostrar `"credenciais inválidas"`, e o Refresh Token ganhou o exemplo "401 Unauthorized — Refresh de usuário inativo". Corpo de erro real: as chaves saem em ordem alfabética (`{"error":"...","success":false}`); os exemplos mostram o mesmo conteúdo.
+
+| Card | Onde | Mudança |
+|------|------|---------|
+| SEC-22 | `POST /api/auth/login` | Usuário inativo responde `401` `"credenciais inválidas"`, com o mesmo corpo e o mesmo custo de hash de usuário inexistente e de senha errada (antes: `401` `"usuário inativo"`). A resposta não revela que a conta existe nem que está inativa. |
+| SEC-22 | `POST /api/auth/refresh` | Refresh token ainda ativo de usuário inativo é revogado com motivo `inativacao` e a resposta é `401` `"refresh token revogado"`. |
+| SEC-22 | Rotas autenticadas (Bearer) | Sem mudança: access token válido de usuário inativo continua recebendo `401` `"usuário inativo"` do middleware (SEC-06). |
+| SEC-18 | Access token e `config.Load()` | O JWT precisa ter `iss` igual a `JWT_ISSUER` (aparado; vazio vira `rotaperfumes`), `exp` e algoritmo HS256; `iat` no futuro é recusado (`401`). A API não sobe com `JWT_SECRET` menor que 32 bytes ou igual ao placeholder (erro `config: JWT_SECRET é obrigatório (mínimo de 32 bytes)`) nem com `JWT_TTL <= 0`. |
+| SEC-20 | Rate limit, logs e alertas | O IP do cliente é o item **mais à direita** do `X-Forwarded-For`, validado e normalizado; valor inválido cai no `RemoteAddr`. O `X-Real-IP` deixou de ser lido. Um `X-Forwarded-For` forjado no Postman não troca mais o IP usado pelo rate limit atrás do Caddy. Sem env nova. |
+| SEC-21 | Cookies de sessão (login, refresh, logout) | O `Secure` vem da env `COOKIE_SECURE` (default `true`), não mais do `Host` da requisição. `make dev-api` e `make run-api` usam `COOKIE_SECURE=false` (HTTP local); o `deploy/setup-servidor.sh` força `true`. A limpeza dos cookies no logout usa os mesmos atributos da criação. |
+
+## Mudanças de contrato do Lote 25 (2026-10-30): status de pedido, pagamento quitado, ids e duplicidade
+
+> Mudanças aprovadas pelo usuário em 2026-10-29 (CHORE-03 e CHORE-06 mudam o contrato HTTP; BUG-16, BUG-20 e SEC-27 trazem respostas de erro novas). Algumas recusas são **extensões do 🤍 MegaBrain** para impedir que a baixa de estoque seja burlada (marcadas abaixo). Na collection, cada pasta com rota `{id}` ganhou o exemplo "400 Bad Request — id inválido (CHORE-03, Lote 25)"; Pedidos, Pagamentos, Produtos e Estoque ganharam os exemplos `400`/`409` novos; a pasta Vendedores ganhou "Vincular Cliente ao Vendedor" e "Encerrar Vínculo Cliente-Vendedor". O exemplo principal de "Editar Pedido" passou a levar o pedido `100001` de Faturado para Entregue com os mesmos itens (o anterior mudava os itens, o que já dava `409`).
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| CHORE-03 | Todas as 29 rotas com `{id}` | Id de path `<= 0` ou não numérico (`0`, `-1`, `+1`, `abc`, `1.5`, `" 1"`, overflow) → **`400`** `"id inválido"`, sem consultar o banco. Antes, `0` e `-1` chegavam ao repositório e davam `404`. Em `DELETE /api/vendedores/{id}/clientes/{clienteId}`, o `{clienteId}` inválido → `400` `"cliente id inválido"`. O `httpx.IDDoPathPermissivo` foi removido; toda rota usa o `httpx.IDDoPath` estrito. O frontend não muda (os ids vêm da API). |
+| CHORE-06 | `POST /api/produtos` | SKU já usado → **`409`** `"sku já cadastrado"` (antes `500`). |
+| CHORE-06 | `POST /api/estoque` | Par `(data_snapshot, sku)` já existente → **`409`** `"registro de estoque já cadastrado para este sku nesta data"` (antes `500`; esta documentação dizia `400` por engano). A tela de Estoque acrescenta "Edite o registro existente.". |
+| CHORE-06 | `POST /api/vendedores/{id}/clientes` | Vínculo do mesmo par cliente/vendedor na mesma data → **`409`** `"vínculo entre cliente e vendedor já cadastrado nesta data"` (antes `500`). |
+| CHORE-06 | `POST`/`PUT /api/clientes`, `POST /api/usuarios` | Sem mudança: CNPJ (`"cnpj já cadastrado"`) e e-mail (`"email já cadastrado"`) já eram `409`. Em todos os casos o log registra só o índice, sem o valor duplicado. |
+| BUG-16 | `PUT /api/pedidos/{id}` | Máquina de status (`400`, checada antes dos itens, sob o lock do pedido): Faturado → só Entregue (`"pedido faturado só pode ter o status alterado para Entregue"`); Entregue é terminal (`"pedido entregue não pode ter o status alterado"`); Em separação ou Cancelado → Entregue recusado (`"pedido só pode ser marcado como Entregue depois de Faturado"`, **extensão do MegaBrain**). Reenviar o mesmo status continua idempotente. Itens diferentes em pedido Faturado **ou Entregue** → `409` com o texto antigo `"pedido já faturado: não é possível alterar os itens, apenas o status"` (card CHORE-07). Detalhe em "PUT /api/pedidos/{id}". |
+| BUG-16 | `DELETE /api/pedidos/{id}` | Pedido Entregue → **`409`** `"pedido entregue não pode ser excluído"` (**extensão do MegaBrain**). Ordem: pagamentos vinculados primeiro, depois Faturado/Entregue. |
+| BUG-20 | `POST /api/pedidos` | Pedido criado já como Faturado **baixa o estoque** na mesma transação do INSERT (falha na baixa → nada é gravado). Criado como Entregue → **`400`** `"pedido só pode ser marcado como Entregue depois de Faturado"` (**extensão do MegaBrain**). |
+| SEC-27 | `POST`/`PUT /api/pagamentos` | `taxa_pct` fora de 0 a 30 (limites inclusivos) → **`400`** `"taxa_pct deve estar entre 0 e 30"`, para admin e normal. No banco, CHECK `chk_pagamentos_taxa_pct` (migração 24, `make db-fix-taxa-pct-check`; revert `make db-revert-taxa-pct-check`). |
+| SEC-27 | `PUT /api/pagamentos/{id}` | Pagamento quitado (`Pago`/`Pago com atraso`) editado pelo usuário `normal` → **`409`** `"pagamento já quitado não pode ser editado"` (UPDATE condicional; a corrida também dá `409`). Admin edita normalmente (`200`). Inexistente continua `404`. |
+| BUG-17 | `PATCH /api/produtos/{id}/inativar` | Sem body, o toggle é um `UPDATE … SET ativo = NOT ativo` atômico. Contrato igual; o `updated_at` da resposta passa a ser o real. |
+| BUG-17 (nota) | `PUT /api/estoque/{id}` | Sem mudança, só documentado: **PUT de estoque é sobrescrita absoluta** do saldo, inclusive por cima de baixas de faturamento concorrentes. |
+| BUG-19, BUG-21 | Dashboard e baixa de estoque | Sem mudança de contrato. `arredondar2` usa `math.Round` (negativos corretos, nunca `-0`); a ruptura do upsert de faturamento é calculada sobre o saldo já atualizado. |
+| Doc | `DELETE /api/pedidos/{id}` | Correção: o `409` de pagamentos vinculados é `"pedido possui pagamentos vinculados"` (a documentação e o exemplo mostravam um sufixo que a API não envia). |
+
 ## Endpoints
 
 ### Healthcheck
@@ -192,6 +226,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Resposta:** `{ "success": true, "data": { "access_token", "refresh_token", "token_type", "expires_in", "user": {...}, "trocar_senha" } }`
 - **Nota:** `trocar_senha` reflete diretamente a coluna `usuarios.deve_trocar_senha` (não é mais calculado comparando a senha digitada com uma constante fixa). Fica `true` quando o usuário foi criado ou teve a senha resetada pelo admin e ainda não trocou a senha voluntariamente; volta a `false` após `POST /api/auth/reset-password`.
 - **CAPTCHA:** `captchaToken` (string, **obrigatório**) é o token do widget Cloudflare Turnstile, validado server-side contra `https://challenges.cloudflare.com/turnstile/v0/siteverify` (fail-closed, timeout 4s). Ver seção "CAPTCHA (Cloudflare Turnstile)" abaixo.
+- **Anti-enumeração (SEC-22, Lote 24, 2026-10-29):** usuário inexistente, usuário inativo e senha errada respondem igual: `401` `"credenciais inválidas"`, com o mesmo custo de hash. Antes, o inativo recebia `401` `"usuário inativo"`.
 
 #### POST /api/auth/refresh
 - **Auth:** nenhuma (usa `refresh_token` no body)
@@ -216,6 +251,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
   - A resposta HTTP continua idêntica (`401` `"refresh token revogado"`) e o reuso fora da janela continua contando no rate limit.
 - **Reuso repetido do mesmo token (SEC-12, Lote 12, 2026-09-27):** só o primeiro reuso de um token `rotacao` revoga todas as sessões e envia o alerta. Novos reusos do **mesmo** token dentro de `REFRESH_REUSE_SUPPRESS_WINDOW` (padrão 30 min) só geram o log `[auth][seguranca] refresh: reuso repetido de token rotacionado dentro da janela de supressão — sessões NÃO revogadas de novo`, sem revogar nem enviar e-mail; depois da janela, o reuso volta a cortar. A supressão é por token: reuso de **outro** token roubado continua cortando. Resposta idêntica (`401` `"refresh token revogado"`), contando no rate limit.
 - **Usuário inativado (SEC-06):** como os refresh tokens são revogados na inativação, o refresh desse usuário responde `401` `"refresh token revogado"`. `401` `"usuário inativo"` continua valendo para um token ainda válido de usuário inativo.
+- **Refresh de usuário inativo com token ainda ativo (SEC-22, Lote 24, 2026-10-29):** se sobrou um refresh token não revogado (por exemplo, `ativo = 0` gravado direto no banco), o refresh revoga esse token com motivo `inativacao` e responde `401` `"refresh token revogado"`, sem cookie e sem novo par.
 
 #### POST /api/auth/logout
 - **Auth:** nenhuma (usa `refresh_token` no body)
@@ -474,7 +510,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 #### POST /api/produtos
 - **Auth:** Bearer Token (admin) — usuário `normal` recebe `403`
 - **Body:** `{ "sku", "descricao", "categoria", "marca", "nota_olfativa", "preco_tabela", "custo_unitario", "unidade", "data_lancamento" (opcional, "AAAA-MM-DD") }`
-- **Descrição:** Cria um novo produto. `ativo` é sempre `true` na criação — não é aceito no body. Campos obrigatórios: `sku`, `descricao`, `categoria`, `marca`, `unidade`; `preco_tabela`/`custo_unitario` devem ser `>= 0`. Retorna `201` com o produto criado; `400` em caso de validação.
+- **Descrição:** Cria um novo produto. `ativo` é sempre `true` na criação — não é aceito no body. Campos obrigatórios: `sku`, `descricao`, `categoria`, `marca`, `unidade`; `preco_tabela`/`custo_unitario` devem ser `>= 0`. Retorna `201` com o produto criado; `400` em caso de validação; `409` `"sku já cadastrado"` se o SKU já existir (CHORE-06, Lote 25; antes `500`).
 
 #### GET /api/produtos/{id}
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
@@ -490,6 +526,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Body (opcional):** `{ "ativo": true|false }` — omitido = toggle
 - **Descrição:** Ativa ou inativa o produto (exclusão lógica)
 - **Body inválido (BUG-06, 2026-09-25):** vazio, `null`, `{}` ou `{"ativo":null}` → toggle; `{"ativo":true|false}` → define o valor; body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`, sem alterar o produto.
+- **Toggle atômico (BUG-17, Lote 25, 2026-10-30):** sem valor explícito, a API grava `UPDATE produtos SET ativo = NOT ativo WHERE id = ?` (sem ler antes), então dois toggles concorrentes não se anulam. Com valor explícito, grava `SET ativo = ?`. Nos dois casos o produto é relido para a resposta (o `updated_at` é o real). `404` se não existir. Na tela, o botão fica bloqueado por 1,5 s depois de cada clique. Clientes e usuários ainda leem e invertem (card BUG-22).
 
 ### Pedidos (`/api/pedidos/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-23)
 
@@ -514,6 +551,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Body:** `{ "cliente_id", "vendedor_id", "data_pedido" ("AAAA-MM-DD"), "canal", "status", "itens": [{ "produto_id", "quantidade", "preco_praticado", "desconto_pct" }] }`
 - **Descrição:** Cria um novo pedido com seus itens. `valor_bruto` de cada item e `valor_total` do pedido são calculados no backend (não aceitos no body). `pedido_id_origem` é a PK `BIGINT AUTO_INCREMENT` gerada nativamente pelo MariaDB. Exige ao menos um item. Retorna `201` com o pedido criado (incluindo itens); `400` em caso de validação. Não existe mais campo `id` — `pedido_id_origem`/`item_id_origem` são os identificadores.
 - **Escopo (usuário `normal`, 2026-09-23):** `403` `"usuário sem vendedor vinculado"` se não houver vendedor vinculado; `vendedor_id` do body é ignorado e forçado ao vendedor do usuário; `400` `"cliente não pertence à carteira deste vendedor"` se `cliente_id` estiver fora da carteira ativa.
+- **Status na criação (BUG-20, Lote 25, 2026-10-30):** criado já como `Faturado`, o pedido baixa o estoque de cada item na mesma transação do INSERT (a mesma baixa da transição no `PUT`); se a baixa falhar, nada é gravado. Criado como `Entregue` → `400` `"pedido só pode ser marcado como Entregue depois de Faturado"`, sem gravar nada (extensão do 🤍 MegaBrain: criar direto em Entregue pularia a baixa). `Em separação` e `Cancelado` não baixam. Na tela, a criação não oferece Entregue.
 
 #### GET /api/pedidos/{id}
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira; `404` para pedido de outro vendedor)
@@ -524,10 +562,19 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Body:** mesmo formato do `POST /api/pedidos`
 - **Descrição:** Atualiza os dados de um pedido existente e substitui integralmente a lista de itens (delete + insert). `valor_bruto`/`valor_total` são recalculados no backend. Retorna `200` com o pedido atualizado (incluindo itens), `404` se não existir, `400` se o payload for inválido.
 - **Escopo (usuário `normal`, 2026-09-23):** `404` `"pedido não encontrado"` (mesmo corpo de inexistente) se o usuário não tiver vendedor vinculado ou o pedido for de outro vendedor; `vendedor_id` do body é forçado ao vendedor do usuário; `400` `"cliente não pertence à carteira deste vendedor"` se `cliente_id` estiver fora da carteira ativa.
+- **Máquina de status (BUG-16, Lote 25, 2026-10-30):** checada dentro da transação, sob `SELECT status … FOR UPDATE`, **antes** da regra de itens. A recusa não grava nada.
+
+  | Status gravado | Destinos aceitos | Recusa (`400`) |
+  |---|---|---|
+  | Em separação / Cancelado | Em separação, Cancelado, Faturado (baixa o estoque) | Entregue → `"pedido só pode ser marcado como Entregue depois de Faturado"` (extensão do 🤍 MegaBrain) |
+  | Faturado | Faturado (idempotente), Entregue (sem nova baixa) | qualquer outro → `"pedido faturado só pode ter o status alterado para Entregue"` |
+  | Entregue (terminal) | Entregue (idempotente) | qualquer outro → `"pedido entregue não pode ter o status alterado"` |
+
+  Nenhuma transição volta para Faturado, então o estoque é baixado uma vez só (antes, Faturado → outro → Faturado baixava duas vezes). Em pedido Faturado ou Entregue, os itens enviados precisam ser iguais aos gravados; itens diferentes → `409` `"pedido já faturado: não é possível alterar os itens, apenas o status"` (texto mantido; revisão no card CHORE-07). Na tela, o select de Status oferece só as transições permitidas, os itens ficam travados e o botão Excluir fica desabilitado em Faturado e Entregue.
 
 #### DELETE /api/pedidos/{id} (adicionado em 2026-09-22)
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal, com escopo por carteira)
-- **Descrição:** Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete). Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (`"pedido possui pagamentos vinculados: remova-os antes de excluir o pedido"`) ou se já estiver com `status = "Faturado"` (`"pedido faturado não pode ser excluído, apenas ter o status alterado"` — nesse caso a única alteração permitida é a de status, via `PUT`). Escopo idêntico ao `GET`/`PUT`: `404` (não `403`) se o pedido pertencer a outro vendedor. Retorna `204` sem corpo em caso de sucesso.
+- **Descrição:** Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete). Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (`"pedido possui pagamentos vinculados"`; corrigido no Lote 25: a documentação mostrava um sufixo que a API não envia), se já estiver com `status = "Faturado"` (`"pedido faturado não pode ser excluído, apenas ter o status alterado"` — pelo BUG-16, a única alteração permitida é para Entregue, via `PUT`) ou se estiver `Entregue` (`"pedido entregue não pode ser excluído"`; BUG-16, Lote 25, extensão do 🤍 MegaBrain). A checagem de pagamentos vem primeiro. Escopo idêntico ao `GET`/`PUT`: `404` (não `403`) se o pedido pertencer a outro vendedor. Retorna `204` sem corpo em caso de sucesso.
 
 ### Pagamentos (`/api/pagamentos/*`) — **acesso comum, com escopo por carteira**
 
@@ -552,7 +599,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 #### POST /api/pagamentos
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
 - **Body:** `{ "pedido_id", "forma_pagamento", "parcelas", "valor", "taxa_pct", "valor_liquido", "data_vencimento" ("AAAA-MM-DD"), "data_pagamento" (opcional, "AAAA-MM-DD"), "status_pagamento" }`
-- **Descrição:** Cria um novo pagamento. `pedido_id` deve existir em `pedidos`. `valor_liquido` é sempre exigido explicitamente no payload — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento em relação ao cálculo direto). `pagamento_id` é gerado automaticamente (AUTO_INCREMENT). Retorna `201` com o pagamento criado; `400` em caso de validação (inclusive `pedido_id` ausente ou `<= 0`); `404` `"pedido não encontrado"` se `pedido_id` não existir (admin e normal, desde 2026-09-24).
+- **Descrição:** Cria um novo pagamento. `pedido_id` deve existir em `pedidos`. `valor_liquido` é sempre exigido explicitamente no payload — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento em relação ao cálculo direto). `pagamento_id` é gerado automaticamente (AUTO_INCREMENT). `taxa_pct` deve estar entre 0 e 30, limites inclusivos (SEC-27, Lote 25): fora disso, `400` `"taxa_pct deve estar entre 0 e 30"`, para admin e normal. Retorna `201` com o pagamento criado; `400` em caso de validação (inclusive `pedido_id` ausente ou `<= 0`); `404` `"pedido não encontrado"` se `pedido_id` não existir (admin e normal, desde 2026-09-24).
 - **Escopo (usuário `normal`, 2026-09-23):** `403` `"usuário sem vendedor vinculado"` se não houver vendedor vinculado; `404` `"pedido não encontrado"` se `pedido_id` pertencer a outro vendedor ou não existir.
 
 #### GET /api/pagamentos/{id}
@@ -564,6 +611,9 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Body:** mesmo formato do `POST /api/pagamentos`, exceto `pedido_id`
 - **Descrição:** Atualiza os campos editáveis de um pagamento existente. `pagamento_id` e `pedido_id` **não** são editáveis por esta rota (o vínculo com o pedido de origem é definitivo — para reatribuir a outro pedido, o fluxo correto é excluir/recriar). Retorna `200` com o pagamento atualizado, `404` se não existir, `400` se o payload for inválido.
 - **Escopo (usuário `normal`, 2026-09-23):** `404` `"pagamento não encontrado"` se o usuário não tiver vendedor vinculado ou o pagamento pertencer a pedido de outro vendedor.
+- **Pagamento quitado (SEC-27, Lote 25, 2026-10-30):** pagamento `Pago` ou `Pago com atraso` só é editável por **admin** (`200`). Para o usuário `normal`, `409` `"pagamento já quitado não pode ser editado"`. O UPDATE do `normal` é condicional (`… WHERE pagamento_id = ? AND status_pagamento NOT IN ('Pago', 'Pago com atraso')`, com os valores vindos do domínio); com 0 linhas, a API relê: inexistente → `404`, quitado (inclusive quitado por outra requisição no meio) → `409`. `Em aberto` → `Pago` continua permitido. Ordem: posse → leitura do body → validação (`400`) → UPDATE (`409`/`404`).
+- **Teto da taxa (SEC-27):** `taxa_pct` fora de 0 a 30 → `400` `"taxa_pct deve estar entre 0 e 30"` (admin e normal).
+- **Na tela:** o usuário `normal` vê "Ver" em vez de "Editar" nos quitados; o modal abre em modo leitura (campos desabilitados, sem Salvar, aviso "Pagamento quitado nao pode ser editado."). O campo Taxa (%) tem `max=30` e a validação "Taxa (%) deve estar entre 0 e 30.".
 
 #### DELETE /api/pagamentos/{id} (adicionado em 2026-09-22)
 - **Auth:** Bearer Token (qualquer usuário autenticado — admin ou normal)
@@ -582,8 +632,8 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | PUT | `/api/vendedores/{id}` | admin only | `403` |
 | DELETE | `/api/vendedores/{id}` | admin only (inativa via `data_desligamento`; em vendedor já desligado responde `200` e preserva a `data_desligamento` original — BUG-04, 2026-09-24) | `403` |
 | POST | `/api/vendedores/{id}/reativar` | admin only | `403` |
-| POST | `/api/vendedores/{id}/clientes` | admin only (vincula/transfere cliente) | `403` |
-| DELETE | `/api/vendedores/{id}/clientes/{clienteId}` | admin only (encerra vínculo) | `403` |
+| POST | `/api/vendedores/{id}/clientes` | admin only (vincula/transfere cliente; vínculo do mesmo par na mesma data → `409` `"vínculo entre cliente e vendedor já cadastrado nesta data"`, CHORE-06, Lote 25) | `403` |
+| DELETE | `/api/vendedores/{id}/clientes/{clienteId}` | admin only (encerra vínculo; `{clienteId}` inválido → `400` `"cliente id inválido"`, CHORE-03, Lote 25) | `403` |
 
 > O `403` retorna `{"success": false, "error": "acesso restrito a administradores"}`. 
 >
@@ -686,6 +736,8 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 >
 > **Hook de faturamento:** ao atualizar um pedido (`PUT /api/pedidos/{id}`) com transição de status para `Faturado`, o sistema decrementa automaticamente o saldo de estoque de cada item do pedido (dentro da mesma transação de `UpdateComItens`, com `SELECT ... FOR UPDATE` para evitar condição de corrida). É idempotente — reenviar o update com status já `Faturado` não baixa estoque de novo — e bloqueia a edição dos itens de um pedido já faturado (a tentativa retorna `409 Conflict`: `{"success": false, "error": "pedido já faturado: não é possível alterar os itens, apenas o status"}`).
 >
+> **Lote 25 (2026-10-30):** pelo BUG-16, Faturado só vai para Entregue e nenhuma transição volta para Faturado, então não há mais baixa dupla no ciclo Faturado → outro → Faturado; os itens também ficam travados em Entregue. Pelo BUG-20, o `POST /api/pedidos` já como Faturado baixa o estoque na mesma transação. Pelo BUG-21, a `ruptura` do upsert é calculada sobre o saldo já atualizado (`ruptura = saldo <= 0`, na ordem de atribuição do MariaDB): saldo 10 com baixa de 6 grava saldo 4 e ruptura 0 (antes, ruptura 1).
+>
 > **Decisão consciente sobre a data do snapshot no faturamento:** a baixa de estoque usa a data/hora atual do servidor (`time.Now()`) como `data_snapshot` no momento do faturamento — **não** a data de criação do pedido (`data_pedido`). Ou seja, o snapshot de estoque reflete o dia em que o faturamento efetivamente ocorreu, e não a data em que o pedido foi originalmente registrado. Isso foi identificado e documentado pelo TestBrain como decisão de negócio (não é bug).
 
 #### GET /api/estoque
@@ -703,12 +755,13 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 #### POST /api/estoque
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "sku", "data_snapshot" ("AAAA-MM-DD"), "saldo" }`
-- **Descrição:** Cria um snapshot de estoque manual. `sku` deve existir em `produtos`; `ruptura` é derivada automaticamente (`saldo <= 0`, não aceita no body). Respeita a constraint `UNIQUE (data_snapshot, sku)` — criar outro registro para o mesmo par retorna `400`. Retorna `201` com o snapshot criado.
+- **Descrição:** Cria um snapshot de estoque manual. `sku` deve existir em `produtos`; `ruptura` é derivada automaticamente (`saldo <= 0`, não aceita no body). Respeita a constraint `UNIQUE (data_snapshot, sku)` — criar outro registro para o mesmo par retorna `409` `"registro de estoque já cadastrado para este sku nesta data"` (CHORE-06, Lote 25, 2026-10-30; antes era `500`, e esta documentação dizia `400` por engano). O registro do dia pode ter sido criado pelo faturamento; para ajustar, edite o registro existente (`PUT`). Na tela de Estoque, o 409 vem com a orientação "Edite o registro existente.". Retorna `201` com o snapshot criado.
 
 #### PUT /api/estoque/{id}
 - **Auth:** Bearer Token (admin)
 - **Body:** `{ "saldo" }`
 - **Descrição:** Atualiza o saldo de um snapshot existente. `sku` e `data_snapshot` **não** são editáveis por esta rota (imutáveis). `ruptura` é recalculada automaticamente. Retorna `200` com o snapshot atualizado, `404` se não existir, `400` se o payload for inválido.
+- **PUT de estoque é sobrescrita absoluta (nota do BUG-17, Lote 25):** o saldo enviado (contagem física) substitui o gravado, com saldo e ruptura no mesmo UPDATE. Ele sobrescreve inclusive baixas de faturamento concorrentes no mesmo snapshot. Comportamento intencional, sem mudança.
 
 ## Testes automatizados (Postman)
 
@@ -1013,6 +1066,8 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Editar Oportunidade | 1 | — |
 | Excluir Oportunidade | 1 | — |
 | Listar Clientes do Vendedor | 2 | — |
+| Vincular Cliente ao Vendedor (Lote 25) | 2 | — |
+| Encerrar Vínculo Cliente-Vendedor (Lote 25) | 1 | — |
 | Listar Visitas | 2 | — |
 | Detalhe da Visita | 1 | — |
 | Criar Visita | 1 | — |
@@ -1027,11 +1082,11 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 | Código | Significado |
 |--------|-------------|
-| 400 | Body inválido ou campos obrigatórios ausentes |
+| 400 | Body inválido ou campos obrigatórios ausentes; `"id inválido"` para id de path não numérico ou `<= 0` (CHORE-03, Lote 25); transição de status de pedido proibida (BUG-16) |
 | 401 | Não autenticado (token ausente/inválido) ou credenciais inválidas |
 | 403 | Acesso restrito a administradores; usuário `normal` sem vendedor vinculado (escritas); ou `"acesso bloqueado: vendedor desligado"` nas rotas da carteira (2026-09-24) |
 | 404 | Recurso não encontrado |
-| 409 | Conflito (ex.: e-mail duplicado) |
+| 409 | Conflito: duplicidade (e-mail, CNPJ, SKU, estoque do SKU na data, vínculo de carteira na data; CHORE-06, Lote 25), pedido Faturado/Entregue (itens ou exclusão), pagamento quitado (exclusão; edição pelo `normal`, SEC-27) |
 | 500 | Erro interno do servidor |
 
 ## Subindo o ambiente

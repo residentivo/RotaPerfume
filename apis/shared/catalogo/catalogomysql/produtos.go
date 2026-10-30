@@ -106,7 +106,10 @@ func (r *Produtos) Inserir(ctx context.Context, p *catalogo.Produto) error {
 	res, err := r.q.ExecContext(ctx, q, p.SKU.String(), p.Descricao, p.Categoria, p.Marca,
 		nullString(p.NotaOlfativa), p.PrecoTabela, p.CustoUnitario, p.Unidade, nullTime(p.DataLancamento), p.Ativo)
 	if err != nil {
-		return fmt.Errorf("catalogomysql: inserir produto: %w", db.SemValorDuplicado(err)) // NB-3: 1062 do SKU sem o valor
+		if db.ChaveDuplicada(err, "uk_produtos_sku") {
+			return catalogo.ErrSKUDuplicado // CHORE-06: sentinela sem embrulhar (o erro do driver traz o SKU)
+		}
+		return fmt.Errorf("catalogomysql: inserir produto: %w", db.SemValorDuplicado(err)) // NB-3: outro 1062 sem o valor
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
@@ -131,6 +134,13 @@ func (r *Produtos) Atualizar(ctx context.Context, id int64, c catalogo.CamposPro
 func (r *Produtos) DefinirAtivo(ctx context.Context, id int64, ativo bool) error {
 	const q = `UPDATE produtos SET ativo = ? WHERE id = ?`
 	return r.exec(ctx, "definir ativo produto", "UPDATE produtos ativo", q, ativo, id)
+}
+
+// AlternarAtivo inverte o status no próprio UPDATE (BUG-17): um único
+// statement, sem ler antes, então dois toggles simultâneos se compõem.
+func (r *Produtos) AlternarAtivo(ctx context.Context, id int64) error {
+	const q = `UPDATE produtos SET ativo = NOT ativo WHERE id = ?`
+	return r.exec(ctx, "alternar ativo produto", "UPDATE produtos ativo toggle", q, id)
 }
 
 // exec roda um UPDATE por id: nenhuma linha casada vira

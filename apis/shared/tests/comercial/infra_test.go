@@ -105,8 +105,8 @@ func TestARQ04_Adapters_PanicSemQuerier(t *testing.T) {
 }
 
 // N-8/O6-iv/E-07: o 1062 do CNPJ vira o sentinela (409) SEM o erro do driver
-// (que traz o CNPJ). O 1062 de carteiras vira ErrVinculoDuplicado (500,
-// como no legado), também sem o valor.
+// (que traz o CNPJ). O 1062 de carteiras vira ErrVinculoDuplicado (409
+// desde o CHORE-06; era 500), também sem o valor.
 func TestARQ04_ChaveDuplicadaSemValorDoDriver(t *testing.T) {
 	ctx := context.Background()
 	dup := &mysql.MySQLError{Number: 1062, Message: "Duplicate entry '11222333000181' for key 'clientes.uq_clientes_cnpj'"}

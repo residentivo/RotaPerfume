@@ -16,9 +16,8 @@ import "github.com/rotaperfumes/shared/kernel"
 var (
 	ErrEmailESenhaObrigatorios = kernel.NovoErro(kernel.KindInvalido, "email e senha são obrigatórios")
 	ErrCredenciaisInvalidas    = kernel.NovoErro(kernel.KindNaoAutenticado, "credenciais inválidas")
-	// ErrUsuarioInativo: login de usuário inativo e refresh de usuário
-	// inativo (SEC-22, GAP preservado: o login revela que a conta existe).
-	ErrUsuarioInativo   = kernel.NovoErro(kernel.KindNaoAutenticado, "usuário inativo")
+	// Usuário inativo no login responde ErrCredenciaisInvalidas e no refresh
+	// ErrRefreshRevogado (SEC-22): a API nunca informa "conta inativa".
 	ErrCaptchaInvalido  = kernel.NovoErro(kernel.KindInvalido, "captcha inválido ou ausente")
 	ErrMuitasTentativas = kernel.NovoErro(kernel.KindBloqueado, "muitas tentativas — tente novamente mais tarde")
 	// ErrGerarToken e ErrGerarAccessToken são 500 com mensagem própria (o

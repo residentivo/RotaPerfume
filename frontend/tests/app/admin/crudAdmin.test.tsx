@@ -6,7 +6,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeResponse } from "@/lib/types";
 
 vi.mock("@/components/layout/ProtectedRoute", () => ({
@@ -48,6 +48,7 @@ import UsuariosPage from "@/app/admin/usuarios/page";
 import VendedoresPage from "@/app/admin/vendedores/page";
 import ProdutosPage from "@/app/admin/produtos/page";
 import EstoquePage from "@/app/admin/estoque/page";
+import { ApiError } from "@/lib/apiError";
 
 function pagina<T>(data: T[]) {
   return { data, page: 1, limit: 20, total: data.length, pages: 1 };
@@ -320,6 +321,42 @@ describe("Estoque - CRUD (admin)", () => {
     await userEvent.click(within(d).getByRole("button", { name: "Salvar alteracoes" }));
     expect(await within(d).findByText(new RegExp(msg))).toBeInTheDocument();
   });
+
+  it("CHORE-06: 409 de duplicidade mostra a mensagem do backend e orienta editar o existente", async () => {
+    api.apiCreateEstoque.mockRejectedValue(
+      new ApiError(409, "registro de estoque já cadastrado para este sku nesta data")
+    );
+    render(<EstoquePage />);
+    await screen.findByText("SKU-5");
+    await esperarDebounce();
+    await userEvent.click(screen.getByRole("button", { name: "+ Novo registro" }));
+    const d = await dialogo();
+    await userEvent.type(within(d).getByLabelText("SKU"), "SKU-5");
+    await userEvent.type(within(d).getByLabelText("Data do snapshot"), "2026-01-01");
+    await userEvent.type(within(d).getByLabelText("Saldo"), "1");
+    await userEvent.click(within(d).getByRole("button", { name: "Criar registro" }));
+    expect(
+      await within(d).findByText(
+        "registro de estoque já cadastrado para este sku nesta data. Edite o registro existente."
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("CHORE-06: erro que nao e 409 nao recebe a orientacao", async () => {
+    api.apiCreateEstoque.mockRejectedValue(new ApiError(400, "saldo invalido"));
+    render(<EstoquePage />);
+    await screen.findByText("SKU-5");
+    await esperarDebounce();
+    await userEvent.click(screen.getByRole("button", { name: "+ Novo registro" }));
+    const d = await dialogo();
+    await userEvent.type(within(d).getByLabelText("SKU"), "SKU-5");
+    await userEvent.type(within(d).getByLabelText("Data do snapshot"), "2026-01-01");
+    await userEvent.type(within(d).getByLabelText("Saldo"), "1");
+    await userEvent.click(within(d).getByRole("button", { name: "Criar registro" }));
+    expect(await within(d).findByText("saldo invalido")).toBeInTheDocument();
+    expect(within(d).queryByText(/Edite o registro existente/)).not.toBeInTheDocument();
+  });
 });
 
 // ─── FE-10 (c): acao deu certo, mas a recarga falhou -> um unico alerta ──────
@@ -548,6 +585,12 @@ describe("FE-11 - mensagem temporaria (usuarios, vendedores, produtos)", () => {
         screen.getByRole("button", { name: "Fechar alerta" }).click();
       });
       expect(screen.queryByText(msg)).not.toBeInTheDocument();
+      // BUG-17: em produtos, o bloqueio do toggle (1500 ms) ainda esta
+      // armado; passado esse tempo (bem antes dos 4 s da mensagem), nenhum
+      // timer pode restar — o da mensagem foi cancelado ao fechar.
+      await act(async () => {
+        vi.advanceTimersByTime(1600);
+      });
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.clearAllTimers();
@@ -572,5 +615,128 @@ describe("FE-11 - mensagem temporaria (usuarios, vendedores, produtos)", () => {
       vi.clearAllTimers();
       vi.useRealTimers();
     }
+  });
+});
+
+// ─── BUG-17: toggle de ativo do produto bloqueado por 1500 ms ────────────────
+
+describe("BUG-17 - bloqueio do toggle de produto", () => {
+  async function montarComFakeTimers() {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiListProdutos.mockResolvedValue(pagina([perfume]));
+    const r = render(<ProdutosPage />);
+    await screen.findByText("Perfume 50");
+    await act(async () => {
+      vi.advanceTimersByTime(420);
+    });
+    return { u, r };
+  }
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("depois do sucesso fica bloqueado 1500 ms e libera; envia sempre o valor explicito", async () => {
+    api.apiToggleProdutoStatus
+      .mockResolvedValueOnce({ ...perfume, ativo: false })
+      .mockResolvedValueOnce({ ...perfume, ativo: true });
+    const { u } = await montarComFakeTimers();
+
+    await u.click(screen.getByTitle("Clique para inativar"));
+    await screen.findByText("Produto inativado com sucesso.");
+    expect(api.apiToggleProdutoStatus).toHaveBeenNthCalledWith(1, 50, false);
+
+    const botao = screen.getByTitle("Clique para reativar");
+    expect(botao).toBeDisabled();
+    // Clique durante o bloqueio nao chama a API nem pede confirmacao.
+    (window.confirm as unknown as ReturnType<typeof vi.fn>).mockClear();
+    await act(async () => {
+      botao.click();
+    });
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(api.apiToggleProdutoStatus).toHaveBeenCalledTimes(1);
+
+    // shouldAdvanceTime deixa o relogio real correr alguns ms entre os
+    // passos; por isso a margem antes/depois dos 1500 ms.
+    await act(async () => {
+      vi.advanceTimersByTime(1300);
+    });
+    expect(screen.getByTitle("Clique para reativar")).toBeDisabled();
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(screen.getByTitle("Clique para reativar")).toBeEnabled();
+
+    await u.click(screen.getByTitle("Clique para reativar"));
+    await screen.findByText("Produto reativado com sucesso.");
+    expect(api.apiToggleProdutoStatus).toHaveBeenNthCalledWith(2, 50, true);
+    expect(screen.getByTitle("Clique para inativar")).toBeDisabled();
+  });
+
+  it("tambem bloqueia depois de erro da API", async () => {
+    api.apiToggleProdutoStatus.mockRejectedValue(new Error("em uso"));
+    const { u } = await montarComFakeTimers();
+    await u.click(screen.getByTitle("Clique para inativar"));
+    await screen.findByText("em uso");
+    expect(screen.getByTitle("Clique para inativar")).toBeDisabled();
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(screen.getByTitle("Clique para inativar")).toBeEnabled();
+  });
+
+  it("cancelar a confirmacao nao bloqueia o toggle", async () => {
+    const { u } = await montarComFakeTimers();
+    (window.confirm as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false);
+    await u.click(screen.getByTitle("Clique para inativar"));
+    expect(api.apiToggleProdutoStatus).not.toHaveBeenCalled();
+    expect(screen.getByTitle("Clique para inativar")).toBeEnabled();
+  });
+
+  it("o bloqueio e por produto: outro produto continua clicavel", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const outro = { ...perfume, id: 51, sku: "P51", descricao: "Perfume 51" };
+    api.apiListProdutos.mockResolvedValue(pagina([perfume, outro]));
+    api.apiToggleProdutoStatus.mockImplementation(async (id: number, ativo: boolean) => ({
+      ...(id === 50 ? perfume : outro),
+      ativo,
+    }));
+    render(<ProdutosPage />);
+    await screen.findByText("Perfume 51");
+    await act(async () => {
+      vi.advanceTimersByTime(420);
+    });
+    const linha50 = screen.getByText("Perfume 50").closest("tr")!;
+    const linha51 = screen.getByText("Perfume 51").closest("tr")!;
+    await u.click(within(linha50).getByTitle("Clique para inativar"));
+    await screen.findByText("Produto inativado com sucesso.");
+    expect(within(linha50).getByTitle("Clique para reativar")).toBeDisabled();
+    expect(within(linha51).getByTitle("Clique para inativar")).toBeEnabled();
+    await u.click(within(linha51).getByTitle("Clique para inativar"));
+    expect(api.apiToggleProdutoStatus).toHaveBeenLastCalledWith(51, false);
+  });
+
+  it("unmount durante o bloqueio limpa o timer (sem setState apos desmontar)", async () => {
+    const erro = vi.spyOn(console, "error");
+    api.apiToggleProdutoStatus.mockResolvedValue({ ...perfume, ativo: false });
+    const { u, r } = await montarComFakeTimers();
+    await u.click(screen.getByTitle("Clique para inativar"));
+    await screen.findByText("Produto inativado com sucesso.");
+    // Fecha a mensagem para isolar o timer do bloqueio.
+    await act(async () => {
+      screen.getByRole("button", { name: "Fechar alerta" }).click();
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    r.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(erro).not.toHaveBeenCalled();
   });
 });

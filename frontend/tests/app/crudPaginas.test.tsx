@@ -18,11 +18,14 @@ vi.mock("@/components/layout/ProtectedRoute", () => ({
 vi.mock("@/components/layout/Navbar", () => ({ Navbar: () => null }));
 
 const ADMIN: MeResponse = { id: 1, nome: "Adm", email: "a@x", role: "admin", ativo: true, id_vendedor: null };
+const NORMAL: MeResponse = { id: 2, nome: "Vend", email: "v@x", role: "normal", ativo: true, id_vendedor: 1, vendedor_nome: "Vend 1" };
+// Usuario da sessao trocavel por teste (padrao: admin).
+const sessao = vi.hoisted(() => ({ user: null as MeResponse | null }));
 vi.mock("@/lib/session", () => ({
-  useSessionUser: () => ADMIN,
+  useSessionUser: () => sessao.user,
   useVendedorDesligado: () => false,
-  getSessionUser: () => ADMIN,
-  refreshSessionUser: () => Promise.resolve(ADMIN),
+  getSessionUser: () => sessao.user,
+  refreshSessionUser: () => Promise.resolve(sessao.user),
 }));
 
 const api = vi.hoisted(() => ({
@@ -66,7 +69,9 @@ const pedido = (id: number, extra: Record<string, unknown> = {}) => ({
   vendedor_nome: "Vend 1",
   data_pedido: "2026-09-01",
   canal: "App",
-  status: "Faturado",
+  // BUG-16: Faturado/Entregue nao podem ser excluidos; o CRUD generico usa
+  // um pedido ainda editavel.
+  status: "Em separação",
   valor_total: 10,
   ...extra,
 });
@@ -279,6 +284,7 @@ const detalhePedido = (id: number) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessao.user = ADMIN;
   Object.values(api).forEach((f) => f.mockReset());
   api.apiListVendedores.mockResolvedValue([
     { id: 1, nome: "Vend 1", regiao: "S", uf: "SP", data_desligamento: null },
@@ -495,6 +501,64 @@ describe("Pedidos - itens do pedido (master-detail)", () => {
     await userEvent.click(screen.getByTitle("Excluir pedido"));
     await screen.findByText("Pedido #5 excluido com sucesso.");
     expect(screen.queryByText("Itens do pedido #5")).not.toBeInTheDocument();
+  });
+});
+
+// ─── BUG-16: pedido Faturado/Entregue nao pode ser excluido ──────────────────
+
+describe("BUG-16 - Excluir pedido por status", () => {
+  it.each<[string, boolean]>([
+    ["Em separação", true],
+    ["Cancelado", true],
+    ["Faturado", false],
+    ["Entregue", false],
+  ])("status %s: Excluir habilitado = %s", async (status, habilitado) => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiListPedidos.mockResolvedValue(pagina([pedido(5, { status })]));
+    render(<PedidosPage />);
+    await aposMontagem("Cliente 5");
+    const botao = screen.getByRole("button", { name: "Excluir" });
+    if (habilitado) {
+      expect(botao).toBeEnabled();
+      expect(botao).toHaveAttribute("title", "Excluir pedido");
+    } else {
+      expect(botao).toBeDisabled();
+      expect(botao).toHaveAttribute(
+        "title",
+        "Pedido faturado ou entregue nao pode ser excluido"
+      );
+      await userEvent.click(botao);
+      expect(confirm).not.toHaveBeenCalled();
+      expect(api.apiDeletePedido).not.toHaveBeenCalled();
+    }
+  });
+});
+
+// ─── SEC-27: pagamento quitado vira "Ver" para o nao-admin ───────────────────
+
+describe("SEC-27 - acao Editar/Ver em pagamentos", () => {
+  it.each<[string, MeResponse, string, string, string]>([
+    ["normal + Pago", NORMAL, "Pago", "Ver", "Ver Pagamento"],
+    ["normal + Pago com atraso", NORMAL, "Pago com atraso", "Ver", "Ver Pagamento"],
+    ["normal + Em aberto", NORMAL, "Em aberto", "Editar", "Editar Pagamento"],
+    ["normal + Inadimplente", NORMAL, "Inadimplente", "Editar", "Editar Pagamento"],
+    ["admin + Pago", ADMIN, "Pago", "Editar", "Editar Pagamento"],
+    ["admin + Pago com atraso", ADMIN, "Pago com atraso", "Editar", "Editar Pagamento"],
+  ])("%s: botao '%s'", async (_n, user, status, botao, titulo) => {
+    sessao.user = user;
+    api.apiListPagamentos.mockResolvedValue(pagina([pagamento(5, { status_pagamento: status })]));
+    render(<PagamentosPage />);
+    await aposMontagem("PIX");
+    await userEvent.click(screen.getByRole("button", { name: botao }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(titulo)).toBeInTheDocument();
+    const salvar = within(dialog).queryByRole("button", { name: "Salvar alteracoes" });
+    if (botao === "Ver") {
+      expect(salvar).not.toBeInTheDocument();
+      expect(within(dialog).getByText("Pagamento quitado nao pode ser editado.")).toBeInTheDocument();
+    } else {
+      expect(salvar).toBeInTheDocument();
+    }
   });
 });
 

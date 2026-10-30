@@ -35,7 +35,7 @@ func (h *ProdutoHandler) ListProdutos(w http.ResponseWriter, r *http.Request) {
 // GetProduto GET /api/produtos/{id}
 func (h *ProdutoHandler) GetProduto(w http.ResponseWriter, r *http.Request) {
 	const tag = "[produtos] GetProduto"
-	id, err := httpx.IDDoPathPermissivo(r, "id")
+	id, err := httpx.IDDoPath(r, "id")
 	if err != nil {
 		httpx.ResponderErro(w, tag, err)
 		return
@@ -76,7 +76,7 @@ func (h *ProdutoHandler) UpdateProduto(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, err := httpx.IDDoPathPermissivo(r, "id")
+	id, err := httpx.IDDoPath(r, "id")
 	if err != nil {
 		httpx.ResponderErro(w, tag, err)
 		return
@@ -103,7 +103,7 @@ func (h *ProdutoHandler) ToggleAtivoProduto(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	id, err := httpx.IDDoPathPermissivo(r, "id")
+	id, err := httpx.IDDoPath(r, "id")
 	if err != nil {
 		httpx.ResponderErro(w, tag, err)
 		return

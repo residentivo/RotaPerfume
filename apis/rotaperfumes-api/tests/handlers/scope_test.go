@@ -248,8 +248,10 @@ func TestEscopo_PermiteVendedor(t *testing.T) {
 		{"admin permite qualquer vendedor", "admin", nil, "99", true},
 		{"normal: mesmo vendedor", "normal", 10, "10", true},
 		{"normal: outro vendedor", "normal", 10, "11", false},
-		{"normal sem vínculo (NULL)", "normal", nil, "0", false},
-		{"normal sem vínculo, id negativo", "normal", 0, "-1", false},
+		// CHORE-03: ids de path 0/-1 agora são 400 antes do escopo; aqui vale
+		// um id válido, para exercitar o escopo sem vínculo.
+		{"normal sem vínculo (NULL)", "normal", nil, "5", false},
+		{"normal com id_vendedor 0", "normal", 0, "5", false},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {

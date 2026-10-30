@@ -195,22 +195,39 @@ func novoItem(d DadosItem) (ItemPedido, kernel.Dinheiro, error) {
 }
 
 // PodeExcluir aplica as travas da exclusão (V-01), na ordem do legado:
-// pagamentos vinculados primeiro, depois o status Faturado (pedido faturado
-// já baixou estoque: só muda de status).
+// pagamentos vinculados primeiro, depois o status: Faturado e Entregue (pós-
+// faturamento, estoque já baixado; BUG-16) não saem.
 func (p *Pedido) PodeExcluir(temPagamentos bool) error {
 	if temPagamentos {
 		return ErrPedidoPossuiPagamentosVinculados
 	}
-	if StatusPedido(p.Status) == StatusFaturado {
+	switch StatusPedido(p.Status) {
+	case StatusFaturado:
 		return ErrPedidoFaturadoNaoPodeSerExcluido
+	case StatusEntregue:
+		return ErrPedidoEntregueNaoPodeSerExcluido
 	}
 	return nil
+}
+
+// PlanejarCriacao decide se a criação do pedido baixa o estoque (BUG-20):
+// criado já como Faturado, baixa na mesma tx (a mesma baixa da transição do
+// PUT); criado como Entregue, é recusado, porque Entregue só vem depois de
+// Faturado e criar direto nele pularia a baixa.
+func PlanejarCriacao(novo *Pedido) (baixarEstoque bool, err error) {
+	switch StatusPedido(novo.Status) {
+	case StatusEntregue:
+		return false, ErrPedidoEntregueSemFaturamento
+	case StatusFaturado:
+		return true, nil
+	}
+	return false, nil
 }
 
 // PlanoAtualizacao diz o que o PUT de pedido grava além do cabeçalho.
 type PlanoAtualizacao struct {
 	// ReescreverItens: os itens são substituídos (DELETE + INSERT). Falso
-	// para pedido já faturado, cujas linhas ficam como estão.
+	// para pedido já faturado ou entregue, cujas linhas ficam como estão.
 	ReescreverItens bool
 	// BaixarEstoque: transição para Faturado (idempotente: reenviar
 	// "Faturado" para um pedido já faturado não baixa de novo).
@@ -218,17 +235,40 @@ type PlanoAtualizacao struct {
 }
 
 // PlanejarAtualizacao decide, a partir do status ATUAL (lido com lock na
-// mesma tx) e dos itens atuais, o que a atualização para novo pode fazer:
-// pedido já faturado não aceita itens diferentes (só a troca de status).
+// mesma tx) e dos itens atuais, o que a atualização para novo pode fazer.
+// Primeiro a transição de status (BUG-16: Faturado só vai para Entregue,
+// Entregue é terminal, Entregue só a partir de Faturado; 400), depois os
+// itens: pedido faturado ou entregue não aceita itens diferentes (409).
 func PlanejarAtualizacao(statusAtual string, itensAtuais []ItemPedido, novo *Pedido) (PlanoAtualizacao, error) {
-	jaFaturado := StatusPedido(statusAtual) == StatusFaturado
-	if jaFaturado && !MesmosItens(itensAtuais, novo.Itens) {
+	atual, destino := StatusPedido(statusAtual), StatusPedido(novo.Status)
+	if err := validarTransicao(atual, destino); err != nil {
+		return PlanoAtualizacao{}, err
+	}
+	posFaturamento := atual == StatusFaturado || atual == StatusEntregue
+	if posFaturamento && !MesmosItens(itensAtuais, novo.Itens) {
 		return PlanoAtualizacao{}, ErrPedidoJaFaturadoNaoPodeAlterarItens
 	}
 	return PlanoAtualizacao{
-		ReescreverItens: !jaFaturado,
-		BaixarEstoque:   !jaFaturado && StatusPedido(novo.Status) == StatusFaturado,
+		ReescreverItens: !posFaturamento,
+		BaixarEstoque:   !posFaturamento && destino == StatusFaturado,
 	}, nil
+}
+
+// validarTransicao é a máquina de status do PUT. Reenviar o mesmo status
+// é sempre permitido (idempotente). Status atual fora do ENUM (lido do
+// banco, não validado) segue a regra dos status não faturados.
+func validarTransicao(atual, destino StatusPedido) error {
+	switch {
+	case atual == destino:
+		return nil
+	case atual == StatusFaturado && destino != StatusEntregue:
+		return ErrPedidoFaturadoSoPodeIrParaEntregue
+	case atual == StatusEntregue:
+		return ErrPedidoEntregueNaoPodeMudarStatus
+	case destino == StatusEntregue && atual != StatusFaturado:
+		return ErrPedidoEntregueSemFaturamento
+	}
+	return nil
 }
 
 // MesmosItens compara as duas listas pelo conteúdo de negócio (produto,

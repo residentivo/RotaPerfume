@@ -13,10 +13,11 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   error?: string;
   options: Option[];
   placeholder?: string;
+  helperText?: string;
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, options, placeholder, className = "", id, ...rest }, ref) => {
+  ({ label, error, options, placeholder, helperText, className = "", id, ...rest }, ref) => {
     vlog("Select.tsx", "Select", "resolvendo id do select, id informado:", !!id);
     const selectId = id || `select-${Math.random().toString(36).slice(2, 9)}`;
     return (
@@ -45,7 +46,13 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             .filter(Boolean)
             .join(" ")}
           aria-invalid={error ? "true" : "false"}
-          aria-describedby={error ? `${selectId}-error` : undefined}
+          aria-describedby={
+            error
+              ? `${selectId}-error`
+              : helperText
+              ? `${selectId}-helper`
+              : undefined
+          }
           {...rest}
         >
           {placeholder && (
@@ -66,6 +73,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             role="alert"
           >
             {error}
+          </p>
+        )}
+        {!error && helperText && (
+          <p id={`${selectId}-helper`} className="mt-1 text-xs text-slate-500">
+            {helperText}
           </p>
         )}
       </div>

@@ -22,8 +22,9 @@ type inativarEndpoint struct {
 	nome string
 	path string
 	// expectToggle registra o SELECT do estado atual (ativo=true) e o UPDATE
-	// com o valor final esperado.
-	expectToggle func(mock sqlmock.Sqlmock, valorFinal bool)
+	// com o valor final esperado. toggle diz se o body pede a inversão (o
+	// produto, BUG-17, inverte no próprio UPDATE e relê depois).
+	expectToggle func(mock sqlmock.Sqlmock, valorFinal, toggle bool)
 }
 
 func inativarEndpoints() []inativarEndpoint {
@@ -31,7 +32,7 @@ func inativarEndpoints() []inativarEndpoint {
 		{
 			nome: "clientes",
 			path: "/api/clientes/1/inativar",
-			expectToggle: func(mock sqlmock.Sqlmock, valorFinal bool) {
+			expectToggle: func(mock sqlmock.Sqlmock, valorFinal, _ bool) {
 				mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
 					WithArgs(int64(1)).WillReturnRows(clienteRowsForHandler())
 				mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
@@ -41,17 +42,22 @@ func inativarEndpoints() []inativarEndpoint {
 		{
 			nome: "produtos",
 			path: "/api/produtos/1/inativar",
-			expectToggle: func(mock sqlmock.Sqlmock, valorFinal bool) {
+			expectToggle: func(mock sqlmock.Sqlmock, valorFinal, toggle bool) {
+				if toggle {
+					mock.ExpectExec(`UPDATE produtos SET ativo = NOT ativo WHERE id = \?`).
+						WithArgs(int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+				} else {
+					mock.ExpectExec(`UPDATE produtos SET ativo = \? WHERE id = \?`).
+						WithArgs(valorFinal, int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+				}
 				mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
-					WithArgs(int64(1)).WillReturnRows(produtoRowsForHandler())
-				mock.ExpectExec(`UPDATE produtos SET ativo = \? WHERE id = \?`).
-					WithArgs(valorFinal, int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+					WithArgs(int64(1)).WillReturnRows(produtoRowsAtivoForHandler(valorFinal))
 			},
 		},
 		{
 			nome: "usuarios",
 			path: "/api/usuarios/1/inativar",
-			expectToggle: func(mock sqlmock.Sqlmock, valorFinal bool) {
+			expectToggle: func(mock sqlmock.Sqlmock, valorFinal, _ bool) {
 				mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 					WithArgs(int64(1)).WillReturnRows(usuarioRowsForHandler(1, true))
 				if valorFinal {
@@ -94,13 +100,14 @@ func TestInativar_BodyValido_ToggleOuDefine(t *testing.T) {
 		body      string
 		semBody   bool
 		wantAtivo bool
+		toggle    bool
 	}{
-		{nome: "sem body (nil)", semBody: true, wantAtivo: false},
-		{nome: "body vazio", body: "", wantAtivo: false},
-		{nome: "só espaços", body: "  \n ", wantAtivo: false},
-		{nome: "null", body: "null", wantAtivo: false},
-		{nome: "objeto vazio", body: "{}", wantAtivo: false},
-		{nome: "ativo null", body: `{"ativo":null}`, wantAtivo: false},
+		{nome: "sem body (nil)", semBody: true, wantAtivo: false, toggle: true},
+		{nome: "body vazio", body: "", wantAtivo: false, toggle: true},
+		{nome: "só espaços", body: "  \n ", wantAtivo: false, toggle: true},
+		{nome: "null", body: "null", wantAtivo: false, toggle: true},
+		{nome: "objeto vazio", body: "{}", wantAtivo: false, toggle: true},
+		{nome: "ativo null", body: `{"ativo":null}`, wantAtivo: false, toggle: true},
 		{nome: "ativo true", body: `{"ativo":true}`, wantAtivo: true},
 		{nome: "ativo false", body: `{"ativo":false}`, wantAtivo: false},
 	}
@@ -110,7 +117,7 @@ func TestInativar_BodyValido_ToggleOuDefine(t *testing.T) {
 				server, db, mock := setupTestServer(t)
 				defer server.Close()
 				defer db.Close()
-				ep.expectToggle(mock, b.wantAtivo)
+				ep.expectToggle(mock, b.wantAtivo, b.toggle)
 
 				status, body := doPatchInativar(t, server.URL+ep.path, b.body, b.semBody)
 

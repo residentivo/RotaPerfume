@@ -89,7 +89,9 @@ func (c *Casos) CriarPagamento(ctx context.Context, p kernel.Principal, ler Leit
 
 // AtualizarPagamento: no escopo restrito, a posse (via pedido do pagamento
 // atual) é checada antes do decode. O comando não tem pedido_id (V-02):
-// não há como mover o pagamento para pedido de outro vendedor.
+// não há como mover o pagamento para pedido de outro vendedor. Pagamento
+// quitado só o admin edita (SEC-27): para o restrito, 409 depois da
+// validação do comando (400).
 func (c *Casos) AtualizarPagamento(ctx context.Context, p kernel.Principal, id int64, ler Leitor[vendas.DadosPagamento]) (pag *vendas.Pagamento, err error) {
 	defer vlog.Trace(arqPagamentos, "Vendas.AtualizarPagamento", "id=%d", id)(&err)
 	e, err := c.noEscopo(ctx, p, vendas.ErrPagamentoNaoEncontrado)
@@ -106,7 +108,7 @@ func (c *Casos) AtualizarPagamento(ctx context.Context, p kernel.Principal, id i
 	if pag, err = d.Pagamento(0); err != nil { // o UPDATE não grava pedido_id
 		return nil, err
 	}
-	if err = c.d.Pagamentos.Atualizar(ctx, id, pag); err != nil {
+	if err = c.gravarEdicao(ctx, e, id, pag); err != nil {
 		return nil, err
 	}
 	log.Printf("[pagamentos] atualizado: pagamento_id=%d", id)
@@ -140,6 +142,30 @@ func (c *Casos) ExcluirPagamento(ctx context.Context, p kernel.Principal, id int
 	}
 	log.Printf("[pagamentos] excluído: pagamento_id=%d", id)
 	return nil
+}
+
+// gravarEdicao: o admin grava com o UPDATE normal; o restrito, com o UPDATE
+// condicionado a "não quitado" (SEC-27, atômico). Zero linhas no restrito:
+// relê para separar o inexistente (404) do quitado (409). Se a releitura
+// achar o pagamento editável, ele mudou entre o UPDATE e a releitura
+// (edição concorrente): também 409, sem nova tentativa.
+func (c *Casos) gravarEdicao(ctx context.Context, e kernel.Escopo, id int64, pag *vendas.Pagamento) error {
+	if !restrito(e) {
+		return c.d.Pagamentos.Atualizar(ctx, id, pag)
+	}
+	err := c.d.Pagamentos.AtualizarSeNaoQuitado(ctx, id, pag)
+	if !errors.Is(err, vendas.ErrPagamentoNaoEncontrado) {
+		return err
+	}
+	atual, err := c.d.Pagamentos.PorID(ctx, id)
+	if err != nil {
+		return err
+	}
+	log.Printf("[pagamentos] edição bloqueada: pagamento_id=%d quitado", id)
+	if err = atual.PodeEditar(); err != nil {
+		return err
+	}
+	return vendas.ErrPagamentoJaQuitadoNaoPodeSerEditado
 }
 
 // pagamentoNovo aplica as regras de criação do legado: pedido obrigatório,

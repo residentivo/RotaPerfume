@@ -70,7 +70,8 @@ func validPedidoPayload() map[string]any {
 // expectCreatePedidoSuccessH registra os mocks para uma criação bem-sucedida
 // de pedido a partir de validPedidoPayload() (valor_total=230.0).
 // pedido_id_origem=100 é obtido via LastInsertId() do INSERT em pedidos, não
-// mais via SELECT MAX(...) + 1 manual.
+// mais via SELECT MAX(...) + 1 manual. O payload nasce Faturado, então a
+// criação baixa o estoque dos dois itens na mesma tx (BUG-20).
 func expectCreatePedidoSuccessH(mock sqlmock.Sqlmock) {
 	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO pedidos \(cliente_id, vendedor_id, data_pedido, canal, status, valor_total\)`).
@@ -82,6 +83,8 @@ func expectCreatePedidoSuccessH(mock sqlmock.Sqlmock) {
 	mock.ExpectExec(`INSERT INTO itens_pedido \(pedido_id, produto_id, quantidade, preco_praticado, desconto_pct, valor_bruto\)`).
 		WithArgs(int64(100), int64(11), 1, 50.0, 0.0, 50.0).
 		WillReturnResult(sqlmock.NewResult(2, 1))
+	expectBaixaEstoquePorItemH(mock, 10, "SKU-010")
+	expectBaixaEstoquePorItemH(mock, 11, "SKU-011")
 	mock.ExpectCommit()
 
 	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).

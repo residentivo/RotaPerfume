@@ -58,6 +58,9 @@ func TestDSN(t *testing.T) {
 // pepperTeste tem exatamente config.PepperMinBytes (32) bytes.
 const pepperTeste = "pepper-de-teste-com-exatos-32-by"
 
+// segredoJWTTeste tem exatamente config.JWTSecretMinBytes (32) bytes (SEC-18).
+const segredoJWTTeste = "segredo-jwt-de-teste-exatos-32-b"
+
 func TestLoad(t *testing.T) {
 	casos := []struct {
 		nome    string
@@ -72,61 +75,61 @@ func TestLoad(t *testing.T) {
 		},
 		{
 			nome:    "JWT_TTL invalido",
-			env:     map[string]string{"JWT_SECRET": "s", "JWT_TTL": "abc"},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "JWT_TTL": "abc"},
 			wantErr: "JWT_TTL",
 		},
 		{
 			nome:    "sem PASSWORD_PEPPER",
-			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": ""},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "PASSWORD_PEPPER": ""},
 			wantErr: "PASSWORD_PEPPER",
 		},
 		{
 			nome:    "PASSWORD_PEPPER curto (31 bytes)",
-			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": strings.Repeat("p", 31)},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "PASSWORD_PEPPER": strings.Repeat("p", 31)},
 			wantErr: "PASSWORD_PEPPER",
 		},
 		{
 			nome:    "ARGON2_MEMORIA_KIB nao numerico",
-			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "x"},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "x"},
 			wantErr: "ARGON2_MEMORIA_KIB",
 		},
 		{
 			nome:    "ARGON2_MEMORIA_KIB abaixo do minimo",
-			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "19455"},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "19455"},
 			wantErr: "ARGON2_MEMORIA_KIB",
 		},
 		{
 			nome:    "ARGON2_MEMORIA_KIB acima do maximo",
-			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "1048577"},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "1048577"},
 			wantErr: "ARGON2_MEMORIA_KIB",
 		},
 		{
 			nome:    "ARGON2_ITERACOES zero",
-			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_ITERACOES": "0"},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "PASSWORD_PEPPER": pepperTeste, "ARGON2_ITERACOES": "0"},
 			wantErr: "ARGON2_ITERACOES",
 		},
 		{
 			nome:    "ARGON2_ITERACOES acima do maximo",
-			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_ITERACOES": "11"},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "PASSWORD_PEPPER": pepperTeste, "ARGON2_ITERACOES": "11"},
 			wantErr: "ARGON2_ITERACOES",
 		},
 		{
 			nome:    "ARGON2_PARALELISMO negativo",
-			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_PARALELISMO": "-1"},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "PASSWORD_PEPPER": pepperTeste, "ARGON2_PARALELISMO": "-1"},
 			wantErr: "ARGON2_PARALELISMO",
 		},
 		{
 			nome:    "ARGON2_PARALELISMO acima do maximo",
-			env:     map[string]string{"JWT_SECRET": "s", "PASSWORD_PEPPER": pepperTeste, "ARGON2_PARALELISMO": "17"},
+			env:     map[string]string{"JWT_SECRET": segredoJWTTeste, "PASSWORD_PEPPER": pepperTeste, "ARGON2_PARALELISMO": "17"},
 			wantErr: "ARGON2_PARALELISMO",
 		},
 		{
 			nome: "defaults",
 			env: map[string]string{
-				"JWT_SECRET": "s", "JWT_TTL": "", "PASSWORD_PEPPER": pepperTeste, "DB_HOST": "", "DB_PORT": "",
+				"JWT_SECRET": segredoJWTTeste, "JWT_TTL": "", "PASSWORD_PEPPER": pepperTeste, "DB_HOST": "", "DB_PORT": "",
 				"ARGON2_MEMORIA_KIB": "", "ARGON2_ITERACOES": "", "ARGON2_PARALELISMO": "",
 				"DB_NAME": "", "DB_USUARIO": "u", "DB_SENHA": "s", "VERBOSE": "", "LOG_LEVEL": "",
-				"CORS_ALLOWED_ORIGINS": "", "TRUST_PROXY_HEADERS": "", "JWT_ISSUER": "",
+				"CORS_ALLOWED_ORIGINS": "", "TRUST_PROXY_HEADERS": "", "JWT_ISSUER": "", "COOKIE_SECURE": "",
 				"REFRESH_REUSE_SUPPRESS_WINDOW": "", "REFRESH_CLEANUP_INTERVAL": "", "REFRESH_TOKEN_RETENCAO": "",
 			},
 			check: func(t *testing.T, c *config.Config) {
@@ -138,22 +141,25 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, config.HashSenha{Pepper: pepperTeste, MemoriaKiB: 65536, Iteracoes: 3, Paralelismo: 2}, c.HashSenha)
 				assert.False(t, c.Verbose)
 				assert.False(t, c.TrustProxyHeaders)
+				assert.True(t, c.CookieSecure, "SEC-21: COOKIE_SECURE vazio → true")
 				assert.Equal(t, []string{"http://localhost:3000", "http://127.0.0.1:3000"}, c.CORSAllowedOrigins)
 			},
 		},
 		{
 			nome: "valores customizados",
 			env: map[string]string{
-				"JWT_SECRET": "s", "JWT_TTL": "2h", "LOG_LEVEL": "debug", "VERBOSE": "",
+				"JWT_SECRET": segredoJWTTeste, "JWT_TTL": "2h", "LOG_LEVEL": "debug", "VERBOSE": "",
 				"PASSWORD_PEPPER": pepperTeste, "ARGON2_MEMORIA_KIB": "19456", "ARGON2_ITERACOES": "2", "ARGON2_PARALELISMO": "1",
 				"DB_USUARIO": "u", "DB_SENHA": "s",
 				"CORS_ALLOWED_ORIGINS": " https://a.com , ,https://b.com", "TRUST_PROXY_HEADERS": "true",
+				"COOKIE_SECURE": "false",
 			},
 			check: func(t *testing.T, c *config.Config) {
 				assert.Equal(t, 2*time.Hour, c.JWTTTL)
 				assert.Equal(t, config.HashSenha{Pepper: pepperTeste, MemoriaKiB: 19456, Iteracoes: 2, Paralelismo: 1}, c.HashSenha)
 				assert.True(t, c.Verbose)
 				assert.True(t, c.TrustProxyHeaders)
+				assert.False(t, c.CookieSecure, "SEC-21: COOKIE_SECURE=false explícito")
 				assert.Equal(t, []string{"http://localhost:3000", "http://127.0.0.1:3000", "https://a.com", "https://b.com"}, c.CORSAllowedOrigins)
 			},
 		},

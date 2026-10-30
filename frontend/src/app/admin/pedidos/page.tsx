@@ -18,7 +18,7 @@ import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
 import { Paginador } from "@/components/ui/Paginador";
 import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
-import { PedidoModal } from "@/components/admin/PedidoModal";
+import { PedidoModal, pedidoItensTravados } from "@/components/admin/PedidoModal";
 import { PedidoItensDetalhe } from "@/components/admin/PedidoItensDetalhe";
 import {
   apiListPedidos,
@@ -597,8 +597,14 @@ function PedidosContent() {
             size="sm"
             variant="danger"
             onClick={() => handleDelete(p)}
-            disabled={deletingId === p.pedido_id_origem}
-            title="Excluir pedido"
+            disabled={
+              deletingId === p.pedido_id_origem || pedidoItensTravados(p.status)
+            }
+            title={
+              pedidoItensTravados(p.status)
+                ? "Pedido faturado ou entregue nao pode ser excluido"
+                : "Excluir pedido"
+            }
           >
             {deletingId === p.pedido_id_origem ? "Excluindo..." : "Excluir"}
           </Button>

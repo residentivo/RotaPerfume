@@ -85,36 +85,40 @@ func TestLerAtivoOpcional(t *testing.T) {
 	})
 }
 
-// TestIDDoPathPermissivo: o parse dos handlers legados (strconv.ParseInt),
-// preservado no Catálogo; o estrito (IDDoPath, R-f) recusa os mesmos casos.
-func TestIDDoPathPermissivo(t *testing.T) {
+// TestIDOuErro_Estrito (CHORE-03): o IDOuErro usa o parse estrito de
+// IDDoPath; o parse permissivo (IDDoPathPermissivo) foi removido. Só
+// dígitos, > 0 e cabendo em int64; o resto responde 400 "id inválido".
+func TestIDOuErro_Estrito(t *testing.T) {
 	casos := []struct {
-		v       string
-		id      int64
-		ok      bool
-		estrito bool // IDDoPath (estrito) aceita?
+		v  string
+		id int64
+		ok bool
 	}{
-		{"1", 1, true, true},
-		{"0", 0, true, false},
-		{"-5", -5, true, false},
-		{"+7", 7, true, false},
-		{"abc", 0, false, false},
-		{"", 0, false, false},
-		{"99999999999999999999", 0, false, false},
+		{"1", 1, true},
+		{"0", 0, false},
+		{"-5", 0, false},
+		{"+7", 0, false},
+		{" 1", 0, false},
+		{"1.5", 0, false},
+		{"abc", 0, false},
+		{"", 0, false},
+		{"99999999999999999999", 0, false},
 	}
 	for _, c := range casos {
 		t.Run(c.v, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			r.SetPathValue("id", c.v)
-			id, err := httpx.IDDoPathPermissivo(r, "id")
-			if !c.ok {
-				assert.ErrorIs(t, err, httpx.ErrIDInvalido)
-			} else {
-				require.NoError(t, err)
+			w := httptest.NewRecorder()
+			id, ok := httpx.IDOuErro(w, r, "[teste]", "id")
+			assert.Equal(t, c.ok, ok)
+			if c.ok {
 				assert.Equal(t, c.id, id)
+				return
 			}
-			_, errEstrito := httpx.IDDoPath(r, "id")
-			assert.Equal(t, c.estrito, errEstrito == nil)
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "id inválido")
+			_, err := httpx.IDDoPath(r, "id")
+			assert.ErrorIs(t, err, httpx.ErrIDInvalido)
 		})
 	}
 }

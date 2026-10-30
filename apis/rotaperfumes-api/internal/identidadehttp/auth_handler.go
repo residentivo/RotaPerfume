@@ -20,15 +20,17 @@ type AuthHandler struct {
 	casos        *identidadeapp.Casos
 	ttlAcesso    time.Duration
 	confiarProxy bool
+	cookieSeguro bool
 }
 
 // NovoAuthHandler exige os casos de uso (nil: panic na montagem). ttlAcesso
-// é o TTL do JWT (cookie e expires_in); confiarProxy é TRUST_PROXY_HEADERS.
-func NovoAuthHandler(c *identidadeapp.Casos, ttlAcesso time.Duration, confiarProxy bool) *AuthHandler {
+// é o TTL do JWT (cookie e expires_in); confiarProxy é TRUST_PROXY_HEADERS;
+// cookieSeguro é COOKIE_SECURE (atributo Secure dos cookies, SEC-21).
+func NovoAuthHandler(c *identidadeapp.Casos, ttlAcesso time.Duration, confiarProxy, cookieSeguro bool) *AuthHandler {
 	if c == nil {
 		panic("identidadehttp: NovoAuthHandler exige os casos de uso")
 	}
-	return &AuthHandler{casos: c, ttlAcesso: ttlAcesso, confiarProxy: confiarProxy}
+	return &AuthHandler{casos: c, ttlAcesso: ttlAcesso, confiarProxy: confiarProxy, cookieSeguro: cookieSeguro}
 }
 
 // Login POST /api/auth/login → tokens em cookies HttpOnly, dados no corpo.
@@ -46,7 +48,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		responderFalha(w, tag, err)
 		return
 	}
-	httpx.DefinirCookiesSessao(w, r, s.Acesso, s.Refresh.Revelar(), h.ttlAcesso)
+	httpx.DefinirCookiesSessao(w, s.Acesso, s.Refresh.Revelar(), h.ttlAcesso, h.cookieSeguro)
 	httpx.JSON(w, http.StatusOK, novoLoginResposta(s, h.ttlAcesso), "")
 }
 
@@ -58,7 +60,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		responderFalha(w, "[auth] Refresh", err)
 		return
 	}
-	httpx.DefinirCookiesSessao(w, r, s.Acesso, s.Refresh.Revelar(), h.ttlAcesso)
+	httpx.DefinirCookiesSessao(w, s.Acesso, s.Refresh.Revelar(), h.ttlAcesso, h.cookieSeguro)
 	httpx.JSON(w, http.StatusOK, refreshResposta{ExpiresIn: int64(h.ttlAcesso.Seconds()), TokenType: tokenType}, "")
 }
 
@@ -66,7 +68,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 // cookies; sempre 200 (idempotente).
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	h.casos.Logout(r.Context(), refreshDoRequest(r))
-	httpx.LimparCookiesSessao(w)
+	httpx.LimparCookiesSessao(w, h.cookieSeguro)
 	log.Printf("[auth] logout OK")
 	httpx.JSON(w, http.StatusOK, mensagemResposta{Mensagem: "logout realizado"}, "")
 }
@@ -89,7 +91,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		httpx.ResponderErro(w, tag, err)
 		return
 	}
-	httpx.LimparCookiesSessao(w)
+	httpx.LimparCookiesSessao(w, h.cookieSeguro)
 	httpx.JSON(w, http.StatusOK, mensagemResposta{Mensagem: "senha alterada com sucesso"}, "")
 }
 

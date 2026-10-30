@@ -155,7 +155,7 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 09 | `09_ddl_clientes.sql` | Cria `clientes` (já com `uq_clientes_cnpj` e o COMMENT novo) | `db-up` | Não (DDL base) |
 | 10 | `10_ddl_produtos.sql` | Cria `produtos` | `db-up` | Não (DDL base) |
 | 11 | `11_ddl_itens_pedido.sql` | Cria `itens_pedido` | `db-up` | Não (DDL base) |
-| 12 | `12_ddl_pagamentos.sql` | Cria `pagamentos` | `db-up` | Não (DDL base) |
+| 12 | `12_ddl_pagamentos.sql` | Cria `pagamentos` (já com o CHECK `chk_pagamentos_taxa_pct`) | `db-up` | Não (DDL base) |
 | 13 | `13_alter_senha_historico_tipo_reset.sql` | Corrige o ENUM de `tipo_reset` | `db-fix-tipo-reset` | Não (sem script) |
 | 14 | `14_ddl_carteiras.sql` | Cria `carteiras` | `db-up` | Não (DDL base) |
 | 15 | `15_ddl_oportunidades.sql` | Cria `oportunidades` | `db-up` | Não (DDL base) |
@@ -167,8 +167,9 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 21 | `21_alter_refresh_tokens_revoked_reason.sql` | Adiciona `refresh_tokens.revoked_reason` (idempotente) | `db-fix-revoked-reason` | Sim: `21_revert_...`, `db-revert-revoked-reason` (perde os motivos) |
 | 22 | `22_alter_usuarios_tokens_validos_desde.sql` | Adiciona `usuarios.tokens_validos_desde` (idempotente) | `db-fix-tokens-validos-desde` | Sim: `22_revert_...`, `db-revert-tokens-validos-desde` (perde os cortes) |
 | 23 | `23_alter_refresh_tokens_reuso_detectado_em.sql` | Adiciona `refresh_tokens.reuso_detectado_em` (SEC-12, idempotente) | `db-fix-reuso-detectado` | Sim: `23_revert_...`, `db-revert-reuso-detectado` (perde as marcas de reuso) |
+| 24 | `24_alter_pagamentos_taxa_pct_check.sql` | Cria o CHECK `chk_pagamentos_taxa_pct` (0 a 30) em `pagamentos` (SEC-27, idempotente; aborta sem alterar dados se houver linha fora da faixa) | `db-fix-taxa-pct-check` | Sim: `24_revert_...`, `db-revert-taxa-pct-check` (só remove o CHECK) |
 
-- As migrações de alteração (08, 13, 18 a 23) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
+- As migrações de alteração (08, 13, 18 a 24) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
 - Todos os alvos que chamam o cliente `mariadb` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed`/`db-reset` herdam via `db-create`) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23) e o `mariadb` (MariaDB ≥ 11.4) no `PATH` (DB-03). O `Makefile` passa `--local-infile=0` (SEC-28). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h ...`, sem `-p` no argv.
 - Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`apis/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por Argon2id real (com o `PASSWORD_PEPPER` do `.env`).
 - Importadores (`db-import-*`, `apis/shared/cmd/import*`): upsert idempotente a partir de `dados/crm/*.csv` e `dados/erp/*.csv`. Ordem de dependência: clientes e produtos, depois pedidos (e itens), pagamentos, carteiras, oportunidades, visitas e estoque.
@@ -661,7 +662,7 @@ Pagamentos dos pedidos, importados de `dados/erp/pagamentos.csv` (`make db-impor
 | `forma_pagamento` | ENUM('Boleto 14 dias','Boleto 28 dias','Cartão de crédito','Cartão de débito','Cheque a prazo','Dinheiro','PIX') | não | - | Forma de pagamento. |
 | `parcelas` | TINYINT UNSIGNED | não | 1 | Número de parcelas (1 a 6 no CSV). |
 | `valor` | DECIMAL(15,2) | não | - | Valor bruto. |
-| `taxa_pct` | DECIMAL(5,2) | não | 0.00 | Taxa em % (3.20 = 3,20%). |
+| `taxa_pct` | DECIMAL(5,2) | não | 0.00 | Taxa em % (3.20 = 3,20%). CHECK `chk_pagamentos_taxa_pct`: de 0 a 30, limites inclusivos (SEC-27). |
 | `valor_liquido` | DECIMAL(15,2) | não | - | Valor descontada a taxa. |
 | `data_vencimento` | DATE | não | - | Vencimento. |
 | `data_pagamento` | DATE | sim | NULL | **NULL = ainda não pago** (status Em aberto ou Inadimplente). |
@@ -672,7 +673,42 @@ Pagamentos dos pedidos, importados de `dados/erp/pagamentos.csv` (`make db-impor
 
 **Regras de negócio:** `RESTRICT` no pedido para o pagamento não ficar órfão: a exclusão do pedido exige tratar os pagamentos antes. O pagamento pode ser apagado fisicamente pela API.
 
-**Migrações:** nenhuma.
+**Constraints:** `fk_pagamentos_pedido` (FK) e `chk_pagamentos_taxa_pct` (CHECK).
+
+### 16.1 CHECK `chk_pagamentos_taxa_pct` e migração 24 (SEC-27, Lote 25, 2026-10-29)
+
+**Regra:** `CHECK (taxa_pct >= 0 AND taxa_pct <= 30)`, com os limites inclusivos (0.00 e 30.00 são aceitos). A regra principal fica no domínio (`vendas.TaxaPctMaxima = 30`, resposta 400 `"taxa_pct deve estar entre 0 e 30"`). O CHECK é defesa em profundidade: barra gravações que não passam pelo domínio, como um importador ou um SQL manual. Um INSERT/UPDATE fora da faixa falha com o erro `4025 CONSTRAINT chk_pagamentos_taxa_pct failed`.
+
+- Antes do SEC-27, a coluna `DECIMAL(5,2)` aceitava de -999.99 a 999.99.
+- No CSV de origem (`dados/erp/pagamentos.csv`), nenhuma linha tem `taxa_pct` negativa ou maior ou igual a 5, então o `make db-import-pagamentos` não é afetado.
+- Não há CHECK nem trigger para "pagamento quitado imutável". Essa regra fica só no backend, porque um trigger quebraria o upsert dos importadores (`ON DUPLICATE KEY UPDATE`).
+
+**Bancos novos:** o `sql/12_ddl_pagamentos.sql` já cria o CHECK inline. O `db-up`/`db-reset` não aplica o 24. Se o 24 for rodado depois, não faz nada.
+
+**Script:** `sql/24_alter_pagamentos_taxa_pct_check.sql`
+**Comando:** `make db-fix-taxa-pct-check`
+**Reversão:** `make db-revert-taxa-pct-check` (`sql/24_revert_pagamentos_taxa_pct_check.sql`). Remove só o CHECK, sem alterar dados, e também funciona em bancos criados pelo 12 novo.
+**Situação:** aplicada no banco do `.env` (dev, MariaDB 11.8, tabela `pagamentos` vazia) em 2026-10-29.
+
+- **Checagem de dados antes do ALTER:** o script conta as linhas com `taxa_pct < 0 OR taxa_pct > 30`. Se houver alguma, ele aborta com `SIGNAL SQLSTATE '45000'` (erro 1644, com a quantidade de linhas, o mínimo e o máximo) e **não corrige nada**. Nesse caso, abra um card para o usuário decidir o que fazer com as linhas e rode a migração de novo.
+- **Idempotente:** consulta `information_schema.CHECK_CONSTRAINTS` e usa `PREPARE`. O revert também é idempotente.
+- Usa `DELIMITER` e `BEGIN NOT ATOMIC`, então precisa do cliente `mariadb` (como todos os alvos `db-*`).
+
+```sql
+-- linhas que bloqueariam a migração (deve voltar 0)
+SELECT pagamento_id, pedido_id, taxa_pct, status_pagamento
+  FROM pagamentos
+ WHERE taxa_pct < 0 OR taxa_pct > 30;
+
+-- CHECK presente
+SELECT CONSTRAINT_NAME, CHECK_CLAUSE
+  FROM information_schema.CHECK_CONSTRAINTS
+ WHERE CONSTRAINT_SCHEMA = DATABASE()
+   AND TABLE_NAME = 'pagamentos';
+-- chk_pagamentos_taxa_pct | `taxa_pct` >= 0 and `taxa_pct` <= 30
+```
+
+**Migrações:** 24 (`db-fix-taxa-pct-check`).
 
 ---
 

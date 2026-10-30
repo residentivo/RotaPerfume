@@ -60,7 +60,27 @@ func (f *fakeProdutos) Atualizar(context.Context, int64, catalogo.CamposProduto)
 	return f.errAtualizar
 }
 
-func (f *fakeProdutos) DefinirAtivo(context.Context, int64, bool) error { return f.errAtivo }
+func (f *fakeProdutos) DefinirAtivo(_ context.Context, id int64, ativo bool) error {
+	return f.gravarAtivo(id, func(bool) bool { return ativo })
+}
+
+// AlternarAtivo (BUG-17) inverte o status gravado, como o UPDATE … NOT ativo.
+func (f *fakeProdutos) AlternarAtivo(_ context.Context, id int64) error {
+	return f.gravarAtivo(id, func(atual bool) bool { return !atual })
+}
+
+func (f *fakeProdutos) gravarAtivo(id int64, novo func(bool) bool) error {
+	if f.errAtivo != nil {
+		return f.errAtivo
+	}
+	p, ok := f.porID[id]
+	if !ok {
+		return catalogo.ErrProdutoNaoEncontrado
+	}
+	p.Ativo = novo(p.Ativo)
+	f.porID[id] = p
+	return nil
+}
 
 type fakeEstoques struct {
 	porID                                 map[int64]catalogo.RegistroEstoque
@@ -216,7 +236,7 @@ func TestCatalogoapp_Produtos_Erros(t *testing.T) {
 
 	_, err = catalogoapp.Novo(&fakeProdutos{porID: um, errAtivo: catalogo.ErrProdutoNaoEncontrado}, &fakeEstoques{}).
 		AlternarAtivoProduto(ctx, 1, nil)
-	assert.ErrorIs(t, err, catalogo.ErrProdutoNaoEncontrado, "produto some entre a leitura e o UPDATE")
+	assert.ErrorIs(t, err, catalogo.ErrProdutoNaoEncontrado, "UPDATE do toggle sem linha")
 
 	p, err := catalogoapp.Novo(&fakeProdutos{porID: um}, &fakeEstoques{}).AlternarAtivoProduto(ctx, 1, nil)
 	require.NoError(t, err)

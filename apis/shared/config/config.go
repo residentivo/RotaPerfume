@@ -68,6 +68,11 @@ type Config struct {
 	// sempre usado como IP do cliente — evita spoofing de IP.
 	TrustProxyHeaders bool
 
+	// CookieSecure liga o atributo Secure dos cookies de sessão (SEC-21), via
+	// COOKIE_SECURE. Padrão true; só "false" explícito (dev em HTTP, o make
+	// dev-api/run-api faz isso) desliga. Não depende do Host da requisição.
+	CookieSecure bool
+
 	// TurnstileSecretKey é a chave secreta do Cloudflare Turnstile usada para
 	// verificar o token de CAPTCHA enviado pelo frontend em /api/auth/login e
 	// /api/auth/reset-password (env TURNSTILE_SECRET_KEY). Nunca é logada nem
@@ -111,6 +116,17 @@ const PepperMinBytes = 32
 
 // ErrPepperAusente: PASSWORD_PEPPER ausente ou curto demais (SEC-13).
 var ErrPepperAusente = fmt.Errorf("config: PASSWORD_PEPPER é obrigatório (mínimo de %d bytes)", PepperMinBytes)
+
+// JWTSecretMinBytes é o tamanho mínimo aceito para JWT_SECRET (SEC-18).
+const JWTSecretMinBytes = 32
+
+// ErrJWTSecretCurto: JWT_SECRET ausente, curto demais ou igual ao
+// placeholder do .env.example (SEC-18). Nunca inclui o valor.
+var ErrJWTSecretCurto = fmt.Errorf("config: JWT_SECRET é obrigatório (mínimo de %d bytes)", JWTSecretMinBytes)
+
+// jwtSecretPlaceholder é o valor de exemplo histórico do .env.example: tem
+// mais de 32 bytes, mas é público, então é recusado.
+const jwtSecretPlaceholder = "troque-por-um-segredo-forte-e-aleatorio"
 
 // Faixas e padrões do Argon2id (SEC-13). O mínimo de memória segue a
 // recomendação da OWASP (19 MiB).
@@ -164,12 +180,12 @@ func load(exigirDB bool) (*Config, error) {
 		DBUsuario: os.Getenv("DB_USUARIO"),
 		DBSenha:   os.Getenv("DB_SENHA"),
 		JWTSecret: os.Getenv("JWT_SECRET"),
-		JWTIssuer: getEnv("JWT_ISSUER", "rotaperfumes"),
+		JWTIssuer: jwtIssuer(),
 	}
 
-	vlog.Printf("config.go", "load", "verificando se JWT_SECRET está vazio")
-	if cfg.JWTSecret == "" {
-		return nil, fmt.Errorf("config: JWT_SECRET é obrigatório")
+	vlog.Printf("config.go", "load", "verificando se JWT_SECRET tem o tamanho mínimo e não é o placeholder")
+	if len(cfg.JWTSecret) < JWTSecretMinBytes || cfg.JWTSecret == jwtSecretPlaceholder {
+		return nil, ErrJWTSecretCurto
 	}
 
 	vlog.Printf("config.go", "load", "lendo JWT_TTL (padrão 24h)")
@@ -179,6 +195,10 @@ func load(exigirDB bool) (*Config, error) {
 	vlog.Printf("config.go", "load", "verificando se err != nil após ParseDuration de JWT_TTL")
 	if err != nil {
 		return nil, fmt.Errorf("config: JWT_TTL inválido (%q): %w", ttlStr, err)
+	}
+	vlog.Printf("config.go", "load", "verificando se JWT_TTL é positivo")
+	if ttl <= 0 {
+		return nil, fmt.Errorf("config: JWT_TTL inválido (%q): esperado maior que zero", ttlStr)
 	}
 	vlog.Printf("config.go", "load", "atribuindo JWTTTL=%s", ttl)
 	cfg.JWTTTL = ttl
@@ -220,6 +240,10 @@ func load(exigirDB bool) (*Config, error) {
 	cfg.CORSAllowedOrigins = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
 	vlog.Printf("config.go", "load", "lendo TRUST_PROXY_HEADERS")
 	cfg.TrustProxyHeaders = getEnv("TRUST_PROXY_HEADERS", "false") == "true"
+	vlog.Printf("config.go", "load", "lendo COOKIE_SECURE (padrão true) e verificando erro")
+	if cfg.CookieSecure, err = parseCookieSecure(); err != nil {
+		return nil, err
+	}
 	vlog.Printf("config.go", "load", "lendo TURNSTILE_SECRET_KEY")
 	cfg.TurnstileSecretKey = os.Getenv("TURNSTILE_SECRET_KEY")
 	vlog.Printf("config.go", "load", "lendo destinatários de alertas de segurança")
@@ -231,7 +255,8 @@ func load(exigirDB bool) (*Config, error) {
 	}
 
 	// SEC-11: checagem no fim, depois das demais validações, para que os
-	// erros já existentes (JWT_SECRET, JWT_TTL, PASSWORD_PEPPER/ARGON2_*) tenham prioridade.
+	// erros já existentes (JWT_SECRET, JWT_TTL, PASSWORD_PEPPER/ARGON2_*,
+	// COOKIE_SECURE) tenham prioridade.
 	// A mensagem nunca inclui os valores.
 	vlog.Printf("config.go", "load", "verificando presença das credenciais do banco (exigirDB=%t)", exigirDB)
 	if exigirDB && (strings.TrimSpace(cfg.DBUsuario) == "" || cfg.DBSenha == "") {
@@ -239,6 +264,32 @@ func load(exigirDB bool) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// jwtIssuer lê JWT_ISSUER com trim; vazio (ou só espaços) vira o padrão
+// "rotaperfumes" (SEC-18: issuer vazio desligaria a checagem no parser).
+func jwtIssuer() string {
+	vlog.Printf("config.go", "jwtIssuer", "lendo JWT_ISSUER com trim e verificando se está vazio")
+	if v := strings.TrimSpace(os.Getenv("JWT_ISSUER")); v != "" {
+		return v
+	}
+	return "rotaperfumes"
+}
+
+// parseCookieSecure lê COOKIE_SECURE: vazio → true; senão strconv.ParseBool.
+// Valor inválido derruba a subida (SEC-21).
+func parseCookieSecure() (bool, error) {
+	vlog.Printf("config.go", "parseCookieSecure", "lendo COOKIE_SECURE com trim e verificando se está vazio")
+	raw := strings.TrimSpace(os.Getenv("COOKIE_SECURE"))
+	if raw == "" {
+		return true, nil
+	}
+	vlog.Printf("config.go", "parseCookieSecure", "convertendo COOKIE_SECURE para bool")
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("config: COOKIE_SECURE inválido (%q): esperado true ou false", raw)
+	}
+	return v, nil
 }
 
 // LoadHashSenha lê PASSWORD_PEPPER e ARGON2_MEMORIA_KIB / ARGON2_ITERACOES /

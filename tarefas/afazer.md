@@ -1,6 +1,14 @@
 # A Fazer
 
-> Atualizado em 2026-10-29. O **Lote 23** (DB-03, MySQL → MariaDB 11.4) foi concluído e está em `feito.md`. Da avaliação de riscos do DB-03 saíram cinco cards no bloco "Achados do DB-03", logo após o FE-15: **SEC-29** (TLS Go ↔ MariaDB, MÉDIA), **SEC-30** (ed25519, BAIXA), **SEC-31** (imagem do Jenkins por digest, BAIXA), **DB-04** (`ONLY_FULL_GROUP_BY`, BAIXA) e **DEPLOY-02** (hardening do servidor mesmo com bind já aberto, MÉDIA). O SEC-28 foi resolvido pelo DB-03 e saiu desta lista (está em `feito.md`, Lote 23).
+> Atualizado em 2026-10-30 (fechamento do Lote 25, 🔵 SubBrain). O **Lote 25** (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram quatro cards, no bloco "Achados do Lote 25", logo após o TST-08: **TST-09** (3 testes de integração e conferência do CHECK `chk_pagamentos_taxa_pct`, bloqueados pela credencial do banco; depende do usuário, MÉDIA), **TST-10** (`make test-frontend`/`make frontend-deps` em disco exFAT com Node 18, MÉDIA; card próprio, separado do TST-08), **CHORE-08** (4 observações do 🔴 TestBrain, BAIXA) e **FE-16** (rodar o `next build`, BAIXA). O UX-02 avançou em parte (a orientação "Edite o registro existente." no 409 do estoque entrou com o CHORE-06).
+>
+> Antes, em 2026-10-29 (especificação do Lote 25). Da especificação do 🟣 SecBrain para o Lote 25 saíram três cards BAIXA, no bloco "Achados da especificação do Lote 25", logo após o DEPLOY-02: **UX-02** (R4, UX do ajuste manual de estoque após o snapshot do faturamento), **CHORE-07** (R6, mensagens imprecisas de `vendas/erros.go`) e **BUG-22** (toggle de ativo de clientes e usuários). Dos achados do Lote 24 saíram, no bloco seguinte ("Achados do Lote 24"), **SEC-32** (enumeração por tempo com hash vazio/malformado, BAIXA), **SEC-33** (prefixo `__Host-` nos cookies, BAIXA), **BUG-23** (refresh de usuário apagado → 500, BAIXA) e **TST-08** (`make test` falha com `covdata`, MÉDIA). Os riscos R2 e R3 viraram BUG-20 e BUG-21 dentro do Lote 25 (`fazendo.md`).
+>
+> Antes, ainda em 2026-10-29: o **Lote 25** (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03 e CHORE-06) foi aberto pelo 🤍 MegaBrain depois de o usuário tomar as decisões de produto pendentes nesses cards; os seis saíram desta lista para `fazendo.md`, onde ficam na fila até o fechamento do Lote 24 (decisões registradas em cada card). No bloco "Achados do ARQ-05" ficam SEC-26 e TST-06; no bloco "Achados do DASH-01" ficam DOC-06 e FE-15. O **Lote 23** foi commitado pelo usuário (`c87a30d` e `186b15f`).
+>
+> Ainda em 2026-10-29: o **Lote 24** (SEC-18, SEC-20, SEC-21 e SEC-22, os 4 GAPs de segurança de prioridade ALTA da auditoria ARQ-00) foi aberto e os quatro cards saíram desta lista para `fazendo.md`. No bloco "GAPs de segurança da auditoria ARQ-00" ficam SEC-14 a SEC-17, SEC-19 e SEC-23 a SEC-25.
+>
+> O **Lote 23** (DB-03, MySQL → MariaDB 11.4) foi concluído e está em `feito.md`. Da avaliação de riscos do DB-03 saíram cinco cards no bloco "Achados do DB-03", logo após o FE-15: **SEC-29** (TLS Go ↔ MariaDB, MÉDIA), **SEC-30** (ed25519, BAIXA), **SEC-31** (imagem do Jenkins por digest, BAIXA), **DB-04** (`ONLY_FULL_GROUP_BY`, BAIXA) e **DEPLOY-02** (hardening do servidor mesmo com bind já aberto, MÉDIA). O SEC-28 foi resolvido pelo DB-03 e saiu desta lista (está em `feito.md`, Lote 23).
 >
 > O **Lote 22** (DASH-01, funil de vendas no Dashboard) foi concluído e está em `feito.md`. Da revisão do DASH-01 saíram três cards BAIXA, no bloco "Achados do DASH-01", logo após o TST-07: **DOC-06** (comentário "escopo por carteira" em `rotas.go`, do 🟣 SecBrain), **BUG-19** (`arredondar2` com negativos, do 🔴 TestBrain) e **FE-15** (aviso de desligado e seleção da janela após erro no `FunilVendas`, do 🔴 TestBrain). A limitação do setup local em disco sem symlink (`npm ci --no-bin-links`) ficou só documentada em `postman/README.md` ("Subindo o ambiente"), sem card.
 >
@@ -61,26 +69,11 @@
 
 ---
 
-## Achados do ARQ-05 (BUG-16, SEC-26, SEC-27, TST-06, BUG-17)
+## Achados do ARQ-05 (SEC-26, TST-06; BUG-16, SEC-27 e BUG-17 foram para o Lote 25)
 
 > Origem comum: revisão do ARQ-05 (Vendas) pelo 🟣 SecBrain e pelo 🔴 TestBrain, Lote 21 (2026-10-15). **Fora do escopo do Lote 21:** não corrigir dentro dos cards ARQ. Executar após o ARQ-07 ou em lote próprio, por decisão do 🤍 MegaBrain/usuário. Durante a refatoração, não piorar estes pontos. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
-
----
-
-## BUG-16: baixa de estoque dupla no ciclo de status Faturado → outro → Faturado — prioridade ALTA
-
-**Status:** pendente (fora do escopo do Lote 21; **exige decisão de produto do usuário**)
-**Camada:** Backend
-**Responsável:** usuário (decisão) → 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
-**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15).
-
-**Descrição:** em `SH/vendas/pedido.go:~223-232` (`PlanejarAtualizacao`), cada entrada no status Faturado baixa o estoque, mas a saída de Faturado não estorna. Um pedido levado de Faturado para outro status e de volta a Faturado baixa o estoque duas vezes. Como o vendedor pode alterar o status dos próprios pedidos, ele consegue manipular o saldo do próprio estoque.
-
-**Opções (decisão do usuário):**
-1. proibir a saída do status Faturado (transição inválida → erro de validação);
-2. estornar o estoque na saída de Faturado, na mesma tx do pedido (UoW `TxPedido`).
-
-**Critério de aceite:** decisão registrada no card; a regra fica no agregado Pedido; teste do ciclo Faturado → outro → Faturado sem baixa dupla; teste de atomicidade (falha no estorno/baixa faz rollback do pedido); contrato HTTP inalterado ou mudança aprovada pelo usuário.
+>
+> **2026-10-29:** BUG-16, SEC-27 e BUG-17 receberam a decisão de produto do usuário e foram para o **Lote 25** (cards em `fazendo.md`, na fila até o fechamento do Lote 24). Aqui ficam SEC-26 e TST-06.
 
 ---
 
@@ -99,21 +92,6 @@
 
 ---
 
-## SEC-27: pagamento quitado continua editável e `taxa_pct` sem limite superior — prioridade BAIXA
-
-**Status:** pendente (fora do escopo do Lote 21; **exige decisão de produto do usuário**)
-**Camada:** Backend
-**Responsável:** usuário (decisão) → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15).
-
-**Descrição:** um pagamento já quitado continua editável via PUT (valor e status). Além disso, `taxa_pct` não tem teto (aceita, por exemplo, valores acima de 100).
-
-**Decisão do usuário:** (a) se pagamento quitado deve ser imutável (ou editável só por admin); (b) qual o teto de `taxa_pct`.
-
-**Critério de aceite:** regras no domínio (`SH/vendas`); testes de cada regra; contrato HTTP inalterado ou mudança aprovada pelo usuário; Postman/docs atualizados se o contrato mudar.
-
----
-
 ## TST-06: asserções de tipo sem checagem nos testes de handler — prioridade BAIXA
 
 **Status:** pendente (fora do escopo do Lote 21)
@@ -126,21 +104,6 @@
 **Ação esperada:** trocar por `require.IsType` ou pela forma `v, ok := …` com `require.True(t, ok)`, em todas as suítes de handler. Sem enfraquecer nenhuma asserção.
 
 **Critério de aceite:** nenhuma asserção de tipo sem checagem nos testes de handler (conferir por busca); mesma quantidade de testes, todos verdes.
-
----
-
-## BUG-17: toggle de ativo do produto concorrente se anula (lê e depois grava `!ativo`) — prioridade BAIXA
-
-**Status:** pendente (fora do escopo do Lote 21; **exige decisão de produto do usuário**)
-**Camada:** Backend
-**Responsável:** usuário (decisão) → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** NB-5 do 🟣 SecBrain (revisão do ARQ-02, 2026-10-14), avaliada no ARQ-05 (2026-10-15) e transformada em card próprio.
-
-**Descrição:** o toggle de ativo do produto (`SH/catalogo`) lê o valor e grava `!ativo` sem lock. Dois toggles concorrentes leem o mesmo valor e se anulam (lost update).
-
-**Ação esperada (a decidir):** `UPDATE … SET ativo = NOT ativo` atômico, ou ler com `SELECT … FOR UPDATE` dentro do Transactor. Conferir também o PUT de estoque, citado na mesma NB-5.
-
-**Critério de aceite:** toggles concorrentes não se anulam; teste do comportamento escolhido; contrato HTTP inalterado.
 
 ---
 
@@ -178,9 +141,11 @@
 
 ---
 
-## Achados do DASH-01 (DOC-06, BUG-19, FE-15)
+## Achados do DASH-01 (DOC-06, FE-15; BUG-19 foi para o Lote 25)
 
 > Origem comum: revisão do DASH-01 (Funil de vendas no Dashboard) pelo 🟣 SecBrain e pelo 🔴 TestBrain, Lote 22 (2026-10-29). Nenhum deles bloqueou o fechamento do DASH-01 (em `feito.md`). Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário.
+>
+> **2026-10-29:** o BUG-19 recebeu a decisão do usuário (corrigir o arredondamento) e foi para o **Lote 25** (card em `fazendo.md`). Aqui ficam DOC-06 e FE-15.
 
 ---
 
@@ -196,21 +161,6 @@
 **Ação esperada:** corrigir o comentário para "escopo por vendedor (`oportunidades.vendedor_id`)". Aproveitar e conferir se os comentários equivalentes das linhas 116 (Pedidos) e 137 (Visitas) descrevem o filtro real; corrigir só o texto, sem mudar código.
 
 **Critério de aceite:** comentários de `rotas.go` batem com o filtro aplicado em cada contexto; build e testes verdes (nenhuma mudança de comportamento).
-
----
-
-## BUG-19: `arredondar2` trunca em direção a zero com valores negativos — prioridade BAIXA
-
-**Status:** pendente (**exige decisão**: o comportamento foi mantido de propósito no ARQ-06)
-**Camada:** Backend
-**Responsável:** 🤍 MegaBrain/usuário (decisão) → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🔴 TestBrain, testes do DASH-01 (Lote 22, 2026-10-29).
-
-**Descrição:** `apis/shared/analytics/ranking.go:53-56` arredonda com `float64(int(val*100+0.5)) / 100`. Como a conversão para `int` trunca em direção a zero, valores negativos arredondam errado: −1,555 → −1,55 (o esperado seria −1,56). O comentário da função diz que o comportamento legado foi mantido "inclusive com valores negativos" para nenhum número do ranking mudar na migração. Hoje o funil (DASH-01) e o ranking só produzem valores ≥ 0, então o efeito é teórico, mas a função é reutilizada no pacote.
-
-**Ação esperada:** decidir se corrige (ex.: `math.Round(val*100) / 100`, com cuidado com o comportamento em `x,xx5` positivo, que deve continuar igual) ou se só documenta que a função não aceita negativos. Se corrigir: testes de tabela com positivos, negativos e zero, e conferência de que nenhum número do ranking, das metas e do funil muda nos testes existentes.
-
-**Critério de aceite:** decisão registrada no card; arredondamento correto para negativos (ou restrição documentada e testada); contrato HTTP inalterado; testes verdes.
 
 ---
 
@@ -312,6 +262,197 @@
 
 ---
 
+## Achados da especificação do Lote 25 (UX-02, CHORE-07, BUG-22)
+
+> **2026-10-30:** o Lote 25 foi concluído (`feito.md`); estes três cards continuam pendentes (UX-02 com avanço parcial).
+>
+> Origem comum: 🟣 SecBrain, especificação do Lote 25 (2026-10-29). Por decisão do usuário (adendo do 🤍 MegaBrain, item 5), R4 e R6 ficam **só no backlog** (não implementar no Lote 25). Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`.
+
+---
+
+## UX-02: orientar o ajuste manual de estoque depois do snapshot do faturamento (409 → usar o PUT) — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Frontend (Docs/Postman)
+**Responsável:** 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 25 (risco R4, 2026-10-29).
+
+**Descrição:** o upsert do faturamento cria o snapshot de estoque do dia para o SKU. Depois disso, um ajuste manual (POST de estoque) para o mesmo SKU e dia bate no índice `uk_estoque_data_sku`. Com o CHORE-06 (Lote 25), essa resposta passa de 500 para 409 "registro de estoque já cadastrado para este sku nesta data", mas o usuário não entende por que o registro "já existe" se ele não o criou.
+
+**Ação esperada:** em `frontend/src/app/admin/estoque/page.tsx` (modal de ajuste), no 409 orientar a editar o registro existente (PUT), por exemplo com a mensagem "já existe registro deste SKU nesta data (pode ter sido criado pelo faturamento); edite o registro existente", e, se possível, um atalho para abrir o registro. Documentar o comportamento no `postman/README.md` e no manual da tela de estoque.
+
+**Critério de aceite:** o 409 do POST de estoque mostra a orientação e não a mensagem genérica; teste de frontend do caso; docs atualizadas. Depende do CHORE-06 concluído.
+
+**Andamento (2026-10-30, Lote 25):** o CHORE-06 foi concluído, e a tela de estoque já acrescenta "Edite o registro existente." à mensagem do 409; o `postman/README.md` documenta o caso (inclusive o registro criado pelo faturamento). Falta: o atalho para abrir o registro existente, o texto mencionando o faturamento na tela e o manual da tela de estoque.
+
+---
+
+## CHORE-07: mensagens "apenas o status" / "apenas ter o status alterado" imprecisas depois do BUG-16 — prioridade BAIXA
+
+**Status:** pendente (mudança de texto = mudança de contrato; exige aprovação do usuário)
+**Camadas:** Backend, Frontend (mapeamento de mensagens), Testes, Docs/Postman
+**Responsável:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 25 (risco R6, 2026-10-29).
+
+**Descrição:** as mensagens existentes em `SH/vendas/erros.go:38` ("…apenas o status") e `erros.go:42` ("…apenas ter o status alterado") dizem que um pedido faturado pode ter o status alterado. Depois do BUG-16 (Faturado só vai para Entregue; Entregue é terminal), isso fica enganoso. O BUG-16 **não** muda esses textos, porque mudar a mensagem é mudança de contrato HTTP não aprovada.
+
+**Ação esperada:** propor ao usuário os textos novos, alinhados à regra do BUG-16; com a aprovação, trocar os textos, atualizar o `friendlyPedidoError` do frontend, os testes que conferem a mensagem exata, o Postman (exemplo "…apenas ter o status alterado") e o `postman/README.md`.
+
+**Critério de aceite:** textos aprovados pelo usuário; mensagens coerentes com a regra de status; testes, frontend, Postman e docs atualizados.
+
+---
+
+## BUG-22: toggle de ativo de clientes e usuários lê e inverte (mesmo padrão do BUG-17) — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Backend, Frontend, Testes
+**Responsável:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 25 (BUG-17, 2026-10-29).
+
+**Descrição:** o toggle de ativo de clientes (contexto Comercial) e de usuários (contexto Identidade) usa o mesmo padrão do produto antes do BUG-17: lê o registro, inverte o valor em memória e grava. Dois toggles concorrentes leem o mesmo valor e se anulam (lost update). O BUG-17 corrigiu só o produto.
+
+**Ação esperada:** aplicar o mesmo padrão do BUG-17: `UPDATE … SET ativo = NOT ativo WHERE id = ?` atômico quando não houver valor explícito no body, `DefinirAtivo` quando houver, e releitura para a resposta; bloqueio de 1500 ms no botão das telas, se aplicável. Atenção às regras próprias desses toggles (escopo/IDOR de clientes do SEC-01; revogação de sessão do usuário inativado do SEC-06/SEC-08; BUG-05) para não perder nenhuma delas. O toggle de usuário está no contexto Identidade, mexido no Lote 24: executar depois do merge dele.
+
+**Critério de aceite:** toggles concorrentes não se anulam (teste de integração); regras de escopo e de revogação de sessão preservadas; contrato HTTP inalterado; testes verdes.
+
+---
+
+## Achados do Lote 24 (SEC-32, SEC-33, BUG-23, TST-08)
+
+> Origem comum: achados registrados durante o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22, 2026-10-29), fora do escopo dele. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário, depois do merge do Lote 24. Caminhos: `SH` = `apis/shared`.
+
+---
+
+## SEC-32: hash vazio ou malformado no banco permite enumerar contas pelo tempo de resposta — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Backend
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** Lote 24 (2026-10-29), achado do SEC-22.
+
+**Descrição:** em `SH/identidade/identidadecrypto/hasher.go:89-96`, quando o hash gravado no banco está vazio ou malformado (formato não reconhecido), a verificação retorna sem rodar o Argon2. A resposta continua 401 "credenciais inválidas", mas sai mais rápido, o que permite enumerar essas contas pelo tempo de resposta (quebra parcial da anti-enumeração do SEC-22).
+
+**Ação esperada:** quando o hash não for reconhecido, rodar o hash descartável (mesmo custo do caminho normal) antes de responder; log de decisão sem o hash nem o e-mail.
+
+**Critério de aceite:** com hash vazio ou malformado, o hash descartável roda e a resposta é idêntica (mensagem e status) à de senha errada; teste que confirma a execução do hash nesse caminho; testes do SEC-22 verdes.
+
+---
+
+## SEC-33: prefixo `__Host-` nos nomes dos cookies de sessão — prioridade BAIXA
+
+**Status:** pendente (muda os nomes dos cookies; avaliar impacto com o usuário)
+**Camadas:** Backend, Frontend (se ler os nomes), Testes, Docs/Postman
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+**Origem:** Lote 24 (2026-10-29), achado do SEC-21.
+
+**Descrição:** os cookies de sessão (access e refresh) não usam o prefixo `__Host-`. O prefixo faz o navegador exigir `Secure`, `Path=/` e ausência de `Domain`, o que impede que um subdomínio ou uma conexão sem HTTPS plante ou sobrescreva o cookie (cookie tossing).
+
+**Ação esperada:** avaliar a troca dos nomes para `__Host-…`. Impactos: muda os nomes (todas as sessões ativas caem no deploy; conferir o frontend, o Caddy, o Postman e os testes que citam os nomes) e exige `Secure` **sempre**, inclusive em dev (o `COOKIE_SECURE=false` do SEC-21 deixaria de funcionar com o prefixo; definir como fica o ambiente local). Conferir o `Path` do cookie de refresh (o `__Host-` exige `Path=/`).
+
+**Critério de aceite:** decisão registrada; se aprovada, cookies com `__Host-`, `Secure`, `Path=/` e sem `Domain`; logout limpa os cookies novos (e os antigos, na transição); testes, Postman e docs atualizados.
+
+---
+
+## BUG-23: refresh de usuário apagado responde 500 — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Backend
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** Lote 24 (2026-10-29), achado do SEC-22.
+
+**Descrição:** em `SH/identidade/identidadeapp/sessao.go:37-41`, se o usuário dono do refresh token não existir mais (apagado do banco), a releitura do usuário falha e a resposta é 500, em vez da resposta genérica de sessão inválida usada para inativo (SEC-22).
+
+**Ação esperada:** tratar "usuário não encontrado" no refresh como sessão inválida: 401 genérico, revogar o refresh token e limpar os cookies, no mesmo padrão do inativo; log de decisão só com o id.
+
+**Critério de aceite:** refresh de usuário apagado → 401 genérico (sem 500); token revogado; teste do caso; testes do SEC-22 verdes.
+
+---
+
+## TST-08: `make test` falha com `go: no such tool "covdata"` — prioridade MÉDIA
+
+**Status:** pendente
+**Camadas:** Ambiente (Makefile/toolchain), Testes
+**Responsável:** 🔴 TestBrain (🟡 BackBrain, se o ajuste for no `Makefile`)
+**Origem:** Lote 24 (2026-10-29), execução dos testes.
+
+**Descrição:** `make test` falha com `go: no such tool "covdata"`. O toolchain `go1.26.0` é baixado automaticamente (diretiva `toolchain`/`GOTOOLCHAIN`) e não traz a ferramenta `covdata`, que o `go test` usa quando os alvos `test-shared`/`test-api` passam `-coverpkg`. Os testes em si passam com `go test ./...`. Sem o alvo funcionando, a medição de cobertura pelo `make` fica quebrada.
+
+**Ação esperada:** identificar a causa (toolchain baixado automaticamente versus Go instalado localmente) e corrigir de forma reprodutível: alinhar a versão do Go instalada com a do `go.mod`, fixar `GOTOOLCHAIN` nos alvos ou ajustar o uso de `-coverpkg`, sem perder a medição de cobertura. Documentar o pré-requisito no `CLAUDE.md`/`Makefile` (`make help`).
+
+**Critério de aceite:** `make test` roda de ponta a ponta com cobertura em ambiente limpo; causa e pré-requisito documentados.
+
+---
+
+## Achados do Lote 25 (TST-09, TST-10, CHORE-08, FE-16)
+
+> Origem comum: fechamento do Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21, 2026-10-30; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
+
+---
+
+## TST-09: rodar os 3 testes de integração do Lote 25 e conferir o CHECK `chk_pagamentos_taxa_pct` — prioridade MÉDIA
+
+**Status:** pendente (bloqueado: **depende do usuário** corrigir a credencial do banco)
+**Camadas:** Testes, Database
+**Responsável:** usuário (credencial) → 🔴 TestBrain (testes) e 🌸 DataBrain (conferência do CHECK)
+**Origem:** Lote 25 (2026-10-30).
+
+**Descrição:** o banco do `.env` (MariaDB 11.8.8) passou a recusar o login (`Access denied for user 'casaos'`) durante o Lote 25. Por isso: (1) os 3 testes de integração do lote não rodaram: o de dois toggles concorrentes do BUG-17 e os de upsert real do BUG-21 (saldo 10, baixa 6 → saldo 4, ruptura 0; saldo 5, baixa 6 → saldo −1, ruptura 1), em `SH/tests/catalogo/bug17_bug21_integration_test.go`; (2) a conferência final do CHECK `chk_pagamentos_taxa_pct`, que o 🌸 DataBrain aplicou com `make db-fix-taxa-pct-check` em 2026-10-29 (tabela com 0 linhas), não foi feita.
+
+**Ação esperada:** depois de o usuário corrigir a credencial no `.env` (ou no servidor), rodar os testes com `INTEGRATION=1`, as variáveis `DB_*` no ambiente e `-p 1` (ver `docs/arquitetura-ddd.md` §10.9); conferir no `information_schema.CHECK_CONSTRAINTS` que o CHECK existe com `taxa_pct >= 0 and taxa_pct <= 30`, e que um INSERT com `taxa_pct = 30.01` falha com o erro 4025. Se algum teste falhar, abrir card de bug para o dev responsável.
+
+**Critério de aceite:** os 3 testes de integração rodam (sem `t.Skip`) e passam; CHECK conferido no banco; resultado registrado no card do Lote 25 em `feito.md`.
+
+---
+
+## TST-10: `make test-frontend` e `make frontend-deps` não funcionam no disco exFAT com o Node 18 do sistema — prioridade MÉDIA
+
+**Status:** pendente
+**Camadas:** Ambiente (Makefile/toolchain), Frontend, Testes
+**Responsável:** 🔴 TestBrain (🟢 FrontBrain, se o ajuste for no `package.json`/`Makefile`)
+**Origem:** Lote 25 (2026-10-30), execução dos testes de frontend.
+
+**Descrição:** com o repositório no disco exFAT (sem symlinks), o `npm ci` não cria `node_modules/.bin`, então os alvos `make frontend-deps` e `make test-frontend` não encontram os binários. Além disso, o Node do sistema é o 18, e o vitest 4 exige Node >= 20. No Lote 25, os 1630 testes, o `tsc` e o `eslint` só rodaram num espelho com Node 22. Card separado do TST-08 (que é do toolchain Go e do `covdata`), porque a causa e a correção são outras.
+
+**Ação esperada:** documentar o pré-requisito de Node >= 20 (por exemplo, `.nvmrc` ou `engines` no `package.json`, e o `CLAUDE.md`/`make help`); fazer os alvos funcionarem sem `node_modules/.bin` (ex.: chamar `node node_modules/vitest/vitest.mjs` ou `npx --no-install`, ou usar `npm ci --no-bin-links`, citado em `postman/README.md`, "Subindo o ambiente") ou documentar o espelho em disco com symlinks como caminho oficial.
+
+**Critério de aceite:** `make frontend-deps` e `make test-frontend` rodam de ponta a ponta no ambiente do usuário (ou falham com mensagem clara de pré-requisito); pré-requisitos documentados.
+
+---
+
+## CHORE-08: observações do 🔴 TestBrain no Lote 25 (log, vlog, NaN e 1062 de carteiras) — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Backend (shared), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa o item 4)
+**Origem:** 🔴 TestBrain, testes do Lote 25 (2026-10-30).
+
+**Descrição:** quatro pontos menores, nenhum com impacto no contrato atual:
+1. **Log "quitado" impreciso na corrida** (`SH/vendas/vendasapp/pagamentos.go:164`): quando o UPDATE condicional afeta 0 linhas e a releitura decide o resultado, o log de bloqueio diz "quitado" mesmo em casos que não são quitação (conferir o caminho exato).
+2. **Rótulo `status_faturado` do vlog ambíguo** (`SH/vendas/vendasapp/uow.go:67-72`): o mesmo rótulo é usado para recusas de naturezas diferentes da máquina de status (Faturado, Entregue, Entregue sem Faturado), o que dificulta ler o log.
+3. **`TaxaPct` NaN aceito no domínio** (`SH/vendas/pagamento.go:147`): a checagem `TaxaPct < 0 || TaxaPct > TaxaPctMaxima` é falsa para NaN. Pelo JSON o NaN não chega, mas o domínio deveria recusar (`math.IsNaN`/`IsInf`).
+4. **1062 em qualquer índice de carteiras vira 409** (`SH/comercial/comercialmysql/carteiras.go:28`, `qualquerIndice = ""`): inclusive um 1062 de PRIMARY, que deveria ser 500 como em produtos e estoque (CHORE-06).
+
+**Ação esperada:** (1) e (2) ajustar o texto/rótulo do log para refletir a decisão real (só ids, sem dados sensíveis); (3) recusar NaN e ±Inf em `taxa_pct` com o mesmo erro 400; (4) detectar o índice pelo nome (`uk_carteiras_cliente_vendedor_inicio`) com `db.ChaveDuplicada`, deixando outros 1062 como 500.
+
+**Critério de aceite:** testes de cada item (incluindo 1062 PRIMARY de carteiras → 500 e NaN → 400 no domínio); testes de vlog (TST-05) verdes; contrato HTTP inalterado nos casos normais.
+
+---
+
+## FE-16: rodar o `next build` do frontend depois do Lote 25 — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Frontend
+**Responsável:** 🟢 FrontBrain (ou 🔴 TestBrain)
+**Origem:** Lote 25 (2026-10-30).
+
+**Descrição:** no Lote 25 o frontend passou em testes, `tsc` e `eslint` (espelho com Node 22), mas o `next build` não foi rodado. Mudaram `PedidoModal.tsx`, `PagamentoModal.tsx`, `ui/Select.tsx` (prop `helperText`), `app/admin/pedidos/page.tsx`, `app/pagamentos/page.tsx`, `app/admin/produtos/page.tsx` e `app/admin/estoque/page.tsx`.
+
+**Ação esperada:** rodar `next build` (no ambiente com Node >= 20; ver TST-10) e corrigir o que aparecer; registrar o resultado.
+
+**Critério de aceite:** `next build` sem erros; resultado registrado no card do Lote 25 em `feito.md`.
+
+---
+
 ## GAPs de segurança da auditoria ARQ-00 (SEC-14 a SEC-25)
 
 > Origem comum: 🟣 SecBrain, auditoria ARQ-00, Lote 21 (2026-10-13). Relatório completo em `docs/arq-00-invariantes-seguranca.md` (seção "GAPs"; itens 1 a 11). O item 12 (teste de matriz de rotas) não virou card: é feito pelo 🔴 TestBrain dentro do ARQ-00.
@@ -325,11 +466,11 @@
 > - SEC-15: `maskDSN` continua em `SH/db/db.go`.
 > - SEC-16: `SH/kernel/pagina.go` (`Pagina`, `Offset()`).
 > - SEC-17: `API/internal/httpx/cors.go`.
-> - SEC-18: `SH/identidade/identidadecrypto/jwt.go` e `SH/config/config.go`.
+> - SEC-18: **concluído no Lote 24 (card em `feito.md`)**; `SH/identidade/identidadecrypto/jwt.go` e `SH/config/config.go`.
 > - SEC-19: `SH/adapters/turnstile/turnstile.go`.
-> - SEC-20: `API/internal/httpx/clientip.go` (`IPDoCliente`).
-> - SEC-21: `API/internal/httpx/cookies.go` (`DefinirCookiesSessao`, `LimparCookiesSessao`).
-> - SEC-22: `SH/identidade/identidadeapp/login.go` (`Login`) e `sessao.go` (refresh).
+> - SEC-20: **concluído no Lote 24 (card em `feito.md`)**; `API/internal/httpx/clientip.go` (`IPDoCliente`).
+> - SEC-21: **concluído no Lote 24 (card em `feito.md`)**; `API/internal/httpx/cookies.go` (`DefinirCookiesSessao`, `LimparCookiesSessao`).
+> - SEC-22: **concluído no Lote 24 (card em `feito.md`)**; `SH/identidade/identidadeapp/login.go` (`Login`) e `sessao.go` (refresh).
 > - SEC-23: `deve_trocar_senha` em `SH/identidade/usuario.go` e `SH/identidade/identidademysql/usuarios.go`; autenticação por request em `API/internal/httpx/auth.go`.
 > - SEC-24: enums de ordenação em `SH/catalogo/ordenacao.go`, `SH/comercial/ordenacao.go`, `SH/vendas/filtros.go`, `SH/identidade/usuario.go` e `SH/identidade/historico.go`, traduzidos por `switch` nos adapters `*mysql`; testes em `SH/tests/repositories/sort_test.go`.
 > - SEC-25: buscas `LIKE ?` em `SH/catalogo/catalogomysql/produtos.go`, `SH/comercial/comercialmysql/{clientes,oportunidades,visitas}.go` e `SH/vendas/vendasmysql/pedidos.go`.
@@ -404,21 +545,6 @@
 
 ---
 
-## SEC-18: JWT sem validação de issuer/`exp` obrigatório e `JWT_SECRET` sem tamanho mínimo — prioridade ALTA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend (shared)
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 5; invariante I-01, F-06).
-
-**Descrição:** o token é emitido com `Issuer: cfg.JWTIssuer` (`SH/services/auth_service.go:82`) e a validação aceita só HS256 (`SH/services/auth_service.go:99`), mas o parser não exige o issuer nem a presença de `exp` (há só uma checagem defensiva). Além disso, `JWT_SECRET` é obrigatório (`SH/config/config.go`), mas sem tamanho mínimo: um segredo curto torna o HS256 vulnerável a força bruta offline.
-
-**Ação esperada:** no parse, usar `jwt.WithIssuer(cfg.JWTIssuer)`, `jwt.WithExpirationRequired()` e `jwt.WithValidMethods([]string{"HS256"})`; exigir `JWT_SECRET` com pelo menos 32 bytes na carga da config (mesma linha do `PASSWORD_PEPPER`), sem incluir o valor na mensagem. Atualizar `.env.example`/`deploy/api.env.example`. Testes: token com issuer errado → 401; token sem `exp` → 401; segredo curto → erro de config. Avaliar impacto nos tokens em circulação (todos já são emitidos com issuer e exp).
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
 ## SEC-19: Turnstile não valida `hostname` nem `action` — prioridade MÉDIA
 
 **Status:** pendente (fora do escopo do Lote 21)
@@ -429,51 +555,6 @@
 **Descrição:** a verificação do Turnstile em login e reset de senha é fail-closed e vem antes do rate limit, mas só confere `success`; não confere se o `hostname` da resposta é o do sistema nem se o `action` corresponde ao fluxo (login vs. reset). Um token obtido em outro site com a mesma site key, ou em outro fluxo, é aceito.
 
 **Ação esperada:** configurar os hostnames esperados (ex. `TURNSTILE_HOSTNAMES`) e conferir `hostname` e `action` na resposta do siteverify; o 🟢 FrontBrain passa `action` distinto em cada widget (`login`, `reset-senha`). Resposta inválida → 400 com a mensagem atual. Testes com resposta simulada de hostname/action errados.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
-## SEC-20: IP do cliente pega o valor mais à esquerda do `X-Forwarded-For` — prioridade ALTA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend + Deploy
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 7; invariante I-14).
-
-**Descrição:** com `TRUST_PROXY_HEADERS=true`, `getClientIP` (`API/handlers/auth_handler.go:908-923`, em especial 912-915) usa o primeiro item do `X-Forwarded-For`, que é controlado pelo cliente quando o proxy **acrescenta** em vez de sobrescrever. Isso permite contornar o rate limit de login/refresh/reset trocando o IP forjado a cada tentativa. No deploy atual o Caddy sobrescreve o header (DEPLOY-01), mas o código não deveria depender disso.
-
-**Ação esperada:** usar o item mais à direita (o IP visto pelo proxy confiável) ou ler o header a partir da direita descontando N proxies confiáveis configurados; validar que o valor é um IP (`net.ParseIP`), com fallback para `RemoteAddr`. Testes com XFF de vários saltos e valores inválidos.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
-## SEC-21: flag `Secure` do cookie decidida por `r.Host` e limpeza de cookies sem atributos — prioridade ALTA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 8; invariante I-15).
-
-**Descrição:** `setTokenCookies` (`API/handlers/auth_handler.go:126-159`) desliga `Secure` quando `r.Host` começa com `localhost`, `127.0.0.1` ou `0.0.0.0` (linhas 128-130). O `Host` vem do cliente, então um header forjado (ou um host como `localhost.atacante.com`, que passa no `HasPrefix`) faz o servidor emitir os tokens sem `Secure`. Além disso, `clearTokenCookies` (linhas 162-177) apaga os cookies sem `HttpOnly`, `Secure` e `SameSite`, divergindo dos atributos de criação.
-
-**Ação esperada:** decidir `Secure` por configuração explícita (ex. `COOKIE_SECURE`, default true; false só em dev) em vez de `r.Host`; `clearTokenCookies` com os mesmos atributos da criação. Testes: Host forjado não desliga `Secure`; Set-Cookie de logout com os atributos corretos.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
-## SEC-22: login revela que o usuário existe e está inativo (mensagem e timing) — prioridade ALTA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain (+ 🟢 FrontBrain se a tela tratar a mensagem)
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 9; invariante I-16).
-
-**Descrição:** no `Login` (`API/handlers/auth_handler.go:266-275`), o usuário inativo é checado **antes** da verificação de senha e recebe 401 "usuário inativo", sem rodar o hash. Isso quebra a anti-enumeração: pela mensagem e pelo tempo de resposta (sem custo do Argon2) dá para saber que a conta existe e está inativa, mesmo sem saber a senha.
-
-**Ação esperada:** verificar a senha (ou rodar o hash descartável) antes de qualquer decisão e responder ao inativo com o mesmo 401 "credenciais inválidas" e o mesmo custo. Se o produto quiser informar "conta inativa", só depois de a senha estar correta (decisão do 🤍 MegaBrain/usuário). Conferir também o refresh (linhas 447-448). Testes de mensagem idêntica e de que o hash roda nos três casos (inexistente, inativo, senha errada).
 
 **Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
 
@@ -561,19 +642,6 @@ Registrar o resultado na seção "Execução" do roteiro.
 
 ---
 
-## CHORE-03: parse estrito de id de path na API inteira — prioridade BAIXA
-
-**Status:** pendente (fora do escopo do Lote 21; **exige ciência/aprovação do usuário**, pois muda o contrato HTTP)
-**Camada:** Backend (Frontend/Postman se algum consumidor depender do 404)
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain (Postman)
-**Origem:** piloto ARQ-02 (Lote 21, 2026-10-14), decisão do 🤍 MegaBrain.
-
-**Descrição:** hoje ids de path `-1`/`0` chegam ao repositório e o legado responde 404. No Lote 21 isso é preservado com `httpx.IDDoPathPermissivo`. Este card padroniza a API inteira para responder **400** com `httpx.IDDoPath` (parse estrito, id > 0) e remove o `IDDoPathPermissivo`.
-
-**Critério de aceite:** todas as rotas com `{id}` respondem 400 para id ≤ 0 ou não numérico; testes por rota; Postman e docs atualizados; usuário ciente da mudança de contrato.
-
----
-
 ## CHORE-04: normalizar formatação (gofmt/CRLF) de 3 testes SEC12 de integração — prioridade BAIXA
 
 **Status:** pendente (fora do escopo do Lote 21)
@@ -609,17 +677,4 @@ Registrar o resultado na seção "Execução" do roteiro.
 
 ---
 
-## CHORE-06: padronizar duplicidade (CNPJ/SKU/e-mail) para 409 Conflict — prioridade BAIXA
-
-**Status:** pendente (fora do escopo do Lote 21; **exige decisão do usuário**, pois muda o contrato HTTP)
-**Camada:** Backend (Frontend/Postman se algum consumidor depender do status atual)
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain (Postman e docs)
-**Origem:** decisão do 🤍 MegaBrain no ARQ-04 (Lote 21, 2026-10-14), a partir da NB-3 do 🟣 SecBrain.
-
-**Descrição:** no Lote 21, a duplicidade preserva o status HTTP atual de cada caso (o ARQ-04 só traduz o 1062 para `KindConflito`, tirando o valor do log). Este card padroniza todos os casos de duplicidade para **409**. Pontos:
-- `apis/shared/catalogo/catalogomysql/produtos.go`: SKU duplicado hoje responde 500;
-- `apis/shared/catalogo/catalogomysql/estoques.go`: `(data_snapshot, sku)` duplicado hoje responde 500;
-- CNPJ duplicado do cliente (contexto Comercial);
-- e-mail duplicado (conferir o status atual).
-
-**Critério de aceite:** usuário ciente e de acordo; todos os casos de duplicidade respondem 409 com mensagem consistente e sem o valor duplicado no log; testes por rota; Postman e docs atualizados.
+> **2026-10-29:** CHORE-03 (id de path → 400) e CHORE-06 (duplicidade → 409) receberam a aprovação do usuário para a mudança de contrato HTTP e foram para o **Lote 25** (cards em `fazendo.md`). Aqui ficam CHORE-04 e CHORE-05.

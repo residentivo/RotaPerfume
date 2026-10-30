@@ -111,11 +111,18 @@ func escopoIrrestrito(t *testing.T) kernel.Escopo {
 	return e
 }
 
+// esperarGravacaoDoPedido: pedidoValido nasce Faturado, então a criação
+// baixa o estoque dos dois itens na mesma tx (BUG-20).
 func esperarGravacaoDoPedido(m sqlmock.Sqlmock) {
 	m.ExpectBegin()
 	m.ExpectExec(`INSERT INTO pedidos`).WillReturnResult(sqlmock.NewResult(100, 1))
 	m.ExpectExec(`INSERT INTO itens_pedido`).WillReturnResult(sqlmock.NewResult(1, 1))
 	m.ExpectExec(`INSERT INTO itens_pedido`).WillReturnResult(sqlmock.NewResult(2, 1))
+	for _, sku := range []string{"SKU-10", "SKU-11"} {
+		m.ExpectQuery(`SELECT sku FROM produtos WHERE id = \?`).WillReturnRows(sqlmock.NewRows([]string{"sku"}).AddRow(sku))
+		m.ExpectQuery(`SELECT id FROM estoque WHERE data_snapshot = \? AND sku = \? FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+		m.ExpectExec(`INSERT INTO estoque`).WillReturnResult(sqlmock.NewResult(0, 1))
+	}
 	m.ExpectCommit()
 }
 

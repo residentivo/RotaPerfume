@@ -50,7 +50,11 @@ func NovoStatusPagamento(s string) (StatusPagamento, error) {
 	return "", ErrStatusPagamentoInvalido
 }
 
+// TaxaPctMaxima é o teto de taxa_pct (SEC-27; o CHECK do banco é o mesmo).
+const TaxaPctMaxima = 30.0
+
 // Quitado informa se o status preserva o registro (Pago ou Pago com atraso).
+// O UPDATE condicional do adapter (SEC-27) usa as mesmas duas constantes.
 func (s StatusPagamento) Quitado() bool { return s == StatusPago || s == StatusPagoComAtraso }
 
 // Pagamento é um pagamento de pedido. A PK é literalmente pagamento_id.
@@ -70,6 +74,15 @@ type Pagamento struct {
 	StatusPagamento string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+}
+
+// PodeEditar (SEC-27): pagamento quitado é trilha financeira e só o admin
+// o edita; o caso de uso chama esta regra apenas para o perfil restrito.
+func (p *Pagamento) PodeEditar() error {
+	if StatusPagamento(p.StatusPagamento).Quitado() {
+		return ErrPagamentoJaQuitadoNaoPodeSerEditado
+	}
+	return nil
 }
 
 // PodeExcluir: pagamento quitado é trilha financeira e não sai (409).
@@ -131,7 +144,7 @@ func (d DadosPagamento) validarValores() error {
 	if _, err := kernel.NovoDinheiro(d.Valor); err != nil {
 		return ErrValorInvalido
 	}
-	if d.TaxaPct < 0 {
+	if d.TaxaPct < 0 || d.TaxaPct > TaxaPctMaxima {
 		return ErrTaxaPctInvalida
 	}
 	if _, err := kernel.NovoDinheiro(d.ValorLiquido); err != nil {

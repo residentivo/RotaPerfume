@@ -2,6 +2,7 @@ package identidadeapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -43,6 +44,9 @@ func (c *Casos) CriarUsuario(ctx context.Context, p kernel.Principal, d identida
 	}
 	u = identidade.NovoUsuario(v, hash)
 	if err := c.d.Usuarios.Inserir(ctx, u); err != nil {
+		if errors.Is(err, identidade.ErrEmailDuplicado) {
+			log.Printf("[usuarios] email duplicado recusado (uk_usuarios_email)") // CHORE-06: sem o e-mail
+		}
 		return nil, false, err
 	}
 	// Dados em memória: o e-mail sai mesmo que a releitura falhe (BUG-11).

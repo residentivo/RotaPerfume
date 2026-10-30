@@ -41,16 +41,20 @@ func sec11Env(t *testing.T, env map[string]*string) {
 
 func sp(s string) *string { return &s }
 
+// sec11SegredoJWT tem o tamanho mínimo de JWT_SECRET (SEC-18: 32 bytes).
+const sec11SegredoJWT = "segredo-sec11-com-pelo-menos-32b"
+
 // sec11Base: ambiente válido exceto pelas credenciais do banco (sem as envs
 // de refresh, que ficam no padrão).
 func sec11Base() map[string]*string {
 	return map[string]*string{
-		"JWT_SECRET":                    sp("segredo-sec11"),
+		"JWT_SECRET":                    sp(sec11SegredoJWT),
 		"JWT_TTL":                       sp("24h"),
 		"PASSWORD_PEPPER":               sp("pepper-de-teste-com-pelo-menos-32-bytes"),
 		"REFRESH_REUSE_SUPPRESS_WINDOW": nil,
 		"REFRESH_CLEANUP_INTERVAL":      nil,
 		"REFRESH_TOKEN_RETENCAO":        nil,
+		"COOKIE_SECURE":                 nil,
 		"ARGON2_MEMORIA_KIB":            nil,
 		"ARGON2_ITERACOES":              nil,
 		"ARGON2_PARALELISMO":            nil,
@@ -146,7 +150,7 @@ func TestSEC11_LoadSemCredenciaisDB(t *testing.T) {
 			nome: "passa sem DB_USUARIO/DB_SENHA",
 			env:  map[string]*string{"DB_USUARIO": nil, "DB_SENHA": nil},
 			check: func(t *testing.T, c *config.Config) {
-				assert.Equal(t, "segredo-sec11", c.JWTSecret)
+				assert.Equal(t, sec11SegredoJWT, c.JWTSecret)
 				assert.Equal(t, uint32(65536), c.HashSenha.MemoriaKiB)
 			},
 		},

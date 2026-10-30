@@ -22,10 +22,16 @@ func produtoColunasHeaderForHandler() []string {
 }
 
 func produtoRowsForHandler() *sqlmock.Rows {
+	return produtoRowsAtivoForHandler(true)
+}
+
+// produtoRowsAtivoForHandler é o produto 1 com o ativo informado (a
+// releitura depois do UPDATE do toggle, BUG-17).
+func produtoRowsAtivoForHandler(ativo bool) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows(produtoColunasHeaderForHandler()).
 		AddRow(int64(1), "SKU-001", "Perfume Teste", "Perfumaria", "Marca X", "Cítrico",
-			99.90, 45.00, "UN", nil, true, now, now)
+			99.90, 45.00, "UN", nil, ativo, now, now)
 }
 
 func emptyProdutoRowsForHandler() *sqlmock.Rows {
@@ -300,13 +306,14 @@ func TestToggleAtivoProduto_Toggle_SemBody(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	// produto atual está ativo=true -> toggle inverte para false
+	// BUG-17: o toggle inverte no próprio UPDATE (sem leitura prévia) e a
+	// resposta é a releitura (produto era ativo=true, agora false).
+	mock.ExpectExec(`UPDATE produtos SET ativo = NOT ativo WHERE id = \?`).
+		WithArgs(int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
 		WithArgs(int64(1)).
-		WillReturnRows(produtoRowsForHandler())
-	mock.ExpectExec(`UPDATE produtos SET ativo = \? WHERE id = \?`).
-		WithArgs(false, int64(1)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+		WillReturnRows(produtoRowsAtivoForHandler(false))
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/produtos/1/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -331,12 +338,12 @@ func TestToggleAtivoProduto_ComBodyExplicito(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(produtoRowsForHandler())
 	mock.ExpectExec(`UPDATE produtos SET ativo = \? WHERE id = \?`).
 		WithArgs(true, int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(produtoRowsForHandler())
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/produtos/1/inativar", makeJSON(map[string]any{"ativo": true}))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -361,9 +368,10 @@ func TestToggleAtivoProduto_NaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + produtoColunasRegex + ` FROM produtos WHERE id = \? LIMIT 1`).
+	// BUG-17: o UPDATE do toggle sem linha casada é o 404 (clientFoundRows).
+	mock.ExpectExec(`UPDATE produtos SET ativo = NOT ativo WHERE id = \?`).
 		WithArgs(int64(999)).
-		WillReturnRows(emptyProdutoRowsForHandler())
+		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/produtos/999/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)

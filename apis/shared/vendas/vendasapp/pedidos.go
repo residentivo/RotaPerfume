@@ -40,7 +40,8 @@ func (c *Casos) ObterPedido(ctx context.Context, p kernel.Principal, id int64) (
 
 // CriarPedido: sem carteira, 403 antes do decode; restrito grava sempre com
 // o próprio vendedor e só para cliente da carteira ativa (E-05). Os valores
-// vêm do domínio (V-03); cabeçalho e itens numa tx (C9).
+// vêm do domínio (V-03); cabeçalho e itens numa tx (C9). Criado como
+// Faturado, baixa o estoque na mesma tx; como Entregue, 400 (BUG-20).
 func (c *Casos) CriarPedido(ctx context.Context, p kernel.Principal, ler Leitor[vendas.DadosPedido]) (ped *vendas.Pedido, err error) {
 	defer vlog.Trace(arqPedidos, "Vendas.CriarPedido", "user_id=%d", p.UserID())(&err)
 	e, err := c.noEscopo(ctx, p, vendas.ErrSemVendedor)
@@ -51,7 +52,13 @@ func (c *Casos) CriarPedido(ctx context.Context, p kernel.Principal, ler Leitor[
 	if err != nil {
 		return nil, err
 	}
-	err = c.d.TxPedido.WithTx(ctx, func(r TxPedido) error { return r.Pedidos.Inserir(ctx, novo) })
+	baixar, err := vendas.PlanejarCriacao(novo)
+	if err != nil {
+		vlog.Printf(arqPedidos, "Vendas.CriarPedido", "decisão bloqueado status_entregue_sem_faturamento")
+		return nil, err
+	}
+	quando := c.d.Relogio()
+	err = c.d.TxPedido.WithTx(ctx, func(r TxPedido) error { return r.Criar(ctx, novo, baixar, quando) })
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +100,8 @@ func (c *Casos) AtualizarPedido(ctx context.Context, p kernel.Principal, id int6
 }
 
 // ExcluirPedido remove o pedido e os itens (hard delete), só da própria
-// carteira e respeitando as travas V-01 (pagamentos vinculados; Faturado).
+// carteira e respeitando as travas V-01 (pagamentos vinculados; Faturado ou
+// Entregue).
 // A segunda leitura do cabeçalho é a do service legado (paridade de SQL).
 func (c *Casos) ExcluirPedido(ctx context.Context, p kernel.Principal, id int64) (err error) {
 	defer vlog.Trace(arqPedidos, "Vendas.ExcluirPedido", "id=%d", id)(&err)
@@ -113,8 +121,8 @@ func (c *Casos) ExcluirPedido(ctx context.Context, p kernel.Principal, id int64)
 		return err
 	}
 	if err = atual.PodeExcluir(temPagamentos); err != nil {
-		vlog.Printf(arqPedidos, "Vendas.ExcluirPedido", "decisão bloqueado id=%d pagamentos=%t status_faturado=%t",
-			id, temPagamentos, vendas.StatusPedido(atual.Status) == vendas.StatusFaturado)
+		vlog.Printf(arqPedidos, "Vendas.ExcluirPedido", "decisão bloqueado id=%d pagamentos=%t status_faturado=%t status_entregue=%t",
+			id, temPagamentos, vendas.StatusPedido(atual.Status) == vendas.StatusFaturado, vendas.StatusPedido(atual.Status) == vendas.StatusEntregue)
 		return err
 	}
 	if err = c.d.TxPedido.WithTx(ctx, func(r TxPedido) error { return r.Pedidos.Excluir(ctx, id) }); err != nil {

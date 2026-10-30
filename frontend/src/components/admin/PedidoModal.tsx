@@ -38,7 +38,49 @@ function friendlyPedidoError(message: string): string {
   if (normalized.includes("nao pertence") && normalized.includes("carteira")) {
     return "O cliente selecionado nao pertence a carteira ativa do vendedor. Escolha um cliente da carteira e tente novamente.";
   }
+  // BUG-16: regras de transicao de status (400) e itens travados (409).
+  vlog(F, "friendlyPedidoError", "verificando erros de transição de status/itens travados");
+  if (normalized.includes("faturado so pode ter o status alterado para entregue")) {
+    return "Pedido faturado so pode ter o status alterado para Entregue.";
+  }
+  if (normalized.includes("entregue nao pode ter o status alterado")) {
+    return "Pedido entregue nao pode ter o status alterado.";
+  }
+  if (normalized.includes("so pode ser marcado como entregue depois de faturado")) {
+    return "O pedido so pode ser marcado como Entregue depois de Faturado.";
+  }
+  if (normalized.includes("ja faturado") && normalized.includes("itens")) {
+    return "Pedido ja faturado: nao e possivel alterar os itens, apenas o status.";
+  }
   return message;
+}
+
+// BUG-16: Faturado so pode ir para Entregue; Entregue e terminal. Nenhum
+// pedido nasce como Entregue nem chega a Entregue sem passar por Faturado.
+const STATUS_FATURADO = "Faturado";
+const STATUS_ENTREGUE = "Entregue";
+
+// Indica se o pedido (status ja gravado) tem os itens travados no backend.
+export function pedidoItensTravados(statusAtual: string | null | undefined): boolean {
+  vlog(F, "pedidoItensTravados", "verificando status gravado:", statusAtual);
+  return statusAtual === STATUS_FATURADO || statusAtual === STATUS_ENTREGUE;
+}
+
+// Opcoes do select de Status conforme o modo e o status gravado do pedido.
+export function opcoesStatusPedido(
+  mode: "create" | "edit",
+  statusAtual: string | null | undefined
+): { value: string; label: string }[] {
+  vlog(F, "opcoesStatusPedido", "montando opções de status, modo/status:", mode, statusAtual);
+  if (mode === "edit" && statusAtual === STATUS_FATURADO) {
+    return STATUS_OPTIONS.filter(
+      (o) => o.value === STATUS_FATURADO || o.value === STATUS_ENTREGUE
+    );
+  }
+  if (mode === "edit" && statusAtual === STATUS_ENTREGUE) {
+    return STATUS_OPTIONS.filter((o) => o.value === STATUS_ENTREGUE);
+  }
+  return STATUS_OPTIONS.filter((o) => o.value !== STATUS_ENTREGUE);
 }
 
 interface PedidoModalProps {
@@ -475,6 +517,19 @@ export function PedidoModal({
     [produtos]
   );
 
+  // Status gravado do pedido em edicao (nao o valor do select).
+  vlog(F, "PedidoModal", "calculando status gravado do pedido");
+  const statusGravado = mode === "edit" && pedido ? pedido.status : null;
+  vlog(F, "PedidoModal", "verificando se itens estão travados (faturado/entregue)");
+  const itensTravados = pedidoItensTravados(statusGravado);
+  vlog(F, "PedidoModal", "verificando se pedido está entregue");
+  const pedidoEntregue = statusGravado === STATUS_ENTREGUE;
+  vlog(F, "PedidoModal", "memorizando opções de status");
+  const statusOptions = useMemo(
+    () => opcoesStatusPedido(mode, statusGravado),
+    [mode, statusGravado]
+  );
+
   vlog(F, "PedidoModal", "memorizando valor total do pedido");
   const valorTotal = useMemo(
     () => itens.reduce((acc, row) => acc + calcValorBruto(row), 0),
@@ -678,12 +733,26 @@ export function PedidoModal({
             label="Status"
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            options={STATUS_OPTIONS}
+            options={statusOptions}
+            disabled={pedidoEntregue}
+            helperText={
+              pedidoEntregue
+                ? "Pedido entregue nao pode ter o status alterado."
+                : statusGravado === STATUS_FATURADO
+                ? "Pedido faturado so pode ser alterado para Entregue."
+                : undefined
+            }
             required
           />
         </div>
 
         <div>
+          {itensTravados && (
+            <Alert variant="info">
+              Pedido ja faturado: nao e possivel alterar os itens, apenas o
+              status.
+            </Alert>
+          )}
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-slate-700">Itens</h3>
             <Button
@@ -691,7 +760,7 @@ export function PedidoModal({
               variant="secondary"
               size="sm"
               onClick={addItem}
-              disabled={loadingAux}
+              disabled={loadingAux || itensTravados}
             >
               + Adicionar item
             </Button>
@@ -709,7 +778,7 @@ export function PedidoModal({
                     value={row.produto_id}
                     onChange={(e) => handleProdutoChange(row.localId, e.target.value)}
                     options={produtoOptions}
-                    disabled={loadingAux}
+                    disabled={loadingAux || itensTravados}
                   />
                 </div>
                 <div className="col-span-1 sm:col-span-2">
@@ -722,6 +791,7 @@ export function PedidoModal({
                     onChange={(e) =>
                       updateItem(row.localId, { quantidade: e.target.value })
                     }
+                    disabled={itensTravados}
                   />
                 </div>
                 <div className="col-span-1 sm:col-span-2">
@@ -734,6 +804,7 @@ export function PedidoModal({
                     onChange={(e) =>
                       updateItem(row.localId, { preco_praticado: e.target.value })
                     }
+                    disabled={itensTravados}
                   />
                 </div>
                 <div className="col-span-1 sm:col-span-2">
@@ -747,6 +818,7 @@ export function PedidoModal({
                     onChange={(e) =>
                       updateItem(row.localId, { desconto_pct: e.target.value })
                     }
+                    disabled={itensTravados}
                   />
                 </div>
                 <div className="col-span-1 flex items-end justify-end pb-3 sm:pb-2 text-xs font-medium text-slate-600">
@@ -758,7 +830,7 @@ export function PedidoModal({
                     variant="ghost"
                     size="sm"
                     onClick={() => removeItem(row.localId)}
-                    disabled={itens.length <= 1}
+                    disabled={itens.length <= 1 || itensTravados}
                     title="Remover item"
                   >
                     ✕

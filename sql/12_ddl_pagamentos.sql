@@ -47,6 +47,12 @@
 --     todas com `status_pagamento` em ('Em aberto', 'Inadimplente') — ou
 --     seja, pagamento ainda não ocorreu. NULL representa fielmente "ainda
 --     não pago", em vez de forçar uma data fictícia.
+--   - ATUALIZAÇÃO (2026-10-29, SEC-27 / Lote 25): CHECK
+--     `chk_pagamentos_taxa_pct` (`taxa_pct` >= 0 AND `taxa_pct` <= 30,
+--     limites inclusivos), defesa em profundidade da regra do domínio
+--     (vendas.TaxaPctMaxima). Bancos criados antes recebem o CHECK pela
+--     migração sql/24_alter_pagamentos_taxa_pct_check.sql
+--     (make db-fix-taxa-pct-check), que não roda no db-up/db-reset.
 --   - Índices para os filtros esperados pelo Backend/Frontend (tela de
 --     Pagamentos, acesso comum a qualquer usuário autenticado): `pedido_id`,
 --     `status_pagamento`, `data_vencimento`.
@@ -79,7 +85,8 @@ CREATE TABLE IF NOT EXISTS `pagamentos` (
     CONSTRAINT `fk_pagamentos_pedido` FOREIGN KEY (`pedido_id`)
         REFERENCES `pedidos`(`pedido_id_origem`)
         ON DELETE RESTRICT
-        ON UPDATE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT `chk_pagamentos_taxa_pct` CHECK (`taxa_pct` >= 0 AND `taxa_pct` <= 30)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tabela de pagamentos do ERP';
 
 SET FOREIGN_KEY_CHECKS = 1;

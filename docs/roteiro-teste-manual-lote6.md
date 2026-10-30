@@ -69,7 +69,7 @@ Use duas janelas: **A** (normal) com o admin e **B** (anônima) com o `qa.lote6@
 
    - [ ] 1.4 Na Network: o `GET` responde **401** `{"success":false,"error":"usuário inativo"}`, o `POST /api/auth/refresh` responde **401** `"refresh token revogado"` (os refresh tokens foram revogados na inativação) e o front chama `POST /api/auth/logout`.
    - [ ] 1.5 A janela B vai para `/login`, e o `auth_user` some do Local Storage.
-   - [ ] 1.6 Novo login com o `qa.lote6@...` é recusado com **"usuário inativo"**.
+   - [ ] 1.6 Novo login com o `qa.lote6@...` é recusado com **401** **"credenciais inválidas"**, a mesma resposta de senha errada (SEC-22, Lote 24, 2026-10-29; até o Lote 24 a mensagem era "usuário inativo").
    - [ ] 1.7 No banco, os tokens do usuário foram revogados com o motivo certo:
 
      ```sql

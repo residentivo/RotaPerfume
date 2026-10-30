@@ -105,12 +105,13 @@ func TestVendas_DescontoPct(t *testing.T) {
 	}
 }
 
-// V-01: com pagamentos vinculados, 409 (antes de olhar o status); Faturado,
-// 409; os demais status podem ser excluídos.
+// V-01: com pagamentos vinculados, 409 (antes de olhar o status); Faturado
+// ou Entregue (BUG-16), 409; os demais status podem ser excluídos.
 func TestVendas_PedidoPodeExcluir(t *testing.T) {
 	assert.ErrorIs(t, (&vendas.Pedido{Status: "Faturado"}).PodeExcluir(true), vendas.ErrPedidoPossuiPagamentosVinculados)
 	assert.ErrorIs(t, (&vendas.Pedido{Status: "Faturado"}).PodeExcluir(false), vendas.ErrPedidoFaturadoNaoPodeSerExcluido)
-	for _, s := range []string{"Cancelado", "Em separação", "Entregue", "Pendente"} {
+	assert.ErrorIs(t, (&vendas.Pedido{Status: "Entregue"}).PodeExcluir(false), vendas.ErrPedidoEntregueNaoPodeSerExcluido)
+	for _, s := range []string{"Cancelado", "Em separação", "Pendente"} {
 		assert.NoError(t, (&vendas.Pedido{Status: s}).PodeExcluir(false), s)
 	}
 }
@@ -132,7 +133,10 @@ func TestVendas_PlanejarAtualizacao(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, vendas.PlanoAtualizacao{ReescreverItens: true, BaixarEstoque: true}, plano, "transição para Faturado")
 
-	plano, err = vendas.PlanejarAtualizacao("Em separação", itens, novo("Entregue", nil))
+	_, err = vendas.PlanejarAtualizacao("Em separação", itens, novo("Entregue", nil))
+	assert.ErrorIs(t, err, vendas.ErrPedidoEntregueSemFaturamento, "Entregue só a partir de Faturado (BUG-16/BUG-20)")
+
+	plano, err = vendas.PlanejarAtualizacao("Em separação", itens, novo("Cancelado", nil))
 	require.NoError(t, err)
 	assert.Equal(t, vendas.PlanoAtualizacao{ReescreverItens: true}, plano)
 }

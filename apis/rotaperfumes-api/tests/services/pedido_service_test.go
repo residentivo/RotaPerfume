@@ -395,6 +395,19 @@ func expectCreateComItensSuccess(mock sqlmock.Sqlmock) {
 	mock.ExpectExec(`INSERT INTO itens_pedido \(pedido_id, produto_id, quantidade, preco_praticado, desconto_pct, valor_bruto\)`).
 		WithArgs(int64(100), int64(11), 1, 50.0, 0.0, 50.0).
 		WillReturnResult(sqlmock.NewResult(2, 1))
+	// BUG-20: validPedidoInput nasce Faturado; a baixa roda na mesma tx.
+	for _, it := range []struct {
+		produtoID int64
+		sku       string
+		delta     int
+	}{{10, "SKU-010", 2}, {11, "SKU-011", 1}} {
+		mock.ExpectQuery(`SELECT sku FROM produtos WHERE id = \? LIMIT 1`).WithArgs(it.produtoID).
+			WillReturnRows(sqlmock.NewRows([]string{"sku"}).AddRow(it.sku))
+		mock.ExpectQuery(`SELECT id FROM estoque WHERE data_snapshot = \? AND sku = \? FOR UPDATE`).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}))
+		mock.ExpectExec(`INSERT INTO estoque`).WithArgs(sqlmock.AnyArg(), it.sku, -it.delta, true).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+	}
 	mock.ExpectCommit()
 
 	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).

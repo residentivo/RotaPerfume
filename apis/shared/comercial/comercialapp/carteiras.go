@@ -83,6 +83,9 @@ func (c *Casos) vincular(ctx context.Context, vendedorID, clienteID int64) (*com
 	}
 	novo := &comercial.Carteira{ClienteID: clienteID, VendedorID: vendedorID, DataInicio: agora}
 	if err := c.d.Carteiras.Inserir(ctx, novo); err != nil {
+		if errors.Is(err, comercial.ErrVinculoDuplicado) {
+			log.Printf("[carteiras] vinculo duplicado recusado")
+		}
 		return nil, err
 	}
 	return novo, nil

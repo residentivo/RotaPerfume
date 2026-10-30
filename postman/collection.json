@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "RotaPerfumes API — Autenticação",
-    "description": "Coleção de endpoints da API de autenticação do SistemaCompleto.\n\n## Credenciais padrão\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedores (seed): a senha **não** é fixa. O `make db-seed` grava o valor de `SEED_USER_PASSWORD` do `.env` ou, se ela não estiver definida, uma senha aleatória impressa no console (`USER_PASSWORD=...`), a mesma para todos os usuários do seed (ver o cabeçalho de `sql/03_seed_vendedores.sql`). Preencha a variável `{{senha_vendedor}}` da coleção com essa senha (DOC-03, 2026-09-26). O nome `@HASH_MUDAR_123` no SQL é legado. **A partir de agora, usuários criados via `POST /api/usuarios` ou resetados via `POST /api/admin/reset-password` NÃO usam mais senha fixa**: a senha é gerada aleatoriamente (crypto/rand, mín. 12 caracteres) e enviada por email (SMTP) ao endereço cadastrado — nunca é retornada pela API.\n\n## Configuração\n1. Importe esta coleção no Postman.\n2. Defina a variável `{{base_url}}` como `http://localhost:8080`.\n3. Para endpoints protegidos, primeiro faça login (POST /api/auth/login) e copie o `access_token` da resposta para a variável `{{token}}` — ou use o botão **Authorize** com o tipo Bearer Token.\n4. Para reset-password e listar usuarios, o token deve ser de um usuário com role=`admin`.\n5. Configure as variáveis `SMTP_*` (ver `.env.example` na raiz) para que a API realmente envie os emails de senha inicial/reset — sem elas, a API usa um serviço \"noop\" que apenas loga o envio (útil em dev).\n\n## Inicialização\n```bash\nmake db-reset && make gen-hash && make dev-api\n```\n\n## Mudanças de contrato transversais (2026-09-24)\n- **BUG-04 — salvar sem alterações:** qualquer `PUT`/`PATCH` que envie os mesmos valores já gravados responde `200` com o registro. Antes respondia `404` \"não encontrado\" (o DSN agora usa `clientFoundRows=true`). `404` continua valendo para id inexistente.\n- **BUG-04 — vendedor já desligado:** `DELETE /api/vendedores/{id}` em um vendedor já desligado responde `200` e preserva a `data_desligamento` original.\n- **RISCO-01 — datas:** o formato das datas nas respostas não mudou. O processo da API passou a usar fuso fixo `-03:00` (sem horário de verão), então datas históricas de início de horário de verão (ex.: `2018-11-04`) não recuam mais um dia.\n- **SEC-01 — clientes:** ver a descrição da pasta \"Clientes\" (escopo por carteira em `POST`/`PUT`/`PATCH`).\n\n## Mudanças de contrato do Lote 4 (2026-09-25)\n- **SEC-02 — `POST /api/auth/refresh`:** novo `401` `\"refresh token revogado\"` quando uma requisição concorrente já usou o mesmo token (contava no rate limit; deixou de contar no SEC-04, Lote 5); falha ao revogar ou gravar o novo refresh token → `500` `\"erro interno\"`, sem cookie (antes: `200` sem refresh).\n- **SEC-03 — `GET /api/vendedores`:** admin vê todos; `normal` com vínculo vê só o próprio vendedor; sem vínculo recebe `data: []`; vendedor desligado recebe `403`. Ver pasta \"Vendedores\".\n- **BUG-06 — `PATCH /api/clientes|produtos|usuarios/{id}/inativar`:** body preenchido e inválido → `400` `\"body JSON inválido\"`; vazio/`null`/`{}`/`{\"ativo\":null}` → toggle; `{\"ativo\":true|false}` → define o valor. Em clientes, sem acesso ao registro continua `404` antes do `400`.\n- **NEG-01 — `POST`/`PUT /api/clientes`:** CNPJ validado (`400` `\"cnpj inválido\"`), único (`409` `\"cnpj já cadastrado\"`), aceita máscara e grava/devolve sem máscara (no Lote 4, só dígitos; o NEG-02 do Lote 5 passou a aceitar letras). Exemplo de CNPJ válido usado na coleção: `11222333000181`.\n- **NEG-04 — `PUT /api/clientes/{id}`:** o dígito verificador é exigido em **toda** gravação, mesmo quando o CNPJ enviado é igual ao atual (antes só era exigido se o CNPJ mudasse). CNPJ com DV inválido → `400` `\"cnpj inválido\"` antes de qualquer consulta ao banco, inclusive para id inexistente (antes: `404`). `PATCH /api/clientes/{id}/inativar` não valida o CNPJ.\n- **Formato de erro:** o envelope de erro é `{\"success\": false, \"error\": \"...\"}`. O envelope (na época, `writeJSON` em `handlers/response.go`; desde o Lote 21, `apis/rotaperfumes-api/internal/httpx/respond.go`) omite o campo `data` quando ele é nulo, então as respostas de erro **não** trazem `\"data\": null`.\n\n## Mudanças de contrato do Lote 5 (2026-09-25)\n- **NEG-02 — `POST`/`PUT /api/clientes` e `GET /api/clientes?q=`:** aceita o CNPJ **alfanumérico** da Receita. Envio com ou sem máscara, em maiúsculas ou minúsculas; as 12 primeiras posições são `[0-9A-Z]` e os 2 DVs são numéricos; DV por módulo 11 com valor ASCII − 48 por caractere. Retorno com 14 caracteres, sem máscara e em maiúsculas. A busca `?q=` aceita máscara e não diferencia maiúsculas de minúsculas. Erros `400`/`409` sem mudança. Exemplo oficial: `12ABC34501DE35` (`12.ABC.345/01DE-35`).\n- **SEC-04 — `POST /api/auth/refresh`:** token revogado há no máximo 30 s (janela de graça) e a corrida na rotação (`BeginRotation`) **não contam** no rate limit por IP. O reuso fora da janela continua contando e gera log `[auth][seguranca]`. A resposta HTTP não muda.\n- **FE-06 (frontend):** falha de rede no retry após o refresh não faz logout; a fila recebe o mesmo erro de rede. Sem mudança na API.\n\n## Mudanças de contrato do Lote 6 (2026-09-26)\n- **SEC-06 — todas as rotas protegidas (Bearer):** o middleware JWT consulta `usuarios.ativo` e `usuarios.role` no banco a cada requisição, sem cache. Usuário inativo ou inexistente → `401` `{\"success\":false,\"error\":\"usuário inativo\"}`, mesmo com access token dentro da validade; erro de banco na checagem → `500` `\"erro interno\"` (fail-closed). A role usada na autorização é a do banco: um rebaixamento `admin` → `normal` vale na próxima requisição, sem novo login (rota admin → `403`). Inativar um usuário (`PATCH /api/usuarios/{id}/inativar`) revoga os refresh tokens dele; desligar um vendedor (`DELETE /api/vendedores/{id}`) revoga os refresh tokens dos usuários vinculados, na mesma transação.\n- **SEC-07 — `POST /api/auth/refresh`:** cada revogação grava o motivo em `refresh_tokens.revoked_reason` (`rotacao`, `logout`, `revogacao_massa`, `senha`, `inativacao`). O reuso, fora da janela de 30 s, de um token revogado por `rotacao` gera o alerta `[auth][seguranca]` (com `user_id`, `token_id`, IP e user agent) e revoga **todos** os refresh tokens do usuário (`revogacao_massa`): as outras sessões precisam fazer login de novo quando o access token expirar. Tokens revogados por outro motivo ou legados (`NULL`) só geram log informativo. A resposta continua idêntica: `401` `\"refresh token revogado\"`.\n- **BUG-08 — `POST /api/clientes`:** a resposta `201` traz `created_at` e `updated_at` preenchidos (o registro é relido do banco depois do INSERT). Antes vinham `0001-01-01T00:00:00Z`.\n- **FE-07 (frontend):** falha de rede, timeout ou falha do Web Lock no próprio refresh não faz logout nem chama `/api/auth/logout`; a fila recebe o mesmo erro de rede. `401`, `429` e `500` no refresh continuam deslogando. Sem mudança na API.\n- **DOC-03:** a senha dos vendedores de seed vem da variável `{{senha_vendedor}}` (ver \"Credenciais padrão\").\n\n## Mudanças de contrato do Lote 8 (2026-09-26)\n- **SEC-08 — todas as rotas protegidas (Bearer):** novo corte de sessão por usuário (`usuarios.tokens_validos_desde`, migração 22). Um access token emitido **no segundo do corte ou antes** (`iat <= tokens_validos_desde`), ou sem `iat` quando há corte, recebe `401` `{\"success\":false,\"error\":\"sessão encerrada — faça login novamente\"}`, mesmo dentro das 24h de validade. O corte é gravado na inativação do usuário (`PATCH /api/usuarios/{id}/inativar`), no desligamento do vendedor (`DELETE /api/vendedores/{id}`, para os usuários vinculados), na troca de senha pelo próprio usuário (`POST /api/auth/reset-password`), no reset pelo admin (`POST /api/admin/reset-password`), na revogação em massa por reuso de refresh token (SEC-07) e na CLI `resetpassword`. Reativação e logout **não** gravam corte. Efeito: o access token antigo não volta a valer depois de reativar o usuário, e depois de trocar ou resetar a senha todas as sessões abertas precisam de novo login. Um login feito no mesmo segundo de um corte gera token recusado (aceito). O frontend não mudou: no `401` ele tenta o refresh (revogado nesses casos) e vai para o login.\n- **BUG-09 — `POST /api/produtos`, `/api/pagamentos`, `/api/oportunidades`, `/api/visitas`, `/api/estoque` e `/api/vendedores`:** o `201` traz `created_at`/`updated_at` reais e os campos preenchidos pelo banco (ex.: `produto_descricao` no estoque, via JOIN), porque o registro é relido depois do INSERT. Mesmo envelope. `POST /api/usuarios` já relia. O `POST /api/vendedores` não tem requisição nesta coleção.\n\n## Mudanças de contrato do Lote 9 (2026-09-26)\n- **FE-13 — `GET /api/senha-historico` e `GET /api/senha-historico/{usuario_id}`:** `order_by` passa a aceitar também `usuario_nome`, `resetado_por_nome` e `ip_origem` (além de `id`, `usuario_id`, `tipo_reset`, `created_at`). Quando a coluna não é `id`, a ordenação ganha desempate por `id DESC`, inclusive nas chaves antigas (paginação estável). `resetado_por_nome` nulo (troca pelo próprio usuário) vem primeiro em `asc` e por último em `desc`. Chave fora da lista → `id` na direção pedida, sem erro 400. A tela `admin/senha-historico` passou a enviar as três chaves.\n- **BUG-11 — `POST /api/usuarios`:** se o INSERT der certo e só a releitura falhar, a resposta é `201` (antes: erro, com o usuário gravado e sem e-mail), com `email_enviado` correto, timestamps zerados e `vendedor_nome` vazio. A ordem passou a ser INSERT → e-mail com a senha inicial → releitura. Falha no INSERT continua com erro e sem e-mail.\n- **CHORE-01 (repositório):** `*.tsbuildinfo` no `.gitignore`. Sem mudança na API.\n\n## Mudanças de contrato do Lote 10 (2026-09-26)\n- **BUG-12 — `GET /api/senha-historico` e `/api/senha-historico/{usuario_id}`:** não muda o formato, só a robustez. Registro com NULL no banco não derruba mais a listagem (antes: `500`). `ip_origem`/`user_agent` NULL saem `\"\"`, `created_at` NULL sai `\"0001-01-01T00:00:00Z\"` e `usuario_nome` de usuário inexistente sai `\"\"`.\n\n## Mudanças do Lote 21 (2026-10-13 a 2026-10-16)\n- **Reestruturação DDD da API:** refatoração interna, sem mudança de rotas, payloads, status ou mensagens, exceto a X1 abaixo (aprovada pelo usuário). Detalhes em `postman/README.md` e `docs/arquitetura-ddd.md`.\n- **X1 — método fixo:** `/api/auth/login|refresh|logout|reset-password` (POST), `/api/auth/me`, `/api/senha-historico`, `/api/senha-historico/{user_id...}`, `/api/dashboard/metrics|vendas|vendedores|clientes` e `/health` (GET) passam a aceitar só o método indicado; outro método → `405` com header `Allow` (corpo em texto, sem envelope JSON). `HEAD` continua aceito nas rotas GET e `OPTIONS` continua `204`.\n- **X1 — `GET /api/senha-historico/{user_id...}`:** `/2/extra`, `/0` e `/-1` → `400` `\"usuario_id inválido\"` (antes `/2/extra` devolvia o histórico do usuário 2). Nenhuma requisição desta coleção foi afetada.\n\n## Mudanças do Lote 22 (2026-10-29)\n- **DASH-01 — endpoint novo `GET /api/dashboard/funil?janela=30d|90d|365d|all`:** funil de vendas das oportunidades por etapa (cumulativo), com conversões, perdidas e taxa de ganho. Acesso autenticado, escopo por `oportunidades.vendedor_id`; janela inválida → `400`. Ver a pasta \"Dashboard — Funil de vendas (DASH-01, Lote 22)\". Os demais endpoints não mudaram.",
+    "description": "Coleção de endpoints da API de autenticação do SistemaCompleto.\n\n## Credenciais padrão\n- Admin: `admin@rotaperfumes.com.br` / `Admin@123`\n- Vendedores (seed): a senha **não** é fixa. O `make db-seed` grava o valor de `SEED_USER_PASSWORD` do `.env` ou, se ela não estiver definida, uma senha aleatória impressa no console (`USER_PASSWORD=...`), a mesma para todos os usuários do seed (ver o cabeçalho de `sql/03_seed_vendedores.sql`). Preencha a variável `{{senha_vendedor}}` da coleção com essa senha (DOC-03, 2026-09-26). O nome `@HASH_MUDAR_123` no SQL é legado. **A partir de agora, usuários criados via `POST /api/usuarios` ou resetados via `POST /api/admin/reset-password` NÃO usam mais senha fixa**: a senha é gerada aleatoriamente (crypto/rand, mín. 12 caracteres) e enviada por email (SMTP) ao endereço cadastrado — nunca é retornada pela API.\n\n## Configuração\n1. Importe esta coleção no Postman.\n2. Defina a variável `{{base_url}}` como `http://localhost:8080`.\n3. Para endpoints protegidos, primeiro faça login (POST /api/auth/login) e copie o `access_token` da resposta para a variável `{{token}}` — ou use o botão **Authorize** com o tipo Bearer Token.\n4. Para reset-password e listar usuarios, o token deve ser de um usuário com role=`admin`.\n5. Configure as variáveis `SMTP_*` (ver `.env.example` na raiz) para que a API realmente envie os emails de senha inicial/reset — sem elas, a API usa um serviço \"noop\" que apenas loga o envio (útil em dev).\n\n## Inicialização\n```bash\nmake db-reset && make gen-hash && make dev-api\n```\n\n## Mudanças de contrato transversais (2026-09-24)\n- **BUG-04 — salvar sem alterações:** qualquer `PUT`/`PATCH` que envie os mesmos valores já gravados responde `200` com o registro. Antes respondia `404` \"não encontrado\" (o DSN agora usa `clientFoundRows=true`). `404` continua valendo para id inexistente.\n- **BUG-04 — vendedor já desligado:** `DELETE /api/vendedores/{id}` em um vendedor já desligado responde `200` e preserva a `data_desligamento` original.\n- **RISCO-01 — datas:** o formato das datas nas respostas não mudou. O processo da API passou a usar fuso fixo `-03:00` (sem horário de verão), então datas históricas de início de horário de verão (ex.: `2018-11-04`) não recuam mais um dia.\n- **SEC-01 — clientes:** ver a descrição da pasta \"Clientes\" (escopo por carteira em `POST`/`PUT`/`PATCH`).\n\n## Mudanças de contrato do Lote 4 (2026-09-25)\n- **SEC-02 — `POST /api/auth/refresh`:** novo `401` `\"refresh token revogado\"` quando uma requisição concorrente já usou o mesmo token (contava no rate limit; deixou de contar no SEC-04, Lote 5); falha ao revogar ou gravar o novo refresh token → `500` `\"erro interno\"`, sem cookie (antes: `200` sem refresh).\n- **SEC-03 — `GET /api/vendedores`:** admin vê todos; `normal` com vínculo vê só o próprio vendedor; sem vínculo recebe `data: []`; vendedor desligado recebe `403`. Ver pasta \"Vendedores\".\n- **BUG-06 — `PATCH /api/clientes|produtos|usuarios/{id}/inativar`:** body preenchido e inválido → `400` `\"body JSON inválido\"`; vazio/`null`/`{}`/`{\"ativo\":null}` → toggle; `{\"ativo\":true|false}` → define o valor. Em clientes, sem acesso ao registro continua `404` antes do `400`.\n- **NEG-01 — `POST`/`PUT /api/clientes`:** CNPJ validado (`400` `\"cnpj inválido\"`), único (`409` `\"cnpj já cadastrado\"`), aceita máscara e grava/devolve sem máscara (no Lote 4, só dígitos; o NEG-02 do Lote 5 passou a aceitar letras). Exemplo de CNPJ válido usado na coleção: `11222333000181`.\n- **NEG-04 — `PUT /api/clientes/{id}`:** o dígito verificador é exigido em **toda** gravação, mesmo quando o CNPJ enviado é igual ao atual (antes só era exigido se o CNPJ mudasse). CNPJ com DV inválido → `400` `\"cnpj inválido\"` antes de qualquer consulta ao banco, inclusive para id inexistente (antes: `404`). `PATCH /api/clientes/{id}/inativar` não valida o CNPJ.\n- **Formato de erro:** o envelope de erro é `{\"success\": false, \"error\": \"...\"}`. O envelope (na época, `writeJSON` em `handlers/response.go`; desde o Lote 21, `apis/rotaperfumes-api/internal/httpx/respond.go`) omite o campo `data` quando ele é nulo, então as respostas de erro **não** trazem `\"data\": null`.\n\n## Mudanças de contrato do Lote 5 (2026-09-25)\n- **NEG-02 — `POST`/`PUT /api/clientes` e `GET /api/clientes?q=`:** aceita o CNPJ **alfanumérico** da Receita. Envio com ou sem máscara, em maiúsculas ou minúsculas; as 12 primeiras posições são `[0-9A-Z]` e os 2 DVs são numéricos; DV por módulo 11 com valor ASCII − 48 por caractere. Retorno com 14 caracteres, sem máscara e em maiúsculas. A busca `?q=` aceita máscara e não diferencia maiúsculas de minúsculas. Erros `400`/`409` sem mudança. Exemplo oficial: `12ABC34501DE35` (`12.ABC.345/01DE-35`).\n- **SEC-04 — `POST /api/auth/refresh`:** token revogado há no máximo 30 s (janela de graça) e a corrida na rotação (`BeginRotation`) **não contam** no rate limit por IP. O reuso fora da janela continua contando e gera log `[auth][seguranca]`. A resposta HTTP não muda.\n- **FE-06 (frontend):** falha de rede no retry após o refresh não faz logout; a fila recebe o mesmo erro de rede. Sem mudança na API.\n\n## Mudanças de contrato do Lote 6 (2026-09-26)\n- **SEC-06 — todas as rotas protegidas (Bearer):** o middleware JWT consulta `usuarios.ativo` e `usuarios.role` no banco a cada requisição, sem cache. Usuário inativo ou inexistente → `401` `{\"success\":false,\"error\":\"usuário inativo\"}`, mesmo com access token dentro da validade; erro de banco na checagem → `500` `\"erro interno\"` (fail-closed). A role usada na autorização é a do banco: um rebaixamento `admin` → `normal` vale na próxima requisição, sem novo login (rota admin → `403`). Inativar um usuário (`PATCH /api/usuarios/{id}/inativar`) revoga os refresh tokens dele; desligar um vendedor (`DELETE /api/vendedores/{id}`) revoga os refresh tokens dos usuários vinculados, na mesma transação.\n- **SEC-07 — `POST /api/auth/refresh`:** cada revogação grava o motivo em `refresh_tokens.revoked_reason` (`rotacao`, `logout`, `revogacao_massa`, `senha`, `inativacao`). O reuso, fora da janela de 30 s, de um token revogado por `rotacao` gera o alerta `[auth][seguranca]` (com `user_id`, `token_id`, IP e user agent) e revoga **todos** os refresh tokens do usuário (`revogacao_massa`): as outras sessões precisam fazer login de novo quando o access token expirar. Tokens revogados por outro motivo ou legados (`NULL`) só geram log informativo. A resposta continua idêntica: `401` `\"refresh token revogado\"`.\n- **BUG-08 — `POST /api/clientes`:** a resposta `201` traz `created_at` e `updated_at` preenchidos (o registro é relido do banco depois do INSERT). Antes vinham `0001-01-01T00:00:00Z`.\n- **FE-07 (frontend):** falha de rede, timeout ou falha do Web Lock no próprio refresh não faz logout nem chama `/api/auth/logout`; a fila recebe o mesmo erro de rede. `401`, `429` e `500` no refresh continuam deslogando. Sem mudança na API.\n- **DOC-03:** a senha dos vendedores de seed vem da variável `{{senha_vendedor}}` (ver \"Credenciais padrão\").\n\n## Mudanças de contrato do Lote 8 (2026-09-26)\n- **SEC-08 — todas as rotas protegidas (Bearer):** novo corte de sessão por usuário (`usuarios.tokens_validos_desde`, migração 22). Um access token emitido **no segundo do corte ou antes** (`iat <= tokens_validos_desde`), ou sem `iat` quando há corte, recebe `401` `{\"success\":false,\"error\":\"sessão encerrada — faça login novamente\"}`, mesmo dentro das 24h de validade. O corte é gravado na inativação do usuário (`PATCH /api/usuarios/{id}/inativar`), no desligamento do vendedor (`DELETE /api/vendedores/{id}`, para os usuários vinculados), na troca de senha pelo próprio usuário (`POST /api/auth/reset-password`), no reset pelo admin (`POST /api/admin/reset-password`), na revogação em massa por reuso de refresh token (SEC-07) e na CLI `resetpassword`. Reativação e logout **não** gravam corte. Efeito: o access token antigo não volta a valer depois de reativar o usuário, e depois de trocar ou resetar a senha todas as sessões abertas precisam de novo login. Um login feito no mesmo segundo de um corte gera token recusado (aceito). O frontend não mudou: no `401` ele tenta o refresh (revogado nesses casos) e vai para o login.\n- **BUG-09 — `POST /api/produtos`, `/api/pagamentos`, `/api/oportunidades`, `/api/visitas`, `/api/estoque` e `/api/vendedores`:** o `201` traz `created_at`/`updated_at` reais e os campos preenchidos pelo banco (ex.: `produto_descricao` no estoque, via JOIN), porque o registro é relido depois do INSERT. Mesmo envelope. `POST /api/usuarios` já relia. O `POST /api/vendedores` não tem requisição nesta coleção.\n\n## Mudanças de contrato do Lote 9 (2026-09-26)\n- **FE-13 — `GET /api/senha-historico` e `GET /api/senha-historico/{usuario_id}`:** `order_by` passa a aceitar também `usuario_nome`, `resetado_por_nome` e `ip_origem` (além de `id`, `usuario_id`, `tipo_reset`, `created_at`). Quando a coluna não é `id`, a ordenação ganha desempate por `id DESC`, inclusive nas chaves antigas (paginação estável). `resetado_por_nome` nulo (troca pelo próprio usuário) vem primeiro em `asc` e por último em `desc`. Chave fora da lista → `id` na direção pedida, sem erro 400. A tela `admin/senha-historico` passou a enviar as três chaves.\n- **BUG-11 — `POST /api/usuarios`:** se o INSERT der certo e só a releitura falhar, a resposta é `201` (antes: erro, com o usuário gravado e sem e-mail), com `email_enviado` correto, timestamps zerados e `vendedor_nome` vazio. A ordem passou a ser INSERT → e-mail com a senha inicial → releitura. Falha no INSERT continua com erro e sem e-mail.\n- **CHORE-01 (repositório):** `*.tsbuildinfo` no `.gitignore`. Sem mudança na API.\n\n## Mudanças de contrato do Lote 10 (2026-09-26)\n- **BUG-12 — `GET /api/senha-historico` e `/api/senha-historico/{usuario_id}`:** não muda o formato, só a robustez. Registro com NULL no banco não derruba mais a listagem (antes: `500`). `ip_origem`/`user_agent` NULL saem `\"\"`, `created_at` NULL sai `\"0001-01-01T00:00:00Z\"` e `usuario_nome` de usuário inexistente sai `\"\"`.\n\n## Mudanças do Lote 21 (2026-10-13 a 2026-10-16)\n- **Reestruturação DDD da API:** refatoração interna, sem mudança de rotas, payloads, status ou mensagens, exceto a X1 abaixo (aprovada pelo usuário). Detalhes em `postman/README.md` e `docs/arquitetura-ddd.md`.\n- **X1 — método fixo:** `/api/auth/login|refresh|logout|reset-password` (POST), `/api/auth/me`, `/api/senha-historico`, `/api/senha-historico/{user_id...}`, `/api/dashboard/metrics|vendas|vendedores|clientes` e `/health` (GET) passam a aceitar só o método indicado; outro método → `405` com header `Allow` (corpo em texto, sem envelope JSON). `HEAD` continua aceito nas rotas GET e `OPTIONS` continua `204`.\n- **X1 — `GET /api/senha-historico/{user_id...}`:** `/2/extra`, `/0` e `/-1` → `400` `\"usuario_id inválido\"` (antes `/2/extra` devolvia o histórico do usuário 2). Nenhuma requisição desta coleção foi afetada.\n\n## Mudanças do Lote 22 (2026-10-29)\n- **DASH-01 — endpoint novo `GET /api/dashboard/funil?janela=30d|90d|365d|all`:** funil de vendas das oportunidades por etapa (cumulativo), com conversões, perdidas e taxa de ganho. Acesso autenticado, escopo por `oportunidades.vendedor_id`; janela inválida → `400`. Ver a pasta \"Dashboard — Funil de vendas (DASH-01, Lote 22)\". Os demais endpoints não mudaram.\n\n## Mudanças de contrato do Lote 24 (2026-10-29)\n- **SEC-22 — `POST /api/auth/login`:** usuário inativo responde `401` `\"credenciais inválidas\"`, com o mesmo corpo e o mesmo custo de hash de usuário inexistente e de senha errada (antes: `401` `\"usuário inativo\"`). O `401` `\"usuário inativo\"` do middleware, nas rotas autenticadas, continua.\n- **SEC-22 — `POST /api/auth/refresh`:** refresh token ativo de usuário inativo é revogado com motivo `inativacao` e responde `401` `\"refresh token revogado\"`.\n- **SEC-18 — access token:** o JWT precisa ter `iss` (= `JWT_ISSUER`, default `rotaperfumes`), `exp` e algoritmo HS256; `iat` no futuro é recusado. `JWT_SECRET` precisa ter 32 bytes ou mais (o placeholder é recusado) e `JWT_TTL` precisa ser maior que zero, ou a API não sobe.\n- **SEC-20 — rate limit e logs:** o IP do cliente é o item mais à direita do `X-Forwarded-For` (validado; inválido cai no RemoteAddr). O `X-Real-IP` não é mais lido. Para testar o rate limit pelo Postman, o `X-Forwarded-For` forjado não muda mais o IP considerado atrás do Caddy.\n- **SEC-21 — cookies de sessão:** o atributo `Secure` vem da env `COOKIE_SECURE` (default `true`; `make dev-api`/`make run-api` usam `false`), não mais do `Host`. O logout limpa os cookies com os mesmos atributos da criação.\n- Corpo de erro real: as chaves saem em ordem alfabética (`{\"error\":\"...\",\"success\":false}`); os exemplos mostram o mesmo conteúdo.\n\n## Mudanças de contrato do Lote 25 (2026-10-30)\n- **CHORE-03 — toda rota com `{id}` (29 rotas):** id de path `<= 0` ou não numérico (`0`, `-1`, `+1`, `abc`, `1.5`, `\" 1\"`, overflow) → `400` `\"id inválido\"`, sem consultar o banco (antes: `404` para `0` e `-1`). Em `DELETE /api/vendedores/{id}/clientes/{clienteId}`, o `{clienteId}` inválido → `400` `\"cliente id inválido\"`. As pastas ganharam um exemplo \"400 Bad Request — id inválido (CHORE-03, Lote 25)\". `IDDoPathPermissivo` foi removido da API.\n- **CHORE-06 — duplicidade → `409`:** `POST /api/produtos` com SKU existente → `409` `\"sku já cadastrado\"` (antes `500`). `POST /api/estoque` com o par `(data_snapshot, sku)` existente → `409` `\"registro de estoque já cadastrado para este sku nesta data\"` (antes `500`; a documentação dizia `400` por engano). `POST /api/vendedores/{id}/clientes` com vínculo do mesmo par na mesma data → `409` `\"vínculo entre cliente e vendedor já cadastrado nesta data\"` (antes `500`). CNPJ (`\"cnpj já cadastrado\"`) e e-mail (`\"email já cadastrado\"`) continuam `409`. Os logs não levam o valor duplicado.\n- **BUG-16 — `PUT /api/pedidos/{id}` (máquina de status, `400`):** Faturado só vai para Entregue (`\"pedido faturado só pode ter o status alterado para Entregue\"`). Entregue é terminal (`\"pedido entregue não pode ter o status alterado\"`). Em separação ou Cancelado → Entregue é recusado (`\"pedido só pode ser marcado como Entregue depois de Faturado\"`). Reenviar o mesmo status continua idempotente. Itens diferentes em pedido Faturado **ou Entregue** → `409` `\"pedido já faturado: não é possível alterar os itens, apenas o status\"` (texto antigo; revisão no card CHORE-07). A transição é checada antes dos itens, sob o lock do pedido.\n- **BUG-16 — `DELETE /api/pedidos/{id}`:** pedido Entregue → `409` `\"pedido entregue não pode ser excluído\"` (novo). Ordem: pagamentos vinculados primeiro, depois Faturado/Entregue.\n- **BUG-20 — `POST /api/pedidos`:** pedido criado já como Faturado baixa o estoque na mesma transação do INSERT (falha na baixa → rollback). Criado como Entregue → `400` `\"pedido só pode ser marcado como Entregue depois de Faturado\"`, sem gravar nada.\n- **SEC-27 — `POST`/`PUT /api/pagamentos`:** `taxa_pct` fora de 0 a 30 (limites inclusivos) → `400` `\"taxa_pct deve estar entre 0 e 30\"`, para admin e normal. `PUT` de pagamento quitado (`Pago` ou `Pago com atraso`) pelo usuário `normal` → `409` `\"pagamento já quitado não pode ser editado\"`; o admin edita normalmente (`200`). Inexistente continua `404`. No banco, CHECK `chk_pagamentos_taxa_pct` (migração 24, `make db-fix-taxa-pct-check`).\n- **BUG-17 — `PATCH /api/produtos/{id}/inativar`:** sem body, o toggle é um `UPDATE ... SET ativo = NOT ativo` atômico (dois toggles concorrentes não se anulam). Contrato igual; o `updated_at` da resposta passa a ser o real.\n- **`PUT /api/estoque/{id}`:** sem mudança, só documentado: sobrescreve o saldo com o valor absoluto enviado, inclusive por cima de baixas de faturamento concorrentes.\n- **BUG-19 e BUG-21:** sem mudança de contrato. O arredondamento do Dashboard usa `math.Round` (negativos corretos, nunca `-0`) e a ruptura do upsert de faturamento é calculada sobre o saldo já atualizado.\n- **Correção de documentação:** o `409` de pedido com pagamentos vinculados é `\"pedido possui pagamentos vinculados\"`; o exemplo mostrava um sufixo que a API não envia.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -203,7 +203,7 @@
           "body": "{\n  \"success\": false,\n  \"error\": \"credenciais inválidas\"\n}"
         },
         {
-          "name": "401 Unauthorized — Usuário inativo",
+          "name": "401 Unauthorized — Usuário inativo (SEC-22: mesma resposta de credenciais inválidas)",
           "originalRequest": {
             "method": "POST",
             "header": [
@@ -232,7 +232,7 @@
             }
           ],
           "cookie": [],
-          "body": "{\n  \"success\": false,\n  \"error\": \"usuário inativo\"\n}"
+          "body": "{\n  \"success\": false,\n  \"error\": \"credenciais inválidas\"\n}"
         },
         {
           "name": "400 Bad Request — Body vazio",
@@ -492,7 +492,7 @@
           "host": ["{{base_url}}"],
           "path": ["api", "auth", "refresh"]
         },
-        "description": "Renova o access token usando um refresh token válido.\n\n**Reuso de token revogado (SEC-07, Lote 6, 2026-09-26):** toda revogação grava o motivo em `refresh_tokens.revoked_reason` (`rotacao`, `logout`, `revogacao_massa`, `senha`, `inativacao`). Se um token revogado por `rotacao` é reusado depois da janela de graça de 30 s, a API registra o alerta `[auth][seguranca]` (com `user_id`, `token_id`, IP e user agent) e revoga **todos** os refresh tokens do usuário (motivo `revogacao_massa`). Reuso de token revogado por outro motivo (ex.: `logout`) ou legado (`NULL`) só gera log informativo, sem revogação em massa. Em todos os casos a resposta é a mesma: `401` `{\"success\":false,\"error\":\"refresh token revogado\"}`. Usuário inativado pelo admin (SEC-06): os refresh tokens dele são revogados com motivo `inativacao`, então o refresh responde `401` `\"refresh token revogado\"` (só log informativo). `401` `\"usuário inativo\"` continua valendo para um token ainda válido de usuário inativo.\n\nO refresh token antigo é **revogado** (single-use) e um novo par é gerado.\n\n**Body:**\n- `refresh_token` (string, obrigatório) — token de renovação\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"novo-uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — refresh token inválido, expirado ou revogado\n- `401` \"refresh token revogado\" — **(SEC-02, 2026-09-25)** outra requisição concorrente já usou este mesmo refresh token (corrida entre abas/requisições paralelas). A revogação agora é condicional e a rotação é transacional: só uma das requisições concorrentes recebe o novo par; as demais recebem este 401. Desde o SEC-04 (Lote 5), essa corrida **não conta** no rate limit de refresh por IP (ver abaixo).\n- `500` \"erro interno\" — **(SEC-02)** falha de banco ao revogar o token antigo ou ao gravar o novo refresh token. Nesse caso **não há cookie nem novo refresh token** na resposta. Antes, a falha ao gravar o novo refresh token respondia `200` apenas com o access token (sem refresh); agora a rotação inteira é desfeita e a resposta é `500`.\n- `429` — IP bloqueado pelo rate limit de refresh (10 falhas em 1 minuto; bloqueio de 5 minutos, com header `Retry-After`).\n\n**Rate limit e reuso de token revogado (SEC-04, 2026-09-25):**\n- **Janela de graça de 30 s:** um token revogado há no máximo 30 s (outra aba, ou outro usuário atrás do mesmo IP/NAT, acabou de rotacioná-lo) responde `401` `\"refresh token revogado\"` e **não conta** no rate limit por IP.\n- **Corrida na rotação:** a requisição que perde a corrida no `BeginRotation` responde `401` e **não conta**.\n- **Reuso fora da janela** (revogado há mais de 30 s): **continua contando** e gera no log da API `[auth][seguranca] refresh: reuso de refresh token revogado fora da janela de graça (possível roubo de token): ip=... ua=...`.\n- **Continuam contando:** token não encontrado e token expirado.\n- **A resposta HTTP não muda:** dentro e fora da janela o corpo é o mesmo `401` `{\"success\":false,\"error\":\"refresh token revogado\"}`, sem `Set-Cookie` e sem novo token. A rotação continua de uso único.\n\n**Nota (frontend, SEC-02):** o `apiClient.ts` serializa o refresh entre abas com `navigator.locks` (lock `rp-auth-refresh`) e, se o refresh responder `401`, repete a requisição original uma única vez (outra aba pode já ter renovado a sessão).\n\n**Nota (frontend, FE-06, 2026-09-25):** se essa repetição falhar por **erro de rede**, o `apiClient.ts` **não** faz logout e propaga o mesmo erro de rede (o erro original do `fetch`) para as requisições da fila do refresh. Antes, a fila recebia \"Sessão expirada. Faça login novamente.\" sem logout. \"Sessão expirada\" só aparece quando há logout."
+        "description": "Renova o access token usando um refresh token válido.\n\n**Reuso de token revogado (SEC-07, Lote 6, 2026-09-26):** toda revogação grava o motivo em `refresh_tokens.revoked_reason` (`rotacao`, `logout`, `revogacao_massa`, `senha`, `inativacao`). Se um token revogado por `rotacao` é reusado depois da janela de graça de 30 s, a API registra o alerta `[auth][seguranca]` (com `user_id`, `token_id`, IP e user agent) e revoga **todos** os refresh tokens do usuário (motivo `revogacao_massa`). Reuso de token revogado por outro motivo (ex.: `logout`) ou legado (`NULL`) só gera log informativo, sem revogação em massa. Em todos os casos a resposta é a mesma: `401` `{\"success\":false,\"error\":\"refresh token revogado\"}`. Usuário inativado pelo admin (SEC-06): os refresh tokens dele são revogados com motivo `inativacao`, então o refresh responde `401` `\"refresh token revogado\"` (só log informativo). `401` `\"usuário inativo\"` continua valendo para um token ainda válido de usuário inativo.\n\n**Refresh de usuário inativo (SEC-22, Lote 24, 2026-10-29):** se o refresh token ainda está ativo mas o usuário está inativo, a API revoga o token com motivo `inativacao` e responde `401` `\"refresh token revogado\"` (resposta genérica, sem revelar que a conta está inativa).\n\nO refresh token antigo é **revogado** (single-use) e um novo par é gerado.\n\n**Body:**\n- `refresh_token` (string, obrigatório) — token de renovação\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"access_token\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refresh_token\": \"novo-uuid-v4-...\",\n    \"token_type\": \"Bearer\",\n    \"expires_in\": 900\n  }\n}\n```\n\n**Códigos de erro:**\n- `401` — refresh token inválido, expirado ou revogado\n- `401` \"refresh token revogado\" — **(SEC-02, 2026-09-25)** outra requisição concorrente já usou este mesmo refresh token (corrida entre abas/requisições paralelas). A revogação agora é condicional e a rotação é transacional: só uma das requisições concorrentes recebe o novo par; as demais recebem este 401. Desde o SEC-04 (Lote 5), essa corrida **não conta** no rate limit de refresh por IP (ver abaixo).\n- `500` \"erro interno\" — **(SEC-02)** falha de banco ao revogar o token antigo ou ao gravar o novo refresh token. Nesse caso **não há cookie nem novo refresh token** na resposta. Antes, a falha ao gravar o novo refresh token respondia `200` apenas com o access token (sem refresh); agora a rotação inteira é desfeita e a resposta é `500`.\n- `429` — IP bloqueado pelo rate limit de refresh (10 falhas em 1 minuto; bloqueio de 5 minutos, com header `Retry-After`).\n\n**Rate limit e reuso de token revogado (SEC-04, 2026-09-25):**\n- **Janela de graça de 30 s:** um token revogado há no máximo 30 s (outra aba, ou outro usuário atrás do mesmo IP/NAT, acabou de rotacioná-lo) responde `401` `\"refresh token revogado\"` e **não conta** no rate limit por IP.\n- **Corrida na rotação:** a requisição que perde a corrida no `BeginRotation` responde `401` e **não conta**.\n- **Reuso fora da janela** (revogado há mais de 30 s): **continua contando** e gera no log da API `[auth][seguranca] refresh: reuso de refresh token revogado fora da janela de graça (possível roubo de token): ip=... ua=...`.\n- **Continuam contando:** token não encontrado e token expirado.\n- **A resposta HTTP não muda:** dentro e fora da janela o corpo é o mesmo `401` `{\"success\":false,\"error\":\"refresh token revogado\"}`, sem `Set-Cookie` e sem novo token. A rotação continua de uso único.\n\n**Nota (frontend, SEC-02):** o `apiClient.ts` serializa o refresh entre abas com `navigator.locks` (lock `rp-auth-refresh`) e, se o refresh responder `401`, repete a requisição original uma única vez (outra aba pode já ter renovado a sessão).\n\n**Nota (frontend, FE-06, 2026-09-25):** se essa repetição falhar por **erro de rede**, o `apiClient.ts` **não** faz logout e propaga o mesmo erro de rede (o erro original do `fetch`) para as requisições da fila do refresh. Antes, a fila recebia \"Sessão expirada. Faça login novamente.\" sem logout. \"Sessão expirada\" só aparece quando há logout."
       },
       "response": [
         {
@@ -579,6 +579,39 @@
               "path": ["api", "auth", "refresh"]
             },
             "description": "Duas requisições paralelas enviam o mesmo refresh token. A primeira a revogar o token recebe 200 com o novo par; a outra recebe este 401. Desde o SEC-04 (2026-09-25), esta falha não conta no rate limit de refresh. O mesmo corpo volta para um token revogado há no máximo 30 s (janela de graça, não conta) e para um revogado há mais tempo (conta e gera log [auth][seguranca])."
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"refresh token revogado\"\n}"
+        },
+        {
+          "name": "401 Unauthorized — Refresh de usuário inativo (SEC-22, Lote 24, 2026-10-29)",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Refresh token ainda ativo de um usuário que está inativo (ativo = 0). A API revoga o token com o motivo `inativacao` e responde o mesmo 401 genérico de token revogado, sem cookie e sem novo par. A resposta não revela que a conta está inativa. O corpo real sai com as chaves em ordem alfabética: {\"error\":\"refresh token revogado\",\"success\":false}."
           },
           "status": "Unauthorized",
           "code": 401,
@@ -1318,6 +1351,33 @@
           ],
           "cookie": [],
           "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 2,\n    \"id_vendedor\": 1,\n    \"email\": \"v1.henrique_rodrigues@rotaperfumes.com.br\",\n    \"role\": \"normal\",\n    \"ativo\": true,\n    \"nome\": \"Henrique Atualizado\",\n    \"created_at\": \"2026-09-06T00:00:00Z\",\n    \"updated_at\": \"2026-09-07T10:00:00Z\",\n    \"ultimo_login_at\": null\n  }\n}"
+        },
+        {
+          "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+          "originalRequest": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"nome\": \"Teste\",\n    \"role\": \"normal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/usuarios/0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "usuarios", "0"]
+            },
+            "description": "Id de path <= 0 ou não numérico (0, -1, abc, 1.5, overflow) responde 400 sem consultar o banco. Antes do Lote 25, 0 e -1 respondiam 404."
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "_postman_previewlanguage": "json",
+          "header": [
+            { "key": "Content-Type", "value": "application/json" }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
         },
         {
           "name": "404 Not Found — Usuário inexistente",
@@ -3479,7 +3539,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "clientes", "1"]
             },
-            "description": "Retorna o detalhe de um cliente pelo `cliente_id_origem` (PK). Não existe mais campo `id`.\n\n**Acesso comum, com escopo por carteira:** o admin vê qualquer cliente. O usuário `normal` só vê clientes da carteira ativa do próprio vendedor; fora dela, ou sem vendedor vinculado, recebe `404` `\"cliente não encontrado\"` (mesma mensagem do inexistente).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"11222333000181\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — cliente não encontrado, ou fora da carteira (usuário `normal`)\n- `500` — erro interno"
+            "description": "Retorna o detalhe de um cliente pelo `cliente_id_origem` (PK). Não existe mais campo `id`.\n\n**Acesso comum, com escopo por carteira:** o admin vê qualquer cliente. O usuário `normal` só vê clientes da carteira ativa do próprio vendedor; fora dela, ou sem vendedor vinculado, recebe `404` `\"cliente não encontrado\"` (mesma mensagem do inexistente).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Path param:**\n- `id` (int64) — corresponde a `cliente_id_origem` do cliente\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"11222333000181\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — cliente não encontrado, ou fora da carteira (usuário `normal`)\n- `500` — erro interno"
           },
           "response": [
             {
@@ -3504,6 +3564,27 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"cliente_id_origem\": 10023,\n    \"cnpj\": \"11222333000181\",\n    \"razao_social\": \"Perfumaria Bela Vista Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"bairro\": \"Bela Vista\",\n    \"data_cadastro\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/clientes/-1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "clientes", "-1"]
+                },
+                "description": "Id de path <= 0 ou não numérico responde 400 sem consultar o banco (antes do Lote 25, 0 e -1 respondiam 404)."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
             },
             {
               "name": "404 Not Found — Cliente inexistente",
@@ -4544,7 +4625,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "produtos"]
             },
-            "description": "Cria um novo produto (apenas admin).\n\n**Timestamps (BUG-09, Lote 8, 2026-09-26):** o produto é relido do banco depois do INSERT, então o `201` traz `created_at`/`updated_at` reais (data e hora da gravação, fuso `-03:00`) e os campos preenchidos pelo banco. Antes podiam vir `0001-01-01T00:00:00Z`. Mesmo envelope. Se só a releitura falhar, a API registra log e devolve o objeto em memória.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"sku\": \"ROT-0002\",\n  \"descricao\": \"Rota Fresh Feminino 75ml\",\n  \"categoria\": \"Feminino\",\n  \"marca\": \"Rota\",\n  \"nota_olfativa\": \"Floral\",\n  \"preco_tabela\": 159.9,\n  \"custo_unitario\": 52.3,\n  \"unidade\": \"UN\",\n  \"data_lancamento\": \"2026-09-13\"\n}\n```\n- `data_lancamento` é opcional (formato `AAAA-MM-DD`); se omitido, fica `null`.\n- Campos obrigatórios: `sku`, `descricao`, `categoria`, `marca`, `unidade`. `preco_tabela` e `custo_unitario` devem ser `>= 0`.\n- `ativo` é sempre `true` na criação — não é aceito no body.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 541,\n    \"sku\": \"ROT-0002\",\n    \"descricao\": \"Rota Fresh Feminino 75ml\",\n    \"categoria\": \"Feminino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Floral\",\n    \"preco_tabela\": 159.9,\n    \"custo_unitario\": 52.3,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, ou campo obrigatório ausente (`sku`, `descricao`, `categoria`, `marca`, `unidade`), `preco_tabela`/`custo_unitario` negativos, ou `data_lancamento` em formato inválido\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Cria um novo produto (apenas admin).\n\n**Timestamps (BUG-09, Lote 8, 2026-09-26):** o produto é relido do banco depois do INSERT, então o `201` traz `created_at`/`updated_at` reais (data e hora da gravação, fuso `-03:00`) e os campos preenchidos pelo banco. Antes podiam vir `0001-01-01T00:00:00Z`. Mesmo envelope. Se só a releitura falhar, a API registra log e devolve o objeto em memória.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"sku\": \"ROT-0002\",\n  \"descricao\": \"Rota Fresh Feminino 75ml\",\n  \"categoria\": \"Feminino\",\n  \"marca\": \"Rota\",\n  \"nota_olfativa\": \"Floral\",\n  \"preco_tabela\": 159.9,\n  \"custo_unitario\": 52.3,\n  \"unidade\": \"UN\",\n  \"data_lancamento\": \"2026-09-13\"\n}\n```\n- `data_lancamento` é opcional (formato `AAAA-MM-DD`); se omitido, fica `null`.\n- Campos obrigatórios: `sku`, `descricao`, `categoria`, `marca`, `unidade`. `preco_tabela` e `custo_unitario` devem ser `>= 0`.\n- `ativo` é sempre `true` na criação — não é aceito no body.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 541,\n    \"sku\": \"ROT-0002\",\n    \"descricao\": \"Rota Fresh Feminino 75ml\",\n    \"categoria\": \"Feminino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Floral\",\n    \"preco_tabela\": 159.9,\n    \"custo_unitario\": 52.3,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2026-09-13T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, ou campo obrigatório ausente (`sku`, `descricao`, `categoria`, `marca`, `unidade`), `preco_tabela`/`custo_unitario` negativos, ou `data_lancamento` em formato inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `409` — `\"sku já cadastrado\"` (CHORE-06, Lote 25, 2026-10-30; antes `500`). O log registra só `[produtos] sku duplicado recusado (uk_produtos_sku)`, sem o valor."
           },
           "response": [
             {
@@ -4642,6 +4723,33 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            },
+            {
+              "name": "409 Conflict — SKU já cadastrado (CHORE-06, Lote 25)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"sku\": \"ROT-0001\",\n    \"descricao\": \"Rota Intense Masculino 100ml\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"unidade\": \"UN\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/produtos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos"]
+                },
+                "description": "SKU já usado por outro produto (índice uk_produtos_sku). Antes do Lote 25 a resposta era 500."
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"sku já cadastrado\"\n}"
             }
           ]
         },
@@ -4684,7 +4792,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "produtos", "1"]
             },
-            "description": "Retorna o detalhe de um produto pelo `id` interno.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`)** — mesma assimetria de `GET /api/produtos`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — acesso comum)\n\n**Path param:**\n- `id` (int64) — ID interno do produto\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"sku\": \"ROT-0001\",\n    \"descricao\": \"Rota Intense Masculino 100ml\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 189.9,\n    \"custo_unitario\": 65.4,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — produto não encontrado"
+            "description": "Retorna o detalhe de um produto pelo `id` interno.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`)** — mesma assimetria de `GET /api/produtos`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — acesso comum)\n\n**Path param:**\n- `id` (int64) — ID interno do produto\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"sku\": \"ROT-0001\",\n    \"descricao\": \"Rota Intense Masculino 100ml\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 189.9,\n    \"custo_unitario\": 65.4,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `404` — produto não encontrado"
           },
           "response": [
             {
@@ -4709,6 +4817,27 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"sku\": \"ROT-0001\",\n    \"descricao\": \"Rota Intense Masculino 100ml\",\n    \"categoria\": \"Masculino\",\n    \"marca\": \"Rota\",\n    \"nota_olfativa\": \"Amadeirado\",\n    \"preco_tabela\": 189.9,\n    \"custo_unitario\": 65.4,\n    \"unidade\": \"UN\",\n    \"data_lancamento\": \"2023-05-10T00:00:00Z\",\n    \"ativo\": true,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/produtos/0",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "produtos", "0"]
+                },
+                "description": "Id de path <= 0 ou não numérico responde 400 sem consultar o banco (antes do Lote 25, 0 e -1 respondiam 404)."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
             },
             {
               "name": "404 Not Found — Produto inexistente",
@@ -4953,7 +5082,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "produtos", "1", "inativar"]
             },
-            "description": "Ativa ou inativa um produto — exclusão lógica (apenas admin).\n\n- **Body omitido:** faz toggle (inverte o estado atual)\n- **Body `{ \"ativo\": true }`:** ativa o produto\n- **Body `{ \"ativo\": false }`:** inativa o produto\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do produto\n\n**Body (opcional):**\n- `ativo` (bool) — estado desejado. Se omitido, faz toggle.\n\n**Resposta de sucesso (200):** produto atualizado (mesmo formato de `GET /api/produtos/{id}`).\n\n**Códigos de erro:**\n- `400` — `id` inválido\n- `400` — `\"body JSON inválido\"` (BUG-06): body preenchido e inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — produto não encontrado\n\n**Regras do body (BUG-06, 2026-09-25):**\n- body vazio, `null`, `{}` ou `{\"ativo\": null}` → **toggle**;\n- `{\"ativo\": true}` / `{\"ativo\": false}` → define o valor;\n- body preenchido e inválido → `400` `\"body JSON inválido\"`, sem alterar o produto. Exemplos: JSON malformado, `{\"ativo\": \"x\"}`, `{\"ativo\": 1}`, `[true]`. Antes esses bodies caíam no toggle."
+            "description": "Ativa ou inativa um produto — exclusão lógica (apenas admin).\n\n**Toggle atômico (BUG-17, Lote 25, 2026-10-30):** sem body, a API grava `UPDATE produtos SET ativo = NOT ativo WHERE id = ?` (sem leitura prévia), então dois toggles concorrentes não se anulam; com `{\"ativo\": true|false}`, grava o valor explícito. Nos dois casos o produto é relido depois, e o `updated_at` da resposta é o real. Contrato igual: `200` com o produto, `404` se não existir, mesmo body opcional. Na tela de Produtos o botão fica bloqueado por 1,5 s depois de cada clique.\n\n- **Body omitido:** faz toggle (inverte o estado atual)\n- **Body `{ \"ativo\": true }`:** ativa o produto\n- **Body `{ \"ativo\": false }`:** inativa o produto\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — ID interno do produto\n\n**Body (opcional):**\n- `ativo` (bool) — estado desejado. Se omitido, faz toggle.\n\n**Resposta de sucesso (200):** produto atualizado (mesmo formato de `GET /api/produtos/{id}`).\n\n**Códigos de erro:**\n- `400` — `id` inválido\n- `400` — `\"body JSON inválido\"` (BUG-06): body preenchido e inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — produto não encontrado\n\n**Regras do body (BUG-06, 2026-09-25):**\n- body vazio, `null`, `{}` ou `{\"ativo\": null}` → **toggle**;\n- `{\"ativo\": true}` / `{\"ativo\": false}` → define o valor;\n- body preenchido e inválido → `400` `\"body JSON inválido\"`, sem alterar o produto. Exemplos: JSON malformado, `{\"ativo\": \"x\"}`, `{\"ativo\": 1}`, `[true]`. Antes esses bodies caíam no toggle."
           },
           "response": [
             {
@@ -5363,7 +5492,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pedidos"]
             },
-            "description": "Cria um novo pedido com seus itens. Acesso comum (admin ou normal) com escopo por carteira (2026-09-23).\n\n**Escopo para usuário `normal`:**\n- `403` `\"usuário sem vendedor vinculado\"` se o usuário não tiver vendedor vinculado.\n- `vendedor_id` do body é **ignorado** e forçado ao vendedor do usuário logado.\n- `cliente_id` precisa pertencer à carteira ativa (`data_fim IS NULL`) desse vendedor, senão `400` `\"cliente não pertence à carteira deste vendedor\"`.\n- `admin` não sofre restrições.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cliente_id\": 1,\n  \"vendedor_id\": 1,\n  \"data_pedido\": \"2026-09-13\",\n  \"canal\": \"App\",\n  \"status\": \"Em separação\",\n  \"itens\": [\n    { \"produto_id\": 1, \"quantidade\": 2, \"preco_praticado\": 189.9, \"desconto_pct\": 5 },\n    { \"produto_id\": 2, \"quantidade\": 1, \"preco_praticado\": 159.9, \"desconto_pct\": 0 }\n  ]\n}\n```\n- Campos obrigatórios: `cliente_id`, `vendedor_id`, `data_pedido` (`AAAA-MM-DD`), `canal` (`App`|`Telefone`|`Visita`|`WhatsApp`), `status` (`Cancelado`|`Em separação`|`Entregue`|`Faturado`) e ao menos um item.\n- Em cada item: `produto_id` obrigatório, `quantidade` > 0, `preco_praticado` >= 0, `desconto_pct` entre 0 e 100.\n- `valor_bruto` de cada item e `valor_total` do pedido são **calculados no backend** (não são aceitos no body).\n- `pedido_id_origem` é gerado automaticamente pelo sistema.\n\n**Resposta de sucesso (201):** pedido criado, incluindo os itens (formato igual ao de `GET /api/pedidos/{pedido_id_origem}`). Não há mais campo `id` — `pedido_id_origem`/`item_id_origem` são as PKs.\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 128730,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"valor_total\": 520.71,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 197725,\n        \"pedido_id\": 28730,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      },\n      {\n        \"item_id_origem\": 197726,\n        \"pedido_id\": 28730,\n        \"produto_id\": 2,\n        \"quantidade\": 1,\n        \"preco_praticado\": 159.9,\n        \"desconto_pct\": 0,\n        \"valor_bruto\": 159.9,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0002\",\n        \"produto_descricao\": \"Rota Fresh Feminino 75ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `cliente_id`/`vendedor_id` ausentes, `data_pedido` inválida, `canal`/`status` inválidos, sem itens, ou item com `produto_id`/`quantidade`/`preco_praticado`/`desconto_pct` inválidos; ou (usuário `normal`) `cliente_id` fora da carteira do vendedor\n- `401` — não autenticado\n- `403` — usuário `normal` sem vendedor vinculado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado, 2026-09-24)"
+            "description": "Cria um novo pedido com seus itens. Acesso comum (admin ou normal) com escopo por carteira (2026-09-23).\n\n**Escopo para usuário `normal`:**\n- `403` `\"usuário sem vendedor vinculado\"` se o usuário não tiver vendedor vinculado.\n- `vendedor_id` do body é **ignorado** e forçado ao vendedor do usuário logado.\n- `cliente_id` precisa pertencer à carteira ativa (`data_fim IS NULL`) desse vendedor, senão `400` `\"cliente não pertence à carteira deste vendedor\"`.\n- `admin` não sofre restrições.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"cliente_id\": 1,\n  \"vendedor_id\": 1,\n  \"data_pedido\": \"2026-09-13\",\n  \"canal\": \"App\",\n  \"status\": \"Em separação\",\n  \"itens\": [\n    { \"produto_id\": 1, \"quantidade\": 2, \"preco_praticado\": 189.9, \"desconto_pct\": 5 },\n    { \"produto_id\": 2, \"quantidade\": 1, \"preco_praticado\": 159.9, \"desconto_pct\": 0 }\n  ]\n}\n```\n- Campos obrigatórios: `cliente_id`, `vendedor_id`, `data_pedido` (`AAAA-MM-DD`), `canal` (`App`|`Telefone`|`Visita`|`WhatsApp`), `status` (`Cancelado`|`Em separação`|`Entregue`|`Faturado`) e ao menos um item.\n- Em cada item: `produto_id` obrigatório, `quantidade` > 0, `preco_praticado` >= 0, `desconto_pct` entre 0 e 100.\n- `valor_bruto` de cada item e `valor_total` do pedido são **calculados no backend** (não são aceitos no body).\n- `pedido_id_origem` é gerado automaticamente pelo sistema.\n\n**Status na criação (BUG-20 e BUG-16, Lote 25, 2026-10-30):**\n- Criado já como `Faturado`: baixa o estoque de cada item **na mesma transação** do INSERT (a mesma baixa da transição no `PUT`). Se a baixa falhar, nada é gravado.\n- Criado como `Entregue`: `400` `\"pedido só pode ser marcado como Entregue depois de Faturado\"`, sem gravar nada (criar direto em Entregue pularia a baixa de estoque; extensão do 🤍 MegaBrain). A tela de pedido não oferece Entregue na criação.\n- `Em separação` e `Cancelado`: sem baixa (como antes).\n\n**Resposta de sucesso (201):** pedido criado, incluindo os itens (formato igual ao de `GET /api/pedidos/{pedido_id_origem}`). Não há mais campo `id` — `pedido_id_origem`/`item_id_origem` são as PKs.\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 128730,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"valor_total\": 520.71,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 197725,\n        \"pedido_id\": 28730,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      },\n      {\n        \"item_id_origem\": 197726,\n        \"pedido_id\": 28730,\n        \"produto_id\": 2,\n        \"quantidade\": 1,\n        \"preco_praticado\": 159.9,\n        \"desconto_pct\": 0,\n        \"valor_bruto\": 159.9,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0002\",\n        \"produto_descricao\": \"Rota Fresh Feminino 75ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `cliente_id`/`vendedor_id` ausentes, `data_pedido` inválida, `canal`/`status` inválidos, sem itens, ou item com `produto_id`/`quantidade`/`preco_praticado`/`desconto_pct` inválidos; ou (usuário `normal`) `cliente_id` fora da carteira do vendedor\n- `401` — não autenticado\n- `403` — usuário `normal` sem vendedor vinculado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado, 2026-09-24)"
           },
           "response": [
             {
@@ -5457,6 +5586,33 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"o pedido deve ter ao menos um item\"\n}"
+            },
+            {
+              "name": "400 Bad Request — Criação já como Entregue (BUG-20, Lote 25)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-10-30\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 1,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 0\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos"]
+                },
+                "description": "Entregue só vem depois de Faturado. Nada é gravado (nem pedido, nem itens, nem estoque)."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido só pode ser marcado como Entregue depois de Faturado\"\n}"
             },
             {
               "name": "400 Bad Request — Cliente fora da carteira (usuário normal)",
@@ -5565,7 +5721,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pedidos", "1"]
             },
-            "description": "Retorna o detalhe de um pedido pelo `pedido_id_origem` (PK), incluindo a lista de itens (master-detail). Não existe mais campo `id` na resposta.\n\n**Acesso comum, com escopo por carteira:** o admin vê qualquer pedido. O usuário `normal` só vê pedidos do próprio vendedor; pedido de outro vendedor, ou usuário sem vendedor, recebe `404` `\"pedido não encontrado\"` (mesma mensagem do inexistente).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Path param:**\n- `id` (int64) — corresponde a `pedido_id_origem` do pedido\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — pedido não encontrado, ou de outro vendedor (usuário `normal`)\n- `500` — erro interno"
+            "description": "Retorna o detalhe de um pedido pelo `pedido_id_origem` (PK), incluindo a lista de itens (master-detail). Não existe mais campo `id` na resposta.\n\n**Acesso comum, com escopo por carteira:** o admin vê qualquer pedido. O usuário `normal` só vê pedidos do próprio vendedor; pedido de outro vendedor, ou usuário sem vendedor, recebe `404` `\"pedido não encontrado\"` (mesma mensagem do inexistente).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` para usuário `normal`)\n\n**Path param:**\n- `id` (int64) — corresponde a `pedido_id_origem` do pedido\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — pedido não encontrado, ou de outro vendedor (usuário `normal`)\n- `500` — erro interno"
           },
           "response": [
             {
@@ -5590,6 +5746,27 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"valor_total\": 459.7,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/abc",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "abc"]
+                },
+                "description": "Id de path <= 0 ou não numérico responde 400 sem consultar o banco (antes do Lote 25, 0 e -1 respondiam 404)."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
             },
             {
               "name": "404 Not Found — Pedido inexistente",
@@ -5680,14 +5857,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 3,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 10\n        }\n    ]\n}"
+              "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 2,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 5\n        }\n    ]\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/pedidos/1",
               "host": ["{{base_url}}"],
               "path": ["api", "pedidos", "1"]
             },
-            "description": "Atualiza os dados de um pedido existente e substitui integralmente a lista de itens. Acesso comum (admin ou normal) com escopo por carteira (2026-09-23).\n\n**Escopo para usuário `normal`:**\n- `404` `\"pedido não encontrado\"` (corpo idêntico ao de pedido inexistente, para não permitir enumeração) se o usuário não tiver vendedor vinculado ou se o pedido pertencer a outro vendedor.\n- `vendedor_id` do body é forçado ao vendedor do usuário logado (não é possível reatribuir o pedido).\n- `cliente_id` fora da carteira ativa do vendedor → `400` `\"cliente não pertence à carteira deste vendedor\"` (inclui pedidos antigos cujo cliente foi transferido para outro vendedor).\n- `admin` não sofre restrições.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — ID interno do pedido\n\n**Body:** mesmo formato do `POST /api/pedidos` (`cliente_id`, `vendedor_id`, `data_pedido`, `canal`, `status`, `itens`).\n- A lista de itens enviada **substitui** integralmente a existente (delete + insert).\n- `valor_bruto` de cada item e `valor_total` do pedido são recalculados no backend.\n- `pedido_id_origem` não é alterado.\n\n**Resposta de sucesso (200):** pedido atualizado, incluindo os itens (mesmo formato de `GET /api/pedidos/{pedido_id_origem}`). Não há mais campo `id`.\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, campo obrigatório ausente, `canal`/`status` inválidos, sem itens, item inválido, ou (usuário `normal`) `cliente_id` fora da carteira do vendedor\n- `401` — não autenticado\n- `404` — pedido não encontrado, pertence a outro vendedor ou usuário `normal` sem vendedor vinculado"
+            "description": "Atualiza os dados de um pedido existente e substitui integralmente a lista de itens. Acesso comum (admin ou normal) com escopo por carteira (2026-09-23).\n\n**Escopo para usuário `normal`:**\n- `404` `\"pedido não encontrado\"` (corpo idêntico ao de pedido inexistente, para não permitir enumeração) se o usuário não tiver vendedor vinculado ou se o pedido pertencer a outro vendedor.\n- `vendedor_id` do body é forçado ao vendedor do usuário logado (não é possível reatribuir o pedido).\n- `cliente_id` fora da carteira ativa do vendedor → `400` `\"cliente não pertence à carteira deste vendedor\"` (inclui pedidos antigos cujo cliente foi transferido para outro vendedor).\n- `admin` não sofre restrições.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — ID interno do pedido\n\n**Body:** mesmo formato do `POST /api/pedidos` (`cliente_id`, `vendedor_id`, `data_pedido`, `canal`, `status`, `itens`).\n- A lista de itens enviada **substitui** integralmente a existente (delete + insert).\n- `valor_bruto` de cada item e `valor_total` do pedido são recalculados no backend.\n- `pedido_id_origem` não é alterado.\n\n**Máquina de status (BUG-16, Lote 25, 2026-10-30):** checada antes da regra de itens, dentro da transação, sob `SELECT status … FOR UPDATE` (atômica).\n\n| Status atual | Destinos aceitos | Recusa (`400`) |\n|---|---|---|\n| Em separação / Cancelado | Em separação, Cancelado, Faturado (baixa o estoque) | Entregue → `\"pedido só pode ser marcado como Entregue depois de Faturado\"` |\n| Faturado | Faturado (idempotente), Entregue (sem nova baixa) | qualquer outro → `\"pedido faturado só pode ter o status alterado para Entregue\"` |\n| Entregue | Entregue (idempotente) | qualquer outro → `\"pedido entregue não pode ter o status alterado\"` |\n\n- Nenhuma transição volta para Faturado, então a baixa de estoque acontece uma vez só.\n- Em pedido Faturado ou Entregue, os itens enviados precisam ser iguais aos gravados; itens diferentes → `409` `\"pedido já faturado: não é possível alterar os itens, apenas o status\"` (texto mantido; card CHORE-07).\n- A recusa não grava nada (rollback, nenhum UPDATE).\n- O exemplo principal leva o pedido `100001` (Faturado, mesmo item do detalhe) para Entregue.\n\n**Resposta de sucesso (200):** pedido atualizado, incluindo os itens (mesmo formato de `GET /api/pedidos/{pedido_id_origem}`). Não há mais campo `id`.\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `\"id inválido\"` (id não numérico ou `<= 0`, CHORE-03), campo obrigatório ausente, `canal`/`status` inválidos, sem itens, item inválido, transição de status proibida (BUG-16), ou (usuário `normal`) `cliente_id` fora da carteira do vendedor\n- `401` — não autenticado\n- `404` — pedido não encontrado, pertence a outro vendedor ou usuário `normal` sem vendedor vinculado\n- `409` — itens diferentes em pedido Faturado ou Entregue"
           },
           "response": [
             {
@@ -5702,13 +5879,14 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 3,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 10\n        }\n    ]\n}"
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 2,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 5\n        }\n    ]\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/pedidos/1",
                   "host": ["{{base_url}}"],
                   "path": ["api", "pedidos", "1"]
-                }
+                },
+                "description": "Pedido Faturado → Entregue com os mesmos itens: aceito, sem nova baixa de estoque (BUG-16)."
               },
               "status": "OK",
               "code": 200,
@@ -5720,7 +5898,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"valor_total\": 512.73,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-09-13T00:00:00Z\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 2,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 3,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 10,\n        \"valor_bruto\": 512.73,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pedido_id_origem\": 100001,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10T00:00:00Z\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"valor_total\": 360.81,\n    \"created_at\": \"2026-09-13T00:00:00Z\",\n    \"updated_at\": \"2026-10-30T10:15:00-03:00\",\n    \"cliente_nome\": \"Perfumaria Central Ltda\",\n    \"vendedor_nome\": \"Henrique Rodrigues\",\n    \"itens\": [\n      {\n        \"item_id_origem\": 1,\n        \"pedido_id\": 1,\n        \"produto_id\": 1,\n        \"quantidade\": 2,\n        \"preco_praticado\": 189.9,\n        \"desconto_pct\": 5,\n        \"valor_bruto\": 360.81,\n        \"created_at\": \"2026-09-13T00:00:00Z\",\n        \"updated_at\": \"2026-09-13T00:00:00Z\",\n        \"produto_sku\": \"ROT-0001\",\n        \"produto_descricao\": \"Rota Intense Masculino 100ml\"\n      }\n    ]\n  }\n}"
             },
             {
               "name": "404 Not Found — Pedido inexistente",
@@ -5785,6 +5963,114 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"cliente não pertence à carteira deste vendedor\"\n}"
+            },
+            {
+              "name": "400 Bad Request — Faturado só vai para Entregue (BUG-16, Lote 25)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10\",\n    \"canal\": \"App\",\n    \"status\": \"Em separação\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 2,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 5\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                },
+                "description": "Pedido gravado como Faturado e destino diferente de Entregue (Em separação, Cancelado). Nada é gravado."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido faturado só pode ter o status alterado para Entregue\"\n}"
+            },
+            {
+              "name": "400 Bad Request — Entregue é terminal (BUG-16, Lote 25)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10\",\n    \"canal\": \"App\",\n    \"status\": \"Faturado\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 2,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 5\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                },
+                "description": "Pedido gravado como Entregue e qualquer outro status no body. Nada é gravado."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido entregue não pode ter o status alterado\"\n}"
+            },
+            {
+              "name": "400 Bad Request — Entregue sem passar por Faturado (BUG-16, Lote 25)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-09-13\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 1,\n            \"preco_praticado\": 10.55,\n            \"desconto_pct\": 0\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/28733",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "28733"]
+                },
+                "description": "Pedido gravado como Em separação ou Cancelado indo direto para Entregue (pularia a baixa de estoque; extensão do MegaBrain). Nada é gravado."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido só pode ser marcado como Entregue depois de Faturado\"\n}"
+            },
+            {
+              "name": "409 Conflict — Itens diferentes em pedido Faturado ou Entregue",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_pedido\": \"2026-03-10\",\n    \"canal\": \"App\",\n    \"status\": \"Entregue\",\n    \"itens\": [\n        {\n            \"produto_id\": 1,\n            \"quantidade\": 3,\n            \"preco_praticado\": 189.9,\n            \"desconto_pct\": 10\n        }\n    ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "1"]
+                },
+                "description": "Transição permitida (Faturado → Entregue), mas com itens diferentes dos gravados. A transição é checada antes; os itens dão 409. Texto antigo mantido (card CHORE-07)."
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido já faturado: não é possível alterar os itens, apenas o status\"\n}"
             }
           ]
         },
@@ -5821,7 +6107,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pedidos", "1"]
             },
-            "description": "Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete — 2026-09-22).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pedido_id_origem`\n\n**Regras de negócio:**\n- Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (é preciso excluir/remover os pagamentos antes).\n- Bloqueado com `409` se o pedido já estiver com `status = \"Faturado\"` (nesse caso a única alteração permitida é a de status, via `PUT`).\n- Escopo idêntico ao `GET`/`PUT`: usuário `normal` só exclui pedido da própria carteira — `404` (não `403`) se pertencer a outro vendedor.\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — pedido não encontrado, ou pertence a outro vendedor (usuário `normal`)\n- `409` — pedido possui pagamentos vinculados, ou está com status `Faturado`"
+            "description": "Exclui definitivamente um pedido e seus itens (hard delete, sem soft-delete — 2026-09-22).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pedido_id_origem`\n\n**Regras de negócio:**\n- Bloqueado com `409` se o pedido tiver **pagamentos vinculados** (é preciso excluir/remover os pagamentos antes).\n- Bloqueado com `409` se o pedido já estiver com `status = \"Faturado\"` (`\"pedido faturado não pode ser excluído, apenas ter o status alterado\"`; pelo BUG-16, a única alteração permitida é para Entregue, via `PUT`).\n- Bloqueado com `409` se o pedido estiver `Entregue` (`\"pedido entregue não pode ser excluído\"`; BUG-16, Lote 25, 2026-10-30, extensão do 🤍 MegaBrain: o estoque já foi baixado).\n- Ordem das checagens: pagamentos vinculados primeiro, depois Faturado/Entregue.\n- Escopo idêntico ao `GET`/`PUT`: usuário `normal` só exclui pedido da própria carteira — `404` (não `403`) se pertencer a outro vendedor.\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado)\n- `404` — pedido não encontrado, ou pertence a outro vendedor (usuário `normal`)\n- `409` — pedido possui pagamentos vinculados (`\"pedido possui pagamentos vinculados\"`), ou está com status `Faturado` ou `Entregue`"
           },
           "response": [
             {
@@ -5880,7 +6166,7 @@
                 { "key": "Content-Type", "value": "application/json" }
               ],
               "cookie": [],
-              "body": "{\n  \"success\": false,\n  \"error\": \"pedido possui pagamentos vinculados: remova-os antes de excluir o pedido\"\n}"
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido possui pagamentos vinculados\"\n}"
             },
             {
               "name": "409 Conflict — Pedido faturado não pode ser excluído",
@@ -5901,6 +6187,26 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"pedido faturado não pode ser excluído, apenas ter o status alterado\"\n}"
+            },
+            {
+              "name": "409 Conflict — Pedido entregue não pode ser excluído (BUG-16, Lote 25)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pedidos/500",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pedidos", "500"]
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pedido entregue não pode ser excluído\"\n}"
             }
           ]
         }
@@ -6127,7 +6433,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pagamentos"]
             },
-            "description": "Cria um novo pagamento.\n\n**Timestamps (BUG-09, Lote 8, 2026-09-26):** o pagamento é relido do banco depois do INSERT, então o `201` traz `created_at`/`updated_at` reais (data e hora da gravação, fuso `-03:00`) e os campos preenchidos pelo banco. Antes podiam vir `0001-01-01T00:00:00Z`. Mesmo envelope. Se só a releitura falhar, a API registra log e devolve o objeto em memória.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`) pode criar.** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Escopo por carteira para usuário `normal` (2026-09-23):**\n- `403` `\"usuário sem vendedor vinculado\"` se o usuário não tiver vendedor vinculado.\n- `404` `\"pedido não encontrado\"` se `pedido_id` pertencer a pedido de outro vendedor **ou** não existir (o `pedido_id` do exemplo precisa ser de um pedido da carteira do vendedor logado).\n\n**Status padronizado (2026-09-24):** `pedido_id` inexistente retorna `404` `\"pedido não encontrado\"` para **admin e normal** (antes o admin recebia `400`). O corpo é idêntico ao de pedido de outro vendedor, então não permite enumeração (parecer 🟣 SecBrain). `pedido_id` ausente ou `<= 0` continua `400` `\"pedido_id é obrigatório\"`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"pedido_id\": 1,\n  \"forma_pagamento\": \"PIX\",\n  \"parcelas\": 1,\n  \"valor\": 459.7,\n  \"taxa_pct\": 0.99,\n  \"valor_liquido\": 455.15,\n  \"data_vencimento\": \"2026-09-20\",\n  \"data_pagamento\": \"\",\n  \"status_pagamento\": \"Em aberto\"\n}\n```\n- `pedido_id` obrigatório — deve existir em `pedidos`.\n- `forma_pagamento` — um de `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro`, `PIX`.\n- `status_pagamento` — um de `Em aberto`, `Inadimplente`, `Pago`, `Pago com atraso`.\n- `parcelas` >= 1; `valor`/`taxa_pct`/`valor_liquido` >= 0.\n- `data_vencimento` obrigatória (`AAAA-MM-DD`); `data_pagamento` opcional (vazio = NULL).\n- **`valor_liquido` é sempre exigido explicitamente no payload** — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento).\n- `pagamento_id` é gerado automaticamente (AUTO_INCREMENT).\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 27701,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-09-20T00:00:00Z\",\n    \"data_pagamento\": null,\n    \"status_pagamento\": \"Em aberto\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `pedido_id` ausente ou `<= 0`, `forma_pagamento`/`status_pagamento` inválidos, `parcelas`/`valor`/`taxa_pct`/`valor_liquido` inválidos, `data_vencimento`/`data_pagamento` ausente ou em formato inválido\n- `401` — não autenticado\n- `403` — usuário `normal` sem vendedor vinculado\n- `404` — `pedido_id` inexistente (admin e normal) ou, para usuário `normal`, pedido de outro vendedor\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado, 2026-09-24)"
+            "description": "Cria um novo pagamento.\n\n**Timestamps (BUG-09, Lote 8, 2026-09-26):** o pagamento é relido do banco depois do INSERT, então o `201` traz `created_at`/`updated_at` reais (data e hora da gravação, fuso `-03:00`) e os campos preenchidos pelo banco. Antes podiam vir `0001-01-01T00:00:00Z`. Mesmo envelope. Se só a releitura falhar, a API registra log e devolve o objeto em memória.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`) pode criar.** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Escopo por carteira para usuário `normal` (2026-09-23):**\n- `403` `\"usuário sem vendedor vinculado\"` se o usuário não tiver vendedor vinculado.\n- `404` `\"pedido não encontrado\"` se `pedido_id` pertencer a pedido de outro vendedor **ou** não existir (o `pedido_id` do exemplo precisa ser de um pedido da carteira do vendedor logado).\n\n**Status padronizado (2026-09-24):** `pedido_id` inexistente retorna `404` `\"pedido não encontrado\"` para **admin e normal** (antes o admin recebia `400`). O corpo é idêntico ao de pedido de outro vendedor, então não permite enumeração (parecer 🟣 SecBrain). `pedido_id` ausente ou `<= 0` continua `400` `\"pedido_id é obrigatório\"`.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"pedido_id\": 1,\n  \"forma_pagamento\": \"PIX\",\n  \"parcelas\": 1,\n  \"valor\": 459.7,\n  \"taxa_pct\": 0.99,\n  \"valor_liquido\": 455.15,\n  \"data_vencimento\": \"2026-09-20\",\n  \"data_pagamento\": \"\",\n  \"status_pagamento\": \"Em aberto\"\n}\n```\n- `pedido_id` obrigatório — deve existir em `pedidos`.\n- `forma_pagamento` — um de `Boleto 14 dias`, `Boleto 28 dias`, `Cartão de crédito`, `Cartão de débito`, `Cheque a prazo`, `Dinheiro`, `PIX`.\n- `status_pagamento` — um de `Em aberto`, `Inadimplente`, `Pago`, `Pago com atraso`.\n- `parcelas` >= 1; `valor`/`valor_liquido` >= 0; `taxa_pct` entre 0 e 30, limites inclusivos (SEC-27, Lote 25, 2026-10-30): fora disso, `400` `\"taxa_pct deve estar entre 0 e 30\"`, para admin e normal. O banco tem o mesmo limite no CHECK `chk_pagamentos_taxa_pct`.\n- `data_vencimento` obrigatória (`AAAA-MM-DD`); `data_pagamento` opcional (vazio = NULL).\n- **`valor_liquido` é sempre exigido explicitamente no payload** — não é calculado automaticamente a partir de `valor`/`taxa_pct` (o CSV de origem já traz o valor líquido calculado, às vezes com pequenas diferenças de arredondamento).\n- `pagamento_id` é gerado automaticamente (AUTO_INCREMENT).\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 27701,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-09-20T00:00:00Z\",\n    \"data_pagamento\": null,\n    \"status_pagamento\": \"Em aberto\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `pedido_id` ausente ou `<= 0`, `forma_pagamento`/`status_pagamento` inválidos, `parcelas`/`valor`/`taxa_pct`/`valor_liquido` inválidos, `data_vencimento`/`data_pagamento` ausente ou em formato inválido\n- `401` — não autenticado\n- `403` — usuário `normal` sem vendedor vinculado\n- `404` — `pedido_id` inexistente (admin e normal) ou, para usuário `normal`, pedido de outro vendedor\n- `403` — `\"acesso bloqueado: vendedor desligado\"` (usuário `normal` com vendedor desligado, 2026-09-24)"
           },
           "response": [
             {
@@ -6326,7 +6632,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pagamentos", "1"]
             },
-            "description": "Retorna o detalhe de um pagamento pelo `pagamento_id`.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pagamento_id`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 1,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n    \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n    \"status_pagamento\": \"Pago\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — pagamento não encontrado"
+            "description": "Retorna o detalhe de um pagamento pelo `pagamento_id`.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pagamento_id`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 1,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n    \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n    \"status_pagamento\": \"Pago\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `404` — pagamento não encontrado"
           },
           "response": [
             {
@@ -6348,6 +6654,27 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 1,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10T00:00:00Z\",\n    \"data_pagamento\": \"2026-03-10T00:00:00Z\",\n    \"status_pagamento\": \"Pago\",\n    \"created_at\": \"2026-09-14T00:00:00Z\",\n    \"updated_at\": \"2026-09-14T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/0",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "0"]
+                },
+                "description": "Id de path <= 0 ou não numérico responde 400 sem consultar o banco (antes do Lote 25, 0 e -1 respondiam 404)."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
             },
             {
               "name": "404 Not Found — Pagamento inexistente",
@@ -6418,7 +6745,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pagamentos", "1"]
             },
-            "description": "Atualiza os campos editáveis de um pagamento existente.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — `pagamento_id`\n\n**Body:** mesmo formato do `POST /api/pagamentos`, exceto `pedido_id`.\n- `pagamento_id` e `pedido_id` **não são editáveis** por esta rota (o vínculo com o pedido de origem é definitivo).\n\n**Escopo por carteira para usuário `normal` (2026-09-23):** `404` `\"pagamento não encontrado\"` (mesmo corpo de inexistente) se o usuário não tiver vendedor vinculado ou se o pagamento pertencer a pedido de outro vendedor. `admin` não sofre restrições.\n\n**Resposta de sucesso (200):** pagamento atualizado (mesmo formato de `GET /api/pagamentos/{id}`).\n\n**Códigos de erro:**\n- `400` — body JSON inválido, id inválido, `forma_pagamento`/`status_pagamento` inválidos, `parcelas`/`valor`/`taxa_pct`/`valor_liquido` inválidos, `data_vencimento`/`data_pagamento` ausente ou em formato inválido\n- `401` — não autenticado\n- `404` — pagamento não encontrado, pertence a pedido de outro vendedor ou usuário `normal` sem vendedor vinculado"
+            "description": "Atualiza os campos editáveis de um pagamento existente.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — `pagamento_id`\n\n**Body:** mesmo formato do `POST /api/pagamentos`, exceto `pedido_id`.\n- `pagamento_id` e `pedido_id` **não são editáveis** por esta rota (o vínculo com o pedido de origem é definitivo).\n\n**Escopo por carteira para usuário `normal` (2026-09-23):** `404` `\"pagamento não encontrado\"` (mesmo corpo de inexistente) se o usuário não tiver vendedor vinculado ou se o pagamento pertencer a pedido de outro vendedor. `admin` não sofre restrições.\n\n**Pagamento quitado e teto da taxa (SEC-27, Lote 25, 2026-10-30):**\n- Pagamento já quitado (`Pago` ou `Pago com atraso`) só é editável por **admin**. Para o usuário `normal`, `409` `\"pagamento já quitado não pode ser editado\"`. O UPDATE do `normal` é condicional (`… AND status_pagamento NOT IN ('Pago', 'Pago com atraso')`), então uma quitação concorrente também dá `409`; inexistente continua `404`.\n- `Em aberto` → `Pago` continua permitido para o `normal`. O exemplo principal assume que o pagamento `1` está `Em aberto`; se ele já estiver quitado, o `{{vendedor_token}}` recebe `409` (use `{{admin_token}}` para corrigir um quitado).\n- `taxa_pct` fora de 0 a 30 → `400` `\"taxa_pct deve estar entre 0 e 30\"` (admin e normal).\n- Ordem: posse → leitura do body → validação (`400`) → UPDATE (`409`/`404`).\n- Na tela de Pagamentos, o `normal` vê \"Ver\" em vez de \"Editar\" nos quitados, e o modal abre em modo leitura.\n\n**Resposta de sucesso (200):** pagamento atualizado (mesmo formato de `GET /api/pagamentos/{id}`).\n\n**Códigos de erro:**\n- `400` — body JSON inválido, `\"id inválido\"` (CHORE-03), `forma_pagamento`/`status_pagamento` inválidos, `parcelas`/`valor`/`valor_liquido` inválidos, `taxa_pct` fora de 0 a 30, `data_vencimento`/`data_pagamento` ausente ou em formato inválido\n- `401` — não autenticado\n- `404` — pagamento não encontrado, pertence a pedido de outro vendedor ou usuário `normal` sem vendedor vinculado\n- `409` — pagamento já quitado (usuário `normal`)"
           },
           "response": [
             {
@@ -6472,6 +6799,87 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"pagamento não encontrado\"\n}"
+            },
+            {
+              "name": "409 Conflict — Pagamento já quitado, usuário normal (SEC-27, Lote 25)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 400,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 396.04,\n    \"data_vencimento\": \"2026-03-10\",\n    \"data_pagamento\": \"2026-03-10\",\n    \"status_pagamento\": \"Pago\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "1"]
+                },
+                "description": "Bearer {{vendedor_token}}. O pagamento 1 já está Pago. Com {{admin_token}}, o mesmo PUT responde 200."
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"pagamento já quitado não pode ser editado\"\n}"
+            },
+            {
+              "name": "200 OK — Admin corrige pagamento quitado (SEC-27, Lote 25)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10\",\n    \"data_pagamento\": \"2026-03-12\",\n    \"status_pagamento\": \"Pago com atraso\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "1"]
+                },
+                "description": "Bearer {{admin_token}}. O admin edita pagamento quitado normalmente (UPDATE sem a condição de status)."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"pagamento_id\": 1,\n    \"pedido_id\": 1,\n    \"forma_pagamento\": \"PIX\",\n    \"parcelas\": 1,\n    \"valor\": 459.7,\n    \"taxa_pct\": 0.99,\n    \"valor_liquido\": 455.15,\n    \"data_vencimento\": \"2026-03-10T00:00:00-03:00\",\n    \"data_pagamento\": \"2026-03-12T00:00:00-03:00\",\n    \"status_pagamento\": \"Pago com atraso\",\n    \"created_at\": \"2026-09-14T00:00:00-03:00\",\n    \"updated_at\": \"2026-10-30T10:20:00-03:00\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — taxa_pct acima de 30 (SEC-27, Lote 25)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"forma_pagamento\": \"Cartão de crédito\",\n    \"parcelas\": 3,\n    \"valor\": 459.7,\n    \"taxa_pct\": 30.01,\n    \"valor_liquido\": 321.74,\n    \"data_vencimento\": \"2026-11-10\",\n    \"status_pagamento\": \"Em aberto\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/pagamentos/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "pagamentos", "1"]
+                },
+                "description": "Vale para admin e normal, no POST e no PUT. 30 é aceito; 30.01, 100 e 999.99 são recusados. Valor negativo dá a mesma mensagem."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"taxa_pct deve estar entre 0 e 30\"\n}"
             }
           ]
         },
@@ -6511,7 +6919,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "pagamentos", "1"]
             },
-            "description": "Exclui definitivamente um pagamento (hard delete, sem soft-delete — 2026-09-22).\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pagamento_id`\n\n**Regras de negócio:**\n- Bloqueado com `409` se `status_pagamento` já for `\"Pago\"` ou `\"Pago com atraso\"` — preserva a trilha financeira de pagamentos já quitados.\n- Escopo idêntico ao `GET`/`PUT`: usuário `normal` só exclui pagamento de pedido da própria carteira — `404` (não `403`) se pertencer a outro vendedor.\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — pagamento não encontrado, ou pertence a pedido de outro vendedor (usuário `normal`)\n- `409` — pagamento já quitado (`Pago` ou `Pago com atraso`)"
+            "description": "Exclui definitivamente um pagamento (hard delete, sem soft-delete — 2026-09-22).\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64) — `pagamento_id`\n\n**Regras de negócio:**\n- Bloqueado com `409` se `status_pagamento` já for `\"Pago\"` ou `\"Pago com atraso\"` — preserva a trilha financeira de pagamentos já quitados.\n- Escopo idêntico ao `GET`/`PUT`: usuário `normal` só exclui pagamento de pedido da própria carteira — `404` (não `403`) se pertencer a outro vendedor.\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `404` — pagamento não encontrado, ou pertence a pedido de outro vendedor (usuário `normal`)\n- `409` — pagamento já quitado (`Pago` ou `Pago com atraso`)"
           },
           "response": [
             {
@@ -6796,7 +7204,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "oportunidades", "1"]
             },
-            "description": "Retorna o detalhe de uma oportunidade pelo `oportunidade_id`.\n\n**Acesso comum (2026-09-22), com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar — deixou de ser admin only. Usuário `normal` tentando acessar uma oportunidade de **outro** vendedor recebe `404` (não `403`) — decisão deliberada para não expor a existência do registro por enumeração de ID (IDOR).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só acessa oportunidade da própria carteira)\n\n**Path param:**\n- `id` (int64) — `oportunidade_id`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"oportunidade_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10T00:00:00Z\",\n    \"etapa\": \"Proposta enviada\",\n    \"probabilidade_pct\": 50,\n    \"valor_estimado\": 1200.5,\n    \"data_fechamento\": null,\n    \"ciclo_dias\": null,\n    \"motivo_perda\": null,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — oportunidade não encontrada, **ou pertence a outro vendedor** (usuário `normal`)"
+            "description": "Retorna o detalhe de uma oportunidade pelo `oportunidade_id`.\n\n**Acesso comum (2026-09-22), com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar — deixou de ser admin only. Usuário `normal` tentando acessar uma oportunidade de **outro** vendedor recebe `404` (não `403`) — decisão deliberada para não expor a existência do registro por enumeração de ID (IDOR).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só acessa oportunidade da própria carteira)\n\n**Path param:**\n- `id` (int64) — `oportunidade_id`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"oportunidade_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10T00:00:00Z\",\n    \"etapa\": \"Proposta enviada\",\n    \"probabilidade_pct\": 50,\n    \"valor_estimado\": 1200.5,\n    \"data_fechamento\": null,\n    \"ciclo_dias\": null,\n    \"motivo_perda\": null,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `404` — oportunidade não encontrada, **ou pertence a outro vendedor** (usuário `normal`)"
           },
           "response": [
             {
@@ -6818,6 +7226,27 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"oportunidade_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"origem\": \"Indicação\",\n    \"data_abertura\": \"2026-01-10T00:00:00Z\",\n    \"etapa\": \"Proposta enviada\",\n    \"probabilidade_pct\": 50,\n    \"valor_estimado\": 1200.5,\n    \"data_fechamento\": null,\n    \"ciclo_dias\": null,\n    \"motivo_perda\": null,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/oportunidades/-1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "oportunidades", "-1"]
+                },
+                "description": "Id de path <= 0 ou não numérico responde 400 sem consultar o banco (antes do Lote 25, 0 e -1 respondiam 404)."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
             },
             {
               "name": "404 Not Found — Oportunidade inexistente",
@@ -7175,7 +7604,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "oportunidades", "1"]
             },
-            "description": "Exclui definitivamente uma oportunidade (hard delete, sem soft-delete — 2026-09-22). Sem restrição extra de negócio (diferente de Pedido/Pagamento).\n\n**Acesso comum, com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar. Usuário `normal` tentando excluir uma oportunidade de **outro** vendedor recebe `404` (não `403`, para não expor a existência do registro).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só exclui oportunidade da própria carteira)\n\n**Path param:**\n- `id` (int64) — `oportunidade_id`\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — oportunidade não encontrada, ou pertence a outro vendedor (usuário `normal`)"
+            "description": "Exclui definitivamente uma oportunidade (hard delete, sem soft-delete — 2026-09-22). Sem restrição extra de negócio (diferente de Pedido/Pagamento).\n\n**Acesso comum, com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar. Usuário `normal` tentando excluir uma oportunidade de **outro** vendedor recebe `404` (não `403`, para não expor a existência do registro).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só exclui oportunidade da própria carteira)\n\n**Path param:**\n- `id` (int64) — `oportunidade_id`\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `404` — oportunidade não encontrada, ou pertence a outro vendedor (usuário `normal`)"
           },
           "response": [
             {
@@ -7278,7 +7707,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "vendedores", "1", "clientes"]
             },
-            "description": "Lista os clientes vinculados (carteira ativa, `data_fim IS NULL`) a um vendedor. Usado pelo dropdown em cascata das telas de Oportunidades, Visitas e (desde 2026-09-23) do modal de Pedidos: ao escolher o vendedor, filtra os clientes possíveis no segundo dropdown.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Nota (2026-09-23):** esta rota e `GET /api/vendedores` são as **únicas** rotas `/api/vendedores*` com acesso comum. `POST /api/vendedores`, `GET/PUT/DELETE /api/vendedores/{id}`, `POST /api/vendedores/{id}/reativar`, `POST /api/vendedores/{id}/clientes` e `DELETE /api/vendedores/{id}/clientes/{clienteId}` passaram a ser **admin only** (`403` `\"acesso restrito a administradores\"` para usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64) — id do vendedor\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cnpj\": \"12.345.678/0001-90\",\n      \"razao_social\": \"Perfumaria Central Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"carteira_id\": 1,\n      \"data_inicio\": \"2026-01-01T00:00:00Z\",\n      \"data_fim\": null\n    }\n  ]\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — vendedor não encontrado"
+            "description": "Lista os clientes vinculados (carteira ativa, `data_fim IS NULL`) a um vendedor. Usado pelo dropdown em cascata das telas de Oportunidades, Visitas e (desde 2026-09-23) do modal de Pedidos: ao escolher o vendedor, filtra os clientes possíveis no segundo dropdown.\n\n**Acesso comum: qualquer usuário autenticado (`admin` ou `normal`).** Exemplo abaixo usa `{{vendedor_token}}` (usuário `normal`).\n\n**Nota (2026-09-23):** esta rota e `GET /api/vendedores` são as **únicas** rotas `/api/vendedores*` com acesso comum. `POST /api/vendedores`, `GET/PUT/DELETE /api/vendedores/{id}`, `POST /api/vendedores/{id}/reativar`, `POST /api/vendedores/{id}/clientes` e `DELETE /api/vendedores/{id}/clientes/{clienteId}` passaram a ser **admin only** (`403` `\"acesso restrito a administradores\"` para usuário `normal`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{vendedor_token}}\n```\n\n**Path param:**\n- `id` (int64) — id do vendedor\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cnpj\": \"12.345.678/0001-90\",\n      \"razao_social\": \"Perfumaria Central Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"carteira_id\": 1,\n      \"data_inicio\": \"2026-01-01T00:00:00Z\",\n      \"data_fim\": null\n    }\n  ]\n}\n```\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `404` — vendedor não encontrado"
           },
           "response": [
             {
@@ -7323,6 +7752,27 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": true,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"cnpj\": \"12.345.678/0001-90\",\n      \"razao_social\": \"Perfumaria Central Ltda\",\n      \"segmento\": \"Varejo\",\n      \"cidade\": \"São Paulo\",\n      \"uf\": \"SP\",\n      \"carteira_id\": 1,\n      \"data_inicio\": \"2026-01-01T00:00:00Z\",\n      \"data_fim\": null\n    }\n  ]\n}"
+            },
+            {
+              "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/vendedores/abc/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendedores", "abc", "clientes"]
+                },
+                "description": "Id de path <= 0 ou não numérico responde 400 sem consultar o banco (antes do Lote 25, 0 e -1 respondiam 404). Vale para todas as rotas /api/vendedores/{id}..."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
             },
             {
               "name": "404 Not Found — Vendedor inexistente",
@@ -7563,7 +8013,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "visitas", "1"]
             },
-            "description": "Retorna o detalhe de uma visita pelo `visita_id`.\n\n**Acesso comum (2026-09-22), com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar — deixou de ser admin only. Usuário `normal` tentando acessar uma visita de **outro** vendedor recebe `404` (não `403`) — decisão deliberada para não expor a existência do registro por enumeração de ID (IDOR).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só acessa visita da própria carteira)\n\n**Path param:**\n- `id` (int64) — `visita_id`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"visita_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10T00:00:00Z\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 45,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — visita não encontrada, **ou pertence a outro vendedor** (usuário `normal`)"
+            "description": "Retorna o detalhe de uma visita pelo `visita_id`.\n\n**Acesso comum (2026-09-22), com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar — deixou de ser admin only. Usuário `normal` tentando acessar uma visita de **outro** vendedor recebe `404` (não `403`) — decisão deliberada para não expor a existência do registro por enumeração de ID (IDOR).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só acessa visita da própria carteira)\n\n**Path param:**\n- `id` (int64) — `visita_id`\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"visita_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10T00:00:00Z\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 45,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `404` — visita não encontrada, **ou pertence a outro vendedor** (usuário `normal`)"
           },
           "response": [
             {
@@ -7585,6 +8035,27 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": true,\n  \"data\": {\n    \"visita_id\": 1,\n    \"cliente_id\": 1,\n    \"vendedor_id\": 1,\n    \"data_visita\": \"2026-01-10T00:00:00Z\",\n    \"resultado\": \"Pedido fechado\",\n    \"duracao_min\": 45,\n    \"created_at\": \"2026-09-15T00:00:00Z\",\n    \"updated_at\": \"2026-09-15T00:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/visitas/1.5",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "visitas", "1.5"]
+                },
+                "description": "Id de path <= 0 ou não numérico responde 400 sem consultar o banco (antes do Lote 25, 0 e -1 respondiam 404)."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
             },
             {
               "name": "404 Not Found — Visita inexistente",
@@ -7942,7 +8413,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "visitas", "1"]
             },
-            "description": "Exclui definitivamente uma visita (hard delete, sem soft-delete — 2026-09-22). Sem restrição extra de negócio (diferente de Pedido/Pagamento).\n\n**Acesso comum, com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar. Usuário `normal` tentando excluir uma visita de **outro** vendedor recebe `404` (não `403`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só exclui visita da própria carteira)\n\n**Path param:**\n- `id` (int64) — `visita_id`\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `404` — visita não encontrada, ou pertence a outro vendedor (usuário `normal`)"
+            "description": "Exclui definitivamente uma visita (hard delete, sem soft-delete — 2026-09-22). Sem restrição extra de negócio (diferente de Pedido/Pagamento).\n\n**Acesso comum, com escopo por carteira:** qualquer usuário autenticado (`admin` ou `normal`) pode chamar. Usuário `normal` tentando excluir uma visita de **outro** vendedor recebe `404` (não `403`).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n(ou `Bearer {{vendedor_token}}` — só exclui visita da própria carteira)\n\n**Path param:**\n- `id` (int64) — `visita_id`\n\n**Resposta de sucesso:** `204 No Content`, sem corpo.\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `404` — visita não encontrada, ou pertence a outro vendedor (usuário `normal`)"
           },
           "response": [
             {
@@ -8009,7 +8480,7 @@
     },
     {
       "name": "Vendedores",
-      "description": "**SEC-03 (2026-09-25):** `GET /api/vendedores` passou a ter escopo por usuário. Antes, qualquer usuário autenticado recebia a lista completa de vendedores.\n\nEsta pasta documenta só a listagem (mudança de contrato do Lote 4). `GET /api/vendedores/{id}/clientes` está na pasta \"Oportunidades\".\n\n**BUG-09 (Lote 8, 2026-09-26):** o `POST /api/vendedores` (sem requisição nesta coleção) passou a reler o vendedor depois do INSERT: o `201` traz `created_at`/`updated_at` reais, e não mais `0001-01-01T00:00:00Z`. Mesmo envelope.\n\n**SEC-08 (Lote 8, 2026-09-26):** `DELETE /api/vendedores/{id}` grava o corte de sessão (`usuarios.tokens_validos_desde`) dos usuários vinculados: os access tokens deles emitidos até esse segundo recebem `401` `\"sessão encerrada — faça login novamente\"`, mesmo se o vendedor for reativado.",
+      "description": "**SEC-03 (2026-09-25):** `GET /api/vendedores` passou a ter escopo por usuário. Antes, qualquer usuário autenticado recebia a lista completa de vendedores.\n\nEsta pasta documenta a listagem (mudança de contrato do Lote 4) e, desde o Lote 25 (2026-10-30), o vínculo de carteira: \"Vincular Cliente ao Vendedor\" (`409` de duplicidade, CHORE-06) e \"Encerrar Vínculo Cliente-Vendedor\" (`400` `\"cliente id inválido\"`, CHORE-03). `GET /api/vendedores/{id}/clientes` está na pasta \"Oportunidades\".\n\n**BUG-09 (Lote 8, 2026-09-26):** o `POST /api/vendedores` (sem requisição nesta coleção) passou a reler o vendedor depois do INSERT: o `201` traz `created_at`/`updated_at` reais, e não mais `0001-01-01T00:00:00Z`. Mesmo envelope.\n\n**SEC-08 (Lote 8, 2026-09-26):** `DELETE /api/vendedores/{id}` grava o corte de sessão (`usuarios.tokens_validos_desde`) dos usuários vinculados: os access tokens deles emitidos até esse segundo recebem `401` `\"sessão encerrada — faça login novamente\"`, mesmo se o vendedor for reativado.",
       "item": [
         {
           "name": "Listar Vendedores (escopo por usuário)",
@@ -8143,6 +8614,211 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"acesso bloqueado: vendedor desligado\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Vincular Cliente ao Vendedor (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Resumo do cliente com o vínculo', function() {",
+                  "    pm.expect(jsonData.data).to.have.property('carteira_id');",
+                  "    pm.expect(jsonData.data.data_fim).to.eql(null);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cliente_id\": 9\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/vendedores/4/clientes",
+              "host": ["{{base_url}}"],
+              "path": ["api", "vendedores", "4", "clientes"]
+            },
+            "description": "Vincula (ou transfere) um cliente à carteira do vendedor, com `data_inicio` = hoje. **Admin only** (usuário `normal` recebe `403`). Adicionada à coleção no Lote 25 (2026-10-30) para documentar o `409` do CHORE-06.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Path param:**\n- `id` (int64) — id do vendedor. Não numérico ou `<= 0` → `400` `\"id inválido\"` (CHORE-03).\n\n**Body:** `{ \"cliente_id\": 9 }`\n\n**Resposta de sucesso (201):** resumo do cliente com o vínculo (`id`, `cnpj`, `razao_social`, `segmento`, `cidade`, `uf`, `carteira_id`, `data_inicio`, `data_fim`).\n\n**Duplicidade (CHORE-06, Lote 25):** a chave única `uk_carteiras_cliente_vendedor_inicio` é `(cliente_id, vendedor_id, data_inicio)`. A revinculação no mesmo dia reaproveita o vínculo do dia; o `409` `\"vínculo entre cliente e vendedor já cadastrado nesta data\"` aparece quando o INSERT bate na chave (ex.: dois vínculos simultâneos do mesmo par no mesmo dia). Antes do Lote 25 a resposta era `500`. O log registra só `[carteiras] vinculo duplicado recusado`, sem os ids.\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`, body JSON inválido ou `cliente_id` inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — vendedor ou cliente não encontrado\n- `409` — vínculo do mesmo par já cadastrado nesta data"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 9\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/vendedores/4/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendedores", "4", "clientes"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 9,\n    \"cnpj\": \"11222333000181\",\n    \"razao_social\": \"Perfumaria Exemplo Ltda\",\n    \"segmento\": \"Varejo\",\n    \"cidade\": \"Manaus\",\n    \"uf\": \"AM\",\n    \"carteira_id\": 1201,\n    \"data_inicio\": \"2026-10-30T00:00:00-03:00\",\n    \"data_fim\": null\n  }\n}"
+            },
+            {
+              "name": "409 Conflict — Vínculo já cadastrado nesta data (CHORE-06, Lote 25)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 9\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/vendedores/4/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendedores", "4", "clientes"]
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"vínculo entre cliente e vendedor já cadastrado nesta data\"\n}"
+            },
+            {
+              "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"cliente_id\": 9\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/vendedores/0/clientes",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendedores", "0", "clientes"]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Encerrar Vínculo Cliente-Vendedor (admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/vendedores/4/clientes/9",
+              "host": ["{{base_url}}"],
+              "path": ["api", "vendedores", "4", "clientes", "9"]
+            },
+            "description": "Encerra o vínculo ativo do cliente com o vendedor (grava `data_fim`). **Admin only**. Adicionada à coleção no Lote 25 (2026-10-30) para documentar o parse estrito dos dois ids (CHORE-03).\n\n**Path params:**\n- `id` (int64) — vendedor. Inválido → `400` `\"id inválido\"`.\n- `clienteId` (int64) — cliente. Inválido (não numérico ou `<= 0`) → `400` `\"cliente id inválido\"`.\n\n**Resposta de sucesso:** `200` `{\"success\": true}`.\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"` ou `\"cliente id inválido\"`\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — vínculo não encontrado"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/vendedores/4/clientes/9",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendedores", "4", "clientes", "9"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true\n}"
+            },
+            {
+              "name": "400 Bad Request — cliente id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/vendedores/4/clientes/-1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendedores", "4", "clientes", "-1"]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"cliente id inválido\"\n}"
             }
           ]
         }
@@ -8359,7 +9035,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "estoque", "1"]
             },
-            "description": "Retorna o detalhe de um snapshot de estoque pelo `id`. **Admin only** (2026-09-22: antes era acesso comum, restringido junto com a mudança de \"Estoque\" no menu do frontend para \"Administração\").\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0001\",\n    \"produto_descricao\": \"Perfume Rota 0001\",\n    \"saldo\": 120,\n    \"ruptura\": false,\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `id` inválido (não numérico)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — snapshot não encontrado"
+            "description": "Retorna o detalhe de um snapshot de estoque pelo `id`. **Admin only** (2026-09-22: antes era acesso comum, restringido junto com a mudança de \"Estoque\" no menu do frontend para \"Administração\").\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\n```\n\n**Path param:**\n- `id` (int64)\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0001\",\n    \"produto_descricao\": \"Perfume Rota 0001\",\n    \"saldo\": 120,\n    \"ruptura\": false,\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — `\"id inválido\"`: `id` não numérico ou `<= 0` (CHORE-03, Lote 25; antes, `0` e `-1` davam `404`)\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — snapshot não encontrado"
           },
           "response": [
             {
@@ -8401,6 +9077,27 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            },
+            {
+              "name": "400 Bad Request — id inválido (CHORE-03, Lote 25)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/estoque/0",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque", "0"]
+                },
+                "description": "Id de path <= 0 ou não numérico responde 400 sem consultar o banco (antes do Lote 25, 0 e -1 respondiam 404)."
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"id inválido\"\n}"
             },
             {
               "name": "404 Not Found — Snapshot inexistente",
@@ -8468,7 +9165,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "estoque"]
             },
-            "description": "Cria um snapshot de estoque manual (apenas admin).\n\n**Timestamps e campos do banco (BUG-09, Lote 8, 2026-09-26):** o snapshot é relido do banco depois do INSERT, então o `201` traz `created_at`/`updated_at` reais (data e hora da gravação, fuso `-03:00`) e o `produto_descricao` vindo do JOIN com `produtos`. Antes podiam vir `0001-01-01T00:00:00Z` e `produto_descricao` vazio. Mesmo envelope. Se só a releitura falhar, a API registra log e devolve o objeto em memória.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"sku\": \"ROT-0002\",\n  \"data_snapshot\": \"2026-09-22\",\n  \"saldo\": 50\n}\n```\n- `sku` deve existir em `produtos`.\n- `data_snapshot` obrigatório (`AAAA-MM-DD`).\n- `saldo` obrigatório (int).\n- `ruptura` é derivada automaticamente (`saldo <= 0`) — não é aceito no body.\n- Respeita a constraint `UNIQUE (data_snapshot, sku)` — criar outro registro para o mesmo par retorna `400`.\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 294,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0002\",\n    \"produto_descricao\": \"Perfume Rota 0002\",\n    \"saldo\": 50,\n    \"ruptura\": false,\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body inválido, `sku` inexistente em `produtos`, `data_snapshot` ausente/inválida, ou já existe snapshot para o par `(data_snapshot, sku)`\n- `401` — não autenticado\n- `403` — não é admin"
+            "description": "Cria um snapshot de estoque manual (apenas admin).\n\n**Timestamps e campos do banco (BUG-09, Lote 8, 2026-09-26):** o snapshot é relido do banco depois do INSERT, então o `201` traz `created_at`/`updated_at` reais (data e hora da gravação, fuso `-03:00`) e o `produto_descricao` vindo do JOIN com `produtos`. Antes podiam vir `0001-01-01T00:00:00Z` e `produto_descricao` vazio. Mesmo envelope. Se só a releitura falhar, a API registra log e devolve o objeto em memória.\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"sku\": \"ROT-0002\",\n  \"data_snapshot\": \"2026-09-22\",\n  \"saldo\": 50\n}\n```\n- `sku` deve existir em `produtos`.\n- `data_snapshot` obrigatório (`AAAA-MM-DD`).\n- `saldo` obrigatório (int).\n- `ruptura` é derivada automaticamente (`saldo <= 0`) — não é aceito no body.\n- Respeita a constraint `UNIQUE (data_snapshot, sku)` (`uk_estoque_data_sku`) — criar outro registro para o mesmo par retorna `409` `\"registro de estoque já cadastrado para este sku nesta data\"` (CHORE-06, Lote 25, 2026-10-30; antes era `500`, e esta documentação dizia `400` por engano). O registro pode ter sido criado pelo faturamento do dia; para ajustar, edite o registro existente (`PUT /api/estoque/{id}`). A tela de Estoque mostra a orientação \"Edite o registro existente.\".\n\n**Resposta de sucesso (201):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 294,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0002\",\n    \"produto_descricao\": \"Perfume Rota 0002\",\n    \"saldo\": 50,\n    \"ruptura\": false,\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:00:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body inválido, `sku` inexistente em `produtos`, `data_snapshot` ausente/inválida\n- `401` — não autenticado\n- `403` — não é admin\n- `409` — já existe snapshot para o par `(data_snapshot, sku)`"
           },
           "response": [
             {
@@ -8522,6 +9219,33 @@
               ],
               "cookie": [],
               "body": "{\n  \"success\": false,\n  \"error\": \"acesso restrito a administradores\"\n}"
+            },
+            {
+              "name": "409 Conflict — Registro do SKU já existe nesta data (CHORE-06, Lote 25)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"sku\": \"ROT-0002\",\n    \"data_snapshot\": \"2026-09-22\",\n    \"saldo\": 40\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/estoque",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "estoque"]
+                },
+                "description": "Segundo POST para o mesmo par (data_snapshot, sku), ou par já criado pelo faturamento do dia. Use o PUT do registro existente."
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"error\": \"registro de estoque já cadastrado para este sku nesta data\"\n}"
             }
           ]
         },
@@ -8568,7 +9292,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "estoque", "1"]
             },
-            "description": "Atualiza o saldo de um snapshot de estoque existente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"saldo\": 75\n}\n```\n- `sku` e `data_snapshot` são **imutáveis** por esta rota — não são aceitos no body.\n- `ruptura` é recalculada automaticamente (`saldo <= 0`).\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0001\",\n    \"produto_descricao\": \"Perfume Rota 0001\",\n    \"saldo\": 75,\n    \"ruptura\": false,\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:10:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — snapshot não encontrado"
+            "description": "Atualiza o saldo de um snapshot de estoque existente (apenas admin).\n\n**Headers necessários:**\n```\nAuthorization: Bearer {{admin_token}}\nContent-Type: application/json\n```\n\n**Body:**\n```json\n{\n  \"saldo\": 75\n}\n```\n- `sku` e `data_snapshot` são **imutáveis** por esta rota — não são aceitos no body.\n- `ruptura` é recalculada automaticamente (`saldo <= 0`).\n- **Sobrescrita absoluta (nota do BUG-17, Lote 25):** o PUT grava o saldo enviado (contagem física), não um delta. Ele sobrescreve o saldo inclusive por cima de baixas de faturamento concorrentes feitas no mesmo snapshot. Comportamento intencional, sem mudança no Lote 25.\n\n**Resposta de sucesso (200):**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"data_snapshot\": \"2026-09-22\",\n    \"sku\": \"ROT-0001\",\n    \"produto_descricao\": \"Perfume Rota 0001\",\n    \"saldo\": 75,\n    \"ruptura\": false,\n    \"created_at\": \"2026-09-22T00:00:00Z\",\n    \"updated_at\": \"2026-09-22T00:10:00Z\"\n  }\n}\n```\n\n**Códigos de erro:**\n- `400` — body inválido\n- `401` — não autenticado\n- `403` — não é admin\n- `404` — snapshot não encontrado"
           },
           "response": [
             {

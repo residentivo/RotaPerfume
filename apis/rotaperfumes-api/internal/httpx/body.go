@@ -50,19 +50,6 @@ func LerAtivoOpcional(r *http.Request) (*bool, error) {
 	return body.Ativo, nil
 }
 
-// IDDoPathPermissivo lê um wildcard numérico com o parse dos handlers
-// legados (strconv.ParseInt): aceita sinal, zero e negativos, que seguem
-// para o caso de uso e respondem 404. Preserva o contrato dos contextos
-// migrados; IDDoPath (parse estrito, R-f) só vale onde a exceção X1 o
-// aprovou. Falha → ErrIDInvalido ("id inválido").
-func IDDoPathPermissivo(r *http.Request, nome string) (int64, error) {
-	id, err := strconv.ParseInt(r.PathValue(nome), 10, 64)
-	if err != nil {
-		return 0, ErrIDInvalido
-	}
-	return id, nil
-}
-
 // JSONPaginadoCom escreve 200 com os itens de r convertidos por conv (DTO)
 // e a paginação. Preserva nil × vazio, como o legado: sem linhas no banco
 // (Itens nil) "data" é null; a listagem vazia de quem não tem carteira

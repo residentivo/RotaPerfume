@@ -3,6 +3,7 @@ package identidadecrypto
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -12,8 +13,8 @@ import (
 	"github.com/rotaperfumes/shared/kernel"
 )
 
-// ErrTokenInvalido: assinatura, algoritmo, formato ou validade (exp/nbf)
-// recusados. Não distingue o motivo (o legado também não distinguia).
+// ErrTokenInvalido: assinatura, algoritmo, formato, issuer ou validade
+// (exp obrigatório, nbf, iat) recusados. Não distingue o motivo (o legado também não distinguia).
 var ErrTokenInvalido = errors.New("identidadecrypto: token inválido")
 
 // Claims é o payload do access token (o mesmo do legado: "uid" e "role").
@@ -23,18 +24,27 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// JWT emite e valida access tokens HS256 (I-01). O issuer é gravado mas não
-// é exigido na validação (SEC-18, GAP preservado).
+// JWT emite e valida access tokens HS256 (I-01). Na validação o issuer tem
+// de ser o JWT_ISSUER e o exp é obrigatório (SEC-18).
 type JWT struct {
 	segredo []byte
 	emissor string
 	ttl     time.Duration
 }
 
-// NovoJWT usa JWT_SECRET, JWT_ISSUER e JWT_TTL da config (nil: panic).
+// NovoJWT usa JWT_SECRET, JWT_ISSUER e JWT_TTL da config. Panic na montagem
+// se a config for nil, o issuer vazio (no golang-jwt v5, WithIssuer("")
+// desliga a checagem) ou o segredo menor que config.JWTSecretMinBytes
+// (SEC-18).
 func NovoJWT(cfg *config.Config) *JWT {
 	if cfg == nil {
 		panic("identidadecrypto: NovoJWT exige config")
+	}
+	if strings.TrimSpace(cfg.JWTIssuer) == "" {
+		panic("identidadecrypto: NovoJWT exige JWT_ISSUER")
+	}
+	if len(cfg.JWTSecret) < config.JWTSecretMinBytes {
+		panic("identidadecrypto: NovoJWT exige JWT_SECRET com o tamanho mínimo")
 	}
 	return &JWT{segredo: []byte(cfg.JWTSecret), emissor: cfg.JWTIssuer, ttl: cfg.JWTTTL}
 }
@@ -59,10 +69,16 @@ func (j *JWT) Emitir(userID int64, role kernel.Role) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(j.segredo)
 }
 
-// Ler valida o token (só HS256) e devolve todos os claims.
+// Ler valida o token (só HS256, issuer = JWT_ISSUER, exp obrigatório, iat
+// no futuro recusado) e devolve todos os claims (SEC-18).
 func (j *JWT) Ler(token string) (*Claims, error) {
 	claims := &Claims{}
-	parser := jwt.NewParser(jwt.WithValidMethods([]string{"HS256"}))
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithIssuer(j.emissor),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+	)
 	tok, err := parser.ParseWithClaims(token, claims, func(*jwt.Token) (any, error) { return j.segredo, nil })
 	if err != nil || !tok.Valid {
 		return nil, ErrTokenInvalido

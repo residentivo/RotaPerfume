@@ -16,7 +16,7 @@ import (
 // legado. A baixa por faturamento é consumida por Vendas pela porta
 // vendasapp.BaixaEstoque, com o Estoques ligado ao MESMO *sql.Tx do pedido
 // (bootstrap): faturar o pedido e baixar o estoque são atômicos (§5.2). O
-// SQL é o do legado, sem alteração.
+// SQL é o do legado, salvo a ordem das atribuições do upsert (BUG-21).
 
 const arqFaturamento = "faturamento.go"
 
@@ -58,12 +58,20 @@ func (r *Estoques) AjustarSaldoPorFaturamento(ctx context.Context, sku string, d
 	}
 	// VALUES(saldo) carrega a CONTRIBUIÇÃO (-delta), não o saldo final: no
 	// INSERT ela já é o saldo (0 - delta); no UPDATE, soma ao saldo atual.
+	//
+	// BUG-21: o MariaDB avalia as atribuições do ON DUPLICATE KEY UPDATE da
+	// esquerda para a direita (sem SIMULTANEOUS_ASSIGNMENT no sql_mode), e
+	// uma coluna já atribuída é lida com o valor NOVO. Com saldo antes de
+	// ruptura, "(saldo + VALUES(saldo)) <= 0" aplicava a baixa duas vezes.
+	// ruptura vem PRIMEIRO, calculada sobre o saldo antigo + a contribuição
+	// (= o saldo resultante): o resultado é o mesmo com avaliação da esquerda
+	// para a direita ou simultânea, então não depende do sql_mode.
 	const q = `
 		INSERT INTO estoque (data_snapshot, sku, saldo, ruptura)
 		VALUES (?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
-			saldo = saldo + VALUES(saldo),
-			ruptura = (saldo + VALUES(saldo)) <= 0`
+			ruptura = (saldo + VALUES(saldo)) <= 0,
+			saldo = saldo + VALUES(saldo)`
 	contribuicao := -delta
 	if _, err = r.q.ExecContext(ctx, q, data, sku, contribuicao, contribuicao <= 0); err != nil {
 		return fmt.Errorf("catalogomysql: ajustar saldo estoque por faturamento: %w", db.SemValorDuplicado(err))

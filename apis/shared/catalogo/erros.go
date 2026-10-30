@@ -20,6 +20,8 @@ var (
 	ErrPrecoTabelaInvalido    = kernel.NovoErro(kernel.KindInvalido, "preco_tabela deve ser maior ou igual a zero")
 	ErrCustoUnitarioInvalido  = kernel.NovoErro(kernel.KindInvalido, "custo_unitario deve ser maior ou igual a zero")
 	ErrDataLancamentoInvalida = kernel.NovoErro(kernel.KindInvalido, "data_lancamento inválida (use o formato AAAA-MM-DD)")
+	// ErrSKUDuplicado (CHORE-06): 1062 em uk_produtos_sku no INSERT, 409.
+	ErrSKUDuplicado = kernel.NovoErro(kernel.KindConflito, "sku já cadastrado")
 
 	ErrEstoqueNaoEncontrado   = kernel.NovoErro(kernel.KindNaoEncontrado, "registro de estoque não encontrado")
 	ErrEstoqueSKUInexistente  = kernel.NovoErro(kernel.KindInvalido, "sku não corresponde a um produto cadastrado")
@@ -27,4 +29,6 @@ var (
 	ErrEstoqueDataObrigatoria = kernel.NovoErro(kernel.KindInvalido, "data_snapshot é obrigatória")
 	ErrEstoqueDataInvalida    = kernel.NovoErro(kernel.KindInvalido, "data_snapshot inválida (use o formato AAAA-MM-DD)")
 	ErrEstoqueDataFutura      = kernel.NovoErro(kernel.KindInvalido, "data_snapshot não pode ser uma data futura")
+	// ErrEstoqueDuplicado (CHORE-06): 1062 em uk_estoque_data_sku no INSERT, 409.
+	ErrEstoqueDuplicado = kernel.NovoErro(kernel.KindConflito, "registro de estoque já cadastrado para este sku nesta data")
 )

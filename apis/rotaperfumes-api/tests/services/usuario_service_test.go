@@ -21,7 +21,12 @@ import (
 )
 
 func usuarioTestCfg(verbose bool) *config.Config {
-	return &config.Config{Verbose: verbose, HashSenha: config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}}
+	// JWT_* de cfgIdentidadeTeste: NovoJWT exige issuer e segredo >= 32 bytes (SEC-18).
+	return &config.Config{
+		Verbose:   verbose,
+		JWTSecret: cfgIdentidadeTeste.JWTSecret, JWTIssuer: cfgIdentidadeTeste.JWTIssuer, JWTTTL: cfgIdentidadeTeste.JWTTTL,
+		HashSenha: config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1},
+	}
 }
 
 func newUsuarioTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {

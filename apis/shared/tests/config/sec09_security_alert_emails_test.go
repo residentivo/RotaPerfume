@@ -53,7 +53,7 @@ func TestSEC09_Load_SecurityAlertEmails(t *testing.T) {
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			t.Setenv("JWT_SECRET", "segredo")
+			t.Setenv("JWT_SECRET", "segredo-sec09-com-pelo-menos-32-bytes")
 			t.Setenv("JWT_TTL", "24h")
 			t.Setenv("PASSWORD_PEPPER", "pepper-de-teste-com-pelo-menos-32-bytes")
 			t.Setenv("DB_USUARIO", "u")

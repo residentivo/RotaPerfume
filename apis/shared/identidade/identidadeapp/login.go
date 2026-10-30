@@ -32,8 +32,9 @@ type SessaoEmitida struct {
 }
 
 // Login autentica por e-mail e senha. Ordem (I-13, I-14, I-16): captcha →
-// rate limit (IP e IP+conta) → credencial. Inexistente e senha errada dão o
-// mesmo 401; inexistente roda o hash descartável.
+// rate limit (IP e IP+conta) → credencial. Inexistente, inativo e senha
+// errada dão o mesmo 401 e contam no rate limit (SEC-22); inexistente roda o
+// hash descartável.
 func (c *Casos) Login(ctx context.Context, cmd ComandoLogin) (s *SessaoEmitida, err error) {
 	defer vlog.Trace(arqLogin, "Identidade.Login", "")(&err)
 	email := strings.TrimSpace(cmd.Email)
@@ -59,7 +60,7 @@ func (c *Casos) Login(ctx context.Context, cmd ComandoLogin) (s *SessaoEmitida, 
 
 	u, err := c.credencial(ctx, email, mascarado, cmd.Senha)
 	if err != nil {
-		if errors.Is(err, identidade.ErrCredenciaisInvalidas) || errors.Is(err, identidade.ErrUsuarioInativo) {
+		if errors.Is(err, identidade.ErrCredenciaisInvalidas) {
 			c.d.Limites.Login.RegistrarFalha(chaveIP)
 			c.d.Limites.Login.RegistrarFalha(chaveConta)
 		}
@@ -70,7 +71,10 @@ func (c *Casos) Login(ctx context.Context, cmd ComandoLogin) (s *SessaoEmitida, 
 	return c.abrirSessao(ctx, u, cmd.Senha, cmd.Origem)
 }
 
-// credencial busca o usuário e confere ativo e senha.
+// credencial busca o usuário e confere senha e ativo. A senha é verificada
+// SEMPRE, inclusive para inativo, e inativo devolve ErrCredenciaisInvalidas
+// mesmo com a senha certa: tempo e resposta não revelam se a conta existe
+// nem se está inativa (SEC-22, I-16).
 func (c *Casos) credencial(ctx context.Context, email, mascarado string, senha identidade.Senha) (*identidade.Usuario, error) {
 	u, err := c.d.Usuarios.PorEmail(ctx, email)
 	if errors.Is(err, identidade.ErrUsuarioNaoEncontrado) {
@@ -82,11 +86,12 @@ func (c *Casos) credencial(ctx context.Context, email, mascarado string, senha i
 		log.Printf("[auth] login: repo.GetByEmail: %v", err)
 		return nil, fmt.Errorf("identidadeapp: login: %w", err)
 	}
+	ok := c.d.Hasher.Verificar(u.Hash, senha)
 	if !u.Ativo {
-		log.Printf("[auth] login: usuário inativo: %s", mascarado)
-		return nil, identidade.ErrUsuarioInativo
+		log.Printf("[auth] login: usuário inativo (respondido como credenciais inválidas): %s", mascarado)
+		return nil, identidade.ErrCredenciaisInvalidas
 	}
-	if !c.d.Hasher.Verificar(u.Hash, senha) {
+	if !ok {
 		log.Printf("[auth] login: senha incorreta para: %s", mascarado)
 		return nil, identidade.ErrCredenciaisInvalidas
 	}

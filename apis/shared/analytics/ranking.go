@@ -1,5 +1,7 @@
 package analytics
 
+import "math"
+
 // LinhaRanking é uma linha de GET /api/dashboard/vendedores: vendas do mês,
 // meta e atingimento de um vendedor ativo. A ordenação (meta desc,
 // atingimento desc) é do SQL, antes do LIMIT/OFFSET.
@@ -47,10 +49,19 @@ func NovaLinhaRanking(d DadosRanking) LinhaRanking {
 	}
 }
 
-// arredondar2 é o arredondamento legado (mathRound(val, 2)): soma 0,5 na
-// segunda casa e trunca para inteiro. Mantido igual para nenhum número do
-// ranking mudar na migração (inclusive com valores negativos).
+// arredondar2 arredonda para 2 casas, metade para longe do zero
+// (math.Round, BUG-19; nunca RoundToEven): negativos passam a arredondar
+// simetricamente (-1.555 → -1.56; o legado somava 0,5 e truncava, -1.55).
+// NaN e ±Inf viram 0 (o json.Marshal falharia) e o resultado zero é sempre
+// +0 (math.Round(-0.4) é -0, que o JSON serializaria como "-0"). Usada
+// também pelo funil.
 func arredondar2(val float64) float64 {
-	const mult = 100.0
-	return float64(int(val*mult+0.5)) / mult
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		return 0
+	}
+	r := math.Round(val*100) / 100
+	if r == 0 {
+		return 0 // sem -0 no JSON
+	}
+	return r
 }

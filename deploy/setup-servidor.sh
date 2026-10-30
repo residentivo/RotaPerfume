@@ -34,7 +34,7 @@ readonly CRED_DB_ADMIN="rotaperfumes-db-admin"
 readonly COMPOSE_MINIMO="2.17.0"
 readonly PLUGINS_EXIGIDOS=(workflow-job workflow-cps git credentials plain-credentials credentials-binding)
 # Chaves do api.env que o script sempre define (as do --env sao descartadas).
-readonly CHAVES_SOBRESCRITAS=(DB_HOST DB_PORT DB_NAME DB_USUARIO DB_SENHA JWT_SECRET CORS_ALLOWED_ORIGINS TRUST_PROXY_HEADERS)
+readonly CHAVES_SOBRESCRITAS=(DB_HOST DB_PORT DB_NAME DB_USUARIO DB_SENHA JWT_SECRET CORS_ALLOWED_ORIGINS TRUST_PROXY_HEADERS COOKIE_SECURE)
 
 # Opcoes (preenchidas por ler_argumentos)
 ARQ_ENV=""
@@ -94,8 +94,8 @@ Uso: sudo bash setup-servidor.sh --env ARQUIVO [opcoes]
 
 Obrigatorio:
   --env ARQUIVO               .env de origem (ex. /tmp/.env copiado do Windows).
-                              DB_*, JWT_SECRET, CORS e TRUST_PROXY_HEADERS sao
-                              substituidos; o resto (SMTP, Turnstile...) e mantido.
+                              DB_*, JWT_SECRET, CORS, TRUST_PROXY_HEADERS e
+                              COOKIE_SECURE (sempre true) sao substituidos; o resto (SMTP, Turnstile...) e mantido.
 Opcoes:
   --dump ARQUIVO              Dump .sql.gz a importar no primeiro build
                               (instalado em /opt/rotaperfumes/dumps).
@@ -293,6 +293,7 @@ linhas_api_env() {
   printf 'JWT_SECRET=%s\n' "$jwt"
   printf 'CORS_ALLOWED_ORIGINS=https://%s:%s,https://%s:%s\n' "$4" "$6" "$5" "$6"
   printf 'TRUST_PROXY_HEADERS=true\n'
+  printf 'COOKIE_SECURE=true\n'
 }
 
 # stdin (JSON do pluginManager) -> stdout: plugins exigidos ausentes/inativos.
