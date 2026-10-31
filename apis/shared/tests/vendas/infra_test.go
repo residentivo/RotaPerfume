@@ -163,8 +163,8 @@ func TestARQ05_ErrosDeInfraNaTxDoPedido(t *testing.T) {
 	errBanco := errors.New("db down")
 
 	db, mock := novoMock(t)
-	mock.ExpectQuery(`SELECT status FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`).WillReturnError(errBanco)
-	_, err := vendasmysql.NovoPedidos(db).StatusParaAtualizar(ctx, 1)
+	mock.ExpectQuery(`SELECT status, vendedor_id FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`).WillReturnError(errBanco)
+	_, err := vendasmysql.NovoPedidos(db).TravarParaEscrita(ctx, 1)
 	assert.ErrorIs(t, err, errBanco)
 	assert.NotErrorIs(t, err, vendas.ErrPedidoNaoEncontrado)
 

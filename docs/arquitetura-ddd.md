@@ -1870,13 +1870,13 @@ Regras de dependência efetivas (verificadas pelos testes do §10.8):
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `router.go` | `Policy`, `Rota`, `Router` (`NovoRouter`, `Handle` com panic para política, método, padrão, handler ou rótulo inválido; O2), `Rotas()`. Cada rota é montada como `Exigir(policy)(Trace(handler))` (O9). |
+| `router.go` | `Policy`, `Rota`, `Router` (`NovoRouter`, `Handle` com panic para política, método, padrão, handler ou rótulo inválido; O2), `Rotas()`. Cada rota é montada como `Exigir(policy)(Trace(handler))` (O9). Desde o SEC-14 (Lote 27), `Rota.MaxCorpo` (0 = `MaxCorpoPadrao` de 256 KiB; negativo → panic) e o wrapper `limitarCorpo` por dentro do `Exigir` (401/403 antes do 413); só o upload de imagem declara `MaxCorpo`. |
 | `chain.go` | `Middleware` e `Chain` (Chain of Responsibility). |
-| `cors.go`, `secheaders.go` | CORS com allowlist exata e OPTIONS → 204 antes do mux (O3); headers de segurança. |
+| `cors.go`, `secheaders.go` | CORS com allowlist exata e OPTIONS → 204 antes do mux (O3); headers de segurança. Sem curinga desde o SEC-17 (Lote 27): `*`/`null` são descartados com log, e a config recusa a subida com eles. |
 | `auth.go`, `principal.go` | `Autenticador` (JWT via `ValidadorAcesso`, ativo/role/corte de sessão no banco via `ConsultaStatus` a cada request, grava a rota com `kernel.ComRota`); o `Principal` nasce só aqui e vai ao contexto por chave não exportada; leitura por `PrincipalFrom`. |
 | `errmap.go` | `ResponderErro`: `switch` sobre `kernel.Kind` → status + mensagem fixa do sentinela, `default` 500 "erro interno"; `ResponderBloqueado` (429 + `Retry-After`). |
 | `respond.go`, `casos.go`, `body.go` | Envelope `{success, data, error, pagination}`; `Responder`/`ResponderPaginado` com conversão para DTO; `LeitorJSON` (decode adiado, "autoriza antes do decode"); `DecodificarJSON`, `LerAtivoOpcional`. `IDOuErro` usa o `IDDoPath` estrito (CHORE-03, Lote 25; o `IDDoPathPermissivo`, que preservava o 404 legado, foi removido). |
-| `query.go` | `PaginaDaQuery`, `OrdenacaoDaQuery`, `BoolDaQuery`, `IDDoPath`/`ParseID` (parse estrito, id > 0; 400 "id inválido"). Usado por todas as 29 rotas com `{id}` desde o CHORE-03 (Lote 25); o `{clienteId}` de `DELETE /api/vendedores/{id}/clientes/{clienteId}` responde "cliente id inválido". |
+| `query.go` | `PaginaDaQuery`, `OrdenacaoDaQuery`, `BoolDaQuery`, `IDDoPath`/`ParseID` (parse estrito, id > 0; 400 "id inválido"). Usado por todas as 29 rotas com `{id}` desde o CHORE-03 (Lote 25); o `{clienteId}` de `DELETE /api/vendedores/{id}/clientes/{clienteId}` responde "cliente id inválido". Lote 27: erro de faixa do `Atoi` em `page` conta como ausente (SEC-16); `BuscaDaQuery` com `ErrBuscaMuitoLonga` (`q` > 100 runes → 400, SEC-25). |
 | `clientip.go`, `cookies.go` | IP do cliente (XFF só com `TRUST_PROXY_HEADERS`) e cookies de sessão. |
 | `logging.go` | `Logging` (log de acesso `[http]`, sempre ligado, path saneado por `kernel.SanearRota`) e `Trace` (vlog nível 1). |
 
@@ -1891,7 +1891,8 @@ Regras de dependência efetivas (verificadas pelos testes do §10.8):
 
 | Arquivo | Conteúdo |
 |---|---|
-| `db.go` | `Open` (pool, ping de 5 s, DSN mascarado no log). |
+| `db.go` | `Open` (pool, ping de 5 s, DSN mascarado no log; desde o SEC-15, Lote 27, o corte segue o parse do go-sql-driver e, se a senha ainda aparecer, o log sai só `****`). |
+| `like.go` | `TermoContem` (SEC-25, Lote 27): escapa `!`, `%` e `_` com `!` e devolve `%termo%`, para `coluna LIKE ? ESCAPE '!'` em todas as buscas. |
 | `tx.go` | `Querier` (`*sql.DB` ou `*sql.Tx`) e `Transactor[R]`/`NewTransactor` (Unit of Work genérico: abre a tx, liga os repositórios de `R` ao mesmo `*sql.Tx`, commit/rollback). |
 | `consulta.go` | `Linha`, `Consultar[T]` (query + scan de várias linhas), `Paginada`, `Where`, `DirecaoSQL`. |
 | `linhas.go` | Helpers dos adapters, antes duplicados em `comercialmysql`/`vendasmysql` (ARQ-07, pendência h): `ExecPorID` (UPDATE/DELETE por id com "não encontrado"), `Existe`, `Inserir` (devolve o id), `LerUma[T]`. |
@@ -2010,3 +2011,5 @@ Todos têm controle negativo (fonte sintética que a regra precisa reprovar).
 Todas em `tarefas/afazer.md`, fora do escopo do lote: ARQ-09, BUG-14 a BUG-18, SEC-14 a SEC-28, TST-06, TST-07, CHORE-03 a CHORE-06.
 
 **Atualização de 2026-10-30:** SEC-18, SEC-20, SEC-21 e SEC-22 foram concluídos no Lote 24; BUG-16, BUG-17, SEC-27, CHORE-03 e CHORE-06 (com BUG-19, BUG-20 e BUG-21) no Lote 25 (ver `tarefas/feito.md`). Pontos do Lote 25 que mudam este documento: `IDDoPathPermissivo` removido (§10.4, §10.11); `vendas.PlanejarCriacao` e a máquina de status em `vendas.PlanejarAtualizacao` (`validarTransicao`); `Produtos.AlternarAtivo` na porta `catalogoapp/portas.go`; `(*Pagamento).PodeEditar()` e o UPDATE condicional de pagamento para o perfil normal; sentinelas `catalogo.ErrSKUDuplicado`/`ErrEstoqueDuplicado` e `comercial.ErrVinculoDuplicado` como `KindConflito`.
+
+**Atualização de 2026-10-31:** SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26 foram concluídos no Lote 27 (ver `tarefas/feito.md`). Pontos do Lote 27 que mudam este documento: `kernel.KindMuitoGrande` (413) e `Rota.MaxCorpo`/`limitarCorpo` no router (§10.4); `NovoServidor` com `ReadHeaderTimeout` e `MaxHeaderBytes` (`bootstrap/server.go`); `kernel.PaginaMaxima` = 10.000 em `NovaPagina`; `vendas.MaxItensPedido` = 200 e `ErrItensDemais`; `db.TermoContem` (§10.6) e `httpx.BuscaDaQuery`; CORS sem curinga e `config.ErrCORSOrigemInvalida`; novas Units of Work: `TxVinculo` (`comercialapp`, com `Clientes.TravarParaVinculo` FOR UPDATE), `TxSenha`/`TransactorSenha` (`identidadeapp`, histórico → senha → revogação na mesma tx) e `TxPedido` com `Pagamentos` e `TravarParaEscrita` (no lugar de `StatusParaAtualizar`), com posse checada sob lock em `TxPedido.Atualizar`/`Excluir`. Na §10.13, o 413 da imagem continua no handler (passar para `KindMuitoGrande` é o card CHORE-10).

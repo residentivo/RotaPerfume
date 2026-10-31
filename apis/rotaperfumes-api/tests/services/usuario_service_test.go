@@ -259,10 +259,7 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
-			WillReturnResult(sqlmock.NewResult(0, 1))
-		esperarAuditoriaReset(mock)
+		esperarTxReset(mock)
 
 		email := &fakeEmailService{}
 		casos := novosCasos(db, usuarioTestCfg(true), email, time.Now, identidadeapp.Opcoes{})
@@ -280,10 +277,7 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
-			WillReturnResult(sqlmock.NewResult(0, 1))
-		esperarAuditoriaReset(mock)
+		esperarTxReset(mock)
 
 		email := &fakeEmailService{err: assertError()}
 		casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
@@ -325,16 +319,46 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 			WithArgs(int64(1)).
 			WillReturnRows(usuarioRows())
+		mock.ExpectBegin()
+		mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
 			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectRollback()
 
-		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
+		email := &fakeEmailService{}
+		casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
 		enviado, err := casos.AdminResetarSenha(context.Background(), adminTeste(), identidadeapp.ComandoAdminResetarSenha{UsuarioID: 1})
 		assert.False(t, enviado)
 		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
+		assert.Zero(t, email.chamadas)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
+
+	// BUG-15: falha em qualquer etapa da tx (histórico, senha, revogação,
+	// commit) → rollback, 500 e nenhum e-mail. Antes, histórico e revogação
+	// falhando só logavam e o reset respondia 200.
+	for _, etapa := range bug15EtapasReset() {
+		t.Run("BUG-15: "+etapa.nome+" falha → 500 sem e-mail", func(t *testing.T) {
+			db, mock := newUsuarioTestDB(t)
+			esperarLeituraAlvo(mock)
+			mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
+				WithArgs(int64(1)).
+				WillReturnRows(usuarioRows())
+			mock.ExpectBegin()
+			etapa.prepara(mock)
+
+			email := &fakeEmailService{}
+			casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
+			enviado, err := casos.AdminResetarSenha(context.Background(), adminTeste(), identidadeapp.ComandoAdminResetarSenha{UsuarioID: 1})
+			assert.False(t, enviado)
+			require.Error(t, err)
+			var de *kernel.Erro
+			assert.False(t, errors.As(err, &de), "500, não sentinela de domínio")
+			assert.Zero(t, email.chamadas, "nenhum e-mail")
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 
 	// NOTA (TestBrain): o caminho de "colisão com a senha atual → regenera"
 	// (loop de até maxTentativasSenhaGerada em AdminResetPassword) não é
@@ -641,8 +665,59 @@ func esperarLeituraAlvo(mock sqlmock.Sqlmock) {
 
 // esperarAuditoriaReset: depois de gravar a senha, o reset administrativo
 // registra o histórico (tipo admin) e revoga as sessões (I-09).
-func esperarAuditoriaReset(mock sqlmock.Sqlmock) {
+// esperarTxReset: BUG-15, histórico, senha (troca obrigatória) e revogação
+// do usuário 1 numa tx; o e-mail só sai depois do commit.
+func esperarTxReset(mock sqlmock.Sqlmock) {
+	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+		WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
 		WithArgs(sqlmock.AnyArg(), "senha", int64(1)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+}
+
+// bug15EtapasReset: a falha de cada etapa da tx do reset (depois do Begin),
+// já com o Rollback esperado (no commit, o database/sql não faz rollback).
+func bug15EtapasReset() []struct {
+	nome    string
+	prepara func(m sqlmock.Sqlmock)
+} {
+	errBanco := errors.New("banco fora do ar")
+	hist := func(m sqlmock.Sqlmock) {
+		m.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
+	}
+	senha := func(m sqlmock.Sqlmock) {
+		m.ExpectExec(`UPDATE usuarios SET password_hash`).WillReturnResult(sqlmock.NewResult(0, 1))
+	}
+	revoga := func(m sqlmock.Sqlmock) {
+		m.ExpectExec(`UPDATE refresh_tokens SET revoked_at`).WillReturnResult(sqlmock.NewResult(0, 0))
+	}
+	return []struct {
+		nome    string
+		prepara func(m sqlmock.Sqlmock)
+	}{
+		{"histórico", func(m sqlmock.Sqlmock) {
+			m.ExpectExec(`INSERT INTO senha_historico`).WillReturnError(errBanco)
+			m.ExpectRollback()
+		}},
+		{"senha", func(m sqlmock.Sqlmock) {
+			hist(m)
+			m.ExpectExec(`UPDATE usuarios SET password_hash`).WillReturnError(errBanco)
+			m.ExpectRollback()
+		}},
+		{"revogação", func(m sqlmock.Sqlmock) {
+			hist(m)
+			senha(m)
+			m.ExpectExec(`UPDATE refresh_tokens SET revoked_at`).WillReturnError(errBanco)
+			m.ExpectRollback()
+		}},
+		{"commit", func(m sqlmock.Sqlmock) {
+			hist(m)
+			senha(m)
+			revoga(m)
+			m.ExpectCommit().WillReturnError(errBanco)
+		}},
+	}
 }

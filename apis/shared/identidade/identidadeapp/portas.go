@@ -68,6 +68,27 @@ type Transactor interface {
 	WithTx(ctx context.Context, fn func(TxRotacao) error) error
 }
 
+// TxSenha são os repositórios ligados à transação da troca/reset de senha
+// (BUG-15): histórico, nova senha (com o corte de sessão) e revogação dos
+// refresh tokens caem juntos ou nada. Dentro do WithTx só eles são usados.
+type TxSenha struct {
+	Usuarios interface {
+		AtualizarSenha(ctx context.Context, id int64, h identidade.HashSenha, deveTrocarSenha bool) error
+	}
+	Historico interface {
+		Registrar(ctx context.Context, r *identidade.RegistroSenha) error
+	}
+	Tokens interface {
+		RevogarTodosDoUsuario(ctx context.Context, usuarioID int64, m identidade.MotivoRevogacao) error
+	}
+}
+
+// TransactorSenha é o Unit of Work da troca/reset de senha
+// (db.Transactor[TxSenha]).
+type TransactorSenha interface {
+	WithTx(ctx context.Context, fn func(TxSenha) error) error
+}
+
 // Hasher é a Strategy de hash de senha (Argon2id+pepper / bcrypt legado).
 type Hasher interface {
 	Gerar(s identidade.Senha) (identidade.HashSenha, error)

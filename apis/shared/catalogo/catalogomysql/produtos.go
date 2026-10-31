@@ -64,8 +64,8 @@ func whereProduto(f catalogo.FiltroProduto) (string, []any) {
 		args = append(args, *f.Ativo)
 	}
 	if f.Busca != "" {
-		conds = append(conds, "(descricao LIKE ? OR sku LIKE ?)")
-		like := "%" + f.Busca + "%"
+		conds = append(conds, "(descricao LIKE ? ESCAPE '!' OR sku LIKE ? ESCAPE '!')")
+		like := db.TermoContem(f.Busca) // SEC-25: '%' e '_' literais
 		args = append(args, like, like)
 	}
 	return db.Where(conds), args

@@ -22,7 +22,7 @@ func NovoVendas(pool *sql.DB, escopo vendasapp.EscopoCarteira) *vendasapp.Casos 
 		Pagamentos: vendasmysql.NovoPagamentos(pool),
 		Escopo:     escopo,
 		TxPedido: db.NewTransactor(pool, func(q db.Querier) vendasapp.TxPedido {
-			return vendasapp.TxPedido{Pedidos: vendasmysql.NovoPedidos(q), Estoque: catalogomysql.NovoEstoques(q)}
+			return vendasapp.TxPedido{Pedidos: vendasmysql.NovoPedidos(q), Pagamentos: vendasmysql.NovoPagamentos(q), Estoque: catalogomysql.NovoEstoques(q)}
 		}),
 		Relogio: time.Now,
 	})

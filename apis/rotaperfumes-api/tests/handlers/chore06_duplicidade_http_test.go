@@ -50,9 +50,11 @@ func TestCHORE06_HTTP_Duplicidade(t *testing.T) {
 			func(m sqlmock.Sqlmock, dup error) {
 				m.ExpectQuery(vendedorExistsByIDRegexH).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 				m.ExpectQuery(clienteGetByIDRegexH).WithArgs(int64(10)).WillReturnRows(clienteGetByIDRowsH(10, "Cliente A"))
+				expectTravaClienteVinculoH(m, 10)
 				m.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegexH).WithArgs(int64(10)).WillReturnError(sql.ErrNoRows)
 				m.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegexH).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).WillReturnError(sql.ErrNoRows)
 				m.ExpectExec(carteiraCreateRegexH).WillReturnError(dup)
+				m.ExpectRollback()
 			}, "carteiras.uq_carteiras_cliente_vendedor_data", http.StatusConflict, "vínculo entre cliente e vendedor já cadastrado nesta data",
 			"[carteiras] vinculo duplicado recusado"},
 	}

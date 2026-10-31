@@ -37,7 +37,7 @@ func (escopoFixo) ClienteNaCarteira(context.Context, kernel.Escopo, int64) (bool
 
 func txPedido(pool *sql.DB) *db.Transactor[vendasapp.TxPedido] {
 	return db.NewTransactor(pool, func(q db.Querier) vendasapp.TxPedido {
-		return vendasapp.TxPedido{Pedidos: vendasmysql.NovoPedidos(q), Estoque: catalogomysql.NovoEstoques(q)}
+		return vendasapp.TxPedido{Pedidos: vendasmysql.NovoPedidos(q), Pagamentos: vendasmysql.NovoPagamentos(q), Estoque: catalogomysql.NovoEstoques(q)}
 	})
 }
 
@@ -142,7 +142,7 @@ func TestVendasapp_Pedido_FalhaNaReleitura(t *testing.T) {
 
 	pool, mock = novoMock(t)
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT status FROM pedidos`).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Faturado"))
+	mock.ExpectQuery(`SELECT status, vendedor_id FROM pedidos`).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Faturado", int64(1)))
 	mock.ExpectQuery(`SELECT produto_id, quantidade`).WillReturnRows(sqlmock.NewRows([]string{"produto_id", "quantidade", "preco_praticado", "desconto_pct"}).
 		AddRow(int64(10), 2, 100.0, 10.0).AddRow(int64(11), 1, 50.0, 0.0))
 	mock.ExpectExec(`UPDATE pedidos`).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -162,7 +162,7 @@ func TestVendasapp_TxPedido_FalhaEmCadaPassoFazRollback(t *testing.T) {
 
 	pool, mock := novoMock(t)
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT status FROM pedidos`).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+	mock.ExpectQuery(`SELECT status, vendedor_id FROM pedidos`).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(1)))
 	mock.ExpectQuery(`SELECT produto_id, quantidade`).WillReturnError(errBanco)
 	mock.ExpectRollback()
 	_, err := novosCasos(pool, escopoIrrestrito(t)).AtualizarPedido(ctx, admin(t), 1, ler(pedidoValido()))
@@ -173,7 +173,7 @@ func TestVendasapp_TxPedido_FalhaEmCadaPassoFazRollback(t *testing.T) {
 	d := pedidoValido()
 	d.Itens = d.Itens[:1]
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT status FROM pedidos`).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+	mock.ExpectQuery(`SELECT status, vendedor_id FROM pedidos`).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(1)))
 	mock.ExpectQuery(`SELECT produto_id, quantidade`).WillReturnRows(sqlmock.NewRows(nil))
 	mock.ExpectExec(`UPDATE pedidos`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`DELETE FROM itens_pedido`).WillReturnResult(sqlmock.NewResult(0, 1))

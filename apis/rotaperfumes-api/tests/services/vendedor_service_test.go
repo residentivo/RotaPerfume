@@ -776,6 +776,14 @@ func carteiraVinculoRowEncerrado(carteiraIDOrigem, clienteID, vendedorID int64) 
 	}).AddRow(carteiraIDOrigem, clienteID, vendedorID, now, now, now, now)
 }
 
+// esperarTravaClienteVinculo: a vinculação roda numa tx aberta com o lock
+// da linha do cliente (BUG-14).
+func esperarTravaClienteVinculo(mock sqlmock.Sqlmock, clienteID int64) {
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT cliente_id_origem FROM clientes WHERE cliente_id_origem = \? FOR UPDATE`).WithArgs(clienteID).
+		WillReturnRows(sqlmock.NewRows([]string{"cliente_id_origem"}).AddRow(clienteID))
+}
+
 func TestVendedorService_VincularCliente(t *testing.T) {
 	testCases := []struct {
 		nome       string
@@ -795,12 +803,14 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
+				esperarTravaClienteVinculo(mock, 10)
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectExec(carteiraCreateRegex).
 					WillReturnResult(sqlmock.NewResult(7, 1))
+				mock.ExpectCommit()
 			},
 			wantVendID: 1,
 		},
@@ -813,6 +823,7 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
+				esperarTravaClienteVinculo(mock, 10)
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnRows(carteiraVinculoRow(300, 10, 1))
 				mock.ExpectExec(carteiraEncerrarVinculoRegex).
@@ -822,6 +833,7 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectExec(carteiraCreateRegex).
 					WillReturnResult(sqlmock.NewResult(8, 1))
+				mock.ExpectCommit()
 			},
 			wantVendID: 2,
 		},
@@ -834,8 +846,10 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
+				esperarTravaClienteVinculo(mock, 10)
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnRows(carteiraVinculoRow(300, 10, 1))
+				mock.ExpectCommit()
 			},
 			wantVendID: 1,
 		},
@@ -883,8 +897,10 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
+				esperarTravaClienteVinculo(mock, 10)
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnError(sql.ErrConnDone)
+				mock.ExpectRollback()
 			},
 			checkErr: func(t *testing.T, err error) {
 				assert.Error(t, err)
@@ -899,12 +915,14 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
+				esperarTravaClienteVinculo(mock, 10)
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectExec(carteiraCreateRegex).
 					WillReturnError(sql.ErrConnDone)
+				mock.ExpectRollback()
 			},
 			checkErr: func(t *testing.T, err error) {
 				assert.Error(t, err)
@@ -919,6 +937,7 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
+				esperarTravaClienteVinculo(mock, 10)
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
@@ -926,6 +945,7 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 				mock.ExpectExec(carteiraReativarVinculoRegex).
 					WithArgs(int64(300)).
 					WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectCommit()
 			},
 			wantVendID: 1,
 		},
@@ -938,10 +958,12 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
+				esperarTravaClienteVinculo(mock, 10)
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrConnDone)
+				mock.ExpectRollback()
 			},
 			checkErr: func(t *testing.T, err error) {
 				assert.Error(t, err)
@@ -956,6 +978,7 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 				mock.ExpectQuery(clienteGetByIDRegex).WithArgs(int64(10)).
 					WillReturnRows(clienteGetByIDRows(10, "Cliente A"))
+				esperarTravaClienteVinculo(mock, 10)
 				mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegex).WithArgs(int64(10)).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegex).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
@@ -963,6 +986,7 @@ func TestVendedorService_VincularCliente(t *testing.T) {
 				mock.ExpectExec(carteiraReativarVinculoRegex).
 					WithArgs(int64(300)).
 					WillReturnError(sql.ErrConnDone)
+				mock.ExpectRollback()
 			},
 			checkErr: func(t *testing.T, err error) {
 				assert.Error(t, err)

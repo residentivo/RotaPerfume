@@ -243,8 +243,10 @@ func load(exigirDB bool) (*Config, error) {
 	vlog.Printf("config.go", "load", "lendo SMTP_TLS_CA_FILE (vazio = só raízes do sistema)")
 	cfg.SMTPTLSCAFile = os.Getenv("SMTP_TLS_CA_FILE")
 
-	vlog.Printf("config.go", "load", "montando lista de origens CORS permitidas")
-	cfg.CORSAllowedOrigins = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	vlog.Printf("config.go", "load", "montando lista de origens CORS permitidas e verificando erro")
+	if cfg.CORSAllowedOrigins, err = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")); err != nil {
+		return nil, err
+	}
 	vlog.Printf("config.go", "load", "lendo TRUST_PROXY_HEADERS")
 	cfg.TrustProxyHeaders = getEnv("TRUST_PROXY_HEADERS", "false") == "true"
 	vlog.Printf("config.go", "load", "lendo COOKIE_SECURE (padrão true) e verificando erro")
@@ -498,10 +500,16 @@ var defaultDevOrigins = []string{
 	"http://127.0.0.1:3000",
 }
 
+// ErrCORSOrigemInvalida: CORS_ALLOWED_ORIGINS com "*" ou "null" (SEC-17).
+// O CORS da API responde com Allow-Credentials; um curinga liberaria os
+// cookies de sessão para qualquer site.
+var ErrCORSOrigemInvalida = errors.New("config: CORS_ALLOWED_ORIGINS não aceita \"*\" nem \"null\" (os cookies de sessão exigem origens explícitas)")
+
 // parseAllowedOrigins monta a lista final de origens permitidas: as origens de
 // dev local padrão mais o que vier em CORS_ALLOWED_ORIGINS (separadas por
-// vírgula). Comparação é sempre exata — sem prefix-match.
-func parseAllowedOrigins(raw string) []string {
+// vírgula). Comparação é sempre exata — sem prefix-match. Uma entrada "*" ou
+// "null" (sem diferenciar maiúsculas) é ErrCORSOrigemInvalida (SEC-17).
+func parseAllowedOrigins(raw string) ([]string, error) {
 	vlog.Printf("config.go", "parseAllowedOrigins", "alocando slice de origens com capacidade inicial")
 	origins := make([]string, 0, len(defaultDevOrigins)+2)
 	vlog.Printf("config.go", "parseAllowedOrigins", "adicionando %d origens padrão de dev", len(defaultDevOrigins))
@@ -513,10 +521,19 @@ func parseAllowedOrigins(raw string) []string {
 		if o == "" {
 			continue
 		}
+		if origemCuringa(o) {
+			vlog.Printf("config.go", "parseAllowedOrigins", "decisão origem_curinga_recusada")
+			return nil, ErrCORSOrigemInvalida
+		}
 		origins = append(origins, o)
 	}
 	vlog.Printf("config.go", "parseAllowedOrigins", "total de origens permitidas: %d", len(origins))
-	return origins
+	return origins, nil
+}
+
+// origemCuringa: "*" e "null" nunca entram na allowlist com credentials.
+func origemCuringa(o string) bool {
+	return o == "*" || strings.EqualFold(o, "null")
 }
 
 // DSN monta a connection string para o driver go-sql-driver/mysql, que

@@ -1,13 +1,16 @@
 package kernel
 
-// Limites de paginação (F-10).
+// Limites de paginação (F-10). PaginaMaxima (SEC-16) segura o OFFSET em
+// (10.000-1)*100 = 999.900, sem overflow.
 const (
 	LimitePadrao = 20
 	LimiteMaximo = 100
+	PaginaMaxima = 10_000
 )
 
-// Pagina é a janela de uma listagem: page ≥ 1; limit < 1 vira 20; limit > 100
-// vira 100. O zero value equivale a NovaPagina(0, 0) (página 1, limite 20).
+// Pagina é a janela de uma listagem: page < 1 vira 1; page > 10.000 vira
+// 10.000; limit < 1 vira 20; limit > 100 vira 100. O zero value equivale a
+// NovaPagina(0, 0) (página 1, limite 20).
 type Pagina struct {
 	numero int
 	limite int
@@ -18,6 +21,9 @@ func NovaPagina(numero, limite int) Pagina {
 	if numero < 1 {
 		numero = 1
 	}
+	if numero > PaginaMaxima {
+		numero = PaginaMaxima
+	}
 	if limite < 1 {
 		limite = LimitePadrao
 	}
@@ -27,7 +33,7 @@ func NovaPagina(numero, limite int) Pagina {
 	return Pagina{numero: numero, limite: limite}
 }
 
-// Numero devolve a página (≥ 1).
+// Numero devolve a página (1..10.000).
 func (p Pagina) Numero() int { return NovaPagina(p.numero, p.limite).numero }
 
 // Limite devolve o tamanho da página (1..100).

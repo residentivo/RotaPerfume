@@ -22,7 +22,12 @@ func NovoPedidoHandler(c *vendasapp.Casos) *PedidoHandler {
 // ListPedidos GET /api/pedidos?page&limit&status&canal&cliente_id&vendedor_id&data_inicio&data_fim&q&order_by&order_dir
 func (h *PedidoHandler) ListPedidos(w http.ResponseWriter, r *http.Request) {
 	const tag = "[pedidos] ListPedidos"
-	res, err := h.casos.ListarPedidos(r.Context(), principalDoEscopo(r), filtroPedidoDaQuery(r), httpx.PaginaDaQuery(r))
+	filtro, err := filtroPedidoDaQuery(r)
+	if err != nil {
+		httpx.ResponderErro(w, tag, err)
+		return
+	}
+	res, err := h.casos.ListarPedidos(r.Context(), principalDoEscopo(r), filtro, httpx.PaginaDaQuery(r))
 	httpx.ResponderPaginado(w, tag, res, err, novoPedidoJSON)
 }
 

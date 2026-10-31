@@ -67,23 +67,29 @@ func esperarListaAtivos(mock sqlmock.Sqlmock) {
 	mock.ExpectQuery(reListAtivos).WillReturnRows(rows)
 }
 
-// esperarReset registra os SQLs do reset de um usuário e devolve onde o hash
-// novo gravado será capturado.
-func esperarReset(mock sqlmock.Sqlmock, u usuarioOPS01, comPosProcessamento bool) *string {
-	novo := new(string)
+// esperarReleitura: o reset relê o usuário (hash atual) fora da tx.
+func esperarReleitura(mock sqlmock.Sqlmock, u usuarioOPS01) {
 	mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).WithArgs(u.id).
 		WillReturnRows(linhaUsuario(sqlmock.NewRows(usuarioColunasHeader()), u))
+}
+
+// esperarReset registra os SQLs do reset de um usuário (BUG-15: releitura
+// fora da tx; histórico, senha e revogação numa tx) e devolve onde o hash
+// novo gravado será capturado.
+func esperarReset(mock sqlmock.Sqlmock, u usuarioOPS01) *string {
+	novo := new(string)
+	esperarReleitura(mock, u)
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO senha_historico`).
+		WithArgs(u.id, sqlmock.AnyArg(), u.hash, identidadeapp.ResetMassaIPOrigem, identidadeapp.ResetMassaUserAgent, "admin").
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
 		WithArgs(capturaHash{novo}, true, sqlmock.AnyArg(), u.id).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	if comPosProcessamento {
-		mock.ExpectExec(`INSERT INTO senha_historico`).
-			WithArgs(u.id, sqlmock.AnyArg(), u.hash, identidadeapp.ResetMassaIPOrigem, identidadeapp.ResetMassaUserAgent, "admin").
-			WillReturnResult(sqlmock.NewResult(1, 1))
-		mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
-			WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), u.id).
-			WillReturnResult(sqlmock.NewResult(0, 2))
-	}
+	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), u.id).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectCommit()
 	return novo
 }
 
@@ -110,7 +116,7 @@ func TestOPS01_Executar_SenhaEnviadaEhOHashArgon2idGravado(t *testing.T) {
 	esperarListaAtivos(mock)
 	hashes := make([]*string, len(ativosOPS01))
 	for i, u := range ativosOPS01 {
-		hashes[i] = esperarReset(mock, u, true)
+		hashes[i] = esperarReset(mock, u)
 	}
 	email := &emailPorDestino{senhas: map[string]string{}}
 	casos := novosCasos(db, cfg, email, time.Now, identidadeapp.Opcoes{})
@@ -138,7 +144,7 @@ func TestOPS01_Executar_SenhaEnviadaEhOHashArgon2idGravado(t *testing.T) {
 func TestOPS01_Executar_ParaNoPrimeiroEmailQueFalha(t *testing.T) {
 	db, mock := newUsuarioTestDB(t)
 	esperarListaAtivos(mock)
-	esperarReset(mock, ativosOPS01[0], true) // o 2º usuário nunca é tocado
+	esperarReset(mock, ativosOPS01[0]) // o 2º usuário nunca é tocado
 	email := &emailPorDestino{senhas: map[string]string{}, falharEm: ativosOPS01[0].email}
 	casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
 
@@ -161,38 +167,62 @@ func TestOPS01_Executar_ErrosDoBanco(t *testing.T) {
 		assert.Nil(t, itens)
 	})
 
-	t.Run("gravação da senha falha: para sem enviar e-mail", func(t *testing.T) {
-		db, mock := newUsuarioTestDB(t)
-		esperarListaAtivos(mock)
-		u := ativosOPS01[0]
-		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).WithArgs(u.id).
-			WillReturnRows(linhaUsuario(sqlmock.NewRows(usuarioColunasHeader()), u))
-		mock.ExpectExec(`UPDATE usuarios SET password_hash`).WillReturnError(errBanco)
-		email := &emailPorDestino{senhas: map[string]string{}}
-		casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
+	// BUG-15: qualquer etapa da tx que falhar (histórico, senha ou
+	// revogação) desfaz o reset do usuário e para o lote sem e-mail. Antes,
+	// histórico e revogação só logavam e o lote seguia.
+	etapas := []struct {
+		nome    string
+		prepara func(m sqlmock.Sqlmock)
+	}{
+		{"histórico", func(m sqlmock.Sqlmock) {
+			m.ExpectExec(`INSERT INTO senha_historico`).WillReturnError(errBanco)
+		}},
+		{"senha", func(m sqlmock.Sqlmock) {
+			m.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
+			m.ExpectExec(`UPDATE usuarios SET password_hash`).WillReturnError(errBanco)
+		}},
+		{"revogação", func(m sqlmock.Sqlmock) {
+			m.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
+			m.ExpectExec(`UPDATE usuarios SET password_hash`).WillReturnResult(sqlmock.NewResult(0, 1))
+			m.ExpectExec(`UPDATE refresh_tokens`).WillReturnError(errBanco)
+		}},
+	}
+	for _, e := range etapas {
+		t.Run(e.nome+" falha: rollback, para sem enviar e-mail", func(t *testing.T) {
+			db, mock := newUsuarioTestDB(t)
+			esperarListaAtivos(mock)
+			esperarReleitura(mock, ativosOPS01[0])
+			mock.ExpectBegin()
+			e.prepara(mock)
+			mock.ExpectRollback()
+			email := &emailPorDestino{senhas: map[string]string{}}
+			casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
 
-		itens, err := casos.ResetarSenhasAtivos(context.Background(), false)
-		assert.ErrorIs(t, err, errBanco)
-		assert.Empty(t, itens)
-		assert.Empty(t, email.senhas)
-		assert.NoError(t, mock.ExpectationsWereMet())
-	})
+			itens, err := casos.ResetarSenhasAtivos(context.Background(), false)
+			assert.ErrorIs(t, err, errBanco)
+			assert.NotErrorIs(t, err, identidadeapp.ErrEmailResetFalhou)
+			assert.Empty(t, itens)
+			assert.Empty(t, email.senhas, "nenhum e-mail para o usuário da tx que falhou")
+			assert.NoError(t, mock.ExpectationsWereMet(), "o 2º usuário nunca é tocado")
+		})
+	}
+}
 
-	t.Run("histórico e revogação falham: só log, segue", func(t *testing.T) {
-		db, mock := newUsuarioTestDB(t)
-		esperarListaAtivos(mock)
-		for _, u := range ativosOPS01 {
-			esperarReset(mock, u, false)
-			mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnError(errBanco)
-			mock.ExpectExec(`UPDATE refresh_tokens`).WillReturnError(errBanco)
-		}
-		email := &emailPorDestino{senhas: map[string]string{}}
-		casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
+// BUG-15: com uma conexão só no pool, qualquer SQL pelo pool dentro da tx
+// esperaria a conexão presa nela até o deadline curto.
+func TestBUG15_ResetMassa_TudoNaMesmaConexao(t *testing.T) {
+	db, mock := newUsuarioTestDB(t)
+	db.SetMaxOpenConns(1)
+	esperarListaAtivos(mock)
+	for _, u := range ativosOPS01 {
+		esperarReset(mock, u)
+	}
+	email := &emailPorDestino{senhas: map[string]string{}}
+	casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
 
-		itens, err := casos.ResetarSenhasAtivos(context.Background(), false)
-		require.NoError(t, err)
-		assert.Len(t, itens, 2)
-		assert.Len(t, email.senhas, 2)
-		assert.NoError(t, mock.ExpectationsWereMet())
-	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := casos.ResetarSenhasAtivos(ctx, false)
+	require.NoError(t, err, "uso do pool dentro da tx travaria até o deadline")
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

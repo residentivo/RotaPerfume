@@ -22,7 +22,12 @@ func NovoOportunidadeHandler(c *comercialapp.Casos) *OportunidadeHandler {
 // ListOportunidades GET /api/oportunidades?page&limit&cliente_id&vendedor_id&etapa&origem&data_abertura_de&data_abertura_ate&q&order_by&order_dir
 func (h *OportunidadeHandler) ListOportunidades(w http.ResponseWriter, r *http.Request) {
 	const tag = "[oportunidades] ListOportunidades"
-	res, err := h.casos.ListarOportunidades(r.Context(), principalDoEscopo(r), filtroOportunidadeDaQuery(r), httpx.PaginaDaQuery(r))
+	filtro, err := filtroOportunidadeDaQuery(r)
+	if err != nil {
+		httpx.ResponderErro(w, tag, err)
+		return
+	}
+	res, err := h.casos.ListarOportunidades(r.Context(), principalDoEscopo(r), filtro, httpx.PaginaDaQuery(r))
 	responderPaginado(w, tag, res, err, novoOportunidadeJSON)
 }
 

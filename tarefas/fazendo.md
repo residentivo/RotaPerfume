@@ -1,6 +1,10 @@
 # Fazendo
 
-> Atualizado em 2026-10-31 (fechamento do Lote 26, 🔵 SubBrain): **nenhum card em execução.** O **IMG-01** (imagem do produto) foi concluído e está em `feito.md` ("Lote 26 de 2026-10-31"; não commitado, pendente do usuário). Dele saíram os cards CHORE-09 e SEC-34 em `afazer.md` (bloco "Achados do IMG-01").
+> Atualizado em 2026-10-31 (fechamento do Lote 27, 🔵 SubBrain): **nenhum card em execução.** O **Lote 27** (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi concluído e está em `feito.md` ("Lote 27 de 2026-10-31: 9 cards concluídos"; não commitado, pendente do usuário). Dele saíram os cards SEC-35, SEC-36, BUG-24, CHORE-10 e TST-11 em `afazer.md` (bloco "Achados do Lote 27"). Passos anteriores do Lote 27: "🟣 SecBrain especificando → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain fechando" (2026-10-31).
+>
+> Antes, ainda em 2026-10-31 (abertura do Lote 27, 🔵 SubBrain): o 🤍 MegaBrain abriu o **Lote 27** com 9 cards de backend/testes vindos de `afazer.md`: **SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25** (GAPs de segurança da auditoria ARQ-00), **BUG-14, BUG-15** (transações em `VincularCliente` e na troca de senha) e **SEC-26** (achado do ARQ-05). Critério: cards de backend/testes de prioridade MÉDIA (mais SEC-16 e SEC-25, BAIXA, que tocam os mesmos pontos), sem decisão de produto pendente. SEC-19 e SEC-23 (backend + frontend + config) ficam para o lote seguinte.
+>
+> Antes, ainda em 2026-10-31 (fechamento do Lote 26, 🔵 SubBrain): **nenhum card em execução.** O **IMG-01** (imagem do produto) foi concluído e está em `feito.md` ("Lote 26 de 2026-10-31"; não commitado, pendente do usuário). Dele saíram os cards CHORE-09 e SEC-34 em `afazer.md` (bloco "Achados do IMG-01").
 >
 > Antes, ainda em 2026-10-31 (abertura do Lote 26, 🔵 SubBrain): o 🤍 MegaBrain abriu o **Lote 26** com um card, o **IMG-01** (imagem do produto), pedido direto do usuário (não passou por `afazer.md`). Passos: 🟣 SecBrain especificando → 🌸 DataBrain, 🟡 BackBrain, 🟢 FrontBrain e 🔴 TestBrain → 🔵 SubBrain fechando.
 >
@@ -17,3 +21,5 @@
 > Histórico: o **Lote 23** (DB-03, troca da conexão de MySQL para MariaDB 11.4, escopo "Infra + docs") foi concluído em 2026-10-29 e está em `feito.md` (commitado pelo usuário em `c87a30d` e `186b15f`), junto com o SEC-28 (resolvido pelo DB-03); os achados do 🟣 SecBrain viraram os cards SEC-29, SEC-30, SEC-31, DB-04 e DEPLOY-02 em `afazer.md`. O **Lote 22** (DASH-01, funil de vendas no Dashboard) foi concluído em 2026-10-29 e está em `feito.md`; os achados viraram os cards DOC-06, BUG-19 e FE-15 em `afazer.md`. Em 2026-10-16 o DEPLOY-01 (Lote 13) foi concluído e o MAIL-01 foi cancelado; os dois estão em `feito.md`.
 
 ---
+
+_Nenhum card em execução._

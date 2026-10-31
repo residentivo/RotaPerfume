@@ -110,6 +110,24 @@ type TxClienteNaCarteira struct {
 	}
 }
 
+// TxVinculo são os repositórios ligados à tx da vinculação de cliente
+// (BUG-14): o lock da linha do cliente serializa vinculações concorrentes
+// do mesmo cliente; encerrar, reabrir e inserir caem juntos ou nada.
+type TxVinculo struct {
+	Clientes interface {
+		// TravarParaVinculo trava a linha do cliente (FOR UPDATE);
+		// comercial.ErrClienteNaoEncontrado sem linha.
+		TravarParaVinculo(ctx context.Context, id int64) error
+	}
+	Carteiras interface {
+		VinculoAtivoDoCliente(ctx context.Context, clienteID int64) (*comercial.Carteira, error)
+		VinculoDoDia(ctx context.Context, clienteID, vendedorID int64, dia time.Time) (*comercial.Carteira, error)
+		Inserir(ctx context.Context, c *comercial.Carteira) error
+		Encerrar(ctx context.Context, id int64, fim time.Time) error
+		Reabrir(ctx context.Context, id int64) error
+	}
+}
+
 // Transactor é o Unit of Work (db.Transactor satisfaz).
 type Transactor[R any] interface {
 	WithTx(ctx context.Context, fn func(R) error) error

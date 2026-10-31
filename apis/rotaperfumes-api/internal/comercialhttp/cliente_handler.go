@@ -22,7 +22,12 @@ func NovoClienteHandler(c *comercialapp.Casos) *ClienteHandler {
 // ListClientes GET /api/clientes?page&limit&uf&segmento&ativo&q&order_by&order_dir
 func (h *ClienteHandler) ListClientes(w http.ResponseWriter, r *http.Request) {
 	const tag = "[clientes] ListClientes"
-	res, err := h.casos.ListarClientes(r.Context(), principalDoEscopo(r), filtroClienteDaQuery(r), httpx.PaginaDaQuery(r))
+	filtro, err := filtroClienteDaQuery(r)
+	if err != nil {
+		httpx.ResponderErro(w, tag, err)
+		return
+	}
+	res, err := h.casos.ListarClientes(r.Context(), principalDoEscopo(r), filtro, httpx.PaginaDaQuery(r))
 	responderPaginado(w, tag, res, err, novoClienteJSON)
 }
 

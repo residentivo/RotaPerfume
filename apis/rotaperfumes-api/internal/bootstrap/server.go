@@ -19,9 +19,12 @@ import (
 	"github.com/rotaperfumes/shared/notificacao/notificacaoapp"
 )
 
-// Timeouts do servidor e do shutdown (F-04, valores inalterados).
+// Timeouts do servidor e do shutdown (F-04); ReadHeaderTimeout e
+// MaxHeaderBytes vieram com o SEC-14.
 const (
 	enderecoHTTP       = ":8080"
+	timeoutCabecalho   = 5 * time.Second
+	maxBytesCabecalho  = 64 << 10
 	timeoutLeitura     = 15 * time.Second
 	timeoutEscrita     = 15 * time.Second
 	timeoutOcioso      = 60 * time.Second
@@ -69,13 +72,7 @@ func Run(cfg *config.Config) {
 	app := Montar(cfg, pool)
 	limpezaDone := identidadeapp.IniciarLimpezaPeriodica(bgCtx, app.Identidade, cfg.RefreshCleanupInterval)
 
-	srv := &http.Server{
-		Addr:         enderecoHTTP,
-		Handler:      app.Handler,
-		ReadTimeout:  timeoutLeitura,
-		WriteTimeout: timeoutEscrita,
-		IdleTimeout:  timeoutOcioso,
-	}
+	srv := NovoServidor(app.Handler)
 	go func() {
 		log.Printf("[server] escutando em %s", enderecoHTTP)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -95,6 +92,20 @@ func Run(cfg *config.Config) {
 	aguardarAlertas(app.Notificador, timeoutAlertas)
 	_ = pool.Close()
 	log.Printf("[server] bye")
+}
+
+// NovoServidor monta o http.Server da API com os timeouts F-04 e, do SEC-14,
+// ReadHeaderTimeout de 5 s (slowloris) e cabeçalhos de no máximo 64 KiB.
+func NovoServidor(handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              enderecoHTTP,
+		Handler:           handler,
+		ReadHeaderTimeout: timeoutCabecalho,
+		ReadTimeout:       timeoutLeitura,
+		WriteTimeout:      timeoutEscrita,
+		IdleTimeout:       timeoutOcioso,
+		MaxHeaderBytes:    maxBytesCabecalho,
+	}
 }
 
 // abrirBanco abre o pool único (db.Open já faz ping de 5 s e loga o DSN

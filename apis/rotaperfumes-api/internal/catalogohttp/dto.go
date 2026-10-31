@@ -85,16 +85,21 @@ func (r atualizarProdutoRequest) paraDados() catalogo.DadosProduto {
 	}
 }
 
-// filtroProdutoDaQuery lê categoria, marca, ativo, q e a ordenação.
-func filtroProdutoDaQuery(r *http.Request) catalogo.FiltroProduto {
+// filtroProdutoDaQuery lê categoria, marca, ativo, q e a ordenação. q acima
+// de 100 caracteres é httpx.ErrBuscaMuitoLonga (SEC-25).
+func filtroProdutoDaQuery(r *http.Request) (catalogo.FiltroProduto, error) {
+	busca, err := httpx.BuscaDaQuery(r)
+	if err != nil {
+		return catalogo.FiltroProduto{}, err
+	}
 	q := r.URL.Query()
 	return catalogo.FiltroProduto{
 		Categoria: strings.TrimSpace(q.Get("categoria")),
 		Marca:     strings.TrimSpace(q.Get("marca")),
 		Ativo:     httpx.BoolDaQuery(r, "ativo"),
-		Busca:     strings.TrimSpace(q.Get("q")),
+		Busca:     busca,
 		Ordenacao: httpx.OrdenacaoDaQuery(r, catalogo.CamposOrdenacaoProduto(), catalogo.OrdenacaoProdutoPadrao()),
-	}
+	}, nil
 }
 
 // estoqueResposta tem as mesmas chaves, ordem e tipos do models.Estoque

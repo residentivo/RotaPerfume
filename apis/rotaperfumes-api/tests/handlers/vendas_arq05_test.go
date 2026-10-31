@@ -195,7 +195,7 @@ func TestARQ05_Vlog_NiveisSemValores(t *testing.T) {
 	mock.ExpectQuery(reUsuarioVendedor).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(10))
 	mock.ExpectQuery(reVendedorDesligado).WithArgs(int64(10)).WillReturnRows(sqlmock.NewRows([]string{"d"}).AddRow(0))
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM pedidos p`).WillReturnRows(sqlmock.NewRows([]string{"n"}).AddRow(0))
-	mock.ExpectQuery(`c\.razao_social LIKE \?`).WillReturnRows(sqlmock.NewRows(pedidoColunasHeaderForHandler()))
+	mock.ExpectQuery(`c\.razao_social LIKE \? ESCAPE '!'`).WillReturnRows(sqlmock.NewRows(pedidoColunasHeaderForHandler()))
 	status, _ := getComToken2(t, server.URL+"/api/pedidos?q=BuscaSecreta", normal)
 	require.Equal(t, http.StatusOK, status)
 

@@ -40,8 +40,9 @@ type ExtIdentidade struct {
 }
 
 // NovaIdentidade liga o contexto Identidade sobre o pool: adapters MariaDB,
-// crypto, os três limitadores e o UoW da rotação. Chamar UMA vez por
-// processo: os limitadores são singletons (I-14).
+// crypto, os três limitadores e os UoW da rotação e da troca/reset de senha
+// (BUG-15). Chamar UMA vez por processo: os limitadores são singletons
+// (I-14).
 func NovaIdentidade(pool *sql.DB, cfg *config.Config, ext ExtIdentidade) *identidadeapp.Casos {
 	return identidadeapp.Novo(identidadeapp.Deps{
 		Usuarios:  identidademysql.NovoUsuarios(pool),
@@ -49,6 +50,13 @@ func NovaIdentidade(pool *sql.DB, cfg *config.Config, ext ExtIdentidade) *identi
 		Historico: identidademysql.NovoHistoricoSenhas(pool),
 		Rotacao: db.NewTransactor(pool, func(q db.Querier) identidadeapp.TxRotacao {
 			return identidadeapp.TxRotacao{Tokens: identidademysql.NovoRefreshTokens(q)}
+		}),
+		TrocaSenha: db.NewTransactor(pool, func(q db.Querier) identidadeapp.TxSenha {
+			return identidadeapp.TxSenha{
+				Usuarios:  identidademysql.NovoUsuarios(q),
+				Historico: identidademysql.NovoHistoricoSenhas(q),
+				Tokens:    identidademysql.NovoRefreshTokens(q),
+			}
 		}),
 		Hasher:  identidadecrypto.NovoHasher(cfg.HashSenha),
 		Emissor: identidadecrypto.NovoJWT(cfg),

@@ -46,8 +46,8 @@ func TestARQ05_Bootstrap_AtualizarPedidoComBaixaNaMesmaTx(t *testing.T) {
 	agora := time.Now()
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT status FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`).WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Em separação"))
+	mock.ExpectQuery(`SELECT status, vendedor_id FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`).WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Em separação", int64(2)))
 	mock.ExpectQuery(`SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido`).WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"produto_id", "quantidade", "preco_praticado", "desconto_pct"}))
 	mock.ExpectExec(`UPDATE pedidos`).WillReturnResult(sqlmock.NewResult(0, 1))

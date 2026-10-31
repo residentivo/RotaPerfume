@@ -77,7 +77,7 @@ func wherePedido(f vendas.FiltroPedido, vendedorID int64) (string, []any) {
 		conds, args = append(conds, "p.data_pedido <= ?"), append(args, f.DataFim)
 	}
 	if f.Busca != "" {
-		conds, args = append(conds, "c.razao_social LIKE ?"), append(args, "%"+f.Busca+"%")
+		conds, args = append(conds, "c.razao_social LIKE ? ESCAPE '!'"), append(args, db.TermoContem(f.Busca)) // SEC-25
 	}
 	return db.Where(conds), args
 }
@@ -194,19 +194,20 @@ func (r *Pedidos) inserirItens(ctx context.Context, pedidoID int64, itens []vend
 	return nil
 }
 
-// StatusParaAtualizar lê o status atual com SELECT … FOR UPDATE: serializa
-// o PUT concorrente do mesmo pedido até o fim da tx.
-func (r *Pedidos) StatusParaAtualizar(ctx context.Context, id int64) (string, error) {
-	var status string
-	err := r.q.QueryRowContext(ctx, `SELECT status FROM pedidos WHERE pedido_id_origem = ? FOR UPDATE`, id).Scan(&status)
+// TravarParaEscrita lê status e vendedor com SELECT … FOR UPDATE: serializa
+// PUT/DELETE concorrentes do mesmo pedido e fixa a posse até o fim da tx
+// (SEC-26).
+func (r *Pedidos) TravarParaEscrita(ctx context.Context, id int64) (*vendas.Pedido, error) {
+	p := &vendas.Pedido{PedidoIDOrigem: id}
+	err := r.q.QueryRowContext(ctx, `SELECT status, vendedor_id FROM pedidos WHERE pedido_id_origem = ? FOR UPDATE`, id).Scan(&p.Status, &p.VendedorID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", vendas.ErrPedidoNaoEncontrado
+		return nil, vendas.ErrPedidoNaoEncontrado
 	}
 	if err != nil {
-		return "", fmt.Errorf("vendasmysql: lock pedido para update: %w", err)
+		return nil, fmt.Errorf("vendasmysql: lock pedido para escrita: %w", err)
 	}
-	vlog.Printf(arqPedidos, "Pedidos.StatusParaAtualizar", "SELECT pedidos FOR UPDATE linhas=1")
-	return status, nil
+	vlog.Printf(arqPedidos, "Pedidos.TravarParaEscrita", "SELECT pedidos FOR UPDATE linhas=1")
+	return p, nil
 }
 
 // ItensAtuais lê o conteúdo de negócio dos itens (para comparar com o PUT).

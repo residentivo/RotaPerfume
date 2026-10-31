@@ -14,14 +14,27 @@ import (
 // ErrBodyJSONInvalido é o 400 de body que não decodifica no DTO.
 var ErrBodyJSONInvalido = kernel.NovoErro(kernel.KindInvalido, "body JSON inválido")
 
-// DecodificarJSON lê o body em dst. Qualquer falha vira ErrBodyJSONInvalido.
-// Como o json.Decoder legado, lê só o primeiro valor JSON e aceita campos
-// desconhecidos (contrato inalterado).
+// ErrCorpoMuitoGrande é o 413 de corpo acima do limite da rota (SEC-14).
+var ErrCorpoMuitoGrande = kernel.NovoErro(kernel.KindMuitoGrande, "corpo da requisição excede o limite de 256 KB")
+
+// DecodificarJSON lê o body em dst. Corpo acima do limite da rota (o
+// MaxBytesReader do Router) vira ErrCorpoMuitoGrande; qualquer outra falha,
+// ErrBodyJSONInvalido. Como o json.Decoder legado, lê só o primeiro valor
+// JSON e aceita campos desconhecidos (contrato inalterado).
 func DecodificarJSON(r *http.Request, dst any) error {
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		return ErrBodyJSONInvalido
+		return erroDeCorpo(err)
 	}
 	return nil
+}
+
+// erroDeCorpo traduz a falha de leitura/decode do body no sentinela público.
+func erroDeCorpo(err error) error {
+	var excedeu *http.MaxBytesError
+	if errors.As(err, &excedeu) {
+		return ErrCorpoMuitoGrande
+	}
+	return ErrBodyJSONInvalido
 }
 
 // LerAtivoOpcional lê o body opcional { "ativo": bool } dos PATCH
@@ -29,7 +42,8 @@ func DecodificarJSON(r *http.Request, dst any) error {
 //   - body ausente, vazio, `null`, `{}` ou `{"ativo":null}` → (nil, nil): toggle;
 //   - `{"ativo":true|false}` → ponteiro para o valor;
 //   - qualquer outro conteúdo (malformado, tipo errado, lixo após o objeto)
-//     → ErrBodyJSONInvalido, e o handler responde 400 sem chamar o caso de uso.
+//     → ErrBodyJSONInvalido, e o handler responde 400 sem chamar o caso de uso;
+//   - corpo acima do limite da rota → ErrCorpoMuitoGrande (413, SEC-14).
 func LerAtivoOpcional(r *http.Request) (*bool, error) {
 	if r.Body == nil {
 		return nil, nil
@@ -42,10 +56,10 @@ func LerAtivoOpcional(r *http.Request) (*bool, error) {
 		if errors.Is(err, io.EOF) {
 			return nil, nil
 		}
-		return nil, ErrBodyJSONInvalido
+		return nil, erroDeCorpo(err)
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, ErrBodyJSONInvalido
+		return nil, erroDeCorpo(err)
 	}
 	return body.Ativo, nil
 }

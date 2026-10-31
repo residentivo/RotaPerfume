@@ -187,28 +187,43 @@ func dadosOportunidade(q oportunidadeRequest) comercial.DadosOportunidade {
 
 func texto(r *http.Request, nome string) string { return strings.TrimSpace(r.URL.Query().Get(nome)) }
 
-func filtroClienteDaQuery(r *http.Request) comercial.FiltroCliente {
-	return comercial.FiltroCliente{
-		UF: texto(r, "uf"), Segmento: texto(r, "segmento"), Ativo: httpx.BoolDaQuery(r, "ativo"), Busca: texto(r, "q"),
-		Ordenacao: httpx.OrdenacaoDaQuery(r, comercial.CamposOrdenacaoCliente(), comercial.OrdenacaoClientePadrao()),
+// Os filtros devolvem httpx.ErrBuscaMuitoLonga para q acima de 100
+// caracteres (SEC-25); o handler responde 400 antes do caso de uso.
+
+func filtroClienteDaQuery(r *http.Request) (comercial.FiltroCliente, error) {
+	busca, err := httpx.BuscaDaQuery(r)
+	if err != nil {
+		return comercial.FiltroCliente{}, err
 	}
+	return comercial.FiltroCliente{
+		UF: texto(r, "uf"), Segmento: texto(r, "segmento"), Ativo: httpx.BoolDaQuery(r, "ativo"), Busca: busca,
+		Ordenacao: httpx.OrdenacaoDaQuery(r, comercial.CamposOrdenacaoCliente(), comercial.OrdenacaoClientePadrao()),
+	}, nil
 }
 
-func filtroVisitaDaQuery(r *http.Request) comercial.FiltroVisita {
+func filtroVisitaDaQuery(r *http.Request) (comercial.FiltroVisita, error) {
+	busca, err := httpx.BuscaDaQuery(r)
+	if err != nil {
+		return comercial.FiltroVisita{}, err
+	}
 	return comercial.FiltroVisita{
 		ClienteID: httpx.Int64DaQuery(r, "cliente_id"), VendedorID: httpx.Int64DaQuery(r, "vendedor_id"),
-		Resultado: texto(r, "resultado"), De: texto(r, "data_visita_de"), Ate: texto(r, "data_visita_ate"), Busca: texto(r, "q"),
+		Resultado: texto(r, "resultado"), De: texto(r, "data_visita_de"), Ate: texto(r, "data_visita_ate"), Busca: busca,
 		Ordenacao: httpx.OrdenacaoDaQuery(r, comercial.CamposOrdenacaoVisita(), comercial.OrdenacaoVisitaPadrao()),
-	}
+	}, nil
 }
 
-func filtroOportunidadeDaQuery(r *http.Request) comercial.FiltroOportunidade {
+func filtroOportunidadeDaQuery(r *http.Request) (comercial.FiltroOportunidade, error) {
+	busca, err := httpx.BuscaDaQuery(r)
+	if err != nil {
+		return comercial.FiltroOportunidade{}, err
+	}
 	return comercial.FiltroOportunidade{
 		ClienteID: httpx.Int64DaQuery(r, "cliente_id"), VendedorID: httpx.Int64DaQuery(r, "vendedor_id"),
 		Etapa: texto(r, "etapa"), Origem: texto(r, "origem"), De: texto(r, "data_abertura_de"), Ate: texto(r, "data_abertura_ate"),
-		Busca:     texto(r, "q"),
+		Busca:     busca,
 		Ordenacao: httpx.OrdenacaoDaQuery(r, comercial.CamposOrdenacaoOportunidade(), comercial.OrdenacaoOportunidadePadrao()),
-	}
+	}, nil
 }
 
 // ---------------------------------------------------------------------------

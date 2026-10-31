@@ -2,7 +2,202 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+> Atualizado em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## Lote 27 de 2026-10-31: 9 cards concluídos
+
+> Cards: SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25 (GAPs 1, 2, 3, 4 e 11 e C-03 da auditoria ARQ-00), BUG-14, BUG-15 (transações em `VincularCliente` e na troca de senha) e SEC-26 (achado do ARQ-05). Lote aberto pelo 🤍 MegaBrain em 2026-10-31, a pedido do usuário ("processe os itens a fazer"), com os cards de backend/testes de prioridade MÉDIA (mais SEC-16 e SEC-25, BAIXA, que tocam os mesmos pontos) e sem decisão de produto pendente. SEC-19 e SEC-23 (backend + frontend + config) ficaram em `afazer.md`, para o lote seguinte. Fechado em 2026-10-31 pelo 🔵 SubBrain.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (especificação) → 🟡 BackBrain A (SEC-14, SEC-15, SEC-16, SEC-17, SEC-25) e 🟡 BackBrain B (BUG-14, BUG-15, SEC-26) → 🔴 TestBrain (SEC-24 e testes) → 🔵 SubBrain (Postman, docs e fechamento). Sem 🌸 DataBrain (nenhuma mudança de schema) e sem 🟢 FrontBrain (o `maxLength` opcional virou o card CHORE-10).
+>
+> **Mudanças de contrato HTTP:** `413` para corpo acima de 256 KiB (exceto o upload de imagem); `431` automático para headers acima de 64 KiB; `400` para pedido com mais de 200 itens; `page` limitado a 10000 (clamp; o `500` de `page` gigante vira `200`); `400` para `q` acima de 100 caracteres e `%`/`_` literais na busca; `CORS_ALLOWED_ORIGINS` com `*`/`null` impede a subida; BUG-15: falha no histórico ou na revogação passa de `200` para `500`, sem trocar a senha. **Nenhuma rota nova:** continuam 64 (5 Public, 36 Authenticated, 23 AdminOnly). Detalhe em `postman/README.md`, seção "Mudanças do Lote 27". **Schema:** sem mudança.
+>
+> **Verificação final do 🤍 MegaBrain (2026-10-31):** `gofmt -l`, `go vet ./...` e `go test -count=1 ./...` limpos e verdes nos dois módulos: shared **3947 passaram**, 0 falharam, 12 pulados; rotaperfumes-api **5147 passaram**, 0 falharam, 28 pulados.
+>
+> **Commit:** não commitado (pendente do usuário).
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados do Lote 27"):** SEC-35 (`ExcluirPagamento`/`CriarPagamento` checam fora de lock, MÉDIA), SEC-36 (origens de dev sempre na allowlist de CORS, BAIXA), BUG-24 (corrida entre troca e reset de senha, BAIXA), CHORE-10 (`ErrImagemMuitoGrande` com `KindMuitoGrande` e `maxLength={100}` nas buscas do frontend, BAIXA) e TST-11 (teste instável do IMG-01, BAIXA).
+
+### Decisões do 🟣 SecBrain (especificação do Lote 27)
+
+- **Unit of Work:** BUG-14, BUG-15 e SEC-26 usam o `db.Transactor[R]`/`NewTransactor` que já existe (`SH/db/tx.go`): dentro da `fn` só os repositórios de `R`; nenhum efeito externo (e-mail, log de decisão) dentro da tx; prova de "tudo na mesma tx" com pool `SetMaxOpenConns(1)` + contexto curto.
+- **SEC-14:** limite **por rota** no router, não middleware global (`MaxBytesReader` aninhados valem pelo menor, o que quebraria o upload). Padrão de 256 KiB; única exceção o upload (`MaxCorpoUploadBytes`). `limitarCorpo` por dentro do `Exigir`, para 401/403 virem antes do 413. 413 tipado com `kernel.KindMuitoGrande` (acrescentado depois de `KindBloqueado`, sem reordenar). Servidor com `ReadHeaderTimeout` 5 s e `MaxHeaderBytes` 64 KiB. Itens do pedido: no máximo 200 (400), conferido antes contra o maior pedido do banco.
+- **SEC-15:** espelhar o parse do go-sql-driver (último `/`, último `@` antes dele, primeiro `:`), mantendo o formato do log, com a proteção extra "se a senha ainda aparecer, só `****`".
+- **SEC-16:** **clamp, não 400** (mesmo padrão do `limit`), em `kernel.PaginaMaxima` = 10.000 (maior OFFSET 999.900); erro de faixa do `Atoi` conta como ausente.
+- **SEC-17:** **falhar na config** (`ErrCORSOrigemInvalida` para `*`/`null`) e, como defesa em profundidade, o middleware também descarta essas entradas com log único.
+- **SEC-24:** só testes (🔴 TestBrain), por entidade, com a lista de payloads de `order_by` e `order_dir` da especificação, completude dos enums e um caso HTTP por listagem.
+- **SEC-25:** caractere de escape **`!`, não `\`** (com `\` o resultado depende do `NO_BACKSLASH_ESCAPES`); helper único `db.TermoContem`; comprimento de `q` com **400, não truncamento** (100 runes depois de tirar os espaços das pontas). Índice FULLTEXT fora do lote.
+- **BUG-14:** `TxVinculo` com lock do cliente (`TravarParaVinculo`, FOR UPDATE), que também fecha a corrida de duas vinculações simultâneas; os 404 de vendedor e cliente continuam fora da tx (mesma ordem); log "cliente vinculado" depois do commit.
+- **BUG-15:** `TxSenha` + porta própria `TransactorSenha` (o `identidadeapp.Transactor` existente não é genérico); hash Argon2 fora da tx; dentro da tx histórico → senha → revogação; logs depois do commit; no reset admin, senha gerada fora da tx e e-mail só depois do commit.
+- **SEC-26:** `TravarParaEscrita` (`SELECT status, vendedor_id … FOR UPDATE`) no lugar de `StatusParaAtualizar`; posse rechecada sob lock no PUT (a checagem antes do decode fica, para 404 antes de 400); DELETE inteiro dentro da tx (lock → posse → pagamentos → `PodeExcluir` → exclusão), mesma ordem de erros; o FK `ON DELETE RESTRICT` faz o INSERT de pagamento concorrente esperar o lock.
+
+### Decisões fora da spec
+
+- **🟡 BackBrain A:**
+  1. Numa rota com `MaxCorpo != 0` (upload), o router só aplica o `MaxBytesReader`; o `Content-Length`/413 fica com o handler. Assim o anti-CSRF (403) continua antes e a mensagem continua "imagem excede 1 MB".
+  2. `refreshDoRequest` (`API/internal/identidadehttp/auth_handler.go:117`) não mudou: o limite do router já vale ali.
+  3. `ErrItensDemais` foi declarado dentro do bloco `var` de `vendas/erros.go`.
+- **🟡 BackBrain B:**
+  1. Os três fluxos de senha usam a mesma ordem (histórico → `AtualizarSenha` → `RevogarTodos`). Antes, no reset admin, o UPDATE vinha primeiro.
+  2. No reset admin/massa, `AtualizarSenha` devolvendo `ErrUsuarioNaoEncontrado` continua `404` (como no legado); o resto vira `500` (`erroGravacaoReset`).
+  3. No BUG-14, o vlog "decisão transferida" também foi para depois do commit.
+
+---
+
+## SEC-14: limite de tamanho do corpo, ReadHeaderTimeout e limite de itens do pedido — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Camadas:** Backend (API + shared), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 1; invariante F-04), com a nota do ARQ-05 sobre o número de itens do pedido. Prioridade MÉDIA.
+
+**Contrato final:** corpo acima de 256 KiB → `413` "corpo da requisição excede o limite de 256 KB" (401/403 antes do 413); upload de imagem inalterado (`413` "imagem excede 1 MB"); headers acima de 64 KiB → `431` automático; pedido com mais de 200 itens → `400` "o pedido deve ter no máximo 200 itens" (POST e PUT).
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/kernel/erros.go` (`KindMuitoGrande`, "muito_grande", depois de `KindBloqueado`) → 413 em `API/internal/httpx/errmap.go`; `httpx/body.go` (`ErrCorpoMuitoGrande`, devolvido por `DecodificarJSON` e `LerAtivoOpcional` no `*http.MaxBytesError`); `httpx/router.go` (`MaxCorpoPadrao` de 256 KiB, `Rota.MaxCorpo` com panic para negativo, `limitarCorpo` com vlog "corpo_muito_grande limite=N"); `bootstrap/rotas.go` (o upload declara `MaxCorpo: catalogohttp.MaxCorpoUploadBytes`); `bootstrap/server.go` (`NovoServidor` com `ReadHeaderTimeout` 5 s e `MaxHeaderBytes` 64 KiB); `SH/vendas/pedido.go` e `erros.go` (`MaxItensPedido = 200`, `ErrItensDemais`). Consulta no banco local: o maior pedido tem 16 itens (29.729 pedidos), então o teto de 200 foi mantido.
+- 🔴 **Testes:** novos `API/tests/httpx/sec14_limite_corpo_test.go`, `API/tests/bootstrap/sec14_servidor_test.go`, `API/tests/routes/sec14_max_corpo_matriz_test.go` (só o upload tem `MaxCorpo != 0`), `SH/tests/vendas/sec14_max_itens_test.go` e `API/tests/handlers/lote27_sec14_sec16_sec25_http_test.go`; ajustados `SH/tests/kernel/erros_test.go` e `API/tests/httpx/errmap_test.go`. Suíte do IMG-01 verde.
+
+---
+
+## SEC-15: `maskDSN` não vaza mais parte da senha com `@` — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Camadas:** Backend (shared/db), Testes
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 2; invariante F-08). Prioridade MÉDIA.
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/db/db.go`: o corte segue o go-sql-driver (último `/`, último `@` antes dele, primeiro `:`), mantendo o formato `user:****@tcp(...)`; se `mysql.ParseDSN` funcionar e a senha ainda aparecer no texto, o log sai só `****`.
+- 🔴 **Testes:** `SH/tests/db/mask_dsn_test.go` com os 3 casos antigos, +10 senhas hostis (`@`, `:`, `/`, `%`, `@@`, `@` no fim e combinações, com fragmentos únicos) e um teste da proteção extra. Contrato HTTP inalterado.
+
+---
+
+## SEC-16: teto de `page` na paginação — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Camadas:** Backend (shared kernel + API), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 3; invariante F-10), com as notas N-3 (ARQ-01), NB-6 (ARQ-02) e do ARQ-06. Prioridade BAIXA.
+
+**Contrato final:** `page` acima de 10000 → 10000 (clamp); `pagination.page` mostra o valor depois do clamp; `page` gigante, que dava `500`, agora dá `200`; `page` fora da faixa de `int` conta como ausente (página 1). Vale para todas as listagens, inclusive Catálogo, Estoque e Dashboard.
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/kernel/pagina.go` (`PaginaMaxima = 10_000`, clamp em `NovaPagina`; maior OFFSET 999.900, sem overflow em `Offset()`); `API/internal/httpx/query.go` (erro de faixa do `Atoi` → 0).
+- 🔴 **Testes:** `SH/tests/kernel/pagina_test.go`, `API/tests/httpx/respond_query_test.go` e o caso de handler (`GET /api/produtos?page=9223372036854775807&limit=100` → 200, OFFSET 999.900, `pagination.page` = 10000).
+
+---
+
+## SEC-17: CORS sem curinga com credentials — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.** Pendência do usuário antes do deploy: conferir que o Secret file do Jenkins não tem `*`/`null` em `CORS_ALLOWED_ORIGINS` (senão a API não sobe).
+**Camadas:** Backend (config + middleware), Deploy (docs), Testes
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 4; invariante F-02). Prioridade MÉDIA.
+
+**Contrato final:** `CORS_ALLOWED_ORIGINS` com `*` ou `null` (sem diferenciar maiúsculas, com ou sem espaços) impede a API de subir, com `config: CORS_ALLOWED_ORIGINS não aceita "*" nem "null" (os cookies de sessão exigem origens explícitas)`. O middleware não tem mais curinga; OPTIONS continua `204`.
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/config/config.go` (`parseAllowedOrigins` devolve `([]string, error)`; `ErrCORSOrigemInvalida`); `API/internal/httpx/cors.go` (curinga removido; `*`/`null` descartados com um `log.Printf` único na montagem); `deploy/api.env.example` e seção CORS nova em `.env.example`.
+- 🔴 **Testes:** `TestCORSMiddleware_Wildcard` invertido (com `{"*"}`, origem qualquer fica sem `Access-Control-Allow-Origin` e sem `Allow-Credentials`); novo `SH/tests/config/sec17_cors_curinga_test.go` (`"*"`, `" * "`, `"https://a.com,*"`, `"null"` → erro; `"https://a.com"` → OK).
+- **Resíduo:** as origens de dev (`localhost:3000`) continuam sempre na allowlist, inclusive em produção (card SEC-36).
+
+---
+
+## SEC-24: testes de injeção via `order_by` em todos os enums de ordenação — 2026-10-31
+**Agentes:** 🟣 SecBrain (payloads) → 🔴 TestBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Camadas:** Testes
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 11; invariante C-02). Prioridade MÉDIA.
+
+**Entregue:**
+- 🔴 **TestBrain:** novo `SH/tests/repositories/sec24_ordenacao_injecao_test.go` (6 entidades × 54 cenários: Cliente, Visita, Oportunidade, Pedido, Pagamento e Usuário, mais a completude dos enums); `sort_test.go` com +16 casos (`1,2`, SLEEP); novo `API/tests/handlers/sec24_order_by_http_test.go` (9 rotas × 3 = 27 subtestes, todos `200`). **Nenhuma injeção encontrada**; enums completos (`visita_id` é sinônimo de `id` por contrato).
+- **Observação:** `;` cru na query string faz o Go descartar o par inteiro (resposta `200` com a ordenação padrão). Contrato HTTP inalterado.
+
+---
+
+## SEC-25: buscas LIKE com escape de `%`/`_` e limite de `q` — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Camadas:** Backend (shared + API), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (invariante C-03, "GAP baixo"), com a NB-7 (ARQ-02) e a nota do ARQ-05. Prioridade BAIXA.
+
+**Contrato final:** `q` acima de 100 caracteres → `400` "o parâmetro q deve ter no máximo 100 caracteres", antes do caso de uso; `%` e `_` passam a ser literais (`q=%` não devolve mais tudo).
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/db/like.go` (`db.TermoContem`, escape `!`); `LIKE ? ESCAPE '!'` em produtos, clientes (os 2 argumentos, inclusive CNPJ), visitas, oportunidades e pedidos; `httpx.BuscaDaQuery` com `ErrBuscaMuitoLonga` (100 runes, 400); os construtores de filtro dos DTOs (`catalogohttp`, `comercialhttp`, `vendashttp`) devolvem `(filtro, error)`.
+- 🔴 **Testes:** novos `SH/tests/db/sec25_termo_contem_test.go`, `SH/tests/repositories/sec25_like_escape_test.go`, `API/tests/httpx/sec25_busca_test.go` e os casos de handler (100 runes OK, 101 → 400, `"ç"` × 100 OK); regex `LIKE \?` ajustadas em 14 testes antigos.
+- **Fora do lote:** índice FULLTEXT (decisão do 🟣 SecBrain) e `maxLength={100}` nos campos de busca do frontend (card CHORE-10).
+
+---
+
+## BUG-14: `VincularCliente` numa transação — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain B → 🔴 TestBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Camadas:** Backend (shared + API), Testes
+**Origem:** decisão P4 do 🤍 MegaBrain no ARQ-00 (2026-10-13). Prioridade MÉDIA.
+
+**Entregue:**
+- 🟡 **BackBrain B:** `SH/comercial/comercialapp/portas.go` (`TxVinculo`); `casos.go` (`Deps.Vinculacao`, obrigatória); `carteiras.go` (os 404 continuam fora da tx; depois, `WithTx` com o lock do cliente e `vincular` usando só `r`; vlogs "cliente vinculado" e "decisão transferida" depois do commit); `SH/comercial/comercialmysql/clientes.go` (`TravarParaVinculo`, `SELECT … FOR UPDATE`, sem linha → `ErrClienteNaoEncontrado`); `API/internal/bootstrap/comercial.go` (montagem). O lock também fecha a corrida de duas vinculações simultâneas do mesmo cliente.
+- 🔴 **Testes:** novo `SH/tests/comercial/bug14_vinculo_tx_test.go` (rollbacks na falha do INSERT e do Reabrir, duplicado 409 + Rollback, ordem dos SQLs na transferência, mesmo vendedor sem escrita, `SetMaxOpenConns(1)`), validado por mutação; ajustados `casos_test`, `chore06_*`, `vendedor_service_test`, `vendedor_handler_test` e `apoio_test`. Contrato HTTP inalterado.
+
+---
+
+## BUG-15: troca e reset de senha numa transação — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain B → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Camadas:** Backend (shared + API), Testes, Documentação
+**Origem:** revisão do blueprint pelo 🟣 SecBrain no ARQ-00 (2026-10-13). Prioridade MÉDIA.
+
+**Contrato final:** caminho de sucesso inalterado. **Mudança intencional:** falha ao gravar o histórico ou ao revogar as sessões, que antes respondia `200` (erro só no log), passa a `500`, sem trocar a senha. No reset admin, o e-mail só sai depois do commit; usuário inexistente continua `404`.
+
+**Entregue:**
+- 🟡 **BackBrain B:** `SH/identidade/identidadeapp/portas.go` (`TxSenha` e `TransactorSenha`); `casos.go` (`Deps.TrocaSenha`, obrigatória); `senha.go` (helper `gravarSenhaNaTx`: histórico → senha → revogação, logs depois do commit; `redefinirSenhaGerada` dividida em `senhaGeradaPara` fora da tx, a tx e o e-mail depois do commit); `massa.go` (mesmo fluxo; falha de e-mail continua `ErrEmailResetFalhou`, com o reset já gravado); `API/internal/bootstrap/identidade.go` (montagem).
+- 🔴 **Testes:** novos `SH/tests/identidade/bug15_senha_tx_test.go`, `API/tests/handlers/bug15_senha_tx_http_test.go` e `TestBUG15_ResetMassa_TudoNaMesmaConexao` (falha em cada etapa → Rollback, 500 e nenhum e-mail; sucesso → Commit e 1 e-mail depois do commit); várias suítes ajustadas (Deps/fakes e sqlmock com Begin/Commit/Rollback).
+- **Resíduo:** troca e reset simultâneos do mesmo usuário ainda sobrescrevem um ao outro (card BUG-24).
+
+---
+
+## SEC-26: posse e regras de exclusão do pedido checadas sob lock — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain B → 🔴 TestBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Camadas:** Backend (shared + API), Testes
+**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15). Prioridade MÉDIA.
+
+**Entregue:**
+- 🟡 **BackBrain B:** `SH/vendas/vendasapp/portas.go` (`TravarParaEscrita` no lugar de `StatusParaAtualizar`; `PagamentosNaTx` e `TxPedido.Pagamentos`); `uow.go` (`Atualizar(ctx, e, id, p, quando)`, `Excluir(ctx, e, id)` e o helper `travarNoEscopo`: outro vendedor sob o lock → 404, vlog "fora_da_carteira"); `pedidos.go` (o DELETE ficou só com `noEscopo` + tx); `SH/vendas/vendasmysql/pedidos.go` (`TravarParaEscrita`, `SELECT status, vendedor_id … FOR UPDATE`); `API/internal/bootstrap/vendas.go` (liga `Pagamentos`).
+- 🔴 **Testes:** novos `SH/tests/vendas/sec26_toctou_posse_test.go` e `TestUpdatePedido_SEC26_PosseMudaAntesDoLock_404Rollback`; muitos testes de pedido ajustados; o helper morto `esperarPossePedido` foi removido. Contrato HTTP inalterado (mesmos status e mensagens).
+- **Resíduo:** o mesmo padrão em `ExcluirPagamento` e `CriarPagamento` (card SEC-35).
+
+---
+
+### Testes do Lote 27
+
+- **Go (verificação final do 🤍 MegaBrain):** `gofmt -l` e `go vet ./...` limpos; `go test -count=1 ./...` verde nos dois módulos: **shared 3947 passaram, 0 falharam, 12 pulados**; **rotaperfumes-api 5147 passaram, 0 falharam, 28 pulados**.
+- **Arquivos novos:** `API/tests/httpx/sec14_limite_corpo_test.go`, `API/tests/bootstrap/sec14_servidor_test.go`, `API/tests/routes/sec14_max_corpo_matriz_test.go`, `SH/tests/vendas/sec14_max_itens_test.go`, `API/tests/handlers/lote27_sec14_sec16_sec25_http_test.go`, `SH/tests/config/sec17_cors_curinga_test.go`, `SH/tests/repositories/sec24_ordenacao_injecao_test.go`, `API/tests/handlers/sec24_order_by_http_test.go`, `SH/tests/db/sec25_termo_contem_test.go`, `SH/tests/repositories/sec25_like_escape_test.go`, `API/tests/httpx/sec25_busca_test.go`, `SH/tests/comercial/bug14_vinculo_tx_test.go`, `SH/tests/identidade/bug15_senha_tx_test.go`, `API/tests/handlers/bug15_senha_tx_http_test.go` e `SH/tests/vendas/sec26_toctou_posse_test.go`.
+- **Ajustados:** `erros_test.go`, `errmap_test.go`, `mask_dsn_test.go`, `pagina_test.go`, `respond_query_test.go`, `cors_middleware_test.go`, `sort_test.go`, 14 testes com regex `LIKE \?`, as suítes de vínculo (`casos_test`, `chore06_*`, `vendedor_*`, `apoio_test`), de senha (Deps/fakes e sqlmock) e de pedido.
+- **Frontend:** não mudou neste lote (não rodado).
+- **Teste instável observado:** `TestIMG01_Upload_FilenameHostilNaoVaza/CRLF_por_RFC_2231` falha quando o UUID aleatório termina em "b" (card TST-11); não é regressão do Lote 27.
+
+### Pendências do Lote 27
+
+- **Usuário, antes do deploy:** confirmar que o Secret file do Jenkins não tem `*`/`null` em `CORS_ALLOWED_ORIGINS` (SEC-17).
+- **Usuário:** `apis/rotaperfumes-api/cmd/server/__debug_bin178758419` aparece como apagado no git; nenhum agente mexeu nele.
+- **Commit:** nada commitado; pendente do usuário.
+- **Cards novos** em `afazer.md` ("Achados do Lote 27"): SEC-35, SEC-36, BUG-24, CHORE-10 e TST-11.
+
+### Documentação do Lote 27 (🔵 SubBrain)
+
+- `postman/README.md`: seção "Mudanças do Lote 27" (64 rotas, sem rota nova) e tabela de códigos de erro (400 de `q`/itens, 413 do corpo, 431 novo).
+- `postman/collection.json`: seção "Mudanças do Lote 27" na descrição. Os exemplos de listagem usam `page=1` e `q` curto, então nenhum exemplo de busca/paginação precisou mudar.
+- `docs/arq-00-invariantes-seguranca.md`: F-02, F-04, F-08, F-10, C-02 e C-03 marcados como resolvidos no Lote 27; mapeamento GAP → card com GAPs 1, 2, 3, 4 e 11 e C-03 resolvidos.
+- `docs/arquitetura-ddd.md`: §10.4 (router com `MaxCorpo`, CORS sem curinga, `query.go`), §10.6 (`db.go`, `like.go` novo) e §10.14 (atualização de 2026-10-31 com os pontos do Lote 27).
+- `docs/manual-base-de-dados.md`: sem mudança (nenhuma mudança de schema).
 
 ---
 ## Lote 26 de 2026-10-31: imagem do produto (1 card)

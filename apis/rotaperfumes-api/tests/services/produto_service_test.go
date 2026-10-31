@@ -86,10 +86,10 @@ func TestProdutoService_ListProdutos(t *testing.T) {
 			page:   2,
 			limit:  10,
 			mock: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\)`).
+				mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? ESCAPE '!' OR sku LIKE \? ESCAPE '!'\)`).
 					WithArgs("Perfumaria", "Marca X", true, "%Teste%", "%Teste%").
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
-				mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\) ORDER BY id ASC LIMIT \? OFFSET \?`).
+				mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? ESCAPE '!' OR sku LIKE \? ESCAPE '!'\) ORDER BY id ASC LIMIT \? OFFSET \?`).
 					WithArgs("Perfumaria", "Marca X", true, "%Teste%", "%Teste%", 10, 10).
 					WillReturnRows(produtoRows())
 			},

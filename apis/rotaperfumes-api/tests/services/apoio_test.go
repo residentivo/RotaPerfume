@@ -44,15 +44,6 @@ func itensETotal[T any](r kernel.Resultado[T], err error) ([]T, int, error) {
 	return r.Itens, r.Total, err
 }
 
-// esperarPossePedido: excluir pedido lê o registro antes, para checar a
-// posse (E-04, V-02).
-func esperarPossePedido(m sqlmock.Sqlmock, id int64) {
-	m.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(id).WillReturnRows(pedidoRowsComStatus(id, 230.0, "Em separação"))
-	m.ExpectQuery(`SELECT ` + itemPedidoColunasRegex + itemPedidoFromRegex + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
-		WithArgs(id).WillReturnRows(itemPedidoRows(id))
-}
-
 // esperarPossePagamento: idem para o pagamento.
 func esperarPossePagamento(m sqlmock.Sqlmock, id int64) {
 	m.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
@@ -96,6 +87,9 @@ func casosComercial(db *sql.DB, vendedorID int64) *comercialapp.Casos {
 		}),
 		ClienteNaCarteira: shareddb.NewTransactor(db, func(q shareddb.Querier) comercialapp.TxClienteNaCarteira {
 			return comercialapp.TxClienteNaCarteira{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
+		}),
+		Vinculacao: shareddb.NewTransactor(db, func(q shareddb.Querier) comercialapp.TxVinculo {
+			return comercialapp.TxVinculo{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
 		}),
 		Relogio: time.Now,
 	})
@@ -182,6 +176,10 @@ func novosCasos(db *sql.DB, cfg *config.Config, email identidadeapp.EnviadorSenh
 		Historico: identidademysql.NovoHistoricoSenhas(db),
 		Rotacao: shareddb.NewTransactor(db, func(q shareddb.Querier) identidadeapp.TxRotacao {
 			return identidadeapp.TxRotacao{Tokens: identidademysql.NovoRefreshTokens(q)}
+		}),
+		TrocaSenha: shareddb.NewTransactor(db, func(q shareddb.Querier) identidadeapp.TxSenha {
+			return identidadeapp.TxSenha{Usuarios: identidademysql.NovoUsuarios(q), Historico: identidademysql.NovoHistoricoSenhas(q),
+				Tokens: identidademysql.NovoRefreshTokens(q)}
 		}),
 		Hasher:     identidadecrypto.NovoHasher(cfg.HashSenha),
 		Emissor:    identidadecrypto.NovoJWT(cfg),

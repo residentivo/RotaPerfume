@@ -52,7 +52,8 @@ func (r *Clientes) Listar(ctx context.Context, e kernel.Escopo, f comercial.Filt
 }
 
 // whereCliente traduz o filtro (C-03). Busca com máscara de CNPJ procura o
-// CNPJ sem máscara (TermoBuscaCNPJ).
+// CNPJ sem máscara (TermoBuscaCNPJ). '%' e '_' da busca são literais
+// (db.TermoContem, SEC-25).
 func whereCliente(f comercial.FiltroCliente) ([]string, []any) {
 	var conds []string
 	var args []any
@@ -70,8 +71,8 @@ func whereCliente(f comercial.FiltroCliente) ([]string, []any) {
 		if termoCNPJ == "" {
 			termoCNPJ = f.Busca
 		}
-		conds = append(conds, "(razao_social LIKE ? OR cnpj LIKE ?)")
-		args = append(args, "%"+f.Busca+"%", "%"+termoCNPJ+"%")
+		conds = append(conds, "(razao_social LIKE ? ESCAPE '!' OR cnpj LIKE ? ESCAPE '!')")
+		args = append(args, db.TermoContem(f.Busca), db.TermoContem(termoCNPJ))
 	}
 	return conds, args
 }
@@ -97,6 +98,18 @@ func scanCliente(s db.Linha) (*comercial.Cliente, error) {
 // Existe informa se há cliente com o id (ativo ou não).
 func (r *Clientes) Existe(ctx context.Context, id int64) (bool, error) {
 	return db.Existe(ctx, r.q, arqClientes, "Clientes.Existe", "comercialmysql: existe cliente", `SELECT 1 FROM clientes WHERE cliente_id_origem = ? LIMIT 1`, id)
+}
+
+// TravarParaVinculo trava a linha do cliente até o fim da tx (BUG-14:
+// serializa vinculações concorrentes do mesmo cliente). Só faz sentido com
+// um Querier de tx; ErrClienteNaoEncontrado sem linha.
+func (r *Clientes) TravarParaVinculo(ctx context.Context, id int64) error {
+	const q = `SELECT cliente_id_origem FROM clientes WHERE cliente_id_origem = ? FOR UPDATE`
+	_, err := db.LerUma(r.q.QueryRowContext(ctx, q, id), comercial.ErrClienteNaoEncontrado, "comercialmysql: travar cliente", func(travado *int64) []any {
+		return []any{travado}
+	})
+	vlog.Printf(arqClientes, "Clientes.TravarParaVinculo", "SELECT FOR UPDATE clientes encontrado=%t", err == nil)
+	return err
 }
 
 // Inserir grava o cliente e preenche ClienteIDOrigem. O 1062 do CNPJ vira

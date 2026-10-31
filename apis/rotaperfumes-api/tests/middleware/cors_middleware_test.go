@@ -2,8 +2,11 @@
 package middleware_test
 
 import (
+	"bytes"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -113,18 +116,54 @@ func TestCORSMiddleware_VaryHeader(t *testing.T) {
 }
 
 // ------------------------------------------------------------------
-// CORSMiddleware — wildcard "*" libera qualquer origem
+// CORSMiddleware — SEC-17: "*" e "null" na lista são ignorados (sem curinga)
 // ------------------------------------------------------------------
 
 func TestCORSMiddleware_Wildcard(t *testing.T) {
-	m := httpx.CORS([]string{"*"})
+	for _, lista := range [][]string{{"*"}, {" * "}, {"null"}, {"NULL"}, {"*", "null"}} {
+		for _, origem := range []string{"http://qualquer-coisa.com", "null", "*"} {
+			t.Run(strings.Join(lista, ",")+"/"+origem, func(t *testing.T) {
+				m := httpx.CORS(lista)
 
-	req := httptest.NewRequest("GET", "/api/produtos", nil)
-	req.Header.Set("Origin", "http://qualquer-coisa.com")
-	w := httptest.NewRecorder()
-	m(corsDummyHandler).ServeHTTP(w, req)
+				req := httptest.NewRequest("GET", "/api/produtos", nil)
+				req.Header.Set("Origin", origem)
+				w := httptest.NewRecorder()
+				m(corsDummyHandler).ServeHTTP(w, req)
 
-	assert.Equal(t, "http://qualquer-coisa.com", w.Header().Get("Access-Control-Allow-Origin"))
+				assert.Equal(t, http.StatusOK, w.Code)
+				assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+				assert.Empty(t, w.Header().Get("Access-Control-Allow-Credentials"))
+
+				pre := httptest.NewRequest(http.MethodOptions, "/api/produtos", nil)
+				pre.Header.Set("Origin", origem)
+				w = httptest.NewRecorder()
+				m(corsDummyHandler).ServeHTTP(w, pre)
+				assert.Equal(t, http.StatusNoContent, w.Code, "OPTIONS continua 204")
+				assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+				assert.Empty(t, w.Header().Get("Access-Control-Allow-Credentials"))
+			})
+		}
+	}
+}
+
+// SEC-17: o curinga ignorado não derruba as origens explícitas da lista, e o
+// descarte gera um único log na montagem (nada por request).
+func TestCORSMiddleware_CuringaIgnorado_MantemExplicitasELogaUmaVez(t *testing.T) {
+	var buf bytes.Buffer
+	saida := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(saida) })
+
+	m := httpx.CORS([]string{"*", "https://app.rotaperfumes.com", "null"})
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest("GET", "/api/produtos", nil)
+		req.Header.Set("Origin", "https://app.rotaperfumes.com")
+		w := httptest.NewRecorder()
+		m(corsDummyHandler).ServeHTTP(w, req)
+		assert.Equal(t, "https://app.rotaperfumes.com", w.Header().Get("Access-Control-Allow-Origin"))
+		assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
+	}
+	assert.Equal(t, 1, strings.Count(buf.String(), "[cors] entrada curinga/null ignorada na allowlist"))
 }
 
 // ------------------------------------------------------------------

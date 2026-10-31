@@ -328,7 +328,7 @@ func TestUpdatePedido_Normal_NaoTrocaVendedor(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexH).WithArgs(int64(1)).WillReturnRows(itensAtuaisRowsVazioH())
 	mock.ExpectExec(updatePedidoRegexH).
 		WithArgs(int64(1), int64(2), sqlmock.AnyArg(), "App", "Faturado", 230.0, int64(1)).
@@ -658,5 +658,27 @@ func TestCreatePagamento_Admin_PedidoIDAusente_400(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, status)
 	assert.Equal(t, "pedido_id é obrigatório", body["error"])
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// SEC-26: o pedido muda de dono entre a checagem de posse (antes do decode)
+// e o lock da tx. A posse é conferida de novo sob o lock: 404 com a mesma
+// mensagem, rollback e nenhum UPDATE/DELETE de itens.
+func TestUpdatePedido_SEC26_PosseMudaAntesDoLock_404Rollback(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	expectEscopoUsuarioH(mock, 2, 2)
+	expectPedidoAtualH(mock, 1, 2)
+	expectCarteiraAtivaH(mock, 2, 1)
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(99)))
+	mock.ExpectRollback()
+
+	status, body := doReq(t, http.MethodPut, server.URL+"/api/pedidos/1", generateToken(t, testCfg(), 2, "normal"), validPedidoPayload())
+	assert.Equal(t, http.StatusNotFound, status)
+	assert.Equal(t, "pedido não encontrado", body["error"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

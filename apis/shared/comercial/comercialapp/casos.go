@@ -21,6 +21,8 @@ type Deps struct {
 	// ClienteNaCarteira é o UoW do cadastro de cliente por usuário
 	// restrito (cliente + vínculo).
 	ClienteNaCarteira Transactor[TxClienteNaCarteira]
+	// Vinculacao é o UoW da vinculação de cliente a vendedor (BUG-14).
+	Vinculacao Transactor[TxVinculo]
 	// Relogio é a fonte de "agora" (datas padrão, desligamento, vínculos).
 	Relogio func() time.Time
 }
@@ -35,7 +37,7 @@ type Casos struct {
 // Novo monta os casos de uso. Dependência nil é erro de montagem: panic.
 func Novo(d Deps) *Casos {
 	obrigatorias := []any{d.Vendedores, d.Carteiras, d.Clientes, d.Visitas, d.Oportunidades,
-		d.Vinculo, d.Desligamento, d.ClienteNaCarteira}
+		d.Vinculo, d.Desligamento, d.ClienteNaCarteira, d.Vinculacao}
 	for _, dep := range obrigatorias {
 		if dep == nil {
 			panic("comercialapp: Novo exige todas as dependências")

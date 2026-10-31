@@ -225,6 +225,21 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | IMG-01 | Banco | Coluna `produtos.imagem` (migração 26, `make db-fix-produtos-imagem`; revert `make db-revert-produtos-imagem`). Ver `docs/manual-base-de-dados.md`, seção 13. |
 | IMG-01 | `make db-gerar-imagens-produtos` | Gera um PNG 600x600 com o nome do produto na diagonal para cada produto sem imagem, pelo mesmo caso de uso do upload. Já rodado no banco local: 292 imagens. Ver "Imagens de produto" em "Subindo o ambiente". |
 
+## Mudanças do Lote 27 (2026-10-31): limites de entrada, CORS, busca e transações
+
+> **Nenhuma rota nova**: a API continua com **64 rotas** (5 Public, 36 Authenticated, 23 AdminOnly). As mudanças são respostas novas para entradas anormais (corpo, headers, `page`, `q`, itens do pedido), uma regra de configuração (CORS) e o `500` do BUG-15. O caminho de sucesso das rotas não muda. Na collection, os exemplos de listagem usam `page=1` e `q` curto, então nenhum exemplo precisou mudar; a descrição ganhou a seção "Mudanças do Lote 27".
+
+| Card | Onde | Mudança |
+|------|------|---------|
+| SEC-14 | Todas as rotas com corpo | Corpo acima de **256 KiB** → **`413`** `"corpo da requisição excede o limite de 256 KB"` (`Content-Length` acima do limite é recusado sem chamar o handler; corpo chunked é cortado pelo `MaxBytesReader`). 401/403 da policy continuam vindo antes do 413. Única exceção: `POST /api/produtos/{id}/imagem`, que mantém o seu limite (1 MB + 64 KB) e o `413` `"imagem excede 1 MB"`. |
+| SEC-14 | Servidor HTTP | `ReadHeaderTimeout` de 5 s (contra slowloris) e `MaxHeaderBytes` de 64 KiB: headers acima disso recebem **`431`** automático do Go. |
+| SEC-14 | `POST /api/pedidos`, `PUT /api/pedidos/{id}` | Pedido com mais de **200 itens** → **`400`** `"o pedido deve ter no máximo 200 itens"`. O maior pedido do banco local tem 16 itens. |
+| SEC-16 | Todas as listagens paginadas | `page` acima de **10000** é limitado a 10000 (clamp, como o `limit` acima de 100 vira 100); `pagination.page` mostra o valor depois do clamp. `page` gigante (ex.: `9223372036854775807`), que estourava o OFFSET e dava `500`, agora dá `200`; `page` fora da faixa de `int` (ex.: `99999999999999999999`) conta como ausente (página 1). |
+| SEC-25 | Buscas `q` (produtos, clientes, visitas, oportunidades, pedidos) | `q` com mais de **100 caracteres** (contados depois de tirar os espaços das pontas) → **`400`** `"o parâmetro q deve ter no máximo 100 caracteres"`, sem consultar o banco. `%` e `_` digitados passam a ser **literais** (antes funcionavam como curinga: `q=%` devolvia tudo). No SQL: `LIKE ? ESCAPE '!'`. |
+| SEC-17 | Config (`CORS_ALLOWED_ORIGINS`) | Entrada `*` ou `null` (sem diferenciar maiúsculas) **impede a API de subir** (`config: CORS_ALLOWED_ORIGINS não aceita "*" nem "null" (os cookies de sessão exigem origens explícitas)`). O middleware também não aceita mais curinga. **Antes do deploy:** conferir que o Secret file do Jenkins não tem `*`/`null`. Documentado em `.env.example` e `deploy/api.env.example`. |
+| BUG-15 | `POST /api/auth/reset-password`, reset pelo admin (`POST /api/admin/reset-password`) e reset em massa | Histórico, nova senha e revogação das sessões gravados numa única transação. **Mudança intencional:** falha ao gravar o histórico ou ao revogar as sessões, que antes respondia `200` (com o erro só no log), passa a **`500`**, sem trocar a senha. No reset pelo admin, o e-mail só sai depois do commit. Usuário inexistente continua `404`. |
+| SEC-15, SEC-24, BUG-14, SEC-26 | — | Sem mudança de contrato: DSN mascarado também com `@` na senha (SEC-15); testes de injeção de `order_by` em todas as listagens (SEC-24, `order_by` inválido continua caindo no padrão com `200`); `POST /api/vendedores/{id}/clientes` numa transação com lock do cliente (BUG-14); posse e regras de exclusão do pedido checadas sob lock no PUT e no DELETE (SEC-26, mesmos status e mensagens). |
+
 ## Endpoints
 
 ### Healthcheck
@@ -1140,11 +1155,12 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 | Código | Significado |
 |--------|-------------|
-| 400 | Body inválido ou campos obrigatórios ausentes; `"id inválido"` para id de path não numérico ou `<= 0` (CHORE-03, Lote 25); transição de status de pedido proibida (BUG-16) |
+| 400 | Body inválido ou campos obrigatórios ausentes; `"id inválido"` para id de path não numérico ou `<= 0` (CHORE-03, Lote 25); transição de status de pedido proibida (BUG-16); `q` acima de 100 caracteres e pedido acima de 200 itens (SEC-25 e SEC-14, Lote 27) |
 | 401 | Não autenticado (token ausente/inválido) ou credenciais inválidas |
 | 403 | Acesso restrito a administradores; usuário `normal` sem vendedor vinculado (escritas); ou `"acesso bloqueado: vendedor desligado"` nas rotas da carteira (2026-09-24) |
 | 404 | Recurso não encontrado |
-| 413 | `"imagem excede 1 MB"` no upload da imagem do produto (IMG-01, Lote 26) |
+| 413 | `"imagem excede 1 MB"` no upload da imagem do produto (IMG-01, Lote 26); `"corpo da requisição excede o limite de 256 KB"` nas demais rotas (SEC-14, Lote 27) |
+| 431 | Headers da requisição acima de 64 KiB (resposta automática do servidor Go; SEC-14, Lote 27) |
 | 409 | Conflito: duplicidade (e-mail, CNPJ, SKU, estoque do SKU na data, vínculo de carteira na data; CHORE-06, Lote 25), pedido Faturado/Entregue (itens ou exclusão), pagamento quitado (exclusão; edição pelo `normal`, SEC-27) |
 | 500 | Erro interno do servidor |
 

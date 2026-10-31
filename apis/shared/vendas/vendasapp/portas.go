@@ -61,9 +61,11 @@ type PedidosNaTx interface {
 	// Inserir grava o cabeçalho e os itens; preenche PedidoIDOrigem e o
 	// ItemIDOrigem/PedidoID de cada item (no próprio slice p.Itens).
 	Inserir(ctx context.Context, p *vendas.Pedido) error
-	// StatusParaAtualizar lê o status com SELECT … FOR UPDATE (serializa o
-	// PUT concorrente); ErrPedidoNaoEncontrado sem linha.
-	StatusParaAtualizar(ctx context.Context, id int64) (string, error)
+	// TravarParaEscrita lê status e vendedor com SELECT … FOR UPDATE
+	// (serializa PUT/DELETE concorrentes e fixa a posse até o fim da tx,
+	// SEC-26); preenche PedidoIDOrigem, Status e VendedorID.
+	// ErrPedidoNaoEncontrado sem linha.
+	TravarParaEscrita(ctx context.Context, id int64) (*vendas.Pedido, error)
 	// ItensAtuais lê produto, quantidade, preço e desconto dos itens.
 	ItensAtuais(ctx context.Context, id int64) ([]vendas.ItemPedido, error)
 	// AtualizarCabecalho: ErrPedidoNaoEncontrado se nenhuma linha casar.
@@ -86,11 +88,20 @@ type BaixaEstoque interface {
 	AjustarSaldoPorFaturamento(ctx context.Context, sku string, dia time.Time, delta int) error
 }
 
-// TxPedido são os repositórios ligados à tx do pedido: cabeçalho, itens e
-// a baixa de estoque do faturamento no MESMO *sql.Tx (§5.2).
+// PagamentosNaTx é a leitura de pagamentos DENTRO da tx do pedido (SEC-26):
+// com a linha do pedido travada, o INSERT de pagamento concorrente espera
+// o lock (FK fk_pagamentos_pedido), então uma leitura simples basta.
+type PagamentosNaTx interface {
+	ExistePorPedido(ctx context.Context, pedidoID int64) (bool, error)
+}
+
+// TxPedido são os repositórios ligados à tx do pedido: cabeçalho, itens,
+// a checagem de pagamentos da exclusão e a baixa de estoque do faturamento
+// no MESMO *sql.Tx (§5.2).
 type TxPedido struct {
-	Pedidos PedidosNaTx
-	Estoque BaixaEstoque
+	Pedidos    PedidosNaTx
+	Pagamentos PagamentosNaTx
+	Estoque    BaixaEstoque
 }
 
 // Transactor é o Unit of Work (db.Transactor satisfaz).

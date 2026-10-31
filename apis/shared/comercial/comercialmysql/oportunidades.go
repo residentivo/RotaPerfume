@@ -62,8 +62,8 @@ func whereOportunidade(f comercial.FiltroOportunidade, vendedorID int64) ([]stri
 		conds, args = append(conds, "data_abertura <= ?"), append(args, f.Ate)
 	}
 	if f.Busca != "" {
-		like := "%" + f.Busca + "%"
-		conds, args = append(conds, "(origem LIKE ? OR etapa LIKE ?)"), append(args, like, like)
+		like := db.TermoContem(f.Busca) // SEC-25: '%' e '_' literais
+		conds, args = append(conds, "(origem LIKE ? ESCAPE '!' OR etapa LIKE ? ESCAPE '!')"), append(args, like, like)
 	}
 	return conds, args
 }

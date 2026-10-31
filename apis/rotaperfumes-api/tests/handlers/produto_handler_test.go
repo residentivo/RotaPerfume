@@ -110,10 +110,10 @@ func TestListProdutos_ComFiltros(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\)`).
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? ESCAPE '!' OR sku LIKE \? ESCAPE '!'\)`).
 		WithArgs("Perfumaria", "Marca X", true, "%Perfume%", "%Perfume%").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\) ORDER BY id ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+produtoColunasRegex+` FROM produtos WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? ESCAPE '!' OR sku LIKE \? ESCAPE '!'\) ORDER BY id ASC LIMIT \? OFFSET \?`).
 		WithArgs("Perfumaria", "Marca X", true, "%Perfume%", "%Perfume%", 20, 0).
 		WillReturnRows(produtoRowsForHandler())
 

@@ -36,9 +36,15 @@ func (h *ProdutoHandler) ComOrigensUpload(origens []string) *ProdutoHandler {
 
 // ListProdutos GET /api/produtos?page&limit&categoria&marca&ativo&q&order_by&order_dir
 func (h *ProdutoHandler) ListProdutos(w http.ResponseWriter, r *http.Request) {
-	res, err := h.casos.ListarProdutos(r.Context(), filtroProdutoDaQuery(r), httpx.PaginaDaQuery(r))
+	const tag = "[produtos] ListProdutos"
+	filtro, err := filtroProdutoDaQuery(r)
 	if err != nil {
-		httpx.ResponderErro(w, "[produtos] ListProdutos", err)
+		httpx.ResponderErro(w, tag, err)
+		return
+	}
+	res, err := h.casos.ListarProdutos(r.Context(), filtro, httpx.PaginaDaQuery(r))
+	if err != nil {
+		httpx.ResponderErro(w, tag, err)
 		return
 	}
 	httpx.JSONPaginadoCom(w, res, produtoParaResposta)

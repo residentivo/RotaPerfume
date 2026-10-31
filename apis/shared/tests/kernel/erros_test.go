@@ -18,15 +18,16 @@ var (
 
 func TestKind_String(t *testing.T) {
 	casos := map[kernel.Kind]string{
-		kernel.KindInterno:        "interno",
-		kernel.KindInvalido:       "invalido",
-		kernel.KindNaoEncontrado:  "nao_encontrado",
-		kernel.KindConflito:       "conflito",
-		kernel.KindProibido:       "proibido",
-		kernel.KindNaoAutenticado: "nao_autenticado",
-		kernel.KindBloqueado:      "bloqueado",
-		kernel.KindBloqueado + 1:  "desconhecido",
-		kernel.Kind(255):          "desconhecido",
+		kernel.KindInterno:         "interno",
+		kernel.KindInvalido:        "invalido",
+		kernel.KindNaoEncontrado:   "nao_encontrado",
+		kernel.KindConflito:        "conflito",
+		kernel.KindProibido:        "proibido",
+		kernel.KindNaoAutenticado:  "nao_autenticado",
+		kernel.KindBloqueado:       "bloqueado",
+		kernel.KindMuitoGrande:     "muito_grande",
+		kernel.KindMuitoGrande + 1: "desconhecido",
+		kernel.Kind(255):           "desconhecido",
 	}
 	for k, want := range casos {
 		assert.Equal(t, want, k.String(), "kind=%d", k)

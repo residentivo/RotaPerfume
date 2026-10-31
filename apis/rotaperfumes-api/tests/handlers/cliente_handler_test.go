@@ -147,10 +147,10 @@ func TestListClientes_ComFiltros(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE uf = \? AND segmento = \? AND ativo = \? AND \(razao_social LIKE \? OR cnpj LIKE \?\)`).
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE uf = \? AND segmento = \? AND ativo = \? AND \(razao_social LIKE \? ESCAPE '!' OR cnpj LIKE \? ESCAPE '!'\)`).
 		WithArgs("SP", "varejo", true, "%Empresa%", "%Empresa%").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT `+clienteColunasRegex+` FROM clientes WHERE uf = \? AND segmento = \? AND ativo = \? AND \(razao_social LIKE \? OR cnpj LIKE \?\) ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
+	mock.ExpectQuery(`SELECT `+clienteColunasRegex+` FROM clientes WHERE uf = \? AND segmento = \? AND ativo = \? AND \(razao_social LIKE \? ESCAPE '!' OR cnpj LIKE \? ESCAPE '!'\) ORDER BY cliente_id_origem ASC LIMIT \? OFFSET \?`).
 		WithArgs("SP", "varejo", true, "%Empresa%", "%Empresa%", 20, 0).
 		WillReturnRows(clienteRowsForHandler())
 

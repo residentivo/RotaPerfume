@@ -187,11 +187,16 @@ type historicoFake struct {
 	errListar   error
 	errRegistro error
 	registros   int
+	ultimo      *identidade.RegistroSenha
 }
 
-func (f *historicoFake) Registrar(context.Context, *identidade.RegistroSenha) error {
+func (f *historicoFake) Registrar(_ context.Context, r *identidade.RegistroSenha) error {
+	if f.errRegistro != nil {
+		return f.errRegistro
+	}
 	f.registros++
-	return f.errRegistro
+	f.ultimo = r
+	return nil
 }
 
 func (f *historicoFake) Todos(_ context.Context, _ kernel.Ordenacao[identidade.CampoHistorico], p kernel.Pagina) (kernel.Resultado[identidade.RegistroSenha], error) {
@@ -207,6 +212,40 @@ type txFake struct{ tokens *tokensFake }
 
 func (t txFake) WithTx(_ context.Context, fn func(identidadeapp.TxRotacao) error) error {
 	return fn(identidadeapp.TxRotacao{Tokens: t.tokens})
+}
+
+// txSenhaFake é o UoW da troca/reset de senha (BUG-15) sobre os fakes do
+// ambiente: anota o hash do usuário, os registros do histórico e as
+// revogações antes da fn e os restaura se a fn ou o commit falhar
+// (rollback). Cada commit/rollback vai para a linha do tempo do ambiente.
+// errCommit faz o commit falhar (em toda tx, ou só na falharNa-ésima).
+type txSenhaFake struct {
+	a         *ambiente
+	errCommit error
+	falharNa  int
+	chamadas  int
+	commits   int
+	rollbacks int
+}
+
+func (t *txSenhaFake) WithTx(_ context.Context, fn func(identidadeapp.TxSenha) error) error {
+	t.chamadas++
+	senhas, registros, revogados := len(t.a.usuarios.senhas), t.a.historico.registros, len(t.a.tokens.revogados)
+	err := fn(identidadeapp.TxSenha{Usuarios: t.a.usuarios, Historico: t.a.historico, Tokens: t.a.tokens})
+	if err == nil && (t.falharNa == 0 || t.falharNa == t.chamadas) {
+		err = t.errCommit
+	}
+	if err != nil {
+		t.a.usuarios.senhas = t.a.usuarios.senhas[:senhas]
+		t.a.historico.registros = registros
+		t.a.tokens.revogados = t.a.tokens.revogados[:revogados]
+		t.rollbacks++
+		t.a.linhaDoTempo = append(t.a.linhaDoTempo, "rollback")
+		return err
+	}
+	t.commits++
+	t.a.linhaDoTempo = append(t.a.linhaDoTempo, "commit")
+	return nil
 }
 
 // hasherFake: o "hash" de s é "h:"+s.
@@ -272,9 +311,19 @@ func (l limitadorFake) Bloqueado(chave string) (bool, time.Duration) {
 func (limitadorFake) RegistrarFalha(string)   {}
 func (limitadorFake) RegistrarSucesso(string) {}
 
-type emailFake struct{ err error }
+// emailFake: com linhaDoTempo, anota cada envio ("email") para os testes
+// de ordem (o e-mail só sai depois do commit, BUG-15).
+type emailFake struct {
+	err          error
+	linhaDoTempo *[]string
+}
 
-func (e emailFake) EnviarSenhaInicial(context.Context, string, string, string) error { return e.err }
+func (e emailFake) EnviarSenhaInicial(context.Context, string, string, string) error {
+	if e.linhaDoTempo != nil {
+		*e.linhaDoTempo = append(*e.linhaDoTempo, "email")
+	}
+	return e.err
+}
 
 type vendedoresFake struct {
 	existe    bool
@@ -299,21 +348,27 @@ type ambiente struct {
 	limite     limitadorFake
 	email      emailFake
 	vendedores vendedoresFake
+	txSenha    *txSenhaFake
 	agora      time.Time
+	// linhaDoTempo: "commit"/"rollback" do txSenha e "email" do emailFake.
+	linhaDoTempo []string
 }
 
 func novoAmbiente(us ...*identidade.Usuario) *ambiente {
-	return &ambiente{
+	a := &ambiente{
 		usuarios: novoUsuariosFake(us...), tokens: novoTokensFake(), historico: &historicoFake{},
 		hasher: &hasherFake{}, senhas: &geradorSenhaFake{senhas: []string{"Gerada#1234567"}},
 		agora: time.Date(2026, 10, 1, 12, 0, 0, 0, time.Local),
 	}
+	a.txSenha = &txSenhaFake{a: a}
+	a.email = emailFake{linhaDoTempo: &a.linhaDoTempo}
+	return a
 }
 
 func (a *ambiente) deps() identidadeapp.Deps {
 	l := a.limite
 	return identidadeapp.Deps{
-		Usuarios: a.usuarios, Tokens: a.tokens, Historico: a.historico, Rotacao: txFake{a.tokens},
+		Usuarios: a.usuarios, Tokens: a.tokens, Historico: a.historico, Rotacao: txFake{a.tokens}, TrocaSenha: a.txSenha,
 		Hasher: a.hasher, Emissor: a.emissor, Refresh: geradorRefreshFake{}, Senhas: a.senhas,
 		Captcha: captchaFake{}, Limites: identidadeapp.Limites{Login: l, Refresh: l, Reset: l},
 		Publicador: identidadeapp.SemPublicador{}, Email: a.email, Vendedores: a.vendedores,

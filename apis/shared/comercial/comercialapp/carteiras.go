@@ -18,7 +18,10 @@ const arqCarteiras = "carteiras.go"
 // encerrado (transferência implícita, histórico preservado). Revincular no
 // mesmo dia reabre a linha do dia (a chave única é cliente+vendedor+data).
 //
-// P4/BUG-14: a sequência é a do legado, SEM transação (card próprio).
+// BUG-14: a existência (404 do vendedor, depois do cliente) é conferida
+// fora da tx; encerrar/reabrir/inserir rodam numa tx que começa travando a
+// linha do cliente (FOR UPDATE), o que serializa vinculações concorrentes
+// do mesmo cliente. Qualquer falha desfaz tudo (rollback).
 func (c *Casos) VincularCliente(ctx context.Context, p kernel.Principal, vendedorID, clienteID int64) (r *comercial.ClienteResumo, err error) {
 	defer vlog.Trace(arqCarteiras, "Comercial.VincularCliente", "vendedor_id=%d cliente_id=%d", vendedorID, clienteID)(&err)
 	if err = exigirAdmin(p); err != nil {
@@ -31,9 +34,21 @@ func (c *Casos) VincularCliente(ctx context.Context, p kernel.Principal, vendedo
 	if err != nil {
 		return nil, err
 	}
-	vinculo, err := c.vincular(ctx, vendedorID, clienteID)
+	var vinculo *comercial.Carteira
+	var transferidoDe int64
+	err = c.d.Vinculacao.WithTx(ctx, func(r TxVinculo) error {
+		if err := r.Clientes.TravarParaVinculo(ctx, clienteID); err != nil {
+			return err
+		}
+		var err error
+		vinculo, transferidoDe, err = c.vincular(ctx, r, vendedorID, clienteID)
+		return err
+	})
 	if err != nil {
 		return nil, err
+	}
+	if transferidoDe != 0 {
+		vlog.Printf(arqCarteiras, "Comercial.VincularCliente", "decisão transferida cliente_id=%d de_vendedor_id=%d", clienteID, transferidoDe)
 	}
 	log.Printf("[vendedores] cliente vinculado: vendedor_id=%d cliente_id=%d por usuario role=%s", vendedorID, clienteID, p.Role())
 	return comercial.ResumoDoVinculo(cliente, vinculo), nil
@@ -52,43 +67,46 @@ func (c *Casos) vendedorEClienteExistentes(ctx context.Context, vendedorID, clie
 }
 
 // vincular encerra o vínculo ativo com outro vendedor (se houver) e cria
-// ou reabre o vínculo do dia. "Não encontrado" na escrita de um vínculo
-// recém-lido é corrida: 500, como no legado (interno tira o sentinela).
-func (c *Casos) vincular(ctx context.Context, vendedorID, clienteID int64) (*comercial.Carteira, error) {
+// ou reabre o vínculo do dia, só com os repositórios da tx (r). Devolve
+// também o vendedor do vínculo encerrado (0 sem transferência), para o log
+// depois do commit. "Não encontrado" na escrita de um vínculo recém-lido é
+// corrida: 500, como no legado (interno tira o sentinela).
+func (c *Casos) vincular(ctx context.Context, r TxVinculo, vendedorID, clienteID int64) (*comercial.Carteira, int64, error) {
 	agora := c.agora()
-	anterior, err := c.d.Carteiras.VinculoAtivoDoCliente(ctx, clienteID)
+	var transferidoDe int64
+	anterior, err := r.Carteiras.VinculoAtivoDoCliente(ctx, clienteID)
 	switch {
 	case err == nil && anterior.VendedorID == vendedorID:
-		return anterior, nil
+		return anterior, 0, nil
 	case err == nil:
-		if err := c.d.Carteiras.Encerrar(ctx, anterior.CarteiraIDOrigem, agora); err != nil {
-			return nil, interno(err)
+		if err := r.Carteiras.Encerrar(ctx, anterior.CarteiraIDOrigem, agora); err != nil {
+			return nil, 0, interno(err)
 		}
-		vlog.Printf(arqCarteiras, "Comercial.VincularCliente", "decisão transferida cliente_id=%d de_vendedor_id=%d", clienteID, anterior.VendedorID)
+		transferidoDe = anterior.VendedorID
 	case !errors.Is(err, comercial.ErrVinculoNaoEncontrado):
-		return nil, err
+		return nil, 0, err
 	}
-	doDia, err := c.d.Carteiras.VinculoDoDia(ctx, clienteID, vendedorID, agora)
+	doDia, err := r.Carteiras.VinculoDoDia(ctx, clienteID, vendedorID, agora)
 	switch {
 	case err == nil && doDia.Ativa():
-		return doDia, nil
+		return doDia, transferidoDe, nil
 	case err == nil:
-		if err := c.d.Carteiras.Reabrir(ctx, doDia.CarteiraIDOrigem); err != nil {
-			return nil, interno(err)
+		if err := r.Carteiras.Reabrir(ctx, doDia.CarteiraIDOrigem); err != nil {
+			return nil, 0, interno(err)
 		}
 		doDia.DataFim = nil
-		return doDia, nil
+		return doDia, transferidoDe, nil
 	case !errors.Is(err, comercial.ErrVinculoNaoEncontrado):
-		return nil, err
+		return nil, 0, err
 	}
 	novo := &comercial.Carteira{ClienteID: clienteID, VendedorID: vendedorID, DataInicio: agora}
-	if err := c.d.Carteiras.Inserir(ctx, novo); err != nil {
+	if err := r.Carteiras.Inserir(ctx, novo); err != nil {
 		if errors.Is(err, comercial.ErrVinculoDuplicado) {
 			log.Printf("[carteiras] vinculo duplicado recusado")
 		}
-		return nil, err
+		return nil, 0, err
 	}
-	return novo, nil
+	return novo, transferidoDe, nil
 }
 
 // DesvincularCliente encerra o vínculo ativo entre o vendedor e o cliente

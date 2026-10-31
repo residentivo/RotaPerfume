@@ -1,6 +1,10 @@
 # A Fazer
 
-> Atualizado em 2026-10-31 (fechamento do Lote 26, 🔵 SubBrain). O **IMG-01** (imagem do produto) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram dois cards BAIXA, no bloco "Achados do IMG-01", logo após o FE-16: **CHORE-09** (job de limpeza de imagens órfãs, inclusive `.tmp-*` antigos e o caso de commit ambíguo) e **SEC-34** (WebP não é reencodado; EXIF e bytes anexados ficam no arquivo).
+> Atualizado em 2026-10-31 (fechamento do Lote 27, 🔵 SubBrain). O **Lote 27** (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram cinco cards, no bloco "Achados do Lote 27", logo após o SEC-34: **SEC-35** (`ExcluirPagamento`/`CriarPagamento` checam fora de lock, MÉDIA), **SEC-36** (origens de dev sempre na allowlist de CORS, BAIXA), **BUG-24** (corrida entre troca e reset de senha, BAIXA), **CHORE-10** (`ErrImagemMuitoGrande` com `KindMuitoGrande` e `maxLength={100}` nas buscas do frontend, BAIXA) e **TST-11** (teste instável do IMG-01, BAIXA). SEC-19 e SEC-23 continuam no bloco "GAPs de segurança da auditoria ARQ-00".
+>
+> Antes, ainda em 2026-10-31 (abertura do Lote 27, 🔵 SubBrain). O 🤍 MegaBrain abriu o **Lote 27** e 9 cards saíram desta lista para `fazendo.md`: **BUG-14** e **BUG-15** (topo da lista), **SEC-26** (bloco "Achados do ARQ-05") e **SEC-14, SEC-15, SEC-16, SEC-17, SEC-24 e SEC-25** (bloco "GAPs de segurança da auditoria ARQ-00"). Critério: cards de backend/testes de prioridade MÉDIA (mais SEC-16 e SEC-25, BAIXA, que tocam os mesmos pontos), sem decisão de produto pendente. SEC-19 e SEC-23 (backend + frontend + config) continuam aqui, para o lote seguinte.
+>
+> Antes, ainda em 2026-10-31 (fechamento do Lote 26, 🔵 SubBrain). O **IMG-01** (imagem do produto) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram dois cards BAIXA, no bloco "Achados do IMG-01", logo após o FE-16: **CHORE-09** (job de limpeza de imagens órfãs, inclusive `.tmp-*` antigos e o caso de commit ambíguo) e **SEC-34** (WebP não é reencodado; EXIF e bytes anexados ficam no arquivo).
 >
 > Antes, ainda em 2026-10-31 (🔵 SubBrain). O 🤍 MegaBrain abriu o **Lote 26** com o card **IMG-01** (imagem do produto), pedido direto do usuário que foi para `fazendo.md` sem passar por esta lista. O backlog abaixo não mudou.
 >
@@ -43,56 +47,13 @@
 
 ---
 
-## BUG-14: `VendedorService.VincularCliente` sem transação — prioridade MÉDIA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** decisão P4 do 🤍 MegaBrain no ARQ-00 (2026-10-13).
-
-**Descrição:** `apis/rotaperfumes-api/services/vendedor_service.go:427-529` (linhas de antes da refatoração; desde o ARQ-04, `VincularCliente` em `apis/shared/comercial/comercialapp/carteiras.go`) encerra o vínculo antigo do cliente e cria o novo **sem transação**. Uma falha entre as duas operações deixa o cliente sem vendedor ou com vínculo inconsistente.
-
-**Ação esperada:** executar as duas operações numa única transação (Unit of Work do ARQ-01, se já existir); teste que simula falha na criação do novo vínculo e confirma o rollback do encerramento. Durante a refatoração (ARQ-04), preservar o comportamento atual e não piorar o ponto.
-
-**Critério de aceite:** vínculo antigo e novo atômicos; teste de falha/rollback; contrato HTTP inalterado.
-
----
-
-## BUG-15: troca de senha não é transacional — prioridade MÉDIA
-
-**Status:** pendente (fora do escopo do Lote 21; executar após o ARQ-03)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
-**Origem:** revisão do blueprint pelo 🟣 SecBrain no ARQ-00 (2026-10-13), registrada pelo 🤍 MegaBrain.
-
-**Descrição:** `ResetPassword` (troca da própria senha; antes em `apis/rotaperfumes-api/handlers/auth_handler.go`, desde o ARQ-03 `TrocarSenha` em `apis/shared/identidade/identidadeapp/senha.go`) e o reset feito pelo admin (`AdminResetarSenha`, mesmo arquivo) gravam o histórico de senha, o novo hash, o corte `tokens_validos_desde` e a revogação dos refresh tokens em chamadas separadas, **sem transação**. Uma falha no meio deixa estado parcial (ex.: senha trocada sem revogar sessões, ou histórico gravado sem a troca).
-
-**Ação esperada:** envolver as operações numa Unit of Work (do ARQ-01) quando o contexto Identidade e Acesso estiver migrado (após o ARQ-03). As expectativas de sqlmock das suítes SEC precisarão mudar (Begin/Commit/Rollback): fazer isso neste card, não dentro dos cards ARQ. Teste de falha em cada etapa confirmando o rollback completo.
-
-**Critério de aceite:** troca e reset de senha atômicos; testes de falha/rollback; suítes SEC ajustadas e verdes; contrato HTTP inalterado.
-
----
-
-## Achados do ARQ-05 (SEC-26, TST-06; BUG-16, SEC-27 e BUG-17 foram para o Lote 25)
+## Achados do ARQ-05 (TST-06; BUG-16, SEC-27 e BUG-17 foram para o Lote 25; SEC-26 foi para o Lote 27)
 
 > Origem comum: revisão do ARQ-05 (Vendas) pelo 🟣 SecBrain e pelo 🔴 TestBrain, Lote 21 (2026-10-15). **Fora do escopo do Lote 21:** não corrigir dentro dos cards ARQ. Executar após o ARQ-07 ou em lote próprio, por decisão do 🤍 MegaBrain/usuário. Durante a refatoração, não piorar estes pontos. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
 >
-> **2026-10-29:** BUG-16, SEC-27 e BUG-17 receberam a decisão de produto do usuário e foram para o **Lote 25** (cards em `fazendo.md`, na fila até o fechamento do Lote 24). Aqui ficam SEC-26 e TST-06.
-
----
-
-## SEC-26: TOCTOU de posse no PUT de pedido e exclusão de pedido fora do lock — prioridade MÉDIA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
-**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15).
-
-**Descrição:** em `SH/vendas/vendasapp/pedidos.go`, a checagem de posse do PUT (`~74-78`) e a exclusão (`~107-120`: posse, `PodeExcluir` e `ExistePorPedido`) leem o pedido fora da tx/lock em que gravam. Entre a leitura e a gravação, o pedido pode mudar de vendedor ou de status, ou ganhar pagamento.
-
-**Ação esperada:** dentro da tx, ler `status, vendedor_id … FOR UPDATE` e só então checar posse, `PodeExcluir` e `ExistePorPedido`. Testes: checagens ocorrem na mesma tx (padrão `SetMaxOpenConns(1)` + contexto curto do 🔴 TestBrain).
-
-**Critério de aceite:** posse e regras de exclusão checadas sob lock; testes verdes; contrato HTTP inalterado.
+> **2026-10-29:** BUG-16, SEC-27 e BUG-17 receberam a decisão de produto do usuário e foram para o **Lote 25** (cards em `fazendo.md`, na fila até o fechamento do Lote 24).
+>
+> **2026-10-31:** o SEC-26 foi para o **Lote 27** e foi concluído nele (card em `feito.md`). Aqui fica só o TST-06.
 
 ---
 
@@ -504,6 +465,93 @@
 
 ---
 
+## Achados do Lote 27 (SEC-35, SEC-36, BUG-24, CHORE-10, TST-11)
+
+> Origem comum: especificação do 🟣 SecBrain e entregas do 🟡 BackBrain e do 🔴 TestBrain no Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
+
+---
+
+## SEC-35: `ExcluirPagamento` e `CriarPagamento` checam fora de lock (TOCTOU) — prioridade MÉDIA
+
+**Status:** pendente
+**Camada:** Backend (shared)
+**Responsável:** 🟣 SecBrain (escolha da correção) → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 27 (2026-10-31), achado fora do escopo nº 1 (mesmo padrão do SEC-26).
+
+**Descrição:**
+1. `ExcluirPagamento` (`SH/vendas/vendasapp/pagamentos.go:121-145`) checa "nunca quitado" e a posse fora de lock e depois executa um DELETE sem condição. Se o pagamento for quitado entre a checagem e o DELETE, um pagamento quitado é apagado.
+2. `CriarPagamento` checa a posse do pedido fora de lock. Se o pedido for apagado no meio, o INSERT cai no erro de FK 1452 e a API responde 500.
+
+**Ação esperada:**
+- Exclusão: DELETE condicional `... AND status_pagamento NOT IN ('Pago','Pago com atraso')` (como o UPDATE do SEC-27, usando `vendas.StatusPago`/`StatusPagoComAtraso`), com releitura para decidir 404/409 quando o DELETE afetar 0 linhas; ou tx com `SELECT ... FOR UPDATE` e as checagens de posse e status dentro dela.
+- Criação: mapear o erro 1452 de `fk_pagamentos_pedido` para `ErrPedidoNaoEncontrado` (404), sem o valor no log; ou checar a posse dentro de uma tx com lock do pedido.
+
+**Critério de aceite:** pagamento quitado no meio da exclusão não é apagado (409); pedido apagado no meio da criação → 404, não 500; testes sqlmock da ordem do SQL e do caminho de corrida; mensagens e status atuais preservados no caminho normal.
+
+---
+
+## SEC-36: origens de dev (`localhost:3000`) sempre na allowlist de CORS, inclusive em produção — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Backend (config/middleware) + Deploy
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 27 (2026-10-31), achado fora do escopo nº 2 (levantado durante o SEC-17).
+
+**Descrição:** `defaultDevOrigins` (`http://localhost:3000` e `http://127.0.0.1:3000`, `SH/config/config.go:496`) entra sempre na allowlist de CORS com `Access-Control-Allow-Credentials: true`, também em produção, e vale para o `uploadPermitido` do IMG-01. Um processo local na máquina do usuário na porta 3000 faria requisições autenticadas com os cookies de produção. Além disso, o middleware envia `Access-Control-Expose-Headers: Set-Cookie`, que não tem efeito (o navegador nunca expõe `Set-Cookie` ao JS).
+
+**Ação esperada:** incluir `defaultDevOrigins` só em dev (ex.: quando `COOKIE_SECURE=false`, critério a confirmar pelo 🟣 SecBrain); remover `Set-Cookie` do `Access-Control-Expose-Headers`; documentar em `.env.example` e `deploy/api.env.example`.
+
+**Critério de aceite:** em configuração de produção, `Origin: http://localhost:3000` não recebe `Access-Control-Allow-Origin` nem passa no `uploadPermitido`; em dev continua funcionando; o header `Expose-Headers` não cita `Set-Cookie`; testes de config e de middleware.
+
+---
+
+## BUG-24: troca de senha concorrente com reset admin sobrescreve uma à outra — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Backend (shared)
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, especificação do Lote 27 (2026-10-31), achado fora do escopo nº 3 (levantado durante o BUG-15).
+
+**Descrição:** depois do BUG-15 cada fluxo de senha é atômico, mas dois fluxos simultâneos para o mesmo usuário (troca da própria senha e reset admin) leem o hash atual fora da tx e gravam sem condição: a última gravação vence e o histórico pode registrar o `HashAnterior` errado (o hash lido antes da outra troca).
+
+**Ação esperada:** `AtualizarSenha` condicionado ao hash lido (`... WHERE id = ? AND senha_hash = ?`), como já faz o `RegravarHash`; 0 linhas afetadas → erro de conflito (409 ou nova tentativa, decisão do 🟣 SecBrain), com rollback do histórico e da revogação na mesma tx.
+
+**Critério de aceite:** teste com duas trocas concorrentes (ou sqlmock com 0 linhas afetadas) mostrando que só uma vence e que o histórico grava o `HashAnterior` correto; caminho normal sem mudança de contrato.
+
+---
+
+## CHORE-10: `ErrImagemMuitoGrande` com `KindMuitoGrande` e `maxLength={100}` nas buscas do frontend — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Backend (shared + API), Frontend, Testes
+**Responsável:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 27 (2026-10-31): achado fora do escopo nº 4 (opcional) e item "Frontend (opcional)" do SEC-25.
+
+**Descrição:**
+1. O SEC-14 criou `kernel.KindMuitoGrande` (→ 413), mas `catalogo.ErrImagemMuitoGrande` continua com outro `Kind` e o handler de imagem trata o 413 num caso especial de `responderErroImagem` (`API/internal/catalogohttp/imagem_handler.go`).
+2. O SEC-25 limitou `q` a 100 caracteres (acima disso, 400), mas os campos de busca do frontend não têm limite, e o usuário só descobre o limite pelo erro.
+
+**Ação esperada:** passar `catalogo.ErrImagemMuitoGrande` para `kernel.KindMuitoGrande` e remover o caso especial de `responderErroImagem`, mantendo a mensagem "imagem excede 1 MB"; colocar `maxLength={100}` nos campos de busca das telas de listagem (produtos, estoque, clientes, visitas, oportunidades, pedidos).
+
+**Critério de aceite:** upload acima de 1 MB continua 413 "imagem excede 1 MB" (`img01_imagem_handler_test.go` verde); campos de busca não aceitam mais de 100 caracteres (teste de frontend); contrato HTTP inalterado.
+
+---
+
+## TST-11: teste instável `TestIMG01_Upload_FilenameHostilNaoVaza/CRLF_por_RFC_2231` — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** entregas do Lote 27 (2026-10-31), observado durante a verificação final.
+
+**Descrição:** o subteste `CRLF_por_RFC_2231` de `TestIMG01_Upload_FilenameHostilNaoVaza` (suíte do IMG-01, `API/tests/handlers/`) falha quando o UUID aleatório gerado para o arquivo termina em "b" ("…b.png"): a asserção de que o fragmento hostil do filename não aparece na resposta casa por coincidência com o nome gerado. Falha intermitente, sem relação com o código de produção.
+
+**Ação esperada:** tornar a asserção determinística (procurar o fragmento hostil completo, ou comparar contra o `imagem_url` devolvido excluindo o nome gerado, ou injetar um gerador de UUID fixo no teste).
+
+**Critério de aceite:** o subteste passa em `go test -count=200 -run TestIMG01_Upload_FilenameHostilNaoVaza` sem falhas; a cobertura do caso hostil é mantida.
+
+---
+
 ## GAPs de segurança da auditoria ARQ-00 (SEC-14 a SEC-25)
 
 > Origem comum: 🟣 SecBrain, auditoria ARQ-00, Lote 21 (2026-10-13). Relatório completo em `docs/arq-00-invariantes-seguranca.md` (seção "GAPs"; itens 1 a 11). O item 12 (teste de matriz de rotas) não virou card: é feito pelo 🔴 TestBrain dentro do ARQ-00.
@@ -512,87 +560,23 @@
 >
 > Caminhos: `API` = `apis/rotaperfumes-api`, `SH` = `apis/shared`. As linhas citadas são do código antes da refatoração DDD; depois do ARQ-07 o dev deve localizar o ponto equivalente na nova estrutura.
 >
+> **2026-10-31 (fechamento do Lote 27):** SEC-14, SEC-15, SEC-16, SEC-17, SEC-24 e SEC-25 foram **concluídos no Lote 27** (cards em `feito.md`).
+>
+> **2026-10-31:** SEC-14, SEC-15, SEC-16, SEC-17, SEC-24 e SEC-25 foram para o **Lote 27** (cards em `fazendo.md`). Aqui ficam SEC-19 e SEC-23 (backend + frontend + config), para o lote seguinte. SEC-18 e SEC-20 a SEC-22 já foram concluídos no Lote 24.
+>
 > **Onde fica hoje (conferido no ARQ-08, 2026-10-16; mapa completo em `docs/arquitetura-ddd.md` §10):**
-> - SEC-14: `http.Server` em `API/internal/bootstrap/server.go`; decode de JSON em `API/internal/httpx/body.go` (`DecodificarJSON`); itens do pedido em `SH/vendas/pedido.go` (`NovoPedido`).
-> - SEC-15: `maskDSN` continua em `SH/db/db.go`.
-> - SEC-16: `SH/kernel/pagina.go` (`Pagina`, `Offset()`).
-> - SEC-17: `API/internal/httpx/cors.go`.
+> - SEC-14: **concluído no Lote 27 (card em `feito.md`)**; `http.Server` em `API/internal/bootstrap/server.go`; decode de JSON em `API/internal/httpx/body.go` (`DecodificarJSON`); itens do pedido em `SH/vendas/pedido.go` (`NovoPedido`).
+> - SEC-15: **concluído no Lote 27 (card em `feito.md`)**; `maskDSN` continua em `SH/db/db.go`.
+> - SEC-16: **concluído no Lote 27 (card em `feito.md`)**; `SH/kernel/pagina.go` (`Pagina`, `Offset()`).
+> - SEC-17: **concluído no Lote 27 (card em `feito.md`)**; `API/internal/httpx/cors.go`.
 > - SEC-18: **concluído no Lote 24 (card em `feito.md`)**; `SH/identidade/identidadecrypto/jwt.go` e `SH/config/config.go`.
 > - SEC-19: `SH/adapters/turnstile/turnstile.go`.
 > - SEC-20: **concluído no Lote 24 (card em `feito.md`)**; `API/internal/httpx/clientip.go` (`IPDoCliente`).
 > - SEC-21: **concluído no Lote 24 (card em `feito.md`)**; `API/internal/httpx/cookies.go` (`DefinirCookiesSessao`, `LimparCookiesSessao`).
 > - SEC-22: **concluído no Lote 24 (card em `feito.md`)**; `SH/identidade/identidadeapp/login.go` (`Login`) e `sessao.go` (refresh).
 > - SEC-23: `deve_trocar_senha` em `SH/identidade/usuario.go` e `SH/identidade/identidademysql/usuarios.go`; autenticação por request em `API/internal/httpx/auth.go`.
-> - SEC-24: enums de ordenação em `SH/catalogo/ordenacao.go`, `SH/comercial/ordenacao.go`, `SH/vendas/filtros.go`, `SH/identidade/usuario.go` e `SH/identidade/historico.go`, traduzidos por `switch` nos adapters `*mysql`; testes em `SH/tests/repositories/sort_test.go`.
-> - SEC-25: buscas `LIKE ?` em `SH/catalogo/catalogomysql/produtos.go`, `SH/comercial/comercialmysql/{clientes,oportunidades,visitas}.go` e `SH/vendas/vendasmysql/pedidos.go`.
-
----
-
-## SEC-14: limite de tamanho do corpo (MaxBytesReader) e ReadHeaderTimeout — prioridade MÉDIA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend
-**Responsável:** 🟣 SecBrain (spec dos limites) → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 1; invariante F-04).
-
-**Descrição:** o servidor tem Read/Write 15s e Idle 60s (`API/cmd/server/main.go:117-144`), mas não limita o tamanho do corpo das requisições (nenhum `http.MaxBytesReader`) nem define `ReadHeaderTimeout`. Um cliente pode enviar corpos JSON grandes ou segurar headers lentamente (slowloris), consumindo memória e conexões.
-
-**Ação esperada:** aplicar `http.MaxBytesReader` (limite global, ex. 1 MiB, com exceção explícita se alguma rota precisar de mais) na cadeia de middlewares ou no decode de JSON, respondendo 413 com mensagem fixa; definir `ReadHeaderTimeout` (ex. 5s) no `http.Server`. Testes: corpo acima do limite → 413; corpo normal inalterado.
-
-**Nota do ARQ-05 (🟣 SecBrain, 2026-10-15):** os itens do pedido não têm limite de quantidade: cada item gera um INSERT na mesma tx, segurando locks. Além do `MaxBytesReader`, limitar o número de itens no domínio (`shared/vendas`, na Factory `NovoPedido`/atualização), com erro de validação e teste.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
-## SEC-15: `maskDSN` vaza parte da senha quando ela contém `@` — prioridade MÉDIA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend (infra/banco)
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 2; invariante F-08).
-
-**Descrição:** `maskDSN` (`SH/db/db.go:51-84`) mascara a senha do DSN antes de logar, mas quando a senha contém `@` o corte é feito no ponto errado e um trecho da senha aparece no log.
-
-**Ação esperada:** mascarar a partir do **último** `@` antes do endereço (ou montar a string de log a partir da `mysql.Config` já parseada, sem nunca incluir `Passwd`). Testes de tabela com senhas contendo `@`, `:`, `/` e `%`, assegurando que nenhum caractere da senha aparece na saída.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
-## SEC-16: parâmetro `page` sem teto na paginação — prioridade BAIXA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 3; invariante F-10).
-
-**Descrição:** a paginação limita `limit` (default 20, máx. 100) e exige `page ≥ 1` (`API/services/usuario_service.go:403-424`), mas não impõe teto a `page`. Valores enormes geram `OFFSET` gigantes (consulta cara no MySQL) e podem estourar a multiplicação `(page-1)*limit`.
-
-**Ação esperada:** definir teto para `page` (ou para o OFFSET resultante) no VO `Pagina` do shared kernel criado no ARQ-01, com clamp ou 400 de mensagem fixa (decisão do 🟣 SecBrain, mantendo o contrato documentado); teste com `page` muito grande e com overflow.
-
-**Nota N-3 (🟣 SecBrain, ARQ-01, 2026-10-13):** `kernel.Pagina.Offset()` (`apis/shared/kernel/pagina.go:37`) herda o problema: `(n-1)*limit` com `page` gigante estoura `int` e vira negativo, e o MySQL responde com erro (500). Tratar quando o adapter de Catálogo (ARQ-02) passar a usar `Offset()`, sem correção de carona.
-
-**NB-6 (🟣 SecBrain, revisão ARQ-02, 2026-10-14), consolida a N-3:** o adapter de Catálogo já usa `Offset()`, então o overflow de `kernel/pagina.go:37` agora também chega a `/api/produtos` e `/api/estoque`. É o mesmo ponto da N-3; corrigir uma vez só no VO `Pagina`, e a correção vale para todos os contextos.
-
-**Nota do ARQ-06 (🟣 SecBrain, 2026-10-15):** o overflow do offset também alcança as rotas do Dashboard (paginação do ranking em `SH/analytics`). Mesma correção única no VO `Pagina`.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
-## SEC-17: CORS com `"*"` reflete qualquer origem com credentials — prioridade MÉDIA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend (middleware) + Deploy
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 4; invariante F-02).
-
-**Descrição:** o middleware de CORS (`API/middleware/cors_middleware.go:16-69`) usa allowlist exata, mas se a configuração contiver `"*"` ele reflete qualquer `Origin` junto com `Access-Control-Allow-Credentials: true`, o que permite que qualquer site faça requisições autenticadas com os cookies do usuário.
-
-**Ação esperada:** rejeitar `"*"` quando credentials está ativo (falhar na validação da config, impedindo a API de subir, ou ignorar o curinga com log de aviso); documentar no `.env.example`/`deploy/api.env.example`. Teste: config com `"*"` → erro de config (ou origem arbitrária sem `Access-Control-Allow-Origin`).
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
+> - SEC-24: **concluído no Lote 27 (card em `feito.md`)**; enums de ordenação em `SH/catalogo/ordenacao.go`, `SH/comercial/ordenacao.go`, `SH/vendas/filtros.go`, `SH/identidade/usuario.go` e `SH/identidade/historico.go`, traduzidos por `switch` nos adapters `*mysql`; testes em `SH/tests/repositories/sort_test.go`.
+> - SEC-25: **concluído no Lote 27 (card em `feito.md`)**; buscas `LIKE ?` em `SH/catalogo/catalogomysql/produtos.go`, `SH/comercial/comercialmysql/{clientes,oportunidades,visitas}.go` e `SH/vendas/vendasmysql/pedidos.go`.
 
 ---
 
@@ -621,40 +605,6 @@
 **Descrição:** a flag `deve_trocar_senha` (`SH/models/usuario.go:21`; gravada em `SH/repositories/usuario_repository.go:276` e `:432`) só é devolvida no login (`API/handlers/auth_handler.go:322-324`) para o frontend redirecionar. O backend aceita todas as rotas protegidas com um token de usuário que ainda deveria trocar a senha gerada pelo sistema, então a obrigação depende só da tela.
 
 **Ação esperada:** no middleware de autenticação (que já consulta o usuário a cada request, SEC-06), bloquear com 403 de mensagem fixa as rotas protegidas quando `deve_trocar_senha = true`, exceto a troca de senha, logout, refresh e `me`; o 🟢 FrontBrain trata o 403 redirecionando para a troca. Testes na matriz de rotas.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
-## SEC-24: testes de injeção via `order_by` só cobrem Produto e SenhaHistorico — prioridade MÉDIA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Testes
-**Responsável:** 🔴 TestBrain (com 🟣 SecBrain definindo os payloads)
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 11; invariante C-02).
-
-**Descrição:** a whitelist de ordenação (`SH/repositories/sort.go:29-46`) é usada por vários repositórios (Produto `produto_repository.go:60`; Estoque com duas whitelists em `estoque_repository.go:77,83`; demais listagens), mas os testes de injeção (`ST/repositories/sort_test.go` e afins) só exercitam Produto e SenhaHistorico.
-
-**Ação esperada:** teste de tabela cobrindo todo repositório/endpoint que aceita `order_by`/direção, com payloads maliciosos (`id; DROP`, `(SELECT ...)`, `1,2`, direção inválida), assegurando fallback para o default e nenhum texto livre no SQL. Após o ARQ-02, apontar para o enum tipado de ordenação.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
-## SEC-25: buscas com LIKE não escapam `%` e `_` — prioridade BAIXA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend (shared)
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (invariante C-03, "GAP baixo"; card criado por decisão do 🤍 MegaBrain).
-
-**Descrição:** as buscas por texto (`q`) usam LIKE parametrizado, então não há injeção de SQL, mas os curingas `%` e `_` digitados pelo usuário não são escapados. Exemplo: `SH/repositories/produto_repository.go:95`; o mesmo vale para as demais buscas `q` com LIKE nos repositórios. Com isso, uma busca por `%` ou `_` devolve tudo ou dá resultado inesperado, e padrões como `%a%b%c%` deixam a consulta mais cara.
-
-**Ação esperada:** criar um helper único de escape (`\` → `\\`, `%` → `\%`, `_` → `\_`) e usá-lo em todas as buscas LIKE, com `ESCAPE '\\'` explícito no SQL. Depois do ARQ-02, colocar o helper na infraestrutura compartilhada. Testes: busca por `%` e `_` encontra só os registros que têm esses caracteres literalmente.
-
-**NB-7 (🟣 SecBrain, revisão ARQ-02, 2026-10-14), amplia o escopo:** além do escape, impor um limite de comprimento ao parâmetro `q`, com truncamento ou 400 de mensagem fixa (a decidir). Também avaliar o custo do `LIKE '%…%'` em 2 colunas, que não usa índice (full scan).
-
-**Nota do ARQ-05 (🟣 SecBrain, 2026-10-15):** a busca de pedidos (`apis/shared/vendas/vendasmysql/pedidos.go:~80`) também usa `q` sem escape de curingas e sem limite de comprimento. Incluir no mesmo helper.
 
 **Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
 

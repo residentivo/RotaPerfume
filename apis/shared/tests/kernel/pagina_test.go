@@ -1,6 +1,7 @@
 package kernel_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -8,7 +9,7 @@ import (
 	"github.com/rotaperfumes/shared/kernel"
 )
 
-// F-10: default 20, máximo 100, page ≥ 1.
+// F-10: default 20, máximo 100, page ≥ 1; SEC-16: page ≤ 10.000.
 func TestNovaPagina(t *testing.T) {
 	casos := []struct {
 		nome                      string
@@ -22,6 +23,10 @@ func TestNovaPagina(t *testing.T) {
 		{"limite 101 vira 100", 1, 101, 1, 100, 0},
 		{"limite enorme vira 100", 3, 1 << 30, 3, 100, 200},
 		{"página 3 de 20", 3, 20, 3, 20, 40},
+		{"página máxima", 10_000, 100, 10_000, 100, 999_900},
+		{"página 10.001 vira 10.000", 10_001, 20, 10_000, 20, 199_980},
+		{"MaxInt vira 10.000 sem overflow", math.MaxInt, 100, 10_000, 100, 999_900},
+		{"MinInt vira 1", math.MinInt, 100, 1, 100, 0},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {

@@ -51,6 +51,11 @@ var casosOrdenacaoProduto = []struct {
 	{"subquery em order_by", "(SELECT 1)", "", "ORDER BY id ASC"},
 	{"SQL injection em order_dir", "sku", "asc; DROP TABLE x;--", "ORDER BY sku ASC"},
 	{"injection nos dois", "1); DROP TABLE x;--", "asc; DROP TABLE x;--", "ORDER BY id ASC"},
+	// SEC-24: lista de colunas e SLEEP (time-based blind).
+	{"lista de colunas 1,2", "1,2", "", "ORDER BY id ASC"},
+	{"coluna mais subquery SLEEP", "id,(SELECT SLEEP(5))", "desc", "ORDER BY id DESC"},
+	{"SLEEP direto", "SLEEP(5)", "", "ORDER BY id ASC"},
+	{"SLEEP em order_dir", "sku", "desc,SLEEP(5)", "ORDER BY sku ASC"},
 }
 
 func TestOrdenacao_ProdutoList(t *testing.T) {
@@ -76,6 +81,8 @@ func TestOrdenacao_ProdutoList(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 			assert.NotContains(t, lista, "DROP")
 			assert.NotContains(t, lista, "SELECT 1")
+			assert.NotContains(t, lista, "SLEEP")
+			assert.NotContains(t, lista, ",2")
 		})
 	}
 }
@@ -93,6 +100,11 @@ func TestOrdenacao_SenhaHistoricoFindAll(t *testing.T) {
 		{"campo fora da whitelist", "senha_hash_anterior", "asc", "ORDER BY sh.id ASC"},
 		{"dir inválida cai no default DESC", "tipo_reset", "up", "ORDER BY sh.tipo_reset DESC, sh.id DESC"},
 		{"injection", "id; DELETE FROM usuarios", "desc", "ORDER BY sh.id DESC"},
+		// SEC-24: lista de colunas e SLEEP (time-based blind).
+		{"lista de colunas 1,2", "1,2", "", "ORDER BY sh.id DESC"},
+		{"coluna mais subquery SLEEP", "id,(SELECT SLEEP(5))", "asc", "ORDER BY sh.id ASC"},
+		{"SLEEP direto", "SLEEP(5)", "", "ORDER BY sh.id DESC"},
+		{"SLEEP em order_dir", "tipo_reset", "asc,SLEEP(5)", "ORDER BY sh.tipo_reset DESC, sh.id DESC"},
 	}
 	for _, tt := range casos {
 		t.Run(tt.nome, func(t *testing.T) {
@@ -110,6 +122,8 @@ func TestOrdenacao_SenhaHistoricoFindAll(t *testing.T) {
 			lista := (*captured)[len(*captured)-1]
 			assert.Equal(t, tt.want, orderByDe(t, lista))
 			assert.NotContains(t, lista, "DELETE")
+			assert.NotContains(t, lista, "SLEEP")
+			assert.NotContains(t, lista, ",2")
 		})
 	}
 }
@@ -139,6 +153,11 @@ var casosOrdenacaoEstoque = []struct {
 	{"subquery em order_by", "(SELECT 1)", "", "data_snapshot", "DESC"},
 	{"SQL injection em order_dir", "saldo", "asc; DROP TABLE x;--", "saldo", "DESC"},
 	{"injection nos dois", "1); DROP TABLE x;--", "desc; DROP TABLE x;--", "data_snapshot", "DESC"},
+	// SEC-24: lista de colunas e SLEEP (time-based blind).
+	{"lista de colunas 1,2", "1,2", "", "data_snapshot", "DESC"},
+	{"coluna mais subquery SLEEP", "saldo,(SELECT SLEEP(5))", "asc", "data_snapshot", "ASC"},
+	{"SLEEP direto", "SLEEP(5)", "", "data_snapshot", "DESC"},
+	{"SLEEP em order_dir", "saldo", "asc,SLEEP(5)", "saldo", "DESC"},
 }
 
 // TestOrdenacao_EstoqueHistorico: whitelist da série histórica (colunas com
@@ -150,6 +169,8 @@ func TestOrdenacao_EstoqueHistorico(t *testing.T) {
 			assert.Equal(t, "ORDER BY e."+tt.col+" "+tt.dir, orderByDe(t, lista))
 			assert.NotContains(t, lista, "DROP")
 			assert.NotContains(t, lista, "SELECT 1")
+			assert.NotContains(t, lista, "SLEEP")
+			assert.NotContains(t, lista, ",2")
 		})
 	}
 }
@@ -167,6 +188,8 @@ func TestOrdenacao_EstoqueUltimaPosicao(t *testing.T) {
 			assert.Contains(t, lista, "PARTITION BY e.sku ORDER BY e.data_snapshot DESC, e.id DESC")
 			assert.NotContains(t, lista, "DROP")
 			assert.NotContains(t, lista, "SELECT 1")
+			assert.NotContains(t, lista, "SLEEP")
+			assert.NotContains(t, lista, ",2")
 		})
 	}
 }

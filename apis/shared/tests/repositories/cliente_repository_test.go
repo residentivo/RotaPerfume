@@ -145,7 +145,7 @@ func TestClienteList_BuscaQCNPJ(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 
-			where := `WHERE \(razao_social LIKE \? OR cnpj LIKE \?\)`
+			where := `WHERE \(razao_social LIKE \? ESCAPE '!' OR cnpj LIKE \? ESCAPE '!'\)`
 			mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes `+where).
 				WithArgs(tc.wantLikeRS, tc.wantLikeDoc).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))

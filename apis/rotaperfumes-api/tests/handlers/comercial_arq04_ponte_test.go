@@ -98,8 +98,9 @@ func TestARQ04_PonteEscopo_Vendas_PosseEFalhas(t *testing.T) {
 			}},
 		{"delete pedido admin: falha ao excluir", http.MethodDelete, "/api/pedidos/1", "admin", "erro interno", http.StatusInternalServerError,
 			func(m sqlmock.Sqlmock) {
-				m.ExpectQuery(rePedido).WithArgs(int64(1)).WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
-				m.ExpectQuery(reItens).WithArgs(int64(1)).WillReturnRows(itemPedidoRowsForHandler(1))
+				m.ExpectBegin()
+				m.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).WillReturnError(errors.New("db down"))
+				m.ExpectRollback()
 			}},
 	}
 	for _, c := range casos {

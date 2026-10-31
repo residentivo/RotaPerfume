@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	bug16StatusLockRe = `SELECT status FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
+	bug16StatusLockRe = `SELECT status, vendedor_id FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
 	bug16ItensAtuaRe  = `SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido WHERE pedido_id = \?`
 )
 
@@ -92,7 +92,7 @@ func TestBUG16_Casos_TransicaoProibida_RollbackSemUpdate(t *testing.T) {
 			out := bug16CapturarVlog(t)
 			pool, mock := novoMock(t)
 			mock.ExpectBegin()
-			mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow(c.atual))
+			mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(c.atual, int64(1)))
 			mock.ExpectQuery(bug16ItensAtuaRe).WithArgs(int64(5)).WillReturnRows(bug16ItensAtuais())
 			mock.ExpectRollback()
 
@@ -114,7 +114,7 @@ func TestBUG16_Casos_ItensDiferentesPosFaturamento_409(t *testing.T) {
 			out := bug16CapturarVlog(t)
 			pool, mock := novoMock(t)
 			mock.ExpectBegin()
-			mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow(c.atual))
+			mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(c.atual, int64(1)))
 			mock.ExpectQuery(bug16ItensAtuaRe).WithArgs(int64(5)).WillReturnRows(
 				sqlmock.NewRows([]string{"produto_id", "quantidade", "preco_praticado", "desconto_pct"}).AddRow(int64(10), 3, 100.0, 10.0))
 			mock.ExpectRollback()
@@ -148,7 +148,7 @@ func TestBUG16_Casos_CicloCompleto_SemSegundaBaixa(t *testing.T) {
 
 	// 2. Em separação → Faturado: reescreve os itens e baixa os dois.
 	mock.ExpectBegin()
-	mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Em separação"))
+	mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Em separação", int64(1)))
 	mock.ExpectQuery(bug16ItensAtuaRe).WithArgs(int64(5)).WillReturnRows(bug16ItensAtuais())
 	mock.ExpectExec(`UPDATE pedidos`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`DELETE FROM itens_pedido`).WillReturnResult(sqlmock.NewResult(0, 2))
@@ -165,7 +165,7 @@ func TestBUG16_Casos_CicloCompleto_SemSegundaBaixa(t *testing.T) {
 	// 4. Faturado → Entregue (itens iguais): só o cabeçalho.
 	for _, passo := range []struct{ atual, destino string }{{"Faturado", "Faturado"}, {"Faturado", "Entregue"}, {"Entregue", "Entregue"}} {
 		mock.ExpectBegin()
-		mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow(passo.atual))
+		mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(passo.atual, int64(1)))
 		mock.ExpectQuery(bug16ItensAtuaRe).WithArgs(int64(5)).WillReturnRows(bug16ItensAtuais())
 		mock.ExpectExec(`UPDATE pedidos`).WithArgs(int64(1), int64(2), sqlmock.AnyArg(), "App", passo.destino, 230.0, int64(5)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
@@ -177,7 +177,7 @@ func TestBUG16_Casos_CicloCompleto_SemSegundaBaixa(t *testing.T) {
 
 	// 5. Entregue → Cancelado: terminal.
 	mock.ExpectBegin()
-	mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Entregue"))
+	mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Entregue", int64(1)))
 	mock.ExpectQuery(bug16ItensAtuaRe).WithArgs(int64(5)).WillReturnRows(bug16ItensAtuais())
 	mock.ExpectRollback()
 	_, err = c.AtualizarPedido(ctx, admin(t), 5, ler(bug16Dados("Cancelado")))

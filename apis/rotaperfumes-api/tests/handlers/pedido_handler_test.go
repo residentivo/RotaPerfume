@@ -165,7 +165,7 @@ func TestListPedidos_ComFiltrosEPaginacao(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	whereRegex := ` WHERE p\.status = \? AND p\.canal = \? AND p\.cliente_id = \? AND p\.vendedor_id = \? AND p\.data_pedido >= \? AND p\.data_pedido <= \? AND c\.razao_social LIKE \?`
+	whereRegex := ` WHERE p\.status = \? AND p\.canal = \? AND p\.cliente_id = \? AND p\.vendedor_id = \? AND p\.data_pedido >= \? AND p\.data_pedido <= \? AND c\.razao_social LIKE \? ESCAPE '!'`
 	mock.ExpectQuery(`SELECT COUNT\(\*\)`+pedidoFromRegexH+whereRegex).
 		WithArgs("Faturado", "App", int64(1), int64(2), "2024-01-01", "2024-01-31", "%Teste%").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(25))
@@ -648,7 +648,7 @@ func TestCreatePedido_ValidacaoNegocio(t *testing.T) {
 // selectStatusForUpdateRegexH/selectItensAtuaisTxRegexH espelham as queries
 // executadas dentro da tx de PedidoRepository.UpdateComItens (SELECT status
 // ... FOR UPDATE + leitura dos itens atuais para comparação).
-const selectStatusForUpdateRegexH = `SELECT status FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
+const selectStatusForUpdateRegexH = `SELECT status, vendedor_id FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
 const selectItensAtuaisTxRegexH = `SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido WHERE pedido_id = \? ORDER BY item_id_origem ASC`
 
 func itensAtuaisRowsVazioH() *sqlmock.Rows {
@@ -679,7 +679,7 @@ func TestUpdatePedido_Success(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexH).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexH).
 		WithArgs(int64(1)).
 		WillReturnRows(itensAtuaisRowsVazioH())
@@ -744,7 +744,7 @@ func TestUpdatePedido_PermitidoParaNaoAdmin(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexH).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexH).
 		WithArgs(int64(1)).
 		WillReturnRows(itensAtuaisRowsVazioH())
@@ -891,7 +891,7 @@ func TestUpdatePedido_JaFaturadoTentaAlterarItens_409(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexH).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Faturado"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Faturado", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexH).
 		WithArgs(int64(1)).
 		WillReturnRows(itensAtuaisRowsVazioH())
@@ -925,6 +925,14 @@ const deleteItensPedidoRegexH = `DELETE FROM itens_pedido WHERE pedido_id = \?`
 const deletePedidoRegexH = `DELETE FROM pedidos WHERE pedido_id_origem = \?`
 const existsPagamentoPorPedidoRegexH = `SELECT 1 FROM pagamentos WHERE pedido_id = \? LIMIT 1`
 
+// expectTravaPedidoH: SEC-26, a exclusão abre a tx e trava o pedido
+// (status e vendedor 2, o mesmo dos fixtures) antes de qualquer checagem.
+func expectTravaPedidoH(mock sqlmock.Sqlmock, id int64, status string) {
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(status, int64(2)))
+}
+
 func TestDeletePedido_Success(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
@@ -933,19 +941,10 @@ func TestDeletePedido_Success(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
-	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
-		WithArgs(int64(1)).
-		WillReturnRows(itemPedidoRowsForHandler(1))
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
+	expectTravaPedidoH(mock, 1, "Em separação")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegexH).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectBegin()
 	mock.ExpectExec(deleteItensPedidoRegexH).
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
@@ -977,19 +976,10 @@ func TestDeletePedido_PermitidoParaNaoAdmin(t *testing.T) {
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
 	expectVendedorDesligado(mock, int64(2), false)
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
-	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
-		WithArgs(int64(1)).
-		WillReturnRows(itemPedidoRowsForHandler(1))
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
+	expectTravaPedidoH(mock, 1, "Em separação")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegexH).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectBegin()
 	mock.ExpectExec(deleteItensPedidoRegexH).
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
@@ -1017,9 +1007,10 @@ func TestDeletePedido_NaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(999)).
-		WillReturnRows(emptyPedidoRowsForHandler())
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(999)).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}))
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/999", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -1046,18 +1037,15 @@ func TestDeletePedido_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	// pedidoRowsForHandler(1, ...) tem vendedor_id=2, mas o usuário
-	// autenticado está vinculado ao vendedor 99.
+	// O lock (SEC-26) devolve vendedor_id=2, mas o usuário autenticado
+	// está vinculado ao vendedor 99: 404 e rollback, sem leitura de
+	// pagamentos nem DELETE.
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
 	expectVendedorDesligado(mock, int64(99), false)
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandler(1, 230.0))
-	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
-		WithArgs(int64(1)).
-		WillReturnRows(itemPedidoRowsForHandler(1))
+	expectTravaPedidoH(mock, 1, "Faturado")
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -1103,18 +1091,11 @@ func TestDeletePedido_PagamentosVinculados_409(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
-	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
-		WithArgs(int64(1)).
-		WillReturnRows(itemPedidoRowsForHandler(1))
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, "Em separação"))
+	expectTravaPedidoH(mock, 1, "Em separação")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegexH).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/1", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -1140,19 +1121,11 @@ func TestDeletePedido_Faturado_409(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	// pedidoRowsForHandler default já retorna status "Faturado".
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandler(1, 230.0))
-	mock.ExpectQuery(`SELECT ` + itemPedidoColunasRegexH + itemPedidoFromRegexH + ` WHERE i\.pedido_id = \? ORDER BY i\.item_id_origem ASC`).
-		WithArgs(int64(1)).
-		WillReturnRows(itemPedidoRowsForHandler(1))
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandler(1, 230.0))
+	expectTravaPedidoH(mock, 1, "Faturado")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegexH).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/1", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)

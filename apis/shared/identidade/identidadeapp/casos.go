@@ -30,10 +30,12 @@ const (
 
 // Deps são as dependências dos casos de uso, todas obrigatórias.
 type Deps struct {
-	Usuarios   Usuarios
-	Tokens     RefreshTokens
-	Historico  HistoricoSenhas
-	Rotacao    Transactor
+	Usuarios  Usuarios
+	Tokens    RefreshTokens
+	Historico HistoricoSenhas
+	Rotacao   Transactor
+	// TrocaSenha é o UoW da troca/reset de senha (BUG-15).
+	TrocaSenha TransactorSenha
 	Hasher     Hasher
 	Emissor    EmissorAcesso
 	Refresh    GeradorRefresh
@@ -62,7 +64,7 @@ type Casos struct {
 
 // Novo monta os casos de uso. Dependência nil é erro de montagem: panic.
 func Novo(d Deps, o Opcoes) *Casos {
-	obrigatorias := []any{d.Usuarios, d.Tokens, d.Historico, d.Rotacao, d.Hasher, d.Emissor, d.Refresh,
+	obrigatorias := []any{d.Usuarios, d.Tokens, d.Historico, d.Rotacao, d.TrocaSenha, d.Hasher, d.Emissor, d.Refresh,
 		d.Senhas, d.Captcha, d.Limites.Login, d.Limites.Refresh, d.Limites.Reset, d.Publicador, d.Email, d.Vendedores}
 	for _, dep := range obrigatorias {
 		if dep == nil {

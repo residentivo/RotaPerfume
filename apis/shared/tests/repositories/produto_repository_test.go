@@ -99,7 +99,7 @@ func TestProdutoList_ComFiltros(t *testing.T) {
 		{
 			nome:        "filtro por busca textual",
 			filtro:      catalogo.FiltroProduto{Busca: "Perfume"},
-			whereRegexp: "WHERE \\(descricao LIKE \\? OR sku LIKE \\?\\)",
+			whereRegexp: "WHERE \\(descricao LIKE \\? ESCAPE '!' OR sku LIKE \\? ESCAPE '!'\\)",
 			args:        []driver.Value{"%Perfume%", "%Perfume%"},
 		},
 	}

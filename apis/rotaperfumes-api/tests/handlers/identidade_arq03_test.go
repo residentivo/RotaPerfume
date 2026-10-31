@@ -138,6 +138,10 @@ func TestARQ03_FalhaAoEmitirJWT_MensagensDoLegado(t *testing.T) {
 		Rotacao: shareddb.NewTransactor(db, func(q shareddb.Querier) identidadeapp.TxRotacao {
 			return identidadeapp.TxRotacao{Tokens: identidademysql.NovoRefreshTokens(q)}
 		}),
+		TrocaSenha: shareddb.NewTransactor(db, func(q shareddb.Querier) identidadeapp.TxSenha {
+			return identidadeapp.TxSenha{Usuarios: identidademysql.NovoUsuarios(q), Historico: identidademysql.NovoHistoricoSenhas(q),
+				Tokens: identidademysql.NovoRefreshTokens(q)}
+		}),
 		Hasher: identidadecrypto.NovoHasher(cfg.HashSenha), Emissor: emissorFalho{}, Refresh: identidadecrypto.GeradorRefresh{},
 		Senhas: identidadecrypto.GeradorSenha{}, Captcha: captchaOK{},
 		Limites:    identidadeapp.Limites{Login: ratelimit.Nova(5, time.Minute, time.Minute), Refresh: ratelimit.Nova(5, time.Minute, time.Minute), Reset: ratelimit.Nova(5, time.Minute, time.Minute)},

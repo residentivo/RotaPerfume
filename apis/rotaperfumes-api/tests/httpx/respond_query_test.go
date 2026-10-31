@@ -99,6 +99,13 @@ func TestPaginaDaQuery(t *testing.T) {
 		{"page=abc&limit=xyz", 1, 20, 0},
 		{"page=-1&limit=0", 1, 20, 0},
 		{"limit=1000", 1, 100, 0},
+		// SEC-16: teto de page (clamp) e erro de faixa do Atoi = ausente.
+		{"page=10000&limit=100", 10_000, 100, 999_900},
+		{"page=10001&limit=100", 10_000, 100, 999_900},
+		{"page=9223372036854775807&limit=100", 10_000, 100, 999_900},
+		{"page=99999999999999999999&limit=100", 1, 100, 0},
+		{"page=-99999999999999999999", 1, 20, 0},
+		{"page=2&limit=99999999999999999999", 2, 20, 20},
 	}
 	for _, c := range casos {
 		t.Run(c.query, func(t *testing.T) {

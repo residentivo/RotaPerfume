@@ -143,9 +143,11 @@ func sec21ExpectResetPassword(t *testing.T, mock sqlmock.Sqlmock, cfg *config.Co
 		WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
 	mock.ExpectQuery(`FROM senha_historico sh`).WillReturnRows(sqlmock.NewRows([]string{"id", "usuario_id", "resetado_por_id",
 		"senha_hash_anterior", "ip_origem", "user_agent", "tipo_reset", "created_at", "usuario_nome", "resetado_por_nome"}))
+	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 }
 
 type sec21Fluxo struct {

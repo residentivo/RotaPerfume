@@ -102,7 +102,7 @@ func TestPedidoList_ComFiltros(t *testing.T) {
 		{
 			nome:        "filtro por busca textual",
 			filtro:      vendas.FiltroPedido{Busca: "Empresa", Ordenacao: vendas.OrdenacaoPedidoPadrao()},
-			whereRegexp: `WHERE c\.razao_social LIKE \?`,
+			whereRegexp: `WHERE c\.razao_social LIKE \? ESCAPE '!'`,
 			args:        []driver.Value{"%Empresa%"},
 		},
 	}
@@ -524,7 +524,7 @@ func TestPedidoCreateComItens_ErroInsertItem(t *testing.T) {
 // (chamado dentro da tx de UpdateComItens para comparar itens atuais x payload).
 var itensAtuaisColumns = []string{"produto_id", "quantidade", "preco_praticado", "desconto_pct"}
 
-const selectStatusForUpdateRegexp = `SELECT status FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
+const selectStatusForUpdateRegexp = `SELECT status, vendedor_id FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
 const selectItensAtuaisTxRegexp = `SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido WHERE pedido_id = \? ORDER BY item_id_origem ASC`
 
 func TestPedidoUpdateComItens_Success(t *testing.T) {
@@ -540,7 +540,7 @@ func TestPedidoUpdateComItens_Success(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("aprovado", int64(1)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexp).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))
@@ -591,7 +591,7 @@ func TestPedidoUpdateComItens_ErroUpdate(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("aprovado", int64(1)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexp).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))
@@ -615,7 +615,7 @@ func TestPedidoUpdateComItens_ErroDelete(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("aprovado", int64(1)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexp).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))
@@ -645,7 +645,7 @@ func TestPedidoUpdateComItens_TransicaoParaFaturado_BaixaEstoque(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("aprovado", int64(1)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexp).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))
@@ -689,7 +689,7 @@ func TestPedidoUpdateComItens_ReenvioFaturadoIdempotente_NaoBaixaEstoqueDeNovo(t
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Faturado"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Faturado", int64(1)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexp).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns).
@@ -722,7 +722,7 @@ func TestPedidoUpdateComItens_FaturadoTentaAlterarItens_Erro(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Faturado"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Faturado", int64(1)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexp).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns).
@@ -749,7 +749,7 @@ func TestPedidoUpdateComItens_ErroBaixaEstoque_RollbackTudo(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexp).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("aprovado"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("aprovado", int64(1)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexp).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows(itensAtuaisColumns))

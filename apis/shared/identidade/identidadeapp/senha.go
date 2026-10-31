@@ -26,9 +26,9 @@ type ComandoTrocarSenha struct {
 // TrocarSenha troca a senha do próprio usuário. Ordem exata do legado
 // (I-12): obrigatórios → captcha → rate limit → senha atual (conta) → nova
 // == atual → força (não conta) → histórico, atual + 2 últimas, sem
-// short-circuit (conta) → grava histórico e senha (com corte de sessão) →
-// revoga os refresh tokens. NÃO é transacional (O8-iii, card BUG-15): a
-// sequência de chamadas é a do legado.
+// short-circuit (conta) → hash (fora da tx) → numa tx (BUG-15): histórico,
+// senha (com corte de sessão) e revogação dos refresh tokens. Falha em
+// qualquer etapa desfaz tudo e é 500 (a senha não muda).
 func (c *Casos) TrocarSenha(ctx context.Context, p kernel.Principal, cmd ComandoTrocarSenha) (err error) {
 	defer vlog.Trace(arqSenha, "Identidade.TrocarSenha", "user_id=%d", p.UserID())(&err)
 	if !p.Valido() {
@@ -94,34 +94,62 @@ func (c *Casos) validarNovaSenha(ctx context.Context, u *identidade.Usuario, cmd
 	return nil
 }
 
-// gravarNovaSenha grava histórico (falha só loga), a senha (sem obrigar
-// troca, com corte de sessão) e revoga os refresh tokens (falha só loga).
+// gravarNovaSenha gera o hash (Argon2, fora da tx) e grava histórico,
+// senha (sem obrigar troca, com corte de sessão) e revogação numa tx só.
 func (c *Casos) gravarNovaSenha(ctx context.Context, u *identidade.Usuario, cmd ComandoTrocarSenha) error {
 	novo, err := c.d.Hasher.Gerar(cmd.NovaSenha)
 	if err != nil {
 		log.Printf("[auth] reset-password: HashPassword: %v", err)
 		return fmt.Errorf("identidadeapp: trocar senha: hash: %w", err)
 	}
-	c.registrarHistorico(ctx, u, nil, identidade.TipoResetUsuario, cmd.Origem,
-		"[auth] reset-password: falha ao registrar histórico de senha do user_id")
-	if err := c.d.Usuarios.AtualizarSenha(ctx, u.ID, novo, false); err != nil {
-		log.Printf("[auth] reset-password: UpdatePasswordHash: %v", err)
+	g := gravacaoSenha{usuario: u, novo: novo, tipo: identidade.TipoResetUsuario, origem: cmd.Origem}
+	if err := c.gravarSenhaNaTx(ctx, g); err != nil {
+		log.Printf("[auth] reset-password: gravar senha: %v", err)
 		return fmt.Errorf("identidadeapp: trocar senha: gravar: %v", err) // sem %w: inexistente aqui é 500
 	}
-	c.revogarTodos(ctx, u.ID, identidade.MotivoSenha, "[auth] reset-password")
 	log.Printf("[auth] reset-password: user_id=%d", u.ID)
 	return nil
 }
 
-// registrarHistorico grava a senha anterior em senha_historico. Falha só é
-// logada: a troca segue (comportamento do legado).
-func (c *Casos) registrarHistorico(ctx context.Context, u *identidade.Usuario, por *int64, tipo identidade.TipoReset, o Origem, tagFalha string) {
-	r := &identidade.RegistroSenha{UsuarioID: u.ID, ResetadoPorID: por, HashAnterior: u.Hash, IP: o.IP, UserAgent: o.UserAgent, Tipo: tipo}
-	if err := c.d.Historico.Registrar(ctx, r); err != nil {
-		log.Printf("%s=%d: %v", tagFalha, u.ID, err)
-		return
+// gravacaoSenha é a escrita atômica de uma troca/reset de senha: usuario
+// traz o id e o hash anterior (histórico); por é o admin do reset (nil na
+// troca pelo próprio usuário e no reset em massa).
+type gravacaoSenha struct {
+	usuario    *identidade.Usuario
+	novo       identidade.HashSenha
+	deveTrocar bool
+	por        *int64
+	tipo       identidade.TipoReset
+	origem     Origem
+}
+
+// gravarSenhaNaTx grava, numa tx (BUG-15), o histórico, a nova senha (com o
+// corte de sessão) e a revogação dos refresh tokens; qualquer erro faz
+// rollback. Os logs de sucesso saem só depois do commit. AtualizarSenha
+// volta sem embrulho (o chamador decide 404/500); histórico e revogação
+// voltam com o nome da etapa.
+func (c *Casos) gravarSenhaNaTx(ctx context.Context, g gravacaoSenha) error {
+	id := g.usuario.ID
+	err := c.d.TrocaSenha.WithTx(ctx, func(tx TxSenha) error {
+		r := &identidade.RegistroSenha{UsuarioID: id, ResetadoPorID: g.por, HashAnterior: g.usuario.Hash,
+			IP: g.origem.IP, UserAgent: g.origem.UserAgent, Tipo: g.tipo}
+		if err := tx.Historico.Registrar(ctx, r); err != nil {
+			return fmt.Errorf("identidadeapp: senha: histórico: %w", err)
+		}
+		if err := tx.Usuarios.AtualizarSenha(ctx, id, g.novo, g.deveTrocar); err != nil {
+			return err
+		}
+		if err := tx.Tokens.RevogarTodosDoUsuario(ctx, id, identidade.MotivoSenha); err != nil {
+			return fmt.Errorf("identidadeapp: senha: revogar refresh tokens: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-	log.Printf("[senha-historico] registrado: usuario_id=%d tipo=%s", u.ID, tipo)
+	log.Printf("[senha-historico] registrado: usuario_id=%d tipo=%s", id, g.tipo)
+	log.Printf("[refresh] todos tokens revogados: usuario_id=%d motivo=%s", id, identidade.MotivoSenha)
+	return nil
 }
 
 // erroLeituraUsuario: inexistente vira 404; o resto, 500 com log.
@@ -139,10 +167,11 @@ type ComandoAdminResetarSenha struct {
 	Origem    Origem
 }
 
-// AdminResetarSenha gera uma senha aleatória para o usuário, grava (com
-// troca obrigatória e corte de sessão), envia por e-mail, registra no
-// histórico (tipo admin) e revoga as sessões (I-09). A senha nunca é
-// devolvida nem logada (M-02). emailEnviado=false não desfaz o reset.
+// AdminResetarSenha gera uma senha aleatória para o usuário e, numa tx
+// (BUG-15), registra o histórico (tipo admin), grava a senha (com troca
+// obrigatória e corte de sessão) e revoga as sessões (I-09); o e-mail só
+// sai depois do commit. A senha nunca é devolvida nem logada (M-02).
+// emailEnviado=false não desfaz o reset.
 func (c *Casos) AdminResetarSenha(ctx context.Context, p kernel.Principal, cmd ComandoAdminResetarSenha) (emailEnviado bool, err error) {
 	defer vlog.Trace(arqSenha, "Identidade.AdminResetarSenha", "alvo=%d", cmd.UsuarioID)(&err)
 	if err := exigirAdmin(p); err != nil {
@@ -151,18 +180,15 @@ func (c *Casos) AdminResetarSenha(ctx context.Context, p kernel.Principal, cmd C
 	if cmd.UsuarioID <= 0 {
 		return false, identidade.ErrUsuarioAlvoInvalido
 	}
-	alvo, err := c.d.Usuarios.PorID(ctx, cmd.UsuarioID) // hash anterior para a auditoria
+	alvo, err := c.d.Usuarios.PorID(ctx, cmd.UsuarioID) // 404 e destino do e-mail
 	if err != nil {
 		return false, erroLeituraUsuario("[usuarios] AdminResetPassword: GetByID", err)
 	}
-	emailEnviado, err = c.redefinirSenhaGerada(ctx, alvo.ID, alvo.Email, alvo.Nome)
+	adminID := p.UserID()
+	emailEnviado, err = c.redefinirSenhaGerada(ctx, alvo.ID, alvo.Email, alvo.Nome, &adminID, cmd.Origem)
 	if err != nil {
 		return false, err
 	}
-	adminID := p.UserID()
-	c.registrarHistorico(ctx, alvo, &adminID, identidade.TipoResetAdmin, cmd.Origem,
-		"[usuarios] AdminResetPassword: falha ao registrar histórico de senha do usuario_id")
-	c.revogarTodos(ctx, alvo.ID, identidade.MotivoSenha, "[usuarios] AdminResetPassword")
 	if !emailEnviado {
 		log.Printf("[usuarios] ATENÇÃO: senha de usuario_id=%d resetada, mas email NÃO foi enviado", alvo.ID)
 	}
@@ -170,31 +196,56 @@ func (c *Casos) AdminResetarSenha(ctx context.Context, p kernel.Principal, cmd C
 	return emailEnviado, nil
 }
 
-// redefinirSenhaGerada relê o usuário, gera uma senha que não colida com a
-// atual (até 3 tentativas), grava com troca obrigatória e envia por e-mail.
-// É o passo comum do reset administrativo e do reset em massa (OPS-01).
-func (c *Casos) redefinirSenhaGerada(ctx context.Context, id int64, email, nome string) (bool, error) {
+// redefinirSenhaGerada é o passo comum do reset administrativo e do reset
+// em massa (OPS-01), em três partes (BUG-15): (a) fora da tx, relê o
+// usuário e gera senha + hash sem colidir com a atual; (b) numa tx,
+// histórico (tipo admin, hash anterior = o relido), senha com troca
+// obrigatória e revogação; (c) depois do commit, o e-mail.
+func (c *Casos) redefinirSenhaGerada(ctx context.Context, id int64, email, nome string, por *int64, o Origem) (bool, error) {
+	alvo, senha, hash, err := c.senhaGeradaPara(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	g := gravacaoSenha{usuario: alvo, novo: hash, deveTrocar: true, por: por, tipo: identidade.TipoResetAdmin, origem: o}
+	if err := c.gravarSenhaNaTx(ctx, g); err != nil {
+		return false, erroGravacaoReset(err)
+	}
+	enviado := c.enviarSenhaInicial(ctx, email, nome, senha)
+	log.Printf("[usuarios] admin reset: senha redefinida: id=%d email_enviado=%t", id, enviado)
+	return enviado, nil
+}
+
+// erroGravacaoReset: usuário que sumiu entre a releitura e o UPDATE vira
+// 404 (como no legado); o resto (histórico, revogação, begin/commit), 500
+// com log.
+func erroGravacaoReset(err error) error {
+	if errors.Is(err, identidade.ErrUsuarioNaoEncontrado) {
+		return identidade.ErrUsuarioNaoEncontrado
+	}
+	log.Printf("[usuarios] AdminResetPassword: gravar senha: %v", err)
+	return fmt.Errorf("identidadeapp: reset de senha: gravar: %w", err)
+}
+
+// senhaGeradaPara relê o usuário e gera uma senha (e o hash) que não
+// colida com a atual (até 3 tentativas). Roda fora da tx: o Argon2 não
+// segura a conexão nem os locks.
+func (c *Casos) senhaGeradaPara(ctx context.Context, id int64) (*identidade.Usuario, identidade.Senha, identidade.HashSenha, error) {
 	alvo, err := c.d.Usuarios.PorID(ctx, id)
 	if err != nil {
-		return false, erroLeituraUsuario("[usuarios] AdminResetPassword", err)
+		return nil, identidade.Senha{}, identidade.HashSenha{}, erroLeituraUsuario("[usuarios] AdminResetPassword", err)
 	}
 	var senha identidade.Senha
 	var hash identidade.HashSenha
 	for tentativa := 1; tentativa <= maxTentativasSenhaGerada; tentativa++ {
 		if senha, hash, err = c.gerarSenhaEHash(); err != nil {
-			return false, err
+			return nil, identidade.Senha{}, identidade.HashSenha{}, err
 		}
 		if !c.d.Hasher.Verificar(alvo.Hash, senha) {
 			break
 		}
 		log.Printf("[usuarios] admin reset: senha gerada colidiu com a atual, regenerando: id=%d tentativa=%d", id, tentativa)
 	}
-	if err := c.d.Usuarios.AtualizarSenha(ctx, id, hash, true); err != nil {
-		return false, erroLeituraUsuario("[usuarios] AdminResetPassword: UpdatePasswordHash", err)
-	}
-	enviado := c.enviarSenhaInicial(ctx, email, nome, senha)
-	log.Printf("[usuarios] admin reset: senha redefinida: id=%d email_enviado=%t", id, enviado)
-	return enviado, nil
+	return alvo, senha, hash, nil
 }
 
 // gerarSenhaEHash gera a senha aleatória (para o e-mail) e o hash (banco).
