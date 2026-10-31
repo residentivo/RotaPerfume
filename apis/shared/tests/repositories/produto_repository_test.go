@@ -33,7 +33,7 @@ func ordenacaoProduto(orderBy, orderDir string) kernel.Ordenacao[catalogo.CampoP
 
 var produtoColumns = []string{
 	"id", "sku", "descricao", "categoria", "marca", "nota_olfativa",
-	"preco_tabela", "custo_unitario", "unidade", "data_lancamento", "ativo", "created_at", "updated_at",
+	"preco_tabela", "custo_unitario", "unidade", "data_lancamento", "ativo", "imagem", "created_at", "updated_at",
 }
 
 func produtoRow(id int64, sku, descricao, categoria, marca, notaOlfativa string, precoTabela, custoUnitario float64, unidade string, dataLancamento *time.Time, ativo bool, created, updated time.Time) []driver.Value {
@@ -41,7 +41,7 @@ func produtoRow(id int64, sku, descricao, categoria, marca, notaOlfativa string,
 	if dataLancamento != nil {
 		dl = *dataLancamento
 	}
-	return []driver.Value{id, sku, descricao, categoria, marca, notaOlfativa, precoTabela, custoUnitario, unidade, dl, ativo, created, updated}
+	return []driver.Value{id, sku, descricao, categoria, marca, notaOlfativa, precoTabela, custoUnitario, unidade, dl, ativo, "", created, updated}
 }
 
 func TestProdutoList_SemFiltro(t *testing.T) {

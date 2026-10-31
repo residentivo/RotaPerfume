@@ -27,8 +27,10 @@ type produtoResposta struct {
 	Unidade        string     `json:"unidade"`
 	DataLancamento *time.Time `json:"data_lancamento"`
 	Ativo          bool       `json:"ativo"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	// ImagemURL (IMG-01) é o caminho público da imagem, ou null sem imagem.
+	ImagemURL *string   `json:"imagem_url"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func produtoParaResposta(p catalogo.Produto) produtoResposta {
@@ -36,8 +38,18 @@ func produtoParaResposta(p catalogo.Produto) produtoResposta {
 		ID: p.ID, SKU: p.SKU.String(), Descricao: p.Descricao, Categoria: p.Categoria, Marca: p.Marca,
 		NotaOlfativa: p.NotaOlfativa, PrecoTabela: p.PrecoTabela, CustoUnitario: p.CustoUnitario,
 		Unidade: p.Unidade, DataLancamento: p.DataLancamento, Ativo: p.Ativo,
-		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+		ImagemURL: urlImagem(p.Imagem), CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
+}
+
+// urlImagem monta o caminho público só para nomes válidos (nunca expõe o
+// diretório); sem imagem → nil (JSON null).
+func urlImagem(nome string) *string {
+	if !catalogo.NomeImagemValido(nome) {
+		return nil
+	}
+	u := PrefixoURLImagem + nome
+	return &u
 }
 
 // criarProdutoRequest é o body do POST de produto.

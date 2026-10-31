@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +100,12 @@ type Config struct {
 	// depois de expires_at antes de ser apagado (CHORE-02), via
 	// REFRESH_TOKEN_RETENCAO. Padrão 720h (30 dias), faixa [24h, 8760h].
 	RefreshTokenRetencao time.Duration
+
+	// ProdutoImagensDir é o diretório das imagens de produto (IMG-01), via
+	// PRODUTO_IMAGENS_DIR. Padrão ./data/produtos-imagens (relativo ao
+	// diretório de execução); sempre absoluto e limpo depois do Load. Vazio,
+	// "/" ou dentro de frontend/public derrubam a subida.
+	ProdutoImagensDir string
 }
 
 // HashSenha são os parâmetros do hash de senha (SEC-13): Argon2id sobre o
@@ -254,6 +261,11 @@ func load(exigirDB bool) (*Config, error) {
 		return nil, err
 	}
 
+	vlog.Printf("config.go", "load", "lendo PRODUTO_IMAGENS_DIR e verificando erro")
+	if cfg.ProdutoImagensDir, err = parseProdutoImagensDir(); err != nil {
+		return nil, err
+	}
+
 	// SEC-11: checagem no fim, depois das demais validações, para que os
 	// erros já existentes (JWT_SECRET, JWT_TTL, PASSWORD_PEPPER/ARGON2_*,
 	// COOKIE_SECURE) tenham prioridade.
@@ -274,6 +286,39 @@ func jwtIssuer() string {
 		return v
 	}
 	return "rotaperfumes"
+}
+
+// produtoImagensDirPadrao é o diretório padrão das imagens de produto.
+const produtoImagensDirPadrao = "./data/produtos-imagens"
+
+// ErrProdutoImagensDir: PRODUTO_IMAGENS_DIR vazio, raiz ou dentro de
+// frontend/public (IMG-01).
+var ErrProdutoImagensDir = errors.New("config: PRODUTO_IMAGENS_DIR inválido (não pode ser vazio, \"/\" nem ficar dentro de frontend/public)")
+
+// parseProdutoImagensDir lê PRODUTO_IMAGENS_DIR (ausente = padrão), aplica
+// Clean+Abs e recusa a raiz e qualquer caminho dentro de frontend/public.
+// Só espaços conta como vazio.
+func parseProdutoImagensDir() (string, error) {
+	vlog.Printf("config.go", "parseProdutoImagensDir", "lendo PRODUTO_IMAGENS_DIR (padrão %s)", produtoImagensDirPadrao)
+	raw, definido := os.LookupEnv("PRODUTO_IMAGENS_DIR")
+	if !definido {
+		raw = produtoImagensDirPadrao
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", ErrProdutoImagensDir
+	}
+	abs, err := filepath.Abs(filepath.Clean(raw))
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrProdutoImagensDir, err)
+	}
+	vlog.Printf("config.go", "parseProdutoImagensDir", "verificando se o diretório é a raiz ou fica dentro de frontend/public")
+	sep := string(filepath.Separator)
+	publico := sep + filepath.Join("frontend", "public")
+	if abs == filepath.VolumeName(abs)+sep || strings.Contains(abs+sep, publico+sep) {
+		return "", ErrProdutoImagensDir
+	}
+	return abs, nil
 }
 
 // parseCookieSecure lê COOKIE_SECURE: vazio → true; senão strconv.ParseBool.

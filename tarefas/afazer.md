@@ -1,6 +1,10 @@
 # A Fazer
 
-> Atualizado em 2026-10-30 (fechamento do Lote 25, 🔵 SubBrain). O **Lote 25** (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram quatro cards, no bloco "Achados do Lote 25", logo após o TST-08: **TST-09** (3 testes de integração e conferência do CHECK `chk_pagamentos_taxa_pct`, bloqueados pela credencial do banco; depende do usuário, MÉDIA), **TST-10** (`make test-frontend`/`make frontend-deps` em disco exFAT com Node 18, MÉDIA; card próprio, separado do TST-08), **CHORE-08** (4 observações do 🔴 TestBrain, BAIXA) e **FE-16** (rodar o `next build`, BAIXA). O UX-02 avançou em parte (a orientação "Edite o registro existente." no 409 do estoque entrou com o CHORE-06).
+> Atualizado em 2026-10-31 (fechamento do Lote 26, 🔵 SubBrain). O **IMG-01** (imagem do produto) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram dois cards BAIXA, no bloco "Achados do IMG-01", logo após o FE-16: **CHORE-09** (job de limpeza de imagens órfãs, inclusive `.tmp-*` antigos e o caso de commit ambíguo) e **SEC-34** (WebP não é reencodado; EXIF e bytes anexados ficam no arquivo).
+>
+> Antes, ainda em 2026-10-31 (🔵 SubBrain). O 🤍 MegaBrain abriu o **Lote 26** com o card **IMG-01** (imagem do produto), pedido direto do usuário que foi para `fazendo.md` sem passar por esta lista. O backlog abaixo não mudou.
+>
+> Antes, em 2026-10-30 (fechamento do Lote 25, 🔵 SubBrain). O **Lote 25** (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram quatro cards, no bloco "Achados do Lote 25", logo após o TST-08: **TST-09** (3 testes de integração e conferência do CHECK `chk_pagamentos_taxa_pct`, bloqueados pela credencial do banco; depende do usuário, MÉDIA), **TST-10** (`make test-frontend`/`make frontend-deps` em disco exFAT com Node 18, MÉDIA; card próprio, separado do TST-08), **CHORE-08** (4 observações do 🔴 TestBrain, BAIXA) e **FE-16** (rodar o `next build`, BAIXA). O UX-02 avançou em parte (a orientação "Edite o registro existente." no 409 do estoque entrou com o CHORE-06).
 >
 > Antes, em 2026-10-29 (especificação do Lote 25). Da especificação do 🟣 SecBrain para o Lote 25 saíram três cards BAIXA, no bloco "Achados da especificação do Lote 25", logo após o DEPLOY-02: **UX-02** (R4, UX do ajuste manual de estoque após o snapshot do faturamento), **CHORE-07** (R6, mensagens imprecisas de `vendas/erros.go`) e **BUG-22** (toggle de ativo de clientes e usuários). Dos achados do Lote 24 saíram, no bloco seguinte ("Achados do Lote 24"), **SEC-32** (enumeração por tempo com hash vazio/malformado, BAIXA), **SEC-33** (prefixo `__Host-` nos cookies, BAIXA), **BUG-23** (refresh de usuário apagado → 500, BAIXA) e **TST-08** (`make test` falha com `covdata`, MÉDIA). Os riscos R2 e R3 viraram BUG-20 e BUG-21 dentro do Lote 25 (`fazendo.md`).
 >
@@ -450,6 +454,53 @@
 **Ação esperada:** rodar `next build` (no ambiente com Node >= 20; ver TST-10) e corrigir o que aparecer; registrar o resultado.
 
 **Critério de aceite:** `next build` sem erros; resultado registrado no card do Lote 25 em `feito.md`.
+
+---
+
+## Achados do IMG-01 (CHORE-09, SEC-34)
+
+> Origem comum: fechamento do IMG-01 (imagem do produto, Lote 26, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
+
+---
+
+## CHORE-09: job de limpeza de imagens órfãs de produto — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Backend (shared + API), Testes, Documentação
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** IMG-01 (Lote 26, 2026-10-31): decisão D5 do 🤍 MegaBrain na especificação e achado do 🔴 TestBrain sobre o commit ambíguo.
+
+**Descrição:** o diretório `PRODUTO_IMAGENS_DIR` pode acumular arquivos sem referência em `produtos.imagem`:
+1. **Remoção da imagem antiga que falha depois do commit** (é best-effort e só gera log).
+2. **Commit com erro ambíguo:** o driver devolve erro, mas o commit foi aplicado. O caso de uso apaga o arquivo novo e o banco fica apontando para um arquivo que não existe (a leitura pública responde `404`). Achado do 🔴 TestBrain, convertido em card pelo 🤍 MegaBrain.
+3. **`.tmp-*` antigos** de gravações interrompidas (queda do processo entre a criação do temporário e o rename), inclusive os `.tmp-probe-*` do teste de escrita da subida.
+4. **Revert da migração 26** (`make db-revert-produtos-imagem`), que zera os vínculos e deixa todos os arquivos órfãos.
+
+**Ação esperada:** tarefa periódica (no padrão de `identidadeapp.IniciarLimpezaPeriodica`/CHORE-02, com intervalo por env e `0` para desativar) ou comando `cmd/` com `-dry-run`, que:
+- liste os arquivos do diretório pelo `*os.Root` do adapter `catalogofs`, sem seguir symlinks;
+- apague só os nomes que batem com o regex `<uuid-v4>.(jpg|png|webp)` e não estão em `produtos.imagem`, e os `.tmp-*` com mais de N horas, sempre com uma idade mínima (para não apagar um arquivo cuja transação ainda está aberta);
+- trate o caso 2 (banco apontando para arquivo inexistente): logar e, por decisão do 🤍 MegaBrain, zerar a coluna ou só reportar;
+- logue totais, sem nomes do cliente (não existem) e sem caminhos absolutos.
+
+**Critério de aceite:** testes com diretório temporário cobrindo órfão apagado, referenciado preservado, `.tmp-*` antigo apagado e recente preservado, nome fora do regex ignorado, symlink ignorado e `-dry-run` sem efeito; documentação em `docs/manual-base-de-dados.md` §13.1 e `postman/README.md` ("Imagens de produto").
+
+---
+
+## SEC-34: WebP de produto não é reencodado (EXIF e bytes anexados ficam no arquivo) — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Backend (shared), Testes
+**Responsável:** 🟣 SecBrain (decisão) → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** IMG-01 (Lote 26, 2026-10-31): decisão D1 do 🤍 MegaBrain e achado do 🔴 TestBrain (WebP com HTML anexado é gravado inteiro).
+
+**Descrição:** o adapter `SH/catalogo/catalogoimagem/normalizador.go` reencoda JPEG e PNG depois do decode (EXIF, GPS e bytes anexados são descartados), mas o WebP é gravado como veio, porque `golang.org/x/image` só decodifica WebP. Ficam no arquivo público: metadados EXIF/XMP (ex.: localização da foto) e qualquer payload anexado depois dos dados da imagem (achado do 🔴 TestBrain: WebP com HTML anexado aceito e servido inteiro). O risco de execução é mitigado por `X-Content-Type-Options: nosniff`, CSP `default-src 'none'`, `Content-Type` fixo `image/webp` e `Content-Disposition: inline`; o 🤍 MegaBrain aceitou o risco no IMG-01.
+
+**Ação esperada (decidir uma):**
+1. adotar um encoder WebP (avaliar dependência, CGO, licença e govulncheck) e reencodar como nos outros formatos;
+2. converter o WebP recebido para PNG (sem dependência nova; o `imagem_url` passaria a terminar em `.png` e o arquivo pode crescer);
+3. no mínimo, remover os chunks `EXIF`/`XMP ` do contêiner RIFF e truncar o arquivo no tamanho declarado no cabeçalho RIFF.
+
+**Critério de aceite:** WebP com EXIF e com bytes anexados gravado sem eles (teste comparando os bytes servidos); limite de 1 MB e validação atuais preservados; contrato HTTP documentado se a extensão mudar.
 
 ---
 

@@ -365,10 +365,15 @@ export async function fetchWithAuth<T = unknown>(
     vlog(F, "fetchWithAuth.makeRequest", "montando URL completa da requisição");
     const url = endpoint.startsWith("http") ? endpoint : `${API_BASE}${endpoint}`;
 
-    vlog(F, "fetchWithAuth.makeRequest", "definindo headers padrão");
-    const defaultHeaders: HeadersInit = {
-      "Content-Type": "application/json",
-    };
+    // IMG-01: com FormData (upload multipart) o Content-Type NAO e definido
+    // aqui: o navegador gera "multipart/form-data; boundary=...".
+    vlog(F, "fetchWithAuth.makeRequest", "verificando se o corpo é FormData");
+    const corpoFormData =
+      typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
+    vlog(F, "fetchWithAuth.makeRequest", "definindo headers padrão, FormData:", corpoFormData);
+    const defaultHeaders: Record<string, string> = corpoFormData
+      ? {}
+      : { "Content-Type": "application/json" };
 
     // Merge com headers customizados
     vlog(F, "fetchWithAuth.makeRequest", "mesclando headers customizados");

@@ -6,6 +6,8 @@ package catalogoapp
 
 import (
 	"context"
+	"io"
+	"time"
 
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/kernel"
@@ -43,4 +45,48 @@ type Estoques interface {
 	// AtualizarSaldo devolve catalogo.ErrEstoqueNaoEncontrado se nenhuma
 	// linha casar com o id.
 	AtualizarSaldo(ctx context.Context, id int64, saldo int, ruptura bool) error
+}
+
+// ArmazenamentoImagens guarda os arquivos de imagem de produto (IMG-01;
+// adapter catalogofs, ligado só no bootstrap). O adapter gera o nome
+// (<uuid-v4><extensao>) e recusa, sem tocar o disco, nomes fora do padrão
+// em Remover/Abrir.
+type ArmazenamentoImagens interface {
+	// Gravar escreve de forma atômica e devolve o nome gerado.
+	Gravar(ctx context.Context, extensao string, dados []byte) (string, error)
+	// Remover apaga o arquivo; inexistente não é erro.
+	Remover(ctx context.Context, nome string) error
+	// Abrir devolve o arquivo e a data de modificação;
+	// catalogo.ErrImagemNaoEncontrada se não houver arquivo regular.
+	Abrir(nome string) (io.ReadSeekCloser, time.Time, error)
+}
+
+// NormalizadorImagens valida o conteúdo (magic bytes, dimensões, decode
+// completo) e reencoda JPEG/PNG (adapter catalogoimagem). Devolve
+// catalogo.ErrImagemInvalida ou catalogo.ErrImagemMuitoGrande.
+type NormalizadorImagens interface {
+	Normalizar(dados []byte) (catalogo.ImagemNormalizada, error)
+}
+
+// TxImagemProduto é o repositório ligado à tx da troca/remoção de imagem.
+type TxImagemProduto struct {
+	Produtos interface {
+		// ImagemParaAtualizar lê a imagem atual com SELECT … FOR UPDATE
+		// ("" = sem imagem); catalogo.ErrProdutoNaoEncontrado sem linha.
+		ImagemParaAtualizar(ctx context.Context, id int64) (string, error)
+		// DefinirImagem grava o nome ("" grava NULL).
+		DefinirImagem(ctx context.Context, id int64, nome string) error
+	}
+}
+
+// Transactor é o Unit of Work (db.Transactor satisfaz).
+type Transactor[R any] interface {
+	WithTx(ctx context.Context, fn func(R) error) error
+}
+
+// Imagens são as dependências dos casos de uso de imagem de produto.
+type Imagens struct {
+	Armazenamento ArmazenamentoImagens
+	Normalizador  NormalizadorImagens
+	Tx            Transactor[TxImagemProduto]
 }

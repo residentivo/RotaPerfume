@@ -14,7 +14,10 @@ type Produto struct {
 	ID  int64
 	SKU SKU
 	CamposProduto
-	Ativo     bool
+	Ativo bool
+	// Imagem é o nome do arquivo da imagem (NomeImagemValido); "" = sem
+	// imagem. Só muda pelos casos de uso de imagem (IMG-01).
+	Imagem    string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

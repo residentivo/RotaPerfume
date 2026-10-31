@@ -15,9 +15,9 @@ import (
 
 const arqProdutos = "produtos.go"
 
-// produtoColunas: nota_olfativa é NULLable e vira "" (COALESCE);
-// data_lancamento é NULLable e vira nil (sql.NullTime).
-const produtoColunas = `id, sku, descricao, categoria, marca, COALESCE(nota_olfativa, ''), preco_tabela, custo_unitario, unidade, data_lancamento, ativo, created_at, updated_at`
+// produtoColunas: nota_olfativa e imagem são NULLable e viram ""
+// (COALESCE); data_lancamento é NULLable e vira nil (sql.NullTime).
+const produtoColunas = `id, sku, descricao, categoria, marca, COALESCE(nota_olfativa, ''), preco_tabela, custo_unitario, unidade, data_lancamento, ativo, COALESCE(imagem, ''), created_at, updated_at`
 
 // Produtos é o repositório de produtos (porta catalogoapp.Produtos). Cada
 // método executa a própria consulta: sem cache entre requests (R4).
@@ -161,6 +161,28 @@ func (r *Produtos) exec(ctx context.Context, op, rotulo, q string, args ...any) 
 	return nil
 }
 
+// ImagemParaAtualizar lê a imagem atual com SELECT … FOR UPDATE (IMG-01):
+// serializa duas trocas simultâneas do mesmo produto. Tem de rodar na tx da
+// troca. "" = sem imagem; catalogo.ErrProdutoNaoEncontrado sem linha.
+func (r *Produtos) ImagemParaAtualizar(ctx context.Context, id int64) (string, error) {
+	var imagem sql.NullString
+	err := r.q.QueryRowContext(ctx, `SELECT imagem FROM produtos WHERE id = ? FOR UPDATE`, id).Scan(&imagem)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", catalogo.ErrProdutoNaoEncontrado
+	}
+	if err != nil {
+		return "", fmt.Errorf("catalogomysql: lock imagem do produto: %w", err)
+	}
+	vlog.Printf(arqProdutos, "Produtos.ImagemParaAtualizar", "SELECT produtos FOR UPDATE linhas=1 tem_imagem=%t", imagem.Valid)
+	return imagem.String, nil
+}
+
+// DefinirImagem grava o nome do arquivo ("" grava NULL).
+func (r *Produtos) DefinirImagem(ctx context.Context, id int64, nome string) error {
+	const q = `UPDATE produtos SET imagem = ? WHERE id = ?`
+	return r.exec(ctx, "definir imagem produto", "UPDATE produtos imagem", q, nullString(nome), id)
+}
+
 // ContarTotal devolve o total de produtos. Leitura para métricas (sem
 // chamador HTTP: o Dashboard migrado no ARQ-06 não conta produtos, como o
 // legado; o ARQ-07 decide se fica).
@@ -193,7 +215,7 @@ func scanProduto(s linha) (*catalogo.Produto, error) {
 	var p catalogo.Produto
 	var dataLancamento sql.NullTime
 	err := s.Scan(&p.ID, &p.SKU, &p.Descricao, &p.Categoria, &p.Marca, &p.NotaOlfativa,
-		&p.PrecoTabela, &p.CustoUnitario, &p.Unidade, &dataLancamento, &p.Ativo, &p.CreatedAt, &p.UpdatedAt)
+		&p.PrecoTabela, &p.CustoUnitario, &p.Unidade, &dataLancamento, &p.Ativo, &p.Imagem, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, catalogo.ErrProdutoNaoEncontrado
 	}

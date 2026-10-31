@@ -144,6 +144,26 @@ describe("rotas via fetchWithAuth", () => {
   });
 });
 
+describe("imagem do produto (IMG-01)", () => {
+  it("enviarImagemProduto envia multipart so com a parte imagem e X-Requested-With", async () => {
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    await api.enviarImagemProduto(50, file);
+    const [p, o] = client.fetchWithAuth.mock.calls[0];
+    expect(p).toBe("/api/produtos/50/imagem");
+    expect(o.method).toBe("POST");
+    expect(o.headers).toEqual({ "X-Requested-With": "XMLHttpRequest" });
+    expect(o.body).toBeInstanceOf(FormData);
+    const form = o.body as FormData;
+    expect([...form.keys()]).toEqual(["imagem"]);
+    expect((form.get("imagem") as File).name).toBe("a.png");
+  });
+
+  it("removerImagemProduto chama DELETE", async () => {
+    await api.removerImagemProduto(50);
+    expect(client.fetchWithAuth).toHaveBeenCalledWith("/api/produtos/50/imagem", { method: "DELETE" });
+  });
+});
+
 // ─── Listagens paginadas (fetchEnvelopeWithAuth, FE-05) ─────────────────────────────────────────────────────────────────────
 
 interface Lista {

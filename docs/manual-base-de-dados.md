@@ -3,7 +3,7 @@
 **Banco:** MariaDB 11.4 LTS (desde o DB-03; antes, MySQL), schema `rotaperfumes` (padrão do `Makefile`: `DB_NAME?=rotaperfumes`), charset `utf8mb4`, collation `utf8mb4_unicode_ci` (definidos no `make db-create`).
 **Requisitos:** cliente `mariadb` (MariaDB ≥ 11.4) no `PATH` para todos os alvos `make db-*`, inclusive o `make db-seed` (o `seedusers` em Go chama o binário `mariadb`, sem fallback para `mysql`). A API e os importadores usam o driver Go `go-sql-driver/mysql`, compatível com o MariaDB; por isso os pacotes de adapter continuam com o sufixo `mysql` (`<contexto>mysql`).
 **Fonte da verdade:** os scripts em `sql/` (DDLs mais as migrações de alteração, em ordem numérica). Em caso de divergência entre este manual e um script, vale o script.
-**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no Lote 5 com o NEG-02, CNPJ alfanumérico, no Lote 6 com a migração 21 e `refresh_tokens.revoked_reason`, no Lote 8 com a migração 22 e `usuarios.tokens_validos_desde` e, no Lote 11, 2026-09-26, card DOC-04, com o detalhamento de todas as tabelas; no Lote 12, 2026-09-27, com DB-01 (`estoque` no `db-up`), SEC-11 (credenciais do banco), SEC-12 (migração 23, `refresh_tokens.reuso_detectado_em`) e CHORE-02 (limpeza de `refresh_tokens`)).
+**Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no Lote 5 com o NEG-02, CNPJ alfanumérico, no Lote 6 com a migração 21 e `refresh_tokens.revoked_reason`, no Lote 8 com a migração 22 e `usuarios.tokens_validos_desde` e, no Lote 11, 2026-09-26, card DOC-04, com o detalhamento de todas as tabelas; no Lote 12, 2026-09-27, com DB-01 (`estoque` no `db-up`), SEC-11 (credenciais do banco), SEC-12 (migração 23, `refresh_tokens.reuso_detectado_em`) e CHORE-02 (limpeza de `refresh_tokens`); no Lote 26, 2026-10-31, com o IMG-01 (migração 26, `produtos.imagem`, seção 13.1)).
 
 > **Escopo:** todas as tabelas do schema atual, campo a campo, com PK, FKs, índices, relacionamentos, regras de negócio conhecidas e as migrações que afetam cada uma. Os itens que não estão claros nos arquivos estão marcados como **a confirmar** e reunidos na seção 22.
 
@@ -57,7 +57,7 @@ A ordem é a do `make db-up`, que cria o schema vazio. O `make db-seed` roda o `
 | `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` | 21 (`revoked_reason`), 23 (`reuso_detectado_em`) | 7 |
 | `senha_historico` | `sql/07_ddl_senha_historico.sql` | 13 (ENUM `tipo_reset`) | 8 |
 | `clientes` | `sql/09_ddl_clientes.sql` | 19 (`uq_clientes_cnpj`), 20 (COMMENT de `cnpj`) | 9 |
-| `produtos` | `sql/10_ddl_produtos.sql` | - | 13 |
+| `produtos` | `sql/10_ddl_produtos.sql` (já com `imagem` desde o IMG-01) | 26 (`imagem`, `uk_produtos_imagem`, `chk_produtos_imagem`) | 13 |
 | `pedidos` | `sql/04_ddl_pedidos.sql` | 19 (transferência de `cliente_id`, só dados) | 14 |
 | `itens_pedido` | `sql/11_ddl_itens_pedido.sql` | - | 15 |
 | `pagamentos` | `sql/12_ddl_pagamentos.sql` | - | 16 |
@@ -106,7 +106,8 @@ erDiagram
     clientes { BIGINT cliente_id_origem PK
                CHAR cnpj UK }
     produtos { BIGINT id PK
-               VARCHAR sku UK }
+               VARCHAR sku UK
+               VARCHAR imagem UK }
     pedidos { BIGINT pedido_id_origem PK
               BIGINT cliente_id FK
               BIGINT vendedor_id FK }
@@ -153,7 +154,7 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 07 | `07_ddl_senha_historico.sql` | Cria `senha_historico` (já com o ENUM corrigido) | `db-up` | Não (DDL base) |
 | 08 | `08_alter_usuarios_deve_trocar_senha.sql` | Adiciona `usuarios.deve_trocar_senha` (idempotente) | `db-fix-deve-trocar-senha` | Não (sem script) |
 | 09 | `09_ddl_clientes.sql` | Cria `clientes` (já com `uq_clientes_cnpj` e o COMMENT novo) | `db-up` | Não (DDL base) |
-| 10 | `10_ddl_produtos.sql` | Cria `produtos` | `db-up` | Não (DDL base) |
+| 10 | `10_ddl_produtos.sql` | Cria `produtos` (já com `imagem`, `uk_produtos_imagem` e `chk_produtos_imagem` desde o IMG-01) | `db-up` | Não (DDL base) |
 | 11 | `11_ddl_itens_pedido.sql` | Cria `itens_pedido` | `db-up` | Não (DDL base) |
 | 12 | `12_ddl_pagamentos.sql` | Cria `pagamentos` (já com o CHECK `chk_pagamentos_taxa_pct`) | `db-up` | Não (DDL base) |
 | 13 | `13_alter_senha_historico_tipo_reset.sql` | Corrige o ENUM de `tipo_reset` | `db-fix-tipo-reset` | Não (sem script) |
@@ -168,8 +169,9 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 22 | `22_alter_usuarios_tokens_validos_desde.sql` | Adiciona `usuarios.tokens_validos_desde` (idempotente) | `db-fix-tokens-validos-desde` | Sim: `22_revert_...`, `db-revert-tokens-validos-desde` (perde os cortes) |
 | 23 | `23_alter_refresh_tokens_reuso_detectado_em.sql` | Adiciona `refresh_tokens.reuso_detectado_em` (SEC-12, idempotente) | `db-fix-reuso-detectado` | Sim: `23_revert_...`, `db-revert-reuso-detectado` (perde as marcas de reuso) |
 | 24 | `24_alter_pagamentos_taxa_pct_check.sql` | Cria o CHECK `chk_pagamentos_taxa_pct` (0 a 30) em `pagamentos` (SEC-27, idempotente; aborta sem alterar dados se houver linha fora da faixa) | `db-fix-taxa-pct-check` | Sim: `24_revert_...`, `db-revert-taxa-pct-check` (só remove o CHECK) |
+| 26 | `26_alter_produtos_imagem.sql` | Adiciona `produtos.imagem` (VARCHAR(41) NULL), o UNIQUE `uk_produtos_imagem` e o CHECK `chk_produtos_imagem` (IMG-01, Lote 26, idempotente; linhas existentes ficam NULL) | `db-fix-produtos-imagem` | Sim: `26_revert_...`, `db-revert-produtos-imagem` (remove CHECK, UNIQUE e coluna; os arquivos em disco ficam órfãos) |
 
-- As migrações de alteração (08, 13, 18 a 24) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
+- As migrações de alteração (08, 13, 18 a 24 e 26) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
 - Todos os alvos que chamam o cliente `mariadb` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed`/`db-reset` herdam via `db-create`) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23) e o `mariadb` (MariaDB ≥ 11.4) no `PATH` (DB-03). O `Makefile` passa `--local-infile=0` (SEC-28). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h ...`, sem `-p` no argv.
 - Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`apis/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por Argon2id real (com o `PASSWORD_PEPPER` do `.env`).
 - Importadores (`db-import-*`, `apis/shared/cmd/import*`): upsert idempotente a partir de `dados/crm/*.csv` e `dados/erp/*.csv`. Ordem de dependência: clientes e produtos, depois pedidos (e itens), pagamentos, carteiras, oportunidades, visitas e estoque.
@@ -593,13 +595,32 @@ Catálogo do ERP, importado de `dados/erp/produtos.csv` (`make db-import-produto
 | `unidade` | VARCHAR(40) | não | - | Unidade/embalagem como veio da origem (ex.: UN, KIT 5, DISPLAY 24, CX 12). |
 | `data_lancamento` | DATE | sim | NULL | Vazia em parte do CSV. |
 | `ativo` | TINYINT(1) | não | 1 | 1 = ativo, 0 = inativo (exclusão lógica). |
+| `imagem` | VARCHAR(41) | sim | NULL | Nome do arquivo da imagem do produto: `<uuid-v4>.jpg`, `.png` ou `.webp` (36 + 5 caracteres), gerado pela API. `NULL` = sem imagem. **Único** (`uk_produtos_imagem`) e validado pelo CHECK `chk_produtos_imagem`. Só o nome: nunca caminho, URL nem o nome enviado pelo cliente (IMG-01, Lote 26). |
 | `created_at`, `updated_at` | TIMESTAMP | não | CURRENT_TIMESTAMP | Controle. |
 
-**Índices:** `PRIMARY` (`id`), `uk_produtos_sku` (UNIQUE, `sku`), `idx_produtos_categoria`, `idx_produtos_marca`, `idx_produtos_ativo`.
+**Índices:** `PRIMARY` (`id`), `uk_produtos_sku` (UNIQUE, `sku`), `uk_produtos_imagem` (UNIQUE, `imagem`; vários `NULL` não conflitam), `idx_produtos_categoria`, `idx_produtos_marca`, `idx_produtos_ativo`.
+
+**CHECK:** `chk_produtos_imagem`: `imagem IS NULL OR imagem REGEXP '(?-i)^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|png|webp)$'`. O prefixo `(?-i)` é obrigatório: no MariaDB o REGEXP segue a collation da coluna (`utf8mb4_unicode_ci`, que não diferencia maiúsculas), e sem ele nomes em maiúsculas passariam. É o mesmo regex que o adapter `catalogofs` aplica antes de abrir ou apagar um arquivo.
 
 **Relacionamentos:** 1:N com `itens_pedido` (`produto_id` → `id`, RESTRICT) e com `estoque` (`sku` → `sku`, RESTRICT; a troca de `sku` propaga por `ON UPDATE CASCADE`).
 
-**Migrações:** nenhuma.
+**Migrações:** 26 (`imagem`, IMG-01, Lote 26, 2026-10-31).
+
+### 13.1 Imagem do produto e migração 26 (IMG-01, Lote 26, 2026-10-31)
+
+- **Onde fica o arquivo:** em disco, no diretório `PRODUTO_IMAGENS_DIR` da API (padrão `./data/produtos-imagens`; em dev, `apis/rotaperfumes-api/data/produtos-imagens/`; no deploy, volume `produto_imagens` em `/data/produtos-imagens`). O banco guarda só o nome. A URL pública (`/api/public/produtos/imagens/<nome>`) é montada pela API no campo `imagem_url`.
+- **Quem grava:** só a API (`POST`/`DELETE /api/produtos/{id}/imagem`) e o comando `make db-gerar-imagens-produtos`, que usa o mesmo caso de uso. A troca e a remoção travam a linha (`SELECT imagem FROM produtos WHERE id = ? FOR UPDATE`), gravam e só depois do commit apagam o arquivo antigo.
+- **Comandos:** `make db-fix-produtos-imagem` (bancos criados antes do IMG-01; idempotente, não altera dados) e `make db-revert-produtos-imagem` (remove CHECK, UNIQUE e coluna; perde os vínculos produto → imagem e os arquivos ficam órfãos no disco). Bancos novos já nascem com a coluna pelo `sql/10_ddl_produtos.sql` (`CREATE TABLE IF NOT EXISTS`, sem conflito com a 26).
+- **Estado no banco local (2026-10-31):** migração aplicada (servidor local MariaDB **11.8.8**, não 11.4); `make db-gerar-imagens-produtos` gerou 292 imagens e 292 produtos estão com `imagem` preenchido.
+- **Órfãos:** um arquivo sem referência no banco pode sobrar (revert da 26, falha ao apagar a imagem antiga depois do commit, commit com erro ambíguo, ou `.tmp-*` de gravação interrompida). A limpeza é um card de backlog (CHORE, "job de limpeza de imagens órfãs").
+- **Consultas de verificação:**
+
+```sql
+SELECT COUNT(*) AS com_imagem FROM produtos WHERE imagem IS NOT NULL;
+SELECT CONSTRAINT_NAME, CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS
+ WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'produtos';
+SHOW INDEX FROM produtos WHERE Key_name = 'uk_produtos_imagem';
+```
 
 ---
 

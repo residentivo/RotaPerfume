@@ -21,7 +21,7 @@ func HandlerHTTP(cfg *config.Config, checker httpx.ConsultaStatus, h Handlers) h
 	)
 }
 
-// NovoRouter registra as 61 rotas da API com método e política obrigatórios.
+// NovoRouter registra as 64 rotas da API com método e política obrigatórios.
 // Rotas() do router devolvido é a fonte da matriz ARQ-00.
 func NovoRouter(cfg *config.Config, checker httpx.ConsultaStatus, h Handlers) *httpx.Router {
 	r := httpx.NovoRouter(httpx.NovoAutenticador(identidadecrypto.NovoJWT(cfg), checker))
@@ -59,6 +59,7 @@ func rotas(h Handlers) []httpx.Rota {
 		fOport  = "oportunidade_handler.go"
 		fVisita = "visita_handler.go"
 		fEstq   = "estoque_handler.go"
+		fImg    = "imagem_handler.go"
 	)
 	return []httpx.Rota{
 		// Autenticação (login/refresh/logout públicos; refresh e logout leem o
@@ -112,6 +113,12 @@ func rotas(h Handlers) []httpx.Rota {
 		{Metodo: get, Padrao: "/api/produtos/{id}", Policy: autent, Arquivo: fProd, Funcao: "ProdutoHandler.GetProduto", Handler: h.Produto.GetProduto},
 		{Metodo: put, Padrao: "/api/produtos/{id}", Policy: admin, Arquivo: fProd, Funcao: "ProdutoHandler.UpdateProduto", Handler: h.Produto.UpdateProduto},
 		{Metodo: patch, Padrao: "/api/produtos/{id}/inativar", Policy: admin, Arquivo: fProd, Funcao: "ProdutoHandler.ToggleAtivoProduto", Handler: h.Produto.ToggleAtivoProduto},
+
+		// Imagem do produto (IMG-01): upload/remoção admin; leitura pública
+		// (aprovada pelo SecBrain), por handler próprio sem FileServer.
+		{Metodo: post, Padrao: "/api/produtos/{id}/imagem", Policy: admin, Arquivo: fImg, Funcao: "ProdutoHandler.EnviarImagem", Handler: h.Produto.EnviarImagem},
+		{Metodo: del, Padrao: "/api/produtos/{id}/imagem", Policy: admin, Arquivo: fImg, Funcao: "ProdutoHandler.RemoverImagem", Handler: h.Produto.RemoverImagem},
+		{Metodo: get, Padrao: "/api/public/produtos/imagens/{arquivo}", Policy: publica, Arquivo: fImg, Funcao: "ImagemPublicaHandler.Servir", Handler: h.ImagemPublica.Servir},
 
 		// Pedidos (acesso comum, escopo por carteira).
 		{Metodo: get, Padrao: "/api/pedidos", Policy: autent, Arquivo: fPed, Funcao: "PedidoHandler.ListPedidos", Handler: h.Pedido.ListPedidos},

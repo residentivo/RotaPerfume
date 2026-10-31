@@ -46,8 +46,8 @@ func bug17Mock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 func bug17LinhaProduto(id int64, ativo bool) *sqlmock.Rows {
 	agora := time.Now()
 	return sqlmock.NewRows([]string{"id", "sku", "descricao", "categoria", "marca", "nota_olfativa", "preco_tabela",
-		"custo_unitario", "unidade", "data_lancamento", "ativo", "created_at", "updated_at"}).
-		AddRow(id, "SKU-1", "D", "C", "M", "", 1.0, 1.0, "UN", nil, ativo, agora, agora)
+		"custo_unitario", "unidade", "data_lancamento", "ativo", "imagem", "created_at", "updated_at"}).
+		AddRow(id, "SKU-1", "D", "C", "M", "", 1.0, 1.0, "UN", nil, ativo, "", agora, agora)
 }
 
 func bug17CapturarLog(t *testing.T) *bytes.Buffer {

@@ -134,6 +134,11 @@ var matrizRotas = []rotaMatriz{
 	{"GET /api/produtos/{id}", politicaAuthenticated, p("/api/produtos/1")},
 	{"PUT /api/produtos/{id}", politicaAdminOnly, p("/api/produtos/1")},
 	{"PATCH /api/produtos/{id}/inativar", politicaAdminOnly, p("/api/produtos/1/inativar")},
+	// Imagem do produto (IMG-01): upload/remoção admin; leitura pública
+	// aprovada pelo SecBrain (só nomes <uuid-v4>.jpg|png|webp, sem auth).
+	{"POST /api/produtos/{id}/imagem", politicaAdminOnly, p("/api/produtos/1/imagem")},
+	{"DELETE /api/produtos/{id}/imagem", politicaAdminOnly, p("/api/produtos/1/imagem")},
+	{"GET /api/public/produtos/imagens/{arquivo}", politicaPublic, p("/api/public/produtos/imagens/0b5f3c1e-8a3d-4f2b-9c4e-1a2b3c4d5e6f.png")},
 	// Pedidos
 	{"GET /api/pedidos", politicaAuthenticated, p("/api/pedidos")},
 	{"POST /api/pedidos", politicaAuthenticated, p("/api/pedidos")},
@@ -303,12 +308,12 @@ func TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo(t *testing.T) {
 	assert.Empty(t, faltando, "rotas registradas no router SEM política na matriz ARQ-00 — adicione-as a matrizRotas")
 	assert.Empty(t, sobrando, "rotas na matriz ARQ-00 que NÃO estão mais no router — remova-as ou corrija o padrão")
 	assert.Empty(t, divergentes, "política registrada no router diverge da matriz ARQ-00")
-	assert.Len(t, registradas, 61, "a API registra 61 padrões (4 Public, 36 Authenticated, 21 AdminOnly)")
+	assert.Len(t, registradas, 64, "a API registra 64 padrões (5 Public, 36 Authenticated, 23 AdminOnly)")
 	porPolitica := map[politicaRota]int{}
 	for _, rt := range registradas {
 		porPolitica[politicaDe(rt.Policy)]++
 	}
-	assert.Equal(t, map[politicaRota]int{politicaPublic: 4, politicaAuthenticated: 36, politicaAdminOnly: 21}, porPolitica,
+	assert.Equal(t, map[politicaRota]int{politicaPublic: 5, politicaAuthenticated: 36, politicaAdminOnly: 23}, porPolitica,
 		"contagem por política registrada no router")
 }
 
@@ -333,7 +338,7 @@ func TestARQ00_Matriz_Sanidade(t *testing.T) {
 		}
 	}
 	sort.Strings(publicas)
-	assert.Equal(t, []string{"GET /health", "POST /api/auth/login", "POST /api/auth/logout", "POST /api/auth/refresh"}, publicas)
+	assert.Equal(t, []string{"GET /api/public/produtos/imagens/{arquivo}", "GET /health", "POST /api/auth/login", "POST /api/auth/logout", "POST /api/auth/refresh"}, publicas)
 }
 
 // ---------------------------------------------------------------------------

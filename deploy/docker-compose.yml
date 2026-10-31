@@ -32,6 +32,11 @@ services:
       - ${API_ENV_FILE:-./api.env}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    environment:
+      # IMG-01: imagens de produto no volume nomeado (o container e read_only).
+      PRODUTO_IMAGENS_DIR: /data/produtos-imagens
+    volumes:
+      - produto_imagens:/data/produtos-imagens
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -109,3 +114,5 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  # IMG-01: imagens de produto (dono 65532, criado no apis/Dockerfile).
+  produto_imagens:

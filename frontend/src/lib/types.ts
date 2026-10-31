@@ -272,6 +272,8 @@ export interface Produto {
   unidade: string;
   data_lancamento: string | null;
   ativo: boolean;
+  /** IMG-01: caminho relativo "/api/public/produtos/imagens/<uuid>.<ext>" ou null. */
+  imagem_url: string | null;
   created_at: string;
   updated_at: string;
 }

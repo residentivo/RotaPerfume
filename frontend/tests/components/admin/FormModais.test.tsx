@@ -98,6 +98,7 @@ const produto: Produto = {
   unidade: "UN",
   data_lancamento: "2024-03-01",
   ativo: true,
+  imagem_url: null,
   created_at: "",
   updated_at: "",
 };

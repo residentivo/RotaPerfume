@@ -103,7 +103,7 @@ func TestCatalogomysql_ErroDeScanNaListagem(t *testing.T) {
 		defer db.Close()
 		mock.ExpectQuery(`SELECT COUNT`).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
 		mock.ExpectQuery(`FROM produtos`).WillReturnRows(sqlmock.NewRows(produtoColumns).
-			AddRow("não-numérico", "S", "D", "C", "M", "", 1.0, 1.0, "UN", nil, true, nil, nil))
+			AddRow("não-numérico", "S", "D", "C", "M", "", 1.0, 1.0, "UN", nil, true, "", nil, nil))
 		itens, _, err := listarProdutos(catalogomysql.NovoProdutos(db), ctx, catalogo.FiltroProduto{})
 		assert.Error(t, err)
 		assert.Nil(t, itens)

@@ -644,6 +644,29 @@ export async function apiToggleProdutoStatus(
   });
 }
 
+// POST /api/produtos/{id}/imagem — admin envia (ou troca) a imagem do
+// produto. IMG-01: multipart com a unica parte "imagem"; o Content-Type fica
+// a cargo do navegador (boundary) e o backend exige X-Requested-With.
+// Erros: 400 formato invalido, 413 acima de 1 MB, 403, 404.
+export async function enviarImagemProduto(id: number, file: File): Promise<Produto> {
+  vlog(F, "enviarImagemProduto", "montando FormData com a imagem, produto:", id);
+  const form = new FormData();
+  form.append("imagem", file);
+  return fetchWithAuth<Produto>(`/api/produtos/${id}/imagem`, {
+    method: "POST",
+    body: form,
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+  });
+}
+
+// DELETE /api/produtos/{id}/imagem — admin remove a imagem (imagem_url: null).
+export async function removerImagemProduto(id: number): Promise<Produto> {
+  vlog(F, "removerImagemProduto", "removendo imagem do produto:", id);
+  return fetchWithAuth<Produto>(`/api/produtos/${id}/imagem`, {
+    method: "DELETE",
+  });
+}
+
 // === Pedidos ===
 
 export interface ListPedidosFilters {

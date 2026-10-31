@@ -53,14 +53,14 @@ func chore03Body(metodo string) string {
 	return ""
 }
 
-// Inventário: as 29 rotas com {id} de internal/bootstrap/rotas.go.
+// Inventário: as 31 rotas com {id} (29 + as 2 de imagem do IMG-01) de internal/bootstrap/rotas.go.
 func TestCHORE03_InventarioDasRotasComID(t *testing.T) {
 	rotas := chore03RotasComID(t)
 	padroes := make([]string, 0, len(rotas))
 	for _, r := range rotas {
 		padroes = append(padroes, r.Metodo+" "+r.Padrao)
 	}
-	assert.Len(t, rotas, 29, "rota com {id} nova ou removida: revise o CHORE-03 (%v)", padroes)
+	assert.Len(t, rotas, 31, "rota com {id} nova ou removida: revise o CHORE-03 (%v)", padroes)
 }
 
 func TestCHORE03_TodasAsRotasComID_400IdInvalidoSemSQL(t *testing.T) {

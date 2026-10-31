@@ -23,7 +23,9 @@ import (
 	"github.com/rotaperfumes/rotaperfumes-api/internal/catalogohttp"
 )
 
-// produtoLegado é a cópia congelada de models.Produto (removido no ARQ-02).
+// produtoLegado é a cópia congelada de models.Produto (removido no ARQ-02),
+// acrescida só de imagem_url (IMG-01: caminho público ou null), na posição
+// em que o DTO a emite.
 type produtoLegado struct {
 	ID             int64      `json:"id"`
 	SKU            string     `json:"sku"`
@@ -36,6 +38,7 @@ type produtoLegado struct {
 	Unidade        string     `json:"unidade"`
 	DataLancamento *time.Time `json:"data_lancamento"`
 	Ativo          bool       `json:"ativo"`
+	ImagemURL      *string    `json:"imagem_url"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
@@ -83,10 +86,10 @@ func arq02Get(t *testing.T, server *httptest.Server, path, token string) (int, s
 func TestARQ02_ContratoJSON_ByteAByte(t *testing.T) {
 	admin := generateToken(t, testCfg(), 1, "admin")
 	produto := produtoLegado{1, "SKU-001", "Perfume Teste", "Perfumaria", "Marca X", "Cítrico",
-		99.9, 45, "UN", &arq02Lanc, true, arq02Criado, arq02Atualizado}
+		99.9, 45, "UN", &arq02Lanc, true, nil, arq02Criado, arq02Atualizado}
 	linhaProduto := func() *sqlmock.Rows {
 		return sqlmock.NewRows(produtoColunasHeaderForHandler()).AddRow(int64(1), "SKU-001", "Perfume Teste",
-			"Perfumaria", "Marca X", "Cítrico", 99.9, 45.0, "UN", arq02Lanc, true, arq02Criado, arq02Atualizado)
+			"Perfumaria", "Marca X", "Cítrico", 99.9, 45.0, "UN", arq02Lanc, true, "", arq02Criado, arq02Atualizado)
 	}
 	estoque := estoqueLegado{3, arq02Lanc, "SKU-001", "Perfume Teste", 0, true, arq02Criado, arq02Atualizado}
 	linhaEstoque := func() *sqlmock.Rows {
@@ -107,7 +110,7 @@ func TestARQ02_ContratoJSON_ByteAByte(t *testing.T) {
 		}, envelopeLegado(produto, nil)},
 		{"GET produto sem data_lancamento (null)", "/api/produtos/1", func(m sqlmock.Sqlmock) {
 			m.ExpectQuery(`FROM produtos WHERE id = \?`).WillReturnRows(sqlmock.NewRows(produtoColunasHeaderForHandler()).
-				AddRow(int64(1), "SKU-001", "Perfume Teste", "Perfumaria", "Marca X", "Cítrico", 99.9, 45.0, "UN", nil, true, arq02Criado, arq02Atualizado))
+				AddRow(int64(1), "SKU-001", "Perfume Teste", "Perfumaria", "Marca X", "Cítrico", 99.9, 45.0, "UN", nil, true, "", arq02Criado, arq02Atualizado))
 		}, envelopeLegado(semData, nil)},
 		{"lista de produtos", "/api/produtos?page=2&limit=1", func(m sqlmock.Sqlmock) {
 			m.ExpectQuery(`SELECT COUNT`).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(3))

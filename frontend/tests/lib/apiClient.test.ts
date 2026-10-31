@@ -560,6 +560,29 @@ describe("fetchWithAuth - sucesso", () => {
   });
 });
 
+describe("fetchWithAuth - corpo FormData (IMG-01)", () => {
+  it("nao define Content-Type e mantem headers customizados", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { success: true, data: { id: 1 } }));
+    const form = new FormData();
+    form.append("imagem", new Blob(["x"], { type: "image/png" }), "a.png");
+    await client.fetchWithAuth("/api/produtos/1/imagem", {
+      method: "POST",
+      body: form,
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(form);
+    expect(init.headers).toEqual({ "X-Requested-With": "XMLHttpRequest" });
+  });
+
+  it("corpo JSON continua com Content-Type application/json", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, {}));
+    await client.fetchWithAuth("/api/x", { method: "POST", body: "{}" });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+  });
+});
+
 // 🔴 TestBrain (Lote 5, FE-06): a fila so recebe "Sessão expirada" quando ha
 // logout; falha de rede no retry nao desloga e nao trava o estado do modulo.
 describe("fetchWithAuth - fila de refresh (FE-06, regressao do Lote 5)", () => {

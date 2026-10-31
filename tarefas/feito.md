@@ -2,7 +2,60 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+> Atualizado em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## Lote 26 de 2026-10-31: imagem do produto (1 card)
+
+> Card: IMG-01. Lote aberto pelo 🤍 MegaBrain em 2026-10-31, a partir de pedido direto do usuário (não passou por `afazer.md`). Fechado em 2026-10-31 pelo 🔵 SubBrain.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (especificação) → 🌸 DataBrain (coluna `produtos.imagem`) → 🟡 BackBrain (APIs, armazenamento e comando de geração) → 🟢 FrontBrain (tela de produtos) → 🔴 TestBrain (testes) → 🔵 SubBrain (Postman, docs e fechamento).
+>
+> **Mudança de contrato HTTP:** 3 rotas novas e o campo `imagem_url` no JSON do produto; nenhum contrato existente mudou. A API passa de 61 para **64 rotas** (5 Public, 36 Authenticated, 23 AdminOnly). Detalhe em `postman/README.md`, seção "Mudanças do Lote 26". **Schema:** coluna `produtos.imagem` (migração 26).
+>
+> **Commit:** não commitado (pendente do usuário).
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados do IMG-01"):** CHORE-09 (job de limpeza de imagens órfãs, BAIXA) e SEC-34 (WebP não é reencodado, BAIXA).
+
+---
+
+## IMG-01: imagem do produto — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🌸 DataBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 26, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.** Os dois ajustes do 🟡 BackBrain apontados pelo 🔴 TestBrain (colisão de UUID apagando tmp alheio; `Remover` devolvendo `ctx.Err()` após apagar) foram concluídos em 2026-10-31, com `go test ./...` e `go vet` verdes nos dois módulos.
+**Camadas:** Segurança, Database, Backend, Frontend, Testes, Documentação
+**Origem:** pedido do usuário (2026-10-31).
+
+**Pedido:** imagem do produto na tela de produtos, gravada no backend numa pasta pública sem autenticação; só imagens, validadas pelo conteúdo (JPEG, PNG, WebP; SVG proibido); nome GUID com a extensão do tipo detectado; até 1 MB; uma imagem por produto, com troca (apaga a antiga) e remoção; imagem de teste para cada produto existente, com o nome na diagonal, gravada pelo mesmo processo do upload.
+
+**Contrato final:**
+- `POST /api/produtos/{id}/imagem` (admin): multipart com uma única parte `imagem`; header `X-Requested-With: XMLHttpRequest` obrigatório. Ordem: policy → id → anti-CSRF → corpo. `200` `{"success":true,"data":<produto>}`. Erros: `400` "id inválido"; `403` "requisição de upload recusada"; `413` "imagem excede 1 MB"; `400` "arquivo de imagem inválido (use JPEG, PNG ou WebP)"; `404` "produto não encontrado"; `401`/`403` da policy.
+- `DELETE /api/produtos/{id}/imagem` (admin): `200` com `imagem_url: null`; idempotente; `404` para produto inexistente.
+- `GET /api/public/produtos/imagens/{arquivo}` (pública): HEAD e Range; `Content-Type` de mapa fixo; `Cache-Control: public, max-age=31536000, immutable`, `Cross-Origin-Resource-Policy: same-site`, `Content-Disposition: inline`, mais nosniff, CSP e XFO; `404` "imagem não encontrada".
+- JSON do produto: `imagem_url` = `"/api/public/produtos/imagens/<uuid>.<ext>"` ou `null`.
+
+**Entregue:**
+- 🟣 **SecBrain:** especificação de segurança (limite de 1 MB antes de ler o corpo, validação por magic bytes e decode, nome UUID sem path traversal, pasta pública sem listagem, headers fixos, anti-CSRF no upload, troca sem órfãos nem corrida). A rota pública nova foi aprovada. Decisões do 🤍 MegaBrain: D1 (reencode de JPEG e PNG), D2 (`X-Requested-With` obrigatório), D3 (não multipart → 400), D4 (comando de geração) e D5 (órfãos em card próprio).
+- 🌸 **DataBrain:** `sql/26_alter_produtos_imagem.sql` e `sql/26_revert_produtos_imagem.sql` (idempotentes); `sql/10_ddl_produtos.sql` atualizado. Coluna `imagem VARCHAR(41) NULL`, UNIQUE `uk_produtos_imagem` e CHECK `chk_produtos_imagem`; o regex do CHECK usa o prefixo `(?-i)`, porque a collation `_ci` deixaria passar maiúsculas. Alvos `make db-fix-produtos-imagem` e `make db-revert-produtos-imagem`. Aplicado no banco local (servidor local MariaDB 11.8.8, não 11.4).
+- 🟡 **BackBrain:**
+  - `API/internal/catalogohttp/imagem_handler.go` (`EnviarImagem`, `RemoverImagem`, `ImagemPublicaHandler.Servir`), 3 rotas em `API/internal/bootstrap/rotas.go`, montagem em `bootstrap/handlers.go`, `imagem_url` em `catalogohttp/dto.go`. Total: 64 rotas.
+  - Validação: magic bytes (`http.DetectContentType`) → `DecodeConfig` → limites (1 a 4096 por lado, W×H ≤ 16M) → decode completo. JPEG e PNG reencodados; WebP gravado como veio. Nome e extensão do cliente ignorados.
+  - Gravação: adapter `SH/catalogo/catalogofs` com `os.Root`, UUID v4 via `crypto/rand`, escrita atômica (tmp + rename), diretório 0750 e arquivos 0640. Transação com `FOR UPDATE`; a imagem antiga só é apagada depois do commit. Casos de uso em `SH/catalogo/catalogoapp/imagens.go`; domínio em `SH/catalogo/imagem.go` e `erros.go`.
+  - Config `PRODUTO_IMAGENS_DIR` (padrão `./data/produtos-imagens`; em dev, `API/data/produtos-imagens/`), fail-fast na subida, documentada em `.env.example` e `deploy/api.env.example`. `deploy/docker-compose.yml` com o volume `produto_imagens`; `apis/Dockerfile` cria o diretório com dono 65532.
+  - Comando `API/cmd/gerarimagens` + `API/internal/gerarimagens` (flags `-confirmar`, `-sobrescrever`, `-dry-run`), pelo `make db-gerar-imagens-produtos`. PNG 600x600 com o nome do produto na diagonal. **Já rodado: 292 imagens geradas, 292 produtos com `imagem` preenchido.**
+  - Dependência nova `golang.org/x/image v0.47.0` (govulncheck sem achados).
+  - **Desvios aprovados pelo 🤍 MegaBrain:** validação no adapter `SH/catalogo/catalogoimagem` (porta `NormalizadorImagens`), porque `catalogoapp` não pode importar `net/http`; sem `Kind` para 413 (o handler checa o erro diretamente); fonte `gofont/gobold` (traz `x/text` indireto); id validado antes do anti-CSRF; `-dry-run` funciona sem `-confirmar`.
+- 🟢 **FrontBrain:** `frontend/src/lib/apiClient.ts` (sem `Content-Type` quando o body é `FormData`); `lib/api.ts` (`enviarImagemProduto`, `removerImagemProduto`); `lib/types.ts` (`imagem_url`); `lib/imagemProduto.ts` (novo: URL só com o prefixo público e validação de UX no cliente); `components/admin/ProdutoModal.tsx` (seção "Imagem" só na edição e só para admin, preview com revoke, mensagens da API, remoção com confirmação); `app/admin/produtos/page.tsx` (miniatura de 40 px com placeholder). `make test-frontend`: 39 arquivos e 1652 testes, todos passando.
+- 🔴 **TestBrain:** 84 funções de teste, 421 casos, todos verdes. Cobertura: `catalogoimagem` 91,9%, `catalogofs` 86,2%, `catalogoapp/imagens.go` 100%, `imagem_handler.go` 99%, `gerarimagens` 95,3%. O `make test` continua saindo com erro por causa do TST-08 (`covdata`); o `go test ./...` passa.
+- 🔵 **SubBrain:** collection Postman (3 requests com testes no fim da pasta "Produtos", variável `imagem_arquivo`, seção "Mudanças do Lote 26" na descrição); `postman/README.md` (Lote 26, endpoints, testes, `413`, "Imagens de produto" em "Subindo o ambiente"); `docs/arquitetura-ddd.md` (64 rotas, árvore, contexto Catálogo, §10.13 nova); `docs/manual-base-de-dados.md` (coluna, CHECK, UNIQUE, migração 26, §13.1); `docs/roteiro-teste-manual-lote26.md` (novo: uso da tela passo a passo e roteiro de teste).
+
+**Achados do 🔴 TestBrain e decisões do 🤍 MegaBrain:**
+- Colisão de UUID apagava o tmp de outra gravação: **em correção pelo 🟡 BackBrain** no fechamento.
+- `Remover` devolvia `ctx.Err()` depois de apagar: **em correção pelo 🟡 BackBrain** no fechamento.
+- `..` literal no caminho dá `307`, não `404`: o redirect leva para fora da rota e nada vaza. **Aceito.**
+- WebP com HTML anexado é gravado inteiro: mitigado por nosniff, CSP e tipo fixo. **Aceito**; virou o card SEC-34.
+- Alguns multipart chunked grandes dão `400` em vez de `413`. **Aceito.**
+- Commit com erro ambíguo pode deixar o banco apontando para um arquivo inexistente: **virou card** (CHORE-09, junto com a limpeza de órfãos).
 
 ---
 ## DB-05: `make db-seed-mes-atual` (movimentações de exemplo no mês corrente) — 2026-10-31

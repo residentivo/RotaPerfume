@@ -25,12 +25,12 @@ func newProdutoTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	return db, mock
 }
 
-var produtoColunasRegex = `id, sku, descricao, categoria, marca, COALESCE\(nota_olfativa, ''\), preco_tabela, custo_unitario, unidade, data_lancamento, ativo, created_at, updated_at`
+var produtoColunasRegex = `id, sku, descricao, categoria, marca, COALESCE\(nota_olfativa, ''\), preco_tabela, custo_unitario, unidade, data_lancamento, ativo, COALESCE\(imagem, ''\), created_at, updated_at`
 
 func produtoColunasHeader() []string {
 	return []string{
 		"id", "sku", "descricao", "categoria", "marca", "nota_olfativa",
-		"preco_tabela", "custo_unitario", "unidade", "data_lancamento", "ativo", "created_at", "updated_at",
+		"preco_tabela", "custo_unitario", "unidade", "data_lancamento", "ativo", "imagem", "created_at", "updated_at",
 	}
 }
 
@@ -43,7 +43,7 @@ func produtoRowsAtivo(ativo bool) *sqlmock.Rows {
 	now := time.Now()
 	return sqlmock.NewRows(produtoColunasHeader()).
 		AddRow(int64(1), "SKU-001", "Perfume Teste", "Perfumaria", "Marca X", "Cítrico",
-			99.90, 45.00, "UN", nil, ativo, now, now)
+			99.90, 45.00, "UN", nil, ativo, "", now, now)
 }
 
 func emptyProdutoRows() *sqlmock.Rows {

@@ -6,7 +6,7 @@
 > **Escopo (no ARQ-00):** `apis/rotaperfumes-api` (handlers, services, middleware, routes, cmd) e `apis/shared` (repositories, models, services, config, db, cnpj, tz, vlog, importers, cmd, tools, cmdutil).
 > **Referências obrigatórias:**
 > - invariantes de segurança do 🟣 SecBrain: `docs/arq-00-invariantes-seguranca.md` (IDs R-, F-, C-, I-, E-, V-, D-, M-);
-> - matriz de rotas do 🔴 TestBrain: `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 35 Authenticated, 21 AdminOnly; corrigido no ARQ-01, N-6; desde o DASH-01, Lote 22, 2026-10-29, são **61**: 4 Public, 36 Authenticated, 21 AdminOnly, com `GET /api/dashboard/funil`);
+> - matriz de rotas do 🔴 TestBrain: `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 35 Authenticated, 21 AdminOnly; corrigido no ARQ-01, N-6; desde o DASH-01, Lote 22, 2026-10-29, são **61**: 4 Public, 36 Authenticated, 21 AdminOnly, com `GET /api/dashboard/funil`; desde o IMG-01, Lote 26, 2026-10-31, são **64**: 5 Public, 36 Authenticated, 23 AdminOnly, com `POST`/`DELETE /api/produtos/{id}/imagem` e `GET /api/public/produtos/imagens/{arquivo}`);
 > - linha de base de testes e cobertura (2026-10-13): API **720** testes de topo, cobertura **91,5%**; shared **593** testes de topo, cobertura **85,6%** (ver §7.1).
 >
 > **Banco (DB-03, 2026-10-29):** o servidor passou de MySQL para **MariaDB 11.4 LTS**. O driver Go continua sendo o `go-sql-driver/mysql` (compatível com o MariaDB) e os pacotes de adapter mantêm o sufixo `<ctx>mysql` (decisão de escopo: nenhum pacote foi renomeado). Nas seções abaixo, "MySQL" no nome de pacote, do driver ou de tipo (`*mysql.MySQLError`) continua valendo; onde o texto fala do comportamento do servidor (InnoDB, isolamento, erro 1062), vale igualmente para o MariaDB. Para os alvos `make db-*` e `db-seed`, o cliente `mariadb` (MariaDB ≥ 11.4) precisa estar no `PATH`.
@@ -1785,9 +1785,11 @@ apis/
 ├── Dockerfile                                (inalterado; compila ./cmd/server)
 ├── shared/                                   módulo github.com/rotaperfumes/shared
 │   ├── kernel/          data.go dinheiro.go email.go erros.go escopo.go ordenacao.go pagina.go principal.go rota.go
-│   ├── catalogo/        produto.go estoque.go sku.go ordenacao.go erros.go                       DOMÍNIO
-│   │   ├── catalogoapp/     casos.go portas.go produtos.go estoque.go                            APLICAÇÃO
-│   │   └── catalogomysql/   produtos.go estoques.go faturamento.go linhas.go                     ADAPTER
+│   ├── catalogo/        produto.go estoque.go sku.go ordenacao.go erros.go imagem.go             DOMÍNIO
+│   │   ├── catalogoapp/     casos.go portas.go produtos.go estoque.go imagens.go                 APLICAÇÃO
+│   │   ├── catalogomysql/   produtos.go estoques.go faturamento.go linhas.go                     ADAPTER
+│   │   ├── catalogofs/      armazenamento.go  (imagens em disco via os.Root, IMG-01)             ADAPTER
+│   │   └── catalogoimagem/  normalizador.go   (validação e reencode de imagem, IMG-01)           ADAPTER
 │   ├── identidade/      usuario.go refresh.go historico.go politica_senha.go segredos.go erros.go
 │   │   ├── identidadeapp/   casos.go portas.go login.go sessao.go senha.go usuarios.go massa.go limpeza.go
 │   │   ├── identidademysql/ usuarios.go refresh_tokens.go historico.go
@@ -1818,15 +1820,17 @@ apis/
 └── rotaperfumes-api/                         módulo github.com/rotaperfumes/rotaperfumes-api
     ├── cmd/server/main.go        carrega .env e config, liga o vlog e chama bootstrap.Run
     ├── cmd/resetsenhas/main.go   main fino → internal/resetsenhas
+    ├── cmd/gerarimagens/main.go  main fino → internal/gerarimagens (IMG-01)
     ├── internal/
     │   ├── bootstrap/    server.go rotas.go handlers.go identidade.go comercial.go vendas.go analytics.go email.go background.go
     │   ├── httpx/        router.go chain.go cors.go secheaders.go auth.go principal.go errmap.go respond.go
     │   │                 query.go body.go casos.go clientip.go cookies.go logging.go
-    │   ├── catalogohttp/    produto_handler.go estoque_handler.go dto.go
+    │   ├── catalogohttp/    produto_handler.go estoque_handler.go imagem_handler.go dto.go
     │   ├── identidadehttp/  auth_handler.go usuario_handler.go senha_historico_handler.go dto.go
     │   ├── comercialhttp/   cliente_handler.go vendedor_handler.go visita_handler.go oportunidade_handler.go dto.go
     │   ├── vendashttp/      pedido_handler.go pagamento_handler.go dto.go
     │   ├── analyticshttp/   dashboard_handler.go dto.go
+    │   ├── gerarimagens/    gerarimagens.go render.go (IMG-01)
     │   └── resetsenhas/     resetsenhas.go (OPS-01)
     └── tests/            (inclui tests/arquitetura)
 ```
@@ -1837,7 +1841,7 @@ Removidos no ARQ-07 (não existem mais): `rotaperfumes-api/{handlers,services,mi
 
 | Contexto | Domínio | Aplicação | Adapters | HTTP |
 |---|---|---|---|---|
-| Catálogo (Produto, Estoque) | `shared/catalogo` | `catalogoapp` | `catalogomysql` (inclui `faturamento.go`, a baixa de estoque usada por Vendas na mesma tx) | `internal/catalogohttp` |
+| Catálogo (Produto, Estoque, Imagem do produto) | `shared/catalogo` | `catalogoapp` | `catalogomysql` (inclui `faturamento.go`, a baixa de estoque usada por Vendas na mesma tx), `catalogofs` (porta `ArmazenamentoImagens`) e `catalogoimagem` (porta `NormalizadorImagens`), ambos do IMG-01 | `internal/catalogohttp` |
 | Identidade e Acesso (Usuário, RefreshToken, Histórico de senha) | `shared/identidade` | `identidadeapp` | `identidademysql`, `identidadecrypto` (hash Argon2id/bcrypt, JWT, aleatoriedade), `shared/adapters/turnstile`, `shared/adapters/ratelimit` | `internal/identidadehttp` + autenticação em `internal/httpx/auth.go` |
 | Comercial (Vendedor, Carteira, Cliente, Visita, Oportunidade) | `shared/comercial` | `comercialapp` (inclui o `AutorizadorEscopo`) | `comercialmysql` | `internal/comercialhttp` |
 | Vendas (Pedido + itens, Pagamento) | `shared/vendas` | `vendasapp` (Unit of Work `TxPedido`) | `vendasmysql` | `internal/vendashttp` |
@@ -1857,9 +1861,10 @@ Regras de dependência efetivas (verificadas pelos testes do §10.8):
 ### 10.3 Composition root (`rotaperfumes-api/internal/bootstrap`)
 
 - `server.go`: `Run(cfg)` abre o pool (`db.Open`, DSN mascarado), chama `Montar`, sobe a limpeza periódica de refresh tokens (`identidadeapp.IniciarLimpezaPeriodica`) e o `http.Server` (timeouts 15/15/60 s) e, no SIGINT/SIGTERM, desliga na ordem servidor (10 s) → tarefas de fundo (até 10 s, `background.go`) → alertas de segurança em andamento (até 10 s, `Notificador.Aguardar`) → pool. `Montar(cfg, pool)` liga e-mail (`NovoEmail`: SMTP ou Noop; config SMTP inválida → `log.Fatalf`), notificador de alerta, Identidade (captcha Turnstile, publicador de eventos, e-mail), os handlers e a cadeia `Logging → CORS → SecurityHeaders → mux`. O próprio `identidadeapp.Casos` é o checker de status por request (SEC-06).
-- `rotas.go`: `HandlerHTTP` (CORS → SecurityHeaders → mux, usado também pelos testes), `NovoRouter` e a **tabela declarativa das 61 rotas** (4 Public, 36 Authenticated, 21 AdminOnly; eram 60 até o DASH-01, Lote 22, que acrescentou `GET /api/dashboard/funil`), cada uma com `Metodo`, `Padrao`, `Policy` (`Public`, `Authenticated`, `AdminOnly`), `Arquivo` e `Funcao` (rótulo do vlog nível 1). `Rotas()` do router é a fonte da matriz `tests/routes/arq00_matriz_rotas_test.go`.
+- `rotas.go`: `HandlerHTTP` (CORS → SecurityHeaders → mux, usado também pelos testes), `NovoRouter` e a **tabela declarativa das 64 rotas** (5 Public, 36 Authenticated, 23 AdminOnly; eram 60 até o DASH-01, Lote 22, que acrescentou `GET /api/dashboard/funil`, e 61 até o IMG-01, Lote 26, que acrescentou `POST`/`DELETE /api/produtos/{id}/imagem` e a rota pública `GET /api/public/produtos/imagens/{arquivo}`), cada uma com `Metodo`, `Padrao`, `Policy` (`Public`, `Authenticated`, `AdminOnly`), `Arquivo` e `Funcao` (rótulo do vlog nível 1). `Rotas()` do router é a fonte da matriz `tests/routes/arq00_matriz_rotas_test.go`.
 - `handlers.go`, `identidade.go`, `comercial.go`, `vendas.go`, `analytics.go`, `email.go`: uma função `Novo<Contexto>` (casos de uso sobre o pool) e `Novo<Contexto>HTTP` (handlers) por contexto. O escopo de carteira é um só para Vendas e Analytics (`comercialCasos.Escopo()`).
 - `cmd/server/main.go` só carrega `.env` e config, liga o `vlog` e chama `bootstrap.Run`.
+- **IMG-01 (Lote 26, 2026-10-31):** `handlers.go` abre o armazenamento de imagens (`ArmazenamentoDoConfig` → `AbrirArmazenamentoImagens(cfg.ProdutoImagensDir)` → `catalogofs.Novo`: `MkdirAll` 0750, `os.OpenRoot` e teste de escrita; falha → `log.Fatalf`) e liga `catalogofs` e `catalogoimagem` nos casos de uso do Catálogo. O mesmo `AbrirArmazenamentoImagens` é usado pelo comando `cmd/gerarimagens`.
 
 ### 10.4 Kit HTTP (`rotaperfumes-api/internal/httpx`)
 
@@ -1987,7 +1992,20 @@ Todos têm controle negativo (fonte sintética que a regra precisa reprovar).
 - **Estado no código (conferido em 2026-10-16):** **não tratada no código, aceita e documentada.** O comentário de `shared/analytics/analyticsapp/consultas.go` (`Novo`, linhas 34 a 37) registra a ressalva. A proteção é o composition root: `bootstrap/analytics.go` monta `analyticsmysql.NovoDashboard(pool, relogio)` e `analyticsmysql.NovoClientes(pool)` (construtores que devolvem ponteiros novos) e o escopo vem de `comercialCasos.Escopo()`, que devolve o `AutorizadorEscopo` criado em `comercialapp.Novo` por `NovoAutorizadorEscopo` (nunca nil). O checker do `httpx.NovoAutenticador` é o `*identidadeapp.Casos` devolvido por `NovaIdentidade` (nunca nil).
 - **Se quiser fechar no código (decisão do 🤍 MegaBrain/usuário, fora do Lote 21):** checar com `reflect.ValueOf(dep).IsNil()` para tipos ponteiro nos construtores, ou um teste do bootstrap que monte a API e faça uma chamada por contexto. Sem card aberto.
 
-### 10.13 Pendências que saíram do Lote 21
+### 10.13 Imagem do produto (IMG-01, Lote 26, 2026-10-31)
+
+- **Rotas** (tabela em `bootstrap/rotas.go`, rótulo `imagem_handler.go`): `POST /api/produtos/{id}/imagem` (`AdminOnly`, `ProdutoHandler.EnviarImagem`), `DELETE /api/produtos/{id}/imagem` (`AdminOnly`, `ProdutoHandler.RemoverImagem`) e `GET /api/public/produtos/imagens/{arquivo}` (`Public`, `ImagemPublicaHandler.Servir`). Total: 64 rotas (5 Public, 36 Authenticated, 23 AdminOnly). A rota pública começa com `/api/` porque o Caddy só encaminha `/api/*` à API; foi aprovada pelo 🟣 SecBrain.
+- **HTTP (`catalogohttp/imagem_handler.go`):** ordem policy → `IDDoPath` → anti-CSRF (`X-Requested-With: XMLHttpRequest`; `Origin`, se houver, do próprio host ou da allowlist CORS) → corpo. Lê o multipart com `r.MultipartReader()` (sem `ParseMultipartForm`, nada vai a disco temporário), uma única parte `imagem`, `http.MaxBytesReader` com teto de 1 MB + 64 KB e `Content-Length` acima disso recusado sem ler. O 413 é escrito pelo próprio handler (`errors.Is(err, catalogo.ErrImagemMuitoGrande)`); não foi criado `Kind` novo (desvio aprovado pelo 🤍 MegaBrain). A leitura pública não usa `http.FileServer`: confere o nome pelo regex, usa `Content-Type` de mapa fixo e `http.ServeContent` (HEAD, Range, If-Modified-Since), com `Cache-Control: public, max-age=31536000, immutable`, `Cross-Origin-Resource-Policy: same-site` e `Content-Disposition: inline`.
+- **Domínio (`catalogo/imagem.go`, `erros.go`):** `MaxImagemBytes`, regex do nome (`<uuid-v4>.(jpg|png|webp)`), `TipoDoNome` e os sentinelas `ErrImagemInvalida` (400), `ErrImagemMuitoGrande` (413 no handler) e `ErrImagemNaoEncontrada` (404).
+- **Aplicação (`catalogoapp/imagens.go`):** `DefinirImagemProduto`, `RemoverImagemProduto` e `AbrirImagemProduto`, sobre as portas `ArmazenamentoImagens` (`Gravar`, `Remover`, `Abrir`) e `NormalizadorImagens`. Troca: grava o arquivo novo → tx com `SELECT ... FOR UPDATE` → `UPDATE` → commit → só então remove o antigo (best-effort, com log). Falha antes do commit apaga o arquivo novo.
+- **Adapter `catalogoimagem`:** a validação ficou num adapter, e não em `catalogoapp`, porque a aplicação não pode importar `net/http` (`http.DetectContentType`); desvio aprovado pelo 🤍 MegaBrain. Passos: magic bytes → `image.DecodeConfig` (só jpeg, png e `golang.org/x/image/webp`; sem gif) → limites (1 a 4096 px por lado, W×H ≤ 16M) → decode completo → reencode de JPEG e PNG. WebP é gravado como veio (card SEC de backlog).
+- **Adapter `catalogofs`:** tudo via `*os.Root` aberto em `PRODUTO_IMAGENS_DIR`; UUID v4 por `crypto/rand`; escrita atômica (`.tmp-<uuid>` com `O_EXCL`, `Sync`, `Rename`); diretório 0750 e arquivos 0640; `Remover`/`Abrir` aplicam o regex mesmo para nomes vindos do banco.
+- **Config:** `config.ProdutoImagensDir` (`PRODUTO_IMAGENS_DIR`, padrão `./data/produtos-imagens`, `Clean` + `Abs`; vazio, `/` ou dentro de `frontend/public` → `config.ErrProdutoImagensDir`).
+- **Comando `cmd/gerarimagens` + `internal/gerarimagens`:** monta os mesmos casos de uso e o mesmo adapter de disco e chama `DefinirImagemProduto` (mesma validação, mesmo nome UUID, mesma troca). Gera PNG 600x600 com o nome na diagonal (fonte `gofont/gobold`). Flags `-confirmar`, `-sobrescrever`, `-dry-run`; alvo `make db-gerar-imagens-produtos`.
+- **Dependência nova:** `golang.org/x/image v0.47.0` (traz `golang.org/x/text` indireto pela fonte); govulncheck sem achados.
+- **Cobertura (🔴 TestBrain):** `catalogoimagem` 91,9%, `catalogofs` 86,2%, `catalogoapp/imagens.go` 100%, `imagem_handler.go` 99%, `gerarimagens` 95,3%.
+
+### 10.14 Pendências que saíram do Lote 21
 
 Todas em `tarefas/afazer.md`, fora do escopo do lote: ARQ-09, BUG-14 a BUG-18, SEC-14 a SEC-28, TST-06, TST-07, CHORE-03 a CHORE-06.
 

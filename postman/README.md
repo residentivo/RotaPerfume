@@ -29,6 +29,7 @@ A coleção inclui variáveis pré-definidas. Ajuste `{{base_url}}` se sua API e
 | `vendedor_token` | (vazio) | JWT de um vendedor (preenchido pelo teste "Login Vendedor") |
 | `refresh_token` | (vazio) | Refresh token (preenchido automaticamente após login) |
 | `senha_vendedor` | (vazio) | Senha dos usuários de seed, usada no "Login — Vendedor". **Preencha à mão** com o `SEED_USER_PASSWORD` do `.env` ou a senha impressa pelo `make db-seed` (DOC-03, 2026-09-26) |
+| `imagem_arquivo` | (vazio) | Nome do arquivo da imagem do produto (`<uuid-v4>.png` etc.). Preenchido pelo teste de "Enviar/Trocar Imagem do Produto" e usado na leitura pública (IMG-01, Lote 26, 2026-10-31) |
 
 ### 3. Autenticar
 
@@ -209,6 +210,20 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | BUG-17 (nota) | `PUT /api/estoque/{id}` | Sem mudança, só documentado: **PUT de estoque é sobrescrita absoluta** do saldo, inclusive por cima de baixas de faturamento concorrentes. |
 | BUG-19, BUG-21 | Dashboard e baixa de estoque | Sem mudança de contrato. `arredondar2` usa `math.Round` (negativos corretos, nunca `-0`); a ruptura do upsert de faturamento é calculada sobre o saldo já atualizado. |
 | Doc | `DELETE /api/pedidos/{id}` | Correção: o `409` de pagamentos vinculados é `"pedido possui pagamentos vinculados"` (a documentação e o exemplo mostravam um sufixo que a API não envia). |
+
+## Mudanças do Lote 26 (2026-10-31): imagem do produto (IMG-01)
+
+> **3 rotas novas** e um campo novo no JSON do produto; nenhum contrato existente mudou. A API passa de 61 para **64 rotas** (5 Public, 36 Authenticated, 23 AdminOnly). Na collection, 3 requests no fim da pasta **"Produtos"**: "Enviar/Trocar Imagem do Produto", "Imagem do Produto — leitura pública" e "Remover Imagem do Produto", nessa ordem (rodar a remoção antes da leitura dá `404`). Os exemplos de produto anteriores ao Lote 26 não mostram `imagem_url`. Teste manual: `docs/roteiro-teste-manual-lote26.md`.
+
+| Card | Endpoint | Mudança |
+|------|----------|---------|
+| IMG-01 | `POST /api/produtos/{id}/imagem` | **Novo, admin.** `multipart/form-data` com uma única parte `imagem` (JPEG, PNG ou WebP, até 1 MB). Header `X-Requested-With: XMLHttpRequest` obrigatório. `200` com o produto. Detalhe em "POST /api/produtos/{id}/imagem" abaixo. |
+| IMG-01 | `DELETE /api/produtos/{id}/imagem` | **Novo, admin.** `200` com `imagem_url: null`; idempotente; `404` se o produto não existe. |
+| IMG-01 | `GET /api/public/produtos/imagens/{arquivo}` | **Novo, público** (sem token, sem cookie). Serve o arquivo com `Content-Type` fixo pela extensão e cache imutável de 1 ano. Aceita `HEAD` e `Range`. `404` `"imagem não encontrada"`. |
+| IMG-01 | `GET /api/produtos`, `GET /api/produtos/{id}`, `POST`/`PUT`/`PATCH` de produtos | Campo novo `imagem_url`: `"/api/public/produtos/imagens/<uuid>.<jpg\|png\|webp>"` ou `null`. O diretório no servidor nunca é exposto. |
+| IMG-01 | Config e deploy | Env nova `PRODUTO_IMAGENS_DIR` (padrão `./data/produtos-imagens`; em dev, `apis/rotaperfumes-api/data/produtos-imagens/`). Vazio, `/` ou dentro de `frontend/public` impede a subida, assim como diretório sem permissão de escrita. No deploy, volume `produto_imagens` montado em `/data/produtos-imagens`. |
+| IMG-01 | Banco | Coluna `produtos.imagem` (migração 26, `make db-fix-produtos-imagem`; revert `make db-revert-produtos-imagem`). Ver `docs/manual-base-de-dados.md`, seção 13. |
+| IMG-01 | `make db-gerar-imagens-produtos` | Gera um PNG 600x600 com o nome do produto na diagonal para cada produto sem imagem, pelo mesmo caso de uso do upload. Já rodado no banco local: 292 imagens. Ver "Imagens de produto" em "Subindo o ambiente". |
 
 ## Endpoints
 
@@ -527,6 +542,31 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Descrição:** Ativa ou inativa o produto (exclusão lógica)
 - **Body inválido (BUG-06, 2026-09-25):** vazio, `null`, `{}` ou `{"ativo":null}` → toggle; `{"ativo":true|false}` → define o valor; body preenchido e inválido (JSON malformado, `{"ativo":"x"}`, `{"ativo":1}`, `[true]`) → `400` `"body JSON inválido"`, sem alterar o produto.
 - **Toggle atômico (BUG-17, Lote 25, 2026-10-30):** sem valor explícito, a API grava `UPDATE produtos SET ativo = NOT ativo WHERE id = ?` (sem ler antes), então dois toggles concorrentes não se anulam. Com valor explícito, grava `SET ativo = ?`. Nos dois casos o produto é relido para a resposta (o `updated_at` é o real). `404` se não existir. Na tela, o botão fica bloqueado por 1,5 s depois de cada clique. Clientes e usuários ainda leem e invertem (card BUG-22).
+
+> **Campo `imagem_url` (IMG-01, Lote 26, 2026-10-31):** todas as respostas com produto trazem `imagem_url`, que é `"/api/public/produtos/imagens/<uuid-v4>.<jpg|png|webp>"` (caminho relativo à base da API) ou `null` quando o produto não tem imagem. O frontend só exibe a imagem se o valor começar com esse prefixo.
+
+#### POST /api/produtos/{id}/imagem
+- **Auth:** Bearer Token (admin); usuário `normal` recebe `403`
+- **Headers:** `X-Requested-With: XMLHttpRequest` (**obrigatório**, anti-CSRF). Se houver `Origin`, ela precisa ser a do próprio host ou uma das origens CORS permitidas.
+- **Body:** `multipart/form-data` com **exatamente uma** parte, `imagem`. Outra parte, segunda parte, outro nome de campo, corpo vazio ou corpo que não é multipart → `400`.
+- **Ordem das checagens:** policy (`401`/`403`) → id (`400` `"id inválido"`) → anti-CSRF (`403` `"requisição de upload recusada"`) → corpo (`413`/`400`) → produto (`404`).
+- **Validação pelo conteúdo** (o nome, a extensão e o `Content-Type` enviados pelo cliente são ignorados): magic bytes (`http.DetectContentType`) → cabeçalho da imagem (`DecodeConfig`) → limites (1 a 4096 px por lado, largura × altura ≤ 16.000.000) → decodificação completa. JPEG e PNG são **reencodados** (EXIF e bytes anexados saem); WebP é gravado como veio (card SEC de backlog).
+- **Gravação:** nome `<uuid-v4>.<ext>` (UUID via `crypto/rand`, extensão do tipo detectado), escrita atômica (arquivo temporário + rename) em `PRODUTO_IMAGENS_DIR`. Banco em transação com `FOR UPDATE`; a imagem antiga só é apagada depois do commit.
+- **Resposta:** `200` `{"success":true,"data":<produto>}`, com `imagem_url` preenchido.
+- **Erros:** `400` `"id inválido"`; `400` `"arquivo de imagem inválido (use JPEG, PNG ou WebP)"`; `401`; `403` `"acesso restrito a administradores"`; `403` `"requisição de upload recusada"`; `404` `"produto não encontrado"` (o arquivo gravado é apagado); `413` `"imagem excede 1 MB"` (limite de 1.048.576 bytes; `Content-Length` acima de 1 MB + 64 KB é recusado sem ler o corpo; alguns envios chunked grandes recebem `400`, aceito pelo 🤍 MegaBrain).
+
+#### DELETE /api/produtos/{id}/imagem
+- **Auth:** Bearer Token (admin); usuário `normal` recebe `403`
+- **Descrição:** grava `imagem = NULL` (transação com `FOR UPDATE`) e apaga o arquivo depois do commit. **Idempotente:** produto sem imagem também responde `200`.
+- **Resposta:** `200` com o produto e `"imagem_url": null`.
+- **Erros:** `400` `"id inválido"`; `401`; `403`; `404` `"produto não encontrado"`.
+
+#### GET /api/public/produtos/imagens/{arquivo}
+- **Auth:** nenhuma (rota pública; não lê token nem cookie e não envia `Set-Cookie`)
+- **Path:** `arquivo` = `<uuid-v4>.jpg|.png|.webp` em minúsculas. Nome fora do padrão → `404` sem tocar o disco.
+- **Resposta:** `200` com os bytes. `Content-Type` de mapa fixo (`image/jpeg`, `image/png`, `image/webp`), `Cache-Control: public, max-age=31536000, immutable`, `Cross-Origin-Resource-Policy: same-site`, `Content-Disposition: inline`, mais `X-Content-Type-Options: nosniff`, CSP e `X-Frame-Options` globais. `HEAD` → `200` sem corpo; `Range` → `206`. Outros métodos → `405`.
+- **Erros:** `404` `"imagem não encontrada"`. `..` literal no caminho recebe `307` do roteador para fora da rota (nada vaza; aceito).
+- **Dev:** use o mesmo host (`localhost`) no frontend e na API, por causa do `Cross-Origin-Resource-Policy: same-site`.
 
 ### Pedidos (`/api/pedidos/*`) — **acesso comum, com escopo por carteira** (atualizado em 2026-09-23)
 
@@ -905,6 +945,21 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 - `Status 200 OK`
 - `Produto com campo ativo retornado`
 
+### Enviar/Trocar Imagem do Produto (IMG-01, Lote 26)
+- `Status 200 OK`
+- `Produto com imagem_url pública (UUID v4 + extensão do tipo detectado)`
+- Salva o último segmento de `imagem_url` em `imagem_arquivo`. Antes de enviar, escolha o arquivo no campo `imagem` da aba Body.
+
+### Imagem do Produto — leitura pública (IMG-01, Lote 26)
+- `Status 200 OK`
+- `Content-Type de imagem (mapa fixo)`
+- `Cabeçalhos de cache e segurança` (`Cache-Control`, `nosniff`, `Cross-Origin-Resource-Policy`, `Content-Disposition`)
+- `Sem Set-Cookie`
+
+### Remover Imagem do Produto (IMG-01, Lote 26)
+- `Status 200 OK`
+- `Produto retornado com imagem_url null`
+
 ### Listar Pedidos
 - `Status 200`
 - `Lista retornada`
@@ -1050,6 +1105,9 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | Detalhe do Produto | 1 | — |
 | Editar Produto | 2 | — |
 | Ativar/Inativar Produto | 2 | — |
+| Enviar/Trocar Imagem do Produto (Lote 26) | 2 | `imagem_arquivo` |
+| Imagem do Produto — leitura pública (Lote 26) | 4 | — |
+| Remover Imagem do Produto (Lote 26) | 2 | — |
 | Listar Pedidos | 2 | — |
 | Criar Pedido | 2 | — |
 | Detalhe do Pedido | 2 | — |
@@ -1086,6 +1144,7 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 | 401 | Não autenticado (token ausente/inválido) ou credenciais inválidas |
 | 403 | Acesso restrito a administradores; usuário `normal` sem vendedor vinculado (escritas); ou `"acesso bloqueado: vendedor desligado"` nas rotas da carteira (2026-09-24) |
 | 404 | Recurso não encontrado |
+| 413 | `"imagem excede 1 MB"` no upload da imagem do produto (IMG-01, Lote 26) |
 | 409 | Conflito: duplicidade (e-mail, CNPJ, SKU, estoque do SKU na data, vínculo de carteira na data; CHORE-06, Lote 25), pedido Faturado/Entregue (itens ou exclusão), pagamento quitado (exclusão; edição pelo `normal`, SEC-27) |
 | 500 | Erro interno do servidor |
 
@@ -1144,6 +1203,21 @@ make db-up && make db-import-produtos
 ```
 
 O importador (`apis/shared/cmd/importprodutos`) é idempotente (upsert por `sku`) e pode ser executado quantas vezes for necessário sem duplicar registros. Itens do CSV são importados com `ativo = true` por padrão. Sem esse passo, os endpoints `GET /api/produtos`, `GET /api/produtos/{id}`, `POST/PUT /api/produtos` e `PATCH /api/produtos/{id}/inativar` funcionam normalmente, mas retornam/operam sobre base vazia.
+
+### Imagens de produto (IMG-01, Lote 26, 2026-10-31)
+
+As imagens ficam em disco, em `PRODUTO_IMAGENS_DIR` (padrão `./data/produtos-imagens`, relativo ao diretório da API; em dev, `apis/rotaperfumes-api/data/produtos-imagens/`, fora do git). O banco guarda só o nome do arquivo (`produtos.imagem`). Documentada em `.env.example` e `deploy/api.env.example`. A API não sobe se o valor for vazio, `/`, ficar dentro de `frontend/public` ou se o diretório não aceitar escrita. No deploy (`deploy/docker-compose.yml`), o volume nomeado `produto_imagens` é montado em `/data/produtos-imagens`; o `apis/Dockerfile` cria o diretório com dono 65532 (usuário nonroot).
+
+Banco criado antes do Lote 26: aplique a coluna com `make db-fix-produtos-imagem` (idempotente; revert `make db-revert-produtos-imagem`). Bancos novos já nascem com ela (`sql/10_ddl_produtos.sql`).
+
+Para gerar uma imagem de teste para cada produto (PNG 600x600 com o nome do produto na diagonal, gravado pelo mesmo caso de uso do upload, com a mesma validação e o mesmo nome UUID):
+
+```bash
+make db-gerar-imagens-produtos                                        # só produtos sem imagem
+make db-gerar-imagens-produtos GERAR_IMAGENS_FLAGS=-sobrescrever      # troca todas
+```
+
+O comando (`apis/rotaperfumes-api/cmd/gerarimagens`) aceita `-confirmar` (obrigatório para gravar; o alvo do `make` já passa), `-sobrescrever` e `-dry-run` (lista sem gravar; funciona sem `-confirmar`). No banco local (2026-10-31): 292 imagens geradas, 292 produtos com `imagem` preenchido.
 
 ### Importação de pedidos (ERP)
 

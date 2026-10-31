@@ -25,6 +25,7 @@ import {
   apiUpdateProduto,
 } from "@/lib/api";
 import { Produto, ProdutoInput } from "@/lib/types";
+import { urlImagemProduto } from "@/lib/imagemProduto";
 import { vlog } from "@/lib/vlog";
 
 const FILE = "admin/produtos/page.tsx";
@@ -401,6 +402,16 @@ function ProdutosPageContent() {
     setModalOpen(false);
   };
 
+  // IMG-01: upload/remocao da imagem no modal atualiza so a linha da lista
+  // (editingProduto nao muda, para nao resetar o formulario aberto).
+  vlog(FILE, "ProdutosPageContent", "definindo handler handleImagemAlterada");
+  const handleImagemAlterada = (updated: Produto) => {
+    vlog(FILE, "ProdutosPageContent.handleImagemAlterada", "substituindo produto na lista (produto_id=%d)", updated.id);
+    setProdutos((prev) =>
+      prev.map((p) => (p.id === updated.id ? updated : p))
+    );
+  };
+
   vlog(FILE, "ProdutosPageContent", "montando definicao das colunas da tabela");
   const columns: Column<Produto>[] = [
     {
@@ -410,6 +421,33 @@ function ProdutosPageContent() {
       align: "left",
       sortable: true,
       render: (p) => <span className="font-mono text-xs">#{p.id}</span>,
+    },
+    {
+      key: "imagem",
+      header: "Imagem",
+      width: "72px",
+      align: "center",
+      render: (p) => {
+        const src = urlImagemProduto(p.imagem_url);
+        return src ? (
+          // eslint-disable-next-line @next/next/no-img-element -- IMG-01: miniatura servida pela API (rota publica), sem next/image
+          <img
+            src={src}
+            alt={`${p.id} - ${p.descricao}`}
+            loading="lazy"
+            decoding="async"
+            className="mx-auto h-10 w-10 rounded-md border border-slate-200 bg-slate-50 object-cover"
+          />
+        ) : (
+          <div
+            className="mx-auto flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-[10px] text-slate-400"
+            title="Sem imagem"
+            aria-label="Sem imagem"
+          >
+            -
+          </div>
+        );
+      },
     },
     {
       key: "descricao",
@@ -660,6 +698,7 @@ function ProdutosPageContent() {
         produto={editingProduto}
         onClose={() => setModalOpen(false)}
         onSubmit={handleModalSubmit}
+        onImagemAlterada={handleImagemAlterada}
       />
     </div>
   );

@@ -33,10 +33,15 @@ COPY rotaperfumes-api/ ./rotaperfumes-api/
 RUN cd rotaperfumes-api && \
     go build -trimpath -ldflags "-s -w" -o /out/server ./cmd/server
 
+# IMG-01: diretorio das imagens de produto (PRODUTO_IMAGENS_DIR). O volume
+# nomeado do compose herda dono e modo deste diretorio na primeira montagem.
+RUN mkdir -p /out/data/produtos-imagens && chmod 0750 /out/data/produtos-imagens
+
 # ---------- runtime ----------
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/server /app/server
+COPY --from=build --chown=65532:65532 /out/data /data
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/app/server"]

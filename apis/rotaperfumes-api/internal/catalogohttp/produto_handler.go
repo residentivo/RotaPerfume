@@ -12,7 +12,12 @@ import (
 // ProdutoHandler trata /api/produtos/* (leitura Authenticated; escrita
 // AdminOnly, C-01, aplicado pela rota). O nome do tipo e dos métodos é o
 // rótulo do vlog de rota, igual ao legado.
-type ProdutoHandler struct{ casos *catalogoapp.Casos }
+type ProdutoHandler struct {
+	casos *catalogoapp.Casos
+	// origensUpload são as origens (além do próprio host) aceitas no
+	// upload de imagem quando o request traz Origin (D2).
+	origensUpload []string
+}
 
 // NovoProdutoHandler exige os casos de uso (nil: panic na montagem).
 func NovoProdutoHandler(c *catalogoapp.Casos) *ProdutoHandler {
@@ -20,6 +25,13 @@ func NovoProdutoHandler(c *catalogoapp.Casos) *ProdutoHandler {
 		panic("catalogohttp: NovoProdutoHandler exige os casos de uso")
 	}
 	return &ProdutoHandler{casos: c}
+}
+
+// ComOrigensUpload define as origens aceitas no upload de imagem (as do
+// CORS) e devolve o próprio handler.
+func (h *ProdutoHandler) ComOrigensUpload(origens []string) *ProdutoHandler {
+	h.origensUpload = append([]string(nil), origens...)
+	return h
 }
 
 // ListProdutos GET /api/produtos?page&limit&categoria&marca&ativo&q&order_by&order_dir

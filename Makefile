@@ -1,4 +1,4 @@
-.PHONY: help reset-senhas-simular reset-senhas-ativos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint \
+.PHONY: help reset-senhas-simular reset-senhas-ativos db-gerar-imagens-produtos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-produtos-imagem db-revert-produtos-imagem db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
@@ -142,6 +142,20 @@ db-fix-taxa-pct-check: db-check-env ## Cria o CHECK chk_pagamentos_taxa_pct (0 a
 
 db-revert-taxa-pct-check: db-check-env ## Reverte db-fix-taxa-pct-check (remove o CHECK; o teto de taxa_pct fica so no dominio)
 	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/24_revert_pagamentos_taxa_pct_check.sql
+
+db-fix-produtos-imagem: db-check-env ## Adiciona produtos.imagem + CHECK chk_produtos_imagem + UNIQUE uk_produtos_imagem (IMG-01) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/26_alter_produtos_imagem.sql
+
+db-revert-produtos-imagem: db-check-env ## Reverte db-fix-produtos-imagem (remove CHECK, UNIQUE e coluna; perde os vinculos produto->imagem, arquivos ficam orfaos)
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/26_revert_produtos_imagem.sql
+
+# IMG-01: gera um PNG por produto (nome na diagonal) pelo mesmo caso de uso do
+# upload, no PRODUTO_IMAGENS_DIR (padrão apis/rotaperfumes-api/data/produtos-imagens).
+# Flags extras: make db-gerar-imagens-produtos GERAR_IMAGENS_FLAGS=-sobrescrever
+# (ou -dry-run para só simular).
+GERAR_IMAGENS_FLAGS ?=
+db-gerar-imagens-produtos: db-check-env ## IMG-01: gera e grava a imagem PNG (nome na diagonal) dos produtos sem imagem (GERAR_IMAGENS_FLAGS=-sobrescrever troca todas)
+	cd apis/rotaperfumes-api && go run ./cmd/gerarimagens -confirmar $(GERAR_IMAGENS_FLAGS)
 
 db-seed-mes-atual: db-check-env ## Gera movimentacoes de exemplo no mes corrente (pedidos/itens/pagamentos/oportunidades/visitas/estoque/carteiras; idempotente, refaz so as linhas do seed do mes)
 	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/25_seed_movimentacoes_mes_atual.sql

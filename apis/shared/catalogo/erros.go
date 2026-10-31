@@ -23,6 +23,14 @@ var (
 	// ErrSKUDuplicado (CHORE-06): 1062 em uk_produtos_sku no INSERT, 409.
 	ErrSKUDuplicado = kernel.NovoErro(kernel.KindConflito, "sku já cadastrado")
 
+	// IMG-01: imagem do produto. As mensagens são fixas (nunca o nome do
+	// arquivo do cliente). ErrImagemMuitoGrande é KindInvalido, mas o handler
+	// a responde como 413 antes do mapper.
+	ErrImagemInvalida       = kernel.NovoErro(kernel.KindInvalido, "arquivo de imagem inválido (use JPEG, PNG ou WebP)")
+	ErrImagemMuitoGrande    = kernel.NovoErro(kernel.KindInvalido, "imagem excede 1 MB")
+	ErrImagemNaoEncontrada  = kernel.NovoErro(kernel.KindNaoEncontrado, "imagem não encontrada")
+	ErrImagensIndisponiveis = kernel.NovoErro(kernel.KindInterno, "erro interno")
+
 	ErrEstoqueNaoEncontrado   = kernel.NovoErro(kernel.KindNaoEncontrado, "registro de estoque não encontrado")
 	ErrEstoqueSKUInexistente  = kernel.NovoErro(kernel.KindInvalido, "sku não corresponde a um produto cadastrado")
 	ErrEstoqueSaldoInvalido   = kernel.NovoErro(kernel.KindInvalido, "saldo deve ser maior ou igual a zero")

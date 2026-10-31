@@ -83,7 +83,7 @@ func bug09Casos() []bug09Caso {
 			linhaGravada: func(id int64, criado, atualizado time.Time) *sqlmock.Rows {
 				return sqlmock.NewRows(produtoColunasHeader()).
 					AddRow(id, "SKU-001", "Descricao Do Banco", "Perfumaria", "Marca X", "Cítrico",
-						99.90, 45.00, "UN", criado, true, criado, atualizado)
+						99.90, 45.00, "UN", criado, true, "", criado, atualizado)
 			},
 			criar: func(db *sql.DB, verbose bool) (*bug09Resultado, error) {
 				// ARQ-02: catalogoapp.CriarProduto (verbose vira vlog, sem cfg).

@@ -135,7 +135,8 @@ func TestMontar_CheckerDoBanco(t *testing.T) {
 }
 
 // TestNovoRouter_ContagemEMetodosDasRotas: o total de rotas registradas
-// (61 desde o DASH-01, que somou GET /api/dashboard/funil) e o método de
+// (61 desde o DASH-01, que somou GET /api/dashboard/funil; 64 desde o IMG-01,
+// que somou POST/DELETE /api/produtos/{id}/imagem e a leitura pública) e o método de
 // cada uma. O nome não carrega o número para não envelhecer a cada rota.
 func TestNovoRouter_ContagemEMetodosDasRotas(t *testing.T) {
 	pool, _, err := sqlmock.New()
@@ -144,7 +145,7 @@ func TestNovoRouter_ContagemEMetodosDasRotas(t *testing.T) {
 	cfg := testCfg()
 	hs := bootstrap.NovosHandlers(pool, cfg, notificacaosmtp.NovoNoop())
 	rotas := bootstrap.NovoRouter(cfg, checkerNulo{}, hs).Rotas()
-	assert.Len(t, rotas, 61) // 60 + /api/dashboard/funil (DASH-01)
+	assert.Len(t, rotas, 64) // 60 + /api/dashboard/funil (DASH-01) + 3 de imagem (IMG-01)
 	re := regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE)$`)
 	funil := 0
 	for _, rt := range rotas {

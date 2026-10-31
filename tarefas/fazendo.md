@@ -1,6 +1,10 @@
 # Fazendo
 
-> Atualizado em 2026-10-31 (🔵 SubBrain). **Nenhum card em execução.** O DB-05 (`make db-seed-mes-atual`) foi concluído e está em `feito.md` (não commitado, pendente do usuário).
+> Atualizado em 2026-10-31 (fechamento do Lote 26, 🔵 SubBrain): **nenhum card em execução.** O **IMG-01** (imagem do produto) foi concluído e está em `feito.md` ("Lote 26 de 2026-10-31"; não commitado, pendente do usuário). Dele saíram os cards CHORE-09 e SEC-34 em `afazer.md` (bloco "Achados do IMG-01").
+>
+> Antes, ainda em 2026-10-31 (abertura do Lote 26, 🔵 SubBrain): o 🤍 MegaBrain abriu o **Lote 26** com um card, o **IMG-01** (imagem do produto), pedido direto do usuário (não passou por `afazer.md`). Passos: 🟣 SecBrain especificando → 🌸 DataBrain, 🟡 BackBrain, 🟢 FrontBrain e 🔴 TestBrain → 🔵 SubBrain fechando.
+>
+> Antes, ainda em 2026-10-31: nenhum card em execução. O DB-05 (`make db-seed-mes-atual`) foi concluído e está em `feito.md` (não commitado, pendente do usuário).
 >
 > Antes, em 2026-10-30: nenhum card em execução.
 >
