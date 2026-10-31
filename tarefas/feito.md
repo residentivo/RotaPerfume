@@ -3769,3 +3769,12 @@ make db-up && make db-import-clientes
 
 **Frontend:**
 - `frontend/src/app/admin/senha-historico/page.tsx` — tabela com badges, filtros, paginação
+
+## UX-03: dica flutuante (tooltip) no filtro "Pesquisar por data" do estoque — prioridade BAIXA ✅
+
+**Concluído em:** 2026-10-31 (não commitado, pendente do usuário)
+**Camadas:** Frontend
+**Responsável:** 🟢 FrontBrain (aberto e fechado pelo 🤍 MegaBrain)
+**Entrega:** em `frontend/src/app/admin/estoque/page.tsx`, o `helperText` fixo "Ultima posicao de cada produto ate a data" virou tooltip (`role="tooltip"`, ligado ao input via `aria-describedby`), visível só com hover ou foco (`group-hover`/`group-focus-within`). Estilo copiado do tooltip do Dashboard (`bg-slate-800`, `text-xs`). `Input.tsx` não foi alterado.
+**Verificação:** `npx eslint` no arquivo e `npx tsc --noEmit` passaram (exit 0). Não foi testado no navegador.
+**Segurança:** sem impacto (texto estático).

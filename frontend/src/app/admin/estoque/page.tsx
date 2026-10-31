@@ -500,14 +500,21 @@ function EstoquePageContent() {
                   }
                 />
               </div>
-              <div className="sm:w-48">
+              <div className="group relative sm:w-48">
                 <Input
                   label="Pesquisar por data"
                   type="date"
                   value={dataFiltro}
                   onChange={(e) => setDataFiltro(e.target.value)}
-                  helperText="Ultima posicao de cada produto ate a data"
+                  aria-describedby="estoque-data-filtro-tooltip"
                 />
+                <div
+                  id="estoque-data-filtro-tooltip"
+                  role="tooltip"
+                  className="pointer-events-none absolute left-0 top-full z-20 mt-1 whitespace-nowrap rounded-sm bg-slate-800 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  Ultima posicao de cada produto ate a data
+                </div>
               </div>
               <div className="sm:w-44">
                 <Select
