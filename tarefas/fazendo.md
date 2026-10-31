@@ -1,6 +1,8 @@
 # Fazendo
 
-> Atualizado em 2026-10-30 (🔵 SubBrain). **Nenhum card em execução.**
+> Atualizado em 2026-10-31 (🔵 SubBrain). **Nenhum card em execução.** O DB-05 (`make db-seed-mes-atual`) foi concluído e está em `feito.md` (não commitado, pendente do usuário).
+>
+> Antes, em 2026-10-30: nenhum card em execução.
 >
 > Histórico: o **Lote 25** (8 cards: BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21), aberto em 2026-10-29 depois das decisões de produto do usuário, foi concluído por 🌸 DataBrain, 🟡 BackBrain, 🟢 FrontBrain e 🔴 TestBrain e fechado pelo 🔵 SubBrain em 2026-10-30. Os 8 cards, com as decisões (originais e refinadas), as extensões do 🤍 MegaBrain, as entregas, os testes e as pendências, estão em `feito.md` ("Lote 25 de 2026-10-30: 8 cards concluídos"; não commitado, pendente do usuário). As pendências viraram os cards TST-09, TST-10, CHORE-08 e FE-16 em `afazer.md` (bloco "Achados do Lote 25"). Passos anteriores do Lote 25: "🌸 DataBrain e 🟡 BackBrain implementando" (2026-10-30), "aguarda o fechamento do Lote 24; especificação pronta" e "🟣 SecBrain especificando" (2026-10-29).
 >

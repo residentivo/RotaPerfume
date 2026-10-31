@@ -2,7 +2,26 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+> Atualizado em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## DB-05: `make db-seed-mes-atual` (movimentações de exemplo no mês corrente) — 2026-10-31
+
+**Camadas:** Database (Makefile + SQL)
+**Responsável:** 🌸 DataBrain → 🔵 SubBrain
+**Origem:** pedido do usuário (2026-10-31). Não commitado (pendente do usuário).
+
+**Entrega:** `sql/25_seed_movimentacoes_mes_atual.sql` e o alvo `db-seed-mes-atual` no `Makefile`. O seed gera movimentações do mês corrente a partir dos clientes, vendedores, produtos e carteiras existentes. A data de referência é `LAST_DAY(CURDATE())`, então os movimentos ocupam o mês inteiro (ajuste pedido pelo usuário; antes o limite era `CURDATE()`).
+
+**Volume por execução:** 1000 pedidos (10 páginas), 4500 itens, 950 pagamentos (620 com vencimento no mês), 700 oportunidades, 700 visitas, 1460 snapshots de estoque (5 datas × 292 SKUs) e 150 carteiras (100 ativas, 50 encerradas).
+
+**Cobertura de domínio:** todos os valores aparecem: status e canais do pedido, status e formas de pagamento, etapas, origens e motivos de perda das oportunidades, resultados das visitas, estoque com e sem ruptura, carteiras ativas e encerradas.
+
+**Idempotência:** o marcador é `created_at` igual à meia-noite da data do movimento, dentro do mês corrente. Cada execução apaga e refaz só as linhas marcadas e reabre as carteiras importadas que o seed encerrou. Tudo roda em uma transação. Testado com 3 execuções seguidas e com uma simulação no dia 10 (ROLLBACK).
+
+**Decisão do usuário:** a tela de Estoque, limitada a 292 linhas (só o snapshot mais recente por SKU, cerca de 3 páginas), foi aceita como está.
+
+**Limitações registradas:** o perfil vendedor vê só os próprios dados (cerca de 28 pedidos no mês); reexecutar consome IDs AUTO_INCREMENT; linhas do seed editadas pela API são refeitas na próxima execução do mês; rodando antes do fim do mês, o seed cria movimentos com data futura.
 
 ---
 ## Lote 25 de 2026-10-30: 8 cards concluídos

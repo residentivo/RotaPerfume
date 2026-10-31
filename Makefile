@@ -1,4 +1,4 @@
-.PHONY: help reset-senhas-simular reset-senhas-ativos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque test test-all lint \
+.PHONY: help reset-senhas-simular reset-senhas-ativos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
@@ -142,6 +142,9 @@ db-fix-taxa-pct-check: db-check-env ## Cria o CHECK chk_pagamentos_taxa_pct (0 a
 
 db-revert-taxa-pct-check: db-check-env ## Reverte db-fix-taxa-pct-check (remove o CHECK; o teto de taxa_pct fica so no dominio)
 	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/24_revert_pagamentos_taxa_pct_check.sql
+
+db-seed-mes-atual: db-check-env ## Gera movimentacoes de exemplo no mes corrente (pedidos/itens/pagamentos/oportunidades/visitas/estoque/carteiras; idempotente, refaz so as linhas do seed do mes)
+	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/25_seed_movimentacoes_mes_atual.sql
 
 db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
 	cd apis/shared && go run ./cmd/importclientes
