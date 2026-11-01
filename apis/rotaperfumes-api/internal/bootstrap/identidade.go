@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"database/sql"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
@@ -80,7 +82,25 @@ func NovaIdentidade(pool *sql.DB, cfg *config.Config, ext ExtIdentidade) *identi
 
 // extPadrao: Turnstile real, sem assinante de evento.
 func extPadrao(cfg *config.Config, email identidadeapp.EnviadorSenhaInicial) ExtIdentidade {
-	return ExtIdentidade{Captcha: turnstile.Novo(cfg.TurnstileSecretKey), Publicador: identidadeapp.SemPublicador{}, Email: email}
+	return ExtIdentidade{Captcha: turnstile.Novo(cfg.TurnstileSecretKey, cfg.TurnstileHostnames), Publicador: identidadeapp.SemPublicador{}, Email: email}
+}
+
+// avisarCaptcha loga, uma vez no startup, como o Turnstile vai conferir a
+// origem do token (SEC-19): só a quantidade de hostnames, nunca a secret.
+func avisarCaptcha(cfg *config.Config) {
+	if turnstile.SecretDeTeste(cfg.TurnstileSecretKey) {
+		log.Printf("[config] Turnstile em modo de teste: hostname/action não conferidos")
+		return
+	}
+	if len(cfg.TurnstileHostnames) == 0 {
+		log.Printf("[config] Turnstile sem hostnames aceitos: todo captcha será recusado")
+		return
+	}
+	origem := "TURNSTILE_HOSTNAMES"
+	if strings.TrimSpace(os.Getenv("TURNSTILE_HOSTNAMES")) == "" {
+		origem = "derivados do CORS"
+	}
+	log.Printf("[config] Turnstile: hostnames aceitos=%d (%s)", len(cfg.TurnstileHostnames), origem)
 }
 
 // IdentidadeHTTP são os handlers do contexto.

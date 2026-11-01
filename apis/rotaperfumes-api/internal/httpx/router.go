@@ -43,14 +43,19 @@ func (p Policy) String() string {
 // MaxCorpo é o teto do corpo em bytes (SEC-14): 0 usa MaxCorpoPadrao;
 // negativo dá panic na montagem. Só o upload de imagem declara um teto
 // próprio (matriz ARQ-00).
+//
+// LiberaTrocaSenhaPendente deixa passar o usuário com deve_trocar_senha
+// (SEC-23); o padrão (false) responde 403. Só a troca de senha e o /me
+// declaram true; numa rota Public dá panic na montagem.
 type Rota struct {
-	Metodo   string
-	Padrao   string
-	Policy   Policy
-	Arquivo  string // ex.: "produto_handler.go"
-	Funcao   string // ex.: "ProdutoHandler.ListProdutos"
-	Handler  http.HandlerFunc
-	MaxCorpo int64
+	Metodo                   string
+	Padrao                   string
+	Policy                   Policy
+	Arquivo                  string // ex.: "produto_handler.go"
+	Funcao                   string // ex.: "ProdutoHandler.ListProdutos"
+	Handler                  http.HandlerFunc
+	MaxCorpo                 int64
+	LiberaTrocaSenhaPendente bool
 }
 
 // Router registra rotas num http.ServeMux aplicando, por rota, a ordem
@@ -95,10 +100,17 @@ func (r *Router) Handle(rt Rota) {
 	if rt.MaxCorpo < 0 {
 		panic("httpx: rota " + rt.Padrao + " com MaxCorpo negativo")
 	}
+	if rt.Policy == Public && rt.LiberaTrocaSenhaPendente {
+		panic("httpx: rota pública " + rt.Padrao + " não passa pelo Autenticador (LiberaTrocaSenhaPendente sem efeito)")
+	}
 
 	var h http.Handler = Trace(rt.Arquivo, rt.Funcao, rt.Handler)
 	h = limitarCorpo(rt, h)
-	if rt.Policy != Public {
+	switch {
+	case rt.Policy == Public:
+	case rt.LiberaTrocaSenhaPendente:
+		h = r.auth.ExigirLiberandoTrocaPendente(rt.Policy, h)
+	default:
 		h = r.auth.Exigir(rt.Policy, h)
 	}
 	r.mux.Handle(rt.Metodo+" "+rt.Padrao, h)

@@ -40,7 +40,6 @@ const (
 	dlReExisteCliente  = `SELECT 1 FROM clientes WHERE cliente_id_origem = \? LIMIT 1`
 	dlReExisteVendedor = `SELECT 1 FROM vendedores WHERE id = \? LIMIT 1`
 	dlReExisteSKU      = `SELECT 1 FROM produtos WHERE sku = \? LIMIT 1`
-	dlReExistePedido   = `SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`
 )
 
 var errDLParar = errors.New("parar após capturar o INSERT")
@@ -141,8 +140,9 @@ func dlPagamentoInput(venc, pag string) vendas.DadosNovoPagamento {
 func dlCriarPagamento(t *testing.T, venc, pag string) *time.Time {
 	t.Helper()
 	db, mock := dlNewDB(t)
-	mock.ExpectQuery(dlReExistePedido).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
+	esperarLockPedido(mock, 1, 1) // SEC-35: o INSERT roda na tx, com o pedido travado
 	mock.ExpectExec(`INSERT INTO pagamentos`).WillReturnResult(sqlmock.NewResult(5, 1))
+	mock.ExpectCommit()
 	p, err := casosVendas(db, 0).CriarPagamento(context.Background(), principalAdmin(), lerFixo(dlPagamentoInput(venc, pag)))
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -381,7 +381,8 @@ func TestBUG01_DataInvalidaContinuaRejeitada(t *testing.T) {
 			// Pagamento confere o pedido antes de validar as datas.
 			for _, in := range []vendas.DadosNovoPagamento{dlPagamentoInput(s, ""), dlPagamentoInput("2024-01-01", s)} {
 				dbp, mockp := dlNewDB(t)
-				mockp.ExpectQuery(dlReExistePedido).WithArgs(int64(1)).WillReturnRows(dlExisteRow())
+				esperarLockPedido(mockp, 1, 1)
+				mockp.ExpectRollback()
 				_, err = casosVendas(dbp, 0).CriarPagamento(ctx, principalAdmin(), lerFixo(in))
 				if in.DataPagamento == s {
 					assert.ErrorIs(t, err, vendas.ErrDataPagamentoInvalida)

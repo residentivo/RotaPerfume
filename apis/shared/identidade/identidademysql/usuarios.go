@@ -69,11 +69,11 @@ func (r *Usuarios) PorID(ctx context.Context, id int64) (*identidade.Usuario, er
 
 // StatusParaAutenticacao é a consulta enxuta (sem JOIN) de cada request protegido.
 func (r *Usuarios) StatusParaAutenticacao(ctx context.Context, id int64) (identidade.StatusAcesso, error) {
-	const q = `SELECT ativo, role, tokens_validos_desde FROM usuarios WHERE id = ? LIMIT 1`
+	const q = `SELECT ativo, role, tokens_validos_desde, deve_trocar_senha FROM usuarios WHERE id = ? LIMIT 1`
 	var st identidade.StatusAcesso
 	var role string
 	var corte sql.NullTime
-	if err := r.q.QueryRowContext(ctx, q, id).Scan(&st.Ativo, &role, &corte); err != nil {
+	if err := r.q.QueryRowContext(ctx, q, id).Scan(&st.Ativo, &role, &corte, &st.DeveTrocarSenha); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return identidade.StatusAcesso{}, identidade.ErrUsuarioNaoEncontrado
 		}

@@ -50,8 +50,9 @@ func Montar(cfg *config.Config, pool *sql.DB) *App {
 	notifier := NovoNotificadorAlerta(pool, email, cfg.SecurityAlertEmails)
 	log.Printf("[server] alertas de segurança: admins=%d", len(cfg.SecurityAlertEmails))
 
+	avisarCaptcha(cfg)
 	identidade := NovaIdentidade(pool, cfg, ExtIdentidade{
-		Captcha:    turnstile.Novo(cfg.TurnstileSecretKey),
+		Captcha:    turnstile.Novo(cfg.TurnstileSecretKey, cfg.TurnstileHostnames),
 		Publicador: identidadeapp.NovoPublicadorLocal(assinanteAlerta(notifier)),
 		Email:      email,
 	})

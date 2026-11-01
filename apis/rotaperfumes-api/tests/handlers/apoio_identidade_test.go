@@ -60,11 +60,11 @@ func (c *captchaTrocavel) trocar(v identidadeapp.VerificadorCaptcha) {
 	c.v = v
 }
 
-func (c *captchaTrocavel) Verificar(ctx context.Context, token, ip string) error {
+func (c *captchaTrocavel) Verificar(ctx context.Context, token, ip, acao string) error {
 	c.mu.Lock()
 	v := c.v
 	c.mu.Unlock()
-	return v.Verificar(ctx, token, ip)
+	return v.Verificar(ctx, token, ip, acao)
 }
 
 // alertaTrocavel é o publicador do evento de reuso do teste; sem assinante

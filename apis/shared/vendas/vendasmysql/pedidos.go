@@ -149,12 +149,6 @@ func scanItem(s db.Linha) (*vendas.ItemPedido, error) {
 	})
 }
 
-// Existe informa se o pedido existe (validação do pedido_id do pagamento).
-func (r *Pedidos) Existe(ctx context.Context, id int64) (bool, error) {
-	return db.Existe(ctx, r.q, arqPedidos, "Pedidos.Existe", "vendasmysql: exists pedido",
-		`SELECT 1 FROM pedidos WHERE pedido_id_origem = ? LIMIT 1`, id)
-}
-
 // ---------------------------------------------------------------------------
 // Escritas (sempre dentro da tx do UoW do pedido)
 // ---------------------------------------------------------------------------

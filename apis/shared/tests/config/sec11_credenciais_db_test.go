@@ -58,6 +58,7 @@ func sec11Base() map[string]*string {
 		"ARGON2_MEMORIA_KIB":            nil,
 		"ARGON2_ITERACOES":              nil,
 		"ARGON2_PARALELISMO":            nil,
+		"TURNSTILE_HOSTNAMES":           nil,
 	}
 }
 

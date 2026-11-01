@@ -61,7 +61,32 @@ func TestARQ03_ContratoJSON_Me_ByteAByte(t *testing.T) {
 	assert.Equal(t, envelopeMapLegado(t, map[string]any{
 		"id": int64(3), "nome": "João", "email": "joao@test.com", "role": "normal", "ativo": true,
 		"id_vendedor": &vend, "created_at": criado, "ultimo_login_at": (*time.Time)(nil), "vendedor_desligado": false,
+		"trocar_senha": false,
 	}), string(readBody(t, resp)))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// SEC-23: /me devolve trocar_senha (deve_trocar_senha do banco), para o
+// frontend mandar o usuário para a troca de senha.
+func TestSEC23_Me_DevolveTrocarSenha(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+	criado := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(usuarioByIDSQL).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows(usuarioCols).
+		AddRow(int64(3), "João", "joao@test.com", "hash", "normal", nil, true, true, criado, criado, nil, nil))
+
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+generateToken(t, testCfg(), 3, "normal"))
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeResponse(t, readBody(t, resp))
+	data, ok := body["data"].(map[string]any)
+	require.True(t, ok, "envelope com data")
+	assert.Equal(t, true, data["trocar_senha"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -126,7 +151,7 @@ func (emissorFalho) Emitir(int64, kernel.Role) (string, error) {
 
 type captchaOK struct{}
 
-func (captchaOK) Verificar(_ context.Context, _, _ string) error { return nil }
+func (captchaOK) Verificar(_ context.Context, _, _, _ string) error { return nil }
 
 func TestARQ03_FalhaAoEmitirJWT_MensagensDoLegado(t *testing.T) {
 	cfg := testCfg()

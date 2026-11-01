@@ -21,6 +21,8 @@ Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevToo
    | normal com vendedor ativo | `rafael.carvalho@rotaperfumes.com.br` | 5 | 4 - Rafael Carvalho |
    | normal com vendedor **desligado** | `thiago.silva@rotaperfumes.com.br` | 4 | 3 - Thiago Silva (`data_desligamento` = 2025-07-26) |
 
+   > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** os usuários do seed (`sql/03_seed_vendedores.sql`, como `rafael.carvalho` e `thiago.silva`) nascem com `deve_trocar_senha = 1`, assim como os usuários criados ou com a senha resetada pelo admin. Com a flag ligada, a API responde `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password`, e o frontend leva para `/trocar-senha`. Antes de começar, confira (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE id IN (1, 4, 5);`), troque a senha de quem estiver com `1` e faça login de novo.
+
 3. CNPJs de teste (nenhum existe na base: os 3000 clientes atuais são numéricos):
 
    | Uso | CNPJ | Com máscara |

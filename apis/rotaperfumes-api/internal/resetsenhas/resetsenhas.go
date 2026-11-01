@@ -84,7 +84,7 @@ func rodar(cfg *config.Config, executar bool, amb cmdutil.Ambiente, deps Deps) e
 	}
 
 	identidade := bootstrap.NovaIdentidade(pool, cfg, bootstrap.ExtIdentidade{
-		Captcha: turnstile.Novo(cfg.TurnstileSecretKey), Publicador: identidadeapp.SemPublicador{}, Email: email,
+		Captcha: turnstile.Novo(cfg.TurnstileSecretKey, cfg.TurnstileHostnames), Publicador: identidadeapp.SemPublicador{}, Email: email,
 	})
 	fmt.Fprintf(amb.Saida, "Banco: %s@%s:%s | SMTP: %s (from %s) | modo: %s\n",
 		cfg.DBName, cfg.DBHost, cfg.DBPort, cfg.SMTPHost, vlog.MaskEmail(cfg.SMTPFrom), modo(executar))

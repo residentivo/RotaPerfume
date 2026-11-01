@@ -315,9 +315,11 @@ func TestPagamentoService_CreatePagamento_PedidoIDObrigatorio(t *testing.T) {
 
 func TestPagamentoService_CreatePagamento_PedidoNaoEncontrado(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegex).
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectRollback()
 
 	casos := casosVendas(db, 0)
 	in := validPagamentoInput()
@@ -330,9 +332,11 @@ func TestPagamentoService_CreatePagamento_PedidoNaoEncontrado(t *testing.T) {
 
 func TestPagamentoService_CreatePagamento_ErroExistsByID(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegex).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
+	mock.ExpectRollback()
 
 	casos := casosVendas(db, 0)
 	p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(validPagamentoInput()))
@@ -345,9 +349,8 @@ func TestPagamentoService_CreatePagamento_Validacoes(t *testing.T) {
 	for _, tc := range pagamentoValidacaoTestCases() {
 		t.Run(tc.nome, func(t *testing.T) {
 			db, mock := newPagamentoTestDB(t)
-			mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
-				WithArgs(int64(1)).
-				WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+			esperarLockPedido(mock, 1, 1)
+			mock.ExpectRollback()
 
 			casos := casosVendas(db, 0)
 			p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(tc.input()))
@@ -360,12 +363,11 @@ func TestPagamentoService_CreatePagamento_Validacoes(t *testing.T) {
 
 func TestPagamentoService_CreatePagamento_Sucesso(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	esperarLockPedido(mock, 1, 1)
 	mock.ExpectExec(`INSERT INTO pagamentos \(pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento\)`).
 		WithArgs(int64(1), "PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	casos := casosVendas(db, 0)
 	p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(validPagamentoInput()))
@@ -379,11 +381,10 @@ func TestPagamentoService_CreatePagamento_Sucesso(t *testing.T) {
 
 func TestPagamentoService_CreatePagamento_ErroCreateRepo(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	esperarLockPedido(mock, 1, 1)
 	mock.ExpectExec(`INSERT INTO pagamentos`).
 		WillReturnError(sql.ErrConnDone)
+	mock.ExpectRollback()
 
 	casos := casosVendas(db, 0)
 	p, err := casos.CriarPagamento(context.Background(), principalAdmin(), lerFixo(validPagamentoInput()))
@@ -498,25 +499,19 @@ func TestPagamentoService_UpdatePagamento_ComDataPagamento(t *testing.T) {
 // DeletePagamento
 // ---------------------------------------------------------------------------
 
-// pagamentoRowsComStatus é igual a pagamentoRows, mas permite parametrizar o
-// status_pagamento (pagamentoRows sempre retorna "Em aberto").
-func pagamentoRowsComStatus(id, pedidoID int64, valor float64, status string) *sqlmock.Rows {
-	now := time.Now()
-	return sqlmock.NewRows(pagamentoColunasHeader()).
-		AddRow(id, pedidoID, "PIX", uint8(1), valor, 0.0, valor, now, nil, status, now, now)
-}
+// deletePagamentoRegex é o DELETE condicionado a não quitado (SEC-35).
+const deletePagamentoRegex = `DELETE FROM pagamentos WHERE pagamento_id = \? AND status_pagamento NOT IN \(\?, \?\)`
 
-const deletePagamentoRegex = `DELETE FROM pagamentos WHERE pagamento_id = \?`
-
+// SEC-35: o admin não trava o pedido; o pagamento é travado na tx.
 func TestPagamentoService_DeletePagamento_Sucesso(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
 	esperarPossePagamento(mock, 1)
-	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pagamentoRows(1, 1, 100.0))
+	mock.ExpectBegin()
+	esperarLockPagamento(mock, 1, 1, "Em aberto")
 	mock.ExpectExec(deletePagamentoRegex).
-		WithArgs(int64(1)).
+		WithArgs(int64(1), "Pago", "Pago com atraso").
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
 
 	casos := casosVendas(db, 0)
 	err := casos.ExcluirPagamento(context.Background(), principalAdmin(), 1)
@@ -527,9 +522,11 @@ func TestPagamentoService_DeletePagamento_Sucesso(t *testing.T) {
 func TestPagamentoService_DeletePagamento_NaoEncontrado(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
 	esperarPossePagamento(mock, 999)
-	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectPagamentoForUpdateRegex).
 		WithArgs(int64(999)).
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectRollback()
 
 	casos := casosVendas(db, 0)
 	err := casos.ExcluirPagamento(context.Background(), principalAdmin(), 999)
@@ -546,9 +543,9 @@ func TestPagamentoService_DeletePagamento_JaQuitado_409(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			db, mock := newPagamentoTestDB(t)
 			esperarPossePagamento(mock, 1)
-			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
-				WithArgs(int64(1)).
-				WillReturnRows(pagamentoRowsComStatus(1, 1, 100.0, status))
+			mock.ExpectBegin()
+			esperarLockPagamento(mock, 1, 1, status)
+			mock.ExpectRollback()
 
 			casos := casosVendas(db, 0)
 			err := casos.ExcluirPagamento(context.Background(), principalAdmin(), 1)
@@ -561,12 +558,12 @@ func TestPagamentoService_DeletePagamento_JaQuitado_409(t *testing.T) {
 func TestPagamentoService_DeletePagamento_ErroDeleteRepo(t *testing.T) {
 	db, mock := newPagamentoTestDB(t)
 	esperarPossePagamento(mock, 1)
-	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pagamentoRows(1, 1, 100.0))
+	mock.ExpectBegin()
+	esperarLockPagamento(mock, 1, 1, "Em aberto")
 	mock.ExpectExec(deletePagamentoRegex).
-		WithArgs(int64(1)).
+		WithArgs(int64(1), "Pago", "Pago com atraso").
 		WillReturnError(sql.ErrConnDone)
+	mock.ExpectRollback()
 
 	casos := casosVendas(db, 0)
 	err := casos.ExcluirPagamento(context.Background(), principalAdmin(), 1)

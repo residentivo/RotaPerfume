@@ -23,18 +23,16 @@ type Pedidos interface {
 	PorID(ctx context.Context, id int64) (*vendas.Pedido, error)
 	// Itens devolve os itens do pedido (nil sem linhas).
 	Itens(ctx context.Context, pedidoID int64) ([]vendas.ItemPedido, error)
-	Existe(ctx context.Context, id int64) (bool, error)
 }
 
-// Pagamentos é o repositório de pagamentos.
+// Pagamentos é o repositório de pagamentos fora da tx. Criação e exclusão
+// rodam no TxPedido (SEC-35).
 type Pagamentos interface {
 	// Listar: o escopo de vendedor filtra pelos pedidos do vendedor
 	// (pedidos.vendedor_id, V-02); SemAcesso/zero value → erro SEM SQL (O1).
 	Listar(ctx context.Context, e kernel.Escopo, f vendas.FiltroPagamento, p kernel.Pagina) (kernel.Resultado[vendas.Pagamento], error)
 	// PorID devolve vendas.ErrPagamentoNaoEncontrado se não existir.
 	PorID(ctx context.Context, id int64) (*vendas.Pagamento, error)
-	// Inserir grava e preenche PagamentoID.
-	Inserir(ctx context.Context, p *vendas.Pagamento) error
 	// Atualizar grava os campos editáveis (nunca pedido_id, V-02);
 	// ErrPagamentoNaoEncontrado se nenhuma linha casar.
 	Atualizar(ctx context.Context, id int64, p *vendas.Pagamento) error
@@ -42,8 +40,6 @@ type Pagamentos interface {
 	// fora de Pago/Pago com atraso (SEC-27, perfil restrito);
 	// ErrPagamentoNaoEncontrado se nenhuma linha casar (inexistente ou quitado).
 	AtualizarSeNaoQuitado(ctx context.Context, id int64, p *vendas.Pagamento) error
-	Excluir(ctx context.Context, id int64) error
-	ExistePorPedido(ctx context.Context, pedidoID int64) (bool, error)
 }
 
 // EscopoCarteira é a porta para Comercial (comercialapp.AutorizadorEscopo
@@ -88,16 +84,27 @@ type BaixaEstoque interface {
 	AjustarSaldoPorFaturamento(ctx context.Context, sku string, dia time.Time, delta int) error
 }
 
-// PagamentosNaTx é a leitura de pagamentos DENTRO da tx do pedido (SEC-26):
-// com a linha do pedido travada, o INSERT de pagamento concorrente espera
-// o lock (FK fk_pagamentos_pedido), então uma leitura simples basta.
+// PagamentosNaTx são os pagamentos DENTRO da tx do pedido. Na exclusão do
+// pedido (SEC-26), com a linha do pedido travada, o INSERT de pagamento
+// concorrente espera o lock (FK fk_pagamentos_pedido), então uma leitura
+// simples basta. Criação e exclusão de pagamento (SEC-35) seguem a ordem de
+// lock pedido → pagamento.
 type PagamentosNaTx interface {
 	ExistePorPedido(ctx context.Context, pedidoID int64) (bool, error)
+	// Inserir grava e preenche PagamentoID; pedido inexistente (FK) →
+	// vendas.ErrPedidoNaoEncontrado.
+	Inserir(ctx context.Context, p *vendas.Pagamento) error
+	// TravarParaExcluir lê pedido_id e status com SELECT … FOR UPDATE;
+	// vendas.ErrPagamentoNaoEncontrado sem linha.
+	TravarParaExcluir(ctx context.Context, id int64) (*vendas.Pagamento, error)
+	// ExcluirSeNaoQuitado: DELETE condicionado a status fora de Pago/Pago
+	// com atraso; vendas.ErrPagamentoNaoEncontrado se nenhuma linha casar.
+	ExcluirSeNaoQuitado(ctx context.Context, id int64) error
 }
 
 // TxPedido são os repositórios ligados à tx do pedido: cabeçalho, itens,
-// a checagem de pagamentos da exclusão e a baixa de estoque do faturamento
-// no MESMO *sql.Tx (§5.2).
+// os pagamentos (checagem da exclusão do pedido, criação e exclusão de
+// pagamento) e a baixa de estoque do faturamento no MESMO *sql.Tx (§5.2).
 type TxPedido struct {
 	Pedidos    PedidosNaTx
 	Pagamentos PagamentosNaTx

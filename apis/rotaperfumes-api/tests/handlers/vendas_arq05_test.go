@@ -162,9 +162,9 @@ func TestARQ05_ContratoJSON_ByteAByte(t *testing.T) {
 		server, db, mock := setupTestServer(t)
 		defer server.Close()
 		defer db.Close()
-		mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).WithArgs(int64(1)).
-			WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+		expectLockPedidoH(mock, 1, 2) // SEC-35: o INSERT roda na tx, com o pedido travado
 		mock.ExpectExec(`INSERT INTO pagamentos`).WillReturnResult(sqlmock.NewResult(9, 1))
+		mock.ExpectCommit()
 		mock.ExpectQuery(`FROM pagamentos WHERE pagamento_id = \? LIMIT 1`).WithArgs(int64(9)).WillReturnError(errors.New("db down"))
 		pagamento := validPagamentoPayload()
 		pagamento["data_pagamento"] = "2024-01-16"

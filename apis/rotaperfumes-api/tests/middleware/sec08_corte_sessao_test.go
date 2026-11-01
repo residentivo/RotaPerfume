@@ -173,7 +173,7 @@ func TestSEC08_DBUserStatusChecker_RepassaCorte(t *testing.T) {
 		t.Run(tc.nome, func(t *testing.T) {
 			db, mock := newCheckerDB(t)
 			mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
-				WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(true, "admin", tc.valor))
+				WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}).AddRow(true, "admin", tc.valor, false))
 
 			st, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
 			require.NoError(t, err)
@@ -194,7 +194,7 @@ func TestSEC08_DBUserStatusChecker_RepassaCorte(t *testing.T) {
 func TestSEC08_DBUserStatusChecker_CorteInvalido_Erro(t *testing.T) {
 	db, mock := newCheckerDB(t)
 	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
-		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(true, "admin", "nao-e-data"))
+		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}).AddRow(true, "admin", "nao-e-data", false))
 
 	_, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
 	require.Error(t, err)

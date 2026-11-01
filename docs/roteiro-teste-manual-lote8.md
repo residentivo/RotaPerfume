@@ -21,6 +21,8 @@ Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevToo
    | admin | `admin@rotaperfumes.com.br` | a sua |
    | **usuário de teste** (SEC-08) | `qa.lote8@rotaperfumes.test` | `QaLote8@2026` (criado abaixo) |
 
+   > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** usuários com `deve_trocar_senha = 1` (os do seed `sql/03_seed_vendedores.sql` e os criados ou com a senha resetada pelo admin) recebem `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password`, e o frontend leva para `/trocar-senha`. Antes de começar, confira (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE email IN ('admin@rotaperfumes.com.br', 'qa.lote8@rotaperfumes.test');`), troque a senha de quem estiver com `1` e faça login de novo.
+
 3. Crie o usuário de teste como **normal** (no terminal, na pasta `apis/shared`):
 
    ```bash

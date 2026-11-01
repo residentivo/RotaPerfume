@@ -50,6 +50,22 @@ func esperarPossePagamento(m sqlmock.Sqlmock, id int64) {
 		WithArgs(id).WillReturnRows(pagamentoRows(id, 1, 100.0))
 }
 
+// selectPagamentoForUpdateRegex é o lock do pagamento na exclusão (SEC-35).
+const selectPagamentoForUpdateRegex = `SELECT pedido_id, status_pagamento FROM pagamentos WHERE pagamento_id = \? FOR UPDATE`
+
+// esperarLockPedido abre a tx do pedido e trava o pedido (SEC-26/SEC-35).
+func esperarLockPedido(m sqlmock.Sqlmock, pedidoID, vendedorID int64) {
+	m.ExpectBegin()
+	m.ExpectQuery(selectStatusForUpdateRegex).WithArgs(pedidoID).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", vendedorID))
+}
+
+// esperarLockPagamento trava o pagamento na tx da exclusão (SEC-35).
+func esperarLockPagamento(m sqlmock.Sqlmock, id, pedidoID int64, status string) {
+	m.ExpectQuery(selectPagamentoForUpdateRegex).WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"pedido_id", "status_pagamento"}).AddRow(pedidoID, status))
+}
+
 // novosCasosCatalogo monta os casos de uso de Catálogo (catalogoapp) sobre os
 // adapters reais (catalogomysql) e o db do sqlmock, como o bootstrap.
 func novosCasosCatalogo(db *sql.DB) *catalogoapp.Casos {
@@ -145,7 +161,7 @@ var cfgIdentidadeTeste = &config.Config{
 
 type captchaAprova struct{}
 
-func (captchaAprova) Verificar(context.Context, string, string) error { return nil }
+func (captchaAprova) Verificar(context.Context, string, string, string) error { return nil }
 
 // vendedoresDoComercial: a porta identidadeapp.Vendedores sobre o adapter de
 // Comercial (ARQ-04; como o bootstrap).

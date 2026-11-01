@@ -10,6 +10,7 @@ import (
 	"github.com/rotaperfumes/shared/kernel"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,9 +41,22 @@ func (f *fakeEmailService) EnviarSenhaInicial(ctx context.Context, destinatario,
 // válido).
 type fakeCaptchaVerifier struct {
 	err error
+
+	mu    sync.Mutex
+	acoes []string // a action pedida em cada verificação (SEC-19)
 }
 
-func (f *fakeCaptchaVerifier) Verificar(ctx context.Context, token, remoteIP string) error {
+// acoesPedidas devolve as actions pedidas até aqui.
+func (f *fakeCaptchaVerifier) acoesPedidas() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.acoes...)
+}
+
+func (f *fakeCaptchaVerifier) Verificar(ctx context.Context, token, remoteIP, acao string) error {
+	f.mu.Lock()
+	f.acoes = append(f.acoes, acao)
+	f.mu.Unlock()
 	if token == "" {
 		return turnstile.ErrCaptchaTokenAusente
 	}

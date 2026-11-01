@@ -2,7 +2,101 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+> Atualizado em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): o Lote 28 (SEC-19, SEC-23 e SEC-35) foi fechado; não commitado, pendente do usuário. Antes, ainda em 2026-10-31: o commit do Lote 27 foi registrado (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado pelo usuário via 🤍 MegaBrain). Antes, ainda em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## Lote 28 de 2026-10-31: 3 cards concluídos
+
+> Cards: **SEC-19** (Turnstile sem conferência de `hostname`/`action`, GAP 6 da auditoria ARQ-00, invariante I-13), **SEC-23** (`deve_trocar_senha` imposto pelo backend, GAP 10) e **SEC-35** (`ExcluirPagamento`/`CriarPagamento` fora de lock, achado do Lote 27). Lote aberto pelo 🤍 MegaBrain em 2026-10-31. SEC-19 e SEC-23 vieram do bloco "GAPs de segurança da auditoria ARQ-00" (adiados do Lote 27 por envolverem backend + frontend + config), que fica sem cards pendentes; SEC-35 veio do bloco "Achados do Lote 27". Fechado em 2026-10-31 pelo 🔵 SubBrain.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (especificação) → 🟡 BackBrain (SEC-19, SEC-23, SEC-35) → 🟢 FrontBrain (SEC-19, SEC-23) → verificação do 🤍 MegaBrain → 🔵 SubBrain (Postman, docs e fechamento). Sem 🌸 DataBrain (a coluna `deve_trocar_senha` já existia; nenhuma migração). O 🔴 TestBrain não rodou um passo separado: os testes foram escritos pelos devs conforme a seção de testes da especificação, e a suíte foi verificada pelo 🤍 MegaBrain.
+>
+> **Mudanças de contrato HTTP:** SEC-23: `403` `"troca de senha obrigatória"` em todas as rotas não públicas, exceto `POST /api/auth/reset-password` e `GET /api/auth/me`, para usuário com `deve_trocar_senha` (todos os papéis); `/me` ganha `trocar_senha` (aditivo). SEC-19: login e reset-password exigem token Turnstile com `hostname`/`action` válidos (recusa continua `400` `"captcha inválido ou ausente"`); env nova opcional `TURNSTILE_HOSTNAMES` (vazia, deriva de `CORS_ALLOWED_ORIGINS`). SEC-35: status e mensagens iguais no caminho normal; o `1452` na criação de pagamento vira `404` `"pedido não encontrado"` (antes `500`); na exclusão pelo admin, erro de banco no lock do pagamento vira `500`. **Nenhuma rota nova:** continuam 64 (5 Public, 36 Authenticated, 23 AdminOnly). Detalhe em `postman/README.md`, seção "Mudanças do Lote 28". **Schema:** sem mudança.
+>
+> **Verificação final do 🤍 MegaBrain (2026-10-31):** Go: `gofmt -l` vazio; `go vet` e `go test -count=1 ./...` verdes nos dois módulos: shared **4017** testes (com subtestes), 0 falhas, 12 pulados; rotaperfumes-api **5298**, 0 falhas, 28 pulados. Frontend: `tsc --noEmit` e `eslint` limpos; `vitest` com 40 arquivos e **1694** testes passando; cobertura de 96,83% stmts e 91,32% branches. Contrato FE↔BE conferido por grep: a mensagem "troca de senha obrigatória" é idêntica em `API/internal/httpx/auth.go:29` e em `frontend/src/lib/trocaSenhaObrigatoria.ts:18`; `trocar_senha` está em `identidadehttp/dto.go`. `next build` não foi rodado (card FE-16).
+>
+> **Commit:** **não commitado, pendente do usuário.**
+>
+> **Pendências do usuário antes do deploy:**
+> 1. Backend e frontend precisam ir no **mesmo deploy**: uma aba com o bundle antigo recebe `400` no login até recarregar (SEC-19).
+> 2. O hostname da página do frontend precisa estar em `CORS_ALLOWED_ORIGINS` ou em `TURNSTILE_HOSTNAMES`; senão o login quebra (SEC-19).
+> 3. Os 42 usuários de `sql/03_seed_vendedores.sql` (`deve_trocar_senha=1`) recebem `403` em tudo até trocarem a senha (SEC-23). Postman (`postman/collection.json`, `postman/README.md`) e roteiros manuais (`docs/roteiro-teste-manual-*.md`) já ganharam a observação.
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados do Lote 28"):** SEC-37 (secret de teste do Turnstile aceita em produção, MÉDIA), FE-17 (depois da troca de senha o frontend vai para `/dashboard` com a sessão já cortada, BAIXA), CHORE-11 (`apiResetPassword` morta no frontend, BAIXA), SEC-38 (`posseDoPagamento`/`posseDoPagamentoTravada` escondem erro de banco como 404, BAIXA) e LOG-03 (recusa do captcha logada sem motivo, BAIXA). O flake do `TestIMG01_Upload_FilenameHostilNaoVaza` continua no TST-11.
+
+### Decisões do 🟣 SecBrain (especificação do Lote 28)
+
+- **SEC-19:** env nova `TURNSTILE_HOSTNAMES` (lista de hostnames, trim + minúsculas; item com `://`, `/`, `:`, `*`, espaço interno ou vazio → `config.Load` falha com mensagem sem o valor). Não definida: derivada de `cfg.CORSAllowedOrigins` (`url.Parse(o).Hostname()`, sem repetição); lista final vazia → adapter recusa (fail-closed). Secret de teste da Cloudflare (`1x…AA`, `2x…AA`, `3x…AA`) → hostname/action não conferidos, com aviso único no bootstrap. Actions `login` e `reset-senha` (`AcaoCaptchaLogin`, `AcaoCaptchaResetSenha`). Ordem: `success` → hostname (sem diferenciar maiúsculas) → action (exata); erros embrulham `ErrCaptchaInvalido` sem os valores recebidos. Contrato HTTP inalterado; captcha continua antes do rate limit (I-13).
+- **SEC-23:** checagem no `Autenticador`, depois dos 401/500 atuais e antes do `AdminOnly`, para todos os papéis. Liberadas só `POST /api/auth/reset-password` e `GET /api/auth/me`, por campo explícito `Rota.LiberaTrocaSenhaPendente` (padrão bloqueia; panic em rota Public); `Exigir` mantém a assinatura e bloqueia; método novo `ExigirLiberandoTrocaPendente`. Mensagem fixa `"troca de senha obrigatória"` + `403` como identificador (padrão do vendedor desligado, sem campo `code`). `/me` ganha `trocar_senha`. Sem migração (coluna TINYINT(1) NOT NULL já existia).
+- **SEC-35:** reaproveitar o UoW `TxPedido` (sem Transactor novo); ordem de lock pedido → pagamento (como `TxPedido.Excluir`). Exclusão: `noEscopo` e `PorID` fora da tx; dentro, lock do pedido só no escopo restrito (qualquer erro → 404, mantendo o V-02), `TravarParaExcluir` (FOR UPDATE; sem linha ou `pedido_id` diferente → 404), `PodeExcluir()` → 409, `ExcluirSeNaoQuitado` (DELETE condicional a `NOT IN (StatusPago, StatusPagoComAtraso)`; 0 linhas → 404). Criação: validações fora da tx como hoje; dentro, `TravarParaEscrita` (`ErrPedidoNaoEncontrado` → 404 também para admin; outro erro → 500), posse sob lock, `Pagamento(pedidoID)` e `Inserir`; `RelerCriado` e logs depois do commit. Helper `db.ViolacaoFK` e 1452 de `fk_pagamentos_pedido` → `ErrPedidoNaoEncontrado` sem embrulhar o erro do driver.
+
+### Decisões fora da spec
+
+- **🟡 BackBrain:**
+  1. `TURNSTILE_HOSTNAMES` vazia ou só com espaços conta como não definida (deriva do CORS); item vazio dentro da lista recusa.
+  2. O log de startup fica no bootstrap (`avisarCaptcha`) e relê a env para dizer a origem da lista; também há aviso para lista vazia (três linhas possíveis: modo de teste / lista vazia, fail-closed / `hostnames aceitos=N (derivados do CORS | TURNSTILE_HOSTNAMES)`).
+  3. O aviso só sai no `Montar` do servidor (o `resetsenhas` não usa captcha).
+  4. `deploy/setup-servidor.sh` não mudou (a derivação do CORS já cobre).
+  5. Os métodos órfãos foram removidos das portas (`Pagamentos.Inserir`/`Excluir`/`ExistePorPedido`, `Pedidos.Existe`).
+  6. O log de recusa do captcha continua genérico, sem distinguir hostname de action (virou o card LOG-03).
+  7. Secrets de teste: o repositório só documentava `1x0000000000000000000000000000000AA`; também foram fixadas `2x…AA` e `3x…AA` (definidas pela Cloudflare com `success=false`). `:` é recusado em `TURNSTILE_HOSTNAMES`, então IPv6 não é aceito.
+- **🟢 FrontBrain:** o estado inicial do `ProtectedRoute` não autoriza uma sessão em memória com `trocar_senha` true, para a tela não piscar antes do redirecionamento.
+
+---
+
+## SEC-19: Turnstile passa a conferir `hostname` e `action` — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 28, aberto e fechado em 2026-10-31). Não commitado, pendente do usuário.
+**Camadas:** Backend (shared + API), Frontend, Config/Deploy (docs), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 6; invariante I-13). Prioridade MÉDIA.
+
+**Contrato final:** `POST /api/auth/login` e `POST /api/auth/reset-password` só aceitam token Turnstile cujo `hostname` esteja na lista aceita (`TURNSTILE_HOSTNAMES` ou os hosts de `CORS_ALLOWED_ORIGINS`) e cuja `action` seja a do fluxo (`login` / `reset-senha`). Recusa: `400` `"captcha inválido ou ausente"`, antes do rate limit (inalterado). `TURNSTILE_HOSTNAMES` inválida impede a subida (`TURNSTILE_HOSTNAMES inválida`, sem o valor).
+
+**Entregue:**
+- 🟡 **BackBrain:** novo `SH/identidade/captcha.go` (`AcaoCaptchaLogin`, `AcaoCaptchaResetSenha`); `SH/adapters/turnstile/turnstile.go` (`Novo(secret, hostnames)`, `NovoComEndpoint(...)`, `Verificar(ctx, token, ip, acaoEsperada)`, `SecretDeTeste(secret)`; ordem success → hostname → action; erros embrulham `ErrCaptchaInvalido` sem valores); porta `VerificadorCaptcha`, `casos.go`, `login.go` e `senha.go` com o parâmetro `acao` (rótulos de log mantidos); `SH/config/config.go` (`TurnstileHostnames`, `parseTurnstileHostnames`, `ErrTurnstileHostnames`); montagem em `bootstrap/server.go`, `bootstrap/identidade.go` e `internal/resetsenhas/resetsenhas.go`; `avisarCaptcha(cfg)` no `Montar`; `.env.example` e `deploy/api.env.example` documentados.
+- 🟢 **FrontBrain:** `Turnstile.tsx` com o tipo `TurnstileAction`, as constantes e a prop `action` obrigatória passada ao `render`; login usa `login` e trocar-senha usa `reset-senha`.
+- **Testes:** `SH/tests/services/turnstile_service_test.go` (hostname errado/vazio/com outras maiúsculas, action errada/vazia, lista vazia, secret de teste); novos `SH/tests/config/sec19_turnstile_hostnames_test.go`, `SH/tests/identidade/sec19_captcha_acao_test.go` e `API/tests/handlers/sec19_captcha_acao_http_test.go`; fakes de `VerificadorCaptcha` ajustados; frontend: `Turnstile.test.tsx`, `login/page.test.tsx` e `trocar-senha/page.test.tsx`.
+- 🔵 **SubBrain:** `postman/README.md` (seção "Mudanças do Lote 28", seção CAPTCHA, onde o `401` citado por engano foi corrigido para `400`), descrição de `postman/collection.json`, `docs/arq-00-invariantes-seguranca.md` (I-13, GAP 6 resolvido) e `docs/arquitetura-ddd.md` §10.
+
+**Resíduos:** secret de teste aceita em produção (card SEC-37); log de recusa sem o motivo (card LOG-03).
+
+---
+
+## SEC-23: `deve_trocar_senha` imposto pelo backend — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 28, aberto e fechado em 2026-10-31). Não commitado, pendente do usuário.
+**Camadas:** Backend (shared + API), Frontend, Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 10). Prioridade MÉDIA.
+
+**Contrato final:** com `usuarios.deve_trocar_senha = 1`, qualquer rota não pública responde `403` `{"success":false,"error":"troca de senha obrigatória"}`, exceto `POST /api/auth/reset-password` e `GET /api/auth/me`; vale para todos os papéis, inclusive admin. Ordem: 401/500 (token, inexistente, inativo, corte de sessão) → 403 de troca → 403 de admin. `GET /api/auth/me` ganha `trocar_senha` (bool). Rotas Public (`login`, `refresh`, `logout`, `/health`, imagem pública) não mudam.
+
+**Entregue:**
+- 🟡 **BackBrain:** `StatusAcesso.DeveTrocarSenha` (`SH/identidade/usuario.go`) e query `SELECT ativo, role, tokens_validos_desde, deve_trocar_senha ...` em `SH/identidade/identidademysql/usuarios.go`; `API/internal/httpx/auth.go` (`msgTrocaSenhaObrigatoria`, `Exigir` bloqueia, novo `ExigirLiberandoTrocaPendente`, log `[auth] acesso negado: user_id=... troca de senha pendente ...` com `SanearRota`); `httpx/router.go` (`Rota.LiberaTrocaSenhaPendente`, panic em rota Public); `bootstrap/rotas.go` (`true` só nas duas rotas); `identidadehttp/dto.go` (`trocar_senha` no `/me`).
+- 🟢 **FrontBrain:** novo `src/lib/trocaSenhaObrigatoria.ts` (`MSG_TROCA_SENHA_OBRIGATORIA`, `ROTA_TROCAR_SENHA`, predicados de igualdade exata); `apiClient.ts` `buildApiError` chama `redirectToTrocarSenha()` (flag própria, sem loop em `/trocar-senha`, sem refresh/logout, o `ApiError` continua sendo lançado); `types.ts` (`MeResponse.trocar_senha?`); `ProtectedRoute.tsx` redireciona antes do `requireAdmin`.
+- **Testes:** matriz `API/tests/routes/arq00_matriz_rotas_test.go` (coluna `liberaTroca`); novos `API/tests/routes/sec23_troca_senha_matriz_test.go` (todas as rotas protegidas, como admin e como usuário normal) e `API/tests/httpx/sec23_troca_senha_test.go`; sqlmock da query nova em 5 suítes; `TestSEC23_Me_DevolveTrocarSenha`; frontend: bloco SEC-23 em `apiClient.test.ts`, `ProtectedRoute.test.tsx` e novo `trocaSenhaObrigatoria.test.ts`.
+- 🔵 **SubBrain:** `postman/README.md` (seção "Mudanças do Lote 28", `/me`, credenciais), `postman/collection.json` (descrição do `/me`, `trocar_senha` nos 2 exemplos de `200` e aviso na descrição geral de que os usuários do seed precisam trocar a senha antes das demais rotas), observação SEC-23 nos roteiros `docs/roteiro-teste-manual-{lote4,lote5,lote6,lote8,clientes,pedidomodal,dashboard,vendedor-desligado}.md`, `docs/arq-00-invariantes-seguranca.md` (GAP 10 resolvido) e `docs/arquitetura-ddd.md` §10.
+
+**Resíduos:** depois da troca de senha o frontend vai para `/dashboard` com a sessão já cortada (card FE-17); `apiResetPassword` morta no frontend (card CHORE-11).
+
+---
+
+## SEC-35: `CriarPagamento` e `ExcluirPagamento` sob lock — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 28, aberto e fechado em 2026-10-31). Não commitado, pendente do usuário.
+**Camadas:** Backend (shared), Testes, Documentação
+**Origem:** 🟣 SecBrain, especificação do Lote 27 (2026-10-31), achado fora do escopo nº 1 (mesmo padrão do SEC-26). Prioridade MÉDIA.
+
+**Contrato final:** caminho normal inalterado (ordem de erros da criação 403 → 400 → 404 → 400). Pedido apagado no meio da criação → `404` `"pedido não encontrado"` (antes `500`). Pagamento quitado no meio da exclusão → `409` `"pagamento já quitado não pode ser excluído"`, sem DELETE. Exclusão pelo admin com erro de banco no lock do pagamento → `500`.
+
+**Entregue:**
+- 🟡 **BackBrain:** novo `SH/db/fk.go` (`ViolacaoFK`); porta `PagamentosNaTx` com `Inserir`, `TravarParaExcluir` e `ExcluirSeNaoQuitado`; métodos órfãos removidos da porta de leitura (`Pagamentos.Inserir`/`Excluir`/`ExistePorPedido`, `Pedidos.Existe`); `SH/vendas/vendasapp/uow.go` (`TxPedido.CriarPagamento`, `TxPedido.ExcluirPagamento` e `posseDoPagamentoTravada`, com 404 e log do V-02); `pagamentos.go` (os dois casos de uso em tx; log e `RelerCriado` depois do commit; saem `pagamentoNovo` e a segunda leitura de paridade; `pedidoNoEscopo` fica porque o Update ainda usa); `vendasmysql/pagamentos.go` (1452 → `ErrPedidoNaoEncontrado` sem embrulhar; métodos novos; `Excluir` removido); `Pedidos.Existe` removido de `vendasmysql/pedidos.go`.
+- **Testes:** novos `SH/tests/vendas/sec35_pagamento_lock_test.go` (ordem do SQL na exclusão restrita/admin e na criação; corridas: quitado sob lock → 409 + ROLLBACK, DELETE com 0 linhas → 404, pedido sumiu no lock → 404, 1452 → 404 sem texto do driver, outro vendedor sob lock → 404) e `API/tests/handlers/sec35_apoio_test.go`; cerca de 12 suítes ajustadas.
+- 🔵 **SubBrain:** `postman/README.md` e descrição de `postman/collection.json` (seção "Mudanças do Lote 28"), `docs/arq-00-invariantes-seguranca.md` (ARQ-05, TOCTOU) e `docs/arquitetura-ddd.md` §10.
+
+**Resíduo:** `posseDoPagamento`/`posseDoPagamentoTravada` transformam qualquer erro de banco em 404 (card SEC-38).
 
 ---
 ## Lote 27 de 2026-10-31: 9 cards concluídos
@@ -15,7 +109,7 @@
 >
 > **Verificação final do 🤍 MegaBrain (2026-10-31):** `gofmt -l`, `go vet ./...` e `go test -count=1 ./...` limpos e verdes nos dois módulos: shared **3947 passaram**, 0 falharam, 12 pulados; rotaperfumes-api **5147 passaram**, 0 falharam, 28 pulados.
 >
-> **Commit:** não commitado (pendente do usuário).
+> **Commit:** commitado pelo usuário (commit `a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado ao 🤍 MegaBrain em 2026-10-31). O `apis/rotaperfumes-api/cmd/server/__debug_bin178758419` apagado ficou fora do commit. No fechamento, código e docs estavam sem commit.
 >
 > **Saíram do lote (em `afazer.md`, bloco "Achados do Lote 27"):** SEC-35 (`ExcluirPagamento`/`CriarPagamento` checam fora de lock, MÉDIA), SEC-36 (origens de dev sempre na allowlist de CORS, BAIXA), BUG-24 (corrida entre troca e reset de senha, BAIXA), CHORE-10 (`ErrImagemMuitoGrande` com `KindMuitoGrande` e `maxLength={100}` nas buscas do frontend, BAIXA) e TST-11 (teste instável do IMG-01, BAIXA).
 
@@ -48,7 +142,7 @@
 ## SEC-14: limite de tamanho do corpo, ReadHeaderTimeout e limite de itens do pedido — 2026-10-31
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
 
-**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
 **Camadas:** Backend (API + shared), Testes, Documentação
 **Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 1; invariante F-04), com a nota do ARQ-05 sobre o número de itens do pedido. Prioridade MÉDIA.
 
@@ -63,7 +157,7 @@
 ## SEC-15: `maskDSN` não vaza mais parte da senha com `@` — 2026-10-31
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain
 
-**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
 **Camadas:** Backend (shared/db), Testes
 **Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 2; invariante F-08). Prioridade MÉDIA.
 
@@ -76,7 +170,7 @@
 ## SEC-16: teto de `page` na paginação — 2026-10-31
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
 
-**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
 **Camadas:** Backend (shared kernel + API), Testes, Documentação
 **Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 3; invariante F-10), com as notas N-3 (ARQ-01), NB-6 (ARQ-02) e do ARQ-06. Prioridade BAIXA.
 
@@ -91,7 +185,7 @@
 ## SEC-17: CORS sem curinga com credentials — 2026-10-31
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
 
-**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.** Pendência do usuário antes do deploy: conferir que o Secret file do Jenkins não tem `*`/`null` em `CORS_ALLOWED_ORIGINS` (senão a API não sobe).
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`). Pendência do usuário antes do deploy: conferir que o Secret file do Jenkins não tem `*`/`null` em `CORS_ALLOWED_ORIGINS` (senão a API não sobe).
 **Camadas:** Backend (config + middleware), Deploy (docs), Testes
 **Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 4; invariante F-02). Prioridade MÉDIA.
 
@@ -107,7 +201,7 @@
 ## SEC-24: testes de injeção via `order_by` em todos os enums de ordenação — 2026-10-31
 **Agentes:** 🟣 SecBrain (payloads) → 🔴 TestBrain
 
-**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
 **Camadas:** Testes
 **Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 11; invariante C-02). Prioridade MÉDIA.
 
@@ -120,7 +214,7 @@
 ## SEC-25: buscas LIKE com escape de `%`/`_` e limite de `q` — 2026-10-31
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
 
-**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
 **Camadas:** Backend (shared + API), Testes, Documentação
 **Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (invariante C-03, "GAP baixo"), com a NB-7 (ARQ-02) e a nota do ARQ-05. Prioridade BAIXA.
 
@@ -136,7 +230,7 @@
 ## BUG-14: `VincularCliente` numa transação — 2026-10-31
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain B → 🔴 TestBrain
 
-**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
 **Camadas:** Backend (shared + API), Testes
 **Origem:** decisão P4 do 🤍 MegaBrain no ARQ-00 (2026-10-13). Prioridade MÉDIA.
 
@@ -149,7 +243,7 @@
 ## BUG-15: troca e reset de senha numa transação — 2026-10-31
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain B → 🔴 TestBrain → 🔵 SubBrain
 
-**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
 **Camadas:** Backend (shared + API), Testes, Documentação
 **Origem:** revisão do blueprint pelo 🟣 SecBrain no ARQ-00 (2026-10-13). Prioridade MÉDIA.
 
@@ -165,7 +259,7 @@
 ## SEC-26: posse e regras de exclusão do pedido checadas sob lock — 2026-10-31
 **Agentes:** 🟣 SecBrain → 🟡 BackBrain B → 🔴 TestBrain
 
-**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). **Não commitado, pendente do usuário.**
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
 **Camadas:** Backend (shared + API), Testes
 **Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15). Prioridade MÉDIA.
 
@@ -187,8 +281,8 @@
 ### Pendências do Lote 27
 
 - **Usuário, antes do deploy:** confirmar que o Secret file do Jenkins não tem `*`/`null` em `CORS_ALLOWED_ORIGINS` (SEC-17).
-- **Usuário:** `apis/rotaperfumes-api/cmd/server/__debug_bin178758419` aparece como apagado no git; nenhum agente mexeu nele.
-- **Commit:** nada commitado; pendente do usuário.
+- **Usuário:** `apis/rotaperfumes-api/cmd/server/__debug_bin178758419` aparece como apagado no git; nenhum agente mexeu nele. Ficou fora do commit `a7e2d4a` (continua apagado e não commitado).
+- **Commit:** feito pelo usuário em 2026-10-31: `a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27` (criado a partir de `main`). No fechamento, nada estava commitado.
 - **Cards novos** em `afazer.md` ("Achados do Lote 27"): SEC-35, SEC-36, BUG-24, CHORE-10 e TST-11.
 
 ### Documentação do Lote 27 (🔵 SubBrain)

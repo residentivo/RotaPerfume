@@ -74,8 +74,10 @@ func TestARQ05_EscopoZeroValue_PosseFalhaFechado(t *testing.T) {
 			return novosCasos(pool, kernel.Escopo{}).ObterPagamento(ctx, admin(t), 5)
 		}, vendas.ErrPagamentoNaoEncontrado},
 		{"ExcluirPagamento", func(m sqlmock.Sqlmock) {
+			// SEC-35: a posse é conferida sob o lock do pedido, na tx.
 			m.ExpectQuery(arq05PagamentoPorIDRe).WithArgs(int64(5)).WillReturnRows(arq05LinhaPagamento(5, 1))
-			m.ExpectQuery(arq05PedidoPorIDRe).WithArgs(int64(1)).WillReturnRows(arq05LinhaPedido(1, 2))
+			sec26Lock(m, 1, "Pendente", 2)
+			m.ExpectRollback()
 		}, func(t *testing.T, pool *sql.DB, _ *bool) (any, error) {
 			return nil, novosCasos(pool, kernel.Escopo{}).ExcluirPagamento(ctx, admin(t), 5)
 		}, vendas.ErrPagamentoNaoEncontrado},
@@ -86,7 +88,9 @@ func TestARQ05_EscopoZeroValue_PosseFalhaFechado(t *testing.T) {
 			return novosCasos(pool, kernel.Escopo{}).AtualizarPagamento(ctx, admin(t), 5, leitorVigiado(pagamentoValido(), lido))
 		}, vendas.ErrPagamentoNaoEncontrado},
 		{"CriarPagamento", func(m sqlmock.Sqlmock) {
-			m.ExpectQuery(arq05PedidoPorIDRe).WithArgs(int64(1)).WillReturnRows(arq05LinhaPedido(1, 2))
+			// SEC-35: a posse é conferida sob o lock do pedido, na tx.
+			sec26Lock(m, 1, "Pendente", 2)
+			m.ExpectRollback()
 		}, func(t *testing.T, pool *sql.DB, _ *bool) (any, error) {
 			d := vendas.DadosNovoPagamento{PedidoID: 1, DadosPagamento: pagamentoValido()}
 			return novosCasos(pool, kernel.Escopo{}).CriarPagamento(ctx, admin(t), ler(d))

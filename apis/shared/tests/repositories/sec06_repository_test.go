@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	reGetStatusUsuario  = `SELECT ativo, role, tokens_validos_desde FROM usuarios WHERE id = \? LIMIT 1`
+	reGetStatusUsuario  = `SELECT ativo, role, tokens_validos_desde, deve_trocar_senha FROM usuarios WHERE id = \? LIMIT 1`
 	reRevokePorVendedor = `UPDATE refresh_tokens rt\s+JOIN usuarios u ON u\.id = rt\.usuario_id\s+SET rt\.revoked_at = \?, rt\.revoked_reason = \?\s+WHERE u\.id_vendedor = \? AND rt\.revoked_at IS NULL`
 )
 
@@ -35,7 +35,7 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 			nome: "ativo admin",
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
-					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(true, "admin", nil))
+					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}).AddRow(true, "admin", nil, false))
 			},
 			want: identidade.StatusAcesso{Ativo: true, Role: "admin"},
 		},
@@ -43,15 +43,24 @@ func TestUsuarioGetStatusByID(t *testing.T) {
 			nome: "inativo normal",
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
-					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(false, "normal", nil))
+					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}).AddRow(false, "normal", nil, false))
 			},
 			want: identidade.StatusAcesso{Ativo: false, Role: "normal"},
+		},
+		{
+			// SEC-23: a troca de senha pendente vem na mesma consulta.
+			nome: "troca de senha pendente",
+			expect: func(m sqlmock.Sqlmock) {
+				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
+					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}).AddRow(true, "normal", nil, int64(1)))
+			},
+			want: identidade.StatusAcesso{Ativo: true, Role: "normal", DeveTrocarSenha: true},
 		},
 		{
 			nome: "inexistente → ErrNotFound",
 			expect: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
-					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}))
+					WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}))
 			},
 			wantErr: identidade.ErrUsuarioNaoEncontrado,
 		},

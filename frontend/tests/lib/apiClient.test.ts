@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MSG_VENDEDOR_DESLIGADO } from "@/lib/vendedorDesligado";
+import { MSG_TROCA_SENHA_OBRIGATORIA } from "@/lib/trocaSenhaObrigatoria";
 
 // apiClient tem estado de modulo (lock de refresh, flag de redirect): cada
 // teste importa uma instancia nova via vi.resetModules().
@@ -106,6 +107,88 @@ describe("fetchWithAuth - 403 vendedor desligado", () => {
       status: 502,
       message: "Erro 502: Bad Gateway",
     });
+  });
+});
+
+describe("fetchWithAuth - 403 troca de senha obrigatoria (SEC-23)", () => {
+  // window.location do jsdom nao permite espionar assign(): substitui o
+  // objeto inteiro (restaurado pelo vi.unstubAllGlobals do afterEach).
+  function stubLocation(pathname: string) {
+    const assign = vi.fn<(url: string) => void>();
+    vi.stubGlobal("location", {
+      pathname,
+      href: `http://localhost${pathname}`,
+      assign,
+    });
+    return assign;
+  }
+
+  const resposta403 = () =>
+    jsonResponse(403, { success: false, error: MSG_TROCA_SENHA_OBRIGATORIA });
+
+  it("redireciona para /trocar-senha, lanca o ApiError e NAO faz refresh/logout", async () => {
+    const assign = stubLocation("/clientes");
+    const listener = vi.fn();
+    vd.subscribeVendedorDesligado(listener);
+    fetchMock.mockResolvedValueOnce(resposta403());
+
+    const err = await client.fetchWithAuth("/api/clientes").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(client.ApiError);
+    expect(err).toMatchObject({ status: 403, message: MSG_TROCA_SENHA_OBRIGATORIA });
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith("/trocar-senha");
+    expect(calledUrls()).toEqual(["http://api.test/api/clientes"]);
+    expect(calledUrls().some((u) => u.includes("/api/auth/refresh"))).toBe(false);
+    expect(calledUrls().some((u) => u.includes("/api/auth/logout"))).toBe(false);
+    // Sem clearTokens: a sessao local continua.
+    expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+    // Nao e confundido com o 403 de vendedor desligado.
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("varias respostas seguidas redirecionam uma vez so", async () => {
+    const assign = stubLocation("/pedidos");
+    fetchMock.mockResolvedValueOnce(resposta403()).mockResolvedValueOnce(resposta403());
+
+    await client.fetchWithAuth("/api/pedidos").catch(() => undefined);
+    await client.fetchWithAuth("/api/clientes").catch(() => undefined);
+
+    expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it("ja em /trocar-senha: nao redireciona (sem loop) e ainda lanca o ApiError", async () => {
+    const assign = stubLocation("/trocar-senha");
+    fetchMock.mockResolvedValueOnce(resposta403());
+
+    const err = await client.fetchWithAuth("/api/x").catch((e: unknown) => e);
+
+    expect(err).toMatchObject({ status: 403, message: MSG_TROCA_SENHA_OBRIGATORIA });
+    expect(assign).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem("auth_user")).toBe(USER_JSON);
+  });
+
+  it.each<[string, number, unknown]>([
+    ["403 generico", 403, { error: "acesso negado" }],
+    ["403 vendedor desligado", 403, { error: MSG_VENDEDOR_DESLIGADO }],
+    ["403 sem acento", 403, { error: "troca de senha obrigatoria" }],
+    ["400 com a mensagem exata", 400, { error: MSG_TROCA_SENHA_OBRIGATORIA }],
+  ])("%s nao redireciona", async (_n, status, body) => {
+    const assign = stubLocation("/clientes");
+    fetchMock.mockResolvedValueOnce(jsonResponse(status, body));
+
+    const err = await client.fetchWithAuth("/api/x").catch((e: unknown) => e);
+
+    expect(err).toMatchObject({ status });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("buildApiError (listagens com fetch manual) tambem redireciona", () => {
+    const assign = stubLocation("/clientes");
+    const err = client.buildApiError(403, MSG_TROCA_SENHA_OBRIGATORIA);
+    expect(err).toMatchObject({ status: 403, message: MSG_TROCA_SENHA_OBRIGATORIA });
+    expect(assign).toHaveBeenCalledWith("/trocar-senha");
   });
 });
 

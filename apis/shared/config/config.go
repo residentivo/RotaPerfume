@@ -9,8 +9,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -79,6 +81,11 @@ type Config struct {
 	// /api/auth/reset-password (env TURNSTILE_SECRET_KEY). Nunca é logada nem
 	// retornada em resposta JSON.
 	TurnstileSecretKey string
+
+	// TurnstileHostnames são os hostnames aceitos na resposta do siteverify
+	// (SEC-19), via TURNSTILE_HOSTNAMES (separados por vírgula, só hostname,
+	// em minúsculas). Ausente ou vazia: derivados de CORSAllowedOrigins.
+	TurnstileHostnames []string
 
 	// SecurityAlertEmails são os destinatários administrativos dos alertas de
 	// segurança (SEC-09, ex.: reuso de refresh token), via
@@ -255,6 +262,10 @@ func load(exigirDB bool) (*Config, error) {
 	}
 	vlog.Printf("config.go", "load", "lendo TURNSTILE_SECRET_KEY")
 	cfg.TurnstileSecretKey = os.Getenv("TURNSTILE_SECRET_KEY")
+	vlog.Printf("config.go", "load", "lendo TURNSTILE_HOSTNAMES e verificando erro")
+	if cfg.TurnstileHostnames, err = parseTurnstileHostnames(os.Getenv("TURNSTILE_HOSTNAMES"), cfg.CORSAllowedOrigins); err != nil {
+		return nil, err
+	}
 	vlog.Printf("config.go", "load", "lendo destinatários de alertas de segurança")
 	cfg.SecurityAlertEmails = ParseSecurityAlertEmails(os.Getenv("SECURITY_ALERT_EMAILS"))
 
@@ -534,6 +545,61 @@ func parseAllowedOrigins(raw string) ([]string, error) {
 // origemCuringa: "*" e "null" nunca entram na allowlist com credentials.
 func origemCuringa(o string) bool {
 	return o == "*" || strings.EqualFold(o, "null")
+}
+
+// ErrTurnstileHostnames: TURNSTILE_HOSTNAMES com item vazio, esquema, porta,
+// caminho, curinga ou espaço interno (SEC-19). Nunca inclui o valor.
+var ErrTurnstileHostnames = errors.New("config: TURNSTILE_HOSTNAMES inválida (lista de hostnames separados por vírgula, sem esquema, porta, caminho nem curinga)")
+
+// parseTurnstileHostnames monta os hostnames aceitos pelo Turnstile (SEC-19).
+// raw vazio (ou só espaços) deriva a lista das origens CORS; senão cada item
+// passa por trim e minúsculas e um item inválido é ErrTurnstileHostnames.
+// A lista final não tem repetição.
+func parseTurnstileHostnames(raw string, origens []string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		hosts := hostnamesDasOrigens(origens)
+		vlog.Printf("config.go", "parseTurnstileHostnames", "decisão hostnames_derivados_do_cors total=%d", len(hosts))
+		return hosts, nil
+	}
+	var hosts []string
+	for _, h := range strings.Split(raw, ",") {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if !hostnameValido(h) {
+			vlog.Printf("config.go", "parseTurnstileHostnames", "decisão hostname_invalido_recusado")
+			return nil, ErrTurnstileHostnames
+		}
+		hosts = adicionarSemRepetir(hosts, h)
+	}
+	vlog.Printf("config.go", "parseTurnstileHostnames", "hostnames de TURNSTILE_HOSTNAMES total=%d", len(hosts))
+	return hosts, nil
+}
+
+// hostnameValido recusa vazio, esquema, porta, caminho, curinga e espaço.
+func hostnameValido(h string) bool {
+	return h != "" && !strings.ContainsAny(h, ":/* \t\r\n")
+}
+
+// hostnamesDasOrigens extrai o hostname de cada origem (minúsculas, sem
+// repetição); origem sem hostname é ignorada.
+func hostnamesDasOrigens(origens []string) []string {
+	var hosts []string
+	for _, o := range origens {
+		u, err := url.Parse(o)
+		if err != nil {
+			continue
+		}
+		if h := strings.ToLower(u.Hostname()); h != "" {
+			hosts = adicionarSemRepetir(hosts, h)
+		}
+	}
+	return hosts
+}
+
+func adicionarSemRepetir(lista []string, v string) []string {
+	if slices.Contains(lista, v) {
+		return lista
+	}
+	return append(lista, v)
 }
 
 // DSN monta a connection string para o driver go-sql-driver/mysql, que

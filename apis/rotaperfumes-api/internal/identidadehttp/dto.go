@@ -73,6 +73,7 @@ type (
 		IDVendedor        *int64     `json:"id_vendedor"`
 		Nome              string     `json:"nome"`
 		Role              string     `json:"role"`
+		TrocarSenha       bool       `json:"trocar_senha"`
 		UltimoLoginAt     *time.Time `json:"ultimo_login_at"`
 		VendedorDesligado bool       `json:"vendedor_desligado"`
 	}
@@ -149,7 +150,8 @@ func novoLoginResposta(s *identidadeapp.SessaoEmitida, ttl time.Duration) loginR
 func novoMeResposta(u *identidade.Usuario, desligado bool) meResposta {
 	return meResposta{
 		Ativo: u.Ativo, CreatedAt: u.CriadoEm, Email: u.Email, ID: u.ID, IDVendedor: u.IDVendedor,
-		Nome: u.Nome, Role: u.Role.String(), UltimoLoginAt: u.UltimoLoginEm, VendedorDesligado: desligado,
+		Nome: u.Nome, Role: u.Role.String(), TrocarSenha: u.DeveTrocarSenha, UltimoLoginAt: u.UltimoLoginEm,
+		VendedorDesligado: desligado,
 	}
 }
 

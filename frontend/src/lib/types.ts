@@ -39,10 +39,13 @@ export interface User {
   vendedor_nome?: string | null;
 }
 
-// Resposta de GET /api/auth/me. `vendedor_desligado` so existe em memoria
-// (session.ts): nunca e gravado no localStorage.
+// Resposta de GET /api/auth/me. `vendedor_desligado` e `trocar_senha` so
+// existem em memoria (session.ts): nunca sao gravados no localStorage
+// (saveUser usa whitelist).
 export interface MeResponse extends User {
   vendedor_desligado?: boolean;
+  // SEC-23: troca de senha pendente; o ProtectedRoute manda para /trocar-senha.
+  trocar_senha?: boolean;
 }
 
 export interface Vendedor {

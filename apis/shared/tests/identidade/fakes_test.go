@@ -293,9 +293,13 @@ func (g *geradorSenhaFake) Gerar() (identidade.Senha, error) {
 	return identidade.NovaSenha(g.senhas[i]), nil
 }
 
-type captchaFake struct{}
+// captchaFake registra a action pedida em cada verificação (SEC-19).
+type captchaFake struct{ acoes *[]string }
 
-func (captchaFake) Verificar(_ context.Context, token, _ string) error {
+func (c captchaFake) Verificar(_ context.Context, token, _, acao string) error {
+	if c.acoes != nil {
+		*c.acoes = append(*c.acoes, acao)
+	}
 	if strings.TrimSpace(token) == "" {
 		return errors.New("ausente")
 	}
@@ -352,6 +356,8 @@ type ambiente struct {
 	agora      time.Time
 	// linhaDoTempo: "commit"/"rollback" do txSenha e "email" do emailFake.
 	linhaDoTempo []string
+	// acoesCaptcha: a action pedida ao captchaFake em cada verificação.
+	acoesCaptcha []string
 }
 
 func novoAmbiente(us ...*identidade.Usuario) *ambiente {
@@ -370,7 +376,7 @@ func (a *ambiente) deps() identidadeapp.Deps {
 	return identidadeapp.Deps{
 		Usuarios: a.usuarios, Tokens: a.tokens, Historico: a.historico, Rotacao: txFake{a.tokens}, TrocaSenha: a.txSenha,
 		Hasher: a.hasher, Emissor: a.emissor, Refresh: geradorRefreshFake{}, Senhas: a.senhas,
-		Captcha: captchaFake{}, Limites: identidadeapp.Limites{Login: l, Refresh: l, Reset: l},
+		Captcha: captchaFake{acoes: &a.acoesCaptcha}, Limites: identidadeapp.Limites{Login: l, Refresh: l, Reset: l},
 		Publicador: identidadeapp.SemPublicador{}, Email: a.email, Vendedores: a.vendedores,
 		Relogio: func() time.Time { return a.agora },
 	}

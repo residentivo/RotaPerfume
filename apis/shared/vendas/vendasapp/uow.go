@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/rotaperfumes/shared/kernel"
@@ -98,6 +99,69 @@ func (r TxPedido) Criar(ctx context.Context, p *vendas.Pedido, baixarEstoque boo
 	}
 	if baixarEstoque {
 		return r.baixarEstoque(ctx, p.Itens, quando)
+	}
+	return nil
+}
+
+// CriarPagamento aplica o POST de pagamento na tx (SEC-35): trava o pedido
+// (inexistente → 404 "pedido não encontrado", também para o admin; outro
+// erro → 500), confere a posse sob o lock (de outro vendedor, o mesmo 404),
+// valida os campos (400) e grava. Um DELETE do pedido concorrente espera o
+// lock; o 1452 da FK, se ainda vier, também é 404 (adapter).
+func (r TxPedido) CriarPagamento(ctx context.Context, e kernel.Escopo, d vendas.DadosNovoPagamento) (*vendas.Pagamento, error) {
+	if _, err := r.travarNoEscopo(ctx, e, d.PedidoID, "TxPedido.CriarPagamento"); err != nil {
+		return nil, err
+	}
+	pag, err := d.Pagamento(d.PedidoID)
+	if err != nil {
+		return nil, err
+	}
+	if err = r.Pagamentos.Inserir(ctx, pag); err != nil {
+		return nil, err
+	}
+	return pag, nil
+}
+
+// ExcluirPagamento aplica o DELETE de pagamento na tx (SEC-35), na ordem de
+// lock pedido → pagamento (a mesma do Excluir do pedido): no escopo
+// restrito trava o pedido e confere a posse (V-02: qualquer falha → 404
+// "pagamento não encontrado"); o admin não trava o pedido. Depois trava o
+// pagamento (sumiu ou mudou de pedido → 404), aplica a regra de quitado
+// (409) e apaga com o DELETE condicionado a não quitado.
+func (r TxPedido) ExcluirPagamento(ctx context.Context, e kernel.Escopo, id, pedidoID int64) error {
+	if err := r.posseDoPagamentoTravada(ctx, e, pedidoID); err != nil {
+		return err
+	}
+	atual, err := r.Pagamentos.TravarParaExcluir(ctx, id)
+	if err != nil {
+		return err
+	}
+	if atual.PedidoID != pedidoID {
+		vlog.Printf(arqUoW, "TxPedido.ExcluirPagamento", "decisão pedido_divergente id=%d", id)
+		return vendas.ErrPagamentoNaoEncontrado
+	}
+	if err = atual.PodeExcluir(); err != nil {
+		vlog.Printf(arqUoW, "TxPedido.ExcluirPagamento", "decisão bloqueado quitado id=%d", id)
+		return err
+	}
+	return r.Pagamentos.ExcluirSeNaoQuitado(ctx, id)
+}
+
+// posseDoPagamentoTravada é o posseDoPagamento do Delete sob lock: só no
+// escopo restrito, trava o pedido do pagamento; QUALQUER falha é 404
+// "pagamento não encontrado" (V-02), com o log operacional do legado.
+func (r TxPedido) posseDoPagamentoTravada(ctx context.Context, e kernel.Escopo, pedidoID int64) error {
+	if !restrito(e) {
+		return nil
+	}
+	ped, err := r.Pedidos.TravarParaEscrita(ctx, pedidoID)
+	if err != nil {
+		log.Printf("[pagamentos] DeletePagamento vendedor do pedido: %v", err)
+		return vendas.ErrPagamentoNaoEncontrado
+	}
+	if !e.Permite(ped.VendedorID) {
+		vlog.Printf(arqUoW, "TxPedido.posseDoPagamentoTravada", "decisão fora_da_carteira pedido_id=%d", pedidoID)
+		return vendas.ErrPagamentoNaoEncontrado
 	}
 	return nil
 }

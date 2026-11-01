@@ -20,6 +20,9 @@
  *    (`navigator.locks`, "rp-auth-refresh") quando o navegador suporta
  * 6. Erros HTTP viram ApiError (com status). O 403 de vendedor desligado
  *    NÃO dispara refresh nem logout: só notifica a sessão em memória.
+ *    SEC-23: o 403 de troca de senha obrigatória também não dispara
+ *    refresh/logout; redireciona para /trocar-senha (sem loop se já estiver
+ *    lá) e o ApiError continua sendo lançado.
  * 7. FE-08: falha de rede (fetch rejeitado: "Failed to fetch", "Load failed",
  *    "NetworkError when attempting to fetch resource"...) ou timeout vira
  *    NetworkError com mensagem amigável em português (o erro original fica
@@ -35,6 +38,10 @@ import {
   isVendedorDesligadoResponse,
   notifyVendedorDesligado,
 } from "./vendedorDesligado";
+import {
+  ROTA_TROCAR_SENHA,
+  isTrocaSenhaObrigatoriaResponse,
+} from "./trocaSenhaObrigatoria";
 import { vlog } from "./vlog";
 
 export { ApiError };
@@ -615,13 +622,20 @@ async function parseResponse<T>(res: Response): Promise<T> {
 /**
  * Monta o ApiError de uma resposta não-OK. Exportado para as listagens de
  * api.ts que fazem fetch manual (envelope paginado). Se for o 403 de
- * vendedor desligado, notifica a sessão (sem refresh/logout).
+ * vendedor desligado, notifica a sessão (sem refresh/logout). Se for o 403
+ * de troca de senha obrigatória (SEC-23), redireciona para /trocar-senha
+ * (também sem refresh/logout).
  */
 export function buildApiError(status: number, message: string): ApiError {
   vlog(F, "buildApiError", "verificando se é 403 de vendedor desligado, status:", status);
   if (isVendedorDesligadoResponse(status, message)) {
     vlog(F, "buildApiError", "notificando sessão de vendedor desligado");
     notifyVendedorDesligado();
+  }
+  vlog(F, "buildApiError", "verificando se é 403 de troca de senha obrigatória");
+  if (isTrocaSenhaObrigatoriaResponse(status, message)) {
+    vlog(F, "buildApiError", "redirecionando para a troca de senha");
+    redirectToTrocarSenha();
   }
   return new ApiError(status, message);
 }
@@ -655,6 +669,26 @@ async function parseError(res: Response): Promise<string> {
   }
 
   return `Erro ${res.status}: ${res.statusText}`;
+}
+
+// ============================================
+// Redirect para troca de senha obrigatória (SEC-23)
+// ============================================
+
+let redirectingTrocaSenha = false;
+
+function redirectToTrocarSenha(): void {
+  vlog(F, "redirectToTrocarSenha", "verificando se já está redirecionando ou fora do navegador:", redirectingTrocaSenha);
+  if (redirectingTrocaSenha || typeof window === "undefined") return;
+  // Sem loop: a própria tela de troca não redireciona para si mesma.
+  vlog(F, "redirectToTrocarSenha", "verificando se já está na tela de troca de senha");
+  if (window.location.pathname === ROTA_TROCAR_SENHA) return;
+  vlog(F, "redirectToTrocarSenha", "marcando redirecionamento em andamento");
+  redirectingTrocaSenha = true;
+  // Sem refresh, clearTokens ou logout: a sessão continua válida, só a troca
+  // de senha está pendente. Recarga completa (módulo fora de componente).
+  vlog(F, "redirectToTrocarSenha", "navegando para /trocar-senha");
+  window.location.assign(ROTA_TROCAR_SENHA);
 }
 
 // ============================================

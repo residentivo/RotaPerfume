@@ -41,7 +41,7 @@ func (c *Casos) TrocarSenha(ctx context.Context, p kernel.Principal, cmd Comando
 		return identidade.ErrNovaSenhaObrigatoria
 	}
 	uid, ip := p.UserID(), cmd.Origem.IP
-	if err := c.verificarCaptcha(ctx, cmd.Captcha, ip, "reset-password"); err != nil {
+	if err := c.verificarCaptcha(ctx, cmd.Captcha, ip, identidade.AcaoCaptchaResetSenha, "reset-password"); err != nil {
 		return err
 	}
 	chave := "reset:" + ip + "|" + strconv.FormatInt(uid, 10)

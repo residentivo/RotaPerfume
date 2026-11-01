@@ -1,6 +1,10 @@
 # A Fazer
 
-> Atualizado em 2026-10-31 (fechamento do Lote 27, 🔵 SubBrain). O **Lote 27** (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram cinco cards, no bloco "Achados do Lote 27", logo após o SEC-34: **SEC-35** (`ExcluirPagamento`/`CriarPagamento` checam fora de lock, MÉDIA), **SEC-36** (origens de dev sempre na allowlist de CORS, BAIXA), **BUG-24** (corrida entre troca e reset de senha, BAIXA), **CHORE-10** (`ErrImagemMuitoGrande` com `KindMuitoGrande` e `maxLength={100}` nas buscas do frontend, BAIXA) e **TST-11** (teste instável do IMG-01, BAIXA). SEC-19 e SEC-23 continuam no bloco "GAPs de segurança da auditoria ARQ-00".
+> Atualizado em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain). O **Lote 28** (SEC-19, SEC-23 e SEC-35) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram cinco cards, no bloco "Achados do Lote 28", logo após o TST-11: **SEC-37** (secret de teste do Turnstile aceita em produção, MÉDIA), **FE-17** (depois da troca de senha o frontend vai para `/dashboard` com a sessão já cortada, BAIXA), **CHORE-11** (`apiResetPassword` morta no frontend, BAIXA), **SEC-38** (`posseDoPagamento`/`posseDoPagamentoTravada` escondem erro de banco como 404, BAIXA) e **LOG-03** (recusa do captcha logada sem o motivo, BAIXA). O bloco "GAPs de segurança da auditoria ARQ-00" fica todo concluído.
+>
+> Antes, ainda em 2026-10-31 (abertura do Lote 28, 🔵 SubBrain). O 🤍 MegaBrain abriu o **Lote 28** e 3 cards saíram desta lista para `fazendo.md`: **SEC-35** (bloco "Achados do Lote 27") e **SEC-19** e **SEC-23** (bloco "GAPs de segurança da auditoria ARQ-00", que fica sem cards pendentes). O **Lote 27** foi commitado pelo usuário (`a7e2d4a`, branch `lote-27`).
+>
+> Antes, ainda em 2026-10-31 (fechamento do Lote 27, 🔵 SubBrain). O **Lote 27** (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram cinco cards, no bloco "Achados do Lote 27", logo após o SEC-34: **SEC-35** (`ExcluirPagamento`/`CriarPagamento` checam fora de lock, MÉDIA), **SEC-36** (origens de dev sempre na allowlist de CORS, BAIXA), **BUG-24** (corrida entre troca e reset de senha, BAIXA), **CHORE-10** (`ErrImagemMuitoGrande` com `KindMuitoGrande` e `maxLength={100}` nas buscas do frontend, BAIXA) e **TST-11** (teste instável do IMG-01, BAIXA). SEC-19 e SEC-23 continuam no bloco "GAPs de segurança da auditoria ARQ-00".
 >
 > Antes, ainda em 2026-10-31 (abertura do Lote 27, 🔵 SubBrain). O 🤍 MegaBrain abriu o **Lote 27** e 9 cards saíram desta lista para `fazendo.md`: **BUG-14** e **BUG-15** (topo da lista), **SEC-26** (bloco "Achados do ARQ-05") e **SEC-14, SEC-15, SEC-16, SEC-17, SEC-24 e SEC-25** (bloco "GAPs de segurança da auditoria ARQ-00"). Critério: cards de backend/testes de prioridade MÉDIA (mais SEC-16 e SEC-25, BAIXA, que tocam os mesmos pontos), sem decisão de produto pendente. SEC-19 e SEC-23 (backend + frontend + config) continuam aqui, para o lote seguinte.
 >
@@ -465,28 +469,13 @@
 
 ---
 
-## Achados do Lote 27 (SEC-35, SEC-36, BUG-24, CHORE-10, TST-11)
+## Achados do Lote 27 (SEC-36, BUG-24, CHORE-10, TST-11; SEC-35 foi para o Lote 28)
 
 > Origem comum: especificação do 🟣 SecBrain e entregas do 🟡 BackBrain e do 🔴 TestBrain no Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
-
----
-
-## SEC-35: `ExcluirPagamento` e `CriarPagamento` checam fora de lock (TOCTOU) — prioridade MÉDIA
-
-**Status:** pendente
-**Camada:** Backend (shared)
-**Responsável:** 🟣 SecBrain (escolha da correção) → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, especificação do Lote 27 (2026-10-31), achado fora do escopo nº 1 (mesmo padrão do SEC-26).
-
-**Descrição:**
-1. `ExcluirPagamento` (`SH/vendas/vendasapp/pagamentos.go:121-145`) checa "nunca quitado" e a posse fora de lock e depois executa um DELETE sem condição. Se o pagamento for quitado entre a checagem e o DELETE, um pagamento quitado é apagado.
-2. `CriarPagamento` checa a posse do pedido fora de lock. Se o pedido for apagado no meio, o INSERT cai no erro de FK 1452 e a API responde 500.
-
-**Ação esperada:**
-- Exclusão: DELETE condicional `... AND status_pagamento NOT IN ('Pago','Pago com atraso')` (como o UPDATE do SEC-27, usando `vendas.StatusPago`/`StatusPagoComAtraso`), com releitura para decidir 404/409 quando o DELETE afetar 0 linhas; ou tx com `SELECT ... FOR UPDATE` e as checagens de posse e status dentro dela.
-- Criação: mapear o erro 1452 de `fk_pagamentos_pedido` para `ErrPedidoNaoEncontrado` (404), sem o valor no log; ou checar a posse dentro de uma tx com lock do pedido.
-
-**Critério de aceite:** pagamento quitado no meio da exclusão não é apagado (409); pedido apagado no meio da criação → 404, não 500; testes sqlmock da ordem do SQL e do caminho de corrida; mensagens e status atuais preservados no caminho normal.
+>
+> **2026-10-31 (fechamento do Lote 28):** o SEC-35 foi **concluído no Lote 28** (card em `feito.md`).
+>
+> **2026-10-31:** o SEC-35 foi para o **Lote 28** (card em `fazendo.md`). Aqui ficam SEC-36, BUG-24, CHORE-10 e TST-11.
 
 ---
 
@@ -550,6 +539,89 @@
 
 **Critério de aceite:** o subteste passa em `go test -count=200 -run TestIMG01_Upload_FilenameHostilNaoVaza` sem falhas; a cobertura do caso hostil é mantida.
 
+**Nota (2026-10-31, Lote 28):** o flake foi lembrado de novo nas pendências do Lote 28; o card continua aqui.
+
+---
+
+## Achados do Lote 28 (SEC-37, FE-17, CHORE-11, SEC-38, LOG-03)
+
+> Origem comum: especificação do 🟣 SecBrain e entregas do 🟡 BackBrain e do 🟢 FrontBrain no Lote 28 (SEC-19, SEC-23 e SEC-35, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`, `FE` = `frontend`.
+
+---
+
+## SEC-37: secret de teste do Turnstile aceita em produção — prioridade MÉDIA
+
+**Status:** pendente
+**Camada:** Backend (config) + Deploy
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 28 (2026-10-31), achado fora do escopo nº 1 (levantado durante o SEC-19).
+
+**Descrição:** com `TURNSTILE_SECRET_KEY` igual a uma das secrets de teste da Cloudflare (`1x0000000000000000000000000000000AA`, `2x…AA`, `3x…AA`), o siteverify aceita qualquer token e, desde o SEC-19, hostname e action também deixam de ser conferidos. Na prática o captcha fica desligado. Nada impede essa configuração em produção, e `deploy/api.env.example` (~linha 100) chega a sugerir a secret de teste.
+
+**Ação esperada:** o `config.Load` recusa secret de teste quando `COOKIE_SECURE=true` (critério de "produção" a confirmar pelo 🟣 SecBrain) ou, no mínimo, registra um erro claro no startup; corrigir a sugestão em `deploy/api.env.example` e documentar em `.env.example`.
+
+**Critério de aceite:** em configuração de produção, a API não sobe (ou loga erro explícito) com secret de teste; em dev continua funcionando com o aviso atual do `avisarCaptcha`; testes de config; `deploy/api.env.example` sem sugerir a secret de teste para produção.
+
+---
+
+## FE-17: depois de trocar a senha, o frontend vai para `/dashboard` com a sessão já cortada — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Frontend
+**Responsável:** 🟢 FrontBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 28 (2026-10-31), achado fora do escopo nº 2 (levantado durante o SEC-23).
+
+**Descrição:** depois de uma troca bem-sucedida, `FE/src/app/trocar-senha/page.tsx` (~linha 133) redireciona para `/dashboard`, mas o backend já gravou o corte de sessão (SEC-08). Resultado: `401` → refresh falha → `/login?redirect=...`, com uma passagem pelo dashboard e a mensagem de sessão expirada.
+
+**Ação esperada:** depois do sucesso, `clearTokens()` + `router.replace("/login")` com a mensagem "Senha alterada. Faça login com a nova senha.", sem chamar o dashboard.
+
+**Critério de aceite:** teste da página de trocar senha: no sucesso, tokens limpos e redirecionamento direto para `/login` com a mensagem; nenhuma chamada autenticada depois da troca; fluxo SEC-23 (403 → `/trocar-senha`) continua funcionando.
+
+---
+
+## CHORE-11: remover `apiResetPassword` morta do frontend — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Frontend
+**Responsável:** 🟢 FrontBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 28 (2026-10-31), achado fora do escopo nº 3.
+
+**Descrição:** `apiResetPassword` (`FE/src/lib/api.ts`, ~linha 175) envia `usuario_id`, que o backend ignora (`POST /api/auth/reset-password` troca sempre a senha do próprio usuário). A função não é usada e engana quem lê o código; a troca real usa `apiChangePassword`.
+
+**Ação esperada:** remover `apiResetPassword` (e testes/mocks que só existam por causa dela), mantendo `apiChangePassword`.
+
+**Critério de aceite:** `grep apiResetPassword frontend/src` vazio; `tsc --noEmit`, `eslint` e `vitest` verdes; sem mudança de contrato HTTP.
+
+---
+
+## SEC-38: `posseDoPagamento`/`posseDoPagamentoTravada` escondem erro de banco como 404 — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Backend (shared)
+**Responsável:** 🟣 SecBrain (decisão) → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain, especificação do Lote 28 (2026-10-31), achado fora do escopo nº 4 (registro); entregas do 🟡 BackBrain (estendido à `posseDoPagamentoTravada` criada no SEC-35).
+
+**Descrição:** pela invariante V-02 (`docs/arq-00-invariantes-seguranca.md`, ARQ-05), qualquer erro ao buscar o pedido de um pagamento vira `404` `ErrPagamentoNaoEncontrado`. Isso vale também para erros de infraestrutura (banco fora, timeout, deadlock no lock do SEC-35), que ficam invisíveis para o cliente e para o monitoramento.
+
+**Ação esperada:** avaliar (🟣 SecBrain) responder `500` com log para erros que não sejam "não encontrado", como já faz `posseParaEditar`, mantendo `404` para inexistente e para fora da carteira. Se aprovado, atualizar a V-02.
+
+**Critério de aceite:** decisão registrada; se mudar, testes com erro de banco em `posseDoPagamento` e `posseDoPagamentoTravada` → `500` com log, inexistente/fora da carteira → `404`; contrato documentado no `postman/README.md`.
+
+---
+
+## LOG-03: recusa do captcha logada sem o motivo — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Backend (shared)
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** entregas do 🟡 BackBrain no Lote 28 (2026-10-31), decisão fora da spec nº 6 (SEC-19).
+
+**Descrição:** depois do SEC-19, um token pode ser recusado por `success=false`, hostname inesperado ou action inesperada, mas o log de recusa (`identidadeapp/casos.go`, `verificarCaptcha`) é genérico. Em produção não dá para saber, por exemplo, que o hostname do frontend ficou fora de `TURNSTILE_HOSTNAMES`.
+
+**Ação esperada:** logar só o motivo (`success`, `hostname` ou `action`), **sem** os valores recebidos, sem token e sem secret; a resposta HTTP continua `400` `"captcha inválido ou ausente"`.
+
+**Critério de aceite:** testes mostrando o motivo no log para cada caso e a ausência do token, da secret, do hostname e da action recebidos; contrato HTTP inalterado.
+
 ---
 
 ## GAPs de segurança da auditoria ARQ-00 (SEC-14 a SEC-25)
@@ -559,6 +631,10 @@
 > **Todos os cards abaixo estão fora do escopo do Lote 21: não corrigir dentro dos cards ARQ. Executar após o ARQ-07 ou em lote próprio, por decisão do 🤍 MegaBrain/usuário.** Durante a refatoração, a regra é não piorar nenhum destes pontos.
 >
 > Caminhos: `API` = `apis/rotaperfumes-api`, `SH` = `apis/shared`. As linhas citadas são do código antes da refatoração DDD; depois do ARQ-07 o dev deve localizar o ponto equivalente na nova estrutura.
+>
+> **2026-10-31 (fechamento do Lote 28):** SEC-19 e SEC-23 foram **concluídos no Lote 28** (cards em `feito.md`). Todos os GAPs deste bloco estão resolvidos (Lotes 24, 27 e 28).
+>
+> **2026-10-31 (abertura do Lote 28):** SEC-19 e SEC-23 foram para o **Lote 28** (cards em `fazendo.md`). Com isso, nenhum card deste bloco fica pendente aqui: SEC-14 a SEC-17 e SEC-24/SEC-25 foram concluídos no Lote 27, SEC-18 e SEC-20 a SEC-22 no Lote 24.
 >
 > **2026-10-31 (fechamento do Lote 27):** SEC-14, SEC-15, SEC-16, SEC-17, SEC-24 e SEC-25 foram **concluídos no Lote 27** (cards em `feito.md`).
 >
@@ -570,43 +646,13 @@
 > - SEC-16: **concluído no Lote 27 (card em `feito.md`)**; `SH/kernel/pagina.go` (`Pagina`, `Offset()`).
 > - SEC-17: **concluído no Lote 27 (card em `feito.md`)**; `API/internal/httpx/cors.go`.
 > - SEC-18: **concluído no Lote 24 (card em `feito.md`)**; `SH/identidade/identidadecrypto/jwt.go` e `SH/config/config.go`.
-> - SEC-19: `SH/adapters/turnstile/turnstile.go`.
+> - SEC-19: **concluído no Lote 28 (card em `feito.md`)**; `SH/adapters/turnstile/turnstile.go`.
 > - SEC-20: **concluído no Lote 24 (card em `feito.md`)**; `API/internal/httpx/clientip.go` (`IPDoCliente`).
 > - SEC-21: **concluído no Lote 24 (card em `feito.md`)**; `API/internal/httpx/cookies.go` (`DefinirCookiesSessao`, `LimparCookiesSessao`).
 > - SEC-22: **concluído no Lote 24 (card em `feito.md`)**; `SH/identidade/identidadeapp/login.go` (`Login`) e `sessao.go` (refresh).
-> - SEC-23: `deve_trocar_senha` em `SH/identidade/usuario.go` e `SH/identidade/identidademysql/usuarios.go`; autenticação por request em `API/internal/httpx/auth.go`.
+> - SEC-23: **concluído no Lote 28 (card em `feito.md`)**; `deve_trocar_senha` em `SH/identidade/usuario.go` e `SH/identidade/identidademysql/usuarios.go`; autenticação por request em `API/internal/httpx/auth.go`.
 > - SEC-24: **concluído no Lote 27 (card em `feito.md`)**; enums de ordenação em `SH/catalogo/ordenacao.go`, `SH/comercial/ordenacao.go`, `SH/vendas/filtros.go`, `SH/identidade/usuario.go` e `SH/identidade/historico.go`, traduzidos por `switch` nos adapters `*mysql`; testes em `SH/tests/repositories/sort_test.go`.
 > - SEC-25: **concluído no Lote 27 (card em `feito.md`)**; buscas `LIKE ?` em `SH/catalogo/catalogomysql/produtos.go`, `SH/comercial/comercialmysql/{clientes,oportunidades,visitas}.go` e `SH/vendas/vendasmysql/pedidos.go`.
-
----
-
-## SEC-19: Turnstile não valida `hostname` nem `action` — prioridade MÉDIA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend (+ Frontend para o `action`)
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 6; invariante I-13).
-
-**Descrição:** a verificação do Turnstile em login e reset de senha é fail-closed e vem antes do rate limit, mas só confere `success`; não confere se o `hostname` da resposta é o do sistema nem se o `action` corresponde ao fluxo (login vs. reset). Um token obtido em outro site com a mesma site key, ou em outro fluxo, é aceito.
-
-**Ação esperada:** configurar os hostnames esperados (ex. `TURNSTILE_HOSTNAMES`) e conferir `hostname` e `action` na resposta do siteverify; o 🟢 FrontBrain passa `action` distinto em cada widget (`login`, `reset-senha`). Resposta inválida → 400 com a mensagem atual. Testes com resposta simulada de hostname/action errados.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
-
----
-
-## SEC-23: `deve_trocar_senha` não é imposto pelo backend — prioridade MÉDIA
-
-**Status:** pendente (fora do escopo do Lote 21)
-**Camada:** Backend + Frontend
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 10).
-
-**Descrição:** a flag `deve_trocar_senha` (`SH/models/usuario.go:21`; gravada em `SH/repositories/usuario_repository.go:276` e `:432`) só é devolvida no login (`API/handlers/auth_handler.go:322-324`) para o frontend redirecionar. O backend aceita todas as rotas protegidas com um token de usuário que ainda deveria trocar a senha gerada pelo sistema, então a obrigação depende só da tela.
-
-**Ação esperada:** no middleware de autenticação (que já consulta o usuário a cada request, SEC-06), bloquear com 403 de mensagem fixa as rotas protegidas quando `deve_trocar_senha = true`, exceto a troca de senha, logout, refresh e `me`; o 🟢 FrontBrain trata o 403 redirecionando para a troca. Testes na matriz de rotas.
-
-**Nota:** fora do escopo do Lote 21 — não corrigir dentro dos cards ARQ; executar após o ARQ-07 ou em lote próprio, decisão do 🤍 MegaBrain/usuário.
 
 ---
 

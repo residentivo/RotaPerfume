@@ -114,10 +114,11 @@ type GeradorSenha interface {
 	Gerar() (identidade.Senha, error)
 }
 
-// VerificadorCaptcha confere o token do Turnstile. Qualquer erro recusa
+// VerificadorCaptcha confere o token do Turnstile e a action esperada pelo
+// fluxo (identidade.AcaoCaptcha*, SEC-19). Qualquer erro recusa
 // (fail-closed, I-13).
 type VerificadorCaptcha interface {
-	Verificar(ctx context.Context, token, ip string) error
+	Verificar(ctx context.Context, token, ip, acao string) error
 }
 
 // Limitador é o rate limit em memória por chave (I-14).

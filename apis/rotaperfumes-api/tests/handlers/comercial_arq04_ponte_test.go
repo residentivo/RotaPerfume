@@ -86,15 +86,21 @@ func TestARQ04_PonteEscopo_Vendas_PosseEFalhas(t *testing.T) {
 				m.ExpectQuery(rePagamento).WithArgs(int64(1)).WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 				m.ExpectQuery(rePedido).WithArgs(int64(1)).WillReturnError(errors.New("db down"))
 			}},
+		// SEC-35: na exclusão, o vendedor do pedido é lido sob lock (V-02 mantido).
 		{"delete pagamento: falha no vendedor do pedido", http.MethodDelete, "/api/pagamentos/1", "normal", "pagamento não encontrado", http.StatusNotFound,
 			func(m sqlmock.Sqlmock) {
 				restritoAtivo(m)
 				m.ExpectQuery(rePagamento).WithArgs(int64(1)).WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
-				m.ExpectQuery(rePedido).WithArgs(int64(1)).WillReturnError(errors.New("db down"))
+				expectLockPedidoErroH(m, 1, errors.New("db down"))
+				m.ExpectRollback()
 			}},
+		// SEC-35: erro de banco no lock do pagamento (admin) é 500.
 		{"delete pagamento admin: falha ao excluir", http.MethodDelete, "/api/pagamentos/1", "admin", "erro interno", http.StatusInternalServerError,
 			func(m sqlmock.Sqlmock) {
 				m.ExpectQuery(rePagamento).WithArgs(int64(1)).WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
+				m.ExpectBegin()
+				m.ExpectQuery(lockPagamentoRegexH).WithArgs(int64(1)).WillReturnError(errors.New("db down"))
+				m.ExpectRollback()
 			}},
 		{"delete pedido admin: falha ao excluir", http.MethodDelete, "/api/pedidos/1", "admin", "erro interno", http.StatusInternalServerError,
 			func(m sqlmock.Sqlmock) {
