@@ -27,7 +27,7 @@
 > Em 2026-10-16: o Lote 21 (2026-10-13 a 2026-10-16, reestruturação da API em DDD + Clean Code + Design Patterns) foi **concluído**: ARQ-00 a ARQ-08 estão em `feito.md` (estrutura final em `docs/arquitetura-ddd.md` §10; ADR em `docs/adr-001-reestruturacao-ddd.md`). Os cards abaixo saíram do lote e ficam fora do escopo dele. Os cards SEC-14 a SEC-25 são GAPs de segurança levantados pelo 🟣 SecBrain na auditoria do ARQ-00 (`docs/arq-00-invariantes-seguranca.md`), fora do escopo do Lote 21. Também saíram do ARQ-00 os cards ARQ-09 (Dinheiro em centavos), BUG-14 (VincularCliente sem transação) e BUG-15 (troca de senha sem transação), no topo da lista. Do ARQ-05 (2026-10-15) saíram BUG-16, SEC-26, SEC-27, TST-06 e BUG-17, no bloco "Achados do ARQ-05", logo após o BUG-15. Do ARQ-06 (2026-10-15) saiu o BUG-18, logo após o BUG-17. Do ARQ-07 (2026-10-16) saíram SEC-28 e TST-07, logo após o BUG-18.
 >
 > **Regras do Lote 21 (decisões de 2026-10-13, ver ARQ-00 em `feito.md`), que continuam valendo para o código daqui em diante:**
-> - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. Regra no código: comentário de `apis/shared/vlog/vlog.go`; documentação: `docs/logs-verbose.md` (atualizada no ARQ-08).
+> - **P1, logs (altera a regra LOG-02):** `vlog` em 4 níveis: rota automática no router, caso de uso via `defer`, pontos de decisão e 1 linha por query (~600 chamadas no lugar de ~3.726). Mesmo formato de log; TST-05 deve continuar verde. Nesses cards, o critério "logs `vlog` preservados" significa formato e TST-05 preservados e cobertura pelos 4 níveis, não a manutenção de cada chamada atual. Regra no código: comentário de `backend/shared/vlog/vlog.go`; documentação: `docs/logs-verbose.md` (atualizada no ARQ-08).
 > - **X1, contrato HTTP:** a única exceção ao "contrato HTTP inalterado" é a do ARQ-01 (métodos das 13 rotas, `/api/senha-historico/2/extra` e, pelo parse estrito de `{user_id...}` (R-f), `/api/senha-historico/0` e `/-1` passando a 400).
 >
 > Histórico anterior (2026-10-11): o 🔴 TestBrain executou `docs/roteiro-teste-manual-lote12.md` (24 aprovados, 1 falhou, 13 não verificáveis de 38; ver a seção "Execução (2026-10-07, 🔴 TestBrain)" no fim do roteiro). Daí saíram os cards BUG-13, LOG-01, DOC-05 e TST-04. BUG-13, LOG-01 e DOC-05 foram concluídos no Lote 16 (2026-10-07; ver `feito.md`). O LOG-02 (Lote 17) gerou o TST-05, e o DEP-00 (Lote 19) gerou o DEP-01 e o DEP-02. No Lote 20 (2026-10-11; ver `feito.md`) foram concluídos DEP-01, DEP-02 e TST-05; o TST-04 avançou parcialmente (só faltam 1.1, 1.2 e 1.7, que dependem do usuário rodar o `make`) e do DEP-01 saiu o card DEP-03 (BAIXA). Em 2026-10-16 o DEPLOY-01 (Lote 13) foi concluído e o MAIL-01 foi cancelado (sem servidor de e-mail; a API usa o envio Noop). Os dois estão em `feito.md`.
@@ -53,7 +53,7 @@
 
 ## Achados do ARQ-05 (TST-06; BUG-16, SEC-27 e BUG-17 foram para o Lote 25; SEC-26 foi para o Lote 27)
 
-> Origem comum: revisão do ARQ-05 (Vendas) pelo 🟣 SecBrain e pelo 🔴 TestBrain, Lote 21 (2026-10-15). **Fora do escopo do Lote 21:** não corrigir dentro dos cards ARQ. Executar após o ARQ-07 ou em lote próprio, por decisão do 🤍 MegaBrain/usuário. Durante a refatoração, não piorar estes pontos. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
+> Origem comum: revisão do ARQ-05 (Vendas) pelo 🟣 SecBrain e pelo 🔴 TestBrain, Lote 21 (2026-10-15). **Fora do escopo do Lote 21:** não corrigir dentro dos cards ARQ. Executar após o ARQ-07 ou em lote próprio, por decisão do 🤍 MegaBrain/usuário. Durante a refatoração, não piorar estes pontos. Caminhos: `SH` = `backend/shared`, `API` = `backend/rotaperfumes-api`.
 >
 > **2026-10-29:** BUG-16, SEC-27 e BUG-17 receberam a decisão de produto do usuário e foram para o **Lote 25** (cards em `fazendo.md`, na fila até o fechamento do Lote 24).
 >
@@ -102,9 +102,9 @@
 **Responsável:** 🔴 TestBrain (🟡 BackBrain se algum adapter precisar de ajuste)
 **Origem:** sugestão do 🔴 TestBrain, Lote 21 ARQ-07 (2026-10-16).
 
-**Descrição:** `apis/rotaperfumes-api/tests/arquitetura/arq07_sql_concat_test.go` detecta concatenação com `+` em textos SQL passados a `QueryContext`/`QueryRowContext`/`ExecContext`, mas hoje varre só o `analyticsmysql`.
+**Descrição:** `backend/rotaperfumes-api/tests/arquitetura/arq07_sql_concat_test.go` detecta concatenação com `+` em textos SQL passados a `QueryContext`/`QueryRowContext`/`ExecContext`, mas hoje varre só o `analyticsmysql`.
 
-**Ação esperada:** estender a varredura aos demais adapters MySQL (`catalogomysql`, `comercialmysql`, `vendasmysql`, identidade etc.), com allowlist dos helpers que recebem SQL pronto do chamador: `apis/shared/db/linhas.go`, `apis/shared/db/consulta.go`, `paginar` em `comercialmysql/linhas.go` e em `vendasmysql/linhas.go`, e `vinculo` em `comercialmysql/carteiras.go`. Manter um controle negativo (caso que o teste precisa reprovar).
+**Ação esperada:** estender a varredura aos demais adapters MySQL (`catalogomysql`, `comercialmysql`, `vendasmysql`, identidade etc.), com allowlist dos helpers que recebem SQL pronto do chamador: `backend/shared/db/linhas.go`, `backend/shared/db/consulta.go`, `paginar` em `comercialmysql/linhas.go` e em `vendasmysql/linhas.go`, e `vinculo` em `comercialmysql/carteiras.go`. Manter um controle negativo (caso que o teste precisa reprovar).
 
 **Critério de aceite:** todos os adapters MySQL cobertos; allowlist explícita e mínima; controle negativo reprovando; testes verdes.
 
@@ -125,7 +125,7 @@
 **Responsável:** 🟡 BackBrain
 **Origem:** 🟣 SecBrain, revisão do DASH-01 (Lote 22, 2026-10-29).
 
-**Descrição:** em `apis/rotaperfumes-api/internal/bootstrap/rotas.go:130`, o comentário do bloco de Oportunidades diz "acesso comum, escopo por carteira", mas o código filtra por vendedor (`oportunidades.vendedor_id`), não pela carteira ativa do cliente. O DASH-01 usou o mesmo filtro por vendedor. O comentário engana quem for revisar o escopo.
+**Descrição:** em `backend/rotaperfumes-api/internal/bootstrap/rotas.go:130`, o comentário do bloco de Oportunidades diz "acesso comum, escopo por carteira", mas o código filtra por vendedor (`oportunidades.vendedor_id`), não pela carteira ativa do cliente. O DASH-01 usou o mesmo filtro por vendedor. O comentário engana quem for revisar o escopo.
 
 **Ação esperada:** corrigir o comentário para "escopo por vendedor (`oportunidades.vendedor_id`)". Aproveitar e conferir se os comentários equivalentes das linhas 116 (Pedidos) e 137 (Visitas) descrevem o filtro real; corrigir só o texto, sem mudar código.
 
@@ -165,7 +165,7 @@
 
 **Descrição:** a API conecta no MariaDB do host (`host.docker.internal:3306`) sem TLS: credenciais e dados trafegam em claro pela bridge docker. O driver `go-sql-driver/mysql` suporta TLS com CA própria via `mysql.RegisterTLSConfig` e `tls=custom` no DSN.
 
-**Ação esperada:** habilitar TLS no servidor MariaDB (`ssl_cert`/`ssl_key`/`ssl_ca`; opcionalmente `require_secure_transport=ON` ou `REQUIRE SSL` nos usuários `rotaperfumes_app`/`rotaperfumes_admin`); na API, nova variável (ex.: `DB_TLS_CA`) lida em `apis/shared/config/config.go`, registrar a config com `mysql.RegisterTLSConfig("custom", ...)` e acrescentar `tls=custom` ao DSN quando definida; o import do `Jenkinsfile` (`mariadb --ssl`) também. Ajustar os testes que comparam o DSN literal (ex.: `apis/shared/tests/config` e `apis/shared/tests/db/mask_dsn_test.go`) e documentar em `docs/deploy-servidor.md` e `deploy/api.env.example`.
+**Ação esperada:** habilitar TLS no servidor MariaDB (`ssl_cert`/`ssl_key`/`ssl_ca`; opcionalmente `require_secure_transport=ON` ou `REQUIRE SSL` nos usuários `rotaperfumes_app`/`rotaperfumes_admin`); na API, nova variável (ex.: `DB_TLS_CA`) lida em `backend/shared/config/config.go`, registrar a config com `mysql.RegisterTLSConfig("custom", ...)` e acrescentar `tls=custom` ao DSN quando definida; o import do `Jenkinsfile` (`mariadb --ssl`) também. Ajustar os testes que comparam o DSN literal (ex.: `backend/shared/tests/config` e `backend/shared/tests/db/mask_dsn_test.go`) e documentar em `docs/deploy-servidor.md` e `deploy/api.env.example`.
 
 **Critério de aceite:** com a variável definida, a conexão usa TLS e falha se o certificado não bater com a CA; sem ela, comportamento atual (dev local); testes de DSN ajustados e verdes; `maskDSN` sem vazar nada novo; docs atualizadas.
 
@@ -235,7 +235,7 @@
 
 > **2026-10-30:** o Lote 25 foi concluído (`feito.md`); estes três cards continuam pendentes (UX-02 com avanço parcial).
 >
-> Origem comum: 🟣 SecBrain, especificação do Lote 25 (2026-10-29). Por decisão do usuário (adendo do 🤍 MegaBrain, item 5), R4 e R6 ficam **só no backlog** (não implementar no Lote 25). Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`.
+> Origem comum: 🟣 SecBrain, especificação do Lote 25 (2026-10-29). Por decisão do usuário (adendo do 🤍 MegaBrain, item 5), R4 e R6 ficam **só no backlog** (não implementar no Lote 25). Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `backend/shared`.
 
 ---
 
@@ -288,7 +288,7 @@
 
 ## Achados do Lote 24 (SEC-32, SEC-33, BUG-23, TST-08)
 
-> Origem comum: achados registrados durante o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22, 2026-10-29), fora do escopo dele. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário, depois do merge do Lote 24. Caminhos: `SH` = `apis/shared`.
+> Origem comum: achados registrados durante o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22, 2026-10-29), fora do escopo dele. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário, depois do merge do Lote 24. Caminhos: `SH` = `backend/shared`.
 
 ---
 
@@ -354,7 +354,7 @@
 
 ## Achados do Lote 25 (TST-09, TST-10, CHORE-08, FE-16)
 
-> Origem comum: fechamento do Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21, 2026-10-30; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
+> Origem comum: fechamento do Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21, 2026-10-30; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `backend/shared`, `API` = `backend/rotaperfumes-api`.
 
 ---
 
@@ -424,7 +424,7 @@
 
 ## Achados do IMG-01 (CHORE-09, SEC-34)
 
-> Origem comum: fechamento do IMG-01 (imagem do produto, Lote 26, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
+> Origem comum: fechamento do IMG-01 (imagem do produto, Lote 26, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `backend/shared`, `API` = `backend/rotaperfumes-api`.
 
 ---
 
@@ -471,7 +471,7 @@
 
 ## Achados do Lote 27 (SEC-36, BUG-24, CHORE-10, TST-11; SEC-35 foi para o Lote 28)
 
-> Origem comum: especificação do 🟣 SecBrain e entregas do 🟡 BackBrain e do 🔴 TestBrain no Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`.
+> Origem comum: especificação do 🟣 SecBrain e entregas do 🟡 BackBrain e do 🔴 TestBrain no Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `backend/shared`, `API` = `backend/rotaperfumes-api`.
 >
 > **2026-10-31 (fechamento do Lote 28):** o SEC-35 foi **concluído no Lote 28** (card em `feito.md`).
 >
@@ -545,7 +545,7 @@
 
 ## Achados do Lote 28 (SEC-37, FE-17, CHORE-11, SEC-38, LOG-03)
 
-> Origem comum: especificação do 🟣 SecBrain e entregas do 🟡 BackBrain e do 🟢 FrontBrain no Lote 28 (SEC-19, SEC-23 e SEC-35, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `apis/shared`, `API` = `apis/rotaperfumes-api`, `FE` = `frontend`.
+> Origem comum: especificação do 🟣 SecBrain e entregas do 🟡 BackBrain e do 🟢 FrontBrain no Lote 28 (SEC-19, SEC-23 e SEC-35, 2026-10-31; ver `feito.md`). Nenhum deles bloqueou o fechamento. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `backend/shared`, `API` = `backend/rotaperfumes-api`, `FE` = `frontend`.
 
 ---
 
@@ -630,7 +630,7 @@
 >
 > **Todos os cards abaixo estão fora do escopo do Lote 21: não corrigir dentro dos cards ARQ. Executar após o ARQ-07 ou em lote próprio, por decisão do 🤍 MegaBrain/usuário.** Durante a refatoração, a regra é não piorar nenhum destes pontos.
 >
-> Caminhos: `API` = `apis/rotaperfumes-api`, `SH` = `apis/shared`. As linhas citadas são do código antes da refatoração DDD; depois do ARQ-07 o dev deve localizar o ponto equivalente na nova estrutura.
+> Caminhos: `API` = `backend/rotaperfumes-api`, `SH` = `backend/shared`. As linhas citadas são do código antes da refatoração DDD; depois do ARQ-07 o dev deve localizar o ponto equivalente na nova estrutura.
 >
 > **2026-10-31 (fechamento do Lote 28):** SEC-19 e SEC-23 foram **concluídos no Lote 28** (cards em `feito.md`). Todos os GAPs deste bloco estão resolvidos (Lotes 24, 27 e 28).
 >
@@ -697,9 +697,9 @@ Registrar o resultado na seção "Execução" do roteiro.
 **Origem:** piloto ARQ-02 (Lote 21, 2026-10-14), achado do 🟡 BackBrain.
 
 **Descrição:** os arquivos abaixo não passam no `gofmt` (formatação/finais de linha CRLF):
-- `apis/shared/tests/repositories/sec12_chore02_refresh_integration_test.go`
-- `apis/rotaperfumes-api/tests/handlers/sec12_http_integration_test.go`
-- `apis/rotaperfumes-api/tests/services/sec12_chore02_integration_test.go`
+- `backend/shared/tests/repositories/sec12_chore02_refresh_integration_test.go`
+- `backend/rotaperfumes-api/tests/handlers/sec12_http_integration_test.go`
+- `backend/rotaperfumes-api/tests/services/sec12_chore02_integration_test.go`
 
 **Ação esperada:** rodar `gofmt -w` e normalizar para LF (conferir `.gitattributes`), sem alterar a lógica, em commit separado.
 
@@ -718,7 +718,7 @@ Registrar o resultado na seção "Execução" do roteiro.
 
 **Ação esperada:** incluir o id do Principal em todos os logs de auditoria de escrita (create, update, delete e toggle) de todos os contextos, mantendo o role. Não registrar PII (e-mail ou nome).
 
-**Pontos acrescentados no ARQ-03 (2026-10-14):** `apis/shared/identidade/identidadeapp/senha.go:169` e `apis/rotaperfumes-api/internal/identidadehttp/usuario_handler.go:59,82,106` registram `por admin=<role>` em vez do id.
+**Pontos acrescentados no ARQ-03 (2026-10-14):** `backend/shared/identidade/identidadeapp/senha.go:169` e `backend/rotaperfumes-api/internal/identidadehttp/usuario_handler.go:59,82,106` registram `por admin=<role>` em vez do id.
 
 **Critério de aceite:** todos os logs de escrita trazem o id e o role do usuário; testes de log por contexto; contrato HTTP inalterado.
 

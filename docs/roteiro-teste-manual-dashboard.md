@@ -178,7 +178,7 @@ SELECT etapa, COUNT(*) qtd, SUM(valor_estimado) valor
 - [ ] 7.11 **API direto (opcional):** `GET /api/dashboard/funil?janela=7d` responde `400` `"janela deve ser '30d', '90d', '365d' ou 'all'"`. Requisições prontas na pasta "Dashboard — Funil de vendas (DASH-01, Lote 22)" do Postman.
 - [ ] 7.12 Desbloqueie a URL `funil` no DevTools ao terminar.
 
-**Testes automatizados:** `frontend/tests/components/dashboard/FunilVendas.test.tsx`, `frontend/tests/lib/apiDashboardFunil.test.ts` e o bloco DASH-01 de `frontend/tests/app/dashboard/page.test.tsx`; no Go, `apis/shared/tests/analytics/funil_dominio_test.go`, `funil_consultas_test.go`, `funil_mysql_test.go` e `apis/rotaperfumes-api/tests/handlers/dashboard_funil_test.go`.
+**Testes automatizados:** `frontend/tests/components/dashboard/FunilVendas.test.tsx`, `frontend/tests/lib/apiDashboardFunil.test.ts` e o bloco DASH-01 de `frontend/tests/app/dashboard/page.test.tsx`; no Go, `backend/shared/tests/analytics/funil_dominio_test.go`, `funil_consultas_test.go`, `funil_mysql_test.go` e `backend/rotaperfumes-api/tests/handlers/dashboard_funil_test.go`.
 
 ---
 

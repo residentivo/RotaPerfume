@@ -3,7 +3,7 @@
 **Card:** SEC-01, IDOR em Create/Update/Toggle de clientes (`tarefas/fazendo.md`)
 **Tela:** `frontend/src/app/admin/clientes/page.tsx` (+ `frontend/src/components/admin/ClienteModal.tsx`)
 **Endpoints:** `GET /api/clientes`, `POST /api/clientes`, `PUT /api/clientes/{id}`, `PATCH /api/clientes/{id}/inativar`
-**Contrato (backend, `apis/rotaperfumes-api/internal/comercialhttp/cliente_handler.go` + `apis/shared/comercial/comercialapp/clientes.go`; até o Lote 21, `apis/rotaperfumes-api/handlers/cliente_handler.go`):**
+**Contrato (backend, `backend/rotaperfumes-api/internal/comercialhttp/cliente_handler.go` + `backend/shared/comercial/comercialapp/clientes.go`; até o Lote 21, `backend/rotaperfumes-api/handlers/cliente_handler.go`):**
 
 | Perfil | Criar | Editar / Inativar cliente da própria carteira | Editar / Inativar cliente fora da carteira |
 | --- | --- | --- | --- |

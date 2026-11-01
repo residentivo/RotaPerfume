@@ -119,7 +119,7 @@ Marque cada checkbox depois de conferir. Se algo divergir, anote o caso e encami
 
 ## 5. SEC-12: reuso repetido do mesmo refresh token
 
-Use um usuário de teste (`<QA>`), por exemplo o do roteiro do Lote 11 (se fez `db-reset`, recrie com `winpty go run ./cmd/resetpassword -email '<e-mail>' -password-prompt -role normal -nome "QA Lote 12"` em `apis/shared`). Suba a API (`make dev-api`) e o frontend.
+Use um usuário de teste (`<QA>`), por exemplo o do roteiro do Lote 11 (se fez `db-reset`, recrie com `winpty go run ./cmd/resetpassword -email '<e-mail>' -password-prompt -role normal -nome "QA Lote 12"` em `backend/shared`). Suba a API (`make dev-api`) e o frontend.
 
 1. **Rotacionar:** faça login com o `<QA>` numa janela anônima, copie o cookie `refresh_token` (**Application > Cookies**) e, no Git Bash:
 
@@ -182,7 +182,7 @@ Use um usuário de teste (`<QA>`), por exemplo o do roteiro do Lote 11 (se fez `
 - **Sem e-mail real:** a API subiu com `SMTP_USER=`, `SMTP_PASSWORD=` e `SMTP_FROM=` vazios no ambiente, e `SMTP_HOST=127.0.0.1` / `SMTP_PORT=1` como segunda proteção. Em todas as subidas o log mostrou `[server] SMTP não configurado — ... só no log`.
 - **Turnstile:** usei a chave secreta de teste da Cloudflare que sempre aprova (`1x0000000000000000000000000000000AA`) e o token `XXXX.DUMMY.TOKEN.XXXX` no campo `captchaToken`.
 - **Navegador trocado por curl:** login e refresh via `curl`, com o `refresh_token` e o `access_token` lidos do `Set-Cookie`. A "navegação" do 5.8 foram GETs protegidos (`/api/auth/me`, `/api/clientes`, `/api/pedidos`) com o cookie `access_token` do re-login.
-- **API:** nas seções 2 e 5 não usei `make dev-api`. Usei o binário `go build ./cmd/server` (mesmo código) rodando com cwd em `apis/rotaperfumes-api`, iniciado por um lançador auxiliar que cria um process group próprio e envia `CTRL_BREAK_EVENT`. No Go do Windows esse evento chega como `os.Interrupt`/SIGINT, equivalente ao Ctrl+C do 2.5. Nos itens 1.8 a 1.10 e 2.1/2.2 usei `make dev-api` / `make db-import-produtos`.
+- **API:** nas seções 2 e 5 não usei `make dev-api`. Usei o binário `go build ./cmd/server` (mesmo código) rodando com cwd em `backend/rotaperfumes-api`, iniciado por um lançador auxiliar que cria um process group próprio e envia `CTRL_BREAK_EVENT`. No Go do Windows esse evento chega como `os.Interrupt`/SIGINT, equivalente ao Ctrl+C do 2.5. Nos itens 1.8 a 1.10 e 2.1/2.2 usei `make dev-api` / `make db-import-produtos`.
 - **Seção 2 (massa):** fiz login e dois refreshes do QA, gerando os tokens 1788 e 1789 (`rotacao`). O `UPDATE expires_at` foi aplicado só nesses dois (1788 com -31 dias, 1789 com -1 h), com filtro `usuario_id=1022 AND revoked_at IS NOT NULL`. Antes disso conferi que nenhum outro token do banco estava expirado havia mais de 30 dias. Assim a limpeza só podia atingir o 1788.
 - **Seções 1.1/1.2/1.7, 3 e 4:** a execução de alvos `make db-*` (até o `make db-create` sem credenciais, que deveria falhar antes do mysql) foi **bloqueada pelo controle de permissões do agente**. Por isso o banco descartável `rotaperfumes_l12` nunca foi criado: `SHOW DATABASES` mostra só `rotaperfumes`. Fiz apenas uma revisão estática:
   - o `Makefile` aplica `17_ddl_estoque.sql` depois de `16_ddl_visitas.sql`;

@@ -25,7 +25,7 @@ Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevToo
 
    > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** os usuários do seed (`sql/03_seed_vendedores.sql`, como `rafael.carvalho`) nascem com `deve_trocar_senha = 1`, assim como os usuários criados ou com a senha resetada pelo admin. Com a flag ligada, a API responde `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password`, e o frontend leva para `/trocar-senha`. Antes de começar, confira (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE email IN ('admin@rotaperfumes.com.br', 'rafael.carvalho@rotaperfumes.com.br', 'qa.lote6@rotaperfumes.test');`), troque a senha de quem estiver com `1` e faça login de novo. No Postman, o item 4.3 continua válido (o "Login — Vendedor" só confere que `trocar_senha` é booleano), mas com `true` o item 4.2 recebe `403` até a troca.
 
-3. Crie o usuário de teste como **admin** (no terminal, na pasta `apis/shared`):
+3. Crie o usuário de teste como **admin** (no terminal, na pasta `backend/shared`):
 
    ```bash
    go run ./cmd/resetpassword -email qa.lote6@rotaperfumes.test -password-prompt -role admin -nome "QA Lote 6"
@@ -230,18 +230,18 @@ Use o `qa.lote6@...` (reativado no fim da seção 1). As queries usam `<QA>`.
 Rodam com `make test` (Go), `make test-frontend` (Vitest) e, com MySQL local, `INTEGRATION=1`:
 
 ```bash
-cd apis/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/services/ -coverpkg=./... -count=1
+cd backend/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/services/ -coverpkg=./... -count=1
 ```
 
-> Caminhos atualizados no Lote 7 (2026-09-26): os testes saíram de junto do código e foram para `apis/rotaperfumes-api/tests/<pacote>/`, `apis/shared/tests/<pacote>/` e `frontend/tests/` (espelhando `src/`).
+> Caminhos atualizados no Lote 7 (2026-09-26): os testes saíram de junto do código e foram para `backend/rotaperfumes-api/tests/<pacote>/`, `backend/shared/tests/<pacote>/` e `frontend/tests/` (espelhando `src/`).
 
 | Arquivo | O que cobre |
 | --- | --- |
-| `apis/rotaperfumes-api/tests/handlers/lote6_http_integration_test.go` | Com MySQL. **SEC-06:** inativar usuário (401 "usuário inativo" nas rotas protegidas e tokens revogados com `inativacao`), desligar vendedor (revogação na mesma transação), rebaixamento de role e usuário inexistente. **SEC-07:** reuso de token com `rotacao` fora da janela (alerta e `revogacao_massa`) e de token de logout (sem revogação em massa). **BUG-08:** timestamps no 201, com e sem carteira. |
-| `apis/rotaperfumes-api/tests/middleware/user_status_test.go` e `user_status_cookie_test.go` | SEC-06: `JWTMiddlewareWithUserCheck` com cookie e Bearer; inativo/inexistente → 401; erro de banco → 500; role do banco substitui a do token. |
-| `apis/rotaperfumes-api/tests/services/refresh_token_service_test.go`, `refresh_rotation_test.go`, `apis/shared/tests/repositories/refresh_token_repository_test.go` | SEC-07: `RevokedTokenError` com motivo, `IsRotationReuse`, gravação de `revoked_reason` em todas as revogações. |
+| `backend/rotaperfumes-api/tests/handlers/lote6_http_integration_test.go` | Com MySQL. **SEC-06:** inativar usuário (401 "usuário inativo" nas rotas protegidas e tokens revogados com `inativacao`), desligar vendedor (revogação na mesma transação), rebaixamento de role e usuário inexistente. **SEC-07:** reuso de token com `rotacao` fora da janela (alerta e `revogacao_massa`) e de token de logout (sem revogação em massa). **BUG-08:** timestamps no 201, com e sem carteira. |
+| `backend/rotaperfumes-api/tests/middleware/user_status_test.go` e `user_status_cookie_test.go` | SEC-06: `JWTMiddlewareWithUserCheck` com cookie e Bearer; inativo/inexistente → 401; erro de banco → 500; role do banco substitui a do token. |
+| `backend/rotaperfumes-api/tests/services/refresh_token_service_test.go`, `refresh_rotation_test.go`, `backend/shared/tests/repositories/refresh_token_repository_test.go` | SEC-07: `RevokedTokenError` com motivo, `IsRotationReuse`, gravação de `revoked_reason` em todas as revogações. |
 | `frontend/tests/lib/apiClient.lote6.test.ts` | FE-07: falha de rede, timeout e falha do Web Lock no refresh → `NetworkError`, sem logout e sem `/api/auth/logout`; a fila recebe o mesmo erro; 401/429/500 continuam deslogando. |
 | `frontend/tests/components/ui/Table.test.tsx`, `frontend/tests/app/admin/listasAdmin.test.tsx` | FE-09: `erroCarga` oculta o estado vazio nas 10 listagens. |
-| `apis/rotaperfumes-api/tests/handlers/lote4_http_integration_test.go`, `apis/shared/tests/cnpj/cruzado_test.go` (as linhas citadas no Lote 6, 254 e 75-79, mudaram com a mudança de pasta) | TEST-01: nome do subteste e comentário atualizados. |
+| `backend/rotaperfumes-api/tests/handlers/lote4_http_integration_test.go`, `backend/shared/tests/cnpj/cruzado_test.go` (as linhas citadas no Lote 6, 254 e 75-79, mudaram com a mudança de pasta) | TEST-01: nome do subteste e comentário atualizados. |
 
-**Regressão do 🔴 TestBrain (2026-09-26):** Go ok (unit e `INTEGRATION=1`: 1202 PASS em `apis/shared` e 2354 em `rotaperfumes-api`, 0 FAIL). Frontend: `tsc`, `eslint` e `vitest` 1188/1188. Cobertura: `rotaperfumes-api` 88,6%, `apiClient.ts` 94,81%, `Table.tsx` 100% das linhas. Banco restaurado e idêntico ao snapshot.
+**Regressão do 🔴 TestBrain (2026-09-26):** Go ok (unit e `INTEGRATION=1`: 1202 PASS em `backend/shared` e 2354 em `rotaperfumes-api`, 0 FAIL). Frontend: `tsc`, `eslint` e `vitest` 1188/1188. Cobertura: `rotaperfumes-api` 88,6%, `apiClient.ts` 94,81%, `Table.tsx` 100% das linhas. Banco restaurado e idêntico ao snapshot.

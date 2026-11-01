@@ -23,7 +23,7 @@
 --     cliente_id 3001..3040 e razão social em MAIÚSCULAS). Em bancos
 --     existentes, eles foram unificados no menor cliente_id por
 --     sql/19_alter_clientes_cnpj_unique.sql (make db-fix-cnpj-unique).
---     O importador (apis/shared/cmd/importclientes) precisa descartar ou
+--     O importador (backend/shared/cmd/importclientes) precisa descartar ou
 --     unificar os duplicados do CSV, senão falha com erro 1062
 --     (ER_DUP_ENTRY) no `uq_clientes_cnpj`.
 --   - ATUALIZAÇÃO (2026-09-25, NEG-02): CNPJ alfanumérico da Receita.

@@ -10,7 +10,7 @@
 --   $2a$12$XXXXPLACEHOLDER_ADMIN_PRECISA_SER_GERADO_PELO_GOXXXX
 --
 -- Para aplicar o seed com hash real (Argon2id com PASSWORD_PEPPER do .env):
---   make gen-hash   (= cd apis/shared && go run ./cmd/seedusers)
+--   make gen-hash   (= cd backend/shared && go run ./cmd/seedusers)
 -- A senha vem de SEED_ADMIN_PASSWORD do .env (ou é aleatória; veja
 -- -show-password). O comando grava uma cópia com o hash em tmp/seed/,
 -- executa essa cópia e a apaga; este arquivo NÃO é alterado.

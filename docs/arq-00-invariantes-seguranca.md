@@ -8,7 +8,7 @@
 
 # 🟣 SecBrain — ARQ-00: invariantes de segurança e riscos da refatoração DDD (2026-10-13)
 
-Raízes: `API` = apis/rotaperfumes-api, `SH` = apis/shared, `AT` = API/tests, `ST` = SH/tests.
+Raízes: `API` = backend/rotaperfumes-api, `SH` = backend/shared, `AT` = API/tests, `ST` = SH/tests.
 **[GAP]** = falha pré-existente; NÃO corrigir de carona na refatoração (vira card próprio), mas também não piorar.
 
 ## 0. Regras globais (ARQ-01..07)

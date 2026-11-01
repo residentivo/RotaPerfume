@@ -12,5 +12,5 @@
 --
 --   make db-import-pedidos
 --
--- Ver: apis/shared/cmd/importpedidos/main.go
+-- Ver: backend/shared/cmd/importpedidos/main.go
 -- ============================================================

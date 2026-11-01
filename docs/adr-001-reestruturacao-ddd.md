@@ -21,14 +21,14 @@ O diagnóstico do ARQ-00 (`docs/arquitetura-ddd.md` §1) encontrou, entre outros
 
 ## Decisão
 
-1. **Bounded contexts** em `apis/shared/<contexto>/`: Catálogo, Identidade e Acesso, Comercial, Vendas, Analytics e Notificação. Cada contexto tem três camadas em pacotes de nome único: domínio (`<ctx>`), aplicação (`<ctx>app`, casos de uso + portas) e adapters (`<ctx>mysql`; também `identidadecrypto` e `notificacaosmtp`).
-2. **Shared kernel** `apis/shared/kernel` (puro, só stdlib): `Principal`, `Role`, `Escopo` (zero value inválido; tradução para SQL só por `Filtro()`), `Pagina`/`Resultado[T]`, `Ordenacao[C]`, `Data`, `Email`, `Dinheiro`, erros tipados por `Kind` e a rota do request para log (`rota.go`, com `SanearRota`).
-3. **Camada HTTP só na API**, em `apis/rotaperfumes-api/internal/`: `httpx` (kit transversal: router com política tipada e método obrigatório, cadeia de middlewares, autenticação, envelope, mapper de erros), `<ctx>http` (handlers finos) e `bootstrap` (composition root).
+1. **Bounded contexts** em `backend/shared/<contexto>/`: Catálogo, Identidade e Acesso, Comercial, Vendas, Analytics e Notificação. Cada contexto tem três camadas em pacotes de nome único: domínio (`<ctx>`), aplicação (`<ctx>app`, casos de uso + portas) e adapters (`<ctx>mysql`; também `identidadecrypto` e `notificacaosmtp`).
+2. **Shared kernel** `backend/shared/kernel` (puro, só stdlib): `Principal`, `Role`, `Escopo` (zero value inválido; tradução para SQL só por `Filtro()`), `Pagina`/`Resultado[T]`, `Ordenacao[C]`, `Data`, `Email`, `Dinheiro`, erros tipados por `Kind` e a rota do request para log (`rota.go`, com `SanearRota`).
+3. **Camada HTTP só na API**, em `backend/rotaperfumes-api/internal/`: `httpx` (kit transversal: router com política tipada e método obrigatório, cadeia de middlewares, autenticação, envelope, mapper de erros), `<ctx>http` (handlers finos) e `bootstrap` (composition root).
 4. **Dois módulos Go mantidos** (`shared` e `rotaperfumes-api`, com `replace ../shared`); Dockerfile, Makefile e Jenkinsfile sem mudança de comando.
 5. **Migração incremental (strangler fig)** por contexto, um commit por card, cada um com build, vet e testes verdes, sem perda de testes (R1) e com a matriz de 60 rotas verde (R2). O legado (`middleware`, `services`, `routes`, `handlers`, `repositories`, `models`) foi removido por completo no ARQ-07.
 6. **Design Patterns aplicados onde simplificam**, com a lista do que não aplicar (`docs/arquitetura-ddd.md` §5.19). A tabela "pattern → onde no código" está em `docs/arquitetura-ddd.md` §10.10.
 7. **Logs `vlog` em 4 níveis** (rota automática, caso de uso por `defer vlog.Trace`, decisão e uma linha por query), substituindo a regra "linha a linha" do LOG-02 (decisão P1 do usuário). Formato da linha e proibições de conteúdo mantidos.
-8. **Regras de camada verificadas por teste** (`apis/shared/tests/arquitetura`, `apis/rotaperfumes-api/tests/arquitetura`): dependências entre camadas e contextos, allowlists de chamadores (`NovoPrincipal`, `Escopo*`), AST de erros, de `vlog` e de SQL montado.
+8. **Regras de camada verificadas por teste** (`backend/shared/tests/arquitetura`, `backend/rotaperfumes-api/tests/arquitetura`): dependências entre camadas e contextos, allowlists de chamadores (`NovoPrincipal`, `Escopo*`), AST de erros, de `vlog` e de SQL montado.
 
 ## Alternativas consideradas e rejeitadas
 

@@ -23,7 +23,7 @@ Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevToo
 
    > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** usuários com `deve_trocar_senha = 1` (os do seed `sql/03_seed_vendedores.sql` e os criados ou com a senha resetada pelo admin) recebem `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password`, e o frontend leva para `/trocar-senha`. Antes de começar, confira (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE email IN ('admin@rotaperfumes.com.br', 'qa.lote8@rotaperfumes.test');`), troque a senha de quem estiver com `1` e faça login de novo.
 
-3. Crie o usuário de teste como **normal** (no terminal, na pasta `apis/shared`):
+3. Crie o usuário de teste como **normal** (no terminal, na pasta `backend/shared`):
 
    ```bash
    go run ./cmd/resetpassword -email qa.lote8@rotaperfumes.test -password-prompt -role normal -nome "QA Lote 8"
@@ -194,13 +194,13 @@ Use duas janelas: **A** (normal) com o admin e **B** (anônima) com o `qa.lote8@
 O `seedusers` substitui placeholders nos arquivos `sql/02_seed_admin.sql` e `sql/03_seed_vendedores.sql`. Use `-no-exec` para **não** executar SQL no banco.
 
 1. Antes, confira que os dois arquivos estão limpos: `git status sql/` não lista `02_seed_admin.sql` nem `03_seed_vendedores.sql`.
-2. Na pasta `apis/shared`:
+2. Na pasta `backend/shared`:
 
    ```bash
    go run ./cmd/seedusers -no-exec
    ```
 
-   - [ ] 5.1 O log mostra `seedusers: 02_seed_admin.sql → N substituições` e `seedusers: 03_seed_vendedores.sql → N substituições` (N pode ser 0, se os arquivos já não tiverem placeholders), e `SQLs NÃO foram executados`. Antes do Lote 8, rodando de `apis/shared`, o comando procurava os arquivos na pasta **acima** do SistemaCompleto e falhava.
+   - [ ] 5.1 O log mostra `seedusers: 02_seed_admin.sql → N substituições` e `seedusers: 03_seed_vendedores.sql → N substituições` (N pode ser 0, se os arquivos já não tiverem placeholders), e `SQLs NÃO foram executados`. Antes do Lote 8, rodando de `backend/shared`, o comando procurava os arquivos na pasta **acima** do SistemaCompleto e falhava.
 
 3. Desfaça as substituições, para não commitar hashes:
 
@@ -210,7 +210,7 @@ O `seedusers` substitui placeholders nos arquivos `sql/02_seed_admin.sql` e `sql
 
    - [ ] 5.2 `git status sql/` volta a não listar os dois arquivos.
 
-> Fora de um checkout do projeto (sem `apis/shared/go.mod` até 6 níveis acima), o comando agora falha com erro, em vez de usar um caminho errado. Isso está coberto pelo `apis/shared/tests/tools/seedusers/seedusers_test.go`.
+> Fora de um checkout do projeto (sem `backend/shared/go.mod` até 6 níveis acima), o comando agora falha com erro, em vez de usar um caminho errado. Isso está coberto pelo `backend/shared/tests/tools/seedusers/seedusers_test.go`.
 
 ---
 
@@ -244,18 +244,18 @@ O `seedusers` substitui placeholders nos arquivos `sql/02_seed_admin.sql` e `sql
 Rodam com `make test` (Go), `make test-frontend` (Vitest) e, com MySQL local, `INTEGRATION=1`:
 
 ```bash
-cd apis/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/middleware/ ./tests/services/ -coverpkg=./... -count=1
+cd backend/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/middleware/ ./tests/services/ -coverpkg=./... -count=1
 ```
 
 | Arquivo | O que cobre |
 | --- | --- |
-| `apis/rotaperfumes-api/tests/middleware/sec08_corte_sessao_test.go` | SEC-08: `iat <= corte` → 401 "sessão encerrada"; `iat` ausente com corte; sem corte (`NULL`) segue válido. |
-| `apis/rotaperfumes-api/tests/handlers/sec08_invalidar_sessoes_test.go` | SEC-08: `InvalidarSessoes` chamado depois do `RevokeAllUserTokens` no reuso de refresh token. |
-| `apis/rotaperfumes-api/tests/handlers/sec08_http_integration_test.go` | Com MySQL: inativar/reativar, troca de senha, reset pelo admin e revogação em massa → token antigo 401. |
-| `apis/shared/tests/repositories/sec08_corte_sessao_test.go`, `apis/shared/tests/tools/resetpassword/sec08_corte_sessao_test.go` | SEC-08: gravação do corte em `SetAtivo(false)`, `InativarByVendedorID`, `UpdatePasswordHash`, `InvalidarSessoes` e na CLI `resetpassword`. |
-| `apis/rotaperfumes-api/tests/handlers/lote6_http_integration_test.go`, `sec07_reuso_refresh_test.go` | Ajustados: o token antigo agora exige 401 depois de reativar; `ExpectExec` do `InvalidarSessoes`. |
-| `apis/rotaperfumes-api/tests/services/bug09_creates_timestamps_test.go` | BUG-09: releitura depois do INSERT nos 6 creates e o caminho de falha da releitura (log e objeto em memória). |
-| `apis/shared/tests/tools/seedusers/seedusers_test.go` | BUG-10: raiz achada a partir de `<raiz>`, `apis/shared`, `apis/shared/cmd/seedusers` e `sql`; erro sem `go.mod`. |
+| `backend/rotaperfumes-api/tests/middleware/sec08_corte_sessao_test.go` | SEC-08: `iat <= corte` → 401 "sessão encerrada"; `iat` ausente com corte; sem corte (`NULL`) segue válido. |
+| `backend/rotaperfumes-api/tests/handlers/sec08_invalidar_sessoes_test.go` | SEC-08: `InvalidarSessoes` chamado depois do `RevokeAllUserTokens` no reuso de refresh token. |
+| `backend/rotaperfumes-api/tests/handlers/sec08_http_integration_test.go` | Com MySQL: inativar/reativar, troca de senha, reset pelo admin e revogação em massa → token antigo 401. |
+| `backend/shared/tests/repositories/sec08_corte_sessao_test.go`, `backend/shared/tests/tools/resetpassword/sec08_corte_sessao_test.go` | SEC-08: gravação do corte em `SetAtivo(false)`, `InativarByVendedorID`, `UpdatePasswordHash`, `InvalidarSessoes` e na CLI `resetpassword`. |
+| `backend/rotaperfumes-api/tests/handlers/lote6_http_integration_test.go`, `sec07_reuso_refresh_test.go` | Ajustados: o token antigo agora exige 401 depois de reativar; `ExpectExec` do `InvalidarSessoes`. |
+| `backend/rotaperfumes-api/tests/services/bug09_creates_timestamps_test.go` | BUG-09: releitura depois do INSERT nos 6 creates e o caminho de falha da releitura (log e objeto em memória). |
+| `backend/shared/tests/tools/seedusers/seedusers_test.go` | BUG-10: raiz achada a partir de `<raiz>`, `backend/shared`, `backend/shared/cmd/seedusers` e `sql`; erro sem `go.mod`. |
 | `frontend/tests/lib/useMensagemTemporaria.test.ts`, `frontend/tests/components/ui/Paginador.test.tsx` | FE-11 e Paginador comum: timer cancelado no unmount; navegação e desabilitação. |
 | `frontend/tests/app/admin/listasAdmin.test.tsx`, `listasPaginadas`, `crudPaginas`, `crudAdmin`, `clientes/page`, `trocar-senha/page`, `useListaSegura` | FE-10, FE-11 e FE-12 nas telas. |
 

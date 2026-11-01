@@ -1,6 +1,6 @@
 # Deploy no servidor da LAN (`ivo-inspiron-15-3530`) com Docker + Jenkins
 
-> Card **DEPLOY-01** (Lote 13, 2026-09-30). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/Dockerfile.caddy`, `deploy/api.env.example`, `deploy/mariadb-setup.sql`, `deploy/dump-local.ps1`, `deploy/setup-servidor.sh`, `apis/Dockerfile`, `frontend/Dockerfile`.
+> Card **DEPLOY-01** (Lote 13, 2026-09-30). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/Dockerfile.caddy`, `deploy/api.env.example`, `deploy/mariadb-setup.sql`, `deploy/dump-local.ps1`, `deploy/setup-servidor.sh`, `backend/Dockerfile`, `frontend/Dockerfile`.
 
 ## 0. Instalação automática (recomendado)
 

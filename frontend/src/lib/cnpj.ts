@@ -2,7 +2,7 @@
  * NEG-02: CNPJ alfanumerico da Receita Federal.
  *
  * Unico ponto do frontend que manipula CNPJ (entrada, mascara, validacao e
- * exibicao). A validacao espelha a do backend (apis/shared/cnpj):
+ * exibicao). A validacao espelha a do backend (backend/shared/cnpj):
  *  - apara espacos das bordas (TrimSpace do service), remove a mascara
  *    (".", "/", "-" e o espaco comum) e passa a-z para maiusculas;
  *  - qualquer outro caractere (tab, NBSP, quebra de linha no meio, letras

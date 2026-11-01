@@ -315,24 +315,24 @@ await criar("12ÁBC34501DE35");       // 400 (acento)
 Rodam com `make test` (Go), `make test-frontend` (Vitest) e, com MySQL local, `INTEGRATION=1`:
 
 ```bash
-cd apis/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/services/ -coverpkg=./... -run Integracao -count=1 -v
+cd backend/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/services/ -coverpkg=./... -run Integracao -count=1 -v
 ```
 
-> Caminhos atualizados no Lote 7 (2026-09-26): os testes saíram de junto do código e foram para `apis/rotaperfumes-api/tests/<pacote>/`, `apis/shared/tests/<pacote>/` e `frontend/tests/` (espelhando `src/`). Os `cmd/import*` e o `cmd/internal/clientesdedup` viraram `apis/shared/importers/*`. Os números de cobertura abaixo são os do Lote 5.
+> Caminhos atualizados no Lote 7 (2026-09-26): os testes saíram de junto do código e foram para `backend/rotaperfumes-api/tests/<pacote>/`, `backend/shared/tests/<pacote>/` e `frontend/tests/` (espelhando `src/`). Os `cmd/import*` e o `cmd/internal/clientesdedup` viraram `backend/shared/importers/*`. Os números de cobertura abaixo são os do Lote 5.
 
 | Arquivo | O que cobre |
 | --- | --- |
-| `apis/rotaperfumes-api/tests/services/refresh_token_service_test.go` | SEC-04: janela de graça com relógio injetado (5 s, exatamente 30 s, 31 s, 1 min, ±1 s/31 s no futuro), `Recently` envolve `Revoked`, expiração tem precedência. |
-| `apis/rotaperfumes-api/tests/handlers/auth_refresh_logout_test.go` | SEC-04: corrida no `BeginRotation` não conta; 15 revogados na janela sem 429; fora da janela → 429; resposta idêntica dentro e fora; forjados intercalados com revogados recentes ainda levam a 429. |
-| `apis/rotaperfumes-api/tests/handlers/sec04_rate_limit_matriz_test.go` | SEC-04 (TestBrain): matriz "conta / não conta" (não encontrado, expirado, expirado + revogado recente, revogado há 31 s/1 h, `revoked_at` 2 min no futuro contam; revogado agora, há 25 s e 10 s no futuro não contam), sempre sem emitir token. |
-| `apis/rotaperfumes-api/tests/handlers/lote4_http_integration_test.go` | SEC-02/SEC-04 com MySQL: 3 rodadas de 15 refresh paralelos (1×200, 14×401, nenhum 429, nenhum token nos 401, a aba vencedora segue). NEG-01/NEG-04 inalterados. |
-| `apis/rotaperfumes-api/tests/handlers/lote5_http_integration_test.go` | TestBrain, com MySQL. **SEC-04:** reuso sequencial do token recém-rotacionado (`revoked_at` gravado pela API), revogado há 5 s e 25 s pelo relógio do banco (sem 429), fora da janela (2 min) com o mesmo corpo e 429 na 11ª. **NEG-02:** criar com máscara em minúsculas (201, grava maiúsculas, conferido com `BINARY`), busca `?q=` sem máscara, minúsculas, com máscara, prefixo e trecho; 409 em outra caixa/máscara; 400 para DV errado, letra no DV e símbolo; PUT em minúsculas mantém maiúsculas. |
-| `apis/shared/tests/cnpj/cnpj_test.go` | Pacote central: normalização, formato, DV, exemplo oficial. |
-| `apis/shared/cnpj/testdata/casos_cruzados.json` | **Massa comum back x front** (147 casos + 4 divergências), gerada por uma 3ª implementação de referência do DV. Inclui `12ABC34501DE35` e `11222333000181`. |
-| `apis/shared/tests/cnpj/cruzado_test.go`, `apis/rotaperfumes-api/tests/services/cnpj_validacao_test.go` (antigo `services/cnpj_cruzado_internal_test.go`, reescrito pela API pública via `CreateCliente`/`ListClientes`) | A massa comum no pacote Go e na camada de serviço (fluxo de Create/Update) e o `termoBuscaCNPJ` (busca com máscara, minúsculas e prefixo). |
+| `backend/rotaperfumes-api/tests/services/refresh_token_service_test.go` | SEC-04: janela de graça com relógio injetado (5 s, exatamente 30 s, 31 s, 1 min, ±1 s/31 s no futuro), `Recently` envolve `Revoked`, expiração tem precedência. |
+| `backend/rotaperfumes-api/tests/handlers/auth_refresh_logout_test.go` | SEC-04: corrida no `BeginRotation` não conta; 15 revogados na janela sem 429; fora da janela → 429; resposta idêntica dentro e fora; forjados intercalados com revogados recentes ainda levam a 429. |
+| `backend/rotaperfumes-api/tests/handlers/sec04_rate_limit_matriz_test.go` | SEC-04 (TestBrain): matriz "conta / não conta" (não encontrado, expirado, expirado + revogado recente, revogado há 31 s/1 h, `revoked_at` 2 min no futuro contam; revogado agora, há 25 s e 10 s no futuro não contam), sempre sem emitir token. |
+| `backend/rotaperfumes-api/tests/handlers/lote4_http_integration_test.go` | SEC-02/SEC-04 com MySQL: 3 rodadas de 15 refresh paralelos (1×200, 14×401, nenhum 429, nenhum token nos 401, a aba vencedora segue). NEG-01/NEG-04 inalterados. |
+| `backend/rotaperfumes-api/tests/handlers/lote5_http_integration_test.go` | TestBrain, com MySQL. **SEC-04:** reuso sequencial do token recém-rotacionado (`revoked_at` gravado pela API), revogado há 5 s e 25 s pelo relógio do banco (sem 429), fora da janela (2 min) com o mesmo corpo e 429 na 11ª. **NEG-02:** criar com máscara em minúsculas (201, grava maiúsculas, conferido com `BINARY`), busca `?q=` sem máscara, minúsculas, com máscara, prefixo e trecho; 409 em outra caixa/máscara; 400 para DV errado, letra no DV e símbolo; PUT em minúsculas mantém maiúsculas. |
+| `backend/shared/tests/cnpj/cnpj_test.go` | Pacote central: normalização, formato, DV, exemplo oficial. |
+| `backend/shared/cnpj/testdata/casos_cruzados.json` | **Massa comum back x front** (147 casos + 4 divergências), gerada por uma 3ª implementação de referência do DV. Inclui `12ABC34501DE35` e `11222333000181`. |
+| `backend/shared/tests/cnpj/cruzado_test.go`, `backend/rotaperfumes-api/tests/services/cnpj_validacao_test.go` (antigo `services/cnpj_cruzado_internal_test.go`, reescrito pela API pública via `CreateCliente`/`ListClientes`) | A massa comum no pacote Go e na camada de serviço (fluxo de Create/Update) e o `termoBuscaCNPJ` (busca com máscara, minúsculas e prefixo). |
 | `frontend/tests/lib/cnpj.cruzado.test.ts` | A mesma massa no util TS: validade, valor enviado, fluxo da tela (digitar → máscara → validar → enviar) e `formatCnpj`. As 4 divergências estão como `it.fails` (ver "Divergências" abaixo). |
-| `apis/shared/tests/importers/clientes/cnpj_cruzado_test.go` | Importador com a massa comum: válido → mesmo valor da API; formato certo com DV errado é importado; formato inválido e divergências recusados; variantes de máscara/caixa unificam no `clientesdedup`. |
-| `apis/shared/tests/importers/clientes/main_test.go`, `apis/shared/tests/importers/clientesdedup/clientesdedup_test.go`, `apis/shared/tests/repositories/cliente_repository_test.go`, `apis/rotaperfumes-api/tests/services/cliente_service_test.go` | NEG-02: `parseRow` alfanumérico, dedup ignorando máscara e caixa, `QCNPJ` no LIKE de `cnpj`. |
+| `backend/shared/tests/importers/clientes/cnpj_cruzado_test.go` | Importador com a massa comum: válido → mesmo valor da API; formato certo com DV errado é importado; formato inválido e divergências recusados; variantes de máscara/caixa unificam no `clientesdedup`. |
+| `backend/shared/tests/importers/clientes/main_test.go`, `backend/shared/tests/importers/clientesdedup/clientesdedup_test.go`, `backend/shared/tests/repositories/cliente_repository_test.go`, `backend/rotaperfumes-api/tests/services/cliente_service_test.go` | NEG-02: `parseRow` alfanumérico, dedup ignorando máscara e caixa, `QCNPJ` no LIKE de `cnpj`. |
 | `frontend/tests/lib/cnpj.test.ts`, `components/admin/ClienteModal.cnpj.test.tsx`, `app/admin/clientes/page.test.tsx`, `components/admin/FormModais.test.tsx` | NEG-02 na tela: máscara progressiva, letra no DV ignorada, DV errado sem requisição, envio normalizado, 409, exibição na tabela e busca enviada como digitada. |
 | `frontend/tests/lib/apiClient.test.ts` | FE-06: falha de rede no retry → a fila recebe o **mesmo** erro, sem logout (inclusive rejeição não-`Error`); 401 → retry 401 → logout e "Sessão expirada". TestBrain: fila com 3 pendentes recebendo o mesmo objeto de erro; refresh 401+401, 429, 500, timeout e erro de rede → logout e "Sessão expirada" na fila toda; depois da falha de rede, um novo 401 dispara um novo refresh. |
 
@@ -344,8 +344,8 @@ A execução no navegador está na seção "Execução 2026-09-25 (TestBrain, Pl
 
 | Suíte | Resultado |
 | --- | --- |
-| Go `apis/shared` | `go build` e `go vet` sem erros; `go test ./...` ok; cobertura total 49,5% (os `cmd/import*` puxam para baixo; `cnpj` 97,4%, `clientesdedup` 100%, `repositories` 84,5%). |
-| Go `apis/rotaperfumes-api` | `go build` e `go vet` sem erros; `go test ./...` ok; cobertura total 88,5% (`handlers` 87,9%, `services` 94,7%). |
+| Go `backend/shared` | `go build` e `go vet` sem erros; `go test ./...` ok; cobertura total 49,5% (os `cmd/import*` puxam para baixo; `cnpj` 97,4%, `clientesdedup` 100%, `repositories` 84,5%). |
+| Go `backend/rotaperfumes-api` | `go build` e `go vet` sem erros; `go test ./...` ok; cobertura total 88,5% (`handlers` 87,9%, `services` 94,7%). |
 | Integração (`INTEGRATION=1`, MySQL local) | Todos os testes `Integracao*` de `handlers` e `services` passam, incluindo o Lote 5. |
 | Frontend | `tsc --noEmit` e `eslint` sem erros; `vitest run --coverage` com todos os testes passando (4 `expected fail` das divergências NEG-02); cobertura de linhas acima de 80%. |
 
@@ -393,7 +393,7 @@ Executado contra `localhost:3000` (`next dev`) e `localhost:8080` (`__debug_bin`
 
 **Observações (sem bloqueio):**
 
-- **O1:** o 201 do `POST /api/clientes` devolve `created_at`/`updated_at` = `0001-01-01T00:00:00Z` e, sem `data_cadastro` no body, `data_cadastro` com nanossegundos (`2026-09-25T20:29:12.7350372-03:00`). `CreateCliente` e `CreateClienteNaCarteira` (`apis/rotaperfumes-api/services/cliente_service.go:216-228` e `:238-271`) devolvem o struct em memória, sem reler do banco. O PUT devolve os valores certos. Pré-existente.
+- **O1:** o 201 do `POST /api/clientes` devolve `created_at`/`updated_at` = `0001-01-01T00:00:00Z` e, sem `data_cadastro` no body, `data_cadastro` com nanossegundos (`2026-09-25T20:29:12.7350372-03:00`). `CreateCliente` e `CreateClienteNaCarteira` (`backend/rotaperfumes-api/services/cliente_service.go:216-228` e `:238-271`) devolvem o struct em memória, sem reler do banco. O PUT devolve os valores certos. Pré-existente.
 - **O2:** com erro de rede em `/admin/clientes`, `aplicarErroClientes` (`frontend/src/app/admin/clientes/page.tsx:152-162`) zera a lista, e a tela mostra "0 clientes / Nenhum cliente cadastrado." junto com o alerta de conexão. A mensagem é a certa, mas o vazio sugere que não há clientes. Pré-existente, é UX.
 - **O3:** o COMMENT do DB-02 descreve o formato alfanumérico por `[0-9A-Z]`, sem a palavra "alfanumérico". Aceitável se o card não exigir o termo literal.
 

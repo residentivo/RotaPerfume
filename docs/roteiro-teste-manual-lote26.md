@@ -68,7 +68,7 @@ O item **Produtos** do menu (grupo Administração) só aparece para admin. Se u
 3. **Troca:** com imagem já gravada, envie outra.
    - [ ] 2.6 O botão diz "Trocar imagem"; o `imagem_url` muda (novo UUID).
    - [ ] 2.7 Abrir a URL antiga no navegador (`http://localhost:8080/api/public/produtos/imagens/<uuid-antigo>`) dá `404` `"imagem não encontrada"`.
-   - [ ] 2.8 Em `apis/rotaperfumes-api/data/produtos-imagens/` o arquivo antigo não existe mais.
+   - [ ] 2.8 Em `backend/rotaperfumes-api/data/produtos-imagens/` o arquivo antigo não existe mais.
 4. **Rejeições:**
    - [ ] 2.9 Arquivo acima de 1 MB: `imagem excede 1 MB`, sem chamar a API (validação no navegador).
    - [ ] 2.10 SVG renomeado para `.png` e `.txt` renomeado para `.png`: `arquivo de imagem inválido (use JPEG, PNG ou WebP)`. Se o navegador informar `image/png`, a requisição sai e a API responde `400` com a mesma mensagem.
@@ -93,7 +93,7 @@ Use a pasta **Produtos** da collection: "Enviar/Trocar Imagem do Produto", "Imag
 
 ## 4. Comando de geração
 
-- [ ] 4.1 `cd apis/rotaperfumes-api && go run ./cmd/gerarimagens` (sem `-confirmar`) não grava nada.
+- [ ] 4.1 `cd backend/rotaperfumes-api && go run ./cmd/gerarimagens` (sem `-confirmar`) não grava nada.
 - [ ] 4.2 `go run ./cmd/gerarimagens -dry-run` lista os produtos sem gravar.
 - [ ] 4.3 `make db-gerar-imagens-produtos` pula os produtos que já têm imagem e loga os totais.
 

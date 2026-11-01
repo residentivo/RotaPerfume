@@ -1,5 +1,7 @@
 # Fazendo
 
+> Atualizado em 2026-11-01 (🔵 SubBrain): **nenhum card em execução.** O CHORE-12 (rename `apis/` → `backend/`) foi concluído e está em `feito.md` (não commitado).
+>
 > Atualizado em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): **nenhum card em execução.** O **Lote 28** (SEC-19, SEC-23 e SEC-35) foi concluído e está em `feito.md` ("Lote 28 de 2026-10-31: 3 cards concluídos"; não commitado, pendente do usuário). Dele saíram os cards SEC-37, FE-17, CHORE-11, SEC-38 e LOG-03 em `afazer.md` (bloco "Achados do Lote 28"). Passos anteriores do Lote 28: "🟣 SecBrain especificando → 🟡 BackBrain → 🟢 FrontBrain → verificação do 🤍 MegaBrain → 🔵 SubBrain fechando" (2026-10-31; o 🔴 TestBrain não rodou passo separado, os testes vieram com os devs).
 >
 > Antes, ainda em 2026-10-31 (abertura do Lote 28, 🔵 SubBrain): o 🤍 MegaBrain abriu o **Lote 28** com 3 cards vindos de `afazer.md`: **SEC-19** (Turnstile sem conferência de `hostname`/`action`) e **SEC-23** (`deve_trocar_senha` imposto pelo backend), ambos do bloco "GAPs de segurança da auditoria ARQ-00" e com backend + frontend + config, e **SEC-35** (`ExcluirPagamento`/`CriarPagamento` fora de lock, bloco "Achados do Lote 27"). Passo atual: "🟣 SecBrain especificando → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain fechando". O **Lote 27** foi commitado pelo usuário (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", branch `lote-27`, criado a partir de `main`; registro em `feito.md`).

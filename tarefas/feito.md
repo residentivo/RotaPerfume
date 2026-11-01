@@ -5,6 +5,15 @@
 > Atualizado em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): o Lote 28 (SEC-19, SEC-23 e SEC-35) foi fechado; não commitado, pendente do usuário. Antes, ainda em 2026-10-31: o commit do Lote 27 foi registrado (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado pelo usuário via 🤍 MegaBrain). Antes, ainda em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
 
 ---
+## CHORE-12 de 2026-11-01: pasta `apis/` renomeada para `backend/`
+
+> Pedido direto do usuário. `git mv apis backend` e troca de `apis/` → `backend/` em Makefile, Jenkinsfile, `deploy/docker-compose.yml` (`context: ../backend`), `.vscode/launch.json`, `.gitignore`, `.dockerignore`, `backend/Dockerfile`, agentes (`.claude/agents/backend.md`, `tester.md`), docs, Postman, `afazer.md`, comentários Go/TS e no import da massa cruzada de CNPJ do frontend. `cmdutil.FindProjectRoot` passou a procurar `backend/shared/go.mod` (testes de `cmdutil` e `seedusers` atualizados). Este histórico (`feito.md`) mantém os caminhos antigos.
+>
+> **Verificação:** `go build`, `go vet` e `go test ./...` verdes nos dois módulos; frontend `vitest tests/lib` 781/781. `make test` segue falhando só pelo `go: no such tool "covdata"` (card TST-08, ambiente).
+>
+> **Commit:** não commitado, pendente do usuário. Servidores com checkout antigo precisam ajustar caminhos próprios (ex.: `PRODUTO_IMAGENS_DIR` absoluto apontando para `apis/...`).
+
+---
 ## Lote 28 de 2026-10-31: 3 cards concluídos
 
 > Cards: **SEC-19** (Turnstile sem conferência de `hostname`/`action`, GAP 6 da auditoria ARQ-00, invariante I-13), **SEC-23** (`deve_trocar_senha` imposto pelo backend, GAP 10) e **SEC-35** (`ExcluirPagamento`/`CriarPagamento` fora de lock, achado do Lote 27). Lote aberto pelo 🤍 MegaBrain em 2026-10-31. SEC-19 e SEC-23 vieram do bloco "GAPs de segurança da auditoria ARQ-00" (adiados do Lote 27 por envolverem backend + frontend + config), que fica sem cards pendentes; SEC-35 veio do bloco "Achados do Lote 27". Fechado em 2026-10-31 pelo 🔵 SubBrain.
