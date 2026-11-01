@@ -11,7 +11,7 @@
 >
 > **Verificação:** `go build`, `go vet` e `go test ./...` verdes nos dois módulos; frontend `vitest tests/lib` 781/781. `make test` segue falhando só pelo `go: no such tool "covdata"` (card TST-08, ambiente).
 >
-> **Commit:** não commitado, pendente do usuário. Servidores com checkout antigo precisam ajustar caminhos próprios (ex.: `PRODUTO_IMAGENS_DIR` absoluto apontando para `apis/...`).
+> **Commit:** `c4c87af` (branch `lote-27`). Servidores com checkout antigo precisam ajustar caminhos próprios (ex.: `PRODUTO_IMAGENS_DIR` absoluto apontando para `apis/...`).
 
 ---
 ## Lote 28 de 2026-10-31: 3 cards concluídos
