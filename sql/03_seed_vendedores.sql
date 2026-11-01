@@ -12,7 +12,7 @@
 --
 -- ATENÇÃO: a senha real NÃO é definida neste arquivo. O `make db-seed`, logo
 -- depois deste script, roda `go run ./cmd/resetpassword -all-users`
--- (apis/shared), que troca todos os placeholders pelo Argon2id (com PASSWORD_PEPPER) de:
+-- (backend/shared), que troca todos os placeholders pelo Argon2id (com PASSWORD_PEPPER) de:
 --   1) SEED_USER_PASSWORD do .env, se estiver definida; ou
 --   2) uma senha aleatória de 16 caracteres, impressa no console
 --      (USER_PASSWORD=...), a mesma para todos os usuários com placeholder.

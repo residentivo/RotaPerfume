@@ -3,10 +3,10 @@
 > **Estado final (ARQ-08, 🔵 SubBrain, 2026-10-16):** o Lote 21 foi concluído (ARQ-00 a ARQ-08). **A estrutura que vale hoje está na seção 10 ("Estado final")**, conferida contra o código. As seções 1 a 9 são o blueprint do ARQ-00 com os registros de cada lote: a seção 1 descreve o código **anterior** à refatoração (os pacotes `handlers`, `services`, `middleware`, `routes`, `repositories` e `models` citados ali não existem mais), e onde o código final divergiu do desenho a seção 10.11 registra a divergência. Decisão em formato ADR: `docs/adr-001-reestruturacao-ddd.md`.
 >
 > **Origem:** 🟡 BackBrain, card ARQ-00, Lote 21 (2026-10-13), branch `refactor/ddd`.
-> **Escopo (no ARQ-00):** `apis/rotaperfumes-api` (handlers, services, middleware, routes, cmd) e `apis/shared` (repositories, models, services, config, db, cnpj, tz, vlog, importers, cmd, tools, cmdutil).
+> **Escopo (no ARQ-00):** `backend/rotaperfumes-api` (handlers, services, middleware, routes, cmd) e `backend/shared` (repositories, models, services, config, db, cnpj, tz, vlog, importers, cmd, tools, cmdutil).
 > **Referências obrigatórias:**
 > - invariantes de segurança do 🟣 SecBrain: `docs/arq-00-invariantes-seguranca.md` (IDs R-, F-, C-, I-, E-, V-, D-, M-);
-> - matriz de rotas do 🔴 TestBrain: `apis/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 35 Authenticated, 21 AdminOnly; corrigido no ARQ-01, N-6; desde o DASH-01, Lote 22, 2026-10-29, são **61**: 4 Public, 36 Authenticated, 21 AdminOnly, com `GET /api/dashboard/funil`; desde o IMG-01, Lote 26, 2026-10-31, são **64**: 5 Public, 36 Authenticated, 23 AdminOnly, com `POST`/`DELETE /api/produtos/{id}/imagem` e `GET /api/public/produtos/imagens/{arquivo}`);
+> - matriz de rotas do 🔴 TestBrain: `backend/rotaperfumes-api/tests/routes/arq00_matriz_rotas_test.go` (60 padrões: 4 Public, 35 Authenticated, 21 AdminOnly; corrigido no ARQ-01, N-6; desde o DASH-01, Lote 22, 2026-10-29, são **61**: 4 Public, 36 Authenticated, 21 AdminOnly, com `GET /api/dashboard/funil`; desde o IMG-01, Lote 26, 2026-10-31, são **64**: 5 Public, 36 Authenticated, 23 AdminOnly, com `POST`/`DELETE /api/produtos/{id}/imagem` e `GET /api/public/produtos/imagens/{arquivo}`);
 > - linha de base de testes e cobertura (2026-10-13): API **720** testes de topo, cobertura **91,5%**; shared **593** testes de topo, cobertura **85,6%** (ver §7.1).
 >
 > **Banco (DB-03, 2026-10-29):** o servidor passou de MySQL para **MariaDB 11.4 LTS**. O driver Go continua sendo o `go-sql-driver/mysql` (compatível com o MariaDB) e os pacotes de adapter mantêm o sufixo `<ctx>mysql` (decisão de escopo: nenhum pacote foi renomeado). Nas seções abaixo, "MySQL" no nome de pacote, do driver ou de tipo (`*mysql.MySQLError`) continua valendo; onde o texto fala do comportamento do servidor (InnoDB, isolamento, erro 1062), vale igualmente para o MariaDB. Para os alvos `make db-*` e `db-seed`, o cliente `mariadb` (MariaDB ≥ 11.4) precisa estar no `PATH`.
@@ -22,9 +22,9 @@
 | # | Decisão | Onde está detalhado |
 |---|---|---|
 | D1 | **Dois módulos continuam** (`shared` e `rotaperfumes-api`, com `replace ../shared`). Dockerfile, Makefile e Jenkinsfile não mudam. | §2.3 |
-| D2 | **Domínio, aplicação e infraestrutura de cada contexto vão para `apis/shared/<contexto>/`**, em três pacotes: `<ctx>` (domínio), `<ctx>app` (casos de uso + portas) e `<ctx>mysql` (adapters). Tudo **público**, nada em `shared/internal`, porque a API e os CLIs de `shared` consomem os mesmos casos de uso. | §2.1, §2.2 |
+| D2 | **Domínio, aplicação e infraestrutura de cada contexto vão para `backend/shared/<contexto>/`**, em três pacotes: `<ctx>` (domínio), `<ctx>app` (casos de uso + portas) e `<ctx>mysql` (adapters). Tudo **público**, nada em `shared/internal`, porque a API e os CLIs de `shared` consomem os mesmos casos de uso. | §2.1, §2.2 |
 | D3 | **A camada HTTP fica no módulo da API, em `internal/`**: `internal/httpx` (kit transversal), `internal/<ctx>http` (handlers por contexto) e `internal/bootstrap` (composition root). | §2.1 |
-| D4 | **Shared kernel `apis/shared/kernel`**: `Principal`, `Role`, `Escopo` (tipo soma sem zero value útil), `Pagina`/`Resultado[T]`, `Ordenacao[C]`, `Data`, `Email`, erros de domínio tipados (`Kind`). | §3.1 |
+| D4 | **Shared kernel `backend/shared/kernel`**: `Principal`, `Role`, `Escopo` (tipo soma sem zero value útil), `Pagina`/`Resultado[T]`, `Ordenacao[C]`, `Data`, `Email`, erros de domínio tipados (`Kind`). | §3.1 |
 | D5 | Os pacotes técnicos que já estão bem (`config`, `db`, `vlog`, `tz`, `cnpj`, `cmdutil`) **ficam onde estão**. Movê-los só geraria churn de imports sem ganho de design. | §2.1 |
 | D6 | **Strangler fig por contexto.** Em cada lote, as rotas do contexto passam para os handlers novos, o código legado do contexto é apagado e os testes do contexto são portados **no mesmo lote** (R1). Os pacotes legados encolhem a cada lote e somem no ARQ-07. | §7 |
 | D7 | **Router com política tipada obrigatória** (`Public`, `Authenticated`, `AdminOnly`) e **método HTTP obrigatório**. Esta é a **única mudança de contrato** do Lote 21 (exceção X1). | §5.9, §7.3 |
@@ -63,7 +63,7 @@ Cards novos derivados deste blueprint (o 🔵 SubBrain cria): **ARQ-09** (Dinhei
 
 ## 1. Diagnóstico atual
 
-Caminhos relativos a `apis/`. `API` = `rotaperfumes-api`, `SH` = `shared`.
+Caminhos relativos a `backend/`. `API` = `rotaperfumes-api`, `SH` = `shared`.
 
 ### 1.1 Acoplamento e injeção de dependência
 
@@ -120,7 +120,7 @@ Caminhos relativos a `apis/`. `API` = `rotaperfumes-api`, `SH` = `shared`.
 > **ARQ-08:** árvore-alvo do ARQ-00. A árvore real, conferida no código, está no §10.1 (diferenças: não existe `bootstrap/wire.go`, a montagem foi dividida por contexto; as rotas ficam numa tabela única em `bootstrap/rotas.go`, não num `routes.go` por `<ctx>http`; não existe `httpx/trace.go`, o `Trace` está em `httpx/logging.go`; `JanelaDias` virou `analytics.Dias`; há ainda `shared/appkit`).
 
 ```
-apis/
+backend/
 ├── Dockerfile                         (inalterado)
 ├── shared/                            módulo github.com/rotaperfumes/shared
 │   ├── kernel/                        SHARED KERNEL (puro: sem sql, net/http, vlog)
@@ -197,11 +197,11 @@ apis/
 3. **Por que a camada HTTP vai para `rotaperfumes-api/internal/`.** Ninguém fora da API deve importar handlers. Os testes em `rotaperfumes-api/tests/...` estão sob a raiz do módulo e **podem** importar `rotaperfumes-api/internal/...` (a regra do `internal` permite isso), então a mudança não quebra os testes.
 4. **Por que três pacotes por contexto, com nome sufixado (`catalogo`, `catalogoapp`, `catalogomysql`).** Um pacote `domain` em cada contexto obrigaria alias em todo arquivo que importa dois contextos (`catalogodomain "…/catalogo/domain"`). Nomes únicos seguem a convenção da stdlib (`net/http` → `httptest`, `httputil`), dispensam alias e deixam o `grep` óbvio. O pacote de domínio leva o nome do contexto porque é o que mais se lê: `catalogo.Produto`, `catalogo.ErrProdutoNaoEncontrado`.
 5. **Por que manter `config`, `db`, `vlog`, `tz`, `cnpj` e `cmdutil`.** São pequenos, coesos, cobertos (config 100%, cnpj 100%) e importados por 37+ testes. `cnpj` vira o algoritmo usado pelo VO `comercial.CNPJ`.
-6. **Por que não fundir os módulos.** Seria uma refatoração ortogonal ao DDD: mexeria em Dockerfile (contexto `apis/`), Makefile (`build-shared`), Jenkinsfile (`cd shared && go test`, `cd rotaperfumes-api && go test`) e na contagem de testes "por suíte" (R1). Fica como opção futura, com card próprio.
+6. **Por que não fundir os módulos.** Seria uma refatoração ortogonal ao DDD: mexeria em Dockerfile (contexto `backend/`), Makefile (`build-shared`), Jenkinsfile (`cd shared && go test`, `cd rotaperfumes-api && go test`) e na contagem de testes "por suíte" (R1). Fica como opção futura, com card próprio.
 
 ### 2.3 Impacto em build, Docker e CI
 
-- **Dockerfile** (`apis/Dockerfile`): nada muda. O contexto já é `apis/`, ele já copia `shared/` e `rotaperfumes-api/` e compila `./cmd/server`.
+- **Dockerfile** (`backend/Dockerfile`): nada muda. O contexto já é `backend/`, ele já copia `shared/` e `rotaperfumes-api/` e compila `./cmd/server`.
 - **`replace github.com/rotaperfumes/shared => ../shared`**: nada muda. Pacotes novos de `shared` entram automaticamente.
 - **Makefile**: `build-api`, `dev-api`, `test` e `db-import-*` ficam iguais (`go run ./cmd/import…` continua). Opcional no ARQ-01: alvo `arch-check` (`go test ./tests/arquitetura/...`).
 - **Jenkinsfile** (`go vet ./... && go test ./...` nos dois módulos): nada muda. O teste de arquitetura roda junto.
@@ -230,7 +230,7 @@ Regras entre contextos:
 - **O domínio pode importar `kernel`** e nada mais do projeto.
 - Desligar um vendedor (I-09) toca três tabelas de dois contextos **em uma transação**. O caso de uso fica em `comercialapp`, e a escrita em Identidade passa por uma porta `IdentidadeTx` amarrada ao mesmo `*sql.Tx` (UoW, §5.2).
 
-### 3.2 Shared kernel (`apis/shared/kernel`)
+### 3.2 Shared kernel (`backend/shared/kernel`)
 
 | Tipo | Regra | Substitui |
 |---|---|---|
@@ -427,17 +427,17 @@ func (p Principal) EhAdmin() bool { return p.Valido() && p.role.EhAdmin() }
 
 | Elemento | Conteúdo | Onde ficou (ARQ-07) | Origem (antes do Lote 21, removida) |
 |---|---|---|---|
-| Domínio | `AlertaReuso`, `Destinatario` (Email sem CR/LF), `ModoTLS` (`Implicito | STARTTLS`) + `ResolverModoTLS`, `Contato`, `Mensagem` | `apis/shared/notificacao/{notificacao,destinatario,modo_tls,mensagem}.go` | `SH/services/email_service.go:39`, `email_smtp.go:51` |
-| Aplicação | `AlertaSegurancaNotifier` (assinante do evento `identidade.ReusoDeRefreshDetectado`; dedup 30 min, teto 20/h, 4 concorrentes, timeout 30 s, I-08; `Aguardar` no shutdown); portas `EnviadorAlerta` e `Contatos` (a porta `EnviadorSenhaInicial` ficou em `identidadeapp`, que é quem a consome) | `apis/shared/notificacao/notificacaoapp/{notifier,portas}.go` | `API/services/alerta_seguranca_notifier.go` |
-| Infra | `notificacaosmtp.SMTP` (Adapter; Strategy de TLS `tlsImplicito`/`startTLS`; AUTH só sobre TLS, M-01); `notificacaosmtp.Noop` (Null Object; loga e-mail mascarado, M-02) | `apis/shared/notificacao/notificacaosmtp/{smtp,transporte,conexao,auth,noop}.go`; montagem em `apis/rotaperfumes-api/internal/bootstrap/email.go` | `email_service.go`, `email_smtp.go` |
+| Domínio | `AlertaReuso`, `Destinatario` (Email sem CR/LF), `ModoTLS` (`Implicito | STARTTLS`) + `ResolverModoTLS`, `Contato`, `Mensagem` | `backend/shared/notificacao/{notificacao,destinatario,modo_tls,mensagem}.go` | `SH/services/email_service.go:39`, `email_smtp.go:51` |
+| Aplicação | `AlertaSegurancaNotifier` (assinante do evento `identidade.ReusoDeRefreshDetectado`; dedup 30 min, teto 20/h, 4 concorrentes, timeout 30 s, I-08; `Aguardar` no shutdown); portas `EnviadorAlerta` e `Contatos` (a porta `EnviadorSenhaInicial` ficou em `identidadeapp`, que é quem a consome) | `backend/shared/notificacao/notificacaoapp/{notifier,portas}.go` | `API/services/alerta_seguranca_notifier.go` |
+| Infra | `notificacaosmtp.SMTP` (Adapter; Strategy de TLS `tlsImplicito`/`startTLS`; AUTH só sobre TLS, M-01); `notificacaosmtp.Noop` (Null Object; loga e-mail mascarado, M-02) | `backend/shared/notificacao/notificacaosmtp/{smtp,transporte,conexao,auth,noop}.go`; montagem em `backend/rotaperfumes-api/internal/bootstrap/email.go` | `email_service.go`, `email_smtp.go` |
 
 ### 3.9 Importers, tools e CLIs (ARQ-07)
 
 - `importers/importkit`: esqueleto genérico (Template Method, §5.13). Cada importer fornece um `importkit.Etapas` (funções `Ler`, `LerNoDryRun` opcional e `Gravar`; no desenho era um `Spec[Row]`, ver divergência (b) do registro do ARQ-07 no §7.6) e mantém o SQL de upsert (performance e idempotência). A gravação em lote usa `importkit.Upsert[R]` (`importkit/lote.go`). **Não** passam a usar repositórios de agregado: carga em lote não é caso de uso transacional por entidade, e forçar isso seria overengineering.
 - Os importers que validam CNPJ usam o VO `comercial.CNPJ` (M-04: CNPJ nunca logado).
-- `tools/resetpassword`, `tools/seedusers` e `cmd/resetsenhas` passam a usar `identidadeapp` e `identidadecrypto` (hash, histórico e revogação num lugar só, M-03). `LoadSemCredenciaisDB` continua só no dry-run. **Como ficou:** só o `resetsenhas` (`apis/rotaperfumes-api/internal/resetsenhas`) usa `identidadeapp`; `resetpassword` e `seedusers` usam `identidadecrypto` para o hash e mantêm o SQL próprio (divergência (a) do ARQ-07).
-- `tools/testeemail` usa `notificacaosmtp`. **Como ficou:** a lógica do diagnóstico foi para `tools/testeemail/{testeemail,diagnostico,conexao_tls,comandos_smtp}.go`, e o antigo `tools/testeemail/testeemail_test.go` (teste interno) foi movido para `apis/shared/tests/tools/testeemail/`, com os mesmos 8 nomes de teste.
-- **CLIs com `main` fino (ARQ-07):** os 13 `main` (`apis/shared/cmd/*` e `apis/rotaperfumes-api/cmd/resetsenhas`) são só `os.Exit(cmdutil.Executar(tag, pacote.CLI, os.Args[1:], cmdutil.AmbientePadrao()))`; a lógica fica em `cli.go` testável (`tools/*`, `importers/*`) e recebe o `cmdutil.Ambiente` por injeção (`apis/shared/cmdutil/cli.go`).
+- `tools/resetpassword`, `tools/seedusers` e `cmd/resetsenhas` passam a usar `identidadeapp` e `identidadecrypto` (hash, histórico e revogação num lugar só, M-03). `LoadSemCredenciaisDB` continua só no dry-run. **Como ficou:** só o `resetsenhas` (`backend/rotaperfumes-api/internal/resetsenhas`) usa `identidadeapp`; `resetpassword` e `seedusers` usam `identidadecrypto` para o hash e mantêm o SQL próprio (divergência (a) do ARQ-07).
+- `tools/testeemail` usa `notificacaosmtp`. **Como ficou:** a lógica do diagnóstico foi para `tools/testeemail/{testeemail,diagnostico,conexao_tls,comandos_smtp}.go`, e o antigo `tools/testeemail/testeemail_test.go` (teste interno) foi movido para `backend/shared/tests/tools/testeemail/`, com os mesmos 8 nomes de teste.
+- **CLIs com `main` fino (ARQ-07):** os 13 `main` (`backend/shared/cmd/*` e `backend/rotaperfumes-api/cmd/resetsenhas`) são só `os.Exit(cmdutil.Executar(tag, pacote.CLI, os.Args[1:], cmdutil.AmbientePadrao()))`; a lógica fica em `cli.go` testável (`tools/*`, `importers/*`) e recebe o `cmdutil.Ambiente` por injeção (`backend/shared/cmdutil/cli.go`).
 
 ---
 
@@ -466,7 +466,7 @@ func (p Principal) EhAdmin() bool { return p.Valido() && p.role.EhAdmin() }
 Um teste de arquitetura em cada módulo, criado no ARQ-01 e válido desde o primeiro lote (os pacotes que ainda não existem são simplesmente ignorados):
 
 ```go
-// apis/shared/tests/arquitetura/dependencias_test.go
+// backend/shared/tests/arquitetura/dependencias_test.go
 package arquitetura_test
 
 import (
@@ -1612,7 +1612,7 @@ Hoje `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` lê `routes/routes.go` com a
 
 - **Entra:** `notificacao`, `notificacaoapp` (notifier), `notificacaosmtp` (SMTP + Noop); `importers/importkit` e os 8 importers como `Spec` (com fachadas das funções exportadas atuais); `tools/resetpassword`, `seedusers`, `testeemail` e `cmd/resetsenhas` sobre `identidadeapp`/`notificacaosmtp`; remoção de `middleware.ComPrincipalLegado`, `handlers/`, `services/` (API), `middleware/`, `SH/services/`, `SH/repositories/`, `SH/models/` (os testes de `shared/tests/models`, 2, são reapontados para os VOs equivalentes).
 - **Testes:** `shared/tests/services/email_*`, `mail01_*`, `sec10_tls_test.go`, `sec09_alerta_email_test.go`; `tests/services/sec09_notifier_test.go`; `shared/tests/importers/*` (123); `shared/tests/tools/*`; `tools/testeemail/testeemail_test.go` (§7.2-8).
-- **Aceite:** §7.1; `grep -r "shared/models\|shared/repositories\|rotaperfumes-api/handlers" apis` vazio; o teste de arquitetura sem exceções temporárias.
+- **Aceite:** §7.1; `grep -r "shared/models\|shared/repositories\|rotaperfumes-api/handlers" backend` vazio; o teste de arquitetura sem exceções temporárias.
 - **Riscos:** os CLIs de banco (`make db-seed` usa `resetpassword`). Mitigação: rodar o `make db-reset` local antes do commit (pedir ao usuário, como no TST-04).
 - **Registro do ARQ-07 (o que foi feito, o que divergiu do desenho e o que fica para o ARQ-08; 🟡 BackBrain, 2026-10-16):**
   - **Entregue.**
@@ -1623,7 +1623,7 @@ Hoje `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` lê `routes/routes.go` com a
     - **NB-7:** `seedusers` loga só os parâmetros Argon2id e imprime o hash completo apenas com `-show-password` (sem ele, prefixo + aviso); `resetsenhas` mascara os e-mails na listagem e no cabeçalho (remetente).
     - **N4:** `kernel.ComRota`/`RotaDe` (o `httpx.Autenticador` grava `r.URL.Path` no ctx); o log de bloqueio de vendedor desligado do `comercialapp` passou a `… rota=<path>`, sem a aplicação importar `net/http`.
     - **Helpers de adapter** (`execPorID`, `existe`, `inserir`, `lerUma`) foram para `shared/db/linhas.go` (`ExecPorID`, `Existe`, `Inserir`, `LerUma[T]`), com o prefixo do pacote no nome da operação (mesmo texto de wrap).
-  - **Removido:** API `middleware/` (`principal_legado.go`) e `services/` (`alerta_seguranca_notifier.go`); `shared/services` (`email_service.go`, `email_smtp.go`), `shared/repositories` (usuário, refresh, `erros.go`, `execer.go`), `shared/models`; `catalogomysql.UpsertPorDataSku` (sem chamador de produção; os 3 testes passaram a exercitar `importers/estoque.UpsertAll`, que grava o mesmo par `(data_snapshot, sku)`); `httpx.PrincipalDoContexto` deixou de ser exportado (só `PrincipalFrom`). `grep "shared/models\|shared/repositories\|shared/services\|rotaperfumes-api/handlers"` em `apis/**/*.go` só acha as fontes sintéticas dos testes de arquitetura; nenhum `TODO(ARQ-0X)`.
+  - **Removido:** API `middleware/` (`principal_legado.go`) e `services/` (`alerta_seguranca_notifier.go`); `shared/services` (`email_service.go`, `email_smtp.go`), `shared/repositories` (usuário, refresh, `erros.go`, `execer.go`), `shared/models`; `catalogomysql.UpsertPorDataSku` (sem chamador de produção; os 3 testes passaram a exercitar `importers/estoque.UpsertAll`, que grava o mesmo par `(data_snapshot, sku)`); `httpx.PrincipalDoContexto` deixou de ser exportado (só `PrincipalFrom`). `grep "shared/models\|shared/repositories\|shared/services\|rotaperfumes-api/handlers"` em `backend/**/*.go` só acha as fontes sintéticas dos testes de arquitetura; nenhum `TODO(ARQ-0X)`.
   - **Shims de teste removidos:** todos os `helpers_*_test.go` (API `tests/handlers`, `tests/services`, `tests/middleware`; shared `tests/repositories`, `tests/services`). No lugar, fixtures sem regra própria (`apoio_*_test.go`) e chamadas diretas a `<ctx>app`/`<ctx>mysql`/`identidadecrypto`. Os tautológicos foram reescritos: `TestUserCheck_RotaPublica_*` e `TestSEC08_CorteDeSessao_RotaPublicaIgnoraCorte` passam pelo `httpx.Router` real (`autenticador_router_test.go`), e `refresh_rotation_test.go` + `TestSEC07_BeginRotation*` passam por `Casos.RenovarSessao` (UoW real).
   - **Testes de arquitetura:** sanidades "≥ 1 uso" viraram "pacote ausente e 0 importadores" nos dois módulos (`middleware`, `services`, `shared/models|repositories|services`) e exigem os pacotes novos; `TestARQ07_ConcatenacaoSQLSoConstantes` (+ controle negativo `_DetectaViolacoes`) estende o AST de SQL à concatenação `+` em `QueryContext`/`QueryRowContext`/`ExecContext` (parâmetros seguidos até o chamador); exceções do `vlog_test` para `email_service.go` e `resetpassword` saíram; `ResetarSenhasAtivos` só em `internal/resetsenhas`.
   - **Mapa M-01..M-04:**
@@ -1638,18 +1638,18 @@ Hoje `TestARQ00_Matriz_CobreTodasAsRotasDeRoutesGo` lê `routes/routes.go` com a
     - **(d) `FindByUsuario`** (refresh) era só do legado: os testes foram reapontados para `HistoricoSenhas.DoUsuario`/`RefreshTokens`; o `ResetPassword` legado, para hasher + `Usuarios.AtualizarSenha`.
     - **(e)** As linhas de vlog "de sintaxe" (uma por `if`/atribuição) saíram dos importers e tools reescritos (P1: só ação relevante); os textos de log operacionais ficaram iguais.
     - **(f) N-7** ficou só documentado (`analyticsapp.Novo` e ARQ-01): a interface não nula com ponteiro nil tipado não é detectada; a proteção é o bootstrap.
-  - **Portões.** gofmt, build, vet e `go test -count=1 ./...` verdes nos dois módulos. R1 contra `adce2b8`: shared **762 → 796**, API **839 → 847**, nenhum nome perdido; as mesmas 36 linhas `--- SKIP` (integração MySQL), sem `t.Skip` novo. Cobertura combinada **89,42% → 98,06%** (6661/6793); descobertos **852 → 132**. `apis/Dockerfile` (`./cmd/server`), `Makefile` (todos os `go run ./cmd/…` e flags) e `Jenkinsfile` (`go vet`/`go test` por módulo) seguem válidos sem alteração.
+  - **Portões.** gofmt, build, vet e `go test -count=1 ./...` verdes nos dois módulos. R1 contra `adce2b8`: shared **762 → 796**, API **839 → 847**, nenhum nome perdido; as mesmas 36 linhas `--- SKIP` (integração MySQL), sem `t.Skip` novo. Cobertura combinada **89,42% → 98,06%** (6661/6793); descobertos **852 → 132**. `backend/Dockerfile` (`./cmd/server`), `Makefile` (todos os `go run ./cmd/…` e flags) e `Jenkinsfile` (`go vet`/`go test` por módulo) seguem válidos sem alteração.
   - **Linhas.** Produção: 92 arquivos, +3529/−4728 (−1199). Legado apagado: 1210 físicas (899 de lógica); código novo (arquivos criados): 2844 físicas (2181 de lógica), compensadas pelos 13 `main`, que encolheram de 1674 para 312 linhas físicas. Testes: 146 arquivos, +4520/−4395.
   - **Para o ARQ-08 (docs):** revisar §3.8/§3.9 (coluna "origem atual" e o `Spec`), §4.3 (`TestARQ_ChavesLegadas_SoMiddlewareLegado` já sem o middleware) e §7.5 (transição encerrada); `docs/logs-verbose.md` com `rota=` (N4) e `[email-usuario]` (NB-1); `.claude/agents/backend.md` com a estrutura final (`shared/<ctx>`, `importkit`, `cmdutil.Executar`, `internal/<ctx>http`, `internal/resetsenhas`); README/manuais dos CLIs (`seedusers -show-password`, `resetsenhas` mascarado).
 
 #### ARQ-08: Documentação (🔵 SubBrain)
 
-ADR, revisão deste documento com o que mudou nos lotes, `docs/logs-verbose.md` (níveis do §6), `.claude/agents/backend.md` (estrutura `apis/shared/<ctx>`, `internal/<ctx>http`), Postman (só a exceção X1).
+ADR, revisão deste documento com o que mudou nos lotes, `docs/logs-verbose.md` (níveis do §6), `.claude/agents/backend.md` (estrutura `backend/shared/<ctx>`, `internal/<ctx>http`), Postman (só a exceção X1).
 
 - **Registro do ARQ-08 (🔵 SubBrain, 2026-10-16):**
   - **ADR:** `docs/adr-001-reestruturacao-ddd.md`.
   - **Este documento:** cabeçalho com o estado final; nova seção 10 (estrutura real, camadas, composition root, `httpx`, `kernel`, `shared/db`, `importkit`, CLIs, testes de arquitetura, testes de integração, tabela de patterns conferida no código, divergências e N-7); notas no §2.1, §3.8, §3.9, §4.3 e §7.5.
-  - **`docs/logs-verbose.md`:** regra LOG-02 reescrita para os 4 níveis (P1), com `[email-usuario]` (NB-1), `rota=` saneado (N4/NB-C) e os testes de AST. O comentário de pacote de `apis/shared/vlog/vlog.go` já estava atualizado pelo 🟡 BackBrain.
+  - **`docs/logs-verbose.md`:** regra LOG-02 reescrita para os 4 níveis (P1), com `[email-usuario]` (NB-1), `rota=` saneado (N4/NB-C) e os testes de AST. O comentário de pacote de `backend/shared/vlog/vlog.go` já estava atualizado pelo 🟡 BackBrain.
   - **Postman:** contrato conferido; nenhuma requisição dependia do comportamento anterior à X1. Seção "Mudanças do Lote 21" no `postman/README.md` e na descrição da `collection.json`; referências a arquivos legados atualizadas.
   - **Caminhos legados:** atualizados em `docs/manual-base-de-dados.md`, `docs/roteiro-teste-manual-clientes.md` e `postman/`; nota de "caminhos anteriores ao Lote 21" em `docs/arq-00-invariantes-seguranca.md` e nos roteiros dos Lotes 4, 5 e 6 (registros históricos, não reescritos).
   - **`.claude/agents/backend.md` e `CLAUDE.md`:** mudança proposta ao usuário (arquivos de configuração dos agentes; não editados sem aprovação dele).
@@ -1776,12 +1776,12 @@ Referência: `docs/arq-00-invariantes-seguranca.md`. Marcar no PR de cada lote. 
 
 ## 10. Estado final (ARQ-08, 2026-10-16)
 
-> Conferido pelo 🔵 SubBrain contra o código da branch `refactor/ddd` depois do commit `719393c` (ARQ-07). Todos os caminhos citados nesta seção existem. Caminhos relativos a `apis/` quando começam por `shared/` ou `rotaperfumes-api/`.
+> Conferido pelo 🔵 SubBrain contra o código da branch `refactor/ddd` depois do commit `719393c` (ARQ-07). Todos os caminhos citados nesta seção existem. Caminhos relativos a `backend/` quando começam por `shared/` ou `rotaperfumes-api/`.
 
 ### 10.1 Estrutura real
 
 ```
-apis/
+backend/
 ├── Dockerfile                                (inalterado; compila ./cmd/server)
 ├── shared/                                   módulo github.com/rotaperfumes/shared
 │   ├── kernel/          data.go dinheiro.go email.go erros.go escopo.go ordenacao.go pagina.go principal.go rota.go
@@ -1925,14 +1925,14 @@ Todos têm controle negativo (fonte sintética que a regra precisa reprovar).
 
 ### 10.9 Como rodar os testes (unitários e de integração)
 
-- **Unitários:** `make test` (os dois módulos), ou `go test ./...` em `apis/shared` e em `apis/rotaperfumes-api`. Cobertura combinada (portão do Lote 21): `make cover-combinada`.
+- **Unitários:** `make test` (os dois módulos), ou `go test ./...` em `backend/shared` e em `backend/rotaperfumes-api`. Cobertura combinada (portão do Lote 21): `make cover-combinada`.
 - **Integração (MySQL local):** os testes `*_integration_test.go` e `TestIntegracao*` são pulados (`t.Skip`) sem `INTEGRATION=1`. **Só `INTEGRATION=1` não basta:** as variáveis `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USUARIO` e `DB_SENHA` precisam estar **no ambiente do processo** (SEC-11: sem default; os testes não leem o `.env` sozinhos). Sem elas, parte dos testes é pulada e outra falha ao conectar, e um resultado "verde" pode não ter tocado o banco. Rode **com `-p 1`**: os pacotes de integração usam o mesmo banco e, em paralelo, interferem entre si.
   - Git Bash (na raiz do repositório):
 
     ```bash
     set -a; . ./.env; set +a
-    (cd apis/shared && INTEGRATION=1 go test -p 1 -count=1 ./...)
-    (cd apis/rotaperfumes-api && INTEGRATION=1 go test -p 1 -count=1 ./...)
+    (cd backend/shared && INTEGRATION=1 go test -p 1 -count=1 ./...)
+    (cd backend/rotaperfumes-api && INTEGRATION=1 go test -p 1 -count=1 ./...)
     ```
 
   - PowerShell (na raiz do repositório; carrega só as `DB_*` do `.env`):
@@ -1940,8 +1940,8 @@ Todos têm controle negativo (fonte sintética que a regra precisa reprovar).
     ```powershell
     Get-Content .env | Where-Object { $_ -match '^\s*(DB_[A-Z_]+)=(.*)$' } | ForEach-Object { Set-Item "env:$($Matches[1])" $Matches[2].Trim() }
     $env:INTEGRATION = "1"
-    Push-Location apis/shared; go test -p 1 -count=1 ./...; Pop-Location
-    Push-Location apis/rotaperfumes-api; go test -p 1 -count=1 ./...; Pop-Location
+    Push-Location backend/shared; go test -p 1 -count=1 ./...; Pop-Location
+    Push-Location backend/rotaperfumes-api; go test -p 1 -count=1 ./...; Pop-Location
     ```
 
   - `make test-integration` exporta as variáveis do `.env` (o `Makefile` faz `-include .env` + `export`), mas **não** passa `-p 1`; prefira os comandos acima.

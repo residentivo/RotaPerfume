@@ -24,7 +24,7 @@ Marque cada checkbox depois de conferir o resultado esperado no navegador. Se al
    | normal **com** vendedor | `rafael.carvalho@rotaperfumes.com.br` | 5 | 4 - Rafael Carvalho (ativo, 60 clientes na carteira ativa) |
    | normal **sem** vendedor | criar temporário (SQL abaixo) | - | nenhum |
 
-   Se você não souber a senha de algum usuário, redefina pela tela de Usuários (admin) ou com `apis/shared/cmd/resetpassword`.
+   Se você não souber a senha de algum usuário, redefina pela tela de Usuários (admin) ou com `backend/shared/cmd/resetpassword`.
 
    > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** os usuários do seed (`sql/03_seed_vendedores.sql`, como `rafael.carvalho`) nascem com `deve_trocar_senha = 1`, assim como os usuários criados ou com a senha resetada pelo admin (inclusive o temporário abaixo). Com a flag ligada, a API responde `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password`, e o frontend leva para `/trocar-senha`. Antes de começar, confira (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE id IN (1, 5);`), troque a senha de quem estiver com `1` e faça login de novo.
 
@@ -146,7 +146,7 @@ O vendedor travado do usuário normal vem da sessão em memória validada por `G
 
 ## Evidências via API (2026-09-24)
 
-Validação feita pelo TestBrain com a API local (`apis/rotaperfumes-api`, binário compilado de `./cmd/server`, porta 8080) e o banco local `rotaperfumes`. O login real exige captcha Cloudflare Turnstile, então os testes usaram tokens JWT HS256 gerados localmente com o mesmo `JWT_SECRET`/`JWT_ISSUER` do `.env`, para os usuários reais: admin id 1; normal id 5 (vendedor 4); normal sem vendedor = usuário temporário id 86, criado por SQL e removido no fim.
+Validação feita pelo TestBrain com a API local (`backend/rotaperfumes-api`, binário compilado de `./cmd/server`, porta 8080) e o banco local `rotaperfumes`. O login real exige captcha Cloudflare Turnstile, então os testes usaram tokens JWT HS256 gerados localmente com o mesmo `JWT_SECRET`/`JWT_ISSUER` do `.env`, para os usuários reais: admin id 1; normal id 5 (vendedor 4); normal sem vendedor = usuário temporário id 86, criado por SQL e removido no fim.
 
 | # | Perfil | Chamada | Status | Trecho da resposta |
 | --- | --- | --- | --- | --- |

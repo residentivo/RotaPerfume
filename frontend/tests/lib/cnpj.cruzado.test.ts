@@ -1,9 +1,9 @@
 /**
  * NEG-02 (TestBrain, Lote 5): verificacao cruzada back x front.
  *
- * A massa apis/shared/cnpj/testdata/casos_cruzados.json e a MESMA lida pelos
- * testes Go (apis/shared/cnpj/cruzado_test.go e
- * apis/rotaperfumes-api/services/cnpj_cruzado_internal_test.go). Foi gerada
+ * A massa backend/shared/cnpj/testdata/casos_cruzados.json e a MESMA lida pelos
+ * testes Go (backend/shared/cnpj/cruzado_test.go e
+ * backend/rotaperfumes-api/services/cnpj_cruzado_internal_test.go). Foi gerada
  * por uma 3a implementacao de referencia do DV, independente das duas.
  *
  * - `casos`: back e front precisam concordar (validade e valor normalizado).
@@ -12,7 +12,7 @@
  *   ficam como regressao e o esperado continua sendo o contrato do backend.
  */
 import { describe, expect, it } from "vitest";
-import massa from "../../../apis/shared/cnpj/testdata/casos_cruzados.json";
+import massa from "../../../backend/shared/cnpj/testdata/casos_cruzados.json";
 import {
   formatCnpj,
   isValidCnpj,

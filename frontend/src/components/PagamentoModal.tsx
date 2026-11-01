@@ -40,7 +40,7 @@ interface PagamentoModalProps {
 }
 
 // Valores de ENUM espelhando o backend (ver
-// apis/rotaperfumes-api/services/pagamento_service.go).
+// backend/rotaperfumes-api/services/pagamento_service.go).
 const FORMA_PAGAMENTO_OPTIONS = [
   { value: "Boleto 14 dias", label: "Boleto 14 dias" },
   { value: "Boleto 28 dias", label: "Boleto 28 dias" },

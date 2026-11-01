@@ -61,7 +61,7 @@ const STATUS_OPTIONS: { value: "" | "ativo" | "inativo"; label: string }[] = [
 
 // Mapeia a sortKey interna do frontend para o campo aceito pelo backend em
 // order_by. A whitelist do backend (clienteOrderWhitelist, em
-// apis/shared/repositories/cliente_repository.go) usa a chave "id" mapeada
+// backend/shared/repositories/cliente_repository.go) usa a chave "id" mapeada
 // para a coluna cliente_id_origem, entao a ordenacao por cliente_id_origem
 // continua enviando order_by=id.
 const ORDER_BY_MAP: Partial<Record<SortKey, string>> = {

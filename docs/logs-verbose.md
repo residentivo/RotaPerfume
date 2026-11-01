@@ -1,6 +1,6 @@
 # Logs verbose de rastreamento (`VERBOSE`)
 
-> Card **LOG-02** (Lote 17, 2026-10-07), revisto no **ARQ-08** (Lote 21, 2026-10-16) para o modelo de **4 níveis** aprovado pelo usuário (decisão **P1** do ARQ-00; detalhe em `docs/arquitetura-ddd.md` §6). Arquivos envolvidos: `apis/shared/vlog/vlog.go` (formato, `MaskEmail`, `OcultarEmail` e a regra resumida no comentário do pacote), `apis/shared/vlog/trace.go` (`vlog.Trace`, nível 2), `apis/rotaperfumes-api/internal/httpx/logging.go` (`httpx.Trace`, nível 1, e o log de acesso `[http]`), `apis/shared/config/config.go` (`cfg.Verbose`), `frontend/src/lib/vlog.ts`, `frontend/.env.local.example` e os testes em `apis/shared/tests/vlog/` e `apis/rotaperfumes-api/tests/arquitetura/vlog_test.go`.
+> Card **LOG-02** (Lote 17, 2026-10-07), revisto no **ARQ-08** (Lote 21, 2026-10-16) para o modelo de **4 níveis** aprovado pelo usuário (decisão **P1** do ARQ-00; detalhe em `docs/arquitetura-ddd.md` §6). Arquivos envolvidos: `backend/shared/vlog/vlog.go` (formato, `MaskEmail`, `OcultarEmail` e a regra resumida no comentário do pacote), `backend/shared/vlog/trace.go` (`vlog.Trace`, nível 2), `backend/rotaperfumes-api/internal/httpx/logging.go` (`httpx.Trace`, nível 1, e o log de acesso `[http]`), `backend/shared/config/config.go` (`cfg.Verbose`), `frontend/src/lib/vlog.ts`, `frontend/.env.local.example` e os testes em `backend/shared/tests/vlog/` e `backend/rotaperfumes-api/tests/arquitetura/vlog_test.go`.
 >
 > **O que mudou no Lote 21:** a regra antiga ("linha a linha": um log antes de cada passo) foi substituída por 4 níveis no backend (rota, caso de uso, decisão e query), de cerca de 3.700 para cerca de 600 chamadas. O formato da linha e as proibições de conteúdo **não mudaram**, e o TST-05 continua verde. O frontend não mudou.
 
@@ -23,7 +23,7 @@ No backend, os logs seguem 4 níveis (seção 2). No frontend continua valendo o
 | 3. Decisão | uma linha `vlog.Printf` em cada ramo com significado de negócio ou de segurança. | `[produtos.go] [Catalogo.AlternarAtivoProduto] decisão ativo=false id=7` |
 | 4. Query | uma linha por operação de repositório (adapters `<contexto>mysql`): nome da operação e contagens. | `[produtos.go] [Produtos.Listar] SELECT produtos linhas=20 total=37` |
 
-Fora do `vlog`, continuam **sempre ligados** (não dependem de `VERBOSE`) os logs operacionais com `log.Printf`: `[http] MÉTODO caminho -> status (duração)`, `[auth] acesso negado ...`, `[escopo] bloqueado vendedor_desligado ... rota=<path>`, `[server] ...`. Neles o caminho passa por `kernel.SanearRota` (`apis/shared/kernel/rota.go`): caracteres de controle e separadores de linha vêm escapados (`\n`), para um path decodificado não forjar linhas no log (ARQ-07, NB-C).
+Fora do `vlog`, continuam **sempre ligados** (não dependem de `VERBOSE`) os logs operacionais com `log.Printf`: `[http] MÉTODO caminho -> status (duração)`, `[auth] acesso negado ...`, `[escopo] bloqueado vendedor_desligado ... rota=<path>`, `[server] ...`. Neles o caminho passa por `kernel.SanearRota` (`backend/shared/kernel/rota.go`): caracteres de controle e separadores de linha vêm escapados (`\n`), para um path decodificado não forjar linhas no log (ARQ-07, NB-C).
 
 ## 3. Como ligar
 
@@ -31,8 +31,8 @@ Fora do `vlog`, continuam **sempre ligados** (não dependem de `VERBOSE`) os log
 
 1. No `.env` da raiz, defina `VERBOSE=true`. `LOG_LEVEL=debug` também liga.
 2. Reinicie o processo (`make dev-api`).
-3. No startup, o server emite um **WARN** avisando que o modo verbose está ativo (`apis/rotaperfumes-api/cmd/server/main.go`).
-4. Os CLIs (`apis/shared/cmd/*`, `apis/rotaperfumes-api/cmd/resetsenhas`) também respeitam a flag: o `main` de cada um é fino e chama `cmdutil.Executar`, e a lógica do comando carrega a config por `cmdutil.Configurar` (`apis/shared/cmdutil/cli.go`), que chama `vlog.SetEnabled(cfg.Verbose)`.
+3. No startup, o server emite um **WARN** avisando que o modo verbose está ativo (`backend/rotaperfumes-api/cmd/server/main.go`).
+4. Os CLIs (`backend/shared/cmd/*`, `backend/rotaperfumes-api/cmd/resetsenhas`) também respeitam a flag: o `main` de cada um é fino e chama `cmdutil.Executar`, e a lógica do comando carrega a config por `cmdutil.Configurar` (`backend/shared/cmdutil/cli.go`), que chama `vlog.SetEnabled(cfg.Verbose)`.
 
 Para desligar, remova a variável (ou use `VERBOSE=false`) e reinicie.
 
@@ -72,7 +72,7 @@ Uma quantidade numérica não sensível digitada pelo usuário (ex.: `saldo=%d` 
 **Nunca logado (backend):**
 - `%v`/`%+v`/`%#v` de struct, map ou slice de entidade, comando, DTO ou filtro. Tag `json:"-"` **não** protege.
 - `r.Body`, request decodificado, `r.Header`, `r.Cookies()`, query string inteira.
-- Configuração sensível: senha e usuário do banco, `cfg.DSN()` (só via `maskDSN` em `apis/shared/db/db.go`), `JWT_SECRET`, pepper do hash, usuário e senha SMTP, secret do Turnstile, e-mails de alerta de segurança, o `*Config` inteiro.
+- Configuração sensível: senha e usuário do banco, `cfg.DSN()` (só via `maskDSN` em `backend/shared/db/db.go`), `JWT_SECRET`, pepper do hash, usuário e senha SMTP, secret do Turnstile, e-mails de alerta de segurança, o `*Config` inteiro.
 - Senhas em claro (login, reset, senha inicial, senhas geradas) e hashes Argon2id (atuais e do histórico). O `seedusers` só imprime o hash completo com `-show-password`, e o `resetsenhas` mascara os e-mails na listagem (ARQ-07, NB-7).
 - Tokens: JWT, refresh token (em claro e hash), token do captcha, resposta crua da Cloudflare, cookies `access_token`/`refresh_token`, header `Authorization`. Das claims JWT, só `usuario_id` e `papel`.
 - PII: CNPJ nunca; IP e User-Agent nunca em verbose; e-mail só via `vlog.MaskEmail`; strings digitadas pelo usuário (nome, razão social, busca, filtros) no máximo como `len()`; conteúdo de planilhas dos importers/exportação nunca.
@@ -83,7 +83,7 @@ Uma quantidade numérica não sensível digitada pelo usuário (ex.: `saldo=%d` 
 
 ## 6. Proibido e exceções
 
-- **Proibido no backend:** vlog "de sintaxe" (uma linha por `if`, atribuição ou declaração, como no modelo antigo), `if cfg.Verbose { log.Printf(...) }` (vira nível 3) e vlog no `kernel` ou no domínio (`apis/shared/<contexto>`, que são puros; quem loga é a aplicação e a infraestrutura).
+- **Proibido no backend:** vlog "de sintaxe" (uma linha por `if`, atribuição ou declaração, como no modelo antigo), `if cfg.Verbose { log.Printf(...) }` (vira nível 3) e vlog no `kernel` ou no domínio (`backend/shared/<contexto>`, que são puros; quem loga é a aplicação e a infraestrutura).
 - **Interior de loops** (`for rows.Next()`, linhas de planilha nos importers, lotes do cleanup de `refresh_tokens`): loga-se **antes e depois**, com a contagem. O `importkit` não loga por linha.
 - `return` e respostas da API não têm log próprio (o nível 1 registra o status).
 - No frontend: formatadores chamados por linha não logam.
@@ -93,7 +93,7 @@ Uma quantidade numérica não sensível digitada pelo usuário (ex.: `saldo=%d` 
 **Go (caso de uso, nível 2), com retorno nomeado `err`:**
 
 ```go
-// apis/shared/catalogo/catalogoapp/produtos.go
+// backend/shared/catalogo/catalogoapp/produtos.go
 func (c *Casos) ObterProduto(ctx context.Context, id int64) (p *catalogo.Produto, err error) {
 	defer vlog.Trace(arqProdutos, "Catalogo.ObterProduto", "id=%d", id)(&err)
 	return c.produtos.PorID(ctx, id)
@@ -128,10 +128,10 @@ Antes de abrir PR, confira as chamadas novas contra a seção 5. Em caso de dúv
 
 ## 8. Testes
 
-- `apis/shared/tests/vlog/vlog_test.go`: liga/desliga e formato da linha.
-- `apis/shared/tests/vlog/trace_test.go`: `vlog.Trace` (nível 2).
-- `apis/shared/tests/vlog/vlog_runtime_test.go`: comportamento em runtime com a flag ligada e `MaskEmail`.
-- `apis/shared/tests/vlog/arq07_ocultar_email_test.go`: `OcultarEmail` (`[email-usuario]`, caixa e espaços).
-- `apis/rotaperfumes-api/tests/arquitetura/vlog_test.go` (`TestARQ_VlogSemConteudoSensivel`): teste de AST nos dois módulos; rejeita `%v`/`%+v`/`%#v` no formato e argumentos com nome sensível (`senha`, `token`, `cnpj`, `email`, `hash`...) sem `MaskEmail`/`Mascarado()`. Tem controle negativo (`_DetectaViolacoes`).
-- `apis/rotaperfumes-api/tests/handlers/tst05_vlog_runtime_auth_test.go` (TST-05, Lote 20): com `VERBOSE` ligado, login e reset de senha não vazam senha, hash, token, cookie, captcha, User-Agent nem e-mail sem máscara.
+- `backend/shared/tests/vlog/vlog_test.go`: liga/desliga e formato da linha.
+- `backend/shared/tests/vlog/trace_test.go`: `vlog.Trace` (nível 2).
+- `backend/shared/tests/vlog/vlog_runtime_test.go`: comportamento em runtime com a flag ligada e `MaskEmail`.
+- `backend/shared/tests/vlog/arq07_ocultar_email_test.go`: `OcultarEmail` (`[email-usuario]`, caixa e espaços).
+- `backend/rotaperfumes-api/tests/arquitetura/vlog_test.go` (`TestARQ_VlogSemConteudoSensivel`): teste de AST nos dois módulos; rejeita `%v`/`%+v`/`%#v` no formato e argumentos com nome sensível (`senha`, `token`, `cnpj`, `email`, `hash`...) sem `MaskEmail`/`Mascarado()`. Tem controle negativo (`_DetectaViolacoes`).
+- `backend/rotaperfumes-api/tests/handlers/tst05_vlog_runtime_auth_test.go` (TST-05, Lote 20): com `VERBOSE` ligado, login e reset de senha não vazam senha, hash, token, cookie, captcha, User-Agent nem e-mail sem máscara.
 - Rodar: `make test` (ou só a arquitetura com `make arch-check`).

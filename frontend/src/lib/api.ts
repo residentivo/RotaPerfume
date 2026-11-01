@@ -763,7 +763,7 @@ export async function apiDeletePedido(id: number): Promise<void> {
 // === Pagamentos ===
 //
 // Acesso comum (qualquer usuário autenticado, admin ou normal) — ver
-// apis/rotaperfumes-api/handlers/pagamento_handler.go.
+// backend/rotaperfumes-api/handlers/pagamento_handler.go.
 
 export interface ListPagamentosResponse {
   data: Pagamento[];
@@ -1003,7 +1003,7 @@ export async function apiDeleteVisita(id: number): Promise<void> {
 // === Estoque ===
 //
 // Leitura e acesso comum (qualquer usuário autenticado); criar/editar são
-// admin-only — ver apis/rotaperfumes-api/handlers/estoque_handler.go.
+// admin-only — ver backend/rotaperfumes-api/handlers/estoque_handler.go.
 
 export interface ListEstoqueResponse {
   data: Estoque[];

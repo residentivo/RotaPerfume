@@ -61,7 +61,7 @@ export interface Vendedor {
 // Vendedor acima e o formato resumido de GET /api/vendedores (lista simples,
 // usada em selects). VendedorCompleto e o formato retornado no
 // header de GET/POST/PUT/DELETE /api/vendedores/{id} (models.Vendedor no
-// backend, ver apis/shared/models/vendedor.go).
+// backend, ver backend/shared/models/vendedor.go).
 
 export interface VendedorCompleto {
   id: number;
@@ -299,7 +299,7 @@ export interface ProdutoInput {
 // === Pedidos ===
 
 // Canais e status aceitos pelo backend (ver services.canaisValidos /
-// statusValidos em apis/rotaperfumes-api/services/pedido_service.go).
+// statusValidos em backend/rotaperfumes-api/services/pedido_service.go).
 export type PedidoCanal = "App" | "Telefone" | "Visita" | "WhatsApp";
 export type PedidoStatus =
   | "Cancelado"
@@ -371,7 +371,7 @@ export interface PedidoInput {
 // /admin/* e exigem role admin.
 
 // Valores de ENUM aceitos pelo backend (ver
-// apis/rotaperfumes-api/services/pagamento_service.go).
+// backend/rotaperfumes-api/services/pagamento_service.go).
 export type FormaPagamento =
   | "Boleto 14 dias"
   | "Boleto 28 dias"
@@ -389,7 +389,7 @@ export type StatusPagamento =
 
 // Pagamento, como retornado por GET /api/pagamentos e GET /api/pagamentos/{id}.
 // Diferente das demais tabelas, a PK e literalmente pagamento_id (nao ha
-// coluna id separada) — ver apis/shared/models/pagamento.go.
+// coluna id separada) — ver backend/shared/models/pagamento.go.
 export interface Pagamento {
   pagamento_id: number;
   pedido_id: number;
@@ -444,7 +444,7 @@ export interface ListPagamentosFilters {
 
 // === Oportunidades (CRM) ===
 //
-// Tela admin-only — ver apis/rotaperfumes-api/handlers (rota /api/oportunidades).
+// Tela admin-only — ver backend/rotaperfumes-api/handlers (rota /api/oportunidades).
 
 export type OportunidadeEtapa =
   | "Prospecção"
@@ -518,7 +518,7 @@ export interface ListOportunidadesResponse {
 
 // === Visitas (CRM) ===
 //
-// Tela admin-only — ver apis/rotaperfumes-api/handlers/visita_handler.go
+// Tela admin-only — ver backend/rotaperfumes-api/handlers/visita_handler.go
 // (rota /api/visitas). Mesmo padrao de Oportunidades, porem data_visita e
 // sempre obrigatoria (sem default no backend).
 
@@ -576,7 +576,7 @@ export interface ListVisitasResponse {
 // === Estoque ===
 //
 // Tela de acesso comum para leitura (qualquer usuário autenticado); criar e
-// editar são admin-only — ver apis/rotaperfumes-api/handlers/estoque_handler.go
+// editar são admin-only — ver backend/rotaperfumes-api/handlers/estoque_handler.go
 // (rota /api/estoque).
 
 // Estoque, como retornado por GET /api/estoque e GET /api/estoque/{id}.

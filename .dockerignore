@@ -1,5 +1,5 @@
 # Contexto de build a partir da raiz (caso algum build use "."). Os builds do
-# deploy usam apis/ e frontend/ como contexto, cada um com seu .dockerignore.
+# deploy usam backend/ e frontend/ como contexto, cada um com seu .dockerignore.
 .git
 .gitignore
 .gitattributes

@@ -77,7 +77,7 @@ function fmtValor(v: number): string {
 
 // Mapeia a sortKey interna do frontend para o campo aceito pelo backend em
 // order_by. A whitelist do backend (pedidoOrderWhitelist, em
-// apis/shared/repositories/pedido_repository.go) usa a chave "id" mapeada
+// backend/shared/repositories/pedido_repository.go) usa a chave "id" mapeada
 // para a coluna pedido_id_origem, entao a ordenacao por pedido_id_origem
 // continua enviando order_by=id.
 const ORDER_BY_MAP: Partial<Record<SortKey, string>> = {

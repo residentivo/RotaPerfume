@@ -1,6 +1,6 @@
 /**
  * NEG-02: util unico de CNPJ (numerico e alfanumerico). Espelha a regra do
- * backend (apis/shared/cnpj): normalizacao, formato, DV modulo 11 com valor
+ * backend (backend/shared/cnpj): normalizacao, formato, DV modulo 11 com valor
  * ASCII - 48 e rejeicao de todos os caracteres iguais.
  */
 import { describe, expect, it } from "vitest";

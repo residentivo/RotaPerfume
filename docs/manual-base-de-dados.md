@@ -32,7 +32,7 @@
 - **Colunas de FK para clientes:** `cliente_id` das tabelas filhas guarda o `clientes.cliente_id_origem`. Todas as FKs para `clientes` apontam para `cliente_id_origem`.
 - **Booleanos:** `TINYINT(1)` com 0/1. No CSV vêm como S/N.
 - **Valores monetários:** `DECIMAL(15,2)` (totais) ou `DECIMAL(10,2)` (preços unitários). Percentuais: `DECIMAL(5,2)` (ex.: 5.00 = 5%).
-- **Exclusão lógica x física** (conferido nos repositórios, hoje os adapters de banco `apis/shared/<contexto>/<contexto>mysql`, ex.: `apis/shared/catalogo/catalogomysql`; até o Lote 21, `apis/shared/repositories`):
+- **Exclusão lógica x física** (conferido nos repositórios, hoje os adapters de banco `backend/shared/<contexto>/<contexto>mysql`, ex.: `backend/shared/catalogo/catalogomysql`; até o Lote 21, `backend/shared/repositories`):
 
 | Tabela | Como é "excluída" |
 | --- | --- |
@@ -173,8 +173,8 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 
 - As migrações de alteração (08, 13, 18 a 24 e 26) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
 - Todos os alvos que chamam o cliente `mariadb` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed`/`db-reset` herdam via `db-create`) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23) e o `mariadb` (MariaDB ≥ 11.4) no `PATH` (DB-03). O `Makefile` passa `--local-infile=0` (SEC-28). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h ...`, sem `-p` no argv.
-- Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`apis/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por Argon2id real (com o `PASSWORD_PEPPER` do `.env`).
-- Importadores (`db-import-*`, `apis/shared/cmd/import*`): upsert idempotente a partir de `dados/crm/*.csv` e `dados/erp/*.csv`. Ordem de dependência: clientes e produtos, depois pedidos (e itens), pagamentos, carteiras, oportunidades, visitas e estoque.
+- Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`backend/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por Argon2id real (com o `PASSWORD_PEPPER` do `.env`).
+- Importadores (`db-import-*`, `backend/shared/cmd/import*`): upsert idempotente a partir de `dados/crm/*.csv` e `dados/erp/*.csv`. Ordem de dependência: clientes e produtos, depois pedidos (e itens), pagamentos, carteiras, oportunidades, visitas e estoque.
 
 ---
 
@@ -254,7 +254,7 @@ O valor vem do Go (`time.Now().Truncate(time.Second)`), nunca do `NOW()` do Mari
 | Desligamento do vendedor (`DELETE /api/vendedores/{id}`), para os usuários vinculados | `UsuarioRepository.InativarByVendedorID` |
 | Troca de senha pelo usuário, reset pelo admin e `ResetSenha` | `UsuarioRepository.UpdatePasswordHash` |
 | Reuso de refresh token rotacionado fora da janela (SEC-07), depois do `RevokeAllUserTokens`. Desde o SEC-12 (Lote 12), só no primeiro reuso do mesmo token dentro da janela de supressão (seção 7.1) | `UsuarioRepository.InvalidarSessoes`, chamado em `tratarTokenRevogadoForaDaJanela` (`auth_handler.go`) |
-| CLI `resetpassword` | `UpsertAdmin`, `UpsertByEmail` (`apis/shared/tools/resetpassword`) |
+| CLI `resetpassword` | `UpsertAdmin`, `UpsertByEmail` (`backend/shared/tools/resetpassword`) |
 
 **Não gravam corte:** reativação do usuário ou do vendedor e logout. Um login feito no mesmo segundo de um corte gera token recusado (regra `iat <= corte`; aceito pelo MegaBrain).
 
@@ -315,7 +315,7 @@ Guarda os refresh tokens (hash SHA-256) emitidos no login e no refresh. Cada ref
 | `logout` | `POST /api/auth/logout`. | `auth_handler.go` (Logout) |
 | `revogacao_massa` | Reuso, fora da janela de 30 s, de um token com motivo `rotacao` (possível roubo): todos os tokens ativos do usuário são revogados. | `auth_handler.go` (`tratarTokenRevogadoForaDaJanela`) |
 | `senha` | Troca de senha pelo usuário (`POST /api/auth/reset-password`) ou reset pelo admin (`POST /api/admin/reset-password`). | `auth_handler.go`, `usuario_handler.go` |
-| `inativacao` | Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) ou desligamento do vendedor dele (`DELETE /api/vendedores/{id}`, na mesma transação, via `RevokeAllByVendedorID`). SEC-06. | `usuario_handler.go`, `apis/shared/comercial/comercialapp/vendedores.go` (`DesligarVendedor`; até o Lote 21, `vendedor_service.go`) |
+| `inativacao` | Inativação do usuário (`PATCH /api/usuarios/{id}/inativar`) ou desligamento do vendedor dele (`DELETE /api/vendedores/{id}`, na mesma transação, via `RevokeAllByVendedorID`). SEC-06. | `usuario_handler.go`, `backend/shared/comercial/comercialapp/vendedores.go` (`DesligarVendedor`; até o Lote 21, `vendedor_service.go`) |
 
 **Regra de uso (SEC-07, opção B):** só o reuso de um token com motivo `rotacao` fora da janela de graça gera o alerta `[auth][seguranca]` e a revogação em massa. Os demais motivos e o `NULL` legado geram só log informativo. A resposta HTTP é sempre `401` `"refresh token revogado"`.
 
@@ -419,7 +419,7 @@ Auditoria das trocas de senha. Cada linha guarda o hash **anterior** e quem fez 
 
 **FKs:** as duas FKs foram declaradas sem nome, então o MariaDB gera os nomes (normalmente `senha_historico_ibfk_1` e `_ibfk_2`; a confirmar no banco). Nenhuma declara `ON UPDATE`: vale o padrão do MariaDB (`RESTRICT`/`NO ACTION`).
 
-**Valores de `tipo_reset`** (`apis/shared/identidade/historico.go`, tipo `TipoReset`; até o Lote 21, `apis/rotaperfumes-api/services/senha_historico_service.go`):
+**Valores de `tipo_reset`** (`backend/shared/identidade/historico.go`, tipo `TipoReset`; até o Lote 21, `backend/rotaperfumes-api/services/senha_historico_service.go`):
 
 | Valor | Significado | Gravado hoje? |
 | --- | --- | --- |
@@ -477,7 +477,7 @@ Base de clientes do CRM, importada de `dados/crm/clientes.csv` (`make db-import-
 - Decisão do usuário (NEG-01): bloquear CNPJ duplicado no banco.
 - Em bancos novos, o `sql/09_ddl_clientes.sql` já cria a tabela com o `uq_clientes_cnpj`. Em bancos que já existiam, quem cria o índice é a migração 19 (seção 18).
 - Um INSERT/UPDATE com CNPJ repetido falha com o erro **1062** do MariaDB (mesmo código do MySQL) (`ER_DUP_ENTRY`). A API converte esse erro em `409` genérico "cnpj já cadastrado", sem revelar o vendedor dono do cliente. Um CNPJ com formato ou DV inválido é recusado antes, com `400` "cnpj inválido" (NEG-03 e NEG-04), então a checagem de duplicidade só se aplica a CNPJ válido.
-- **Importação:** como o CSV tem CNPJs repetidos, os importadores unificam os duplicados antes de gravar (`apis/shared/importers/clientesdedup`; até o Lote 6 ficava em `cmd/internal/clientesdedup`). Fica a primeira ocorrência de cada CNPJ, que é o menor `cliente_id`, igual à regra da migração. O `importclientes` não grava as cópias, e os importadores de carteiras, pedidos, oportunidades e visitas redirecionam o `cliente_id` da cópia para o sobrevivente. Sem isso, a importação falharia com 1062.
+- **Importação:** como o CSV tem CNPJs repetidos, os importadores unificam os duplicados antes de gravar (`backend/shared/importers/clientesdedup`; até o Lote 6 ficava em `cmd/internal/clientesdedup`). Fica a primeira ocorrência de cada CNPJ, que é o menor `cliente_id`, igual à regra da migração. O `importclientes` não grava as cópias, e os importadores de carteiras, pedidos, oportunidades e visitas redirecionam o `cliente_id` da cópia para o sobrevivente. Sem isso, a importação falharia com 1062.
 - **Collation:** `cnpj` herda `utf8mb4_unicode_ci`, que ignora maiúsculas e minúsculas. No índice único, valores que só diferem na caixa colidem. O Backend grava em maiúsculas. Detalhes no cabeçalho de `sql/09_ddl_clientes.sql` (nota do NEG-02, CNPJ alfanumérico).
 
 ### CNPJ alfanumérico (NEG-02, 2026-09-25)
@@ -486,13 +486,13 @@ A coluna `cnpj` aceita o CNPJ alfanumérico da Receita Federal (vigente desde ju
 
 - **Formato gravado:** 14 caracteres, sem máscara e em **maiúsculas**. As 12 primeiras posições são `[0-9A-Z]` e as 2 últimas (dígitos verificadores) são `[0-9]`. Ex.: `12ABC34501DE35` (exibido como `12.ABC.345/01DE-35`). Os CNPJs numéricos continuam válidos, e os 3000 clientes atuais são todos numéricos.
 - **Dígito verificador:** módulo 11 com os pesos do CNPJ numérico. Cada caractere vale o código ASCII − 48 (`0`–`9` → 0–9, `A` → 17, …, `Z` → 42). O DV é validado pela API e pelo frontend, **não pelo banco**.
-- **Regra central:** `apis/shared/cnpj` (`Normalizar`, `FormatoValido`, `Valido`, `DigitosVerificadores`), usada pela API (`services/cnpj.go`) e pelos importadores. O frontend espelha a regra em `frontend/src/lib/cnpj.ts`.
+- **Regra central:** `backend/shared/cnpj` (`Normalizar`, `FormatoValido`, `Valido`, `DigitosVerificadores`), usada pela API (`services/cnpj.go`) e pelos importadores. O frontend espelha a regra em `frontend/src/lib/cnpj.ts`.
 - **Caixa:** a API normaliza para maiúsculas antes de gravar. Como a collation é `_ci`, um `SELECT ... WHERE cnpj = '12abc34501de35'` também encontra o registro, e o índice único trata `12abc...` e `12ABC...` como o mesmo valor. Para conferir a caixa gravada de verdade, use `BINARY cnpj`. Ex.: `SELECT COUNT(*) FROM clientes WHERE BINARY cnpj <> UPPER(cnpj);` deve voltar 0.
 - **Comentário da coluna (DB-02, 2026-09-25):** o `COMMENT` de `cnpj` diz "CNPJ normalizado: 14 caracteres, sem máscara, em maiúsculas; 12 primeiras posições em [0-9A-Z] e 2 DVs numéricos (NEG-02)". Bancos novos já recebem esse texto pelo `sql/09_ddl_clientes.sql`. Bancos existentes recebem pela migração 20 (`sql/20_alter_clientes_cnpj_comment.sql`, `make db-fix-cnpj-comment`; reversão: `make db-revert-cnpj-comment`). Ela troca só o texto (`ALGORITHM=INPLACE, LOCK=NONE`): tipo, collation, índice `uq_clientes_cnpj` e dados não mudam. Como a 19, a migração 20 não faz parte do `db-up`/`db-seed`. Foi aplicada no banco local em 2026-09-25. A tabela `clientes_merge_backup_20260925` mantém o comentário antigo de propósito, porque guarda o retrato das cópias removidas no NEG-01.
 
 ### Importador `importclientes` e o CNPJ (NEG-02, 2026-09-25)
 
-O importador de clientes (`apis/shared/importers/clientes`, chamado pelo `cmd/importclientes`) e o `importers/clientesdedup` usam a mesma normalização da API (`clientesdedup.NormalizarCNPJ` → `shared/cnpj`):
+O importador de clientes (`backend/shared/importers/clientes`, chamado pelo `cmd/importclientes`) e o `importers/clientesdedup` usam a mesma normalização da API (`clientesdedup.NormalizarCNPJ` → `shared/cnpj`):
 
 - remove a máscara (`.`, `/`, `-` e espaços) e converte letras para maiúsculas;
 - exige 14 caracteres, com as 12 primeiras posições em `[0-9A-Z]` e as 2 últimas numéricas.
@@ -608,7 +608,7 @@ Catálogo do ERP, importado de `dados/erp/produtos.csv` (`make db-import-produto
 
 ### 13.1 Imagem do produto e migração 26 (IMG-01, Lote 26, 2026-10-31)
 
-- **Onde fica o arquivo:** em disco, no diretório `PRODUTO_IMAGENS_DIR` da API (padrão `./data/produtos-imagens`; em dev, `apis/rotaperfumes-api/data/produtos-imagens/`; no deploy, volume `produto_imagens` em `/data/produtos-imagens`). O banco guarda só o nome. A URL pública (`/api/public/produtos/imagens/<nome>`) é montada pela API no campo `imagem_url`.
+- **Onde fica o arquivo:** em disco, no diretório `PRODUTO_IMAGENS_DIR` da API (padrão `./data/produtos-imagens`; em dev, `backend/rotaperfumes-api/data/produtos-imagens/`; no deploy, volume `produto_imagens` em `/data/produtos-imagens`). O banco guarda só o nome. A URL pública (`/api/public/produtos/imagens/<nome>`) é montada pela API no campo `imagem_url`.
 - **Quem grava:** só a API (`POST`/`DELETE /api/produtos/{id}/imagem`) e o comando `make db-gerar-imagens-produtos`, que usa o mesmo caso de uso. A troca e a remoção travam a linha (`SELECT imagem FROM produtos WHERE id = ? FOR UPDATE`), gravam e só depois do commit apagam o arquivo antigo.
 - **Comandos:** `make db-fix-produtos-imagem` (bancos criados antes do IMG-01; idempotente, não altera dados) e `make db-revert-produtos-imagem` (remove CHECK, UNIQUE e coluna; perde os vínculos produto → imagem e os arquivos ficam órfãos no disco). Bancos novos já nascem com a coluna pelo `sql/10_ddl_produtos.sql` (`CREATE TABLE IF NOT EXISTS`, sem conflito com a 26).
 - **Estado no banco local (2026-10-31):** migração aplicada (servidor local MariaDB **11.8.8**, não 11.4); `make db-gerar-imagens-produtos` gerou 292 imagens e 292 produtos estão com `imagem` preenchido.
@@ -892,12 +892,12 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 | 5 | `estoque` | **Aberto.** `ruptura`: o DDL diz que vem do S/N do CSV; o card de criação diz "derivado de `saldo <= 0`". Regra efetiva a confirmar no código. | `sql/17`, `tarefas/feito.md` |
 | 6 | `senha_historico` | Sem `ENGINE`/charset/collation explícitos: herda do servidor e do banco (esperado InnoDB e `utf8mb4_unicode_ci`). Nomes das FKs gerados pelo MariaDB. | `sql/07_ddl_senha_historico.sql` |
 | 7 | `senha_historico` | `created_at` aceita NULL (sem `NOT NULL`); o BUG-12 confirmou `timestamp NULL DEFAULT CURRENT_TIMESTAMP` no banco local. Um `NOT NULL` exigiria migração (decisão de negócio). | BUG-12 em `tarefas/feito.md` |
-| 8 | `senha_historico` | O teste de integração do BUG-12 usa um "registro órfão" (`usuario_id` sem usuário), o que a FK `ON DELETE CASCADE` não deveria permitir. Confirmar se a FK existe no banco local ou se o teste desliga `FOREIGN_KEY_CHECKS`. | `apis/shared/tests/repositories/bug12_senha_historico_null_test.go` |
-| 9 | `senha_historico` | `tipo_reset` `primeiro_acesso` e `esquecimento` estão no ENUM, mas nenhum código fora dos testes os grava. A troca de primeiro acesso é gravada como `usuario`. | `apis/shared/identidade/historico.go`, `apis/shared/identidade/identidadeapp/senha.go` (até o Lote 21, `senha_historico_service.go` e `auth_handler.go`) |
-| 10 | `usuarios` | Valor de `deve_trocar_senha` gravado pelo CLI `resetpassword` (`-all-users`, `-create-admin`) no `db-seed`. | `apis/shared/tools/resetpassword` |
-| 11 | `refresh_tokens` | ~~`CleanupExpired`/`DeleteExpired` existe, mas nada fora dos testes o chama.~~ **Resolvido no CHORE-02 (Lote 12):** limpeza periódica na API, retenção `REFRESH_TOKEN_RETENCAO` (720h) após `expires_at`, intervalo `REFRESH_CLEANUP_INTERVAL` (6h; `0` desativa), lotes de 1000 (seção 7.2). | `apis/shared/identidade/identidadeapp/limpeza.go`, `apis/shared/identidade/identidademysql/refresh_tokens.go` (até o Lote 21, `refresh_token_service.go` e `refresh_cleanup.go`) |
+| 8 | `senha_historico` | O teste de integração do BUG-12 usa um "registro órfão" (`usuario_id` sem usuário), o que a FK `ON DELETE CASCADE` não deveria permitir. Confirmar se a FK existe no banco local ou se o teste desliga `FOREIGN_KEY_CHECKS`. | `backend/shared/tests/repositories/bug12_senha_historico_null_test.go` |
+| 9 | `senha_historico` | `tipo_reset` `primeiro_acesso` e `esquecimento` estão no ENUM, mas nenhum código fora dos testes os grava. A troca de primeiro acesso é gravada como `usuario`. | `backend/shared/identidade/historico.go`, `backend/shared/identidade/identidadeapp/senha.go` (até o Lote 21, `senha_historico_service.go` e `auth_handler.go`) |
+| 10 | `usuarios` | Valor de `deve_trocar_senha` gravado pelo CLI `resetpassword` (`-all-users`, `-create-admin`) no `db-seed`. | `backend/shared/tools/resetpassword` |
+| 11 | `refresh_tokens` | ~~`CleanupExpired`/`DeleteExpired` existe, mas nada fora dos testes o chama.~~ **Resolvido no CHORE-02 (Lote 12):** limpeza periódica na API, retenção `REFRESH_TOKEN_RETENCAO` (720h) após `expires_at`, intervalo `REFRESH_CLEANUP_INTERVAL` (6h; `0` desativa), lotes de 1000 (seção 7.2). | `backend/shared/identidade/identidadeapp/limpeza.go`, `backend/shared/identidade/identidademysql/refresh_tokens.go` (até o Lote 21, `refresh_token_service.go` e `refresh_cleanup.go`) |
 | 12 | `vendedores` | Não há UNIQUE além da PK (nem em `nome`): dois vendedores homônimos são aceitos pelo banco. Confirmar se é intencional. | `sql/01_ddl_usuarios.sql` |
-| 13 | `vendedores` | Se a reativação do vendedor também reativa os usuários vinculados. | `apis/shared/comercial/comercialapp/vendedores.go` (`ReativarVendedor`; até o Lote 21, `vendedor_service.go`) |
+| 13 | `vendedores` | Se a reativação do vendedor também reativa os usuários vinculados. | `backend/shared/comercial/comercialapp/vendedores.go` (`ReativarVendedor`; até o Lote 21, `vendedor_service.go`) |
 
 ---
 
@@ -947,5 +947,5 @@ Registradas para lotes futuros (não corrigidas no SEC-11):
 | 2 | `db-seed` imprime `Admin@123` no console (`=== Admin: admin@rotaperfumes.com.br / Admin@123 ===`). | `Makefile` |
 | 3 | O usuário local do banco de dev (MariaDB) ainda é `golang/golang`; trocar a senha do usuário no servidor e no `.env`. | MariaDB local |
 | 4 | `MYSQL_PWD` é considerado obsoleto (inseguro) pelo cliente MySQL e pode sair em versões futuras. Com o MariaDB (DB-03), o cliente `mariadb` continua lendo `MYSQL_PWD`; a alternativa futura é um arquivo de opções (`--defaults-extra-file`), já descartado na seção 23.2 pelo risco de senha em disco. | `Makefile` |
-| 5 | Opcional: `cmd/cleanuprefresh` em Go para rodar a limpeza de `refresh_tokens` sob demanda (hoje só a API faz, seção 7.2). | `apis/shared/cmd` |
+| 5 | Opcional: `cmd/cleanuprefresh` em Go para rodar a limpeza de `refresh_tokens` sob demanda (hoje só a API faz, seção 7.2). | `backend/shared/cmd` |
 | 6 | ~~A receita do `db-check-env` era `@test -n "$(DB_USUARIO)" -a -n "$(DB_SENHA)"`: o `make` expandia a senha no argv do `test` e no `make -n`.~~ **Resolvido no Lote 12 (commit `069d708`, conferido em 2026-10-07):** a receita testa as variáveis de ambiente já exportadas (`@test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD"`, `Makefile` linha 48), então a senha não aparece no argv nem no eco do `make -n`. | `Makefile`, alvo `db-check-env` |

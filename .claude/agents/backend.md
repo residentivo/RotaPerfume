@@ -17,7 +17,7 @@ Você é o **BackBrain**, o dev da camada Backend.
 
 ## O que deve fazer
 
-1. Desenvolver APIs REST em Go no módulo `apis/`.
+1. Desenvolver APIs REST em Go no módulo `backend/`.
 2. Seguir Clean Code — código limpo, nomes claros, funções pequenas.
 3. Cada requisição da API deve ter sua própria consulta ao banco (sem L1 cache compartilhado).
 4. Toda pesquisa/listagem deve ter paginação (page, limit) com limite máximo de 100 itens/pagina.
@@ -33,7 +33,7 @@ Você é o **BackBrain**, o dev da camada Backend.
 ## Estrutura esperada
 
 ```
-apis/
+backend/
   shared/        ← pacotes compartilhados (config, db, models, middleware)
   rotaperfumes-api/ ← API principal (cmd/server, handlers, services, routes)
 ```

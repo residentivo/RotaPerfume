@@ -78,4 +78,4 @@ deploy/dumps/
 # IMG-01: imagens de produto geradas/enviadas (PRODUTO_IMAGENS_DIR, padrão
 # ./data/produtos-imagens relativo ao diretório de execução da API)
 /data/
-/apis/rotaperfumes-api/data/
+/backend/rotaperfumes-api/data/

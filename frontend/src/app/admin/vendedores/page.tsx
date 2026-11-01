@@ -26,7 +26,7 @@ const FILE = "admin/vendedores/page.tsx";
 
 // GET /api/vendedores nao aceita paginacao/filtros/ordenacao no backend
 // (endpoint simples, historicamente usado so para popular combobox) — ver
-// apis/rotaperfumes-api/handlers/vendedor_handler.go (ListVendedores). Por
+// backend/rotaperfumes-api/handlers/vendedor_handler.go (ListVendedores). Por
 // isso a busca, ordenacao e paginacao desta tela sao aplicadas no cliente,
 // sobre a lista completa de vendedores (ativos e inativos) retornada pela
 // API.

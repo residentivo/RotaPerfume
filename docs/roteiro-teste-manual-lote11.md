@@ -13,7 +13,7 @@ Marque cada checkbox depois de conferir. Se algo divergir, anote o caso e encami
 
 1. No `.env` da raiz, confira `DB_USUARIO` e `DB_SENHA` preenchidos (o `resetpassword` e o `seedusers` não usam mais o default `golang/golang`; desde o Lote 12, SEC-11, também a API, os importadores e o `make` exigem os dois).
 2. Preencha `SMTP_USER`, `SMTP_PASSWORD` e `SMTP_FROM` (veja `.env.example`) e `SECURITY_ALERT_EMAILS` com 1 ou 2 caixas de admin que você consiga ler (separadas por vírgula).
-3. Crie um usuário de teste com um **e-mail real** que você consiga ler (por exemplo, um alias `+qa11` do seu Gmail), na pasta `apis/shared`:
+3. Crie um usuário de teste com um **e-mail real** que você consiga ler (por exemplo, um alias `+qa11` do seu Gmail), na pasta `backend/shared`:
 
    ```bash
    winpty go run ./cmd/resetpassword -email '<seu-email+qa11@gmail.com>' -password-prompt -role normal -nome "QA Lote 11"
@@ -45,7 +45,7 @@ Marque cada checkbox depois de conferir. Se algo divergir, anote o caso e encami
 
 ## 2. SEC-10: `resetpassword`, `seedusers` e `gen-hash`
 
-Na pasta `apis/shared`:
+Na pasta `backend/shared`:
 
 1. **Prompt sem eco:** `winpty go run ./cmd/resetpassword -email '<e-mail do QA>' -password-prompt`.
    - [ ] 2.1 A senha não aparece ao digitar; pede confirmação; confirmação diferente → erro e nada é gravado.
@@ -59,7 +59,7 @@ Na pasta `apis/shared`:
 5. **Seeds sem tocar em `sql/`:** na raiz, rode `make gen-hash`.
    - [ ] 2.6 `git status sql/` não mostra mudanças: `sql/02_seed_admin.sql` e `sql/03_seed_vendedores.sql` continuam só com placeholders.
    - [ ] 2.7 Não sobra a pasta `tmp/seed` (as cópias com hash são apagadas ao final).
-   - [ ] 2.8 As senhas vêm de `SEED_ADMIN_PASSWORD`/`SEED_USER_PASSWORD` do `.env`; sem elas, o log avisa "não definido — gerando senha aleatória (modo dev)" (para ver a gerada, rode `go run ./cmd/seedusers -show-password` em `apis/shared`). Não existe mais senha padrão fixa. **Atenção:** `make gen-hash` reaplica os seeds; se as variáveis não estiverem no `.env`, as senhas do admin e dos vendedores mudam.
+   - [ ] 2.8 As senhas vêm de `SEED_ADMIN_PASSWORD`/`SEED_USER_PASSWORD` do `.env`; sem elas, o log avisa "não definido — gerando senha aleatória (modo dev)" (para ver a gerada, rode `go run ./cmd/seedusers -show-password` em `backend/shared`). Não existe mais senha padrão fixa. **Atenção:** `make gen-hash` reaplica os seeds; se as variáveis não estiverem no `.env`, as senhas do admin e dos vendedores mudam.
    - [ ] 2.9 (Opcional) Com `-no-exec` (`go run ./cmd/seedusers -no-exec`), as cópias ficam em `tmp/seed` com aviso no terminal. Apague a pasta depois.
 
 > O TLS mínimo 1.2 do SMTP, as senhas sem viés e o truncamento do corte de sessão são cobertos só pelos testes automatizados. O item 1.2 já confirma que o envio SMTP com validação de certificado funciona.

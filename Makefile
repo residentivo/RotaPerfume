@@ -83,9 +83,9 @@ db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/03_seed_vendedores.sql
 	@echo ""
 	@echo "=== Corrigindo hashes (placeholder -> argon2id real) + criando admin ==="
-	cd apis/shared && go run ./cmd/resetpassword -list
-	cd apis/shared && go run ./cmd/resetpassword -create-admin
-	cd apis/shared && go run ./cmd/resetpassword -all-users
+	cd backend/shared && go run ./cmd/resetpassword -list
+	cd backend/shared && go run ./cmd/resetpassword -create-admin
+	cd backend/shared && go run ./cmd/resetpassword -all-users
 	@echo ""
 	@echo "=== Seed completo com hashes validos! ==="
 	@echo "=== Admin: admin@rotaperfumes.com.br / Admin@123 ==="
@@ -150,44 +150,44 @@ db-revert-produtos-imagem: db-check-env ## Reverte db-fix-produtos-imagem (remov
 	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/26_revert_produtos_imagem.sql
 
 # IMG-01: gera um PNG por produto (nome na diagonal) pelo mesmo caso de uso do
-# upload, no PRODUTO_IMAGENS_DIR (padrão apis/rotaperfumes-api/data/produtos-imagens).
+# upload, no PRODUTO_IMAGENS_DIR (padrão backend/rotaperfumes-api/data/produtos-imagens).
 # Flags extras: make db-gerar-imagens-produtos GERAR_IMAGENS_FLAGS=-sobrescrever
 # (ou -dry-run para só simular).
 GERAR_IMAGENS_FLAGS ?=
 db-gerar-imagens-produtos: db-check-env ## IMG-01: gera e grava a imagem PNG (nome na diagonal) dos produtos sem imagem (GERAR_IMAGENS_FLAGS=-sobrescrever troca todas)
-	cd apis/rotaperfumes-api && go run ./cmd/gerarimagens -confirmar $(GERAR_IMAGENS_FLAGS)
+	cd backend/rotaperfumes-api && go run ./cmd/gerarimagens -confirmar $(GERAR_IMAGENS_FLAGS)
 
 db-seed-mes-atual: db-check-env ## Gera movimentacoes de exemplo no mes corrente (pedidos/itens/pagamentos/oportunidades/visitas/estoque/carteiras; idempotente, refaz so as linhas do seed do mes)
 	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/25_seed_movimentacoes_mes_atual.sql
 
 db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
-	cd apis/shared && go run ./cmd/importclientes
+	cd backend/shared && go run ./cmd/importclientes
 
 db-import-produtos: ## Importa dados/erp/produtos.csv para a tabela produtos (upsert idempotente)
-	cd apis/shared && go run ./cmd/importprodutos
+	cd backend/shared && go run ./cmd/importprodutos
 
 db-import-pedidos: ## Importa dados/erp/pedidos.csv e itens_pedido.csv (upsert idempotente, nesta ordem)
-	cd apis/shared && go run ./cmd/importpedidos
+	cd backend/shared && go run ./cmd/importpedidos
 
 db-import-pagamentos: ## Importa dados/erp/pagamentos.csv para a tabela pagamentos (upsert idempotente, depende de pedidos já importados)
-	cd apis/shared && go run ./cmd/importpagamentos
+	cd backend/shared && go run ./cmd/importpagamentos
 
 db-import-carteiras: ## Importa dados/crm/carteira.csv para a tabela carteiras (upsert idempotente, depende de clientes e vendedores já importados)
-	cd apis/shared && go run ./cmd/importcarteiras
+	cd backend/shared && go run ./cmd/importcarteiras
 
 db-import-oportunidades: ## Importa dados/crm/oportunidades.csv para a tabela oportunidades (upsert idempotente, depende de clientes e vendedores já importados)
-	cd apis/shared && go run ./cmd/importoportunidades
+	cd backend/shared && go run ./cmd/importoportunidades
 
 db-import-visitas: ## Importa dados/crm/visitas.csv para a tabela visitas (upsert idempotente, depende de clientes e vendedores já importados)
-	cd apis/shared && go run ./cmd/importvisitas
+	cd backend/shared && go run ./cmd/importvisitas
 
 db-import-estoque: ## Importa dados/erp/estoque.csv para a tabela estoque (upsert idempotente, depende de produtos já importados)
-	cd apis/shared && go run ./cmd/importestoque
+	cd backend/shared && go run ./cmd/importestoque
 
 db-rebuild: db-down db-seed db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque ## Recria o banco do zero e importa todos os dados
 
 db-export: ## Exporta as tabelas do banco para CSV em export/crm e export/erp (mesmo formato de dados/)
-	cd apis/shared && go run ./cmd/exportdados
+	cd backend/shared && go run ./cmd/exportdados
 
 # =============================================================================
 # Build
@@ -195,10 +195,10 @@ db-export: ## Exporta as tabelas do banco para CSV em export/crm e export/erp (m
 build: build-api ## Build API única
 
 build-shared:
-	cd apis/shared && go build ./...
+	cd backend/shared && go build ./...
 
 build-api: build-shared ## Compila a API unificada
-	cd apis/rotaperfumes-api && go build -o ../../bin/rotaperfumes-api ./cmd/server
+	cd backend/rotaperfumes-api && go build -o ../../bin/rotaperfumes-api ./cmd/server
 
 build-all: build
 
@@ -217,7 +217,7 @@ run-api: build-api ## Sobe a API na porta 8080 (COOKIE_SECURE=false se não defi
 # Dev (go run direto)
 # =============================================================================
 dev-api: ## go run API (modo desenvolvimento; COOKIE_SECURE=false se não definido)
-	cd apis/rotaperfumes-api && go run ./cmd/server
+	cd backend/rotaperfumes-api && go run ./cmd/server
 
 # =============================================================================
 # Frontend dev
@@ -234,35 +234,35 @@ frontend-deps: ## Instala dependências npm do frontend (roda uma vez)
 test: test-shared test-api ## Roda todos os testes Go
 
 test-shared: ## Testes do pacote compartilhado (em tests/, cobertura medida com -coverpkg=./...)
-	cd apis/shared && go test ./... -v -coverpkg=./... -coverprofile=coverage.txt
+	cd backend/shared && go test ./... -v -coverpkg=./... -coverprofile=coverage.txt
 
-cover-shared: ## Cobertura do shared: total + relatório HTML (apis/shared/coverage.html)
-	cd apis/shared && go test ./... -coverpkg=./... -coverprofile=coverage.txt
-	cd apis/shared && go tool cover -func=coverage.txt | tail -1
-	cd apis/shared && go tool cover -html=coverage.txt -o coverage.html
+cover-shared: ## Cobertura do shared: total + relatório HTML (backend/shared/coverage.html)
+	cd backend/shared && go test ./... -coverpkg=./... -coverprofile=coverage.txt
+	cd backend/shared && go tool cover -func=coverage.txt | tail -1
+	cd backend/shared && go tool cover -html=coverage.txt -o coverage.html
 
 test-api: build-shared ## Testes da API (em tests/, cobertura medida com -coverpkg=./...)
-	cd apis/rotaperfumes-api && go test ./... -v -coverpkg=./... -coverprofile=coverage.txt
+	cd backend/rotaperfumes-api && go test ./... -v -coverpkg=./... -coverprofile=coverage.txt
 
-cover-api: build-shared ## Cobertura da API: total + relatório HTML (apis/rotaperfumes-api/coverage.html)
-	cd apis/rotaperfumes-api && go test ./... -coverpkg=./... -coverprofile=coverage.txt
-	cd apis/rotaperfumes-api && go tool cover -func=coverage.txt | tail -1
-	cd apis/rotaperfumes-api && go tool cover -html=coverage.txt -o coverage.html
+cover-api: build-shared ## Cobertura da API: total + relatório HTML (backend/rotaperfumes-api/coverage.html)
+	cd backend/rotaperfumes-api && go test ./... -coverpkg=./... -coverprofile=coverage.txt
+	cd backend/rotaperfumes-api && go tool cover -func=coverage.txt | tail -1
+	cd backend/rotaperfumes-api && go tool cover -html=coverage.txt -o coverage.html
 
 arch-check: ## ARQ-01: testes de arquitetura (dependências entre camadas, allowlists e AST, nos dois módulos)
-	cd apis/shared && go test ./tests/arquitetura/...
-	cd apis/rotaperfumes-api && go test ./tests/arquitetura/...
+	cd backend/shared && go test ./tests/arquitetura/...
+	cd backend/rotaperfumes-api && go test ./tests/arquitetura/...
 
 # ARQ-01 (§7.1, portão 4): o código migra da API para shared, então a
 # cobertura é medida com os testes da API cobrindo também os pacotes de
 # shared, somada à do módulo shared (blocos mesclados: um bloco conta como
 # coberto se algum dos dois perfis o cobrir).
 cover-combinada: build-shared ## ARQ-01: cobertura combinada API+shared (-coverpkg cobrindo os dois módulos, blocos mesclados)
-	cd apis/shared && go test ./... -coverpkg=./... -coverprofile=coverage-combinada-shared.txt
-	cd apis/rotaperfumes-api && go test ./... -coverpkg=./...,github.com/rotaperfumes/shared/... -coverprofile=coverage-combinada-api.txt
+	cd backend/shared && go test ./... -coverpkg=./... -coverprofile=coverage-combinada-shared.txt
+	cd backend/rotaperfumes-api && go test ./... -coverpkg=./...,github.com/rotaperfumes/shared/... -coverprofile=coverage-combinada-api.txt
 	awk 'NR == 1 { print; next } FNR == 1 { next } { chave = $$1 " " $$2; if (!(chave in n) || $$3 > n[chave]) n[chave] = $$3 } END { for (c in n) print c, n[c] }' \
-		apis/rotaperfumes-api/coverage-combinada-api.txt apis/shared/coverage-combinada-shared.txt > apis/rotaperfumes-api/coverage-combinada.txt
-	cd apis/rotaperfumes-api && go tool cover -func=coverage-combinada.txt | tail -1
+		backend/rotaperfumes-api/coverage-combinada-api.txt backend/shared/coverage-combinada-shared.txt > backend/rotaperfumes-api/coverage-combinada.txt
+	cd backend/rotaperfumes-api && go tool cover -func=coverage-combinada.txt | tail -1
 
 # Integração: além de INTEGRATION=1, os testes precisam das DB_* no ambiente
 # (SEC-11; o "-include .env" + "export" acima as exporta) e devem rodar com
@@ -275,19 +275,19 @@ test-frontend:
 	cd frontend && npm test
 
 lint: ## Vet em todos os módulos
-	cd apis/shared && go vet ./...
-	cd apis/rotaperfumes-api && go vet ./...
+	cd backend/shared && go vet ./...
+	cd backend/rotaperfumes-api && go vet ./...
 
 # =============================================================================
 # Dependências
 # =============================================================================
 deps: ## Instala dependências Go
-	cd apis/shared && go get ./... && go mod tidy
-	cd apis/rotaperfumes-api && go get ./... && go mod tidy
+	cd backend/shared && go get ./... && go mod tidy
+	cd backend/rotaperfumes-api && go get ./... && go mod tidy
 
 # SEC-13: política de atualização — rodar "make deps-audit" periodicamente
 # (ex.: mensalmente e antes de cada deploy). Só reporta; não atualiza nada.
-GO_MODULES = apis/shared apis/rotaperfumes-api
+GO_MODULES = backend/shared backend/rotaperfumes-api
 
 deps-audit: deps-audit-go deps-audit-frontend ## SEC-13: audita dependências Go + npm (vulnerabilidades e desatualizadas)
 
@@ -314,32 +314,32 @@ deps-audit-frontend: ## SEC-13: npm audit (falha em severidade high+) e npm outd
 # Seed de usuários (gera hash argon2id com PASSWORD_PEPPER)
 # =============================================================================
 gen-hash: ## aplica os seeds com hash gerado (sem alterar sql/)
-	cd apis/shared && go run ./cmd/seedusers
+	cd backend/shared && go run ./cmd/seedusers
 
 reset-senhas-simular: ## OPS-01: lista os usuários ativos que o reset em massa atingiria (não grava)
-	cd apis/rotaperfumes-api && go run ./cmd/resetsenhas
+	cd backend/rotaperfumes-api && go run ./cmd/resetsenhas
 
 reset-senhas-ativos: ## OPS-01: nova senha Argon2id + e-mail para TODOS os usuários ativos (exige SMTP)
-	cd apis/rotaperfumes-api && go run ./cmd/resetsenhas -executar
+	cd backend/rotaperfumes-api && go run ./cmd/resetsenhas -executar
 
 fix-hash: ## Lista usuários e corrige TODOS os PLACEHOLDER + cria admin (se faltar)
-	cd apis/shared && go run ./cmd/resetpassword -list
+	cd backend/shared && go run ./cmd/resetpassword -list
 	@echo.
 	@echo "=== Corrigindo todos os PLACEHOLDER + criando admin ==="
-	cd apis/shared && go run ./cmd/resetpassword -all-users -password=Admin@123
-	cd apis/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
+	cd backend/shared && go run ./cmd/resetpassword -all-users -password=Admin@123
+	cd backend/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
 	@echo.
 	@echo "=== CORRIGIDO! Credenciais: admin@rotaperfumes.com.br / Admin@123 ==="
 
 fix-admin: ## Garante que admin existe (cria se não existir) com senha Admin@123
-	cd apis/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
+	cd backend/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
 
 # =============================================================================
 # Audit
 # =============================================================================
 audit: ## Gera resumo de linhas de código
 	@echo "=== Linhas de código Go ==="
-	@find apis -name "*.go" -exec wc -l {} + | tail -1
+	@find backend -name "*.go" -exec wc -l {} + | tail -1
 	@echo "=== Linhas de SQL ==="
 	@find sql -name "*.sql" -exec wc -l {} + | tail -1 || true
 

@@ -21,7 +21,7 @@ name: rotaperfumes
 services:
   api:
     build:
-      context: ../apis
+      context: ../backend
       dockerfile: Dockerfile
     image: rotaperfumes-api:latest
     # O arquivo so existe durante o deploy (o Jenkins grava e apaga). Para
@@ -114,5 +114,5 @@ services:
 volumes:
   caddy_data:
   caddy_config:
-  # IMG-01: imagens de produto (dono 65532, criado no apis/Dockerfile).
+  # IMG-01: imagens de produto (dono 65532, criado no backend/Dockerfile).
   produto_imagens:

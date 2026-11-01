@@ -75,7 +75,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 > Resumo das mudanças. O detalhe está em cada endpoint abaixo e nos exemplos marcados com `(SEC-02 | SEC-03 | BUG-06 | NEG-01, 2026-09-25)` na collection. Os cards continuam em `tarefas/fazendo.md` até a validação do usuário.
 >
-> **Envelope de erro:** `{"success": false, "error": "..."}`. O envelope (na época, `writeJSON` em `handlers/response.go`; desde o Lote 21, `apis/rotaperfumes-api/internal/httpx/respond.go`) omite `data` quando é nulo, então as respostas de erro **não** trazem `"data": null`.
+> **Envelope de erro:** `{"success": false, "error": "..."}`. O envelope (na época, `writeJSON` em `handlers/response.go`; desde o Lote 21, `backend/rotaperfumes-api/internal/httpx/respond.go`) omite `data` quando é nulo, então as respostas de erro **não** trazem `"data": null`.
 
 | Card | Endpoint | Mudança |
 |------|----------|---------|
@@ -119,7 +119,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | SEC-08 | **Todas as rotas protegidas** (Bearer) | Corte de sessão por usuário (`usuarios.tokens_validos_desde`, migração 22). Access token com `iat <= tokens_validos_desde`, ou sem `iat` quando há corte → `401` `{"success":false,"error":"sessão encerrada — faça login novamente"}`, mesmo dentro das 24h. Log: `[auth] acesso negado: user_id=... token anterior ao corte de sessão iat=... corte=...`. Sem corte (`NULL`), nada muda. |
 | SEC-08 | `PATCH /api/usuarios/{id}/inativar` (inativar), `DELETE /api/vendedores/{id}`, `POST /api/auth/reset-password`, `POST /api/admin/reset-password`, reuso de refresh token do SEC-07, CLI `resetpassword` | Gravam o corte (hora do Go truncada no segundo). Efeito: token antigo não volta a valer depois de reativar; troca ou reset de senha derruba todas as sessões abertas do usuário (inclusive a que trocou a senha). Reativação e logout **não** gravam corte. Um login no mesmo segundo de um corte gera token recusado (aceito pelo 🤍 MegaBrain). |
 | BUG-09 | `POST /api/vendedores`, `/api/produtos`, `/api/pagamentos`, `/api/oportunidades`, `/api/visitas`, `/api/estoque` | O `201` traz `created_at`/`updated_at` reais e os campos preenchidos pelo banco (ex.: `produto_descricao` do estoque, via JOIN), porque o registro é relido depois do INSERT. Antes podiam vir `0001-01-01T00:00:00Z`. Mesmo envelope. Se só a releitura falhar: log e objeto em memória. `POST /api/usuarios` já relia. |
-| BUG-10 | (CLI `seedusers`) | `FindProjectRoot` acha a raiz pela pasta com `apis/shared/go.mod` (até 6 níveis acima) e devolve erro se não achar. Sem mudança na API. |
+| BUG-10 | (CLI `seedusers`) | `FindProjectRoot` acha a raiz pela pasta com `backend/shared/go.mod` (até 6 níveis acima) e devolve erro se não achar. Sem mudança na API. |
 | FE-10, FE-11, FE-12 | (frontend) | Paginador e contador coerentes quando a carga falha; mensagens temporárias sem timer pendente no unmount; `sortValue` removido das colunas (ordenação é server-side). Sem mudança na API. |
 
 ## Mudanças de contrato do Lote 9 (2026-09-26)
@@ -223,7 +223,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | IMG-01 | `DELETE /api/produtos/{id}/imagem` | **Novo, admin.** `200` com `imagem_url: null`; idempotente; `404` se o produto não existe. |
 | IMG-01 | `GET /api/public/produtos/imagens/{arquivo}` | **Novo, público** (sem token, sem cookie). Serve o arquivo com `Content-Type` fixo pela extensão e cache imutável de 1 ano. Aceita `HEAD` e `Range`. `404` `"imagem não encontrada"`. |
 | IMG-01 | `GET /api/produtos`, `GET /api/produtos/{id}`, `POST`/`PUT`/`PATCH` de produtos | Campo novo `imagem_url`: `"/api/public/produtos/imagens/<uuid>.<jpg\|png\|webp>"` ou `null`. O diretório no servidor nunca é exposto. |
-| IMG-01 | Config e deploy | Env nova `PRODUTO_IMAGENS_DIR` (padrão `./data/produtos-imagens`; em dev, `apis/rotaperfumes-api/data/produtos-imagens/`). Vazio, `/` ou dentro de `frontend/public` impede a subida, assim como diretório sem permissão de escrita. No deploy, volume `produto_imagens` montado em `/data/produtos-imagens`. |
+| IMG-01 | Config e deploy | Env nova `PRODUTO_IMAGENS_DIR` (padrão `./data/produtos-imagens`; em dev, `backend/rotaperfumes-api/data/produtos-imagens/`). Vazio, `/` ou dentro de `frontend/public` impede a subida, assim como diretório sem permissão de escrita. No deploy, volume `produto_imagens` montado em `/data/produtos-imagens`. |
 | IMG-01 | Banco | Coluna `produtos.imagem` (migração 26, `make db-fix-produtos-imagem`; revert `make db-revert-produtos-imagem`). Ver `docs/manual-base-de-dados.md`, seção 13. |
 | IMG-01 | `make db-gerar-imagens-produtos` | Gera um PNG 600x600 com o nome do produto na diagonal para cada produto sem imagem, pelo mesmo caso de uso do upload. Já rodado no banco local: 292 imagens. Ver "Imagens de produto" em "Subindo o ambiente". |
 
@@ -357,7 +357,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 ### Bloqueio de vendedor desligado nas rotas da carteira (2026-09-24)
 
-> **Decisão do usuário (2026-09-24):** o usuário `normal` vinculado a um vendedor desligado (`vendedores.data_desligamento` preenchida) fica bloqueado em **todas as rotas da carteira**, na leitura e na escrita. Contrato definido pelo 🟣 SecBrain e aplicado pelo 🟡 BackBrain em `apis/rotaperfumes-api/handlers/scope.go` (`resolverVendedorScope(r, db)` + `responderErroEscopo`). Desde o Lote 21 (ARQ-04 a ARQ-06), a regra está no `AutorizadorEscopo` (`apis/shared/comercial/comercialapp/escopo.go`), usado por Comercial, Vendas e Analytics; o pacote `handlers` não existe mais.
+> **Decisão do usuário (2026-09-24):** o usuário `normal` vinculado a um vendedor desligado (`vendedores.data_desligamento` preenchida) fica bloqueado em **todas as rotas da carteira**, na leitura e na escrita. Contrato definido pelo 🟣 SecBrain e aplicado pelo 🟡 BackBrain em `backend/rotaperfumes-api/handlers/scope.go` (`resolverVendedorScope(r, db)` + `responderErroEscopo`). Desde o Lote 21 (ARQ-04 a ARQ-06), a regra está no `AutorizadorEscopo` (`backend/shared/comercial/comercialapp/escopo.go`), usado por Comercial, Vendas e Analytics; o pacote `handlers` não existe mais.
 >
 > **Resposta de bloqueio:** `403` com corpo
 > ```json
@@ -382,7 +382,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 >
 > **Datas (BUG-01, 2026-09-24):** o formato das datas nas respostas **não mudou**. A correção (`time.ParseInLocation(..., time.Local)`) só eliminou o deslocamento de um dia na gravação: a data enviada como `AAAA-MM-DD` é gravada e lida no mesmo dia, inclusive em re-salvamentos.
 >
-> **Fuso fixo (RISCO-01, 2026-09-24):** o processo da API (e o `resetpassword`) passou a usar `time.Local` = fuso fixo `-03:00`, sem horário de verão (pacote `apis/shared/tz`). O formato das datas nas respostas **não mudou**. Datas históricas de início de horário de verão (ex.: `2018-11-04`) não recuam mais um dia em Linux/Docker com `TZ=America/Sao_Paulo`.
+> **Fuso fixo (RISCO-01, 2026-09-24):** o processo da API (e o `resetpassword`) passou a usar `time.Local` = fuso fixo `-03:00`, sem horário de verão (pacote `backend/shared/tz`). O formato das datas nas respostas **não mudou**. Datas históricas de início de horário de verão (ex.: `2018-11-04`) não recuam mais um dia em Linux/Docker com `TZ=America/Sao_Paulo`.
 >
 > **Salvar sem alterações (BUG-04, 2026-09-24):** qualquer `PUT`/`PATCH` que envie os mesmos valores já gravados responde `200` com o registro. Antes respondia `404` "não encontrado", porque o banco (MySQL na época; hoje MariaDB, mesmo comportamento) devolvia `RowsAffected=0`. O DSN agora usa `clientFoundRows=true`. Id inexistente continua `404`. `DELETE /api/vendedores/{id}` em vendedor já desligado responde `200` e preserva a `data_desligamento` original.
 
@@ -428,7 +428,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 - **Normal sem vendedor ou com vendedor desligado:** `200` com `data: []` e paginação `total=0`, `pages=0`.
 
 #### GET /api/dashboard/funil
-- **Desde:** DASH-01, Lote 22 (2026-10-29). Handler `DashboardHandler.GetFunil` (`apis/rotaperfumes-api/internal/analyticshttp/dashboard_handler.go`), caso de uso `Consultas.Funil` (`apis/shared/analytics/analyticsapp/consultas.go`), domínio `apis/shared/analytics/{janela,funil}.go`, SQL em `apis/shared/analytics/analyticsmysql/oportunidades.go`.
+- **Desde:** DASH-01, Lote 22 (2026-10-29). Handler `DashboardHandler.GetFunil` (`backend/rotaperfumes-api/internal/analyticshttp/dashboard_handler.go`), caso de uso `Consultas.Funil` (`backend/shared/analytics/analyticsapp/consultas.go`), domínio `backend/shared/analytics/{janela,funil}.go`, SQL em `backend/shared/analytics/analyticsmysql/oportunidades.go`.
 - **Auth:** Bearer Token (qualquer usuário autenticado, Policy `Authenticated`; escopo por vendedor para o normal).
 - **Query:** `?janela=30d|90d|365d|all` (padrão: `all`; vazio também vale `all`).
   - Filtra por `oportunidades.data_abertura` relativa a `CURDATE()`, incluindo hoje: `30d` = `INTERVAL 29 DAY`, `90d` = `INTERVAL 89 DAY`, `365d` = `INTERVAL 364 DAY`; `all` não tem cláusula de data.
@@ -469,7 +469,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 >
 > **Vendedor desligado (2026-09-24):** as 5 rotas `/api/clientes*` respondem `403` `"acesso bloqueado: vendedor desligado"` para o usuário `normal` com vendedor desligado. Ver a seção "Bloqueio de vendedor desligado nas rotas da carteira".
 >
-> **Acesso comum com escopo por carteira:** todas as rotas `/api/clientes*` têm a política `Authenticated` (qualquer usuário autenticado; tabela de rotas em `apis/rotaperfumes-api/internal/bootstrap/rotas.go`). O escopo é resolvido pelo `AutorizadorEscopo` (`apis/shared/comercial/comercialapp/escopo.go`) e aplicado nos casos de uso de `comercialapp`; o handler fica em `apis/rotaperfumes-api/internal/comercialhttp/cliente_handler.go` (até o Lote 21, `apis/rotaperfumes-api/handlers/cliente_handler.go`). O admin não sofre restrições.
+> **Acesso comum com escopo por carteira:** todas as rotas `/api/clientes*` têm a política `Authenticated` (qualquer usuário autenticado; tabela de rotas em `backend/rotaperfumes-api/internal/bootstrap/rotas.go`). O escopo é resolvido pelo `AutorizadorEscopo` (`backend/shared/comercial/comercialapp/escopo.go`) e aplicado nos casos de uso de `comercialapp`; o handler fica em `backend/rotaperfumes-api/internal/comercialhttp/cliente_handler.go` (até o Lote 21, `backend/rotaperfumes-api/handlers/cliente_handler.go`). O admin não sofre restrições.
 >
 > **Escopo nas escritas (SEC-01, 2026-09-24):** antes, qualquer usuário `normal` conseguia editar ou inativar qualquer cliente pelo id. Agora (helper `autorizarEscritaCliente`, checado antes de ler o body):
 >
@@ -605,7 +605,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 > Tela master-detail: lista de pedidos + sub-lista de itens (produtos) de cada pedido. Base importada de `dados/erp/pedidos.csv` (28.729 linhas) e `dados/erp/itens_pedido.csv` (197.724 linhas) para as tabelas `pedidos`/`itens_pedido` (ver seção "Importação de pedidos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pedidos"** da collection.
 >
-> **Escopo por carteira em Create/Update (2026-09-23):** todas as rotas de Pedidos têm a política `Authenticated` (qualquer usuário autenticado). A restrição de dono é aplicada pelo escopo de carteira (na época, no handler `apis/rotaperfumes-api/handlers/pedido_handler.go`; desde o Lote 21, ARQ-05, nos casos de uso de `apis/shared/vendas/vendasapp`, com o handler em `apis/rotaperfumes-api/internal/vendashttp/pedido_handler.go`; mesma regra de Oportunidades/Visitas). Para usuário `normal`:
+> **Escopo por carteira em Create/Update (2026-09-23):** todas as rotas de Pedidos têm a política `Authenticated` (qualquer usuário autenticado). A restrição de dono é aplicada pelo escopo de carteira (na época, no handler `backend/rotaperfumes-api/handlers/pedido_handler.go`; desde o Lote 21, ARQ-05, nos casos de uso de `backend/shared/vendas/vendasapp`, com o handler em `backend/rotaperfumes-api/internal/vendashttp/pedido_handler.go`; mesma regra de Oportunidades/Visitas). Para usuário `normal`:
 > - **`POST /api/pedidos`:** `403` (`"usuário sem vendedor vinculado"`) se o usuário não tiver vendedor vinculado; `vendedor_id` do payload é **ignorado** e forçado ao vendedor do usuário logado; `cliente_id` precisa pertencer à carteira ativa (`data_fim IS NULL`) desse vendedor, senão `400` (`"cliente não pertence à carteira deste vendedor"`).
 > - **`PUT /api/pedidos/{id}`:** `404` (`"pedido não encontrado"`, corpo idêntico ao de pedido inexistente) se o usuário não tiver vendedor vinculado ou se o pedido pertencer a outro vendedor — evita enumeração de IDs; `vendedor_id` do payload é forçado ao vendedor do usuário (não é possível reatribuir o pedido); `cliente_id` fora da carteira → `400`.
 > - **Efeito colateral aceito:** se o cliente de um pedido antigo tiver sido transferido para outro vendedor, o usuário `normal` não consegue mais editar esse pedido (`400` de carteira). Admin não é afetado.
@@ -651,7 +651,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 ### Pagamentos (`/api/pagamentos/*`) — **acesso comum, com escopo por carteira**
 
-> **Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`**, como Clientes, Pedidos, Oportunidades e Visitas. A política da rota é `Authenticated` (antes do Lote 21, `middleware.JWTMiddleware(cfg, true, false)`); as rotas admin only (Usuários, Estoque, escrita de Produtos, gestão de Vendedores) usam `AdminOnly` (antes, `(cfg, true, true)`). Tabela de rotas: `apis/rotaperfumes-api/internal/bootstrap/rotas.go`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum.
+> **Pagamentos é liberado a qualquer usuário autenticado — `admin` ou `normal`**, como Clientes, Pedidos, Oportunidades e Visitas. A política da rota é `Authenticated` (antes do Lote 21, `middleware.JWTMiddleware(cfg, true, false)`); as rotas admin only (Usuários, Estoque, escrita de Produtos, gestão de Vendedores) usam `AdminOnly` (antes, `(cfg, true, true)`). Tabela de rotas: `backend/rotaperfumes-api/internal/bootstrap/rotas.go`. Base importada de `dados/erp/pagamentos.csv` (~27,7 mil linhas) para a tabela `pagamentos` (ver seção "Importação de pagamentos (ERP)" abaixo). Requests desses endpoints estão agrupadas na pasta **"Pagamentos"** da collection e usam `{{vendedor_token}}` (usuário `normal`) nos exemplos, em vez de `{{admin_token}}`, para deixar explícito que o acesso é comum.
 >
 > **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/pagamentos/{id}` — hard delete (sem exclusão lógica). Ver detalhes abaixo.
 >
@@ -694,7 +694,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 ### Vendedores (`/api/vendedores/*`) — admin only, exceto 2 GETs (atualizado em 2026-09-23)
 
-> Até 2026-09-22 todas as rotas `/api/vendedores*` usavam `JWTMiddleware(cfg, true, false)` (acesso comum) — a restrição a admin existia só no frontend. O 🟣 SecBrain identificou que um usuário `normal` podia gerenciar vendedores via API, ler a carteira de qualquer vendedor (`GET /api/vendedores/{id}`) e — crítico — transferir clientes de outros vendedores para a própria carteira (`POST /api/vendedores/{id}/clientes`). Desde 2026-09-23 (na época em `routes/routes.go`; desde o Lote 21, na tabela de rotas de `apis/rotaperfumes-api/internal/bootstrap/rotas.go`):
+> Até 2026-09-22 todas as rotas `/api/vendedores*` usavam `JWTMiddleware(cfg, true, false)` (acesso comum) — a restrição a admin existia só no frontend. O 🟣 SecBrain identificou que um usuário `normal` podia gerenciar vendedores via API, ler a carteira de qualquer vendedor (`GET /api/vendedores/{id}`) e — crítico — transferir clientes de outros vendedores para a própria carteira (`POST /api/vendedores/{id}/clientes`). Desde 2026-09-23 (na época em `routes/routes.go`; desde o Lote 21, na tabela de rotas de `backend/rotaperfumes-api/internal/bootstrap/rotas.go`):
 
 | Método | Rota | Acesso | Usuário `normal` |
 |--------|------|--------|------------------|
@@ -728,7 +728,7 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 >
 > **Botão de exclusão (2026-09-22):** adicionado endpoint `DELETE /api/oportunidades/{id}` — hard delete (sem exclusão lógica), sem restrição extra de negócio. Ver detalhes abaixo.
 >
-> **Mudança de acesso (2026-09-22):** `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` deixaram de ser `admin only` e passaram a **acesso comum com escopo por carteira** — mesma cadeia de middleware usada em Pagamentos (`cfg, true, false`), com a restrição de dono aplicada no handler via `vendedorScope`/`resolverVendedorScope` (`apis/rotaperfumes-api/handlers/scope.go`; desde o Lote 21, pelo `AutorizadorEscopo` de `apis/shared/comercial/comercialapp/escopo.go`), o mesmo padrão já usado em Pedidos/Clientes/Pagamentos:
+> **Mudança de acesso (2026-09-22):** `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` deixaram de ser `admin only` e passaram a **acesso comum com escopo por carteira** — mesma cadeia de middleware usada em Pagamentos (`cfg, true, false`), com a restrição de dono aplicada no handler via `vendedorScope`/`resolverVendedorScope` (`backend/rotaperfumes-api/handlers/scope.go`; desde o Lote 21, pelo `AutorizadorEscopo` de `backend/shared/comercial/comercialapp/escopo.go`), o mesmo padrão já usado em Pedidos/Clientes/Pagamentos:
 > - **Listagem (`GET /api/oportunidades`):** usuário `admin` enxerga tudo; usuário `normal` só enxerga oportunidades da própria carteira — qualquer `vendedor_id` informado na query é **ignorado** e forçado ao vendedor vinculado ao usuário logado (nunca confia em input do cliente).
 > - **Detalhe/edição por ID (`GET`/`PUT /api/oportunidades/{id}`):** usuário `normal` tentando acessar/editar uma oportunidade de outro vendedor recebe **`404`** (não `403`) — decisão deliberada para não expor, por enumeração de ID, a existência do registro a quem não tem acesso a ele.
 > - **Criação/edição (`POST`/`PUT`):** o `vendedor_id` do payload é **ignorado** para usuário `normal` — é sempre forçado ao vendedor vinculado ao usuário logado, mesmo que o body envie outro valor (impede forjar/reatribuir o registro a outro vendedor). Além disso, `cliente_id` precisa pertencer à carteira ativa (`data_fim IS NULL`) desse vendedor — se não pertencer, retorna `400` (`"cliente não pertence à carteira deste vendedor"`).
@@ -1209,7 +1209,7 @@ Desde o Lote 11 (SEC-09), o mesmo SMTP envia o alerta de reuso de refresh token 
 
 ### CAPTCHA (Cloudflare Turnstile) em Login e Troca de Senha
 
-`POST /api/auth/login` e `POST /api/auth/reset-password` exigem o campo `captchaToken` no body — um token gerado pelo widget Cloudflare Turnstile, validado server-side (fail-closed, timeout 4s) contra `https://challenges.cloudflare.com/turnstile/v0/siteverify`. O verificador fica em `apis/shared/adapters/turnstile/turnstile.go` (até o Lote 21, `apis/shared/services/turnstile_service.go`).
+`POST /api/auth/login` e `POST /api/auth/reset-password` exigem o campo `captchaToken` no body — um token gerado pelo widget Cloudflare Turnstile, validado server-side (fail-closed, timeout 4s) contra `https://challenges.cloudflare.com/turnstile/v0/siteverify`. O verificador fica em `backend/shared/adapters/turnstile/turnstile.go` (até o Lote 21, `backend/shared/services/turnstile_service.go`).
 
 Para configurar:
 1. Crie um site no [dashboard do Cloudflare Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile) e copie a **Site Key** (pública) e a **Secret Key** (privada).
@@ -1228,7 +1228,7 @@ Sem `captchaToken` válido, ambos os endpoints respondem `400` `"captcha inváli
 make db-up && make db-import-clientes
 ```
 
-O importador (`apis/shared/cmd/importclientes`) é idempotente (upsert por `cliente_id_origem`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/clientes`, `GET /api/clientes/{id}`, `PATCH /api/clientes/{id}/inativar` e `GET /api/dashboard/clientes` funcionam normalmente, mas retornam base vazia/zerada.
+O importador (`backend/shared/cmd/importclientes`) é idempotente (upsert por `cliente_id_origem`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/clientes`, `GET /api/clientes/{id}`, `PATCH /api/clientes/{id}/inativar` e `GET /api/dashboard/clientes` funcionam normalmente, mas retornam base vazia/zerada.
 
 ### Importação de produtos (ERP)
 
@@ -1238,11 +1238,11 @@ O importador (`apis/shared/cmd/importclientes`) é idempotente (upsert por `clie
 make db-up && make db-import-produtos
 ```
 
-O importador (`apis/shared/cmd/importprodutos`) é idempotente (upsert por `sku`) e pode ser executado quantas vezes for necessário sem duplicar registros. Itens do CSV são importados com `ativo = true` por padrão. Sem esse passo, os endpoints `GET /api/produtos`, `GET /api/produtos/{id}`, `POST/PUT /api/produtos` e `PATCH /api/produtos/{id}/inativar` funcionam normalmente, mas retornam/operam sobre base vazia.
+O importador (`backend/shared/cmd/importprodutos`) é idempotente (upsert por `sku`) e pode ser executado quantas vezes for necessário sem duplicar registros. Itens do CSV são importados com `ativo = true` por padrão. Sem esse passo, os endpoints `GET /api/produtos`, `GET /api/produtos/{id}`, `POST/PUT /api/produtos` e `PATCH /api/produtos/{id}/inativar` funcionam normalmente, mas retornam/operam sobre base vazia.
 
 ### Imagens de produto (IMG-01, Lote 26, 2026-10-31)
 
-As imagens ficam em disco, em `PRODUTO_IMAGENS_DIR` (padrão `./data/produtos-imagens`, relativo ao diretório da API; em dev, `apis/rotaperfumes-api/data/produtos-imagens/`, fora do git). O banco guarda só o nome do arquivo (`produtos.imagem`). Documentada em `.env.example` e `deploy/api.env.example`. A API não sobe se o valor for vazio, `/`, ficar dentro de `frontend/public` ou se o diretório não aceitar escrita. No deploy (`deploy/docker-compose.yml`), o volume nomeado `produto_imagens` é montado em `/data/produtos-imagens`; o `apis/Dockerfile` cria o diretório com dono 65532 (usuário nonroot).
+As imagens ficam em disco, em `PRODUTO_IMAGENS_DIR` (padrão `./data/produtos-imagens`, relativo ao diretório da API; em dev, `backend/rotaperfumes-api/data/produtos-imagens/`, fora do git). O banco guarda só o nome do arquivo (`produtos.imagem`). Documentada em `.env.example` e `deploy/api.env.example`. A API não sobe se o valor for vazio, `/`, ficar dentro de `frontend/public` ou se o diretório não aceitar escrita. No deploy (`deploy/docker-compose.yml`), o volume nomeado `produto_imagens` é montado em `/data/produtos-imagens`; o `backend/Dockerfile` cria o diretório com dono 65532 (usuário nonroot).
 
 Banco criado antes do Lote 26: aplique a coluna com `make db-fix-produtos-imagem` (idempotente; revert `make db-revert-produtos-imagem`). Bancos novos já nascem com ela (`sql/10_ddl_produtos.sql`).
 
@@ -1253,7 +1253,7 @@ make db-gerar-imagens-produtos                                        # só prod
 make db-gerar-imagens-produtos GERAR_IMAGENS_FLAGS=-sobrescrever      # troca todas
 ```
 
-O comando (`apis/rotaperfumes-api/cmd/gerarimagens`) aceita `-confirmar` (obrigatório para gravar; o alvo do `make` já passa), `-sobrescrever` e `-dry-run` (lista sem gravar; funciona sem `-confirmar`). No banco local (2026-10-31): 292 imagens geradas, 292 produtos com `imagem` preenchido.
+O comando (`backend/rotaperfumes-api/cmd/gerarimagens`) aceita `-confirmar` (obrigatório para gravar; o alvo do `make` já passa), `-sobrescrever` e `-dry-run` (lista sem gravar; funciona sem `-confirmar`). No banco local (2026-10-31): 292 imagens geradas, 292 produtos com `imagem` preenchido.
 
 ### Importação de pedidos (ERP)
 
@@ -1263,7 +1263,7 @@ O comando (`apis/rotaperfumes-api/cmd/gerarimagens`) aceita `-confirmar` (obriga
 make db-up && make db-import-pedidos
 ```
 
-O importador (`apis/shared/cmd/importpedidos`) é idempotente (upsert por `pedido_id_origem`/`item_id_origem`) e importa primeiro os pedidos e depois os itens (nessa ordem, por causa da FK `itens_pedido.pedido_id`). Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/pedidos`, `GET /api/pedidos/{id}`, `POST/PUT /api/pedidos` funcionam normalmente, mas retornam/operam sobre base vazia.
+O importador (`backend/shared/cmd/importpedidos`) é idempotente (upsert por `pedido_id_origem`/`item_id_origem`) e importa primeiro os pedidos e depois os itens (nessa ordem, por causa da FK `itens_pedido.pedido_id`). Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/pedidos`, `GET /api/pedidos/{id}`, `POST/PUT /api/pedidos` funcionam normalmente, mas retornam/operam sobre base vazia.
 
 ### Importação de pagamentos (ERP)
 
@@ -1273,7 +1273,7 @@ O importador (`apis/shared/cmd/importpedidos`) é idempotente (upsert por `pedid
 make db-up && make db-import-pagamentos
 ```
 
-O importador (`apis/shared/cmd/importpagamentos`) é idempotente (upsert por `pagamento_id`, a própria PK da tabela) e resolve `pedido_id` via lookup em `pedidos.pedido_id_origem` — pagamentos cujo `pedido_id` do CSV não corresponda a nenhum pedido importado são pulados com log de aviso. Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/pagamentos`, `GET /api/pagamentos/{id}`, `POST/PUT /api/pagamentos` funcionam normalmente (inclusive para usuários `normal`, já que o acesso é comum), mas retornam/operam sobre base vazia — exceto pagamentos criados manualmente via `POST`, que exigem que o `pedido_id` informado já exista (rode `make db-import-pedidos` antes, se necessário).
+O importador (`backend/shared/cmd/importpagamentos`) é idempotente (upsert por `pagamento_id`, a própria PK da tabela) e resolve `pedido_id` via lookup em `pedidos.pedido_id_origem` — pagamentos cujo `pedido_id` do CSV não corresponda a nenhum pedido importado são pulados com log de aviso. Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET /api/pagamentos`, `GET /api/pagamentos/{id}`, `POST/PUT /api/pagamentos` funcionam normalmente (inclusive para usuários `normal`, já que o acesso é comum), mas retornam/operam sobre base vazia — exceto pagamentos criados manualmente via `POST`, que exigem que o `pedido_id` informado já exista (rode `make db-import-pedidos` antes, se necessário).
 
 ### Oportunidades (CRM)
 
@@ -1283,7 +1283,7 @@ O importador (`apis/shared/cmd/importpagamentos`) é idempotente (upsert por `pa
 make db-up && make db-import-oportunidades
 ```
 
-O importador (`apis/shared/cmd/importoportunidades`) é idempotente (upsert por `oportunidade_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto oportunidades criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam. O mesmo vale para `GET /api/dashboard/funil` (DASH-01, Lote 22): sem a importação, o funil vem zerado.
+O importador (`backend/shared/cmd/importoportunidades`) é idempotente (upsert por `oportunidade_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/oportunidades` e `GET/PUT /api/oportunidades/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto oportunidades criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam. O mesmo vale para `GET /api/dashboard/funil` (DASH-01, Lote 22): sem a importação, o funil vem zerado.
 
 ### Visitas (CRM)
 
@@ -1293,7 +1293,7 @@ O importador (`apis/shared/cmd/importoportunidades`) é idempotente (upsert por 
 make db-up && make db-import-visitas
 ```
 
-O importador (`apis/shared/cmd/importvisitas`) é idempotente (upsert por `visita_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Já foi executado com sucesso contra o banco local (37936 linhas importadas, 0 erros; segunda execução confirmou idempotência: 0 inseridos, 37936 atualizados). Sem esse passo, os endpoints `GET/POST /api/visitas` e `GET/PUT /api/visitas/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto visitas criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam.
+O importador (`backend/shared/cmd/importvisitas`) é idempotente (upsert por `visita_id`) e pode ser executado quantas vezes for necessário sem duplicar registros. Já foi executado com sucesso contra o banco local (37936 linhas importadas, 0 erros; segunda execução confirmou idempotência: 0 inseridos, 37936 atualizados). Sem esse passo, os endpoints `GET/POST /api/visitas` e `GET/PUT /api/visitas/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto visitas criadas manualmente via `POST`, que exigem que `cliente_id`/`vendedor_id` informados já existam.
 
 ### Estoque (ERP)
 
@@ -1303,7 +1303,7 @@ O importador (`apis/shared/cmd/importvisitas`) é idempotente (upsert por `visit
 make db-up && make db-import-estoque
 ```
 
-O importador (`apis/shared/cmd/importestoque`) é idempotente (upsert por `(data_snapshot, sku)`). Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/estoque` e `GET/PUT /api/estoque/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto snapshots criados manualmente via `POST`, que exigem que o `sku` informado já exista em `produtos`. Além do importador, o saldo de estoque também é alimentado automaticamente pelo hook de faturamento de pedidos (ver seção "Estoque" em Endpoints acima). Desde a migração 18 não há mais registro de qual processo gravou cada snapshot (a coluna `origem` foi removida): import e faturamento no mesmo `(data_snapshot, sku)` se sobrescrevem.
+O importador (`backend/shared/cmd/importestoque`) é idempotente (upsert por `(data_snapshot, sku)`). Pode ser executado quantas vezes for necessário sem duplicar registros. Sem esse passo, os endpoints `GET/POST /api/estoque` e `GET/PUT /api/estoque/{id}` funcionam normalmente, mas retornam/operam sobre base vazia — exceto snapshots criados manualmente via `POST`, que exigem que o `sku` informado já exista em `produtos`. Além do importador, o saldo de estoque também é alimentado automaticamente pelo hook de faturamento de pedidos (ver seção "Estoque" em Endpoints acima). Desde a migração 18 não há mais registro de qual processo gravou cada snapshot (a coluna `origem` foi removida): import e faturamento no mesmo `(data_snapshot, sku)` se sobrescrevem.
 
 Depois, em outro terminal:
 
