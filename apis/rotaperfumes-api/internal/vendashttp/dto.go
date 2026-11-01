@@ -155,13 +155,19 @@ var errPedidoIDInvalido = kernel.NovoErro(kernel.KindInvalido, "pedido_id invál
 
 func texto(r *http.Request, nome string) string { return strings.TrimSpace(r.URL.Query().Get(nome)) }
 
-func filtroPedidoDaQuery(r *http.Request) vendas.FiltroPedido {
+// filtroPedidoDaQuery: q acima de 100 caracteres é httpx.ErrBuscaMuitoLonga
+// (SEC-25); o handler responde 400 antes do caso de uso.
+func filtroPedidoDaQuery(r *http.Request) (vendas.FiltroPedido, error) {
+	busca, err := httpx.BuscaDaQuery(r)
+	if err != nil {
+		return vendas.FiltroPedido{}, err
+	}
 	return vendas.FiltroPedido{
 		Status: texto(r, "status"), Canal: texto(r, "canal"),
 		ClienteID: httpx.Int64DaQuery(r, "cliente_id"), VendedorID: httpx.Int64DaQuery(r, "vendedor_id"),
-		DataInicio: texto(r, "data_inicio"), DataFim: texto(r, "data_fim"), Busca: texto(r, "q"),
+		DataInicio: texto(r, "data_inicio"), DataFim: texto(r, "data_fim"), Busca: busca,
 		Ordenacao: httpx.OrdenacaoDaQuery(r, vendas.CamposOrdenacaoPedido(), vendas.OrdenacaoPedidoPadrao()),
-	}
+	}, nil
 }
 
 // leitorFiltroPagamento adia o parse do filtro para depois do escopo: o

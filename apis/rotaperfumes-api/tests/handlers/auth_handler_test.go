@@ -10,6 +10,7 @@ import (
 	"github.com/rotaperfumes/shared/kernel"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,9 +41,22 @@ func (f *fakeEmailService) EnviarSenhaInicial(ctx context.Context, destinatario,
 // válido).
 type fakeCaptchaVerifier struct {
 	err error
+
+	mu    sync.Mutex
+	acoes []string // a action pedida em cada verificação (SEC-19)
 }
 
-func (f *fakeCaptchaVerifier) Verificar(ctx context.Context, token, remoteIP string) error {
+// acoesPedidas devolve as actions pedidas até aqui.
+func (f *fakeCaptchaVerifier) acoesPedidas() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.acoes...)
+}
+
+func (f *fakeCaptchaVerifier) Verificar(ctx context.Context, token, remoteIP, acao string) error {
+	f.mu.Lock()
+	f.acoes = append(f.acoes, acao)
+	f.mu.Unlock()
 	if token == "" {
 		return turnstile.ErrCaptchaTokenAusente
 	}
@@ -501,6 +515,8 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 		WithArgs(int64(2), 2, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "usuario_id", "resetado_por_id", "senha_hash_anterior", "ip_origem", "user_agent", "tipo_reset", "created_at", "usuario_nome", "resetado_por_nome"}))
 
+	// Mock: tx da troca (BUG-15): histórico, senha e revogação juntos.
+	mock.ExpectBegin()
 	// Mock: insert senha_historico
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -513,6 +529,7 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 	// Mock: revoga todos os refresh tokens
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 
 	// O endpoint /api/auth/reset-password usa senha_atual (não é admin-only).
 	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
@@ -557,17 +574,16 @@ func TestAdminResetPassword_Success(t *testing.T) {
 		WithArgs(int64(5)).
 		WillReturnRows(usuarioRowsFn())
 
-	// Mock: update password_hash + deve_trocar_senha (senha aleatória gerada pelo admin)
-	mock.ExpectExec(`UPDATE usuarios SET password_hash`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-
-	// Mock: insert senha_historico
+	// Mock: tx do reset (BUG-15): histórico (tipo admin), senha aleatória
+	// com troca obrigatória e revogação; o e-mail só depois do commit.
+	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
-
-	// Mock: revoga todos os refresh tokens
+	mock.ExpectExec(`UPDATE usuarios SET password_hash`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 
 	// Admin reset: POST /api/admin/reset-password
 	req, _ := http.NewRequest("POST", server.URL+"/api/admin/reset-password",
@@ -872,6 +888,7 @@ func TestResetPassword_NovaSenhaForte_NaoReutilizada_Sucesso(t *testing.T) {
 	mockUsuarioParaResetPassword(t, mock, cfg, 2, "SenhaAtual999!")
 	mockSenhaHistoricoRecente(mock, 2, hashSenhaAntiga)
 
+	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
@@ -879,6 +896,7 @@ func TestResetPassword_NovaSenhaForte_NaoReutilizada_Sucesso(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/auth/reset-password",
 		makeJSON(validCaptchaBody(map[string]any{"senha_atual": "SenhaAtual999!", "nova_senha": "SenhaNovaForte1!"})))

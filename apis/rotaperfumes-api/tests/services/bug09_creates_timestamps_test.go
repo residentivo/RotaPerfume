@@ -100,12 +100,11 @@ func bug09Casos() []bug09Caso {
 			nome: "pagamento",
 			id:   21,
 			antesDoInsert: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
-					WithArgs(int64(1)).
-					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+				esperarLockPedido(mock, 1, 1) // SEC-35: o INSERT roda na tx, com o pedido travado
 				mock.ExpectExec(`INSERT INTO pagamentos \(pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento\)`).
 					WithArgs(int64(1), "PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto").
 					WillReturnResult(sqlmock.NewResult(21, 1))
+				mock.ExpectCommit()
 			},
 			reGetByID: `SELECT ` + pagamentoColunasRegex + pagamentoFromRegex + ` WHERE pagamento_id = \? LIMIT 1`,
 			linhaGravada: func(id int64, criado, atualizado time.Time) *sqlmock.Rows {

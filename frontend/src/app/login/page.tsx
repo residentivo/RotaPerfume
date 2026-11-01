@@ -6,7 +6,12 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
-import { Turnstile, TurnstileHandle, isTurnstileEnabled } from "@/components/ui/Turnstile";
+import {
+  TURNSTILE_ACTION_LOGIN,
+  Turnstile,
+  TurnstileHandle,
+  isTurnstileEnabled,
+} from "@/components/ui/Turnstile";
 import { apiLogin } from "@/lib/api";
 import { saveUser, getUser, isAdmin } from "@/lib/auth";
 import { vlog } from "@/lib/vlog";
@@ -208,6 +213,7 @@ export default function LoginPage() {
 
             <Turnstile
               ref={turnstileRef}
+              action={TURNSTILE_ACTION_LOGIN}
               onVerify={(token) => setCaptchaToken(token)}
               onExpire={() => setCaptchaToken(null)}
               onError={() => setCaptchaToken(null)}

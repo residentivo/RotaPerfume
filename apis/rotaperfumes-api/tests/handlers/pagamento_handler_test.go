@@ -373,12 +373,14 @@ func TestCreatePagamento_Success(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	expectLockPedidoH(mock, 1, 2) // SEC-35: o INSERT roda na tx, com o pedido travado
 	mock.ExpectExec(`INSERT INTO pagamentos \(pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento\)`).
 		WithArgs(int64(1), "PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/pagamentos", makeJSON(validPagamentoPayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -439,9 +441,8 @@ func TestCreatePagamento_PedidoNaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnError(sql.ErrNoRows)
+	expectLockPedidoErroH(mock, 1, sql.ErrNoRows)
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/pagamentos", makeJSON(validPagamentoPayload()))
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -566,10 +567,10 @@ func TestCreatePagamento_ValidacaoNegocio(t *testing.T) {
 
 			payload := tc.payload()
 			// pedido_id=0 falha antes de tocar o repo; caso contrário, o
-			// serviço checa a existência do pedido primeiro.
+			// pedido é travado na tx antes da validação dos campos (SEC-35).
 			if pid, ok := payload["pedido_id"].(int); !ok || pid != 0 {
-				mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).
-					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+				expectLockPedidoH(mock, 1, 2)
+				mock.ExpectRollback()
 			}
 
 			req, _ := http.NewRequest("POST", server.URL+"/api/pagamentos", makeJSON(payload))
@@ -775,8 +776,6 @@ func pagamentoRowsComStatusForHandler(id, pedidoID int64, valor float64, status 
 		AddRow(id, pedidoID, "PIX", uint8(1), valor, 0.0, valor, now, nil, status, now, now)
 }
 
-const deletePagamentoRegexH = `DELETE FROM pagamentos WHERE pagamento_id = \?`
-
 func TestDeletePagamento_Success(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
@@ -792,15 +791,11 @@ func TestDeletePagamento_Success(t *testing.T) {
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandler(1, 100.0))
-	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
-	mock.ExpectExec(deletePagamentoRegexH).
-		WithArgs(int64(1)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	// SEC-35: posse e status sob lock (pedido → pagamento), DELETE condicionado.
+	expectLockPedidoH(mock, 1, 2)
+	expectLockPagamentoH(mock, 1, 1, "Em aberto")
+	expectDeletePagamentoH(mock, 1, 1)
+	mock.ExpectCommit()
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/pagamentos/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -863,9 +858,8 @@ func TestDeletePagamento_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegexH + pedidoFromRegexH + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsForHandler(1, 100.0))
+	expectLockPedidoH(mock, 1, 2) // SEC-35: posse conferida sob o lock do pedido
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/pagamentos/1", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -917,9 +911,10 @@ func TestDeletePagamento_JaQuitado_409(t *testing.T) {
 			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 				WithArgs(int64(1)).
 				WillReturnRows(pagamentoRowsComStatusForHandler(1, 1, 100.0, status))
-			mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
-				WithArgs(int64(1)).
-				WillReturnRows(pagamentoRowsComStatusForHandler(1, 1, 100.0, status))
+			// SEC-35: o admin não trava o pedido; o status vale o lido sob lock.
+			mock.ExpectBegin()
+			expectLockPagamentoH(mock, 1, 1, status)
+			mock.ExpectRollback()
 
 			req, _ := http.NewRequest("DELETE", server.URL+"/api/pagamentos/1", nil)
 			req.Header.Set("Authorization", "Bearer "+adminToken)

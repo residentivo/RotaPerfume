@@ -28,6 +28,7 @@ func TestNovo_DependenciaNilPanica(t *testing.T) {
 		func(d *identidadeapp.Deps) { d.Tokens = nil },
 		func(d *identidadeapp.Deps) { d.Historico = nil },
 		func(d *identidadeapp.Deps) { d.Rotacao = nil },
+		func(d *identidadeapp.Deps) { d.TrocaSenha = nil },
 		func(d *identidadeapp.Deps) { d.Hasher = nil },
 		func(d *identidadeapp.Deps) { d.Emissor = nil },
 		func(d *identidadeapp.Deps) { d.Refresh = nil },
@@ -158,11 +159,19 @@ func TestTrocarSenha_RamosDeFalha(t *testing.T) {
 		require.Error(t, err)
 		assert.NotErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 	})
-	t.Run("histórico e revogação falham: troca segue (O8-iii)", func(t *testing.T) {
-		a := novoAmbiente(u)
-		a.historico.errRegistro, a.tokens.errTodos = errInfra, errInfra
-		require.NoError(t, a.casos().TrocarSenha(ctx, p, cmd("Atual#123", "Nova#12345")))
-		assert.Len(t, a.usuarios.senhas, 1)
+	// BUG-15: antes a troca seguia (O8-iii); agora histórico, senha e
+	// revogação estão na mesma tx e a falha de qualquer um é 500 sem trocar
+	// a senha (casos por etapa em bug15_senha_tx_test.go).
+	t.Run("histórico ou revogação falham: 500 e a senha não muda (BUG-15)", func(t *testing.T) {
+		for _, falhar := range []func(a *ambiente){
+			func(a *ambiente) { a.historico.errRegistro = errInfra },
+			func(a *ambiente) { a.tokens.errTodos = errInfra },
+		} {
+			a := novoAmbiente(u)
+			falhar(a)
+			require.Error(t, a.casos().TrocarSenha(ctx, p, cmd("Atual#123", "Nova#12345")))
+			assert.Empty(t, a.usuarios.senhas)
+		}
 	})
 }
 

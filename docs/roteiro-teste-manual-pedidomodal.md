@@ -26,6 +26,8 @@ Marque cada checkbox depois de conferir o resultado esperado no navegador. Se al
 
    Se você não souber a senha de algum usuário, redefina pela tela de Usuários (admin) ou com `apis/shared/cmd/resetpassword`.
 
+   > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** os usuários do seed (`sql/03_seed_vendedores.sql`, como `rafael.carvalho`) nascem com `deve_trocar_senha = 1`, assim como os usuários criados ou com a senha resetada pelo admin (inclusive o temporário abaixo). Com a flag ligada, a API responde `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password`, e o frontend leva para `/trocar-senha`. Antes de começar, confira (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE id IN (1, 5);`), troque a senha de quem estiver com `1` e faça login de novo.
+
 3. Criar o usuário temporário **sem vendedor**. Hoje a base não tem nenhum usuário `normal` sem vínculo.
    ```sql
    -- Crie o usuário e depois defina a senha pela tela de Usuários (admin -> "Resetar senha").

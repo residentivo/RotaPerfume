@@ -150,11 +150,18 @@ func NovoPedido(d DadosPedido) (*Pedido, error) {
 		Canal: string(canal), Status: string(status), ValorTotal: total.Float64(), Itens: itens}, nil
 }
 
+// MaxItensPedido é o teto de itens de um pedido, na criação e no PUT
+// (SEC-14). O maior pedido histórico tinha 16 itens (conferido em 2026-10-31).
+const MaxItensPedido = 200
+
 // novosItens valida os itens e soma o valor_total (P3: Dinheiro).
 func novosItens(ds []DadosItem) ([]ItemPedido, kernel.Dinheiro, error) {
 	var total kernel.Dinheiro
 	if len(ds) == 0 {
 		return nil, total, ErrItensObrigatorios
+	}
+	if len(ds) > MaxItensPedido {
+		return nil, total, ErrItensDemais
 	}
 	itens := make([]ItemPedido, 0, len(ds))
 	for _, d := range ds {

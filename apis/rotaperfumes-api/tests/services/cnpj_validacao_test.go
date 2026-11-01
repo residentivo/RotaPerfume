@@ -53,7 +53,7 @@ func cnpjTermoBusca(t *testing.T, q string) string {
 	t.Helper()
 	db, mock := dlNewDB(t)
 	var razao, termo string
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE \(razao_social LIKE \? OR cnpj LIKE \?\)`).
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE \(razao_social LIKE \? ESCAPE '!' OR cnpj LIKE \? ESCAPE '!'\)`).
 		WithArgs(dlCapturaTexto{&razao}, dlCapturaTexto{&termo}).
 		WillReturnError(errDLParar)
 	_, _, err := itensETotal(casosComercial(db, 0).ListarClientes(context.Background(), principalAdmin(), comercial.FiltroCliente{Busca: q, Ordenacao: comercial.OrdenacaoClientePadrao()}, kernel.NovaPagina(1, 10)))

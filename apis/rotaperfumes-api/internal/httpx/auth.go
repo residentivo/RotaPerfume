@@ -23,6 +23,11 @@ const (
 	msgSoAdmin          = "acesso restrito a administradores"
 )
 
+// msgTrocaSenhaObrigatoria é o 403 de quem ainda precisa trocar a senha
+// gerada pelo sistema (SEC-23). O frontend identifica o caso pela mensagem
+// exata + 403 (sem campo code no envelope); não mudar o texto.
+const msgTrocaSenhaObrigatoria = "troca de senha obrigatória"
+
 // ValidadorAcesso valida o access token (identidadecrypto.JWT satisfaz):
 // só HS256, assinatura e exp conferidos (I-01).
 type ValidadorAcesso interface {
@@ -44,6 +49,9 @@ type ConsultaStatus interface {
 //   - I-03: usuário consultado no banco a cada request; inexistente ou
 //     inativo → 401 com a mesma mensagem; erro → 500 sem chamar o handler;
 //   - I-04: token emitido até o corte de sessão → 401;
+//   - SEC-23: usuário com deve_trocar_senha → 403 msgTrocaSenhaObrigatoria
+//     (todos os papéis), depois dos 401/500 acima e antes do AdminOnly; só
+//     as rotas com Rota.LiberaTrocaSenhaPendente passam;
 //   - I-05: AuthZ pelo role do BANCO; só "admin" exato passa em AdminOnly;
 //     role desconhecido é restrito, com log (R-a).
 //
@@ -66,28 +74,45 @@ func NovoAutenticador(tokens ValidadorAcesso, status ConsultaStatus) *Autenticad
 
 // Exigir envolve next com a autenticação da política. Public não passa por
 // aqui (rota pública não consulta o banco); qualquer valor fora de
-// {Authenticated, AdminOnly} é bug: panic na montagem (O2).
+// {Authenticated, AdminOnly} é bug: panic na montagem (O2). Usuário com
+// troca de senha pendente é barrado com 403 (SEC-23).
 func (a *Autenticador) Exigir(p Policy, next http.Handler) http.Handler {
+	return a.exigir(p, next, false)
+}
+
+// ExigirLiberandoTrocaPendente é o Exigir que deixa passar o usuário com
+// troca de senha pendente (SEC-23). Só para as rotas com
+// Rota.LiberaTrocaSenhaPendente (a própria troca e o /me).
+func (a *Autenticador) ExigirLiberandoTrocaPendente(p Policy, next http.Handler) http.Handler {
+	return a.exigir(p, next, true)
+}
+
+func (a *Autenticador) exigir(p Policy, next http.Handler, liberaTroca bool) http.Handler {
 	switch p {
 	case Authenticated:
-		return a.autenticar(next, false)
+		return a.autenticar(next, false, liberaTroca)
 	case AdminOnly:
-		return a.autenticar(next, true)
+		return a.autenticar(next, true, liberaTroca)
 	default:
 		panic("httpx: Exigir com política inválida: " + p.String())
 	}
 }
 
-func (a *Autenticador) autenticar(next http.Handler, exigeAdmin bool) http.Handler {
+func (a *Autenticador) autenticar(next http.Handler, exigeAdmin, liberaTroca bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims, msg := a.validarToken(r)
 		if msg != "" {
 			JSON(w, http.StatusUnauthorized, nil, msg)
 			return
 		}
-		role, rec := a.conferirUsuario(r, claims)
+		role, deveTrocar, rec := a.conferirUsuario(r, claims)
 		if rec.status != 0 {
 			JSON(w, rec.status, nil, rec.msg)
+			return
+		}
+		if deveTrocar && !liberaTroca {
+			log.Printf("[auth] acesso negado: user_id=%d troca de senha pendente %s %s", claims.UserID, r.Method, kernel.SanearRota(r.URL.Path))
+			JSON(w, http.StatusForbidden, nil, msgTrocaSenhaObrigatoria)
 			return
 		}
 		if exigeAdmin && !role.EhAdmin() {
@@ -150,29 +175,29 @@ type recusa struct {
 }
 
 // conferirUsuario consulta o banco e aplica ativo e corte de sessão. Devolve
-// o role do banco ou a recusa (401/500).
-func (a *Autenticador) conferirUsuario(r *http.Request, c identidade.ClaimsAcesso) (kernel.Role, recusa) {
+// o role do banco e a troca de senha pendente (SEC-23), ou a recusa (401/500).
+func (a *Autenticador) conferirUsuario(r *http.Request, c identidade.ClaimsAcesso) (kernel.Role, bool, recusa) {
 	st, err := a.status.StatusParaAutenticacao(r.Context(), c.UserID)
 	switch {
 	case errors.Is(err, identidade.ErrUsuarioNaoEncontrado):
 		// ARQ-07 NB-C: path decodificado saneado (sem quebra de linha no log).
 		log.Printf("[auth] acesso negado: user_id=%d inexistente (token válido) %s %s", c.UserID, r.Method, kernel.SanearRota(r.URL.Path))
-		return "", recusa{http.StatusUnauthorized, msgUsuarioInativo}
+		return "", false, recusa{http.StatusUnauthorized, msgUsuarioInativo}
 	case err != nil:
 		log.Printf("[auth] erro ao verificar usuário user_id=%d: %v", c.UserID, err)
-		return "", recusa{http.StatusInternalServerError, msgErroInterno}
+		return "", false, recusa{http.StatusInternalServerError, msgErroInterno}
 	case !st.Ativo:
 		log.Printf("[auth] acesso negado: user_id=%d inativo %s %s", c.UserID, r.Method, kernel.SanearRota(r.URL.Path))
-		return "", recusa{http.StatusUnauthorized, msgUsuarioInativo}
+		return "", false, recusa{http.StatusUnauthorized, msgUsuarioInativo}
 	case st.TokenAnteriorAoCorte(c.EmitidoEm):
 		log.Printf("[auth] acesso negado: user_id=%d token anterior ao corte de sessão iat=%d corte=%d",
 			c.UserID, unixOuZero(c.EmitidoEm), st.TokensValidosDesde.Unix())
-		return "", recusa{http.StatusUnauthorized, msgSessaoEncerrada}
+		return "", false, recusa{http.StatusUnauthorized, msgSessaoEncerrada}
 	}
 	if st.Role != c.Role {
 		log.Printf("[auth] role do token divergente do banco: user_id=%d token=%s banco=%s (usando banco)", c.UserID, c.Role, st.Role)
 	}
-	return st.Role, recusa{}
+	return st.Role, st.DeveTrocarSenha, recusa{}
 }
 
 func unixOuZero(t *time.Time) int64 {

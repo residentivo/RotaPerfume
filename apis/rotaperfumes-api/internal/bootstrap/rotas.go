@@ -3,14 +3,16 @@ package bootstrap
 import (
 	"net/http"
 
+	"github.com/rotaperfumes/rotaperfumes-api/internal/catalogohttp"
 	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 )
 
 // HandlerHTTP monta a cadeia CORS → SecurityHeaders → mux → Exigir(policy) →
-// Trace → handler (substitui o routes.NewMux). O Logging de acesso fica de
-// fora: é aplicado por Montar, como o withLogging antigo ficava no main.
+// limitarCorpo (SEC-14) → Trace → handler (substitui o routes.NewMux). O
+// Logging de acesso fica de fora: é aplicado por Montar, como o withLogging
+// antigo ficava no main.
 //
 // checker (obrigatório) consulta ativo/role/corte no banco a cada request
 // protegido (SEC-06); nil dá panic na montagem.
@@ -63,12 +65,13 @@ func rotas(h Handlers) []httpx.Rota {
 	)
 	return []httpx.Rota{
 		// Autenticação (login/refresh/logout públicos; refresh e logout leem o
-		// cookie de refresh no próprio handler).
+		// cookie de refresh no próprio handler). Só reset-password e me
+		// liberam o usuário com troca de senha pendente (SEC-23).
 		{Metodo: post, Padrao: "/api/auth/login", Policy: publica, Arquivo: fAuth, Funcao: "AuthHandler.Login", Handler: h.Auth.Login},
 		{Metodo: post, Padrao: "/api/auth/refresh", Policy: publica, Arquivo: fAuth, Funcao: "AuthHandler.Refresh", Handler: h.Auth.Refresh},
 		{Metodo: post, Padrao: "/api/auth/logout", Policy: publica, Arquivo: fAuth, Funcao: "AuthHandler.Logout", Handler: h.Auth.Logout},
-		{Metodo: post, Padrao: "/api/auth/reset-password", Policy: autent, Arquivo: fAuth, Funcao: "AuthHandler.ResetPassword", Handler: h.Auth.ResetPassword},
-		{Metodo: get, Padrao: "/api/auth/me", Policy: autent, Arquivo: fAuth, Funcao: "AuthHandler.Me", Handler: h.Auth.Me},
+		{Metodo: post, Padrao: "/api/auth/reset-password", Policy: autent, Arquivo: fAuth, Funcao: "AuthHandler.ResetPassword", Handler: h.Auth.ResetPassword, LiberaTrocaSenhaPendente: true},
+		{Metodo: get, Padrao: "/api/auth/me", Policy: autent, Arquivo: fAuth, Funcao: "AuthHandler.Me", Handler: h.Auth.Me, LiberaTrocaSenhaPendente: true},
 
 		// Usuários (admin).
 		{Metodo: get, Padrao: "/api/usuarios", Policy: admin, Arquivo: fUser, Funcao: "UsuarioHandler.ListUsuarios", Handler: h.Usuario.ListUsuarios},
@@ -116,7 +119,7 @@ func rotas(h Handlers) []httpx.Rota {
 
 		// Imagem do produto (IMG-01): upload/remoção admin; leitura pública
 		// (aprovada pelo SecBrain), por handler próprio sem FileServer.
-		{Metodo: post, Padrao: "/api/produtos/{id}/imagem", Policy: admin, Arquivo: fImg, Funcao: "ProdutoHandler.EnviarImagem", Handler: h.Produto.EnviarImagem},
+		{Metodo: post, Padrao: "/api/produtos/{id}/imagem", Policy: admin, Arquivo: fImg, Funcao: "ProdutoHandler.EnviarImagem", Handler: h.Produto.EnviarImagem, MaxCorpo: catalogohttp.MaxCorpoUploadBytes},
 		{Metodo: del, Padrao: "/api/produtos/{id}/imagem", Policy: admin, Arquivo: fImg, Funcao: "ProdutoHandler.RemoverImagem", Handler: h.Produto.RemoverImagem},
 		{Metodo: get, Padrao: "/api/public/produtos/imagens/{arquivo}", Policy: publica, Arquivo: fImg, Funcao: "ImagemPublicaHandler.Servir", Handler: h.ImagemPublica.Servir},
 

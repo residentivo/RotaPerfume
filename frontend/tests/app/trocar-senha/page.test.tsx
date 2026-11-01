@@ -18,14 +18,19 @@ vi.mock("@/lib/api", () => ({
 const captcha = vi.hoisted(() => ({ enabled: false, reset: vi.fn() }));
 vi.mock("@/components/ui/Turnstile", async () => {
   const React = await import("react");
-  type Props = { onVerify: (t: string) => void; onExpire?: () => void; onError?: () => void };
+  type Props = {
+    action: string;
+    onVerify: (t: string) => void;
+    onExpire?: () => void;
+    onError?: () => void;
+  };
   const Turnstile = React.forwardRef<{ reset: () => void }, Props>(function FakeTurnstile(
-    { onVerify, onExpire, onError },
+    { action, onVerify, onExpire, onError },
     ref
   ) {
     React.useImperativeHandle(ref, () => ({ reset: captcha.reset }));
     return (
-      <div>
+      <div data-testid="turnstile" data-action={action}>
         <button type="button" onClick={() => onVerify("tok-captcha")}>
           captcha-ok
         </button>
@@ -40,6 +45,8 @@ vi.mock("@/components/ui/Turnstile", async () => {
   });
   return {
     Turnstile,
+    TURNSTILE_ACTION_LOGIN: "login",
+    TURNSTILE_ACTION_RESET_SENHA: "reset-senha",
     get isTurnstileEnabled() {
       return captcha.enabled;
     },
@@ -241,6 +248,11 @@ describe("TrocarSenhaPage - envio", () => {
 describe("TrocarSenhaPage - captcha (Turnstile configurado)", () => {
   beforeEach(() => {
     captcha.enabled = true;
+  });
+
+  it("passa a action reset-senha para o widget (SEC-19)", () => {
+    render(<TrocarSenhaPage />);
+    expect(screen.getByTestId("turnstile")).toHaveAttribute("data-action", "reset-senha");
   });
 
   it("exige o captcha e envia o token", async () => {

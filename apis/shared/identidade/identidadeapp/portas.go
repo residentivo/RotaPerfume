@@ -68,6 +68,27 @@ type Transactor interface {
 	WithTx(ctx context.Context, fn func(TxRotacao) error) error
 }
 
+// TxSenha são os repositórios ligados à transação da troca/reset de senha
+// (BUG-15): histórico, nova senha (com o corte de sessão) e revogação dos
+// refresh tokens caem juntos ou nada. Dentro do WithTx só eles são usados.
+type TxSenha struct {
+	Usuarios interface {
+		AtualizarSenha(ctx context.Context, id int64, h identidade.HashSenha, deveTrocarSenha bool) error
+	}
+	Historico interface {
+		Registrar(ctx context.Context, r *identidade.RegistroSenha) error
+	}
+	Tokens interface {
+		RevogarTodosDoUsuario(ctx context.Context, usuarioID int64, m identidade.MotivoRevogacao) error
+	}
+}
+
+// TransactorSenha é o Unit of Work da troca/reset de senha
+// (db.Transactor[TxSenha]).
+type TransactorSenha interface {
+	WithTx(ctx context.Context, fn func(TxSenha) error) error
+}
+
 // Hasher é a Strategy de hash de senha (Argon2id+pepper / bcrypt legado).
 type Hasher interface {
 	Gerar(s identidade.Senha) (identidade.HashSenha, error)
@@ -93,10 +114,11 @@ type GeradorSenha interface {
 	Gerar() (identidade.Senha, error)
 }
 
-// VerificadorCaptcha confere o token do Turnstile. Qualquer erro recusa
+// VerificadorCaptcha confere o token do Turnstile e a action esperada pelo
+// fluxo (identidade.AcaoCaptcha*, SEC-19). Qualquer erro recusa
 // (fail-closed, I-13).
 type VerificadorCaptcha interface {
-	Verificar(ctx context.Context, token, ip string) error
+	Verificar(ctx context.Context, token, ip, acao string) error
 }
 
 // Limitador é o rate limit em memória por chave (I-14).

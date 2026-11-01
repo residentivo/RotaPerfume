@@ -773,12 +773,14 @@ func TestAdminResetPassword_Success_ViaUsuarioHandler(t *testing.T) {
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 		WithArgs(int64(5)).
 		WillReturnRows(usuarioRowsForHandler(5, true))
-	mock.ExpectExec(`UPDATE usuarios SET password_hash`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE usuarios SET password_hash`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/admin/reset-password", makeJSON(map[string]any{"usuario_id": 5}))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -921,8 +923,13 @@ func TestAdminResetPassword_ErroInterno_Update(t *testing.T) {
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
 		WithArgs(int64(5)).
 		WillReturnRows(usuarioRowsForHandler(5, true))
+	// BUG-15: a tx abre com o histórico; a falha no UPDATE desfaz tudo.
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO senha_historico`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(`UPDATE usuarios SET password_hash`).
 		WillReturnError(sqlmock.ErrCancelled)
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/admin/reset-password", makeJSON(map[string]any{"usuario_id": 5}))
 	req.Header.Set("Authorization", "Bearer "+adminToken)

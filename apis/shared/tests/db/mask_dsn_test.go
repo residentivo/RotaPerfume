@@ -4,8 +4,8 @@ package db_test
 // testado de FORA do pacote (convenção: nenhum teste interno em pacote de
 // produção). maskDSN só roda depois de um ping bem-sucedido; aqui o ping é
 // respondido por um servidor MySQL mínimo em 127.0.0.1 (handshake v10 +
-// OK para o login e para o COM_PING), sem banco real. O caso de senha com
-// '@' é o GAP SEC-15 e NÃO é fixado aqui.
+// OK para o login e para o COM_PING), sem banco real. SEC-15: senhas com
+// '@', ':', '/' e '%' (TestSEC15_MaskDSN_SenhaComSeparadores).
 
 import (
 	"bytes"
@@ -131,4 +131,63 @@ func TestF08_MaskDSN(t *testing.T) {
 			assert.NotContains(t, linha, "segredo", "a senha nunca vai para o log")
 		})
 	}
+}
+
+// abrirELogar abre o DSN contra o fakeMySQL e devolve a linha de log do
+// db.Open (sem flags de data).
+func abrirELogar(t *testing.T, dsn string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	saida, flags := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(saida); log.SetFlags(flags) })
+
+	conn, err := db.Open(dsn)
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+	return strings.TrimSpace(buf.String())
+}
+
+// TestSEC15_MaskDSN_SenhaComSeparadores: o corte segue o go-sql-driver
+// (último '/', último '@' antes dele, primeiro ':'); cada fragmento da senha
+// é único e nenhum pode aparecer no log.
+func TestSEC15_MaskDSN_SenhaComSeparadores(t *testing.T) {
+	host := fakeMySQL(t)
+	casos := []struct {
+		nome       string
+		senha      string
+		fragmentos []string
+	}{
+		{"arroba", "SEGa@SEGb", []string{"SEGa", "SEGb"}},
+		{"dois-pontos", "SEGa:SEGb", []string{"SEGa", "SEGb"}},
+		{"barra", "SEGa/SEGb", []string{"SEGa", "SEGb"}},
+		{"porcento", "SEGa%SEGb", []string{"SEGa", "SEGb"}},
+		{"arroba duplo", "SEGa@@SEGb", []string{"SEGa", "SEGb"}},
+		{"arroba no fim", "SEGa@", []string{"SEGa"}},
+		{"arroba no início", "@SEGa", []string{"SEGa"}},
+		{"arroba e dois-pontos", "SEGa:SEGb@SEGc", []string{"SEGa", "SEGb", "SEGc"}},
+		{"combinação completa", "SEGa@SEGb:SEGc/SEGd%SEGe", []string{"SEGa", "SEGb", "SEGc", "SEGd", "SEGe"}},
+		{"combinação com arroba no fim", "SEGa:SEGb/SEGc@", []string{"SEGa", "SEGb", "SEGc"}},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			sufixo := "@tcp(" + host + ")/rota?parseTime=true"
+			linha := abrirELogar(t, "user:"+c.senha+sufixo)
+
+			assert.Equal(t, "[db] conexão MariaDB estabelecida (host=user:****"+sufixo+")", linha)
+			for _, f := range c.fragmentos {
+				assert.NotContains(t, linha, f, "fragmento da senha no log")
+			}
+		})
+	}
+}
+
+// TestSEC15_MaskDSN_ProtecaoExtra: se a senha que o driver extrai ainda
+// aparece no texto mascarado (aqui, senha igual a um pedaço do resto do DSN),
+// o log leva só "****".
+func TestSEC15_MaskDSN_ProtecaoExtra(t *testing.T) {
+	host := fakeMySQL(t)
+	linha := abrirELogar(t, "user:rota@tcp("+host+")/rota")
+	assert.Equal(t, "[db] conexão MariaDB estabelecida (host=****)", linha)
 }

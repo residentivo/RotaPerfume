@@ -249,8 +249,8 @@ func TestSEC27_Casos_Admin(t *testing.T) {
 	})
 	t.Run("criação com taxa acima de 30 → 400 sem INSERT", func(t *testing.T) {
 		pool, mock := novoMock(t)
-		mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).WithArgs(int64(1)).
-			WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+		sec26Lock(mock, 1, "Pendente", 2) // SEC-35: o pedido é travado antes da validação dos campos
+		mock.ExpectRollback()
 		d := vendas.DadosNovoPagamento{PedidoID: 1, DadosPagamento: pagamentoValido()}
 		d.TaxaPct = 100
 		_, err := novosCasos(pool, escopoIrrestrito(t)).CriarPagamento(ctx, admin(t), ler(d))

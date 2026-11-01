@@ -126,7 +126,7 @@ func TestPedidoService_ListPedidos(t *testing.T) {
 			page:  2,
 			limit: 10,
 			mock: func(mock sqlmock.Sqlmock) {
-				whereRegex := ` WHERE p\.status = \? AND p\.canal = \? AND p\.cliente_id = \? AND p\.vendedor_id = \? AND p\.data_pedido >= \? AND p\.data_pedido <= \? AND c\.razao_social LIKE \?`
+				whereRegex := ` WHERE p\.status = \? AND p\.canal = \? AND p\.cliente_id = \? AND p\.vendedor_id = \? AND p\.data_pedido >= \? AND p\.data_pedido <= \? AND c\.razao_social LIKE \? ESCAPE '!'`
 				mock.ExpectQuery(`SELECT COUNT\(\*\)`+pedidoFromRegex+whereRegex).
 					WithArgs("Faturado", "App", int64(1), int64(2), "2024-01-01", "2024-01-31", "%Teste%").
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
@@ -482,7 +482,7 @@ func TestPedidoService_UpdatePedido_Validacoes(t *testing.T) {
 // executadas dentro da tx de PedidoRepository.UpdateComItens (SELECT status
 // ... FOR UPDATE + leitura dos itens atuais para comparação) — exigência do
 // SecBrain para faturamento idempotente/atômico.
-const selectStatusForUpdateRegex = `SELECT status FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
+const selectStatusForUpdateRegex = `SELECT status, vendedor_id FROM pedidos WHERE pedido_id_origem = \? FOR UPDATE`
 const selectItensAtuaisTxRegex = `SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido WHERE pedido_id = \? ORDER BY item_id_origem ASC`
 
 func itensAtuaisRowsVazio() *sqlmock.Rows {
@@ -497,7 +497,7 @@ func TestPedidoService_UpdatePedido_Sucesso(t *testing.T) {
 	// baixa de estoque automática (transição para "Faturado").
 	mock.ExpectQuery(selectStatusForUpdateRegex).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegex).
 		WithArgs(int64(1)).
 		WillReturnRows(itensAtuaisRowsVazio())
@@ -568,7 +568,7 @@ func TestPedidoService_UpdatePedido_ErroGenericoDoRepo(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegex).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegex).
 		WithArgs(int64(1)).
 		WillReturnRows(itensAtuaisRowsVazio())
@@ -594,7 +594,7 @@ func TestPedidoService_UpdatePedido_FaturadoTentaAlterarItens_Erro409(t *testing
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegex).
 		WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Faturado"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Faturado", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegex).
 		WithArgs(int64(1)).
 		WillReturnRows(itensAtuaisRowsVazio())
@@ -624,17 +624,20 @@ const deleteItensPedidoRegex = `DELETE FROM itens_pedido WHERE pedido_id = \?`
 const deletePedidoRegex = `DELETE FROM pedidos WHERE pedido_id_origem = \?`
 const existsPagamentoPorPedidoRegex = `SELECT 1 FROM pagamentos WHERE pedido_id = \? LIMIT 1`
 
+// esperarTravaPedidoExclusao: SEC-26, a exclusão lê tudo DENTRO da tx, sob
+// o lock do pedido (status e vendedor).
+func esperarTravaPedidoExclusao(mock sqlmock.Sqlmock, id int64, status string) {
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegex).WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(status, int64(2)))
+}
+
 func TestPedidoService_DeletePedido_Sucesso(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
-	esperarPossePedido(mock, 1)
-
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Em separação"))
+	esperarTravaPedidoExclusao(mock, 1, "Em separação")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectBegin()
 	mock.ExpectExec(deleteItensPedidoRegex).
 		WithArgs(int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
@@ -651,11 +654,10 @@ func TestPedidoService_DeletePedido_Sucesso(t *testing.T) {
 
 func TestPedidoService_DeletePedido_NaoEncontrado(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
-	esperarPossePedido(mock, 999)
-
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(999)).
-		WillReturnRows(emptyPedidoRows())
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegex).WithArgs(int64(999)).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}))
+	mock.ExpectRollback()
 
 	casos := casosVendas(db, 0)
 	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 999)
@@ -665,14 +667,11 @@ func TestPedidoService_DeletePedido_NaoEncontrado(t *testing.T) {
 
 func TestPedidoService_DeletePedido_PossuiPagamentosVinculados_409(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
-	esperarPossePedido(mock, 1)
-
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Em separação"))
+	esperarTravaPedidoExclusao(mock, 1, "Em separação")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	mock.ExpectRollback()
 
 	casos := casosVendas(db, 0)
 	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 1)
@@ -682,14 +681,11 @@ func TestPedidoService_DeletePedido_PossuiPagamentosVinculados_409(t *testing.T)
 
 func TestPedidoService_DeletePedido_Faturado_409(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
-	esperarPossePedido(mock, 1)
-
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Faturado"))
+	esperarTravaPedidoExclusao(mock, 1, "Faturado")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectRollback()
 
 	casos := casosVendas(db, 0)
 	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 1)
@@ -699,14 +695,11 @@ func TestPedidoService_DeletePedido_Faturado_409(t *testing.T) {
 
 func TestPedidoService_DeletePedido_ErroExistsByPedidoID(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
-	esperarPossePedido(mock, 1)
-
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Em separação"))
+	esperarTravaPedidoExclusao(mock, 1, "Em separação")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)
+	mock.ExpectRollback()
 
 	casos := casosVendas(db, 0)
 	err := casos.ExcluirPedido(context.Background(), principalAdmin(), 1)
@@ -717,15 +710,10 @@ func TestPedidoService_DeletePedido_ErroExistsByPedidoID(t *testing.T) {
 
 func TestPedidoService_DeletePedido_ErroDeleteComItens(t *testing.T) {
 	db, mock := newPedidoTestDB(t)
-	esperarPossePedido(mock, 1)
-
-	mock.ExpectQuery(`SELECT ` + pedidoColunasRegex + pedidoFromRegex + ` WHERE p\.pedido_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(pedidoRowsComStatus(1, 230.0, "Em separação"))
+	esperarTravaPedidoExclusao(mock, 1, "Em separação")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegex).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectBegin()
 	mock.ExpectExec(deleteItensPedidoRegex).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrConnDone)

@@ -41,7 +41,7 @@ function instalarTurnstile() {
 }
 
 function callbacks() {
-  return { onVerify: vi.fn(), onExpire: vi.fn(), onError: vi.fn() };
+  return { action: "login" as const, onVerify: vi.fn(), onExpire: vi.fn(), onError: vi.fn() };
 }
 
 beforeEach(() => {
@@ -94,8 +94,25 @@ describe("Turnstile com site key", () => {
     expect(api.render).toHaveBeenCalledTimes(1);
     const [alvo, opcoes] = api.render.mock.calls[0];
     expect(container.contains(alvo)).toBe(true);
-    expect(opcoes).toMatchObject({ sitekey: "site-key-123", theme: "light" });
+    expect(opcoes).toMatchObject({ sitekey: "site-key-123", theme: "light", action: "login" });
   });
+
+  it("constantes de action seguem o contrato do backend (SEC-19)", async () => {
+    const m = await carregar("site-key-123");
+    expect(m.TURNSTILE_ACTION_LOGIN).toBe("login");
+    expect(m.TURNSTILE_ACTION_RESET_SENHA).toBe("reset-senha");
+  });
+
+  it.each<["login" | "reset-senha"]>([["login"], ["reset-senha"]])(
+    "repassa a action %j para window.turnstile.render (SEC-19)",
+    async (action) => {
+      const api = instalarTurnstile();
+      const { Turnstile } = await carregar("site-key-123");
+      render(<Turnstile {...callbacks()} action={action} />);
+      expect(api.render).toHaveBeenCalledTimes(1);
+      expect(api.render.mock.calls[0][1].action).toBe(action);
+    }
+  );
 
   it("onReady antes de window.turnstile existir nao quebra nem renderiza", async () => {
     const { Turnstile } = await carregar("site-key-123");

@@ -65,10 +65,11 @@ func TestRepositorios_ExecComNotFound(t *testing.T) {
 			},
 		},
 		{
-			nome: "PagamentoRepository.Delete", sqlRe: `DELETE FROM pagamentos WHERE pagamento_id = \?`,
-			args: []driver.Value{int64(5)}, checaRowsAffected: true, naoEncontrado: vendas.ErrPagamentoNaoEncontrado,
+			// SEC-35: o DELETE só casa com pagamento não quitado.
+			nome: "PagamentoRepository.ExcluirSeNaoQuitado", sqlRe: `DELETE FROM pagamentos WHERE pagamento_id = \? AND status_pagamento NOT IN \(\?, \?\)`,
+			args: []driver.Value{int64(5), "Pago", "Pago com atraso"}, checaRowsAffected: true, naoEncontrado: vendas.ErrPagamentoNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {
-				return vendasmysql.NovoPagamentos(db).Excluir(ctx, 5)
+				return vendasmysql.NovoPagamentos(db).ExcluirSeNaoQuitado(ctx, 5)
 			},
 		},
 		{

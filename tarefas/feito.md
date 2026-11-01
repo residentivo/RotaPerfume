@@ -2,7 +2,296 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+> Atualizado em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): o Lote 28 (SEC-19, SEC-23 e SEC-35) foi fechado; não commitado, pendente do usuário. Antes, ainda em 2026-10-31: o commit do Lote 27 foi registrado (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado pelo usuário via 🤍 MegaBrain). Antes, ainda em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## Lote 28 de 2026-10-31: 3 cards concluídos
+
+> Cards: **SEC-19** (Turnstile sem conferência de `hostname`/`action`, GAP 6 da auditoria ARQ-00, invariante I-13), **SEC-23** (`deve_trocar_senha` imposto pelo backend, GAP 10) e **SEC-35** (`ExcluirPagamento`/`CriarPagamento` fora de lock, achado do Lote 27). Lote aberto pelo 🤍 MegaBrain em 2026-10-31. SEC-19 e SEC-23 vieram do bloco "GAPs de segurança da auditoria ARQ-00" (adiados do Lote 27 por envolverem backend + frontend + config), que fica sem cards pendentes; SEC-35 veio do bloco "Achados do Lote 27". Fechado em 2026-10-31 pelo 🔵 SubBrain.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (especificação) → 🟡 BackBrain (SEC-19, SEC-23, SEC-35) → 🟢 FrontBrain (SEC-19, SEC-23) → verificação do 🤍 MegaBrain → 🔵 SubBrain (Postman, docs e fechamento). Sem 🌸 DataBrain (a coluna `deve_trocar_senha` já existia; nenhuma migração). O 🔴 TestBrain não rodou um passo separado: os testes foram escritos pelos devs conforme a seção de testes da especificação, e a suíte foi verificada pelo 🤍 MegaBrain.
+>
+> **Mudanças de contrato HTTP:** SEC-23: `403` `"troca de senha obrigatória"` em todas as rotas não públicas, exceto `POST /api/auth/reset-password` e `GET /api/auth/me`, para usuário com `deve_trocar_senha` (todos os papéis); `/me` ganha `trocar_senha` (aditivo). SEC-19: login e reset-password exigem token Turnstile com `hostname`/`action` válidos (recusa continua `400` `"captcha inválido ou ausente"`); env nova opcional `TURNSTILE_HOSTNAMES` (vazia, deriva de `CORS_ALLOWED_ORIGINS`). SEC-35: status e mensagens iguais no caminho normal; o `1452` na criação de pagamento vira `404` `"pedido não encontrado"` (antes `500`); na exclusão pelo admin, erro de banco no lock do pagamento vira `500`. **Nenhuma rota nova:** continuam 64 (5 Public, 36 Authenticated, 23 AdminOnly). Detalhe em `postman/README.md`, seção "Mudanças do Lote 28". **Schema:** sem mudança.
+>
+> **Verificação final do 🤍 MegaBrain (2026-10-31):** Go: `gofmt -l` vazio; `go vet` e `go test -count=1 ./...` verdes nos dois módulos: shared **4017** testes (com subtestes), 0 falhas, 12 pulados; rotaperfumes-api **5298**, 0 falhas, 28 pulados. Frontend: `tsc --noEmit` e `eslint` limpos; `vitest` com 40 arquivos e **1694** testes passando; cobertura de 96,83% stmts e 91,32% branches. Contrato FE↔BE conferido por grep: a mensagem "troca de senha obrigatória" é idêntica em `API/internal/httpx/auth.go:29` e em `frontend/src/lib/trocaSenhaObrigatoria.ts:18`; `trocar_senha` está em `identidadehttp/dto.go`. `next build` não foi rodado (card FE-16).
+>
+> **Commit:** **não commitado, pendente do usuário.**
+>
+> **Pendências do usuário antes do deploy:**
+> 1. Backend e frontend precisam ir no **mesmo deploy**: uma aba com o bundle antigo recebe `400` no login até recarregar (SEC-19).
+> 2. O hostname da página do frontend precisa estar em `CORS_ALLOWED_ORIGINS` ou em `TURNSTILE_HOSTNAMES`; senão o login quebra (SEC-19).
+> 3. Os 42 usuários de `sql/03_seed_vendedores.sql` (`deve_trocar_senha=1`) recebem `403` em tudo até trocarem a senha (SEC-23). Postman (`postman/collection.json`, `postman/README.md`) e roteiros manuais (`docs/roteiro-teste-manual-*.md`) já ganharam a observação.
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados do Lote 28"):** SEC-37 (secret de teste do Turnstile aceita em produção, MÉDIA), FE-17 (depois da troca de senha o frontend vai para `/dashboard` com a sessão já cortada, BAIXA), CHORE-11 (`apiResetPassword` morta no frontend, BAIXA), SEC-38 (`posseDoPagamento`/`posseDoPagamentoTravada` escondem erro de banco como 404, BAIXA) e LOG-03 (recusa do captcha logada sem motivo, BAIXA). O flake do `TestIMG01_Upload_FilenameHostilNaoVaza` continua no TST-11.
+
+### Decisões do 🟣 SecBrain (especificação do Lote 28)
+
+- **SEC-19:** env nova `TURNSTILE_HOSTNAMES` (lista de hostnames, trim + minúsculas; item com `://`, `/`, `:`, `*`, espaço interno ou vazio → `config.Load` falha com mensagem sem o valor). Não definida: derivada de `cfg.CORSAllowedOrigins` (`url.Parse(o).Hostname()`, sem repetição); lista final vazia → adapter recusa (fail-closed). Secret de teste da Cloudflare (`1x…AA`, `2x…AA`, `3x…AA`) → hostname/action não conferidos, com aviso único no bootstrap. Actions `login` e `reset-senha` (`AcaoCaptchaLogin`, `AcaoCaptchaResetSenha`). Ordem: `success` → hostname (sem diferenciar maiúsculas) → action (exata); erros embrulham `ErrCaptchaInvalido` sem os valores recebidos. Contrato HTTP inalterado; captcha continua antes do rate limit (I-13).
+- **SEC-23:** checagem no `Autenticador`, depois dos 401/500 atuais e antes do `AdminOnly`, para todos os papéis. Liberadas só `POST /api/auth/reset-password` e `GET /api/auth/me`, por campo explícito `Rota.LiberaTrocaSenhaPendente` (padrão bloqueia; panic em rota Public); `Exigir` mantém a assinatura e bloqueia; método novo `ExigirLiberandoTrocaPendente`. Mensagem fixa `"troca de senha obrigatória"` + `403` como identificador (padrão do vendedor desligado, sem campo `code`). `/me` ganha `trocar_senha`. Sem migração (coluna TINYINT(1) NOT NULL já existia).
+- **SEC-35:** reaproveitar o UoW `TxPedido` (sem Transactor novo); ordem de lock pedido → pagamento (como `TxPedido.Excluir`). Exclusão: `noEscopo` e `PorID` fora da tx; dentro, lock do pedido só no escopo restrito (qualquer erro → 404, mantendo o V-02), `TravarParaExcluir` (FOR UPDATE; sem linha ou `pedido_id` diferente → 404), `PodeExcluir()` → 409, `ExcluirSeNaoQuitado` (DELETE condicional a `NOT IN (StatusPago, StatusPagoComAtraso)`; 0 linhas → 404). Criação: validações fora da tx como hoje; dentro, `TravarParaEscrita` (`ErrPedidoNaoEncontrado` → 404 também para admin; outro erro → 500), posse sob lock, `Pagamento(pedidoID)` e `Inserir`; `RelerCriado` e logs depois do commit. Helper `db.ViolacaoFK` e 1452 de `fk_pagamentos_pedido` → `ErrPedidoNaoEncontrado` sem embrulhar o erro do driver.
+
+### Decisões fora da spec
+
+- **🟡 BackBrain:**
+  1. `TURNSTILE_HOSTNAMES` vazia ou só com espaços conta como não definida (deriva do CORS); item vazio dentro da lista recusa.
+  2. O log de startup fica no bootstrap (`avisarCaptcha`) e relê a env para dizer a origem da lista; também há aviso para lista vazia (três linhas possíveis: modo de teste / lista vazia, fail-closed / `hostnames aceitos=N (derivados do CORS | TURNSTILE_HOSTNAMES)`).
+  3. O aviso só sai no `Montar` do servidor (o `resetsenhas` não usa captcha).
+  4. `deploy/setup-servidor.sh` não mudou (a derivação do CORS já cobre).
+  5. Os métodos órfãos foram removidos das portas (`Pagamentos.Inserir`/`Excluir`/`ExistePorPedido`, `Pedidos.Existe`).
+  6. O log de recusa do captcha continua genérico, sem distinguir hostname de action (virou o card LOG-03).
+  7. Secrets de teste: o repositório só documentava `1x0000000000000000000000000000000AA`; também foram fixadas `2x…AA` e `3x…AA` (definidas pela Cloudflare com `success=false`). `:` é recusado em `TURNSTILE_HOSTNAMES`, então IPv6 não é aceito.
+- **🟢 FrontBrain:** o estado inicial do `ProtectedRoute` não autoriza uma sessão em memória com `trocar_senha` true, para a tela não piscar antes do redirecionamento.
+
+---
+
+## SEC-19: Turnstile passa a conferir `hostname` e `action` — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 28, aberto e fechado em 2026-10-31). Não commitado, pendente do usuário.
+**Camadas:** Backend (shared + API), Frontend, Config/Deploy (docs), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 6; invariante I-13). Prioridade MÉDIA.
+
+**Contrato final:** `POST /api/auth/login` e `POST /api/auth/reset-password` só aceitam token Turnstile cujo `hostname` esteja na lista aceita (`TURNSTILE_HOSTNAMES` ou os hosts de `CORS_ALLOWED_ORIGINS`) e cuja `action` seja a do fluxo (`login` / `reset-senha`). Recusa: `400` `"captcha inválido ou ausente"`, antes do rate limit (inalterado). `TURNSTILE_HOSTNAMES` inválida impede a subida (`TURNSTILE_HOSTNAMES inválida`, sem o valor).
+
+**Entregue:**
+- 🟡 **BackBrain:** novo `SH/identidade/captcha.go` (`AcaoCaptchaLogin`, `AcaoCaptchaResetSenha`); `SH/adapters/turnstile/turnstile.go` (`Novo(secret, hostnames)`, `NovoComEndpoint(...)`, `Verificar(ctx, token, ip, acaoEsperada)`, `SecretDeTeste(secret)`; ordem success → hostname → action; erros embrulham `ErrCaptchaInvalido` sem valores); porta `VerificadorCaptcha`, `casos.go`, `login.go` e `senha.go` com o parâmetro `acao` (rótulos de log mantidos); `SH/config/config.go` (`TurnstileHostnames`, `parseTurnstileHostnames`, `ErrTurnstileHostnames`); montagem em `bootstrap/server.go`, `bootstrap/identidade.go` e `internal/resetsenhas/resetsenhas.go`; `avisarCaptcha(cfg)` no `Montar`; `.env.example` e `deploy/api.env.example` documentados.
+- 🟢 **FrontBrain:** `Turnstile.tsx` com o tipo `TurnstileAction`, as constantes e a prop `action` obrigatória passada ao `render`; login usa `login` e trocar-senha usa `reset-senha`.
+- **Testes:** `SH/tests/services/turnstile_service_test.go` (hostname errado/vazio/com outras maiúsculas, action errada/vazia, lista vazia, secret de teste); novos `SH/tests/config/sec19_turnstile_hostnames_test.go`, `SH/tests/identidade/sec19_captcha_acao_test.go` e `API/tests/handlers/sec19_captcha_acao_http_test.go`; fakes de `VerificadorCaptcha` ajustados; frontend: `Turnstile.test.tsx`, `login/page.test.tsx` e `trocar-senha/page.test.tsx`.
+- 🔵 **SubBrain:** `postman/README.md` (seção "Mudanças do Lote 28", seção CAPTCHA, onde o `401` citado por engano foi corrigido para `400`), descrição de `postman/collection.json`, `docs/arq-00-invariantes-seguranca.md` (I-13, GAP 6 resolvido) e `docs/arquitetura-ddd.md` §10.
+
+**Resíduos:** secret de teste aceita em produção (card SEC-37); log de recusa sem o motivo (card LOG-03).
+
+---
+
+## SEC-23: `deve_trocar_senha` imposto pelo backend — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🟢 FrontBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 28, aberto e fechado em 2026-10-31). Não commitado, pendente do usuário.
+**Camadas:** Backend (shared + API), Frontend, Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 10). Prioridade MÉDIA.
+
+**Contrato final:** com `usuarios.deve_trocar_senha = 1`, qualquer rota não pública responde `403` `{"success":false,"error":"troca de senha obrigatória"}`, exceto `POST /api/auth/reset-password` e `GET /api/auth/me`; vale para todos os papéis, inclusive admin. Ordem: 401/500 (token, inexistente, inativo, corte de sessão) → 403 de troca → 403 de admin. `GET /api/auth/me` ganha `trocar_senha` (bool). Rotas Public (`login`, `refresh`, `logout`, `/health`, imagem pública) não mudam.
+
+**Entregue:**
+- 🟡 **BackBrain:** `StatusAcesso.DeveTrocarSenha` (`SH/identidade/usuario.go`) e query `SELECT ativo, role, tokens_validos_desde, deve_trocar_senha ...` em `SH/identidade/identidademysql/usuarios.go`; `API/internal/httpx/auth.go` (`msgTrocaSenhaObrigatoria`, `Exigir` bloqueia, novo `ExigirLiberandoTrocaPendente`, log `[auth] acesso negado: user_id=... troca de senha pendente ...` com `SanearRota`); `httpx/router.go` (`Rota.LiberaTrocaSenhaPendente`, panic em rota Public); `bootstrap/rotas.go` (`true` só nas duas rotas); `identidadehttp/dto.go` (`trocar_senha` no `/me`).
+- 🟢 **FrontBrain:** novo `src/lib/trocaSenhaObrigatoria.ts` (`MSG_TROCA_SENHA_OBRIGATORIA`, `ROTA_TROCAR_SENHA`, predicados de igualdade exata); `apiClient.ts` `buildApiError` chama `redirectToTrocarSenha()` (flag própria, sem loop em `/trocar-senha`, sem refresh/logout, o `ApiError` continua sendo lançado); `types.ts` (`MeResponse.trocar_senha?`); `ProtectedRoute.tsx` redireciona antes do `requireAdmin`.
+- **Testes:** matriz `API/tests/routes/arq00_matriz_rotas_test.go` (coluna `liberaTroca`); novos `API/tests/routes/sec23_troca_senha_matriz_test.go` (todas as rotas protegidas, como admin e como usuário normal) e `API/tests/httpx/sec23_troca_senha_test.go`; sqlmock da query nova em 5 suítes; `TestSEC23_Me_DevolveTrocarSenha`; frontend: bloco SEC-23 em `apiClient.test.ts`, `ProtectedRoute.test.tsx` e novo `trocaSenhaObrigatoria.test.ts`.
+- 🔵 **SubBrain:** `postman/README.md` (seção "Mudanças do Lote 28", `/me`, credenciais), `postman/collection.json` (descrição do `/me`, `trocar_senha` nos 2 exemplos de `200` e aviso na descrição geral de que os usuários do seed precisam trocar a senha antes das demais rotas), observação SEC-23 nos roteiros `docs/roteiro-teste-manual-{lote4,lote5,lote6,lote8,clientes,pedidomodal,dashboard,vendedor-desligado}.md`, `docs/arq-00-invariantes-seguranca.md` (GAP 10 resolvido) e `docs/arquitetura-ddd.md` §10.
+
+**Resíduos:** depois da troca de senha o frontend vai para `/dashboard` com a sessão já cortada (card FE-17); `apiResetPassword` morta no frontend (card CHORE-11).
+
+---
+
+## SEC-35: `CriarPagamento` e `ExcluirPagamento` sob lock — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 28, aberto e fechado em 2026-10-31). Não commitado, pendente do usuário.
+**Camadas:** Backend (shared), Testes, Documentação
+**Origem:** 🟣 SecBrain, especificação do Lote 27 (2026-10-31), achado fora do escopo nº 1 (mesmo padrão do SEC-26). Prioridade MÉDIA.
+
+**Contrato final:** caminho normal inalterado (ordem de erros da criação 403 → 400 → 404 → 400). Pedido apagado no meio da criação → `404` `"pedido não encontrado"` (antes `500`). Pagamento quitado no meio da exclusão → `409` `"pagamento já quitado não pode ser excluído"`, sem DELETE. Exclusão pelo admin com erro de banco no lock do pagamento → `500`.
+
+**Entregue:**
+- 🟡 **BackBrain:** novo `SH/db/fk.go` (`ViolacaoFK`); porta `PagamentosNaTx` com `Inserir`, `TravarParaExcluir` e `ExcluirSeNaoQuitado`; métodos órfãos removidos da porta de leitura (`Pagamentos.Inserir`/`Excluir`/`ExistePorPedido`, `Pedidos.Existe`); `SH/vendas/vendasapp/uow.go` (`TxPedido.CriarPagamento`, `TxPedido.ExcluirPagamento` e `posseDoPagamentoTravada`, com 404 e log do V-02); `pagamentos.go` (os dois casos de uso em tx; log e `RelerCriado` depois do commit; saem `pagamentoNovo` e a segunda leitura de paridade; `pedidoNoEscopo` fica porque o Update ainda usa); `vendasmysql/pagamentos.go` (1452 → `ErrPedidoNaoEncontrado` sem embrulhar; métodos novos; `Excluir` removido); `Pedidos.Existe` removido de `vendasmysql/pedidos.go`.
+- **Testes:** novos `SH/tests/vendas/sec35_pagamento_lock_test.go` (ordem do SQL na exclusão restrita/admin e na criação; corridas: quitado sob lock → 409 + ROLLBACK, DELETE com 0 linhas → 404, pedido sumiu no lock → 404, 1452 → 404 sem texto do driver, outro vendedor sob lock → 404) e `API/tests/handlers/sec35_apoio_test.go`; cerca de 12 suítes ajustadas.
+- 🔵 **SubBrain:** `postman/README.md` e descrição de `postman/collection.json` (seção "Mudanças do Lote 28"), `docs/arq-00-invariantes-seguranca.md` (ARQ-05, TOCTOU) e `docs/arquitetura-ddd.md` §10.
+
+**Resíduo:** `posseDoPagamento`/`posseDoPagamentoTravada` transformam qualquer erro de banco em 404 (card SEC-38).
+
+---
+## Lote 27 de 2026-10-31: 9 cards concluídos
+
+> Cards: SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25 (GAPs 1, 2, 3, 4 e 11 e C-03 da auditoria ARQ-00), BUG-14, BUG-15 (transações em `VincularCliente` e na troca de senha) e SEC-26 (achado do ARQ-05). Lote aberto pelo 🤍 MegaBrain em 2026-10-31, a pedido do usuário ("processe os itens a fazer"), com os cards de backend/testes de prioridade MÉDIA (mais SEC-16 e SEC-25, BAIXA, que tocam os mesmos pontos) e sem decisão de produto pendente. SEC-19 e SEC-23 (backend + frontend + config) ficaram em `afazer.md`, para o lote seguinte. Fechado em 2026-10-31 pelo 🔵 SubBrain.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → 🟣 SecBrain (especificação) → 🟡 BackBrain A (SEC-14, SEC-15, SEC-16, SEC-17, SEC-25) e 🟡 BackBrain B (BUG-14, BUG-15, SEC-26) → 🔴 TestBrain (SEC-24 e testes) → 🔵 SubBrain (Postman, docs e fechamento). Sem 🌸 DataBrain (nenhuma mudança de schema) e sem 🟢 FrontBrain (o `maxLength` opcional virou o card CHORE-10).
+>
+> **Mudanças de contrato HTTP:** `413` para corpo acima de 256 KiB (exceto o upload de imagem); `431` automático para headers acima de 64 KiB; `400` para pedido com mais de 200 itens; `page` limitado a 10000 (clamp; o `500` de `page` gigante vira `200`); `400` para `q` acima de 100 caracteres e `%`/`_` literais na busca; `CORS_ALLOWED_ORIGINS` com `*`/`null` impede a subida; BUG-15: falha no histórico ou na revogação passa de `200` para `500`, sem trocar a senha. **Nenhuma rota nova:** continuam 64 (5 Public, 36 Authenticated, 23 AdminOnly). Detalhe em `postman/README.md`, seção "Mudanças do Lote 27". **Schema:** sem mudança.
+>
+> **Verificação final do 🤍 MegaBrain (2026-10-31):** `gofmt -l`, `go vet ./...` e `go test -count=1 ./...` limpos e verdes nos dois módulos: shared **3947 passaram**, 0 falharam, 12 pulados; rotaperfumes-api **5147 passaram**, 0 falharam, 28 pulados.
+>
+> **Commit:** commitado pelo usuário (commit `a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado ao 🤍 MegaBrain em 2026-10-31). O `apis/rotaperfumes-api/cmd/server/__debug_bin178758419` apagado ficou fora do commit. No fechamento, código e docs estavam sem commit.
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados do Lote 27"):** SEC-35 (`ExcluirPagamento`/`CriarPagamento` checam fora de lock, MÉDIA), SEC-36 (origens de dev sempre na allowlist de CORS, BAIXA), BUG-24 (corrida entre troca e reset de senha, BAIXA), CHORE-10 (`ErrImagemMuitoGrande` com `KindMuitoGrande` e `maxLength={100}` nas buscas do frontend, BAIXA) e TST-11 (teste instável do IMG-01, BAIXA).
+
+### Decisões do 🟣 SecBrain (especificação do Lote 27)
+
+- **Unit of Work:** BUG-14, BUG-15 e SEC-26 usam o `db.Transactor[R]`/`NewTransactor` que já existe (`SH/db/tx.go`): dentro da `fn` só os repositórios de `R`; nenhum efeito externo (e-mail, log de decisão) dentro da tx; prova de "tudo na mesma tx" com pool `SetMaxOpenConns(1)` + contexto curto.
+- **SEC-14:** limite **por rota** no router, não middleware global (`MaxBytesReader` aninhados valem pelo menor, o que quebraria o upload). Padrão de 256 KiB; única exceção o upload (`MaxCorpoUploadBytes`). `limitarCorpo` por dentro do `Exigir`, para 401/403 virem antes do 413. 413 tipado com `kernel.KindMuitoGrande` (acrescentado depois de `KindBloqueado`, sem reordenar). Servidor com `ReadHeaderTimeout` 5 s e `MaxHeaderBytes` 64 KiB. Itens do pedido: no máximo 200 (400), conferido antes contra o maior pedido do banco.
+- **SEC-15:** espelhar o parse do go-sql-driver (último `/`, último `@` antes dele, primeiro `:`), mantendo o formato do log, com a proteção extra "se a senha ainda aparecer, só `****`".
+- **SEC-16:** **clamp, não 400** (mesmo padrão do `limit`), em `kernel.PaginaMaxima` = 10.000 (maior OFFSET 999.900); erro de faixa do `Atoi` conta como ausente.
+- **SEC-17:** **falhar na config** (`ErrCORSOrigemInvalida` para `*`/`null`) e, como defesa em profundidade, o middleware também descarta essas entradas com log único.
+- **SEC-24:** só testes (🔴 TestBrain), por entidade, com a lista de payloads de `order_by` e `order_dir` da especificação, completude dos enums e um caso HTTP por listagem.
+- **SEC-25:** caractere de escape **`!`, não `\`** (com `\` o resultado depende do `NO_BACKSLASH_ESCAPES`); helper único `db.TermoContem`; comprimento de `q` com **400, não truncamento** (100 runes depois de tirar os espaços das pontas). Índice FULLTEXT fora do lote.
+- **BUG-14:** `TxVinculo` com lock do cliente (`TravarParaVinculo`, FOR UPDATE), que também fecha a corrida de duas vinculações simultâneas; os 404 de vendedor e cliente continuam fora da tx (mesma ordem); log "cliente vinculado" depois do commit.
+- **BUG-15:** `TxSenha` + porta própria `TransactorSenha` (o `identidadeapp.Transactor` existente não é genérico); hash Argon2 fora da tx; dentro da tx histórico → senha → revogação; logs depois do commit; no reset admin, senha gerada fora da tx e e-mail só depois do commit.
+- **SEC-26:** `TravarParaEscrita` (`SELECT status, vendedor_id … FOR UPDATE`) no lugar de `StatusParaAtualizar`; posse rechecada sob lock no PUT (a checagem antes do decode fica, para 404 antes de 400); DELETE inteiro dentro da tx (lock → posse → pagamentos → `PodeExcluir` → exclusão), mesma ordem de erros; o FK `ON DELETE RESTRICT` faz o INSERT de pagamento concorrente esperar o lock.
+
+### Decisões fora da spec
+
+- **🟡 BackBrain A:**
+  1. Numa rota com `MaxCorpo != 0` (upload), o router só aplica o `MaxBytesReader`; o `Content-Length`/413 fica com o handler. Assim o anti-CSRF (403) continua antes e a mensagem continua "imagem excede 1 MB".
+  2. `refreshDoRequest` (`API/internal/identidadehttp/auth_handler.go:117`) não mudou: o limite do router já vale ali.
+  3. `ErrItensDemais` foi declarado dentro do bloco `var` de `vendas/erros.go`.
+- **🟡 BackBrain B:**
+  1. Os três fluxos de senha usam a mesma ordem (histórico → `AtualizarSenha` → `RevogarTodos`). Antes, no reset admin, o UPDATE vinha primeiro.
+  2. No reset admin/massa, `AtualizarSenha` devolvendo `ErrUsuarioNaoEncontrado` continua `404` (como no legado); o resto vira `500` (`erroGravacaoReset`).
+  3. No BUG-14, o vlog "decisão transferida" também foi para depois do commit.
+
+---
+
+## SEC-14: limite de tamanho do corpo, ReadHeaderTimeout e limite de itens do pedido — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
+**Camadas:** Backend (API + shared), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 1; invariante F-04), com a nota do ARQ-05 sobre o número de itens do pedido. Prioridade MÉDIA.
+
+**Contrato final:** corpo acima de 256 KiB → `413` "corpo da requisição excede o limite de 256 KB" (401/403 antes do 413); upload de imagem inalterado (`413` "imagem excede 1 MB"); headers acima de 64 KiB → `431` automático; pedido com mais de 200 itens → `400` "o pedido deve ter no máximo 200 itens" (POST e PUT).
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/kernel/erros.go` (`KindMuitoGrande`, "muito_grande", depois de `KindBloqueado`) → 413 em `API/internal/httpx/errmap.go`; `httpx/body.go` (`ErrCorpoMuitoGrande`, devolvido por `DecodificarJSON` e `LerAtivoOpcional` no `*http.MaxBytesError`); `httpx/router.go` (`MaxCorpoPadrao` de 256 KiB, `Rota.MaxCorpo` com panic para negativo, `limitarCorpo` com vlog "corpo_muito_grande limite=N"); `bootstrap/rotas.go` (o upload declara `MaxCorpo: catalogohttp.MaxCorpoUploadBytes`); `bootstrap/server.go` (`NovoServidor` com `ReadHeaderTimeout` 5 s e `MaxHeaderBytes` 64 KiB); `SH/vendas/pedido.go` e `erros.go` (`MaxItensPedido = 200`, `ErrItensDemais`). Consulta no banco local: o maior pedido tem 16 itens (29.729 pedidos), então o teto de 200 foi mantido.
+- 🔴 **Testes:** novos `API/tests/httpx/sec14_limite_corpo_test.go`, `API/tests/bootstrap/sec14_servidor_test.go`, `API/tests/routes/sec14_max_corpo_matriz_test.go` (só o upload tem `MaxCorpo != 0`), `SH/tests/vendas/sec14_max_itens_test.go` e `API/tests/handlers/lote27_sec14_sec16_sec25_http_test.go`; ajustados `SH/tests/kernel/erros_test.go` e `API/tests/httpx/errmap_test.go`. Suíte do IMG-01 verde.
+
+---
+
+## SEC-15: `maskDSN` não vaza mais parte da senha com `@` — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
+**Camadas:** Backend (shared/db), Testes
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 2; invariante F-08). Prioridade MÉDIA.
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/db/db.go`: o corte segue o go-sql-driver (último `/`, último `@` antes dele, primeiro `:`), mantendo o formato `user:****@tcp(...)`; se `mysql.ParseDSN` funcionar e a senha ainda aparecer no texto, o log sai só `****`.
+- 🔴 **Testes:** `SH/tests/db/mask_dsn_test.go` com os 3 casos antigos, +10 senhas hostis (`@`, `:`, `/`, `%`, `@@`, `@` no fim e combinações, com fragmentos únicos) e um teste da proteção extra. Contrato HTTP inalterado.
+
+---
+
+## SEC-16: teto de `page` na paginação — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
+**Camadas:** Backend (shared kernel + API), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 3; invariante F-10), com as notas N-3 (ARQ-01), NB-6 (ARQ-02) e do ARQ-06. Prioridade BAIXA.
+
+**Contrato final:** `page` acima de 10000 → 10000 (clamp); `pagination.page` mostra o valor depois do clamp; `page` gigante, que dava `500`, agora dá `200`; `page` fora da faixa de `int` conta como ausente (página 1). Vale para todas as listagens, inclusive Catálogo, Estoque e Dashboard.
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/kernel/pagina.go` (`PaginaMaxima = 10_000`, clamp em `NovaPagina`; maior OFFSET 999.900, sem overflow em `Offset()`); `API/internal/httpx/query.go` (erro de faixa do `Atoi` → 0).
+- 🔴 **Testes:** `SH/tests/kernel/pagina_test.go`, `API/tests/httpx/respond_query_test.go` e o caso de handler (`GET /api/produtos?page=9223372036854775807&limit=100` → 200, OFFSET 999.900, `pagination.page` = 10000).
+
+---
+
+## SEC-17: CORS sem curinga com credentials — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`). Pendência do usuário antes do deploy: conferir que o Secret file do Jenkins não tem `*`/`null` em `CORS_ALLOWED_ORIGINS` (senão a API não sobe).
+**Camadas:** Backend (config + middleware), Deploy (docs), Testes
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 4; invariante F-02). Prioridade MÉDIA.
+
+**Contrato final:** `CORS_ALLOWED_ORIGINS` com `*` ou `null` (sem diferenciar maiúsculas, com ou sem espaços) impede a API de subir, com `config: CORS_ALLOWED_ORIGINS não aceita "*" nem "null" (os cookies de sessão exigem origens explícitas)`. O middleware não tem mais curinga; OPTIONS continua `204`.
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/config/config.go` (`parseAllowedOrigins` devolve `([]string, error)`; `ErrCORSOrigemInvalida`); `API/internal/httpx/cors.go` (curinga removido; `*`/`null` descartados com um `log.Printf` único na montagem); `deploy/api.env.example` e seção CORS nova em `.env.example`.
+- 🔴 **Testes:** `TestCORSMiddleware_Wildcard` invertido (com `{"*"}`, origem qualquer fica sem `Access-Control-Allow-Origin` e sem `Allow-Credentials`); novo `SH/tests/config/sec17_cors_curinga_test.go` (`"*"`, `" * "`, `"https://a.com,*"`, `"null"` → erro; `"https://a.com"` → OK).
+- **Resíduo:** as origens de dev (`localhost:3000`) continuam sempre na allowlist, inclusive em produção (card SEC-36).
+
+---
+
+## SEC-24: testes de injeção via `order_by` em todos os enums de ordenação — 2026-10-31
+**Agentes:** 🟣 SecBrain (payloads) → 🔴 TestBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
+**Camadas:** Testes
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (GAP 11; invariante C-02). Prioridade MÉDIA.
+
+**Entregue:**
+- 🔴 **TestBrain:** novo `SH/tests/repositories/sec24_ordenacao_injecao_test.go` (6 entidades × 54 cenários: Cliente, Visita, Oportunidade, Pedido, Pagamento e Usuário, mais a completude dos enums); `sort_test.go` com +16 casos (`1,2`, SLEEP); novo `API/tests/handlers/sec24_order_by_http_test.go` (9 rotas × 3 = 27 subtestes, todos `200`). **Nenhuma injeção encontrada**; enums completos (`visita_id` é sinônimo de `id` por contrato).
+- **Observação:** `;` cru na query string faz o Go descartar o par inteiro (resposta `200` com a ordenação padrão). Contrato HTTP inalterado.
+
+---
+
+## SEC-25: buscas LIKE com escape de `%`/`_` e limite de `q` — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain A → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
+**Camadas:** Backend (shared + API), Testes, Documentação
+**Origem:** 🟣 SecBrain, auditoria ARQ-00, Lote 21 (invariante C-03, "GAP baixo"), com a NB-7 (ARQ-02) e a nota do ARQ-05. Prioridade BAIXA.
+
+**Contrato final:** `q` acima de 100 caracteres → `400` "o parâmetro q deve ter no máximo 100 caracteres", antes do caso de uso; `%` e `_` passam a ser literais (`q=%` não devolve mais tudo).
+
+**Entregue:**
+- 🟡 **BackBrain A:** `SH/db/like.go` (`db.TermoContem`, escape `!`); `LIKE ? ESCAPE '!'` em produtos, clientes (os 2 argumentos, inclusive CNPJ), visitas, oportunidades e pedidos; `httpx.BuscaDaQuery` com `ErrBuscaMuitoLonga` (100 runes, 400); os construtores de filtro dos DTOs (`catalogohttp`, `comercialhttp`, `vendashttp`) devolvem `(filtro, error)`.
+- 🔴 **Testes:** novos `SH/tests/db/sec25_termo_contem_test.go`, `SH/tests/repositories/sec25_like_escape_test.go`, `API/tests/httpx/sec25_busca_test.go` e os casos de handler (100 runes OK, 101 → 400, `"ç"` × 100 OK); regex `LIKE \?` ajustadas em 14 testes antigos.
+- **Fora do lote:** índice FULLTEXT (decisão do 🟣 SecBrain) e `maxLength={100}` nos campos de busca do frontend (card CHORE-10).
+
+---
+
+## BUG-14: `VincularCliente` numa transação — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain B → 🔴 TestBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
+**Camadas:** Backend (shared + API), Testes
+**Origem:** decisão P4 do 🤍 MegaBrain no ARQ-00 (2026-10-13). Prioridade MÉDIA.
+
+**Entregue:**
+- 🟡 **BackBrain B:** `SH/comercial/comercialapp/portas.go` (`TxVinculo`); `casos.go` (`Deps.Vinculacao`, obrigatória); `carteiras.go` (os 404 continuam fora da tx; depois, `WithTx` com o lock do cliente e `vincular` usando só `r`; vlogs "cliente vinculado" e "decisão transferida" depois do commit); `SH/comercial/comercialmysql/clientes.go` (`TravarParaVinculo`, `SELECT … FOR UPDATE`, sem linha → `ErrClienteNaoEncontrado`); `API/internal/bootstrap/comercial.go` (montagem). O lock também fecha a corrida de duas vinculações simultâneas do mesmo cliente.
+- 🔴 **Testes:** novo `SH/tests/comercial/bug14_vinculo_tx_test.go` (rollbacks na falha do INSERT e do Reabrir, duplicado 409 + Rollback, ordem dos SQLs na transferência, mesmo vendedor sem escrita, `SetMaxOpenConns(1)`), validado por mutação; ajustados `casos_test`, `chore06_*`, `vendedor_service_test`, `vendedor_handler_test` e `apoio_test`. Contrato HTTP inalterado.
+
+---
+
+## BUG-15: troca e reset de senha numa transação — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain B → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
+**Camadas:** Backend (shared + API), Testes, Documentação
+**Origem:** revisão do blueprint pelo 🟣 SecBrain no ARQ-00 (2026-10-13). Prioridade MÉDIA.
+
+**Contrato final:** caminho de sucesso inalterado. **Mudança intencional:** falha ao gravar o histórico ou ao revogar as sessões, que antes respondia `200` (erro só no log), passa a `500`, sem trocar a senha. No reset admin, o e-mail só sai depois do commit; usuário inexistente continua `404`.
+
+**Entregue:**
+- 🟡 **BackBrain B:** `SH/identidade/identidadeapp/portas.go` (`TxSenha` e `TransactorSenha`); `casos.go` (`Deps.TrocaSenha`, obrigatória); `senha.go` (helper `gravarSenhaNaTx`: histórico → senha → revogação, logs depois do commit; `redefinirSenhaGerada` dividida em `senhaGeradaPara` fora da tx, a tx e o e-mail depois do commit); `massa.go` (mesmo fluxo; falha de e-mail continua `ErrEmailResetFalhou`, com o reset já gravado); `API/internal/bootstrap/identidade.go` (montagem).
+- 🔴 **Testes:** novos `SH/tests/identidade/bug15_senha_tx_test.go`, `API/tests/handlers/bug15_senha_tx_http_test.go` e `TestBUG15_ResetMassa_TudoNaMesmaConexao` (falha em cada etapa → Rollback, 500 e nenhum e-mail; sucesso → Commit e 1 e-mail depois do commit); várias suítes ajustadas (Deps/fakes e sqlmock com Begin/Commit/Rollback).
+- **Resíduo:** troca e reset simultâneos do mesmo usuário ainda sobrescrevem um ao outro (card BUG-24).
+
+---
+
+## SEC-26: posse e regras de exclusão do pedido checadas sob lock — 2026-10-31
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain B → 🔴 TestBrain
+
+**Status:** concluído (Lote 27, aberto e fechado em 2026-10-31). Commitado pelo usuário em `a7e2d4a` (branch `lote-27`).
+**Camadas:** Backend (shared + API), Testes
+**Origem:** 🟣 SecBrain, revisão do ARQ-05 (Lote 21, 2026-10-15). Prioridade MÉDIA.
+
+**Entregue:**
+- 🟡 **BackBrain B:** `SH/vendas/vendasapp/portas.go` (`TravarParaEscrita` no lugar de `StatusParaAtualizar`; `PagamentosNaTx` e `TxPedido.Pagamentos`); `uow.go` (`Atualizar(ctx, e, id, p, quando)`, `Excluir(ctx, e, id)` e o helper `travarNoEscopo`: outro vendedor sob o lock → 404, vlog "fora_da_carteira"); `pedidos.go` (o DELETE ficou só com `noEscopo` + tx); `SH/vendas/vendasmysql/pedidos.go` (`TravarParaEscrita`, `SELECT status, vendedor_id … FOR UPDATE`); `API/internal/bootstrap/vendas.go` (liga `Pagamentos`).
+- 🔴 **Testes:** novos `SH/tests/vendas/sec26_toctou_posse_test.go` e `TestUpdatePedido_SEC26_PosseMudaAntesDoLock_404Rollback`; muitos testes de pedido ajustados; o helper morto `esperarPossePedido` foi removido. Contrato HTTP inalterado (mesmos status e mensagens).
+- **Resíduo:** o mesmo padrão em `ExcluirPagamento` e `CriarPagamento` (card SEC-35).
+
+---
+
+### Testes do Lote 27
+
+- **Go (verificação final do 🤍 MegaBrain):** `gofmt -l` e `go vet ./...` limpos; `go test -count=1 ./...` verde nos dois módulos: **shared 3947 passaram, 0 falharam, 12 pulados**; **rotaperfumes-api 5147 passaram, 0 falharam, 28 pulados**.
+- **Arquivos novos:** `API/tests/httpx/sec14_limite_corpo_test.go`, `API/tests/bootstrap/sec14_servidor_test.go`, `API/tests/routes/sec14_max_corpo_matriz_test.go`, `SH/tests/vendas/sec14_max_itens_test.go`, `API/tests/handlers/lote27_sec14_sec16_sec25_http_test.go`, `SH/tests/config/sec17_cors_curinga_test.go`, `SH/tests/repositories/sec24_ordenacao_injecao_test.go`, `API/tests/handlers/sec24_order_by_http_test.go`, `SH/tests/db/sec25_termo_contem_test.go`, `SH/tests/repositories/sec25_like_escape_test.go`, `API/tests/httpx/sec25_busca_test.go`, `SH/tests/comercial/bug14_vinculo_tx_test.go`, `SH/tests/identidade/bug15_senha_tx_test.go`, `API/tests/handlers/bug15_senha_tx_http_test.go` e `SH/tests/vendas/sec26_toctou_posse_test.go`.
+- **Ajustados:** `erros_test.go`, `errmap_test.go`, `mask_dsn_test.go`, `pagina_test.go`, `respond_query_test.go`, `cors_middleware_test.go`, `sort_test.go`, 14 testes com regex `LIKE \?`, as suítes de vínculo (`casos_test`, `chore06_*`, `vendedor_*`, `apoio_test`), de senha (Deps/fakes e sqlmock) e de pedido.
+- **Frontend:** não mudou neste lote (não rodado).
+- **Teste instável observado:** `TestIMG01_Upload_FilenameHostilNaoVaza/CRLF_por_RFC_2231` falha quando o UUID aleatório termina em "b" (card TST-11); não é regressão do Lote 27.
+
+### Pendências do Lote 27
+
+- **Usuário, antes do deploy:** confirmar que o Secret file do Jenkins não tem `*`/`null` em `CORS_ALLOWED_ORIGINS` (SEC-17).
+- **Usuário:** `apis/rotaperfumes-api/cmd/server/__debug_bin178758419` aparece como apagado no git; nenhum agente mexeu nele. Ficou fora do commit `a7e2d4a` (continua apagado e não commitado).
+- **Commit:** feito pelo usuário em 2026-10-31: `a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27` (criado a partir de `main`). No fechamento, nada estava commitado.
+- **Cards novos** em `afazer.md` ("Achados do Lote 27"): SEC-35, SEC-36, BUG-24, CHORE-10 e TST-11.
+
+### Documentação do Lote 27 (🔵 SubBrain)
+
+- `postman/README.md`: seção "Mudanças do Lote 27" (64 rotas, sem rota nova) e tabela de códigos de erro (400 de `q`/itens, 413 do corpo, 431 novo).
+- `postman/collection.json`: seção "Mudanças do Lote 27" na descrição. Os exemplos de listagem usam `page=1` e `q` curto, então nenhum exemplo de busca/paginação precisou mudar.
+- `docs/arq-00-invariantes-seguranca.md`: F-02, F-04, F-08, F-10, C-02 e C-03 marcados como resolvidos no Lote 27; mapeamento GAP → card com GAPs 1, 2, 3, 4 e 11 e C-03 resolvidos.
+- `docs/arquitetura-ddd.md`: §10.4 (router com `MaxCorpo`, CORS sem curinga, `query.go`), §10.6 (`db.go`, `like.go` novo) e §10.14 (atualização de 2026-10-31 com os pontos do Lote 27).
+- `docs/manual-base-de-dados.md`: sem mudança (nenhuma mudança de schema).
 
 ---
 ## Lote 26 de 2026-10-31: imagem do produto (1 card)

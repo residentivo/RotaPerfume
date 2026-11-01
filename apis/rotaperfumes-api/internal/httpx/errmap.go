@@ -36,6 +36,8 @@ func ResponderErro(w http.ResponseWriter, tag string, err error) {
 		JSON(w, http.StatusUnauthorized, nil, de.Error())
 	case kernel.KindBloqueado:
 		ResponderBloqueado(w, err)
+	case kernel.KindMuitoGrande:
+		JSON(w, http.StatusRequestEntityTooLarge, nil, de.Error())
 	default: // KindInterno, ErrEscopoInvalido, ErrPrincipalInvalido, Kind desconhecido
 		interno(w, tag, err)
 	}

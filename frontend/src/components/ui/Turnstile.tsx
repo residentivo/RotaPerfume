@@ -36,6 +36,7 @@ declare global {
           callback?: (token: string) => void;
           "expired-callback"?: () => void;
           "error-callback"?: () => void;
+          action?: string;
           theme?: "light" | "dark" | "auto";
         }
       ) => string;
@@ -50,7 +51,18 @@ export interface TurnstileHandle {
   reset: () => void;
 }
 
+// SEC-19: a action identifica a tela que gerou o token. O backend confere a
+// action devolvida pelo siteverify contra a esperada para o endpoint
+// (login -> "login", troca de senha -> "reset-senha"), entao um token emitido
+// numa tela nao serve na outra. Os valores precisam bater com as constantes
+// AcaoCaptchaLogin/AcaoCaptchaResetSenha do backend.
+export type TurnstileAction = "login" | "reset-senha";
+export const TURNSTILE_ACTION_LOGIN: TurnstileAction = "login";
+export const TURNSTILE_ACTION_RESET_SENHA: TurnstileAction = "reset-senha";
+
 interface TurnstileProps {
+  /** Action enviada ao Turnstile (obrigatoria, conferida pelo backend). */
+  action: TurnstileAction;
   onVerify: (token: string) => void;
   onExpire?: () => void;
   onError?: () => void;
@@ -65,7 +77,7 @@ const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 export const isTurnstileEnabled = Boolean(SITE_KEY);
 
 export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
-  function Turnstile({ onVerify, onExpire, onError }, ref) {
+  function Turnstile({ action, onVerify, onExpire, onError }, ref) {
     vlog(F, "Turnstile", "criando ref do container");
     const containerRef = useRef<HTMLDivElement>(null);
     vlog(F, "Turnstile", "criando ref do widgetId");
@@ -104,12 +116,13 @@ export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
       vlog(F, "Turnstile.renderWidget", "limpando container");
       containerRef.current.innerHTML = "";
       // LOG-02: o token do desafio vai direto para onVerify e nunca e logado.
-      vlog(F, "Turnstile.renderWidget", "renderizando widget do Turnstile");
+      vlog(F, "Turnstile.renderWidget", "renderizando widget do Turnstile, action:", action);
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: SITE_KEY,
         callback: onVerify,
         "expired-callback": onExpire,
         "error-callback": onError,
+        action,
         theme: "light",
       });
     };

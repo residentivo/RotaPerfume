@@ -23,7 +23,7 @@ import (
 // txPedido é o UoW do pedido montado como no bootstrap.
 func txPedido(pool *sql.DB) *db.Transactor[vendasapp.TxPedido] {
 	return db.NewTransactor(pool, func(q db.Querier) vendasapp.TxPedido {
-		return vendasapp.TxPedido{Pedidos: vendasmysql.NovoPedidos(q), Estoque: catalogomysql.NovoEstoques(q)}
+		return vendasapp.TxPedido{Pedidos: vendasmysql.NovoPedidos(q), Pagamentos: vendasmysql.NovoPagamentos(q), Estoque: catalogomysql.NovoEstoques(q)}
 	})
 }
 
@@ -36,7 +36,7 @@ func inserirPedido(ctx context.Context, pool *sql.DB, p *vendas.Pedido, itens []
 // atualizarPedido roda o roteiro do PUT de produção (vendasapp.TxPedido.Atualizar) na tx.
 func atualizarPedido(ctx context.Context, pool *sql.DB, id int64, p *vendas.Pedido, itens []vendas.ItemPedido) error {
 	p.Itens = itens
-	return txPedido(pool).WithTx(ctx, func(r vendasapp.TxPedido) error { return r.Atualizar(ctx, id, p, time.Now()) })
+	return txPedido(pool).WithTx(ctx, func(r vendasapp.TxPedido) error { return r.Atualizar(ctx, escopoAdmin(), id, p, time.Now()) })
 }
 
 // escopoAdmin é o escopo Irrestrito (admin, sem filtro de carteira).

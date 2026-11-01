@@ -30,10 +30,12 @@ const (
 
 // Deps são as dependências dos casos de uso, todas obrigatórias.
 type Deps struct {
-	Usuarios   Usuarios
-	Tokens     RefreshTokens
-	Historico  HistoricoSenhas
-	Rotacao    Transactor
+	Usuarios  Usuarios
+	Tokens    RefreshTokens
+	Historico HistoricoSenhas
+	Rotacao   Transactor
+	// TrocaSenha é o UoW da troca/reset de senha (BUG-15).
+	TrocaSenha TransactorSenha
 	Hasher     Hasher
 	Emissor    EmissorAcesso
 	Refresh    GeradorRefresh
@@ -62,7 +64,7 @@ type Casos struct {
 
 // Novo monta os casos de uso. Dependência nil é erro de montagem: panic.
 func Novo(d Deps, o Opcoes) *Casos {
-	obrigatorias := []any{d.Usuarios, d.Tokens, d.Historico, d.Rotacao, d.Hasher, d.Emissor, d.Refresh,
+	obrigatorias := []any{d.Usuarios, d.Tokens, d.Historico, d.Rotacao, d.TrocaSenha, d.Hasher, d.Emissor, d.Refresh,
 		d.Senhas, d.Captcha, d.Limites.Login, d.Limites.Refresh, d.Limites.Reset, d.Publicador, d.Email, d.Vendedores}
 	for _, dep := range obrigatorias {
 		if dep == nil {
@@ -89,13 +91,14 @@ func bloqueio(retry time.Duration) error {
 }
 
 // verificarCaptcha roda ANTES do rate limit (I-13): não gasta o budget com
-// bots óbvios. Fail-closed; token e secret nunca são logados.
-func (c *Casos) verificarCaptcha(ctx context.Context, token, ip, acao string) error {
-	if err := c.d.Captcha.Verificar(ctx, token, ip); err != nil {
+// bots óbvios. Fail-closed; token e secret nunca são logados. acao é a
+// action esperada do Turnstile (SEC-19); rotulo é só o prefixo do log.
+func (c *Casos) verificarCaptcha(ctx context.Context, token, ip, acao, rotulo string) error {
+	if err := c.d.Captcha.Verificar(ctx, token, ip, acao); err != nil {
 		if strings.TrimSpace(token) == "" {
-			log.Printf("[auth] %s: captchaToken ausente: ip=%s", acao, ip)
+			log.Printf("[auth] %s: captchaToken ausente: ip=%s", rotulo, ip)
 		} else {
-			log.Printf("[auth] %s: falha na verificação de captcha: ip=%s", acao, ip)
+			log.Printf("[auth] %s: falha na verificação de captcha: ip=%s", rotulo, ip)
 		}
 		return identidade.ErrCaptchaInvalido
 	}

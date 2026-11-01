@@ -120,7 +120,7 @@ func TestMontar_CadeiaDeProducao(t *testing.T) {
 func TestMontar_CheckerDoBanco(t *testing.T) {
 	h, mock := montar(t)
 	mock.ExpectQuery(`FROM usuarios`).WithArgs(int64(2)).WillReturnRows(
-		sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(false, "normal", nil))
+		sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}).AddRow(false, "normal", nil, false))
 
 	tok, err := identidadecrypto.NovoJWT(testCfg()).Emitir(2, kernel.RoleNormal)
 	require.NoError(t, err)

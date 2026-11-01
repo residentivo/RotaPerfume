@@ -17,7 +17,7 @@ import (
 
 // NovoComercial liga o contexto Comercial (ARQ-04) sobre o pool: adapters
 // MariaDB, as portas para Identidade (vínculo do usuário e a parte de
-// Identidade da tx do desligamento, I-09) e os dois UoW.
+// Identidade da tx do desligamento, I-09) e os três UoW.
 func NovoComercial(pool *sql.DB) *comercialapp.Casos {
 	return comercialapp.Novo(comercialapp.Deps{
 		Vendedores:    comercialmysql.NovoVendedores(pool),
@@ -34,6 +34,9 @@ func NovoComercial(pool *sql.DB) *comercialapp.Casos {
 		}),
 		ClienteNaCarteira: db.NewTransactor(pool, func(q db.Querier) comercialapp.TxClienteNaCarteira {
 			return comercialapp.TxClienteNaCarteira{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
+		}),
+		Vinculacao: db.NewTransactor(pool, func(q db.Querier) comercialapp.TxVinculo {
+			return comercialapp.TxVinculo{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
 		}),
 		Relogio: time.Now,
 	})

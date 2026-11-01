@@ -328,7 +328,7 @@ func TestUpdatePedido_Normal_NaoTrocaVendedor(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Pendente"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexH).WithArgs(int64(1)).WillReturnRows(itensAtuaisRowsVazioH())
 	mock.ExpectExec(updatePedidoRegexH).
 		WithArgs(int64(1), int64(2), sqlmock.AnyArg(), "App", "Faturado", 230.0, int64(1)).
@@ -370,7 +370,8 @@ func TestCreatePagamento_Normal_Negado(t *testing.T) {
 			nome: "pedido de outro vendedor",
 			setup: func(mock sqlmock.Sqlmock) {
 				expectEscopoUsuarioH(mock, 2, 99)
-				mock.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(pedidoRowsVendedorH(1, 2))
+				expectLockPedidoH(mock, 1, 2) // SEC-35: posse sob o lock do pedido
+				mock.ExpectRollback()
 			},
 			wantStatus: http.StatusNotFound,
 			wantMsg:    "pedido não encontrado",
@@ -379,7 +380,8 @@ func TestCreatePagamento_Normal_Negado(t *testing.T) {
 			nome: "pedido inexistente",
 			setup: func(mock sqlmock.Sqlmock) {
 				expectEscopoUsuarioH(mock, 2, 2)
-				mock.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(emptyPedidoRowsForHandler())
+				expectLockPedidoErroH(mock, 1, sql.ErrNoRows)
+				mock.ExpectRollback()
 			},
 			wantStatus: http.StatusNotFound,
 			wantMsg:    "pedido não encontrado",
@@ -402,7 +404,8 @@ func TestCreatePagamento_Normal_Negado(t *testing.T) {
 			nome: "erro de banco ao buscar vendedor do pedido",
 			setup: func(mock sqlmock.Sqlmock) {
 				expectEscopoUsuarioH(mock, 2, 2)
-				mock.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnError(sqlmock.ErrCancelled)
+				expectLockPedidoErroH(mock, 1, sqlmock.ErrCancelled)
+				mock.ExpectRollback()
 			},
 			wantStatus: http.StatusInternalServerError,
 			wantMsg:    "erro interno",
@@ -440,11 +443,13 @@ func TestCreatePagamento_Normal_404IndistinguivelDeInexistente(t *testing.T) {
 
 	stOutro, bodyOutro := executar(func(m sqlmock.Sqlmock) {
 		expectEscopoUsuarioH(m, 2, 99)
-		m.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(pedidoRowsVendedorH(1, 2))
+		expectLockPedidoH(m, 1, 2)
+		m.ExpectRollback()
 	})
 	stInex, bodyInex := executar(func(m sqlmock.Sqlmock) {
 		expectEscopoUsuarioH(m, 2, 99)
-		m.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(emptyPedidoRowsForHandler())
+		expectLockPedidoErroH(m, 1, sql.ErrNoRows)
+		m.ExpectRollback()
 	})
 
 	assert.Equal(t, http.StatusNotFound, stOutro)
@@ -460,12 +465,14 @@ func TestCreatePagamento_Normal_ProprioEscopo(t *testing.T) {
 	token := generateToken(t, testCfg(), 2, "normal")
 
 	expectEscopoUsuarioH(mock, 2, 2)
-	mock.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(pedidoRowsVendedorH(1, 2))
-	mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+	expectLockPedidoH(mock, 1, 2) // SEC-35: posse e INSERT na tx, com o pedido travado
 	mock.ExpectExec(insertPagamentoRegH).
 		WithArgs(int64(1), "PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
+		WithArgs(int64(1)).
+		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 
 	status, body := doReq(t, "POST", server.URL+"/api/pagamentos", token, validPagamentoPayload())
 
@@ -630,12 +637,13 @@ func TestCreatePagamento_Admin_PedidoInexistente_404IgualNormal(t *testing.T) {
 	}
 
 	stAdmin, bodyAdmin := executar("admin", func(m sqlmock.Sqlmock) {
-		m.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).WithArgs(int64(1)).
-			WillReturnError(sql.ErrNoRows)
+		expectLockPedidoErroH(m, 1, sql.ErrNoRows)
+		m.ExpectRollback()
 	})
 	stNormal, bodyNormal := executar("normal", func(m sqlmock.Sqlmock) {
 		expectEscopoUsuarioH(m, 2, 99)
-		m.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(emptyPedidoRowsForHandler())
+		expectLockPedidoErroH(m, 1, sql.ErrNoRows)
+		m.ExpectRollback()
 	})
 
 	assert.Equal(t, http.StatusNotFound, stAdmin)
@@ -658,5 +666,27 @@ func TestCreatePagamento_Admin_PedidoIDAusente_400(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, status)
 	assert.Equal(t, "pedido_id é obrigatório", body["error"])
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// SEC-26: o pedido muda de dono entre a checagem de posse (antes do decode)
+// e o lock da tx. A posse é conferida de novo sob o lock: 404 com a mesma
+// mensagem, rollback e nenhum UPDATE/DELETE de itens.
+func TestUpdatePedido_SEC26_PosseMudaAntesDoLock_404Rollback(t *testing.T) {
+	server, db, mock := setupTestServer(t)
+	defer server.Close()
+	defer db.Close()
+
+	expectEscopoUsuarioH(mock, 2, 2)
+	expectPedidoAtualH(mock, 1, 2)
+	expectCarteiraAtivaH(mock, 2, 1)
+	mock.ExpectBegin()
+	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(99)))
+	mock.ExpectRollback()
+
+	status, body := doReq(t, http.MethodPut, server.URL+"/api/pedidos/1", generateToken(t, testCfg(), 2, "normal"), validPedidoPayload())
+	assert.Equal(t, http.StatusNotFound, status)
+	assert.Equal(t, "pedido não encontrado", body["error"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

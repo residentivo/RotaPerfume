@@ -10,9 +10,10 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql" // driver MySQL/MariaDB (go-sql-driver/mysql)
+	"github.com/go-sql-driver/mysql" // driver MySQL/MariaDB (go-sql-driver/mysql)
 
 	"github.com/rotaperfumes/shared/vlog"
 )
@@ -52,33 +53,36 @@ func Open(dsn string) (*sql.DB, error) {
 	return conn, nil
 }
 
-// maskDSN remove a senha do DSN para logging seguro.
+// maskDSN remove a senha do DSN para logging seguro, com o mesmo corte do
+// go-sql-driver/mysql (SEC-15): a senha pode conter '@', ':' e '/'.
+//
+// Formato: user:pass@tcp(host:port)/db?... O banco começa no último '/'; as
+// credenciais terminam no último '@' antes dele; o usuário termina no
+// primeiro ':'. Sem '@' ou sem ':', não há senha e o DSN sai como está.
 func maskDSN(dsn string) string {
-	// Formato: user:pass@tcp(host:port)/db?...
-	vlog.Printf("db.go", "maskDSN", "inicializando posição do '@' em -1")
-	at := -1
-	vlog.Printf("db.go", "maskDSN", "procurando o primeiro '@' no DSN")
-	for i, r := range dsn {
-		if r == '@' {
-			at = i
-			break
-		}
+	slash := strings.LastIndexByte(dsn, '/')
+	if slash < 0 {
+		slash = len(dsn)
 	}
-	vlog.Printf("db.go", "maskDSN", "verificando se o '@' foi encontrado (encontrou=%t)", at >= 0)
+	at := strings.LastIndexByte(dsn[:slash], '@')
 	if at < 0 {
 		return dsn
 	}
-	vlog.Printf("db.go", "maskDSN", "inicializando posição do ':' em -1")
-	colon := -1
-	vlog.Printf("db.go", "maskDSN", "procurando o último ':' antes do '@'")
-	for i, r := range dsn[:at] {
-		if r == ':' {
-			colon = i
-		}
-	}
-	vlog.Printf("db.go", "maskDSN", "verificando se o ':' foi encontrado (encontrou=%t)", colon >= 0)
+	colon := strings.IndexByte(dsn[:at], ':')
 	if colon < 0 {
 		return dsn
 	}
-	return dsn[:colon+1] + "****" + dsn[at:]
+	mascarado := dsn[:colon+1] + "****" + dsn[at:]
+	if senhaVazou(dsn, mascarado) {
+		vlog.Printf("db.go", "maskDSN", "decisão senha_no_dsn_mascarado: log só com ****")
+		return "****"
+	}
+	return mascarado
+}
+
+// senhaVazou é a proteção extra do maskDSN: se o parse do driver achar uma
+// senha que ainda aparece no texto mascarado, o corte divergiu do driver.
+func senhaVazou(dsn, mascarado string) bool {
+	cfg, err := mysql.ParseDSN(dsn)
+	return err == nil && cfg.Passwd != "" && strings.Contains(mascarado, cfg.Passwd)
 }

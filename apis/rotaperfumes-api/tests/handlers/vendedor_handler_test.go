@@ -1089,6 +1089,14 @@ func carteiraVinculoRowH(carteiraIDOrigem, clienteID, vendedorID int64) *sqlmock
 	}).AddRow(carteiraIDOrigem, clienteID, vendedorID, now, nil, now, now)
 }
 
+// expectTravaClienteVinculoH: a vinculação (BUG-14) roda numa tx aberta
+// com o lock da linha do cliente.
+func expectTravaClienteVinculoH(mock sqlmock.Sqlmock, clienteID int64) {
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT cliente_id_origem FROM clientes WHERE cliente_id_origem = \? FOR UPDATE`).WithArgs(clienteID).
+		WillReturnRows(sqlmock.NewRows([]string{"cliente_id_origem"}).AddRow(clienteID))
+}
+
 func TestVincularCliente_Success(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
@@ -1101,12 +1109,14 @@ func TestVincularCliente_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	mock.ExpectQuery(clienteGetByIDRegexH).WithArgs(int64(10)).
 		WillReturnRows(clienteGetByIDRowsH(10, "Cliente A"))
+	expectTravaClienteVinculoH(mock, 10)
 	mock.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegexH).WithArgs(int64(10)).
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegexH).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectExec(carteiraCreateRegexH).
 		WillReturnResult(sqlmock.NewResult(7, 1))
+	mock.ExpectCommit()
 
 	req, _ := http.NewRequest("POST", server.URL+"/api/vendedores/1/clientes", makeJSON(map[string]any{"cliente_id": 10}))
 	req.Header.Set("Authorization", "Bearer "+adminToken)

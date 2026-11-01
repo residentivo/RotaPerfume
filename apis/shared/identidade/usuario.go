@@ -110,10 +110,13 @@ func NovoUsuario(v UsuarioValidado, hash HashSenha) *Usuario {
 
 // StatusAcesso é o recorte do usuário consultado a cada request protegido
 // (SEC-06/SEC-08): ativo, role vigente e corte de sessão. nil = sem corte.
+// DeveTrocarSenha é a troca de senha pendente, imposta pelo Autenticador
+// (SEC-23).
 type StatusAcesso struct {
 	Ativo              bool
 	Role               kernel.Role
 	TokensValidosDesde *time.Time
+	DeveTrocarSenha    bool
 }
 
 // TokenAnteriorAoCorte reporta se um access token emitido em emitidoEm foi

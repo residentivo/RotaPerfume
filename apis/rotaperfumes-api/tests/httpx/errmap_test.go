@@ -17,7 +17,7 @@ import (
 	"github.com/rotaperfumes/shared/kernel"
 )
 
-// TestErrMap_TodosOsKinds percorre Kind(0)..KindBloqueado+5: os conhecidos
+// TestErrMap_TodosOsKinds percorre Kind(0)..KindMuitoGrande+5: os conhecidos
 // têm o status do enum; os de fora caem em 500 "erro interno" e logam.
 func TestErrMap_TodosOsKinds(t *testing.T) {
 	esperado := map[kernel.Kind]int{
@@ -28,8 +28,9 @@ func TestErrMap_TodosOsKinds(t *testing.T) {
 		kernel.KindProibido:       http.StatusForbidden,
 		kernel.KindNaoAutenticado: http.StatusUnauthorized,
 		kernel.KindBloqueado:      http.StatusTooManyRequests,
+		kernel.KindMuitoGrande:    http.StatusRequestEntityTooLarge,
 	}
-	for k := kernel.Kind(0); k <= kernel.KindBloqueado+5; k++ {
+	for k := kernel.Kind(0); k <= kernel.KindMuitoGrande+5; k++ {
 		t.Run(fmt.Sprintf("kind=%d(%s)", k, k), func(t *testing.T) {
 			out := capturarLog(t, false)
 			err := kernel.NovoErro(k, "mensagem do sentinela")

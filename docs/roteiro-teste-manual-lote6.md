@@ -23,6 +23,8 @@ Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevToo
    | normal com vendedor ativo | `rafael.carvalho@rotaperfumes.com.br` | 5 | a de seed (`SEED_USER_PASSWORD` do `.env` ou a impressa pelo `make db-seed`), ou a que você definiu |
    | **usuário de teste** (SEC-06) | `qa.lote6@rotaperfumes.test` | criado abaixo | `QaLote6@2026` |
 
+   > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** os usuários do seed (`sql/03_seed_vendedores.sql`, como `rafael.carvalho`) nascem com `deve_trocar_senha = 1`, assim como os usuários criados ou com a senha resetada pelo admin. Com a flag ligada, a API responde `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password`, e o frontend leva para `/trocar-senha`. Antes de começar, confira (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE email IN ('admin@rotaperfumes.com.br', 'rafael.carvalho@rotaperfumes.com.br', 'qa.lote6@rotaperfumes.test');`), troque a senha de quem estiver com `1` e faça login de novo. No Postman, o item 4.3 continua válido (o "Login — Vendedor" só confere que `trocar_senha` é booleano), mas com `true` o item 4.2 recebe `403` até a troca.
+
 3. Crie o usuário de teste como **admin** (no terminal, na pasta `apis/shared`):
 
    ```bash

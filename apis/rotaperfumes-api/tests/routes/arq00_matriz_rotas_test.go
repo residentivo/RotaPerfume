@@ -77,6 +77,9 @@ type rotaMatriz struct {
 	politica politicaRota
 	// paths concretos usados nos requests (path params preenchidos).
 	paths []string
+	// liberaTroca: a rota atende o usuário com troca de senha pendente
+	// (Rota.LiberaTrocaSenhaPendente, SEC-23). Só reset-password e me.
+	liberaTroca bool
 }
 
 // metodos devolve os métodos a exercitar: o do padrão, ou todos se o padrão
@@ -92,84 +95,84 @@ func p(paths ...string) []string { return paths }
 
 var matrizRotas = []rotaMatriz{
 	// Auth (X1: método fixo)
-	{"POST /api/auth/login", politicaPublic, p("/api/auth/login")},
-	{"POST /api/auth/refresh", politicaPublic, p("/api/auth/refresh")},
-	{"POST /api/auth/logout", politicaPublic, p("/api/auth/logout")},
-	{"POST /api/auth/reset-password", politicaAuthenticated, p("/api/auth/reset-password")},
-	{"GET /api/auth/me", politicaAuthenticated, p("/api/auth/me")},
+	{"POST /api/auth/login", politicaPublic, p("/api/auth/login"), false},
+	{"POST /api/auth/refresh", politicaPublic, p("/api/auth/refresh"), false},
+	{"POST /api/auth/logout", politicaPublic, p("/api/auth/logout"), false},
+	{"POST /api/auth/reset-password", politicaAuthenticated, p("/api/auth/reset-password"), true},
+	{"GET /api/auth/me", politicaAuthenticated, p("/api/auth/me"), true},
 	// Usuários / admin
-	{"GET /api/usuarios", politicaAdminOnly, p("/api/usuarios")},
-	{"POST /api/usuarios", politicaAdminOnly, p("/api/usuarios")},
-	{"PUT /api/usuarios/{id}", politicaAdminOnly, p("/api/usuarios/2")},
-	{"PATCH /api/usuarios/{id}/inativar", politicaAdminOnly, p("/api/usuarios/2/inativar")},
-	{"POST /api/admin/reset-password", politicaAdminOnly, p("/api/admin/reset-password")},
+	{"GET /api/usuarios", politicaAdminOnly, p("/api/usuarios"), false},
+	{"POST /api/usuarios", politicaAdminOnly, p("/api/usuarios"), false},
+	{"PUT /api/usuarios/{id}", politicaAdminOnly, p("/api/usuarios/2"), false},
+	{"PATCH /api/usuarios/{id}/inativar", politicaAdminOnly, p("/api/usuarios/2/inativar"), false},
+	{"POST /api/admin/reset-password", politicaAdminOnly, p("/api/admin/reset-password"), false},
 	// Histórico de senhas (wildcard de resto continua admin; X1/R-f)
-	{"GET /api/senha-historico/{user_id...}", politicaAdminOnly, p("/api/senha-historico/2", "/api/senha-historico/", "/api/senha-historico/2/extra")},
-	{"GET /api/senha-historico", politicaAdminOnly, p("/api/senha-historico")},
+	{"GET /api/senha-historico/{user_id...}", politicaAdminOnly, p("/api/senha-historico/2", "/api/senha-historico/", "/api/senha-historico/2/extra"), false},
+	{"GET /api/senha-historico", politicaAdminOnly, p("/api/senha-historico"), false},
 	// Dashboard (X1: método fixo)
-	{"GET /api/dashboard/metrics", politicaAuthenticated, p("/api/dashboard/metrics")},
-	{"GET /api/dashboard/vendas", politicaAuthenticated, p("/api/dashboard/vendas")},
-	{"GET /api/dashboard/vendedores", politicaAuthenticated, p("/api/dashboard/vendedores")},
-	{"GET /api/dashboard/clientes", politicaAuthenticated, p("/api/dashboard/clientes")},
-	{"GET /api/dashboard/funil", politicaAuthenticated, p("/api/dashboard/funil")},
+	{"GET /api/dashboard/metrics", politicaAuthenticated, p("/api/dashboard/metrics"), false},
+	{"GET /api/dashboard/vendas", politicaAuthenticated, p("/api/dashboard/vendas"), false},
+	{"GET /api/dashboard/vendedores", politicaAuthenticated, p("/api/dashboard/vendedores"), false},
+	{"GET /api/dashboard/clientes", politicaAuthenticated, p("/api/dashboard/clientes"), false},
+	{"GET /api/dashboard/funil", politicaAuthenticated, p("/api/dashboard/funil"), false},
 	// Vendedores
-	{"GET /api/vendedores", politicaAuthenticated, p("/api/vendedores")},
-	{"POST /api/vendedores", politicaAdminOnly, p("/api/vendedores")},
-	{"GET /api/vendedores/{id}", politicaAdminOnly, p("/api/vendedores/1")},
-	{"PUT /api/vendedores/{id}", politicaAdminOnly, p("/api/vendedores/1")},
-	{"DELETE /api/vendedores/{id}", politicaAdminOnly, p("/api/vendedores/1")},
-	{"POST /api/vendedores/{id}/reativar", politicaAdminOnly, p("/api/vendedores/1/reativar")},
-	{"POST /api/vendedores/{id}/clientes", politicaAdminOnly, p("/api/vendedores/1/clientes")},
-	{"DELETE /api/vendedores/{id}/clientes/{clienteId}", politicaAdminOnly, p("/api/vendedores/1/clientes/10")},
-	{"GET /api/vendedores/{id}/clientes", politicaAuthenticated, p("/api/vendedores/1/clientes")},
+	{"GET /api/vendedores", politicaAuthenticated, p("/api/vendedores"), false},
+	{"POST /api/vendedores", politicaAdminOnly, p("/api/vendedores"), false},
+	{"GET /api/vendedores/{id}", politicaAdminOnly, p("/api/vendedores/1"), false},
+	{"PUT /api/vendedores/{id}", politicaAdminOnly, p("/api/vendedores/1"), false},
+	{"DELETE /api/vendedores/{id}", politicaAdminOnly, p("/api/vendedores/1"), false},
+	{"POST /api/vendedores/{id}/reativar", politicaAdminOnly, p("/api/vendedores/1/reativar"), false},
+	{"POST /api/vendedores/{id}/clientes", politicaAdminOnly, p("/api/vendedores/1/clientes"), false},
+	{"DELETE /api/vendedores/{id}/clientes/{clienteId}", politicaAdminOnly, p("/api/vendedores/1/clientes/10"), false},
+	{"GET /api/vendedores/{id}/clientes", politicaAuthenticated, p("/api/vendedores/1/clientes"), false},
 	// Clientes
-	{"GET /api/clientes", politicaAuthenticated, p("/api/clientes")},
-	{"POST /api/clientes", politicaAuthenticated, p("/api/clientes")},
-	{"GET /api/clientes/{id}", politicaAuthenticated, p("/api/clientes/1")},
-	{"PUT /api/clientes/{id}", politicaAuthenticated, p("/api/clientes/1")},
-	{"PATCH /api/clientes/{id}/inativar", politicaAuthenticated, p("/api/clientes/1/inativar")},
+	{"GET /api/clientes", politicaAuthenticated, p("/api/clientes"), false},
+	{"POST /api/clientes", politicaAuthenticated, p("/api/clientes"), false},
+	{"GET /api/clientes/{id}", politicaAuthenticated, p("/api/clientes/1"), false},
+	{"PUT /api/clientes/{id}", politicaAuthenticated, p("/api/clientes/1"), false},
+	{"PATCH /api/clientes/{id}/inativar", politicaAuthenticated, p("/api/clientes/1/inativar"), false},
 	// Produtos
-	{"GET /api/produtos", politicaAuthenticated, p("/api/produtos")},
-	{"POST /api/produtos", politicaAdminOnly, p("/api/produtos")},
-	{"GET /api/produtos/{id}", politicaAuthenticated, p("/api/produtos/1")},
-	{"PUT /api/produtos/{id}", politicaAdminOnly, p("/api/produtos/1")},
-	{"PATCH /api/produtos/{id}/inativar", politicaAdminOnly, p("/api/produtos/1/inativar")},
+	{"GET /api/produtos", politicaAuthenticated, p("/api/produtos"), false},
+	{"POST /api/produtos", politicaAdminOnly, p("/api/produtos"), false},
+	{"GET /api/produtos/{id}", politicaAuthenticated, p("/api/produtos/1"), false},
+	{"PUT /api/produtos/{id}", politicaAdminOnly, p("/api/produtos/1"), false},
+	{"PATCH /api/produtos/{id}/inativar", politicaAdminOnly, p("/api/produtos/1/inativar"), false},
 	// Imagem do produto (IMG-01): upload/remoção admin; leitura pública
 	// aprovada pelo SecBrain (só nomes <uuid-v4>.jpg|png|webp, sem auth).
-	{"POST /api/produtos/{id}/imagem", politicaAdminOnly, p("/api/produtos/1/imagem")},
-	{"DELETE /api/produtos/{id}/imagem", politicaAdminOnly, p("/api/produtos/1/imagem")},
-	{"GET /api/public/produtos/imagens/{arquivo}", politicaPublic, p("/api/public/produtos/imagens/0b5f3c1e-8a3d-4f2b-9c4e-1a2b3c4d5e6f.png")},
+	{"POST /api/produtos/{id}/imagem", politicaAdminOnly, p("/api/produtos/1/imagem"), false},
+	{"DELETE /api/produtos/{id}/imagem", politicaAdminOnly, p("/api/produtos/1/imagem"), false},
+	{"GET /api/public/produtos/imagens/{arquivo}", politicaPublic, p("/api/public/produtos/imagens/0b5f3c1e-8a3d-4f2b-9c4e-1a2b3c4d5e6f.png"), false},
 	// Pedidos
-	{"GET /api/pedidos", politicaAuthenticated, p("/api/pedidos")},
-	{"POST /api/pedidos", politicaAuthenticated, p("/api/pedidos")},
-	{"GET /api/pedidos/{id}", politicaAuthenticated, p("/api/pedidos/1")},
-	{"PUT /api/pedidos/{id}", politicaAuthenticated, p("/api/pedidos/1")},
-	{"DELETE /api/pedidos/{id}", politicaAuthenticated, p("/api/pedidos/1")},
+	{"GET /api/pedidos", politicaAuthenticated, p("/api/pedidos"), false},
+	{"POST /api/pedidos", politicaAuthenticated, p("/api/pedidos"), false},
+	{"GET /api/pedidos/{id}", politicaAuthenticated, p("/api/pedidos/1"), false},
+	{"PUT /api/pedidos/{id}", politicaAuthenticated, p("/api/pedidos/1"), false},
+	{"DELETE /api/pedidos/{id}", politicaAuthenticated, p("/api/pedidos/1"), false},
 	// Pagamentos
-	{"GET /api/pagamentos", politicaAuthenticated, p("/api/pagamentos")},
-	{"POST /api/pagamentos", politicaAuthenticated, p("/api/pagamentos")},
-	{"GET /api/pagamentos/{id}", politicaAuthenticated, p("/api/pagamentos/1")},
-	{"PUT /api/pagamentos/{id}", politicaAuthenticated, p("/api/pagamentos/1")},
-	{"DELETE /api/pagamentos/{id}", politicaAuthenticated, p("/api/pagamentos/1")},
+	{"GET /api/pagamentos", politicaAuthenticated, p("/api/pagamentos"), false},
+	{"POST /api/pagamentos", politicaAuthenticated, p("/api/pagamentos"), false},
+	{"GET /api/pagamentos/{id}", politicaAuthenticated, p("/api/pagamentos/1"), false},
+	{"PUT /api/pagamentos/{id}", politicaAuthenticated, p("/api/pagamentos/1"), false},
+	{"DELETE /api/pagamentos/{id}", politicaAuthenticated, p("/api/pagamentos/1"), false},
 	// Oportunidades
-	{"GET /api/oportunidades", politicaAuthenticated, p("/api/oportunidades")},
-	{"POST /api/oportunidades", politicaAuthenticated, p("/api/oportunidades")},
-	{"GET /api/oportunidades/{id}", politicaAuthenticated, p("/api/oportunidades/1")},
-	{"PUT /api/oportunidades/{id}", politicaAuthenticated, p("/api/oportunidades/1")},
-	{"DELETE /api/oportunidades/{id}", politicaAuthenticated, p("/api/oportunidades/1")},
+	{"GET /api/oportunidades", politicaAuthenticated, p("/api/oportunidades"), false},
+	{"POST /api/oportunidades", politicaAuthenticated, p("/api/oportunidades"), false},
+	{"GET /api/oportunidades/{id}", politicaAuthenticated, p("/api/oportunidades/1"), false},
+	{"PUT /api/oportunidades/{id}", politicaAuthenticated, p("/api/oportunidades/1"), false},
+	{"DELETE /api/oportunidades/{id}", politicaAuthenticated, p("/api/oportunidades/1"), false},
 	// Visitas
-	{"GET /api/visitas", politicaAuthenticated, p("/api/visitas")},
-	{"POST /api/visitas", politicaAuthenticated, p("/api/visitas")},
-	{"GET /api/visitas/{id}", politicaAuthenticated, p("/api/visitas/1")},
-	{"PUT /api/visitas/{id}", politicaAuthenticated, p("/api/visitas/1")},
-	{"DELETE /api/visitas/{id}", politicaAuthenticated, p("/api/visitas/1")},
+	{"GET /api/visitas", politicaAuthenticated, p("/api/visitas"), false},
+	{"POST /api/visitas", politicaAuthenticated, p("/api/visitas"), false},
+	{"GET /api/visitas/{id}", politicaAuthenticated, p("/api/visitas/1"), false},
+	{"PUT /api/visitas/{id}", politicaAuthenticated, p("/api/visitas/1"), false},
+	{"DELETE /api/visitas/{id}", politicaAuthenticated, p("/api/visitas/1"), false},
 	// Estoque (tudo admin)
-	{"GET /api/estoque", politicaAdminOnly, p("/api/estoque")},
-	{"POST /api/estoque", politicaAdminOnly, p("/api/estoque")},
-	{"GET /api/estoque/{id}", politicaAdminOnly, p("/api/estoque/1")},
-	{"PUT /api/estoque/{id}", politicaAdminOnly, p("/api/estoque/1")},
+	{"GET /api/estoque", politicaAdminOnly, p("/api/estoque"), false},
+	{"POST /api/estoque", politicaAdminOnly, p("/api/estoque"), false},
+	{"GET /api/estoque/{id}", politicaAdminOnly, p("/api/estoque/1"), false},
+	{"PUT /api/estoque/{id}", politicaAdminOnly, p("/api/estoque/1"), false},
 	// Healthcheck (X1: GET, que também atende HEAD)
-	{"GET /health", politicaPublic, p("/health")},
+	{"GET /health", politicaPublic, p("/health"), false},
 }
 
 const (

@@ -3,6 +3,8 @@ package vendasmysql
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/rotaperfumes/shared/db"
@@ -12,6 +14,9 @@ import (
 )
 
 const arqPagamentos = "pagamentos.go"
+
+// fkPagamentosPedido é a FK pagamentos.pedido_id → pedidos (sql/12_ddl_pagamentos.sql).
+const fkPagamentosPedido = "fk_pagamentos_pedido"
 
 // pagamentoColunas usa a PK literal pagamento_id (não há coluna id
 // desacoplada nesta tabela — ver sql/12_ddl_pagamentos.sql).
@@ -134,13 +139,19 @@ func scanPagamento(s db.Linha) (*vendas.Pagamento, error) {
 	return p, nil
 }
 
-// Inserir grava o pagamento e preenche PagamentoID.
+// Inserir grava o pagamento e preenche PagamentoID. Pedido inexistente (FK
+// fk_pagamentos_pedido, 1452) vira vendas.ErrPedidoNaoEncontrado SEM o erro
+// do driver (SEC-35).
 func (r *Pagamentos) Inserir(ctx context.Context, p *vendas.Pagamento) error {
 	const q = `
 		INSERT INTO pagamentos (pedido_id, forma_pagamento, parcelas, valor, taxa_pct, valor_liquido, data_vencimento, data_pagamento, status_pagamento)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	id, err := db.Inserir(ctx, r.q, "vendasmysql: create pagamento", q, p.PedidoID, p.FormaPagamento, p.Parcelas,
 		p.Valor, p.TaxaPct, p.ValorLiquido, p.DataVencimento, nullTime(p.DataPagamento), p.StatusPagamento)
+	if db.ViolacaoFK(err, fkPagamentosPedido) {
+		vlog.Printf(arqPagamentos, "Pagamentos.Inserir", "decisão pedido_inexistente_fk")
+		return vendas.ErrPedidoNaoEncontrado
+	}
 	if err != nil {
 		return err
 	}
@@ -182,10 +193,31 @@ func (r *Pagamentos) ExistePorPedido(ctx context.Context, pedidoID int64) (bool,
 		`SELECT 1 FROM pagamentos WHERE pedido_id = ? LIMIT 1`, pedidoID)
 }
 
-// Excluir remove o pagamento (hard delete: não há deleted_at).
-func (r *Pagamentos) Excluir(ctx context.Context, id int64) error {
-	return db.ExecPorID(ctx, r.q, arqPagamentos, "Pagamentos.Excluir", "vendasmysql: delete pagamento", vendas.ErrPagamentoNaoEncontrado,
-		`DELETE FROM pagamentos WHERE pagamento_id = ?`, id)
+// TravarParaExcluir lê pedido e status com SELECT … FOR UPDATE (SEC-35):
+// fixa o pagamento até o fim da tx da exclusão. Preenche PagamentoID,
+// PedidoID e StatusPagamento; vendas.ErrPagamentoNaoEncontrado sem linha.
+func (r *Pagamentos) TravarParaExcluir(ctx context.Context, id int64) (*vendas.Pagamento, error) {
+	p := &vendas.Pagamento{PagamentoID: id}
+	err := r.q.QueryRowContext(ctx, `SELECT pedido_id, status_pagamento FROM pagamentos WHERE pagamento_id = ? FOR UPDATE`, id).
+		Scan(&p.PedidoID, &p.StatusPagamento)
+	if errors.Is(err, sql.ErrNoRows) {
+		vlog.Printf(arqPagamentos, "Pagamentos.TravarParaExcluir", "SELECT pagamentos FOR UPDATE linhas=0")
+		return nil, vendas.ErrPagamentoNaoEncontrado
+	}
+	if err != nil {
+		return nil, fmt.Errorf("vendasmysql: lock pagamento para exclusao: %w", err)
+	}
+	vlog.Printf(arqPagamentos, "Pagamentos.TravarParaExcluir", "SELECT pagamentos FOR UPDATE linhas=1")
+	return p, nil
+}
+
+// ExcluirSeNaoQuitado remove o pagamento (hard delete: não há deleted_at)
+// só se ele NÃO estiver quitado, no mesmo statement (SEC-35, defesa junto
+// com o lock). Nenhuma linha casada vira vendas.ErrPagamentoNaoEncontrado.
+func (r *Pagamentos) ExcluirSeNaoQuitado(ctx context.Context, id int64) error {
+	return db.ExecPorID(ctx, r.q, arqPagamentos, "Pagamentos.ExcluirSeNaoQuitado", "vendasmysql: delete pagamento nao quitado", vendas.ErrPagamentoNaoEncontrado,
+		`DELETE FROM pagamentos WHERE pagamento_id = ? AND status_pagamento NOT IN (?, ?)`,
+		id, string(vendas.StatusPago), string(vendas.StatusPagoComAtraso))
 }
 
 // nullTime grava nil como NULL (data_pagamento é opcional).

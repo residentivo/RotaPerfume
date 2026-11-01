@@ -21,7 +21,12 @@ func NovoVisitaHandler(c *comercialapp.Casos) *VisitaHandler {
 // ListVisitas GET /api/visitas?page&limit&cliente_id&vendedor_id&resultado&data_visita_de&data_visita_ate&q&order_by&order_dir
 func (h *VisitaHandler) ListVisitas(w http.ResponseWriter, r *http.Request) {
 	const tag = "[visitas] ListVisitas"
-	res, err := h.casos.ListarVisitas(r.Context(), principalDoEscopo(r), filtroVisitaDaQuery(r), httpx.PaginaDaQuery(r))
+	filtro, err := filtroVisitaDaQuery(r)
+	if err != nil {
+		httpx.ResponderErro(w, tag, err)
+		return
+	}
+	res, err := h.casos.ListarVisitas(r.Context(), principalDoEscopo(r), filtro, httpx.PaginaDaQuery(r))
 	responderPaginado(w, tag, res, err, novoVisitaJSON)
 }
 

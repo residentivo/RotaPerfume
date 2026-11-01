@@ -97,7 +97,7 @@ func TestOportunidadeList_ComFiltros(t *testing.T) {
 		{
 			nome:        "filtro por busca textual",
 			filtro:      comercial.FiltroOportunidade{Busca: "Site", Ordenacao: comercial.OrdenacaoOportunidadePadrao()},
-			whereRegexp: "WHERE \\(origem LIKE \\? OR etapa LIKE \\?\\)",
+			whereRegexp: "WHERE \\(origem LIKE \\? ESCAPE '!' OR etapa LIKE \\? ESCAPE '!'\\)",
 			args:        []driver.Value{"%Site%", "%Site%"},
 		},
 		{

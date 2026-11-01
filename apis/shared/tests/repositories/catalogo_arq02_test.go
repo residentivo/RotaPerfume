@@ -126,7 +126,7 @@ func TestCatalogomysql_FiltrosCombinadosEPagina(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 	nao := false
-	where := `WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? OR sku LIKE \?\)`
+	where := `WHERE categoria = \? AND marca = \? AND ativo = \? AND \(descricao LIKE \? ESCAPE '!' OR sku LIKE \? ESCAPE '!'\)`
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM produtos `+where).
 		WithArgs("C", "M", false, "%b%", "%b%").WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(11))
 	mock.ExpectQuery(`FROM produtos `+where+` ORDER BY id ASC LIMIT \? OFFSET \?`).

@@ -41,7 +41,7 @@ func bug16PayloadH(status string) map[string]any {
 
 func bug16ExpectLockH(mock sqlmock.Sqlmock, statusAtual string, itens *sqlmock.Rows) {
 	mock.ExpectBegin()
-	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow(statusAtual))
+	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(statusAtual, int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexH).WithArgs(int64(1)).WillReturnRows(itens)
 }
 
@@ -237,19 +237,20 @@ func TestBUG16_HTTP_DELETE_TravasPorStatus(t *testing.T) {
 			server, db, mock := setupTestServer(t)
 			defer server.Close()
 			defer db.Close()
-			mock.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, c.status))
-			mock.ExpectQuery(itensByPedidoRegexH).WithArgs(int64(1)).WillReturnRows(itemPedidoRowsForHandler(1))
-			mock.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(pedidoRowsForHandlerStatus(1, 230.0, c.status))
+			mock.ExpectBegin()
+			mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).
+				WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(c.status, int64(2)))
 			if c.pagamentos {
 				mock.ExpectQuery(existsPagamentoPorPedidoRegexH).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 			} else {
 				mock.ExpectQuery(existsPagamentoPorPedidoRegexH).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"1"}))
 			}
 			if c.want == http.StatusNoContent {
-				mock.ExpectBegin()
 				mock.ExpectExec(deleteItensPedidoRegexH).WithArgs(int64(1)).WillReturnResult(sqlmock.NewResult(0, 2))
 				mock.ExpectExec(deletePedidoRegexH).WithArgs(int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
 				mock.ExpectCommit()
+			} else {
+				mock.ExpectRollback()
 			}
 
 			req, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/pedidos/1", nil)

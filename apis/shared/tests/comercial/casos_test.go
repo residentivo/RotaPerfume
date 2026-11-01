@@ -59,6 +59,9 @@ func novosCasos(pool *sql.DB, v comercialapp.VinculoUsuario) *comercialapp.Casos
 		ClienteNaCarteira: db.NewTransactor(pool, func(q db.Querier) comercialapp.TxClienteNaCarteira {
 			return comercialapp.TxClienteNaCarteira{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
 		}),
+		Vinculacao: db.NewTransactor(pool, func(q db.Querier) comercialapp.TxVinculo {
+			return comercialapp.TxVinculo{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
+		}),
 		Relogio: func() time.Time { return agoraFixo },
 	})
 }
@@ -79,6 +82,7 @@ func TestComercialapp_Novo_PanicSemDependencia(t *testing.T) {
 			Oportunidades: comercialmysql.NovoOportunidades(pool), Vinculo: vinculoFake{},
 			Desligamento:      db.NewTransactor(pool, func(db.Querier) comercialapp.TxDesligamento { return comercialapp.TxDesligamento{} }),
 			ClienteNaCarteira: db.NewTransactor(pool, func(db.Querier) comercialapp.TxClienteNaCarteira { return comercialapp.TxClienteNaCarteira{} }),
+			Vinculacao:        db.NewTransactor(pool, func(db.Querier) comercialapp.TxVinculo { return comercialapp.TxVinculo{} }),
 		}
 		comercialapp.Novo(d) // sem relógio
 	})
@@ -179,6 +183,7 @@ const (
 	reClientePorID   = `FROM clientes WHERE cliente_id_origem = \? LIMIT 1`
 	reAtivoDoCliente = `WHERE cliente_id = \? AND data_fim IS NULL`
 	reDoDia          = `WHERE cliente_id = \? AND vendedor_id = \? AND data_inicio = \?`
+	reTravarCliente  = `SELECT cliente_id_origem FROM clientes WHERE cliente_id_origem = \? FOR UPDATE`
 )
 
 var (
@@ -190,10 +195,17 @@ func esperarVincularAte(m sqlmock.Sqlmock) {
 	m.ExpectQuery(reExisteVendedor).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 	m.ExpectQuery(reClientePorID).WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows(colsCliente).AddRow(int64(2), "c", "r", "s", "ci", "PR", "", agoraFixo, true, agoraFixo, agoraFixo))
+	esperarTravaDoCliente(m)
 }
 
-// P4/BUG-14 (sequência legada, sem tx). "Não encontrado" ao escrever um
-// vínculo recém-lido é corrida: 500, como no legado (nunca 404).
+// esperarTravaDoCliente: a tx do vínculo (BUG-14) abre travando o cliente.
+func esperarTravaDoCliente(m sqlmock.Sqlmock) {
+	m.ExpectBegin()
+	m.ExpectQuery(reTravarCliente).WithArgs(int64(2)).WillReturnRows(sqlmock.NewRows([]string{"cliente_id_origem"}).AddRow(int64(2)))
+}
+
+// BUG-14: a sequência roda numa tx. "Não encontrado" ao escrever um
+// vínculo recém-lido é corrida: 500 com rollback, como no legado (nunca 404).
 func TestComercialapp_VincularCliente_Corridas(t *testing.T) {
 	ctx := context.Background()
 	admin := principal(t, kernel.RoleAdmin)
@@ -204,6 +216,7 @@ func TestComercialapp_VincularCliente_Corridas(t *testing.T) {
 		esperarVincularAte(mock)
 		mock.ExpectQuery(reAtivoDoCliente).WillReturnRows(sqlmock.NewRows(colsCarteira).AddRow(int64(9), int64(2), int64(5), agoraFixo, nil, agoraFixo, agoraFixo))
 		mock.ExpectExec(`UPDATE carteiras SET data_fim = \?`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectRollback()
 		_, err := novosCasos(pool, vinculoFake{}).VincularCliente(ctx, admin, 1, 2)
 		require.Error(t, err)
 		var de *kernel.Erro
@@ -215,6 +228,7 @@ func TestComercialapp_VincularCliente_Corridas(t *testing.T) {
 		esperarVincularAte(mock)
 		mock.ExpectQuery(reAtivoDoCliente).WillReturnRows(sqlmock.NewRows(colsCarteira))
 		mock.ExpectQuery(reDoDia).WillReturnRows(sqlmock.NewRows(colsCarteira).AddRow(int64(4), int64(2), int64(1), agoraFixo, nil, agoraFixo, agoraFixo))
+		mock.ExpectCommit()
 		r, err := novosCasos(pool, vinculoFake{}).VincularCliente(ctx, admin, 1, 2)
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), r.CarteiraID)
@@ -226,6 +240,7 @@ func TestComercialapp_VincularCliente_Corridas(t *testing.T) {
 		mock.ExpectQuery(reAtivoDoCliente).WillReturnRows(sqlmock.NewRows(colsCarteira))
 		mock.ExpectQuery(reDoDia).WillReturnRows(sqlmock.NewRows(colsCarteira).AddRow(int64(4), int64(2), int64(1), agoraFixo, &fim, agoraFixo, agoraFixo))
 		mock.ExpectExec(`UPDATE carteiras SET data_fim = NULL`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectRollback()
 		_, err := novosCasos(pool, vinculoFake{}).VincularCliente(ctx, admin, 1, 2)
 		var de *kernel.Erro
 		assert.False(t, errors.As(err, &de))

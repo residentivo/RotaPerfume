@@ -126,6 +126,6 @@ type FiltroProduto struct {
 	Categoria string
 	Marca     string
 	Ativo     *bool
-	Busca     string // em descrição OU sku (LIKE; o escape de %/_ é o GAP SEC-25)
+	Busca     string // em descrição OU sku (LIKE; %/_ literais, SEC-25)
 	Ordenacao kernel.Ordenacao[CampoProduto]
 }

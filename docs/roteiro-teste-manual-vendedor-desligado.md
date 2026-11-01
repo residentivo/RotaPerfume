@@ -25,6 +25,8 @@ Marque cada checkbox depois de conferir no navegador, com o DevTools aberto na a
 
    **Senhas:** o seed (`sql/03_seed_vendedores.sql`) grava um hash placeholder. O `make db-seed` troca esse hash pela senha do `SEED_USER_PASSWORD` do `.env` ou, se ela não existir, por uma senha aleatória impressa no terminal. Use a senha que você tem hoje para cada usuário. Os usuários do seed vêm com `deve_trocar_senha = 1`: se ainda estiver assim, o primeiro login leva para `/trocar-senha` antes de liberar as outras telas.
 
+   > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** desde o Lote 28 o backend também impõe a flag: com `deve_trocar_senha = 1`, a API responde `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password` (vale também para as chamadas por terminal/Postman). Esse `403` vem **antes** do `403` "acesso bloqueado: vendedor desligado": para testar o bloqueio do desligado, troque antes a senha do `thiago.silva` (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE id IN (1, 4, 5);`).
+
 3. Confira o usuário desligado antes de começar:
 
    ```sql

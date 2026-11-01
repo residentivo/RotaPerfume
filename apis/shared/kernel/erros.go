@@ -21,7 +21,8 @@ const (
 	KindConflito
 	KindProibido
 	KindNaoAutenticado
-	KindBloqueado // 429; o Retry-After vem de *Bloqueio
+	KindBloqueado   // 429; o Retry-After vem de *Bloqueio
+	KindMuitoGrande // 413; corpo da requisição acima do limite (SEC-14)
 )
 
 // String devolve o nome estável do Kind, usado em log (vlog.Trace).
@@ -41,6 +42,8 @@ func (k Kind) String() string {
 		return "nao_autenticado"
 	case KindBloqueado:
 		return "bloqueado"
+	case KindMuitoGrande:
+		return "muito_grande"
 	default:
 		return "desconhecido"
 	}

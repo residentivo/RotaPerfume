@@ -6,7 +6,12 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
-import { Turnstile, TurnstileHandle, isTurnstileEnabled } from "@/components/ui/Turnstile";
+import {
+  TURNSTILE_ACTION_RESET_SENHA,
+  Turnstile,
+  TurnstileHandle,
+  isTurnstileEnabled,
+} from "@/components/ui/Turnstile";
 import { apiChangePassword } from "@/lib/api";
 import { getUser } from "@/lib/auth";
 import { useTimeoutSeguro } from "@/lib/useMensagemTemporaria";
@@ -293,6 +298,7 @@ export default function TrocarSenhaPage() {
 
             <Turnstile
               ref={turnstileRef}
+              action={TURNSTILE_ACTION_RESET_SENHA}
               onVerify={(token) => setCaptchaToken(token)}
               onExpire={() => setCaptchaToken(null)}
               onError={() => setCaptchaToken(null)}

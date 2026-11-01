@@ -22,7 +22,8 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
   const [authorized, setAuthorized] = useState(() => {
     vlog(F, "ProtectedRoute.func", "lendo usuário da sessão em memória");
     const u = getSessionUser();
-    return !!u && (!requireAdmin || u.role === "admin");
+    // SEC-23: troca de senha pendente nunca renderiza de imediato.
+    return !!u && u.trocar_senha !== true && (!requireAdmin || u.role === "admin");
   });
 
   vlog(F, "ProtectedRoute", "registrando efeito de validação da sessão");
@@ -54,6 +55,17 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
         const freshUser = await refreshSessionUser();
         vlog(F, "ProtectedRoute.validate", "verificando se o efeito foi cancelado:", cancelled);
         if (cancelled) return;
+
+        // SEC-23: troca de senha pendente - o backend bloqueia as demais
+        // rotas com 403, entao nao renderiza a tela e vai para a troca.
+        vlog(F, "ProtectedRoute.validate", "verificando troca de senha pendente:", freshUser.trocar_senha === true);
+        if (freshUser.trocar_senha === true) {
+          vlog(F, "ProtectedRoute.validate", "troca pendente: negando autorização");
+          setAuthorized(false);
+          vlog(F, "ProtectedRoute.validate", "redirecionando para /trocar-senha");
+          router.replace("/trocar-senha");
+          return;
+        }
 
         vlog(F, "ProtectedRoute.validate", "verificando permissão de admin, id/papel:", freshUser.id, freshUser.role);
         if (requireAdmin && freshUser.role !== "admin") {

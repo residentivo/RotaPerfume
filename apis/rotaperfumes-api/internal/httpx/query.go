@@ -4,12 +4,30 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/rotaperfumes/shared/kernel"
 )
 
 // ErrIDInvalido é o 400 de id de path ausente, não numérico, ≤ 0 ou com "/".
 var ErrIDInvalido = kernel.NovoErro(kernel.KindInvalido, "id inválido")
+
+// MaxBuscaRunes é o maior ?q= aceito, em caracteres, depois do trim (SEC-25).
+const MaxBuscaRunes = 100
+
+// ErrBuscaMuitoLonga é o 400 do ?q= acima de MaxBuscaRunes (sem truncar).
+var ErrBuscaMuitoLonga = kernel.NovoErro(kernel.KindInvalido, "o parâmetro q deve ter no máximo 100 caracteres")
+
+// BuscaDaQuery lê o termo de busca ?q= com trim. Acima de MaxBuscaRunes
+// caracteres é ErrBuscaMuitoLonga: o handler responde 400 antes do caso de
+// uso (SEC-25).
+func BuscaDaQuery(r *http.Request) (string, error) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if utf8.RuneCountInString(q) > MaxBuscaRunes {
+		return "", ErrBuscaMuitoLonga
+	}
+	return q, nil
+}
 
 // PaginaDaQuery lê ?page= e ?limit= (F-10, regra única em kernel.NovaPagina).
 func PaginaDaQuery(r *http.Request) kernel.Pagina {
@@ -18,11 +36,20 @@ func PaginaDaQuery(r *http.Request) kernel.Pagina {
 }
 
 // PaginaDaQueryStrings é PaginaDaQuery a partir das strings cruas: valores
-// não numéricos contam como ausentes (default).
+// não numéricos ou fora da faixa de int contam como ausentes (default,
+// SEC-16); o teto de page e de limit é o de kernel.NovaPagina.
 func PaginaDaQueryStrings(page, limit string) kernel.Pagina {
-	numero, _ := strconv.Atoi(page)
-	limite, _ := strconv.Atoi(limit)
-	return kernel.NovaPagina(numero, limite)
+	return kernel.NovaPagina(inteiroOuZero(page), inteiroOuZero(limit))
+}
+
+// inteiroOuZero: strconv.Atoi devolve MaxInt/MinInt junto com o erro de
+// faixa; aqui qualquer erro vale 0.
+func inteiroOuZero(v string) int {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // OrdenacaoDaQuery lê ?order_by= e ?order_dir= contra o enum da entidade;

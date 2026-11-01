@@ -180,7 +180,7 @@ func TestUserCheck_CheckerNil_Panica(t *testing.T) {
 // DBUserStatusChecker (sqlmock)
 // ------------------------------------------------------------------
 
-const statusQueryRegex = `SELECT ativo, role, tokens_validos_desde FROM usuarios WHERE id = \? LIMIT 1`
+const statusQueryRegex = `SELECT ativo, role, tokens_validos_desde, deve_trocar_senha FROM usuarios WHERE id = \? LIMIT 1`
 
 func newCheckerDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	t.Helper()
@@ -193,7 +193,7 @@ func newCheckerDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 func TestDBUserStatusChecker_Encontrado(t *testing.T) {
 	db, mock := newCheckerDB(t)
 	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
-		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(false, "normal", nil))
+		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}).AddRow(false, "normal", nil, false))
 
 	st, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
 
@@ -202,10 +202,23 @@ func TestDBUserStatusChecker_Encontrado(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// SEC-23: a troca de senha pendente vem na mesma consulta enxuta.
+func TestDBUserStatusChecker_TrocaDeSenhaPendente(t *testing.T) {
+	db, mock := newCheckerDB(t)
+	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}).AddRow(true, "admin", nil, int64(1)))
+
+	st, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
+
+	require.NoError(t, err)
+	assert.Equal(t, identidade.StatusAcesso{Ativo: true, Role: "admin", DeveTrocarSenha: true}, st)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestDBUserStatusChecker_Inexistente_ErrUserNotFound(t *testing.T) {
 	db, mock := newCheckerDB(t)
 	mock.ExpectQuery(statusQueryRegex).WithArgs(int64(3)).
-		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}))
+		WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}))
 
 	_, err := bootstrap.NovoVerificadorStatus(db).StatusParaAutenticacao(context.Background(), 3)
 

@@ -57,10 +57,10 @@ func (c *Casos) ObterPagamento(ctx context.Context, p kernel.Principal, id int64
 	return pag, nil
 }
 
-// CriarPagamento: sem carteira, 403 antes do decode; restrito só lança em
-// pedido da própria carteira (404 "pedido não encontrado", igual ao
-// inexistente). Depois, as regras do legado: pedido obrigatório e
-// existente, campos válidos.
+// CriarPagamento: sem carteira, 403 antes do decode; pedido_id obrigatório
+// (400, sem consulta). O resto roda no TxPedido com o pedido travado
+// (SEC-35, TxPedido.CriarPagamento): pedido inexistente ou, no restrito, de
+// outra carteira → 404 "pedido não encontrado"; depois os campos (400).
 func (c *Casos) CriarPagamento(ctx context.Context, p kernel.Principal, ler Leitor[vendas.DadosNovoPagamento]) (pag *vendas.Pagamento, err error) {
 	defer vlog.Trace(arqPagamentos, "Vendas.CriarPagamento", "user_id=%d", p.UserID())(&err)
 	e, err := c.noEscopo(ctx, p, vendas.ErrSemVendedor)
@@ -71,16 +71,14 @@ func (c *Casos) CriarPagamento(ctx context.Context, p kernel.Principal, ler Leit
 	if err != nil {
 		return nil, err
 	}
-	// pedido_id <= 0 segue para a validação abaixo (400), sem consulta.
-	if restrito(e) && d.PedidoID > 0 {
-		if err = c.pedidoNoEscopo(ctx, e, d.PedidoID, vendas.ErrPedidoNaoEncontrado); err != nil {
-			return nil, err
-		}
+	if d.PedidoID <= 0 {
+		return nil, vendas.ErrPedidoIDObrigatorio
 	}
-	if pag, err = c.pagamentoNovo(ctx, d); err != nil {
-		return nil, err
-	}
-	if err = c.d.Pagamentos.Inserir(ctx, pag); err != nil {
+	err = c.d.TxPedido.WithTx(ctx, func(r TxPedido) error {
+		pag, err = r.CriarPagamento(ctx, e, d)
+		return err
+	})
+	if err != nil {
 		return nil, err
 	}
 	log.Printf("[pagamentos] criado: pagamento_id=%d pedido_id=%d", pag.PagamentoID, pag.PedidoID)
@@ -116,8 +114,9 @@ func (c *Casos) AtualizarPagamento(ctx context.Context, p kernel.Principal, id i
 }
 
 // ExcluirPagamento remove o pagamento (hard delete), só da própria carteira
-// e nunca quitado (409). A segunda leitura é a do service legado (paridade
-// de SQL).
+// e nunca quitado (409). A leitura fora da tx só obtém o pedido (imutável,
+// V-02); posse e status são conferidos sob lock no TxPedido (SEC-35,
+// TxPedido.ExcluirPagamento).
 func (c *Casos) ExcluirPagamento(ctx context.Context, p kernel.Principal, id int64) (err error) {
 	defer vlog.Trace(arqPagamentos, "Vendas.ExcluirPagamento", "id=%d", id)(&err)
 	e, err := c.noEscopo(ctx, p, vendas.ErrPagamentoNaoEncontrado)
@@ -128,16 +127,8 @@ func (c *Casos) ExcluirPagamento(ctx context.Context, p kernel.Principal, id int
 	if err != nil {
 		return err
 	}
-	if err = c.posseDoPagamento(ctx, e, pag.PedidoID, "DeletePagamento"); err != nil {
-		return err
-	}
-	if pag, err = c.d.Pagamentos.PorID(ctx, id); err != nil {
-		return err
-	}
-	if err = pag.PodeExcluir(); err != nil {
-		return err
-	}
-	if err = c.d.Pagamentos.Excluir(ctx, id); err != nil {
+	err = c.d.TxPedido.WithTx(ctx, func(r TxPedido) error { return r.ExcluirPagamento(ctx, e, id, pag.PedidoID) })
+	if err != nil {
 		return err
 	}
 	log.Printf("[pagamentos] excluído: pagamento_id=%d", id)
@@ -168,23 +159,7 @@ func (c *Casos) gravarEdicao(ctx context.Context, e kernel.Escopo, id int64, pag
 	return vendas.ErrPagamentoJaQuitadoNaoPodeSerEditado
 }
 
-// pagamentoNovo aplica as regras de criação do legado: pedido obrigatório,
-// pedido existente (404 também para admin) e só então os campos.
-func (c *Casos) pagamentoNovo(ctx context.Context, d vendas.DadosNovoPagamento) (*vendas.Pagamento, error) {
-	if d.PedidoID <= 0 {
-		return nil, vendas.ErrPedidoIDObrigatorio
-	}
-	existe, err := c.d.Pedidos.Existe(ctx, d.PedidoID)
-	if err != nil {
-		return nil, err
-	}
-	if !existe {
-		return nil, vendas.ErrPedidoNaoEncontrado
-	}
-	return d.Pagamento(d.PedidoID)
-}
-
-// pedidoNoEscopo exige o pedido na carteira do escopo restrito: inexistente
+// pedidoNoEscopo (Update) exige o pedido na carteira do escopo restrito: inexistente
 // ou de outro vendedor → naoEncontrado (mesmo corpo, sem enumeração); erro
 // de banco → 500.
 func (c *Casos) pedidoNoEscopo(ctx context.Context, e kernel.Escopo, pedidoID int64, naoEncontrado error) error {
@@ -201,9 +176,10 @@ func (c *Casos) pedidoNoEscopo(ctx context.Context, e kernel.Escopo, pedidoID in
 	return nil
 }
 
-// posseDoPagamento (Get/Delete, só no escopo restrito): QUALQUER falha ao
-// ler o pedido do pagamento é 404 "pagamento não encontrado" (V-02), com o
-// log operacional do legado; fora da carteira, o mesmo 404.
+// posseDoPagamento (Get, só no escopo restrito): QUALQUER falha ao ler o
+// pedido do pagamento é 404 "pagamento não encontrado" (V-02), com o log
+// operacional do legado; fora da carteira, o mesmo 404. O Delete faz a
+// mesma conferência sob lock (TxPedido.posseDoPagamentoTravada).
 func (c *Casos) posseDoPagamento(ctx context.Context, e kernel.Escopo, pedidoID int64, operacao string) error {
 	if !restrito(e) {
 		return nil

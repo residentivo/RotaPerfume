@@ -64,10 +64,9 @@ func TestSEC27_HTTP_TaxaForaDoLimite_400SemGravar(t *testing.T) {
 				if papel == "normal" {
 					uid = 2
 					expectEscopoUsuarioH(mock, 2, 2)
-					mock.ExpectQuery(pedidoByIDRegexH).WithArgs(int64(1)).WillReturnRows(pedidoRowsVendedorH(1, 2))
 				}
-				mock.ExpectQuery(`SELECT 1 FROM pedidos WHERE pedido_id_origem = \? LIMIT 1`).WithArgs(int64(1)).
-					WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+				expectLockPedidoH(mock, 1, 2) // SEC-35: o pedido é travado antes da validação dos campos
+				mock.ExpectRollback()
 				p := validPagamentoPayload()
 				p["taxa_pct"] = taxa
 				status, body := doReq(t, http.MethodPost, server.URL+"/api/pagamentos", generateToken(t, testCfg(), uid, papel), p)

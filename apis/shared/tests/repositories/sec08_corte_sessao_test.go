@@ -199,7 +199,7 @@ func TestSEC08_GetStatusByID_Corte(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 			mock.ExpectQuery(reGetStatusUsuario).WithArgs(int64(4)).
-				WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde"}).AddRow(true, "normal", tc.valor))
+				WillReturnRows(sqlmock.NewRows([]string{"ativo", "role", "tokens_validos_desde", "deve_trocar_senha"}).AddRow(true, "normal", tc.valor, false))
 			st, err := identidademysql.NovoUsuarios(db).StatusParaAutenticacao(context.Background(), 4)
 			if tc.wantErr {
 				require.Error(t, err)

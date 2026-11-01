@@ -90,7 +90,7 @@ func TestVisitaList_ComFiltros(t *testing.T) {
 		{
 			nome:        "filtro por busca textual",
 			filtro:      comercial.FiltroVisita{Busca: "Positiva", Ordenacao: comercial.OrdenacaoVisitaPadrao()},
-			whereRegexp: "WHERE resultado LIKE \\?",
+			whereRegexp: "WHERE resultado LIKE \\? ESCAPE '!'",
 			args:        []driver.Value{"%Positiva%"},
 		},
 		{

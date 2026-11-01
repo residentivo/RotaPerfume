@@ -73,6 +73,50 @@ describe("ProtectedRoute", () => {
     expect(screen.queryByText("conteudo")).not.toBeInTheDocument();
   });
 
+  it.each<[string, boolean]>([
+    ["sem requireAdmin", false],
+    ["com requireAdmin (admin tambem e bloqueado)", true],
+  ])("trocar_senha true no /me redireciona para /trocar-senha (%s, SEC-23)", async (_n, requireAdmin) => {
+    seedCache("admin");
+    refreshSessionUserMock.mockResolvedValue({ ...me("admin"), trocar_senha: true });
+    render(<ProtectedRoute requireAdmin={requireAdmin}>conteudo</ProtectedRoute>);
+    await vi.waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/trocar-senha"));
+    expect(replaceMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("conteudo")).not.toBeInTheDocument();
+    // Nao derruba a sessao.
+    expect(clearSessionMock).not.toHaveBeenCalled();
+    expect(localStorage.getItem("auth_user")).not.toBeNull();
+  });
+
+  it("sessao em memoria com trocar_senha true nao renderiza de imediato (SEC-23)", async () => {
+    getSessionUserMock.mockReturnValue({ ...me(), trocar_senha: true });
+    refreshSessionUserMock.mockResolvedValue({ ...me(), trocar_senha: true });
+    render(<ProtectedRoute>conteudo</ProtectedRoute>);
+    expect(screen.queryByText("conteudo")).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/trocar-senha"));
+  });
+
+  it("trocar_senha false libera o conteudo normalmente", async () => {
+    seedCache();
+    refreshSessionUserMock.mockResolvedValue({ ...me(), trocar_senha: false });
+    render(<ProtectedRoute>conteudo</ProtectedRoute>);
+    expect(await screen.findByText("conteudo")).toBeInTheDocument();
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it("troca de senha concluida em outra aba: revalidacao libera o conteudo", async () => {
+    seedCache();
+    refreshSessionUserMock
+      .mockResolvedValueOnce({ ...me(), trocar_senha: true })
+      .mockResolvedValueOnce({ ...me(), trocar_senha: false });
+    render(<ProtectedRoute>conteudo</ProtectedRoute>);
+    await vi.waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/trocar-senha"));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(await screen.findByText("conteudo")).toBeInTheDocument();
+  });
+
   it.each<[string, () => void]>([
     ["focus da janela", () => window.dispatchEvent(new Event("focus"))],
     [

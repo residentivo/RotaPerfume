@@ -59,7 +59,7 @@ func whereVisita(f comercial.FiltroVisita, vendedorID int64) ([]string, []any) {
 		conds, args = append(conds, "data_visita <= ?"), append(args, f.Ate)
 	}
 	if f.Busca != "" {
-		conds, args = append(conds, "resultado LIKE ?"), append(args, "%"+f.Busca+"%")
+		conds, args = append(conds, "resultado LIKE ? ESCAPE '!'"), append(args, db.TermoContem(f.Busca)) // SEC-25
 	}
 	return conds, args
 }

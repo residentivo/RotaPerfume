@@ -45,7 +45,7 @@ func (c *Casos) Login(ctx context.Context, cmd ComandoLogin) (s *SessaoEmitida, 
 	log.Printf("[auth] Login attempt: email=%s", mascarado)
 
 	ip := cmd.Origem.IP
-	if err := c.verificarCaptcha(ctx, cmd.Captcha, ip, "login"); err != nil {
+	if err := c.verificarCaptcha(ctx, cmd.Captcha, ip, identidade.AcaoCaptchaLogin, "login"); err != nil {
 		return nil, err
 	}
 	chaveIP, chaveConta := "ip:"+ip, "acct:"+ip+"|"+email

@@ -28,7 +28,7 @@ func arq05PayloadComValoresForjados() map[string]any {
 func arq05ExpectUpdatePedidoAdmin(mock sqlmock.Sqlmock) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("Em separação"))
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Em separação", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexH).WithArgs(int64(1)).WillReturnRows(itensAtuaisRowsVazioH())
 	mock.ExpectExec(`UPDATE pedidos\s+SET cliente_id = \?, vendedor_id = \?, data_pedido = \?, canal = \?, status = \?, valor_total = \?\s+WHERE pedido_id_origem = \?`).
 		WithArgs(int64(1), int64(2), sqlmock.AnyArg(), "App", "Faturado", 230.0, int64(1)).

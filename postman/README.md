@@ -67,6 +67,8 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 >
 > **`trocar_senha`:** vem da coluna `usuarios.deve_trocar_senha`. É `true` enquanto o usuário não troca a senha (depois do seed, da criação ou do reset pelo admin), e o frontend redireciona para a tela de troca de senha. É `false` depois da troca (`POST /api/auth/reset-password`). Os dois casos são válidos: no banco local de 2026-09-26, o id 5 está com `deve_trocar_senha = 0`.
 >
+> **Troca obrigatória imposta pelo backend (SEC-23, Lote 28, 2026-10-31):** com `trocar_senha = true`, só `GET /api/auth/me` e `POST /api/auth/reset-password` funcionam; as demais rotas protegidas respondem `403` `"troca de senha obrigatória"`. Os usuários recém-semeados (`make db-seed`) estão nesse estado: troque a senha antes de usar a collection com eles.
+>
 > **Fluxo real de senha (produção/novos usuários):** a partir da criação de usuário (`POST /api/usuarios`) ou reset de senha pelo admin (`POST /api/admin/reset-password`), a API **não usa mais senha fixa**. Ela gera uma senha aleatória segura (`crypto/rand`, mínimo 12 caracteres, com maiúscula/minúscula/dígito/símbolo garantidos) e a envia por email (SMTP) ao endereço cadastrado do usuário. A senha gerada nunca é exposta pela API — nem em logs, nem na resposta HTTP. Ambas as respostas (criação e reset) incluem um campo `email_enviado: boolean` informando se o envio de fato ocorreu (será `false` se o SMTP não estiver configurado, caso em que a API usa um serviço "noop" que apenas loga o envio, sem quebrar a operação de criação/reset).
 
 ## Mudanças de contrato do Lote 4 (2026-09-25)
@@ -225,6 +227,36 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 | IMG-01 | Banco | Coluna `produtos.imagem` (migração 26, `make db-fix-produtos-imagem`; revert `make db-revert-produtos-imagem`). Ver `docs/manual-base-de-dados.md`, seção 13. |
 | IMG-01 | `make db-gerar-imagens-produtos` | Gera um PNG 600x600 com o nome do produto na diagonal para cada produto sem imagem, pelo mesmo caso de uso do upload. Já rodado no banco local: 292 imagens. Ver "Imagens de produto" em "Subindo o ambiente". |
 
+## Mudanças do Lote 27 (2026-10-31): limites de entrada, CORS, busca e transações
+
+> **Nenhuma rota nova**: a API continua com **64 rotas** (5 Public, 36 Authenticated, 23 AdminOnly). As mudanças são respostas novas para entradas anormais (corpo, headers, `page`, `q`, itens do pedido), uma regra de configuração (CORS) e o `500` do BUG-15. O caminho de sucesso das rotas não muda. Na collection, os exemplos de listagem usam `page=1` e `q` curto, então nenhum exemplo precisou mudar; a descrição ganhou a seção "Mudanças do Lote 27".
+
+| Card | Onde | Mudança |
+|------|------|---------|
+| SEC-14 | Todas as rotas com corpo | Corpo acima de **256 KiB** → **`413`** `"corpo da requisição excede o limite de 256 KB"` (`Content-Length` acima do limite é recusado sem chamar o handler; corpo chunked é cortado pelo `MaxBytesReader`). 401/403 da policy continuam vindo antes do 413. Única exceção: `POST /api/produtos/{id}/imagem`, que mantém o seu limite (1 MB + 64 KB) e o `413` `"imagem excede 1 MB"`. |
+| SEC-14 | Servidor HTTP | `ReadHeaderTimeout` de 5 s (contra slowloris) e `MaxHeaderBytes` de 64 KiB: headers acima disso recebem **`431`** automático do Go. |
+| SEC-14 | `POST /api/pedidos`, `PUT /api/pedidos/{id}` | Pedido com mais de **200 itens** → **`400`** `"o pedido deve ter no máximo 200 itens"`. O maior pedido do banco local tem 16 itens. |
+| SEC-16 | Todas as listagens paginadas | `page` acima de **10000** é limitado a 10000 (clamp, como o `limit` acima de 100 vira 100); `pagination.page` mostra o valor depois do clamp. `page` gigante (ex.: `9223372036854775807`), que estourava o OFFSET e dava `500`, agora dá `200`; `page` fora da faixa de `int` (ex.: `99999999999999999999`) conta como ausente (página 1). |
+| SEC-25 | Buscas `q` (produtos, clientes, visitas, oportunidades, pedidos) | `q` com mais de **100 caracteres** (contados depois de tirar os espaços das pontas) → **`400`** `"o parâmetro q deve ter no máximo 100 caracteres"`, sem consultar o banco. `%` e `_` digitados passam a ser **literais** (antes funcionavam como curinga: `q=%` devolvia tudo). No SQL: `LIKE ? ESCAPE '!'`. |
+| SEC-17 | Config (`CORS_ALLOWED_ORIGINS`) | Entrada `*` ou `null` (sem diferenciar maiúsculas) **impede a API de subir** (`config: CORS_ALLOWED_ORIGINS não aceita "*" nem "null" (os cookies de sessão exigem origens explícitas)`). O middleware também não aceita mais curinga. **Antes do deploy:** conferir que o Secret file do Jenkins não tem `*`/`null`. Documentado em `.env.example` e `deploy/api.env.example`. |
+| BUG-15 | `POST /api/auth/reset-password`, reset pelo admin (`POST /api/admin/reset-password`) e reset em massa | Histórico, nova senha e revogação das sessões gravados numa única transação. **Mudança intencional:** falha ao gravar o histórico ou ao revogar as sessões, que antes respondia `200` (com o erro só no log), passa a **`500`**, sem trocar a senha. No reset pelo admin, o e-mail só sai depois do commit. Usuário inexistente continua `404`. |
+| SEC-15, SEC-24, BUG-14, SEC-26 | — | Sem mudança de contrato: DSN mascarado também com `@` na senha (SEC-15); testes de injeção de `order_by` em todas as listagens (SEC-24, `order_by` inválido continua caindo no padrão com `200`); `POST /api/vendedores/{id}/clientes` numa transação com lock do cliente (BUG-14); posse e regras de exclusão do pedido checadas sob lock no PUT e no DELETE (SEC-26, mesmos status e mensagens). |
+
+## Mudanças do Lote 28 (2026-10-31): troca de senha obrigatória, Turnstile e pagamentos sob lock
+
+> **Nenhuma rota nova**: a API continua com **64 rotas** (5 Public, 36 Authenticated, 23 AdminOnly). Muda o acesso de quem tem troca de senha pendente (SEC-23), a validação do captcha (SEC-19) e um `500` que vira `404` na criação de pagamento (SEC-35). Na collection, o `GET /api/auth/me` ganhou `trocar_senha` no exemplo, e a descrição ganhou a seção "Mudanças do Lote 28".
+>
+> **Atenção ao usar a collection com os usuários do seed:** os 42 usuários de `sql/03_seed_vendedores.sql` nascem com `deve_trocar_senha = 1`. Enquanto não trocarem a senha, **todas** as rotas protegidas respondem `403` `"troca de senha obrigatória"`, menos `GET /api/auth/me` e `POST /api/auth/reset-password`. Antes de usar as demais requisições com um desses usuários (inclusive o "Login — Vendedor"), faça login, rode "Reset Password (própria senha)" (`POST /api/auth/reset-password`, que derruba a sessão, SEC-08) e faça login de novo. O admin também é bloqueado se estiver com a flag ligada.
+
+| Card | Onde | Mudança |
+|------|------|---------|
+| SEC-23 | Todas as rotas não públicas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password` | Usuário com `usuarios.deve_trocar_senha = 1` (qualquer papel, inclusive admin) recebe **`403`** `{"success":false,"error":"troca de senha obrigatória"}`. Ordem no middleware: os `401` (token, inexistente, inativo, sessão encerrada) e o `500` vêm antes; depois o `403` de troca; por último o `403` de admin. O identificador é a mensagem exata + `403` (sem campo `code`). Log: `[auth] acesso negado: user_id=... troca de senha pendente <método> <rota saneada>`. `login`, `refresh`, `logout`, `/health` e a imagem pública são Public e não mudam. No frontend, esse `403` leva a `/trocar-senha`. |
+| SEC-23 | `GET /api/auth/me` | Campo novo **`trocar_senha`** (bool, entre `role` e `ultimo_login_at`), com o valor de `usuarios.deve_trocar_senha`. Mudança aditiva. O frontend usa o campo para redirecionar para `/trocar-senha` antes de renderizar a tela. |
+| SEC-19 | `POST /api/auth/login`, `POST /api/auth/reset-password` | O token Turnstile passa a ser conferido também pelo **`hostname`** (sem diferenciar maiúsculas, contra a lista aceita) e pela **`action`** (exata): `login` no login e `reset-senha` na troca de senha. Token de outro site ou do outro fluxo é recusado com a resposta de sempre, **`400`** `"captcha inválido ou ausente"`, ainda antes do rate limit. Com uma secret de teste da Cloudflare (`1x…AA`, `2x…AA`, `3x…AA`), hostname e action não são conferidos (aviso no startup). |
+| SEC-19 | Config (`TURNSTILE_HOSTNAMES`) | **Env nova, opcional:** hostnames aceitos, separados por vírgula, sem esquema, porta, caminho ou curinga (ex.: `ivo-inspiron-15-3530,192.168.168.106`). Vazia ou não definida: a lista é derivada dos hosts de `CORS_ALLOWED_ORIGINS`. Item inválido (`://`, `/`, `:`, `*`, espaço interno, item vazio) impede a subida com `TURNSTILE_HOSTNAMES inválida`, sem o valor; `:` é recusado, então IPv6 não é aceito. Lista final vazia recusa todos os tokens (fail-closed). O startup registra o modo (teste, lista vazia ou `hostnames aceitos=N` com a origem). Documentada em `.env.example` e `deploy/api.env.example`. **No deploy:** o hostname da página do frontend precisa estar no CORS ou nesta env, e backend e frontend precisam subir juntos (uma aba com o bundle antigo recebe `400` no login até recarregar). |
+| SEC-35 | `POST /api/pagamentos` | Criação numa transação com lock do pedido. Pedido apagado no meio da criação (erro de FK `1452` em `fk_pagamentos_pedido`) passa de `500` para **`404`** `"pedido não encontrado"`, sem o texto do driver no log. A ordem de erros `403` → `400` → `404` → `400` não muda. |
+| SEC-35 | `DELETE /api/pagamentos/{id}` | Exclusão numa transação (lock do pedido no escopo restrito, depois lock do pagamento) e `DELETE` condicional a "não quitado": pagamento quitado no meio da exclusão dá `409` `"pagamento já quitado não pode ser excluído"` em vez de ser apagado. Status e mensagens iguais no caminho normal; na exclusão pelo admin, erro de banco no lock do pagamento passa a `500`. |
+
 ## Endpoints
 
 ### Healthcheck
@@ -275,7 +307,8 @@ Exemplos (todos com a senha de seed, ver a nota abaixo):
 
 #### GET /api/auth/me
 - **Auth:** Bearer Token
-- **Resposta:** `{ id, nome, email, role, ativo, id_vendedor, created_at, ultimo_login_at, vendedor_desligado }`
+- **Resposta:** `{ id, nome, email, role, ativo, id_vendedor, trocar_senha, created_at, ultimo_login_at, vendedor_desligado }`
+- **`trocar_senha` (bool, SEC-23, Lote 28, 2026-10-31):** valor de `usuarios.deve_trocar_senha`. Enquanto for `true`, o `/me` e `POST /api/auth/reset-password` são as únicas rotas protegidas liberadas; as demais respondem `403` `"troca de senha obrigatória"`.
 - **`vendedor_desligado` (bool, 2026-09-24):** `true` só para usuário `normal` vinculado a vendedor com `data_desligamento` preenchida. É `false` para admin, para usuário sem vínculo e para vínculo órfão (vendedor inexistente). O `/me` continua acessível para o vendedor desligado (não retorna `403`). O frontend usa este campo e o `id_vendedor` atualizado para revalidar a sessão (em vez de confiar só no `localStorage`) e exibir o aviso.
 - **Erros:** `401` não autenticado; `401` `"usuário inativo"` (SEC-06); `404` usuário não encontrado; `500` erro interno (inclui falha ao checar se o vendedor está desligado ou o status do usuário).
 - **Usuário inativo em rotas protegidas (SEC-06, Lote 6, 2026-09-26):** vale para o `/me` e para todas as rotas com Bearer. O middleware lê `ativo` e `role` do usuário no banco a cada requisição, sem cache. Inativo ou inexistente → `401` `"usuário inativo"`; o front faz logout. Erro de banco → `500`. A role do banco substitui a do token, então um rebaixamento vale sem novo login.
@@ -1140,11 +1173,12 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 | Código | Significado |
 |--------|-------------|
-| 400 | Body inválido ou campos obrigatórios ausentes; `"id inválido"` para id de path não numérico ou `<= 0` (CHORE-03, Lote 25); transição de status de pedido proibida (BUG-16) |
+| 400 | Body inválido ou campos obrigatórios ausentes; `"id inválido"` para id de path não numérico ou `<= 0` (CHORE-03, Lote 25); transição de status de pedido proibida (BUG-16); `q` acima de 100 caracteres e pedido acima de 200 itens (SEC-25 e SEC-14, Lote 27) |
 | 401 | Não autenticado (token ausente/inválido) ou credenciais inválidas |
 | 403 | Acesso restrito a administradores; usuário `normal` sem vendedor vinculado (escritas); ou `"acesso bloqueado: vendedor desligado"` nas rotas da carteira (2026-09-24) |
 | 404 | Recurso não encontrado |
-| 413 | `"imagem excede 1 MB"` no upload da imagem do produto (IMG-01, Lote 26) |
+| 413 | `"imagem excede 1 MB"` no upload da imagem do produto (IMG-01, Lote 26); `"corpo da requisição excede o limite de 256 KB"` nas demais rotas (SEC-14, Lote 27) |
+| 431 | Headers da requisição acima de 64 KiB (resposta automática do servidor Go; SEC-14, Lote 27) |
 | 409 | Conflito: duplicidade (e-mail, CNPJ, SKU, estoque do SKU na data, vínculo de carteira na data; CHORE-06, Lote 25), pedido Faturado/Entregue (itens ou exclusão), pagamento quitado (exclusão; edição pelo `normal`, SEC-27) |
 | 500 | Erro interno do servidor |
 
@@ -1182,7 +1216,9 @@ Para configurar:
 2. Backend: copie `.env.example` (raiz do projeto) para `.env` e preencha `TURNSTILE_SECRET_KEY` com a Secret Key. **Nunca** faça commit dessa chave.
 3. Frontend: preencha `NEXT_PUBLIC_TURNSTILE_SITE_KEY` em `frontend/.env.local` com a Site Key (ver `frontend/.env.local.example`).
 
-Sem `captchaToken` válido, ambos os endpoints respondem `401`. `POST /api/auth/reset-password` também ganhou rate limiting dedicado (10 falhas/5min, bloqueio de 10min), lacuna identificada pelo SecBrain durante a revisão desta feature.
+Sem `captchaToken` válido, ambos os endpoints respondem `400` `"captcha inválido ou ausente"` (este parágrafo dizia `401` por engano; corrigido no Lote 28).
+
+**Hostname e action (SEC-19, Lote 28, 2026-10-31):** a resposta do siteverify também precisa trazer um `hostname` da lista aceita (`TURNSTILE_HOSTNAMES` ou, se vazia, os hosts de `CORS_ALLOWED_ORIGINS`) e a `action` do fluxo (`login` no login, `reset-senha` na troca de senha; o widget do frontend envia a action correta). Com uma secret de teste da Cloudflare, os dois não são conferidos. Ver "Mudanças do Lote 28". `POST /api/auth/reset-password` também ganhou rate limiting dedicado (10 falhas/5min, bloqueio de 10min), lacuna identificada pelo SecBrain durante a revisão desta feature.
 
 ### Importação de clientes (CRM)
 
