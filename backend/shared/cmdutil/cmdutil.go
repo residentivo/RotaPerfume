@@ -4,34 +4,22 @@
 package cmdutil
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/joho/godotenv"
+
+	"github.com/rotaperfumes/shared/projroot"
 )
 
 // maxNiveis limita quantos diretórios acima do cwd são inspecionados.
 const maxNiveis = 6
 
 // FindProjectRoot sobe a árvore de diretórios a partir do cwd até achar a
-// raiz do repositório (identificada por backend/shared/go.mod).
+// raiz do repositório (identificada por backend/shared/go.mod). Delegado a
+// projroot.Find, que o pacote config também usa (SEC-29).
 func FindProjectRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	for i := 0; i < maxNiveis; i++ {
-		if _, err := os.Stat(filepath.Join(dir, "backend", "shared", "go.mod")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return "", fmt.Errorf("não foi possível localizar backend/shared/go.mod a partir de %s", dir)
+	return projroot.Find()
 }
 
 // LoadEnvFromCwd tenta carregar o .env da raiz do projeto subindo diretórios

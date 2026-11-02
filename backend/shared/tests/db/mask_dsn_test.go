@@ -127,7 +127,7 @@ func TestF08_MaskDSN(t *testing.T) {
 			require.NoError(t, conn.Close())
 
 			linha := strings.TrimSpace(buf.String())
-			assert.Equal(t, "[db] conexão MariaDB estabelecida (host="+c.want+")", linha)
+			assert.Equal(t, "[db] conexão MariaDB estabelecida (host="+c.want+", tls=desligado)", linha)
 			assert.NotContains(t, linha, "segredo", "a senha nunca vai para o log")
 		})
 	}
@@ -175,7 +175,7 @@ func TestSEC15_MaskDSN_SenhaComSeparadores(t *testing.T) {
 			sufixo := "@tcp(" + host + ")/rota?parseTime=true"
 			linha := abrirELogar(t, "user:"+c.senha+sufixo)
 
-			assert.Equal(t, "[db] conexão MariaDB estabelecida (host=user:****"+sufixo+")", linha)
+			assert.Equal(t, "[db] conexão MariaDB estabelecida (host=user:****"+sufixo+", tls=desligado)", linha)
 			for _, f := range c.fragmentos {
 				assert.NotContains(t, linha, f, "fragmento da senha no log")
 			}
@@ -189,5 +189,5 @@ func TestSEC15_MaskDSN_SenhaComSeparadores(t *testing.T) {
 func TestSEC15_MaskDSN_ProtecaoExtra(t *testing.T) {
 	host := fakeMySQL(t)
 	linha := abrirELogar(t, "user:rota@tcp("+host+")/rota")
-	assert.Equal(t, "[db] conexão MariaDB estabelecida (host=****)", linha)
+	assert.Equal(t, "[db] conexão MariaDB estabelecida (host=****, tls=desligado)", linha)
 }

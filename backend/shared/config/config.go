@@ -32,6 +32,9 @@ type Config struct {
 	DBName    string
 	DBUsuario string
 	DBSenha   string
+	// DBTLS é o TLS da conexão com o banco (SEC-29), via DB_TLS_CA e
+	// DB_TLS_SERVER_NAME. Valor zero = sem TLS (DSN sem tls=).
+	DBTLS DBTLS
 
 	// JWT
 	JWTSecret string
@@ -81,6 +84,14 @@ type Config struct {
 	// /api/auth/reset-password (env TURNSTILE_SECRET_KEY). Nunca é logada nem
 	// retornada em resposta JSON.
 	TurnstileSecretKey string
+
+	// TurnstilePermitirSecretTeste (TURNSTILE_PERMITIR_SECRET_TESTE, padrão
+	// false) é a válvula do SEC-37: com COOKIE_SECURE=true a API recusa subir
+	// com secret de teste da Cloudflare, salvo se esta flag for true (só em
+	// rede interna; o captcha fica desligado). A checagem fica no startup da
+	// API (bootstrap.ValidarCaptcha), não no Load: CLIs e testes não usam
+	// captcha.
+	TurnstilePermitirSecretTeste bool
 
 	// TurnstileHostnames são os hostnames aceitos na resposta do siteverify
 	// (SEC-19), via TURNSTILE_HOSTNAMES (separados por vírgula, só hostname,
@@ -261,7 +272,11 @@ func load(exigirDB bool) (*Config, error) {
 		return nil, err
 	}
 	vlog.Printf("config.go", "load", "lendo TURNSTILE_SECRET_KEY")
-	cfg.TurnstileSecretKey = os.Getenv("TURNSTILE_SECRET_KEY")
+	cfg.TurnstileSecretKey = strings.TrimSpace(os.Getenv("TURNSTILE_SECRET_KEY"))
+	vlog.Printf("config.go", "load", "lendo TURNSTILE_PERMITIR_SECRET_TESTE (padrão false) e verificando erro")
+	if cfg.TurnstilePermitirSecretTeste, err = parsePermitirSecretTeste(); err != nil {
+		return nil, err
+	}
 	vlog.Printf("config.go", "load", "lendo TURNSTILE_HOSTNAMES e verificando erro")
 	if cfg.TurnstileHostnames, err = parseTurnstileHostnames(os.Getenv("TURNSTILE_HOSTNAMES"), cfg.CORSAllowedOrigins); err != nil {
 		return nil, err
@@ -276,6 +291,11 @@ func load(exigirDB bool) (*Config, error) {
 
 	vlog.Printf("config.go", "load", "lendo PRODUTO_IMAGENS_DIR e verificando erro")
 	if cfg.ProdutoImagensDir, err = parseProdutoImagensDir(); err != nil {
+		return nil, err
+	}
+
+	vlog.Printf("config.go", "load", "carregando TLS do banco (DB_TLS_CA/DB_TLS_SERVER_NAME) e verificando erro")
+	if cfg.DBTLS, err = LoadDBTLS(); err != nil {
 		return nil, err
 	}
 
@@ -332,6 +352,22 @@ func parseProdutoImagensDir() (string, error) {
 		return "", ErrProdutoImagensDir
 	}
 	return abs, nil
+}
+
+// parsePermitirSecretTeste lê TURNSTILE_PERMITIR_SECRET_TESTE (SEC-37):
+// ausente ou vazio → false; senão strconv.ParseBool estrito. Valor inválido
+// derruba a subida.
+func parsePermitirSecretTeste() (bool, error) {
+	raw := strings.TrimSpace(os.Getenv("TURNSTILE_PERMITIR_SECRET_TESTE"))
+	if raw == "" {
+		return false, nil
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		vlog.Printf("config.go", "parsePermitirSecretTeste", "decisão valor_invalido_recusado")
+		return false, fmt.Errorf("config: TURNSTILE_PERMITIR_SECRET_TESTE inválido (%q): esperado true ou false", raw)
+	}
+	return v, nil
 }
 
 // parseCookieSecure lê COOKIE_SECURE: vazio → true; senão strconv.ParseBool.
@@ -620,10 +656,13 @@ func adicionarSemRepetir(lista []string, v string) []string {
 // a partir de RowsAffected=0 — com clientFoundRows=true isso não acontece
 // mais quando a linha existe. Manter este DSN idêntico ao de
 // cmd/resetpassword.
+//
+// tls=custom (SEC-29): acrescentado só quando DBTLS está ativo; a config
+// "custom" é registrada no driver por LoadDBTLS (chamado pelo Load).
 func (c *Config) DSN() string {
 	return fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true",
-		c.DBUsuario, c.DBSenha, c.DBHost, c.DBPort, c.DBName,
+		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true%s",
+		c.DBUsuario, c.DBSenha, c.DBHost, c.DBPort, c.DBName, c.DBTLS.parametroDSN(),
 	)
 }
 

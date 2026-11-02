@@ -2,7 +2,8 @@
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
-	audit deps-audit deps-audit-go deps-audit-frontend
+	audit deps-audit deps-audit-go deps-audit-frontend \
+	setup setup-check
 
 # =============================================================================
 # Helpers
@@ -26,6 +27,7 @@ DB_SENHA   := $(subst $(CR),,$(DB_SENHA))
 DB_HOST    := $(strip $(subst $(CR),,$(DB_HOST)))
 DB_PORT    := $(strip $(subst $(CR),,$(DB_PORT)))
 DB_NAME    := $(strip $(subst $(CR),,$(DB_NAME)))
+DB_TLS_CA  := $(strip $(subst $(CR),,$(DB_TLS_CA)))
 
 # Senha só pelo ambiente (lida nativamente pelo mariadb/mariadb.exe), nunca no argv.
 MYSQL_PWD = $(DB_SENHA)
@@ -33,10 +35,35 @@ MYSQL_PWD = $(DB_SENHA)
 MSYS2_ENV_CONV_EXCL = MYSQL_PWD
 export
 
-MYSQL_OPTS = --local-infile=0 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4
+# SEC-29: com DB_TLS_CA no .env, o cliente mariadb conecta por TLS conferindo
+# a CA e o nome do servidor (DB_HOST precisa estar no SAN do certificado; o
+# cliente não tem equivalente ao DB_TLS_SERVER_NAME da API). Caminho relativo
+# vale a partir da raiz do projeto (onde o make roda). Sem DB_TLS_CA: como antes.
+MYSQL_TLS_OPTS = $(if $(DB_TLS_CA),--ssl-ca="$(DB_TLS_CA)" --ssl-verify-server-cert)
+MYSQL_OPTS = --local-infile=0 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4 $(MYSQL_TLS_OPTS)
 
 help: ## Mostra esta ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# =============================================================================
+# Ambiente de desenvolvimento (SETUP-01)
+# =============================================================================
+# Versões: Go = diretiva "go" dos go.mod; Node = frontend/.nvmrc; demais em
+# scripts/versoes.conf. No Windows (Git Bash) chama o scripts/setup-windows.ps1.
+# Opções extras: make setup SETUP_ARGS="--deps --go-sistema" (ver --help).
+ifeq ($(OS),Windows_NT)
+SETUP_CMD = powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-windows.ps1
+SETUP_CHECK_FLAG = -Check
+else
+SETUP_CMD = bash scripts/setup-linux.sh
+SETUP_CHECK_FLAG = --check
+endif
+
+setup: ## SETUP-01: instala/ajusta as ferramentas (Go do go.mod, Node do .nvmrc, govulncheck, mariadb, Postman CLI)
+	$(SETUP_CMD) $(SETUP_ARGS)
+
+setup-check: ## SETUP-01: só confere versões (inclui covdata e GOTOOLCHAIN, pré-requisito do make test - TST-08)
+	$(SETUP_CMD) $(SETUP_CHECK_FLAG) $(SETUP_ARGS)
 
 # =============================================================================
 # Banco de dados
@@ -231,7 +258,7 @@ frontend-deps: ## Instala dependências npm do frontend (roda uma vez)
 # =============================================================================
 # Testes
 # =============================================================================
-test: test-shared test-api ## Roda todos os testes Go
+test: test-shared test-api ## Roda todos os testes Go (requer Go local na versão do go.mod, com covdata: ver make setup-check / TST-08)
 
 test-shared: ## Testes do pacote compartilhado (em tests/, cobertura medida com -coverpkg=./...)
 	cd backend/shared && go test ./... -v -coverpkg=./... -coverprofile=coverage.txt

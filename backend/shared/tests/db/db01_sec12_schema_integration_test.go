@@ -76,6 +76,9 @@ func TestIntegracaoDB01_SEC12_Schema(t *testing.T) {
 			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'refresh_tokens' AND COLUMN_NAME = 'reuso_detectado_em'`).Scan(&tipo, &nulo, &padrao))
 		assert.Equal(t, "datetime", tipo)
 		assert.Equal(t, "YES", nulo)
-		assert.False(t, padrao.Valid, "DEFAULT NULL")
+		// MariaDB (>= 10.2.7) devolve o DEFAULT NULL explícito como o texto
+		// 'NULL' em COLUMN_DEFAULT (e SQL NULL quando não há default); o MySQL
+		// devolve SQL NULL. As duas formas significam DEFAULT NULL.
+		assert.True(t, !padrao.Valid || padrao.String == "NULL", "DEFAULT NULL (obtido: %q)", padrao.String)
 	})
 }

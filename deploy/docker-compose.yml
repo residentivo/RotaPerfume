@@ -15,6 +15,16 @@
 #
 # O MariaDB roda no HOST (fora do compose): a API acessa via host.docker.internal.
 # Segredos da API ficam em ./api.env (gerado pelo Jenkins, nunca versionado).
+#
+# SEC-29 (TLS API <-> banco; producao = MySQL 8.0 do host na 3306): a CA e
+# montada DIRETO do host, pelo caminho absoluto
+#   DB_TLS_CA_HOST_PATH  (default /etc/mysql/ssl/ca.pem; parametro do Jenkins)
+# O bind e resolvido pelo daemon no HOST, entao funciona com o Jenkins em
+# container (usando o socket do host) e nativo. Arquivo inexistente faz o
+# "up" falhar (create_host_path: false) em vez de criar um diretorio.
+# Como o host.docker.internal pode nao estar no SAN, o nome conferido e
+#   DB_TLS_SERVER_NAME   (default: SITE_IP) - precisa estar no SAN
+# Ver docs/Instal_SSL.md.
 
 name: rotaperfumes
 
@@ -32,11 +42,28 @@ services:
       - ${API_ENV_FILE:-./api.env}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    labels:
+      # SEC-29: sha256 da CA (exportado pelo Jenkins no Deploy). Mudou a CA,
+      # muda a label e o compose recria o container (o bind de arquivo fica
+      # preso ao inode antigo; so conteudo novo nao dispara recriacao).
+      rotaperfumes.db-ca-sha256: ${DB_CA_SHA256:-}
     environment:
       # IMG-01: imagens de produto no volume nomeado (o container e read_only).
       PRODUTO_IMAGENS_DIR: /data/produtos-imagens
+      # SEC-29: TLS com o banco. Fixados aqui (ganham do api.env) para
+      # casar com o bind mount abaixo; ver docs/deploy-servidor.md.
+      DB_TLS_CA: /etc/rotaperfumes/db-ca.pem
+      DB_TLS_SERVER_NAME: ${DB_TLS_SERVER_NAME:-${SITE_IP:-192.168.168.106}}
     volumes:
       - produto_imagens:/data/produtos-imagens
+      # SEC-29: CA do banco no HOST (publica; 644 para o uid 65532 da
+      # distroless ler). Caminho absoluto: resolvido pelo daemon no host.
+      - type: bind
+        source: ${DB_TLS_CA_HOST_PATH:-/etc/mysql/ssl/ca.pem}
+        target: /etc/rotaperfumes/db-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777

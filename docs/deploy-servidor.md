@@ -18,11 +18,17 @@ O script `deploy/setup-servidor.sh` faz, no servidor, tudo o que as seções 2, 
    sudo bash setup-servidor.sh --env /tmp/.env --dump /tmp/rotaperfumes-AAAAMMDD-HHMMSS.sql.gz \
      --turnstile-site-key SUA_SITE_KEY --remove-inputs
    ```
-   Opções: `--site-host` (padrão `ivo-inspiron-15-3530`), `--site-ip` (`192.168.168.106`), `--https-port` (`8443`), `--jenkins-url` (`http://localhost:8888`), `--skip-mysql` (o nome da opção foi mantido; não mexe em banco/usuários do MariaDB e pede a senha atual do `rotaperfumes_app`), `--skip-build` e `--remove-inputs` (apaga o `.env` e o dump do `/tmp` no final). Veja `bash setup-servidor.sh --help`.
+   Opções: `--site-host` (padrão `ivo-inspiron-15-3530`), `--site-ip` (`192.168.168.106`), `--https-port` (`8443`), `--jenkins-url` (`http://localhost:8888`), `--skip-mysql` (o nome da opção foi mantido; não mexe em banco/usuários do MySQL/MariaDB e pede a senha atual do `rotaperfumes_app`), `--skip-build`, `--remove-inputs` (apaga o `.env` e o dump do `/tmp` no final) e `--apenas-banco` (só hardening e bind-address do banco; veja o item 5). Veja `bash setup-servidor.sh --help`.
 3. O script executa 11 etapas e mostra o andamento como `[n/11]`:
-   1. **Pré-checagens:** root via `sudo`, `docker compose` ≥ 2.17, integridade do dump (`gzip -t`), Jenkins nativo, servidor MariaDB (recomendado: MariaDB ≥ 11.4 LTS; o script ainda aceita MySQL por compatibilidade) e acesso root ao banco. O script usa o cliente `mariadb` quando ele existe. Se o acesso root por socket falhar, o script pede a senha do root.
+   1. **Pré-checagens:** root via `sudo`, `docker compose` ≥ 2.17, integridade do dump (`gzip -t`), Jenkins nativo, servidor MySQL 8 (produção) ou MariaDB e acesso root ao banco. O script usa o cliente `mariadb` quando ele existe. Se o acesso root por socket falhar, o script pede a senha do root.
    2. Coloca o usuário `jenkins` no grupo `docker`. O Jenkins só é reiniciado se o grupo mudou.
-   3. **bind-address:** se o banco escuta só em loopback, grava `zz-rotaperfumes.cnf` com `bind-address = 0.0.0.0`, `local_infile = 0`, `sql_mode` estrito (`STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION`) e charset/collation `utf8mb4`/`utf8mb4_unicode_ci`, e reinicia o banco. Se o banco **já** escutava fora do loopback, esse arquivo não é gravado: aplique essas três configurações à mão (card pendente no Kanban).
+   3. **Hardening e bind-address do banco (DEPLOY-02):** o script trabalha com dois drop-ins `[mysqld]` no diretório do banco (`/etc/mysql/mysql.conf.d` no MySQL 8 de produção; `/etc/mysql/mariadb.conf.d` no MariaDB):
+      - `zz-rotaperfumes-hardening.cnf` é gravado **sempre**, inclusive em servidor com bind já aberto: `local_infile = 0`, `sql_mode` estrito, `character_set_server = utf8mb4` e `collation_server = utf8mb4_unicode_ci`. No **MySQL 8** o `sql_mode` é `ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION`. No **MariaDB** é a mesma lista sem `ONLY_FULL_GROUP_BY`, mais `character_set_collations = utf8mb4=utf8mb4_unicode_ci` a partir do 11.2. Esse arquivo **nunca reinicia o banco**: ele só é regravado se o conteúdo mudou, é validado antes (`mysqld --validate-config` no MySQL; `mariadbd --help --verbose` no MariaDB) e o que estiver diferente em execução é aplicado com `SET GLOBAL` (não `PERSIST`; vale para conexões novas).
+      - `zz-rotaperfumes-bind.cnf` só tem `bind-address = 0.0.0.0` e só é gravado se o banco escuta apenas em loopback. É o **único** caso em que o banco é reiniciado.
+      - Se a validação falhar, o script restaura o arquivo anterior e para **sem reiniciar**. Se o restart falhar, restaura, reinicia de novo e para com erro.
+      - O drop-in antigo `zz-rotaperfumes.cnf` (bind + hardening juntos) é migrado: primeiro o script grava o `-bind.cnf` com o mesmo endereço e só depois remove o antigo, sem restart.
+      - No fim, confere com `SHOW GLOBAL VARIABLES` e só **avisa** (não altera nada) se `local_infile` não estiver `OFF`, se `sql_mode`, charset ou collation divergirem, se houver `SET PERSIST` dessas variáveis no MySQL (`performance_schema.persisted_variables`; remova com `RESET PERSIST <variável>;`) ou se o schema `rotaperfumes` ou alguma tabela não estiver em `utf8mb4_unicode_ci`. Nesse último caso o script não faz `ALTER`; abra um card.
+      - Reexecutar não grava nada nem reinicia nada se tudo já estiver certo.
    4. **ufw:** se estiver ativo, libera a porta do banco só para `172.16.0.0/12`, nega o resto e libera a 8443. Se estiver inativo, **só avisa** e sugere os comandos. O script nunca ativa o ufw.
    5. **Banco e usuários:** cria o banco `rotaperfumes` e os usuários `rotaperfumes_app` e `rotaperfumes_admin`. A senha do app é gerada automaticamente. A senha do admin é **você** que escolhe, com no mínimo 12 caracteres, e a digita depois no Jenkins. Se os usuários já existirem, o script pergunta se deve redefinir as senhas.
    6. Instala o dump em `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` (dono `root:jenkins`, modo 640).
@@ -38,7 +44,13 @@ O script `deploy/setup-servidor.sh` faz, no servidor, tudo o que as seções 2, 
    10. Dispara o build com `IMPORTAR_DUMP=true` (quando há `--dump`) e mostra o log ao vivo. Se o build não terminar em `SUCCESS`, o script sai com erro.
    11. **Resumo:** mostra a URL de acesso, exporta a CA do Caddy para `~/rotaperfumes-caddy-root.crt` (instale no Windows como na seção 8) e lembra de cadastrar o hostname no Turnstile.
 4. **Reexecução:** o script pode ser rodado de novo sem problemas. Se ele **redefinir as senhas** ou gerar um `api.env` novo, que sempre traz um `JWT_SECRET` novo, **atualize** as credenciais no Jenkins: abra a credencial → **Update** → envie o arquivo novo ou digite a senha nova. O script só confere se as credenciais existem, não o conteúdo delas.
-5. **Confira o `JWT_SECRET` do Secret file (SEC-18, Lote 24, 2026-10-29):** desde o Lote 24 a API **não sobe** com `JWT_SECRET` menor que 32 bytes ou igual ao placeholder do `.env.example` (log `config: JWT_SECRET é obrigatório (mínimo de 32 bytes)`), nem com `JWT_TTL` menor ou igual a zero. O `api.env` gerado pelo script já atende. Se o Secret file `rotaperfumes-api-env` do Jenkins foi criado antes do Lote 24 ou editado à mão, confira antes do próximo deploy que o `JWT_SECRET` dele tem 32 bytes ou mais (para gerar um: `openssl rand -base64 48`). Trocar o `JWT_SECRET` derruba as sessões abertas. Confira também que `COOKIE_SECURE` não está `false` nesse arquivo.
+5. **Servidor já instalado (só o banco):** para aplicar o hardening do DEPLOY-02 num servidor que já está no ar, sem `--env`, Docker, compose nem Jenkins:
+   ```bash
+   curl -fsSLO https://raw.githubusercontent.com/residentivo/RotaPerfume/main/deploy/setup-servidor.sh
+   sudo bash setup-servidor.sh --apenas-banco
+   ```
+   Roda só a etapa 1 reduzida (root, cliente, acesso root ao banco, sabor e serviço) e a etapa 3, e sai. Com o bind já aberto, **não reinicia** o banco. Pode ser rodado de novo quando quiser. Funciona também com o Jenkins em container.
+6. **Confira o `JWT_SECRET` do Secret file (SEC-18, Lote 24, 2026-10-29):** desde o Lote 24 a API **não sobe** com `JWT_SECRET` menor que 32 bytes ou igual ao placeholder do `.env.example` (log `config: JWT_SECRET é obrigatório (mínimo de 32 bytes)`), nem com `JWT_TTL` menor ou igual a zero. O `api.env` gerado pelo script já atende. Se o Secret file `rotaperfumes-api-env` do Jenkins foi criado antes do Lote 24 ou editado à mão, confira antes do próximo deploy que o `JWT_SECRET` dele tem 32 bytes ou mais (para gerar um: `openssl rand -base64 48`). Trocar o `JWT_SECRET` derruba as sessões abertas. Confira também que `COOKIE_SECURE` não está `false` nesse arquivo.
 
 As seções abaixo descrevem o mesmo processo **manualmente**, como alternativa ou para diagnóstico.
 
@@ -64,7 +76,7 @@ Navegador (LAN)                          Navegador (internet)
                  MariaDB do HOST (fora do Docker), banco rotaperfumes
 ```
 
-- O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `golang:1.26-alpine`) → `Build` (imagens do compose) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy, acessando direto `https://SITE_IP:HTTPS_PORT`, e `/api/health` no mesmo endereço com um Host qualquer, como faz o tunnel).
+- O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `golang:1.26-alpine`) → `Build` (imagens do compose) → `CA do banco` (valida a CA do banco no host, SEC-29, seção 3.5) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy, acessando direto `https://SITE_IP:HTTPS_PORT`, e `/api/health` no mesmo endereço com um Host qualquer, como faz o tunnel).
 - A API e o frontend **não** publicam porta no host. Só o Caddy publica a `HTTPS_PORT` (8443), que atende a LAN, `https://localhost:8443` no próprio servidor e o **Cloudflare Tunnel**.
 - **Cloudflare Tunnel:** no `cloudflared` do host, aponte o hostname público para a porta 8443 do servidor (hoje `https://192.168.168.106:8443`) com **No TLS Verify** ligado (`noTLSVerify: true`), porque o certificado é da CA interna do Caddy. Hosts desconhecidos caem no site curinga do Caddy. O Caddy só aceita o header `CF-Connecting-IP` (IP real do visitante) de conexões vindas do próprio servidor (o `SITE_IP` ou o gateway docker `172.16.0.0/12`). Cadastre também o domínio do tunnel no Turnstile.
 - **HTTPS é obrigatório:** os cookies de autenticação são `Secure` (`COOKIE_SECURE=true`, o default; desde o SEC-21 a decisão não depende mais do `Host` da requisição). Por HTTP o login "funciona", mas a sessão não se mantém. (Pelo tunnel o navegador fala HTTPS com a Cloudflare, então funciona.)
@@ -80,6 +92,8 @@ Navegador (LAN)                          Navegador (internet)
 | `TURNSTILE_SITE_KEY` | `0x4AAAAAAFACjc-LtM9NWlvP` | Site key **pública** do Turnstile, embutida no bundle |
 | `IMPORTAR_DUMP` | `false` | Importa o dump no MariaDB. **Sobrescreve as tabelas** |
 | `DUMP_PATH` | `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` | Caminho do dump no servidor |
+| `DB_TLS_CA_HOST_PATH` | `/etc/mysql/ssl/ca.pem` | Caminho **absoluto no host** do certificado **público** da CA do banco (`ssl_ca`), modo 644 (SEC-29, seção 3.5 e `docs/Instal_SSL.md`) |
+| `DB_TLS_SERVER_NAME` | vazio (= `SITE_IP`) | Nome conferido no certificado do MariaDB; precisa estar no SAN. Vale para a API e para o import |
 
 ### Credenciais Jenkins exigidas
 
@@ -123,23 +137,46 @@ O banco do projeto é o **MariaDB 11.4 LTS** (DB-03). A API roda em container e 
 
 > **Driver Go:** a API continua usando o `go-sql-driver/mysql`, que é compatível com o MariaDB (mesmo protocolo). Os pacotes `<ctx>mysql` mantêm o nome.
 
-1. **bind-address e configurações do servidor.** Por padrão, o MariaDB do Ubuntu escuta só em `127.0.0.1`, que os containers não alcançam. Crie um drop-in, por exemplo `/etc/mysql/mariadb.conf.d/zz-rotaperfumes.cnf` (o diretório `/etc/mysql` é o padrão do pacote), seção `[mysqld]`:
+1. **bind-address e configurações do servidor (DEPLOY-02).** O `setup-servidor.sh` faz isto sozinho (`sudo bash setup-servidor.sh --apenas-banco` num servidor já instalado; seção 0, item 5). Para fazer à mão, use **dois** drop-ins `[mysqld]` em `/etc/mysql/mysql.conf.d/` (MySQL 8, produção) ou `/etc/mysql/mariadb.conf.d/` (MariaDB).
+
+   `zz-rotaperfumes-hardening.cnf` (sempre). **MySQL 8.0:**
    ```ini
    [mysqld]
-   bind-address = 0.0.0.0
+   local_infile = 0
+   sql_mode = ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+   character_set_server = utf8mb4
+   collation_server = utf8mb4_unicode_ci
+   ```
+   **MariaDB** (a última linha só no 11.2 ou superior):
+   ```ini
+   [mysqld]
    local_infile = 0
    sql_mode = STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
    character_set_server = utf8mb4
    collation_server = utf8mb4_unicode_ci
+   character_set_collations = utf8mb4=utf8mb4_unicode_ci
    ```
+   `zz-rotaperfumes-bind.cnf` (só se o banco escuta apenas em `127.0.0.1`):
+   ```ini
+   [mysqld]
+   bind-address = 0.0.0.0
+   ```
+   - Não use `NO_AUTO_CREATE_USER` (não existe no MySQL 8.0) nem `default_collation_for_utf8mb4`. Não misture opções de um sabor no outro.
    - Com `bind-address = 0.0.0.0` (todas as interfaces), bloqueie a 3306 para a LAN no firewall (passo 4).
    - `local_infile = 0`: o projeto não usa `LOAD DATA LOCAL INFILE` (SEC-28).
-   - A collation explícita evita o padrão do MariaDB 11.4 (`utf8mb4_uca1400_ai_ci`), diferente da usada pelo projeto.
+   - A collation explícita evita o padrão do servidor (`utf8mb4_0900_ai_ci` no MySQL 8; `utf8mb4_uca1400_ai_ci` no MariaDB 11.4+), diferente da usada pelo projeto.
+   - Se existir o antigo `zz-rotaperfumes.cnf`, crie primeiro o `-bind.cnf` e só depois apague o antigo.
 
-   Depois reinicie:
+   Valide **antes** de aplicar:
    ```bash
-   sudo systemctl restart mariadb
+   sudo mysqld --validate-config --user=mysql                          # MySQL 8
+   sudo mariadbd --help --verbose --user=mysql >/dev/null; echo $?     # MariaDB (0 = ok)
    ```
+   Só o `-bind.cnf` exige restart (`sudo systemctl restart mysql`). O hardening pode ser aplicado sem restart:
+   ```sql
+   SET GLOBAL local_infile = 0, sql_mode = '<a lista do arquivo>', character_set_server = 'utf8mb4', collation_server = 'utf8mb4_unicode_ci';
+   ```
+   Confira com `SHOW GLOBAL VARIABLES WHERE Variable_name IN ('local_infile','sql_mode','character_set_server','collation_server');`. No MySQL, confira também `SELECT * FROM performance_schema.persisted_variables;`: uma variável persistida ali sobrescreve o drop-in no restart (remova com `RESET PERSIST <variável>;`).
 2. **Usuários e banco.** Gere senhas fortes, sem `$`, `#`, aspas nem espaços:
    ```bash
    openssl rand -base64 32     # senha do rotaperfumes_app
@@ -165,6 +202,33 @@ O banco do projeto é o **MariaDB 11.4 LTS** (DB-03). A API roda em container e 
    sudo ufw allow 8443/tcp                                         # acesso ao sistema
    ```
    A regra `allow` da faixa docker precisa vir **antes** do `deny` (o ufw avalia as regras em ordem).
+5. **TLS na conexão API ↔ banco (SEC-29, Lote 29, 2026-11-01).** O passo a passo completo, a ser executado **no host**, está em **[`docs/Instal_SSL.md`](Instal_SSL.md)**: certificado com SAN, drop-in do MySQL, permissões, parâmetros do job, primeiro deploy, `REQUIRE SSL`, rotação e rollback.
+
+> **Divergência registrada (SEC-29):** esta seção, o `deploy/setup-servidor.sh` e o `deploy/mariadb-setup.sql` falam em **MariaDB 11.4**, mas a **produção é MySQL 8.0.46** (pacote apt do Ubuntu, nativo no host, porta 3306; conferido em 2026-11-01). O MariaDB 11.8.8 da porta 3307 é o banco de **dev** (container do CasaOS). Além disso, o **Jenkins de produção roda em container** (usa o Docker do host pelo socket), embora o `setup-servidor.sh` exija Jenkins nativo. Alinhar script e docs fica para um card próprio. Desde o DEPLOY-02 o `setup-servidor.sh` detecta o sabor e grava o hardening adequado ao MySQL 8; o modo `--apenas-banco` funciona com o Jenkins em container. O modo completo ainda exige Jenkins nativo. O desenho do SEC-29 abaixo funciona com o Jenkins em container e também nativo.
+
+### 3.5 Como o pipeline usa a CA do banco (SEC-29)
+
+A CA **não** fica no repositório nem passa pelo workspace do Jenkins. Ela fica **no host**, no caminho absoluto do parâmetro `DB_TLS_CA_HOST_PATH` (padrão `/etc/mysql/ssl/ca.pem`, modo 644, ver `docs/Instal_SSL.md`), e quem a monta é o **daemon Docker do host**. Por isso funciona com o Jenkins em container: o container do Jenkins não precisa enxergar `/etc/mysql`.
+
+A cada build, o estágio **`CA do banco`**:
+
+1. confere se `DB_TLS_CA_HOST_PATH` é absoluto (`^/[A-Za-z0-9._/-]+$`);
+2. roda `deploy/validar-ca-banco.sh` (enviado por stdin) num container descartável de `DB_CLIENT_IMAGE` (`mariadb:11.4`, que traz `bash` e `openssl`, porque o `ca-certificates` do Ubuntu depende do `openssl`). O container roda como **uid 65532**, o mesmo da API distroless, e recebe o arquivo do host com `--mount type=bind,...,readonly`. Caminho inexistente é erro (o `-v` criaria um diretório). Se o uid 65532 não conseguir ler, a API também não conseguiria, e o job para;
+3. o script recusa qualquer linha `-----BEGIN ...` diferente de `-----BEGIN CERTIFICATE-----` (uma chave privada não pode ser montada na API). Em seguida separa **cada** certificado e valida todos: parse, `-checkend 0` (vencido = falha), aviso de 30 dias e de `CA:TRUE`, subject e fingerprint SHA-256 no log;
+4. **confere a CA contra o servidor**, antes de parar a API ou importar: `openssl s_client -starttls mysql -connect SITE_IP:DB_HOST_PORT -CAfile <CA> -verify_return_error`, com `-verify_ip` (nome IP) ou `-verify_hostname` (nome DNS) igual ao `DB_TLS_SERVER_NAME` (vazio = `SITE_IP`; precisa casar com `^[A-Za-z0-9.-]+$` e não pode ser `0.0.0.0`). `DB_HOST_PORT` é `3306` (`environment` do `Jenkinsfile`). Se a CA não validar o certificado que o banco serve hoje para esse nome, o job para com mensagem clara e nada é alterado;
+5. grava o sha256 do arquivo em `deploy/db-ca.sha256` (apagado no `post`).
+
+O `deploy/docker-compose.yml` monta `${DB_TLS_CA_HOST_PATH:-/etc/mysql/ssl/ca.pem}` em `/etc/rotaperfumes/db-ca.pem` (bind read-only, `create_host_path: false`) e fixa no `environment` da API `DB_TLS_CA=/etc/rotaperfumes/db-ca.pem` e `DB_TLS_SERVER_NAME=${DB_TLS_SERVER_NAME:-${SITE_IP}}`. Esses dois ganham do `api.env`; para mudar o nome conferido, use o parâmetro do job. Como o arquivo é do host, o container o remonta sozinho ao reiniciar (ex.: reboot).
+
+No estágio **Deploy**, o pipeline exporta `DB_CA_SHA256` (lido de `deploy/db-ca.sha256`) e o compose o grava na label `rotaperfumes.db-ca-sha256` do serviço `api`. Isso é necessário porque o `docker compose up -d` não recria o container quando só o conteúdo de um arquivo montado muda, e o bind de arquivo fica preso ao inode antigo quando o arquivo é substituído. Com a label, CA nova significa container novo, já com a CA atual.
+
+O estágio **`Importar dump`** monta o mesmo arquivo do host no container `mariadb:11.4` e chama `mariadb -P "$DB_HOST_PORT" --ssl-ca=/etc/rotaperfumes/db-ca.pem --ssl-verify-server-cert`. Como o cliente `mariadb` não tem opção de "server name", ele conecta pelo próprio nome do SAN: com IP (padrão `SITE_IP`) conecta direto nesse IP (o login continua vindo da faixa docker `172.16.0.0/12`); com um nome DNS, o pipeline aponta esse nome para o host (`--add-host <nome>:host-gateway`). `localhost`/`127.*`/`0.0.0.0` são recusados. O cliente `mariadb` 11.4 contra o **MySQL 8.0** (`caching_sha2_password`) **não foi testado** pela equipe; ver o teste e o plano B em `docs/Instal_SSL.md`, passo 8.
+
+Na API, sem `DB_TLS_CA` a conexão é a de antes (sem TLS; só dev local). Com `DB_TLS_CA`, arquivo ilegível ou sem certificado derruba a subida (`config: DB_TLS_CA inválido ...`), e CA errada, vencida ou nome fora do SAN derrubam a conexão (`x509: ...`); não há queda para texto claro. O log de subida mostra `[server] TLS do banco: ligado (...)` e `[db] conexão MariaDB estabelecida (host=<DSN mascarado>, tls=ligado (custom))`.
+
+**Alternativa (não implementada): credencial Secret file.** Em vez do arquivo do host, o PEM da CA poderia ser uma credencial Secret file do Jenkins, entregue ao container por stdin. Desvantagem: a cada rotação seria preciso atualizar a credencial à mão. O desenho atual pega a CA atual do host em todo deploy.
+
+**Rotação** (certificado do servidor e CA): `docs/Instal_SSL.md`, passo 9. Resumo: certificado novo com a mesma CA não exige nada no pipeline; para trocar a CA, coloque antes as duas CAs concatenadas no arquivo do host e rode o job, troque o certificado do servidor, e então deixe só a CA nova e rode o job de novo. Trocar o arquivo da CA antes do certificado é barrado pelo passo 4 acima.
 
 ---
 
@@ -177,7 +241,7 @@ O banco do projeto é o **MariaDB 11.4 LTS** (DB-03). A API roda em container e 
    ```
    192.168.168.106   ivo-inspiron-15-3530
    ```
-5. Se o Cloudflare não aceitar o hostname da LAN, dá para usar as **chaves de teste** da Cloudflare, que sempre passam: site `1x00000000000000000000AA`, secret `1x0000000000000000000000000000000AA`. Com elas, o Turnstile **deixa de proteger** o login. Use só nesta rede interna e sabendo desse risco.
+5. **Use a secret real.** Desde o SEC-37 (Lote 29), a API **não sobe** em produção (`COOKIE_SECURE=true`) com uma secret de **teste** da Cloudflare (`1x…`, `2x…`, `3x…` seguidas de zeros). O log mostra `config: TURNSTILE_SECRET_KEY é uma secret de teste da Cloudflare e não é aceita com COOKIE_SECURE=true ...`, porque com ela o captcha aceita qualquer token e não confere hostname nem action. Se o Cloudflare não aceitar o hostname da LAN e você **precisar** das chaves de teste (site `1x00000000000000000000AA`, secret `1x0000000000000000000000000000000AA`), existe uma válvula: `TURNSTILE_PERMITIR_SECRET_TESTE=true` no Secret file. **Aviso:** com ela o login fica **sem captcha** (só o rate limit protege contra força bruta), e a API loga a cada subida `[config] SEGURANCA: secret de teste do Turnstile em producao (TURNSTILE_PERMITIR_SECRET_TESTE=true): captcha desligado`. Use só nesta rede interna, sabendo do risco, e remova a válvula assim que tiver a secret real.
 
 ---
 
@@ -196,7 +260,7 @@ Caminho: **Gerenciar Jenkins → Credentials → System → Global credentials (
      ```
      Com menos de 32 bytes, ou com o placeholder do exemplo, a API não sobe (SEC-18, Lote 24).
    - `COOKIE_SECURE=true` (SEC-21, Lote 24; é o default se a chave faltar). Nunca `false` no servidor: com `false` os cookies de sessão saem sem `Secure`.
-   - `TURNSTILE_SECRET_KEY` = secret key do Turnstile.
+   - `TURNSTILE_SECRET_KEY` = secret key **real** do Turnstile (secret de teste impede a subida, SEC-37; ver seção 4, item 5).
    - `PASSWORD_PEPPER` = pepper das senhas (SEC-13). Use **o mesmo do `.env` que gerou os hashes do dump importado**: com outro valor, nenhuma senha Argon2id do dump funciona (hashes bcrypt antigos continuam valendo e migram no próximo login). Num banco novo, gere com `openssl rand -base64 48`. Sem ele, ou com menos de 32 bytes, a API não sobe. Depois de definido, **não troque**.
    - `SMTP_*` e `SECURITY_ALERT_EMAILS`, se for enviar e-mails. Se ficarem vazios, os e-mails vão só para o log.
    - Se mudar `SITE_HOST`/`HTTPS_PORT`, ajuste também o `CORS_ALLOWED_ORIGINS`.
@@ -263,7 +327,7 @@ Kind **Username with password**: o usuário do GitHub e um **Personal Access Tok
 5. O estágio **Importar dump**:
    - valida o gzip;
    - para o container da API;
-   - importa via container `mariadb:11.4` (variável `DB_CLIENT_IMAGE` do `Jenkinsfile`), com o comando `mariadb --local-infile=0` e o usuário `rotaperfumes-db-admin`;
+   - importa via container `mariadb:11.4` (variável `DB_CLIENT_IMAGE` do `Jenkinsfile`), com o comando `mariadb --local-infile=0 --ssl-ca=... --ssl-verify-server-cert` (TLS com a CA do host validada no estágio `CA do banco`, SEC-29, seção 3.5) e o usuário `rotaperfumes-db-admin`;
    - roda `TRUNCATE TABLE refresh_tokens`, porque as sessões do ambiente local não valem no servidor.
 
    Em seguida vêm `Deploy` e `Smoke test`.
@@ -357,6 +421,12 @@ As imagens são sempre `:latest`, sem tag por versão. Para voltar:
 | Smoke test: `tunnel=000` com `/api/health=200` usando `localhost` | O Jenkins roda em container: o `localhost` dele é o próprio container, não o servidor | O smoke test testa o site curinga pelo `SITE_IP` com um `Host` qualquer, como o `cloudflared` faz |
 | API não conecta no MariaDB (logs com `connection refused`/`timeout`) | `bind-address` em 127.0.0.1; ufw bloqueando a faixa docker | Seção 3.1 e 3.4, depois `sudo systemctl restart mariadb` |
 | API: `Access denied for user 'rotaperfumes_app'` | Senha diferente entre o MariaDB e o `DB_SENHA`; usuário criado com outro host | Confira o `mariadb-setup.sql` aplicado (host `172.16.0.0/255.240.0.0`) e a credencial `rotaperfumes-api-env` |
+| Estágio **CA do banco**: "bind source path does not exist" ou "nao legivel pelo uid 65532" | `DB_TLS_CA_HOST_PATH` errado, ou arquivo/diretório sem permissão para "outros" | `docs/Instal_SSL.md` passo 5 (`chmod 644`/`755` **no host**) ou ajuste o parâmetro |
+| Estágio **CA do banco**: "nao e certificado", "invalido", "VENCIDO" ou "NAO valida o certificado servido" | Arquivo com chave, CA vencida, CA que não assinou o certificado em uso ou nome fora do SAN | `docs/Instal_SSL.md` passos 1 a 4 e 9 |
+| API não sobe: `config: DB_TLS_CA inválido` | `/etc/rotaperfumes/db-ca.pem` ilegível no container | `chmod 644` no arquivo do host (`docs/Instal_SSL.md` passo 5) |
+| API: `x509: certificate is valid for <nome do SAN>, not host.docker.internal` (ou outro nome) | `DB_TLS_SERVER_NAME` fora do SAN do certificado do MariaDB | Rode o job com `DB_TLS_SERVER_NAME` igual a um nome do SAN (padrão `SITE_IP`) ou reemita o certificado incluindo o nome |
+| API: `x509: certificate signed by unknown authority` ou `relies on legacy Common Name field` | CA do host não é a que assinou o certificado atual do servidor (rotação pela metade) ou o servidor ainda usa o certificado autogerado do MySQL | `docs/Instal_SSL.md` passos 1 a 4 e 9 |
+| `compose up` manual falha com "bind source path does not exist" | `DB_TLS_CA_HOST_PATH` (padrão `/etc/mysql/ssl/ca.pem`) não existe no host | Exporte `DB_TLS_CA_HOST_PATH` com o caminho certo ou instale a CA (`docs/Instal_SSL.md`) |
 | Estágio **Importar dump** falha com "Dump nao encontrado/legivel" | Arquivo fora do `DUMP_PATH` ou sem permissão para o usuário `jenkins` | Seção 7.2/7.3 (`chown`/`chmod`) |
 | Import falha com `Access denied` ou erro de DDL | Credencial `rotaperfumes-db-admin` sem ALL no banco, ou usuário com host `localhost` | Crie o `rotaperfumes_admin@'172.16.0.0/255.240.0.0'` (seção 3.2) |
 | `permission denied ... docker.sock` no build | Usuário `jenkins` fora do grupo `docker`, ou Jenkins não reiniciado | Seção 2.2 |

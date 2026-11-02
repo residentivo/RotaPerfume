@@ -59,6 +59,8 @@ func sec11Base() map[string]*string {
 		"ARGON2_ITERACOES":              nil,
 		"ARGON2_PARALELISMO":            nil,
 		"TURNSTILE_HOSTNAMES":           nil,
+		"DB_TLS_CA":                     nil,
+		"DB_TLS_SERVER_NAME":            nil,
 	}
 }
 

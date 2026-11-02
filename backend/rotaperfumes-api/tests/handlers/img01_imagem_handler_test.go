@@ -105,13 +105,16 @@ func TestIMG01_Upload_Aceita_GravaPeloTipoDetectado(t *testing.T) {
 }
 
 // filename hostil nunca chega ao disco, ao banco, ao log nem à resposta.
+// Os marcadores não podem casar com o nome gerado (<uuid-v4>.<ext>, hex
+// minúsculo): "b.png" casava com um UUID terminado em "b" (teste flaky), por
+// isso os nomes com CRLF usam "zz", que nunca aparece em hex.
 func TestIMG01_Upload_FilenameHostilNaoVaza(t *testing.T) {
 	casos := []struct{ nome, disposicao, marcador string }{
 		{"traversal", `form-data; name="imagem"; filename="../../etc/passwd"`, "etc/passwd"},
 		{"traversal absoluto", `form-data; name="imagem"; filename="/etc/passwd.png"`, "passwd"},
 		{"windows", `form-data; name="imagem"; filename="..\..\boot.ini"`, "boot.ini"},
 		{"CRLF escapado", `form-data; name="imagem"; filename="a\r\nb.png"`, `a\r\nb`},
-		{"CRLF por RFC 2231", `form-data; name="imagem"; filename*=UTF-8''a%0D%0Ab.png`, "b.png"},
+		{"CRLF por RFC 2231", `form-data; name="imagem"; filename*=UTF-8''a%0D%0Azz.png`, "zz.png"},
 		{"script", `form-data; name="imagem"; filename="<script>alert(1)</script>.png"`, "<script>"},
 	}
 	for _, c := range casos {
@@ -144,7 +147,7 @@ func TestIMG01_Upload_FilenameComCRLFCru(t *testing.T) {
 	img01EsperarTroca(e.mock, "", img01Fixo, &gravado)
 	boundary := "limiteIMG01"
 	corpo := "--" + boundary + "\r\n" +
-		"Content-Disposition: form-data; name=\"imagem\"; filename=\"a\r\nb.png\"\r\n" +
+		"Content-Disposition: form-data; name=\"imagem\"; filename=\"a\r\nzz.png\"\r\n" +
 		"Content-Type: image/png\r\n\r\n" + string(img01PNG(t, 4, 4)) + "\r\n--" + boundary + "--\r\n"
 	w := e.serve(img01Upload(t, "/api/produtos/1/imagem", strings.NewReader(corpo), "multipart/form-data; boundary="+boundary))
 	assert.Contains(t, []int{http.StatusOK, http.StatusBadRequest}, w.Code, w.Body.String())
@@ -154,8 +157,9 @@ func TestIMG01_Upload_FilenameComCRLFCru(t *testing.T) {
 	for _, arq := range e.arquivos(t) {
 		assert.Regexp(t, reImg01NomeV4, arq)
 	}
-	assert.NotContains(t, w.Body.String(), "b.png")
-	assert.NotContains(t, e.logs.String(), "b.png")
+	// "zz" nunca aparece no nome gerado (hex), ao contrário de "b.png".
+	assert.NotContains(t, w.Body.String(), "zz.png")
+	assert.NotContains(t, e.logs.String(), "zz.png")
 }
 
 // Troca: a imagem antiga sai do disco depois do commit.

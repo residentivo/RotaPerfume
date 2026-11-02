@@ -1,6 +1,14 @@
 # A Fazer
 
-> Atualizado em 2026-11-01 (abertura do Lote 29, 🔵 SubBrain). O 🤍 MegaBrain abriu o **Lote 29**, a pedido do usuário, com os 6 cards de prioridade MÉDIA do backlog, que saíram desta lista para `fazendo.md`: **TST-08** (bloco "Achados do Lote 24"), **SEC-29** e **DEPLOY-02** (bloco "Achados do DB-03"), **TST-09** e **TST-10** (bloco "Achados do Lote 25") e **SEC-37** (bloco "Achados do Lote 28"). O TST-09 segue bloqueado pela credencial do banco (depende do usuário). O CHORE-12 (rename `apis/` → `backend/`) foi commitado em `c4c87af` (branch `lote-27`).
+> Atualizado em 2026-11-01 (fechamento do Lote 29, 🔵 SubBrain). O **Lote 29** foi fechado (`feito.md`; não commitado, pendente do usuário). Entraram quatro cards no bloco "Achados do Lote 29", logo após o DOC-07: **DB-06** (`ONLY_FULL_GROUP_BY` diferente entre dev MariaDB e prod MySQL 8, MÉDIA), **DEPLOY-03** (dump do MariaDB 11.x recusado pelo MySQL 8, MÉDIA), **DEPLOY-04** (`setup-servidor.sh` completo recusa Jenkins em contêiner; numeração dos passos, MÉDIA) e **TST-14** (`TestDEPLOY02_ValidateConfig_Docker` com Docker, BAIXA). O **TST-11** saiu desta lista (concluído). O DOC-07 ganhou nota sobre o `IMPORTAR_DUMP` e o SEC-40 ganhou nota sobre o `DB_TLS_CA_HOST_PATH`.
+>
+> Antes, ainda em 2026-11-01 (novas decisões do usuário no Lote 29, 🔵 SubBrain). Saíram desta lista para `feito.md`: **TST-13** (cancelado pelo usuário: "não irei conferir esse script agora") e **SEC-43** (fechado como "não corrigir": ambiente de dev, risco aceito pelo usuário). Entrou o **DOC-07** (MÉDIA, bloco "Achados do Lote 29"): revisar docs, `CLAUDE.md` e `setup-servidor.sh` para a realidade (prod MySQL 8.0, dev MariaDB). O card novo **SEC-44** (TLS do SEC-29 no ambiente real) foi direto para o Lote 29 (`fazendo.md`).
+>
+> Antes, ainda em 2026-11-01 (fechamento parcial do Lote 29, 🔵 SubBrain). SEC-29, TST-09, TST-08 e SETUP-01 foram concluídos (`feito.md`); SEC-37 e DEPLOY-02 seguem no Lote 29 (`fazendo.md`). Dos concluídos saíram sete cards, no bloco "Achados do Lote 29", logo após o LOG-03: **SEC-39** (`REQUIRE SSL` nos scripts de setup, MÉDIA), **SEC-40** (confiança na CA do workspace/`DB_TLS_CA_PATH`, BAIXA), **SEC-41** (`deploy/dump-local.ps1` sem TLS, BAIXA), **SEC-42** (aviso com TLS desligado e host remoto, BAIXA), **SEC-43** (credencial fraca no `.env` local, MÉDIA, ação do usuário), **TST-12** (testes de TLS faltantes, BAIXA) e **TST-13** (validar os scripts de setup no Windows e o MariaDB 11.4 no Linux, MÉDIA). O TST-11 ganhou nota de andamento (flake corrigido no TST-09; falta conferir e fechar).
+>
+> Antes, ainda em 2026-11-01 (decisões do usuário no Lote 29, 🔵 SubBrain). Backlog sem cards novos nem removidos: o **TST-10** foi cancelado (em `feito.md`), o **SETUP-01** (scripts de instalação do ambiente) entrou direto no Lote 29 (`fazendo.md`) e o **TST-09** foi desbloqueado (credencial do `.env` voltou a funcionar). No FE-16, a referência ao TST-10 passa a valer para o SETUP-01 (Node 22 via nvm).
+>
+> Antes, ainda em 2026-11-01 (abertura do Lote 29, 🔵 SubBrain). O 🤍 MegaBrain abriu o **Lote 29**, a pedido do usuário, com os 6 cards de prioridade MÉDIA do backlog, que saíram desta lista para `fazendo.md`: **TST-08** (bloco "Achados do Lote 24"), **SEC-29** e **DEPLOY-02** (bloco "Achados do DB-03"), **TST-09** e **TST-10** (bloco "Achados do Lote 25") e **SEC-37** (bloco "Achados do Lote 28"). O TST-09 segue bloqueado pela credencial do banco (depende do usuário). O CHORE-12 (rename `apis/` → `backend/`) foi commitado em `c4c87af` (branch `lote-27`).
 >
 > Antes, em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain). O **Lote 28** (SEC-19, SEC-23 e SEC-35) foi concluído e está em `feito.md` (não commitado, pendente do usuário). Dele saíram cinco cards, no bloco "Achados do Lote 28", logo após o TST-11: **SEC-37** (secret de teste do Turnstile aceita em produção, MÉDIA), **FE-17** (depois da troca de senha o frontend vai para `/dashboard` com a sessão já cortada, BAIXA), **CHORE-11** (`apiResetPassword` morta no frontend, BAIXA), **SEC-38** (`posseDoPagamento`/`posseDoPagamentoTravada` escondem erro de banco como 404, BAIXA) e **LOG-03** (recusa do captcha logada sem o motivo, BAIXA). O bloco "GAPs de segurança da auditoria ARQ-00" fica todo concluído.
 >
@@ -409,6 +417,8 @@
 > **2026-10-31 (fechamento do Lote 28):** o SEC-35 foi **concluído no Lote 28** (card em `feito.md`).
 >
 > **2026-10-31:** o SEC-35 foi para o **Lote 28** (card em `fazendo.md`). Aqui ficam SEC-36, BUG-24, CHORE-10 e TST-11.
+>
+> **2026-11-01 (fechamento do Lote 29):** o TST-11 foi **concluído** (flake corrigido no TST-09; `-count=300` verde; card em `feito.md`). Aqui ficam SEC-36, BUG-24 e CHORE-10.
 
 ---
 
@@ -459,22 +469,6 @@
 
 ---
 
-## TST-11: teste instável `TestIMG01_Upload_FilenameHostilNaoVaza/CRLF_por_RFC_2231` — prioridade BAIXA
-
-**Status:** pendente
-**Camada:** Testes
-**Responsável:** 🔴 TestBrain
-**Origem:** entregas do Lote 27 (2026-10-31), observado durante a verificação final.
-
-**Descrição:** o subteste `CRLF_por_RFC_2231` de `TestIMG01_Upload_FilenameHostilNaoVaza` (suíte do IMG-01, `API/tests/handlers/`) falha quando o UUID aleatório gerado para o arquivo termina em "b" ("…b.png"): a asserção de que o fragmento hostil do filename não aparece na resposta casa por coincidência com o nome gerado. Falha intermitente, sem relação com o código de produção.
-
-**Ação esperada:** tornar a asserção determinística (procurar o fragmento hostil completo, ou comparar contra o `imagem_url` devolvido excluindo o nome gerado, ou injetar um gerador de UUID fixo no teste).
-
-**Critério de aceite:** o subteste passa em `go test -count=200 -run TestIMG01_Upload_FilenameHostilNaoVaza` sem falhas; a cobertura do caso hostil é mantida.
-
-**Nota (2026-10-31, Lote 28):** o flake foi lembrado de novo nas pendências do Lote 28; o card continua aqui.
-
----
 
 ## Achados do Lote 28 (FE-17, CHORE-11, SEC-38, LOG-03; SEC-37 foi para o Lote 29)
 
@@ -541,6 +535,170 @@
 **Ação esperada:** logar só o motivo (`success`, `hostname` ou `action`), **sem** os valores recebidos, sem token e sem secret; a resposta HTTP continua `400` `"captcha inválido ou ausente"`.
 
 **Critério de aceite:** testes mostrando o motivo no log para cada caso e a ausência do token, da secret, do hostname e da action recebidos; contrato HTTP inalterado.
+
+---
+
+## Achados do Lote 29 (SEC-39, SEC-40, SEC-41, SEC-42, TST-12, DOC-07, DB-06, DEPLOY-03, DEPLOY-04, TST-14; SEC-43 e TST-13 foram fechados)
+
+> Origem comum: revisão do 🟣 SecBrain e entregas do 🟡 BackBrain e do 🔴 TestBrain no Lote 29 (SEC-29, TST-09, TST-08 e SETUP-01, 2026-11-01; ver `feito.md`). Nenhum deles bloqueou o fechamento desses cards. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `backend/shared`.
+>
+> **2026-11-01 (decisões do usuário):** TST-13 cancelado e SEC-43 fechado como "não corrigir" (ambos em `feito.md`). DOC-07 entrou aqui (divergência MariaDB 11.4 × MySQL 8.0 em produção). SEC-39 a SEC-42 e TST-12 devem considerar a produção MySQL 8.0 e o SEC-44 (concluído, em `feito.md`).
+>
+> **2026-11-01 (fechamento do Lote 29):** entraram DB-06, DEPLOY-03, DEPLOY-04 e TST-14 (achados do SEC-44 e do DEPLOY-02), logo após o DOC-07.
+
+---
+
+## SEC-39: `REQUIRE SSL` nas contas do banco criadas pelos scripts de setup — prioridade MÉDIA
+
+**Status:** pendente (executar só depois do TLS ativo no servidor e do primeiro deploy com `tls=ligado`)
+**Camadas:** Database (deploy)
+**Responsável:** 🌸 DataBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, revisão do SEC-29 (Lote 29, 2026-11-01).
+
+**Descrição:** o SEC-29 deixou a API e o pipeline conectando com TLS, mas `deploy/mariadb-setup.sql` e `deploy/setup-servidor.sh` criam `rotaperfumes_app` e `rotaperfumes_admin` sem `REQUIRE SSL`. Hoje o `REQUIRE SSL` fica como passo manual do usuário (`docs/deploy-servidor.md` §3.5).
+
+**Ação esperada:** `CREATE USER ... REQUIRE SSL` nos dois usuários e `ALTER USER ... REQUIRE SSL` idempotente para os que já existem; rodar só quando o servidor tiver TLS (conferir antes e avisar se não tiver, para não trancar a API fora).
+
+**Critério de aceite:** contas criadas ou reconfiguradas com `REQUIRE SSL`; reexecução sem erro; conexão sem TLS recusada para as duas contas; docs atualizadas.
+
+---
+
+## SEC-40: confiança na CA do workspace e no parâmetro `DB_TLS_CA_PATH` do Jenkins — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Infra (CI/CD)
+**Responsável:** 🟡 BackBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, revisão do SEC-29 (Lote 29, 2026-11-01).
+
+**Descrição:** o estágio "CA do banco" do `Jenkinsfile` lê a CA do caminho do parâmetro `DB_TLS_CA_PATH`. Quem consegue mudar o parâmetro do job (ou o arquivo no workspace) pode apontar para outra CA, e uma troca de CA passa sem aviso.
+
+**Ação esperada:** restringir o `realpath` do parâmetro a `/etc/mysql/ssl/` (ou tornar o caminho constante) e avisar quando o fingerprint da CA mudar em relação ao último build.
+
+**Critério de aceite:** caminho fora de `/etc/mysql/ssl/` recusado (ou caminho fixo); troca de fingerprint gera aviso visível no build; procedimento de rotação em `docs/deploy-servidor.md` §3.5 ajustado.
+
+**Nota (2026-11-01, SEC-44):** o `DB_TLS_CA_PATH` foi substituído por `DB_TLS_CA_HOST_PATH` (padrão `/etc/mysql/ssl/ca.pem`), e a CA agora é validada num contêiner descartável (`deploy/validar-ca-banco.sh`), com o sha256 em `deploy/db-ca.sha256`. Reavaliar o card sobre o novo parâmetro; o `db-ca.sha256` pode servir de base para o aviso de troca de fingerprint.
+
+---
+
+## SEC-41: `deploy/dump-local.ps1` conecta sem TLS — prioridade BAIXA
+
+**Status:** pendente
+**Camadas:** Infra (deploy)
+**Responsável:** 🌸 DataBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, revisão do SEC-29 (Lote 29, 2026-11-01).
+
+**Descrição:** o `deploy/dump-local.ps1` não usa `DB_TLS_CA`; o dump trafega em claro e, com `REQUIRE SSL` (SEC-39), deixaria de funcionar.
+
+**Ação esperada:** ler `DB_TLS_CA` (e `DB_TLS_SERVER_NAME`, se aplicável) e passar `--ssl-ca` com `--ssl-verify-server-cert` (ou `--ssl-mode=VERIFY_IDENTITY`, conforme o cliente) ao cliente do banco.
+
+**Critério de aceite:** com `DB_TLS_CA` definida, o dump usa TLS com verificação; sem ela, comportamento atual com aviso; documentado.
+
+---
+
+## SEC-42: aviso (ou `DB_TLS_REQUIRED=true`) quando o TLS está desligado com `DB_HOST` remoto — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Backend (shared config)
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, revisão do SEC-29 (Lote 29, 2026-11-01).
+
+**Descrição:** em `SH/config/db_tls.go`, sem `DB_TLS_CA` a conexão segue sem TLS em silêncio (só o log `tls=desligado`), mesmo com `DB_HOST` fora do loopback. Um `api.env` sem a variável faria a produção voltar a trafegar em claro.
+
+**Ação esperada:** com `DB_HOST` não-loopback e TLS desligado, logar um aviso explícito no startup; avaliar a variável `DB_TLS_REQUIRED=true` para a API recusar subir nesse caso (decisão do 🟣 SecBrain).
+
+**Critério de aceite:** aviso (ou recusa com `DB_TLS_REQUIRED=true`) testado; dev local com loopback sem mudança; documentado em `.env.example` e `deploy/api.env.example`.
+
+---
+
+## TST-12: testes de TLS que faltaram no SEC-29 — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Testes
+**Responsável:** 🔴 TestBrain (🟣 SecBrain decide o `MinVersion`)
+**Origem:** 🟣 SecBrain e 🔴 TestBrain, SEC-29 (Lote 29, 2026-11-01).
+
+**Descrição:** os testes do SEC-29 cobrem CA errada, CA vencida, nome fora do SAN e servidor sem TLS, mas não cobrem certificado do **servidor** vencido nem servidor que só aceita TLS 1.1.
+
+**Ação esperada:** acrescentar os dois casos (servidor TLS falso no teste); avaliar subir o `MinVersion` de TLS 1.2 para TLS 1.3 (o servidor já negocia TLSv1.3).
+
+**Critério de aceite:** os dois casos recusados com erro claro; decisão sobre o `MinVersion` registrada; testes verdes.
+
+---
+
+## DOC-07: docs dizem MariaDB 11.4, mas a produção real é MySQL 8.0 — prioridade MÉDIA
+
+**Status:** pendente
+**Camadas:** Documentação, Infra (deploy), Ambiente (scripts de setup)
+**Responsável:** 🌸 DataBrain (🔵 SubBrain revisa a documentação)
+**Origem:** decisão do usuário (2026-11-01), durante o SEC-44 (Lote 29).
+
+**Descrição:** desde o DB-03 (Lote 23) a documentação, o `CLAUDE.md`, o `deploy/setup-servidor.sh` e os scripts do SETUP-01 assumem **MariaDB 11.4 LTS**. O ambiente real é outro: a **produção** (porta 3306) é **MySQL 8.0.46** nativo no host, e o **dev** (porta 3307) é MariaDB 11.8.8 em contêiner.
+
+**Ação esperada:** revisar `docs/` (principalmente `docs/deploy-servidor.md`), o `CLAUDE.md`, o `deploy/setup-servidor.sh` (drop-in, `sql_mode`, collation, plugins de autenticação) e os scripts/versões do SETUP-01 (`scripts/versoes.conf`) para a realidade: prod MySQL 8, dev MariaDB. Indicar o que depende do servidor (ex.: SEC-30 ed25519 é só MariaDB; DEPLOY-02 e DB-04 precisam valer para MySQL 8) e conferir a compatibilidade do cliente usado no Jenkins (`mariadb:11.4`) com o MySQL 8.
+
+**Critério de aceite:** docs, `CLAUDE.md` e scripts descrevem prod MySQL 8.0 e dev MariaDB; cards afetados (SEC-30, SEC-31, DB-04, DEPLOY-02) anotados com o impacto.
+
+**Nota (2026-11-01, fechamento do Lote 29):** o parâmetro `IMPORTAR_DUMP` do `Jenkinsfile` e as descrições dos parâmetros/estágios ainda dizem MariaDB; incluir na revisão. O DEPLOY-02 já foi concluído com `sql_mode` por sabor (MySQL 8 e MariaDB), então para ele basta conferir a documentação.
+
+---
+
+## DB-06: `ONLY_FULL_GROUP_BY` diferente entre dev (MariaDB, sem) e produção (MySQL 8, com) — prioridade MÉDIA
+
+**Status:** pendente
+**Camadas:** Database, Testes
+**Responsável:** 🌸 DataBrain → 🔴 TestBrain
+**Origem:** DEPLOY-02 (Lote 29, 2026-11-01): o drop-in de hardening mantém `ONLY_FULL_GROUP_BY` no MySQL 8 da produção, mas o dev (MariaDB 11.8.8) roda sem ele.
+
+**Descrição:** a suíte de integração roda contra o dev, sem `ONLY_FULL_GROUP_BY`. Um `GROUP BY` incompleto passa nos testes e falha só na produção (MySQL 8). Relacionado ao DB-04 (que avaliava ligar o modo no MariaDB).
+
+**Ação esperada:** alinhar o `sql_mode` do dev com o da produção (ligar `ONLY_FULL_GROUP_BY` no MariaDB de dev) ou rodar a integração também contra um MySQL 8 (ex.: contêiner `mysql:8.0`). Corrigir as consultas que falharem antes.
+
+**Critério de aceite:** integração rodando com `ONLY_FULL_GROUP_BY` ligado e verde; decisão registrada (alinhar o dev ou rodar contra MySQL 8); DB-04 atualizado ou fechado junto.
+
+---
+
+## DEPLOY-03: dump do MariaDB 11.x não importa no MySQL 8 (linha do sandbox mode) — prioridade MÉDIA
+
+**Status:** pendente
+**Camadas:** Infra (deploy, Jenkinsfile)
+**Responsável:** 🌸 DataBrain
+**Origem:** SEC-44/DEPLOY-02 (Lote 29, 2026-11-01).
+
+**Descrição:** o `mariadb-dump` 11.x grava na 1ª linha `/*M!999999\- enable the sandbox mode */`, que o cliente/servidor MySQL 8 recusa. Afeta o estágio `IMPORTAR_DUMP` do `Jenkinsfile` e o `deploy/dump-local.ps1` quando o dump vem do dev (MariaDB) e vai para a produção (MySQL 8).
+
+**Ação esperada:** remover a linha antes do import (ex.: filtrar a 1ª linha quando for o marcador), ou gerar o dump com um cliente compatível com MySQL 8; documentar o caminho dev → prod.
+
+**Critério de aceite:** dump gerado no dev importa sem erro no MySQL 8 pelo `IMPORTAR_DUMP` e pelo fluxo do `dump-local.ps1`; documentado.
+
+---
+
+## DEPLOY-04: modo completo do `setup-servidor.sh` recusa o Jenkins em contêiner; numeração dos passos no `--apenas-banco` — prioridade MÉDIA
+
+**Status:** pendente
+**Camadas:** Infra (deploy)
+**Responsável:** 🌸 DataBrain
+**Origem:** DEPLOY-02 (Lote 29, 2026-11-01).
+
+**Descrição:** no modo completo, o `checar_jenkins` do `deploy/setup-servidor.sh` recusa o Jenkins em contêiner, que é o da produção; hoje só o `--apenas-banco` serve no servidor real. Além disso, no `--apenas-banco` a numeração dos passos pula (`[1/11]`, `[3/11]`...).
+
+**Ação esperada:** aceitar o Jenkins em contêiner no `checar_jenkins` (detectar o contêiner e ajustar o que depende do Jenkins nativo); numerar os passos conforme o modo.
+
+**Critério de aceite:** modo completo roda com o Jenkins em contêiner; numeração contínua nos dois modos; `docs/deploy-servidor.md` atualizado.
+
+---
+
+## TST-14: rodar `TestDEPLOY02_ValidateConfig_Docker` num ambiente com Docker — prioridade BAIXA
+
+**Status:** pendente
+**Camada:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** DEPLOY-02 (Lote 29, 2026-11-01): o teste foi pulado por falta de Docker.
+
+**Descrição:** `TestDEPLOY02_ValidateConfig_Docker` (`tests/deploy/deploy02_hardening_test.go`) confere os drop-ins com `mysqld --validate-config`/`mariadbd --help --verbose` em contêineres reais, mas não rodou.
+
+**Ação esperada:** rodar o teste num ambiente com Docker, contra `mysql:8.0` e `mariadb:11.8`; corrigir o que aparecer.
+
+**Critério de aceite:** teste rodado sem skip e verde nas duas imagens; resultado registrado no card do DEPLOY-02 em `feito.md`.
 
 ---
 

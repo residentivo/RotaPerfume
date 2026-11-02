@@ -252,7 +252,7 @@ func TestSEC10_DSN(t *testing.T) {
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			for _, k := range []string{"DB_USUARIO", "DB_SENHA", "DB_HOST", "DB_PORT", "DB_NAME"} {
+			for _, k := range []string{"DB_USUARIO", "DB_SENHA", "DB_HOST", "DB_PORT", "DB_NAME", "DB_TLS_CA", "DB_TLS_SERVER_NAME"} {
 				unsetEnv(t, k)
 			}
 			for k, v := range c.env {

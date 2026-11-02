@@ -49,8 +49,23 @@ func Open(dsn string) (*sql.DB, error) {
 		return nil, fmt.Errorf("db: ping falhou: %w", err)
 	}
 
-	log.Printf("[db] conexão MariaDB estabelecida (host=%s)", maskDSN(dsn))
+	log.Printf("[db] conexão MariaDB estabelecida (host=%s, tls=%s)", maskDSN(dsn), estadoTLS(dsn))
 	return conn, nil
+}
+
+// estadoTLS resume o TLS do DSN para o log de startup (SEC-29): "desligado"
+// sem o parâmetro tls, senão "ligado (<nome>)" — o nome da config registrada
+// (ex.: custom), nunca o conteúdo dela. DSN que o driver não entende vira
+// "desconhecido".
+func estadoTLS(dsn string) string {
+	cfg, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return "desconhecido"
+	}
+	if cfg.TLSConfig == "" || cfg.TLSConfig == "false" {
+		return "desligado"
+	}
+	return "ligado (" + cfg.TLSConfig + ")"
 }
 
 // maskDSN remove a senha do DSN para logging seguro, com o mesmo corte do

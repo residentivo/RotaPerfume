@@ -52,12 +52,16 @@ func abrirDBIntegracao(t *testing.T) *sql.DB {
 	if usuario == "" || senha == "" {
 		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
 	}
+	// SEC-29: mesmo TLS do config.Load (DB_TLS_CA/DB_TLS_SERVER_NAME do ambiente).
+	dbTLS, err := config.LoadDBTLS()
+	require.NoError(t, err, "DB_TLS_CA/DB_TLS_SERVER_NAME inválidos")
 	cfg := &config.Config{
 		DBHost:    envOr("DB_HOST", "localhost"),
 		DBPort:    envOr("DB_PORT", "3306"),
 		DBName:    envOr("DB_NAME", "rotaperfumes"),
 		DBUsuario: usuario,
 		DBSenha:   senha,
+		DBTLS:     dbTLS,
 	}
 	db, err := shareddb.Open(cfg.DSN())
 	require.NoError(t, err, "MySQL local indisponível")

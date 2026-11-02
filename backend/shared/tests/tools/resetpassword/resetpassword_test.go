@@ -449,7 +449,7 @@ func TestGetEnvEDSN(t *testing.T) {
 	t.Setenv("RP_TESTE_CHEIA", "valor")
 	assert.Equal(t, "valor", resetpassword.GetEnv("RP_TESTE_CHEIA", "padrão"))
 
-	for _, k := range []string{"DB_USUARIO", "DB_SENHA", "DB_HOST", "DB_PORT", "DB_NAME"} {
+	for _, k := range []string{"DB_USUARIO", "DB_SENHA", "DB_HOST", "DB_PORT", "DB_NAME", "DB_TLS_CA", "DB_TLS_SERVER_NAME"} {
 		t.Setenv(k, "")
 	}
 	// SEC-10: sem fallback golang/golang para usuário/senha.

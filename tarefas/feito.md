@@ -2,7 +2,218 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): o Lote 28 (SEC-19, SEC-23 e SEC-35) foi fechado; não commitado, pendente do usuário. Antes, ainda em 2026-10-31: o commit do Lote 27 foi registrado (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado pelo usuário via 🤍 MegaBrain). Antes, ainda em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+> Atualizado em 2026-11-01 (fechamento do Lote 29, 🔵 SubBrain): o **Lote 29** foi fechado. **SEC-44, SEC-37 e DEPLOY-02** foram concluídos e entraram no bloco do lote, junto com a rodada final do 🔴 TestBrain e o **TST-11** (fechado). Não commitado, pendente do usuário. Antes, ainda em 2026-11-01 (novas decisões do usuário, 🔵 SubBrain): **TST-13 cancelado** e **SEC-43 fechado sem correção** (dev, risco aceito), no bloco do Lote 29; o card do SEC-29 ganhou nota de que as pendências 1 a 4 foram substituídas pelo SEC-44 (`fazendo.md`). Antes, ainda em 2026-11-01 (fechamento parcial do Lote 29, 🔵 SubBrain): **SEC-29, TST-09, TST-08 e SETUP-01** foram concluídos (bloco "Lote 29 de 2026-11-01"; não commitado, pendente do usuário). SEC-37 e DEPLOY-02 seguem em `fazendo.md`. Antes, ainda em 2026-11-01: o **TST-10** foi **cancelado** pelo usuário (Lote 29); o projeto foi migrado para um HD com Linux (sem exFAT, Node 22 via nvm). Antes, ainda em 2026-11-01: o CHORE-12 foi registrado (`c4c87af`). Antes, em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): o Lote 28 (SEC-19, SEC-23 e SEC-35) foi fechado; não commitado, pendente do usuário. Antes, ainda em 2026-10-31: o commit do Lote 27 foi registrado (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado pelo usuário via 🤍 MegaBrain). Antes, ainda em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## Lote 29 de 2026-11-01: 7 cards concluídos, 2 cancelados, 1 fechado sem correção
+
+> Cards concluídos: **SEC-29** (TLS na conexão Go ↔ MariaDB), **TST-09** (integração do Lote 25 e CHECK `chk_pagamentos_taxa_pct`), **TST-08** (`make test` com `covdata`), **SETUP-01** (scripts de instalação do ambiente), **SEC-44** (TLS do SEC-29 no ambiente real), **SEC-37** (secret de teste do Turnstile recusada em produção) e **DEPLOY-02** (hardening do banco também com bind aberto). Cancelados: **TST-10** e **TST-13**. Fechado sem correção: **SEC-43**. Lote aberto pelo 🤍 MegaBrain em 2026-11-01 com TST-08, SEC-37, SEC-29, DEPLOY-02, TST-09 e TST-10; SETUP-01 e SEC-44 entraram no mesmo dia (pedidos do usuário). Fechamento parcial e depois fechamento final em 2026-11-01 pelo 🔵 SubBrain. O TST-11 (backlog) também foi fechado, pelo trabalho do TST-09.
+>
+> **Fluxo:** 🔵 SubBrain (Kanban) → usuário (TLS no servidor MariaDB, credencial do `.env`) → 🟡 BackBrain (SEC-29) e 🔴 TestBrain (SETUP-01) → 🔴 TestBrain (TST-09, TST-08 e testes do SEC-29) e 🟣 SecBrain (revisão do SEC-29) → 🟡 BackBrain (SEC-44 e `docs/Instal_SSL.md`) e 🟣 SecBrain (especificação do SEC-37 e do DEPLOY-02) → 🟡 BackBrain (SEC-37) e 🌸 DataBrain (DEPLOY-02) → 🔴 TestBrain (rodada final) → 🔵 SubBrain (fechamento).
+>
+> **Mudanças de contrato HTTP:** nenhuma. **Rotas:** sem mudança. **Schema:** sem mudança. **Config:** variáveis novas `DB_TLS_CA` e `DB_TLS_SERVER_NAME` (opcionais; sem elas, conexão sem TLS como antes), `DB_TLS_CA_HOST_PATH` (compose/Jenkins; substitui o `DB_TLS_CA_PATH` do SEC-29) e `TURNSTILE_PERMITIR_SECRET_TESTE` (padrão `false`). Mudança de comportamento: com `COOKIE_SECURE=true`, a API **não sobe** com secret de teste do Turnstile (SEC-37).
+>
+> **Rodada final do 🔴 TestBrain (2026-11-01):** `make test`: shared **4093 PASS / 0 FAIL / 13 SKIP**, cobertura 92,0%; API **5316 / 0 / 28**, 94,4%. `INTEGRATION=1` com TLS: shared **4166 / 0 / 2** (um só Windows, um precisa de Docker); API **5591 / 0 / 0**. `make dev-api` sobe com `tls=ligado` e `GET /health` responde 200.
+>
+> **Commit:** **não commitado, pendente do usuário.**
+>
+> **Pendências do usuário (resumo; detalhe em cada card):**
+> 1. **Antes do merge do SEC-29/SEC-44 na `main`:** executar os passos 1 a 6 do `docs/Instal_SSL.md` no servidor. Sem isso, o deploy disparado pelo pollSCM para no estágio "CA do banco" (a API em execução não cai).
+> 2. Testar o cliente `mariadb:11.4` contra o MySQL 8 (passo 8 do `Instal_SSL.md`; plano B: `mysql:8.0`).
+> 3. Conferir o `ufw`: a 3306 de produção respondeu a `192.168.168.105`.
+> 4. Conferir se o Secret file `rotaperfumes-api-env` do Jenkins usa a secret real do Turnstile; com a de teste, o próximo deploy não sobe (SEC-37).
+> 5. Rodar `sudo bash setup-servidor.sh --apenas-banco` na produção e conferir os avisos (DEPLOY-02).
+>
+> **Saíram do lote no fechamento final (em `afazer.md`, bloco "Achados do Lote 29"):** DB-06 (`ONLY_FULL_GROUP_BY`: dev MariaDB sem, prod MySQL 8 com, MÉDIA), DEPLOY-03 (dump do MariaDB 11.x recusado pelo MySQL 8 por causa da linha do sandbox mode, MÉDIA), DEPLOY-04 (modo completo do `setup-servidor.sh` recusa Jenkins em contêiner; numeração dos passos no `--apenas-banco`, MÉDIA) e TST-14 (rodar `TestDEPLOY02_ValidateConfig_Docker` com Docker, BAIXA).
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados do Lote 29"):** SEC-39 (`REQUIRE SSL` nos scripts de setup, MÉDIA), SEC-40 (confiança na CA do workspace/`DB_TLS_CA_PATH`, BAIXA), SEC-41 (`deploy/dump-local.ps1` sem TLS, BAIXA), SEC-42 (aviso quando o TLS está desligado com host remoto, BAIXA), SEC-43 (credencial fraca no `.env` local, MÉDIA, usuário), TST-12 (testes TLS faltantes, BAIXA) e TST-13 (validar o script Windows e o repositório MariaDB no Linux, MÉDIA).
+>
+> **Atualização (2026-11-01, decisões do usuário):** TST-13 **cancelado** e SEC-43 **fechado como "não corrigir"** (cards abaixo). O SEC-29 ganhou o card de continuação **SEC-44** (TLS no ambiente real: produção MySQL 8.0.46, Jenkins em contêiner), concluído no mesmo lote, e a divergência de documentação virou o **DOC-07** em `afazer.md`.
+
+---
+
+## SEC-44: TLS do SEC-29 no ambiente real (produção MySQL 8.0, Jenkins em contêiner) — 2026-11-01
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 29, 2026-11-01). Citado pelo usuário como "SEC-29b". Não commitado, pendente do usuário.
+**Camadas:** Infra (docker-compose, Jenkinsfile, script de deploy), Documentação, Testes
+**Origem:** pedido do usuário (2026-11-01), depois do SEC-29. Substituiu as pendências 1 a 4 do card do SEC-29.
+
+**Contexto:** a produção (porta 3306) é MySQL 8.0.46 nativo no host, com certificado autogerado sem SAN (o Go recusa); o dev (3307) é MariaDB 11.8.8 em contêiner, com certificados em `/DATA/AppData/mariadb/ssl`; o Jenkins roda em contêiner, então o bind relativo `./db-ca.pem` e a leitura de `/etc/mysql/ssl` pelo pipeline não funcionavam.
+
+**Entregas (🟡 BackBrain):**
+- `DB_TLS_CA_HOST_PATH` (padrão `/etc/mysql/ssl/ca.pem`) substitui o `DB_TLS_CA_PATH`. O compose monta o caminho absoluto do host com bind read-only e `create_host_path: false`.
+- Script novo `deploy/validar-ca-banco.sh`, executado via stdin num contêiner descartável (`DB_CLIENT_IMAGE` `mariadb:11.4`, `--user 65532`), com as regras B2/N1 da revisão do SEC-29. O sha256 da CA vai para `deploy/db-ca.sha256` (no `.gitignore`) e alimenta a label do B1, que força recriar a API quando a CA muda. O "Importar dump" monta o mesmo caminho.
+- Runbook novo `docs/Instal_SSL.md`: CA e certificado com SAN, MySQL 8 com os arquivos em `/etc/mysql/ssl`, drop-in `zz-rotaperfumes-ssl.cnf`, `chmod` no host, parâmetros do Jenkins, `REQUIRE SSL`, rotação, rollback e seção de dev. `docs/deploy-servidor.md` atualizado.
+
+**Testes:** script validado contra a 3307 com a CA de dev (todos os casos); na 3306 de produção, o certificado atual sem SAN é recusado, como esperado.
+
+**Pendências do usuário:**
+1. Executar os passos 1 a 6 do `docs/Instal_SSL.md` **antes** do merge do SEC-29/SEC-44 na `main`. Sem isso, o deploy do pollSCM para no estágio "CA do banco" (a API em execução não cai).
+2. Testar o cliente `mariadb:11.4` contra o MySQL 8 (passo 8; plano B `mysql:8.0`).
+3. Conferir o `ufw`: a 3306 de produção respondeu a `192.168.168.105`.
+
+---
+
+## SEC-37: secret de teste do Turnstile recusada em produção — 2026-11-01
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 29, 2026-11-01). Não commitado, pendente do usuário.
+**Camadas:** Backend (config/startup), Deploy (env de exemplo), Testes, Documentação
+**Origem:** 🟣 SecBrain, especificação do Lote 28 (2026-10-31), achado fora do escopo nº 1 (SEC-19).
+
+**Entregas (🟡 BackBrain, especificado pelo 🟣 SecBrain):**
+- `ValidarCaptcha` no startup (`cmd/server`) recusa as secrets de teste da Cloudflare (`1x…AA`, `2x…AA`, `3x…AA`) quando `COOKIE_SECURE=true`.
+- Válvula `TURNSTILE_PERMITIR_SECRET_TESTE` (`ParseBool` estrito, padrão `false`); quando ligada, gera log `SEGURANCA`.
+- `trim` na secret. CLIs e testes não são afetados.
+- `deploy/api.env.example`, `.env.example` e docs (§4, item 5) atualizados; o exemplo de produção não sugere mais a secret de teste.
+
+**Testes:** `sec37_*`, 13 casos.
+
+**Pendência do usuário:** conferir se o Secret file `rotaperfumes-api-env` do Jenkins usa a secret real; se usar a de teste, o próximo deploy não sobe.
+
+---
+
+## DEPLOY-02: hardening do banco (`local_infile`/`sql_mode`/collation) também com bind aberto — 2026-11-01
+**Agentes:** 🟣 SecBrain → 🌸 DataBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 29, 2026-11-01). Não commitado, pendente do usuário.
+**Camadas:** Infra (deploy), Testes, Documentação
+**Origem:** 🟣 SecBrain, DB-03 (Lote 23, 2026-10-29).
+
+**Entregas (🌸 DataBrain, especificado pelo 🟣 SecBrain):**
+- Dois drop-ins no `deploy/setup-servidor.sh`:
+  - `zz-rotaperfumes-hardening.cnf`, gravado sempre, com `sql_mode` por sabor do servidor (MySQL 8 mantém `ONLY_FULL_GROUP_BY`; MariaDB 11.2+ com `character_set_collations`);
+  - `zz-rotaperfumes-bind.cnf`, só quando o banco escuta em loopback. É o único caso com restart.
+- Validação antes de aplicar (`mysqld --validate-config` / `mariadbd --help --verbose`), com rollback; `SET GLOBAL` sem restart; migração do drop-in legado; modo novo `--apenas-banco`; conferência final com avisos; `avisar_turnstile_teste`.
+- Docs §0 e §3 atualizados.
+
+**Testes:** `tests/deploy/deploy02_hardening_test.go`. O 🔴 TestBrain corrigiu a herança de variáveis de ambiente nos testes (`ambienteLimpo()`). `TestDEPLOY02_ValidateConfig_Docker` foi **pulado** por falta de Docker (card TST-14).
+
+**Pendência do usuário:** rodar `sudo bash setup-servidor.sh --apenas-banco` na produção e conferir os avisos.
+
+---
+
+## TST-11: teste instável `TestIMG01_Upload_FilenameHostilNaoVaza/CRLF_por_RFC_2231` — 2026-11-01
+**Agentes:** 🔴 TestBrain
+
+**Status:** concluído (fechado no Lote 29, 2026-11-01; a correção veio com o TST-09).
+**Camada:** Testes
+**Origem:** entregas do Lote 27 (2026-10-31).
+
+**Entrega:** o marcador `b.png` foi trocado por `zz.png` em `CRLF_por_RFC_2231`/`FilenameComCRLFCru`, e a asserção não casa mais por coincidência com o UUID gerado.
+
+**Critério de aceite atendido:** os dois testes rodados com `-count=300` (acima do `-count=200` pedido), todos passando; cobertura do caso hostil mantida.
+
+---
+
+## SEC-43: credencial fraca no `.env` local (senha contida no nome do usuário) — FECHADO SEM CORREÇÃO em 2026-11-01
+**Agentes:** nenhum (decisão do usuário)
+
+**Status:** fechado como "não corrigir" pelo usuário (Lote 29). Justificativa: é o ambiente de **dev**; o risco foi aceito pelo usuário. Nenhuma mudança.
+**Camadas:** Database (servidor de dev), Config local
+**Origem:** 🔴 TestBrain, TST-09 (Lote 29, 2026-11-01): o `TestOpen_Integracao` mostrou que a senha do banco de dev está contida no nome do usuário (o valor não é registrado).
+
+**Observação:** a decisão vale só para o dev. A produção não deve usar credencial nesse padrão.
+
+---
+
+## TST-13: validar `scripts/setup-windows.ps1` no Windows e o repositório MariaDB 11.4 no Linux — ❌ CANCELADO em 2026-11-01
+**Agentes:** 🔴 TestBrain (não executado)
+
+**Status:** cancelado pelo usuário (Lote 29): "não irei conferir esse script agora". Nenhuma mudança.
+**Camadas:** Ambiente (scripts), Testes
+**Origem:** 🔴 TestBrain, SETUP-01 (Lote 29, 2026-11-01).
+
+**Descrição original:** o `scripts/setup-windows.ps1` não foi executado (sem `pwsh`), o `shellcheck` não estava disponível e o cliente local do banco no Linux é o 10.11.14, e não o 11.4. A validação continua não feita; a limitação segue registrada no card do SETUP-01. A versão do banco a instalar pelos scripts também entra no DOC-07 (prod MySQL 8.0, dev MariaDB).
+
+---
+
+## SEC-29: TLS na conexão Go ↔ MariaDB — 2026-11-01
+**Agentes:** usuário (servidor) → 🟡 BackBrain → 🟣 SecBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 29, 2026-11-01). Revisão do 🟣 SecBrain aprovada depois das correções B1, B2, B3, N1, N6 e N7. Não commitado, pendente do usuário.
+**Camadas:** Backend (shared config/DSN), Infra (Jenkinsfile, docker-compose, Makefile), Database (servidor, feito pelo usuário), Testes, Documentação
+**Origem:** 🟣 SecBrain, DB-03 (Lote 23, 2026-10-29).
+
+**Parte do servidor (usuário, 2026-11-01):** MariaDB 11.8.8 em `192.168.168.106:3307` com TLS (TLSv1.3 conferido com `--ssl-verify-server-cert`); CA autoassinada `CN=MariaDB_CA` (válida até 2036-10-29); certificado do servidor `CN=MariaDB Server`, SAN `IP:192.168.168.106`, `IP:127.0.0.1`, `DNS:localhost` (sem `host.docker.internal`, daí o `DB_TLS_SERVER_NAME`). Decisão do usuário: a CA é obtida no pipeline, não por cópia versionada.
+
+**Entregas (🟡 BackBrain):**
+- **Config:** `DB_TLS_CA` e `DB_TLS_SERVER_NAME`, lidas por `config.LoadDBTLS` (`backend/shared/config/db_tls.go`). `mysql.RegisterTLSConfig("custom", ...)` com `RootCAs` da CA, `ServerName` e TLS mínimo 1.2; `&tls=custom` no DSN. Falha fechada com `ErrDBTLSCA` e `ErrDBTLSServerName`. CA com caminho relativo resolvida pela raiz do projeto (pacote novo `backend/shared/projroot`). Log de startup `tls=ligado`/`tls=desligado`.
+- **Makefile:** `MYSQL_TLS_OPTS` nos alvos que chamam o cliente `mariadb`.
+- **docker-compose:** bind `./db-ca.pem` → `/etc/rotaperfumes/db-ca.pem`; `DB_TLS_SERVER_NAME` com padrão `SITE_IP`; label `rotaperfumes.db-ca-sha256`, que força recriar o contêiner da API quando a CA muda.
+- **Jenkinsfile:** parâmetros `DB_TLS_CA_PATH` (padrão `/etc/mysql/ssl/ca-cert.pem`) e `DB_TLS_SERVER_NAME`; env `DB_HOST_PORT=3306`. Estágio novo "CA do banco": copia a CA para um `.tmp`, recusa blocos que não sejam `CERTIFICATE`, valida cada certificado (validade, aviso a 30 dias do vencimento, `CA:TRUE`, fingerprint), confere com `openssl s_client -starttls mysql` que a CA assina o certificado servido e só então faz o `mv`. "Importar dump" com `--ssl-ca` e `--ssl-verify-server-cert`.
+- **`.gitignore`:** `deploy/ca-cert.pem` e `deploy/db-ca.pem`.
+- **Docs:** `docs/deploy-servidor.md` §3.5 (como o pipeline obtém a CA, rotação, `REQUIRE SSL` obrigatório).
+
+**Testes (🔴 TestBrain):**
+- Unitários de config/DSN e handshake com servidor TLS falso.
+- Real contra `192.168.168.106:3307`: conexão com TLSv1.3; CA errada, CA vencida e nome fora do SAN recusados; sem TLS o servidor recusa (`require_secure_transport=ON`).
+- **Não testado:** `docker compose up` com a label, o `mysql_cli` dentro do contêiner e a consulta em `mysql.global_priv`.
+
+> **Nota (2026-11-01, decisão do usuário):** as pendências 1 a 4 abaixo foram **substituídas pelo card SEC-44** ("TLS do SEC-29 no ambiente real", Lote 29, em `fazendo.md`). O ambiente real difere do suposto aqui: a produção (3306) é MySQL 8.0.46 nativo com certificado sem SAN, e o Jenkins roda em contêiner (o bind `./db-ca.pem` e a leitura de `/etc/mysql/ssl` pelo pipeline não funcionam). Ficam só como histórico.
+
+**Pendências do usuário (substituídas pelo SEC-44):**
+1. `chmod 644` na CA e `o+x` no diretório dela, para o usuário `jenkins` conseguir ler.
+2. Confirmar o SAN do certificado de produção (porta 3306) ou definir `DB_TLS_SERVER_NAME`.
+3. Confirmar que o Jenkins é nativo (systemd), e não em contêiner (o caminho `DB_TLS_CA_PATH` é do host).
+4. Depois do primeiro deploy com `tls=ligado`, rodar `ALTER USER ... REQUIRE SSL` nos dois usuários (`rotaperfumes_app` e `rotaperfumes_admin`). Os scripts de setup ganham isso no card SEC-39.
+
+---
+
+## TST-09: 3 testes de integração do Lote 25 e CHECK `chk_pagamentos_taxa_pct` — 2026-11-01
+**Agentes:** 🔴 TestBrain (🌸 DataBrain na conferência do CHECK)
+
+**Status:** concluído (Lote 29, 2026-11-01). Desbloqueado no mesmo dia (credencial do `.env` voltou a funcionar). Resultado também registrado no card do Lote 25 ("Testes e cobertura do Lote 25"), como pedia o critério de aceite.
+**Camadas:** Testes, Database
+**Origem:** Lote 25 (2026-10-30).
+
+**Resultado:** suíte de integração com TLS e `INTEGRATION=1`: shared **4118 PASS / 0 FAIL / 1 SKIP** (o skip só roda no Windows); API **5573 PASS / 0 FAIL / 0 SKIP**. Os 3 testes de `bug17_bug21_integration_test.go` passaram sem `t.Skip`. CHECK `chk_pagamentos_taxa_pct` confere (`taxa_pct >= 0 and taxa_pct <= 30`); `30.01` e `-0.01` dão erro 4025 (conferido em transação com ROLLBACK, sem deixar linhas).
+
+**Bugs de teste corrigidos (nenhum no código de produção):**
+1. `TestOpen_Integracao`: a senha do banco está contida no nome do usuário, e o assert de "senha não aparece no log" ecoava a senha. Assert corrigido. A credencial fraca virou o card SEC-43.
+2. `TestIntegracaoDB01_SEC12_Schema`: o MariaDB devolve `COLUMN_DEFAULT` `'NULL'` como texto; teste ajustado.
+3. Flaky `CRLF_por_RFC_2231`/`FilenameComCRLFCru`: marcador `b.png` trocado por `zz.png`; 300 execuções sem falha. Resolve o flake descrito no TST-11 (o card continua em `afazer.md` para o 🔴 TestBrain conferir e fechar).
+
+---
+
+## TST-08: `make test` falha com `go: no such tool "covdata"` — 2026-11-01
+**Agentes:** 🔴 TestBrain
+
+**Status:** concluído e verificado (Lote 29, 2026-11-01).
+**Camadas:** Ambiente (toolchain), Testes, Documentação
+**Origem:** Lote 24 (2026-10-29), execução dos testes.
+
+**Resultado:** `make test` passa de ponta a ponta com cobertura (shared **92,0%**, API **94,4%**), tanto com o toolchain 1.26.0 baixado automaticamente quanto com o Go 1.26.0 oficial e `GOTOOLCHAIN=local`. **Não reproduzido:** o `covdata` é compilado sob demanda; a causa provável foi o disco exFAT ou outro toolchain. Pré-requisito documentado no `CLAUDE.md`.
+
+**Observação:** na máquina do usuário, `/usr/bin/go` é o 1.22 do apt e `~/.config/go/env` tem `GOTOOLCHAIN=go1.25.0+auto`, ou seja, não há Go 1.26 instalado localmente; hoje funciona pelo download automático. O `scripts/setup-linux.sh` (SETUP-01) instala o Go 1.26.0.
+
+---
+
+## SETUP-01: scripts de instalação do ambiente de desenvolvimento (Linux e Windows) — 2026-11-01
+**Agentes:** 🔴 TestBrain
+
+**Status:** concluído (Lote 29, 2026-11-01).
+**Camadas:** Ambiente (toolchain/scripts), Frontend (versão do Node), Documentação
+**Origem:** pedido do usuário (2026-11-01), saiu do TST-08.
+
+**Entregas:** `scripts/setup-linux.sh`, `scripts/setup-windows.ps1`, `scripts/versoes.conf` (versões num lugar só), `frontend/.nvmrc` (`22.23.4`), `engines` `node ^22.13.0` no `package.json`, alvos `make setup` e `make setup-check`, documentação no `CLAUDE.md` e no `postman/README.md`.
+
+**Validação:** `--check` rodado; instalação testada em diretório temporário (Go 1.26.0 com SHA-256 conferido e `covdata` funcionando; reexecução idempotente).
+
+**Limitações:** o script Windows **não foi executado** (sem `pwsh` no ambiente); `shellcheck` indisponível. A validação no Windows e o repositório MariaDB 11.4 no Linux (o cliente local é o 10.11.14) viraram o card TST-13.
+
+---
+## TST-10: `make test-frontend` e `make frontend-deps` não funcionam no disco exFAT com o Node 18 do sistema — ❌ CANCELADO em 2026-11-01
+**Agentes:** 🔴 TestBrain (não executado)
+
+**Status:** cancelado pelo usuário (Lote 29). Motivo: o projeto foi migrado para um HD com Linux instalado, sem exFAT (symlinks funcionam, `node_modules/.bin` é criado) e com Node 22 via nvm disponível. As duas causas do card deixaram de existir. Nenhuma mudança de código.
+**Camadas:** Ambiente (Makefile/toolchain), Frontend, Testes
+**Origem:** Lote 25 (2026-10-30), execução dos testes de frontend.
+
+**Descrição original:** com o repositório no disco exFAT (sem symlinks), o `npm ci` não criava `node_modules/.bin`, então `make frontend-deps` e `make test-frontend` não achavam os binários; além disso, o Node do sistema era o 18, e o vitest 4 exige Node >= 20. No Lote 25, os testes, o `tsc` e o `eslint` só rodaram num espelho com Node 22.
+
+**O que ficou para outro card:** a fixação/documentação da versão do Node do projeto entra no **SETUP-01** (scripts de instalação do ambiente, Lote 29, em `fazendo.md`).
 
 ---
 ## CHORE-12 de 2026-11-01: pasta `apis/` renomeada para `backend/`
@@ -385,6 +596,8 @@
 >
 > **Commit:** não commitado (pendente do usuário).
 >
+> **Atualização (2026-11-01, Lote 29):** o TST-09 foi concluído (3 testes de integração verdes e CHECK conferido; ver "Testes e cobertura do Lote 25" abaixo) e o TST-10 foi cancelado.
+>
 > **Saíram do lote (em `afazer.md`, bloco "Achados do Lote 25"):** TST-09 (testes de integração e conferência do CHECK pendentes por credencial do banco, MÉDIA), TST-10 (`make test-frontend`/`make frontend-deps` em disco exFAT e Node 18, MÉDIA), CHORE-08 (4 observações do 🔴 TestBrain, BAIXA) e FE-16 (rodar o `next build`, BAIXA). Da especificação já tinham saído UX-02, CHORE-07 e BUG-22 (ainda em `afazer.md`).
 
 ### Decisões do usuário (2026-10-29)
@@ -532,6 +745,7 @@
 - **Go:** 14 arquivos novos (`bug16_*`, `bug16_bug20_*`, `sec27_*`, `bug17_*`, `bug19_*`, `bug17_bug21_integration_test.go`, `chore03_*`, `chore06_*`), em `apis/shared/tests/{vendas,catalogo,comercial,identidade,analytics}` e `apis/rotaperfumes-api/tests/{handlers,routes,arquitetura}`. Os dois módulos estão verdes.
 - **Cobertura:** shared 91,2%; API 96,1%; combinada, os pacotes tocados ficam em 100% e o total em 98,6%.
 - **Integração pendente:** os 3 testes de integração (BUG-17 concorrente e BUG-21 upsert real) **não rodaram**, porque o banco recusou o login (`Access denied for user 'casaos'`). Card TST-09.
+- **Integração executada (2026-11-01, TST-09, Lote 29, 🔴 TestBrain):** com a credencial do `.env` funcionando de novo, `INTEGRATION=1` e TLS ligado (SEC-29), os 3 testes de `bug17_bug21_integration_test.go` **rodaram sem `t.Skip` e passaram**. CHECK `chk_pagamentos_taxa_pct` conferido no `information_schema.CHECK_CONSTRAINTS` (`taxa_pct >= 0 and taxa_pct <= 30`); INSERT com `30.01` e com `-0.01` falha com erro 4025 (conferido em transação com ROLLBACK). Detalhe no card TST-09 ("Lote 29 de 2026-11-01").
 - **Frontend:** 1630/1630 testes, `tsc` e `eslint` limpos, rodados num espelho com Node 22 (o repositório está em disco exFAT, sem symlinks, e o Node do sistema é o 18; card TST-10). O `next build` **não** foi rodado (card FE-16).
 - Testes antigos ajustados: `dominio_test.go` (Faturado → Entregue), `WithArgs` dos `UPDATE pagamentos` (+2 args), ordem do SQL do toggle, `body_test.go`/`catalogo_arq02_test.go`/`scope_test.go` (CHORE-03) e comentários de `infra_test.go` (CHORE-06).
 

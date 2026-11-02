@@ -67,10 +67,18 @@ func TestOpen_Integracao(t *testing.T) {
 	assert.Equal(t, 1, um)
 	assert.Equal(t, 25, conn.Stats().MaxOpenConnections)
 
+	// As asserções sobre o log usam strings.Contains + mensagem fixa: com
+	// assert.Contains/NotContains, uma falha imprimiria o log (e o usuário, que
+	// pode conter a senha) na saída do teste.
 	logado := buf.String()
-	assert.Contains(t, logado, "[db] conexão MariaDB estabelecida")
-	assert.Contains(t, logado, cfg.DBUsuario+":****@tcp(")
-	if cfg.DBSenha != "" && !strings.Contains(cfg.DBUsuario, cfg.DBSenha) {
-		assert.NotContains(t, logado, ":"+cfg.DBSenha+"@", "a senha nunca deve ser logada")
+	assert.True(t, strings.Contains(logado, "[db] conexão MariaDB estabelecida"), "log de conexão ausente")
+	if strings.Contains(cfg.DBUsuario, cfg.DBSenha) {
+		// Credencial em que a senha é parte do usuário (ex.: usuário = senha):
+		// o "user:****@" ainda conteria a senha, e a proteção extra do maskDSN
+		// (senhaVazou) loga o DSN inteiro como "****".
+		assert.True(t, strings.Contains(logado, "host=****,"), "com a senha contida no usuário, o DSN deve sair como ****")
+	} else {
+		assert.True(t, strings.Contains(logado, cfg.DBUsuario+":****@tcp("), "DSN mascarado (user:****@tcp(...)) ausente no log")
 	}
+	assert.False(t, strings.Contains(logado, cfg.DBSenha), "a senha nunca deve ser logada")
 }

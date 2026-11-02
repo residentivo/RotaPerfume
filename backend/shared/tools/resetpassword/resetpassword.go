@@ -91,7 +91,7 @@ const AvisoPasswordDepreciada = "resetpassword: aviso: -password fica no histór
 // DB_SENHA são obrigatórios (sem fallback; ErrCredenciaisDB se ausentes ou
 // vazios); DB_HOST, DB_PORT e DB_NAME mantêm os defaults locais.
 //
-// Mesmo DSN de config.DSN() (ver lá a regra de clientFoundRows=true:
+// Montado por config.DSN() (ver lá a regra de clientFoundRows=true:
 // condições "só se ainda não ..." vão no WHERE, nunca deduzidas de
 // RowsAffected=0). Os upserts abaixo (UPDATE e, se 0 linhas, INSERT)
 // continuam corretos: com a flag, 0 significa "e-mail não existe".
@@ -101,14 +101,20 @@ func DSN() (string, error) {
 	if !okU || !okS || usuario == "" || senha == "" {
 		return "", ErrCredenciaisDB
 	}
-	return fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true",
-		usuario,
-		senha,
-		GetEnv("DB_HOST", "localhost"),
-		GetEnv("DB_PORT", "3306"),
-		GetEnv("DB_NAME", "rotaperfumes"),
-	), nil
+	// SEC-29: mesmo TLS do config.Load (DB_TLS_CA/DB_TLS_SERVER_NAME).
+	dbTLS, err := config.LoadDBTLS()
+	if err != nil {
+		return "", err
+	}
+	cfg := config.Config{
+		DBUsuario: usuario,
+		DBSenha:   senha,
+		DBHost:    GetEnv("DB_HOST", "localhost"),
+		DBPort:    GetEnv("DB_PORT", "3306"),
+		DBName:    GetEnv("DB_NAME", "rotaperfumes"),
+		DBTLS:     dbTLS,
+	}
+	return cfg.DSN(), nil
 }
 
 // ResolverSenha escolhe a senha a partir das flags de opts (no máximo uma

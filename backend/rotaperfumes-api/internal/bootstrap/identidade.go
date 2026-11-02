@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"database/sql"
+	"errors"
 	"log"
 	"os"
 	"strings"
@@ -85,10 +86,30 @@ func extPadrao(cfg *config.Config, email identidadeapp.EnviadorSenhaInicial) Ext
 	return ExtIdentidade{Captcha: turnstile.Novo(cfg.TurnstileSecretKey, cfg.TurnstileHostnames), Publicador: identidadeapp.SemPublicador{}, Email: email}
 }
 
+// ErrTurnstileSecretTeste: secret de teste da Cloudflare com
+// COOKIE_SECURE=true sem a válvula (SEC-37). Nunca inclui a secret.
+var ErrTurnstileSecretTeste = errors.New("config: TURNSTILE_SECRET_KEY é uma secret de teste da Cloudflare e não é aceita com COOKIE_SECURE=true (use a secret real ou, só em rede interna, TURNSTILE_PERMITIR_SECRET_TESTE=true)")
+
+// ValidarCaptcha recusa a secret de teste do Turnstile em produção
+// (COOKIE_SECURE=true), salvo com TURNSTILE_PERMITIR_SECRET_TESTE=true
+// (SEC-37). Chamado só pelo startup da API (cmd/server): CLIs e testes que
+// montam o bootstrap com a secret de teste não passam por aqui.
+func ValidarCaptcha(cfg *config.Config) error {
+	if cfg.CookieSecure && turnstile.SecretDeTeste(cfg.TurnstileSecretKey) && !cfg.TurnstilePermitirSecretTeste {
+		return ErrTurnstileSecretTeste
+	}
+	return nil
+}
+
 // avisarCaptcha loga, uma vez no startup, como o Turnstile vai conferir a
 // origem do token (SEC-19): só a quantidade de hostnames, nunca a secret.
+// Com a válvula do SEC-37 ligada em produção, o aviso é de SEGURANCA.
 func avisarCaptcha(cfg *config.Config) {
 	if turnstile.SecretDeTeste(cfg.TurnstileSecretKey) {
+		if cfg.CookieSecure && cfg.TurnstilePermitirSecretTeste {
+			log.Printf("[config] SEGURANCA: secret de teste do Turnstile em producao (TURNSTILE_PERMITIR_SECRET_TESTE=true): captcha desligado")
+			return
+		}
 		log.Printf("[config] Turnstile em modo de teste: hostname/action não conferidos")
 		return
 	}

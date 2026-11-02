@@ -73,6 +73,10 @@ out/
 # Deploy (DEPLOY-01): segredos e dumps nunca versionados
 deploy/api.env
 deploy/dumps/
+# SEC-29: CA do banco de DEV (deploy/ca-cert.pem, copiada à mão) e o sha256
+# gerado pelo Jenkins. A CA de produção fica só no host (/etc/mysql/ssl).
+deploy/ca-cert.pem
+deploy/db-ca.sha256
 *.sql.gz
 
 # IMG-01: imagens de produto geradas/enviadas (PRODUTO_IMAGENS_DIR, padrão

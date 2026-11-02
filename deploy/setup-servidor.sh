@@ -2,7 +2,8 @@
 # =============================================================================
 # Instalacao automatica do rotaperfumes no servidor da LAN (card DEPLOY-01).
 #
-# Prepara o servidor (Docker/Jenkins/MariaDB/ufw), cria o banco e os usuarios,
+# Prepara o servidor (Docker/Jenkins/banco MySQL 8 ou MariaDB/ufw), cria o
+# banco e os usuarios,
 # gera o api.env de producao, cria/atualiza o job Jenkins "rotaperfumes-deploy"
 # e dispara o primeiro build.
 #
@@ -12,6 +13,8 @@
 # Uso rapido (no servidor):
 #   curl -fsSLO https://raw.githubusercontent.com/residentivo/RotaPerfume/main/deploy/setup-servidor.sh
 #   sudo bash setup-servidor.sh --env /tmp/.env --dump /tmp/rotaperfumes-AAAAMMDD-HHMMSS.sql.gz
+# So o hardening/bind-address do banco (servidor ja instalado, DEPLOY-02):
+#   sudo bash setup-servidor.sh --apenas-banco
 #
 # Re-executavel: cada etapa confere o estado antes de mudar algo.
 # Regras: nunca "set -x"; segredos nunca vao para argv, log ou tela.
@@ -35,6 +38,17 @@ readonly COMPOSE_MINIMO="2.17.0"
 readonly PLUGINS_EXIGIDOS=(workflow-job workflow-cps git credentials plain-credentials credentials-binding)
 # Chaves do api.env que o script sempre define (as do --env sao descartadas).
 readonly CHAVES_SOBRESCRITAS=(DB_HOST DB_PORT DB_NAME DB_USUARIO DB_SENHA JWT_SECRET CORS_ALLOWED_ORIGINS TRUST_PROXY_HEADERS COOKIE_SECURE)
+# Drop-ins [mysqld] do banco (DEPLOY-02): hardening sempre; bind so se loopback.
+readonly DROPIN_HARDENING="zz-rotaperfumes-hardening.cnf"
+readonly DROPIN_BIND="zz-rotaperfumes-bind.cnf"
+readonly DROPIN_LEGADO="zz-rotaperfumes.cnf"
+readonly COLLATION_PROJETO="utf8mb4_unicode_ci"
+readonly SQL_MODE_MARIADB="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+# MySQL 8: mantem ONLY_FULL_GROUP_BY (padrao do 8.0). NO_AUTO_CREATE_USER nao existe no 8.0.
+readonly SQL_MODE_MYSQL="ONLY_FULL_GROUP_BY,$SQL_MODE_MARIADB"
+# character_set_collations existe no MariaDB >= 11.2 (no 11.2+ ele faz o
+# "CHARACTER SET utf8mb4" sem COLLATE cair em utf8mb4_uca1400_ai_ci).
+readonly MARIADB_MIN_CHARSET_COLLATIONS="11.2"
 
 # Opcoes (preenchidas por ler_argumentos)
 ARQ_ENV=""
@@ -47,6 +61,7 @@ JENKINS_URL="http://localhost:8888"
 PULAR_MYSQL=false
 PULAR_BUILD=false
 REMOVER_ENTRADAS=false
+APENAS_BANCO=false
 
 # Estado
 USUARIO=""
@@ -55,6 +70,7 @@ USUARIO_GRUPO=""
 MYSQL_BIN=""
 MYSQL_ROOT_SENHA=""
 MYSQL_SABOR=""
+MYSQL_VERSAO=""
 MYSQL_SERVICO=""
 DB_PORTA=""
 SENHA_APP=""
@@ -91,8 +107,9 @@ aviso_destacado() {
 uso() {
   cat <<'EOF'
 Uso: sudo bash setup-servidor.sh --env ARQUIVO [opcoes]
+     sudo bash setup-servidor.sh --apenas-banco
 
-Obrigatorio:
+Obrigatorio (exceto com --apenas-banco):
   --env ARQUIVO               .env de origem (ex. /tmp/.env copiado do Windows).
                               DB_*, JWT_SECRET, CORS, TRUST_PROXY_HEADERS e
                               COOKIE_SECURE (sempre true) sao substituidos; o resto (SMTP, Turnstile...) e mantido.
@@ -105,8 +122,13 @@ Opcoes:
   --https-port PORTA          Porta HTTPS do Caddy (padrao 8443)
   --jenkins-url URL           URL do Jenkins vista do servidor
                               (padrao http://localhost:8888)
-  --skip-mysql                Nao cria banco/usuarios no MariaDB (pede a senha
-                              atual do rotaperfumes_app para o api.env).
+  --apenas-banco              So aplica o hardening (local_infile, sql_mode,
+                              charset/collation) e o bind-address do banco
+                              (MySQL 8 ou MariaDB) e sai. Nao usa --env,
+                              Docker, compose nem Jenkins. Para servidor
+                              ja instalado.
+  --skip-mysql                Nao cria banco/usuarios no MySQL/MariaDB (pede a
+                              senha atual do rotaperfumes_app para o api.env).
   --skip-build                Nao dispara o build no final.
   --remove-inputs             Apaga o --env e o --dump originais no final.
   -h, --help                  Mostra esta ajuda.
@@ -390,6 +412,135 @@ EOF
 EOF
 }
 
+# --- Hardening do banco (DEPLOY-02) ------------------------------------------
+
+# Nome legivel do sabor para mensagens. Arg: SABOR (mysql|mariadb; padrao $MYSQL_SABOR).
+nome_sabor() {
+  case "${1:-$MYSQL_SABOR}" in
+    mysql) printf 'MySQL' ;;
+    mariadb) printf 'MariaDB' ;;
+    *) printf 'banco' ;;
+  esac
+}
+
+# sql_mode_esperado SABOR -> lista do drop-in de hardening.
+sql_mode_esperado() {
+  case "$1" in
+    mysql) printf '%s' "$SQL_MODE_MYSQL" ;;
+    mariadb) printf '%s' "$SQL_MODE_MARIADB" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Sucesso se o sabor/versao aceita character_set_collations (MariaDB >= 11.2).
+usa_character_set_collations() {
+  [[ "$1" == mariadb ]] || return 1
+  versao_ge "$(normalizar_versao "$2")" "$MARIADB_MIN_CHARSET_COLLATIONS"
+}
+
+# "a, B ,c" -> "A,B,C" ordenado e sem repeticoes (para comparar como conjunto).
+sql_mode_normalizado() {
+  local s=${1^^}
+  s=${s//[[:space:]]/}
+  local -a itens
+  IFS=, read -ra itens <<<"$s"
+  ((${#itens[@]} == 0)) && return 0
+  printf '%s\n' "${itens[@]}" | sed '/^$/d' | sort -u | paste -sd, -
+}
+
+# sql_mode_igual A B -> sucesso se os dois sql_mode tem os mesmos modos.
+sql_mode_igual() {
+  [[ "$(sql_mode_normalizado "$1")" == "$(sql_mode_normalizado "$2")" ]]
+}
+
+# conteudo_dropin_hardening SABOR VERSAO -> stdout. Sem bind-address e sem
+# opcoes exclusivas do outro sabor (nada de NO_AUTO_CREATE_USER nem
+# default_collation_for_utf8mb4).
+conteudo_dropin_hardening() {
+  local modo
+  modo=$(sql_mode_esperado "$1") || return 1
+  printf '# Gerado por deploy/setup-servidor.sh (rotaperfumes, DEPLOY-02): hardening.\n'
+  printf '# Nao edite: o script regrava este arquivo. O bind fica em %s.\n' "$DROPIN_BIND"
+  printf '[mysqld]\n'
+  printf 'local_infile = 0\n'
+  printf 'sql_mode = %s\n' "$modo"
+  printf 'character_set_server = utf8mb4\n'
+  printf 'collation_server = %s\n' "$COLLATION_PROJETO"
+  if usa_character_set_collations "$1" "$2"; then
+    printf 'character_set_collations = utf8mb4=%s\n' "$COLLATION_PROJETO"
+  fi
+}
+
+# conteudo_dropin_bind [ENDERECO] -> stdout (so o bind-address; padrao
+# 0.0.0.0, o ENDERECO so vem da migracao do legado).
+conteudo_dropin_bind() {
+  printf '# Gerado por deploy/setup-servidor.sh (rotaperfumes, DEPLOY-02): bind-address.\n'
+  printf '# Gravado so porque o banco escutava apenas em loopback (containers nao alcancam).\n'
+  printf '[mysqld]\n'
+  printf 'bind-address = %s\n' "${1:-0.0.0.0}"
+}
+
+# SET GLOBAL (nao PERSIST: o drop-in e a fonte da verdade no proximo restart).
+sql_set_global_hardening() {
+  local modo
+  modo=$(sql_mode_esperado "$1") || return 1
+  printf "SET GLOBAL local_infile = 0, sql_mode = '%s', character_set_server = 'utf8mb4', collation_server = '%s'" \
+    "$modo" "$COLLATION_PROJETO"
+  if usa_character_set_collations "$1" "$2"; then
+    printf ", character_set_collations = 'utf8mb4=%s'" "$COLLATION_PROJETO"
+  fi
+  printf '\n'
+}
+
+# Consulta das variaveis conferidas (saida "nome<TAB>valor").
+sql_variaveis_hardening() {
+  printf "SHOW GLOBAL VARIABLES WHERE Variable_name IN ('local_infile','sql_mode','character_set_server','collation_server','character_set_collations')"
+}
+
+# valores_divergentes SABOR VERSAO < "nome<TAB>valor" -> nomes que divergem
+# do esperado (um por linha). Variavel esperada ausente tambem diverge.
+valores_divergentes() {
+  local sabor=$1 versao=$2 modo nome valor
+  modo=$(sql_mode_esperado "$sabor") || return 1
+  local -A vistos=()
+  while IFS=$'\t' read -r nome valor || [[ -n "$nome" ]]; do
+    nome=${nome,,}
+    valor=${valor%$'\r'}
+    [[ -n "$nome" ]] || continue
+    vistos[$nome]=1
+    case "$nome" in
+      local_infile) [[ "${valor^^}" == OFF || "$valor" == 0 ]] || printf 'local_infile\n' ;;
+      sql_mode) sql_mode_igual "$valor" "$modo" || printf 'sql_mode\n' ;;
+      character_set_server) [[ "${valor,,}" == utf8mb4 ]] || printf 'character_set_server\n' ;;
+      collation_server) [[ "${valor,,}" == "$COLLATION_PROJETO" ]] || printf 'collation_server\n' ;;
+      character_set_collations)
+        usa_character_set_collations "$sabor" "$versao" || continue
+        valor=${valor,,}
+        [[ ",${valor//[[:space:]]/}," == *",utf8mb4=$COLLATION_PROJETO,"* ]] || printf 'character_set_collations\n'
+        ;;
+    esac
+  done
+  local esperadas=(local_infile sql_mode character_set_server collation_server)
+  usa_character_set_collations "$sabor" "$versao" && esperadas+=(character_set_collations)
+  for nome in "${esperadas[@]}"; do
+    [[ -n "${vistos[$nome]:-}" ]] || printf '%s\n' "$nome"
+  done
+}
+
+# gravar_se_mudou TMP DESTINO -> 0 = gravou (conteudo novo), 1 = ja estava igual.
+gravar_se_mudou() {
+  if [[ -f "$2" ]] && cmp -s -- "$1" "$2"; then
+    return 1
+  fi
+  install -m 644 -o root -g root "$1" "$2"
+  return 0
+}
+
+# Sucesso se o arquivo .env traz uma secret de TESTE do Turnstile (Cloudflare).
+env_tem_turnstile_teste() {
+  grep -Eq '^[[:space:]]*(export[[:space:]]+)?TURNSTILE_SECRET_KEY[[:space:]]*=[[:space:]]*["'"'"']?[123]x0{31}AA["'"'"']?[[:space:]]*$' "$1"
+}
+
 # -----------------------------------------------------------------------------
 # Argumentos
 # -----------------------------------------------------------------------------
@@ -410,6 +561,7 @@ ler_argumentos() {
       --skip-mysql) PULAR_MYSQL=true; shift ;;
       --skip-build) PULAR_BUILD=true; shift ;;
       --remove-inputs) REMOVER_ENTRADAS=true; shift ;;
+      --apenas-banco) APENAS_BANCO=true; shift ;;
       -h | --help) uso; exit 0 ;;
       *) falhar "Opcao desconhecida: $1 (veja --help)." ;;
     esac
@@ -418,7 +570,7 @@ ler_argumentos() {
 }
 
 validar_argumentos() {
-  [[ -n "$ARQ_ENV" ]] || falhar "Informe --env ARQUIVO (veja --help)."
+  $APENAS_BANCO || [[ -n "$ARQ_ENV" ]] || falhar "Informe --env ARQUIVO (veja --help)."
   [[ "$SITE_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || falhar "--site-host invalido."
   [[ "$SITE_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || falhar "--site-ip invalido (IPv4)."
   [[ "$HTTPS_PORT" =~ ^[0-9]{1,5}$ ]] && ((HTTPS_PORT >= 1 && HTTPS_PORT <= 65535)) ||
@@ -430,8 +582,12 @@ validar_argumentos() {
 # -----------------------------------------------------------------------------
 # [1] Pre-checagens
 # -----------------------------------------------------------------------------
-checar_root_e_usuario() {
+checar_root() {
   [[ $EUID -eq 0 ]] || falhar "Rode como root: sudo bash $0 ..."
+}
+
+checar_root_e_usuario() {
+  checar_root
   [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]] ||
     falhar "Rode com sudo a partir do SEU usuario (SUDO_USER vazio): o api.env sera gravado na home dele."
   USUARIO=$SUDO_USER
@@ -487,15 +643,15 @@ checar_jenkins() {
   falhar "Jenkins nao encontrado como servico systemd 'jenkins'."
 }
 
-# Alvo: MariaDB 11.4 (cliente "mariadb"; a partir do 11.x o pacote pode nao
-# trazer mais o symlink "mysql"). O cliente "mysql" fica so como fallback.
+# Producao: MySQL 8.0 (cliente "mysql"). MariaDB: cliente "mariadb" (a partir
+# do 11.x o pacote pode nao trazer mais o symlink "mysql").
 detectar_mysql_bin() {
   if command -v mariadb >/dev/null 2>&1; then
     MYSQL_BIN=mariadb
   elif command -v mysql >/dev/null 2>&1; then
     MYSQL_BIN=mysql
   else
-    falhar "Cliente mariadb (ou mysql) nao encontrado no servidor. Instale: sudo apt install mariadb-server"
+    falhar "Cliente mysql (ou mariadb) nao encontrado no servidor. O servidor do banco esta instalado?"
   fi
 }
 
@@ -516,7 +672,7 @@ checar_acesso_mysql() {
     return 0
   fi
   info "Acesso root via socket falhou."
-  IFS= read -rsp "    Senha do root do MariaDB: " MYSQL_ROOT_SENHA
+  IFS= read -rsp "    Senha do root do banco (MySQL/MariaDB): " MYSQL_ROOT_SENHA
   echo >&2
   mysql_root -e 'SELECT 1' >/dev/null 2>&1 || falhar "Nao foi possivel acessar o banco como root."
   ok "acesso root ao banco com senha"
@@ -525,6 +681,7 @@ checar_acesso_mysql() {
 detectar_sabor_e_servico() {
   local versao candidatos s
   versao=$(mysql_consulta 'SELECT VERSION()')
+  MYSQL_VERSAO=$versao
   if [[ "$versao" == *MariaDB* ]]; then
     MYSQL_SABOR=mariadb
     candidatos=(mariadb mysql mysqld)
@@ -539,7 +696,7 @@ detectar_sabor_e_servico() {
     fi
   done
   [[ -n "$MYSQL_SERVICO" ]] || falhar "Servico systemd do banco nao encontrado (mariadb/mysql/mysqld)."
-  ok "$MYSQL_SABOR $versao (servico $MYSQL_SERVICO)"
+  ok "$(nome_sabor) $versao (servico $MYSQL_SERVICO)"
 }
 
 etapa_prechecagens() {
@@ -549,6 +706,16 @@ etapa_prechecagens() {
   checar_compose
   checar_entradas
   checar_jenkins
+  detectar_mysql_bin
+  checar_acesso_mysql
+  detectar_sabor_e_servico
+}
+
+# --apenas-banco: so o necessario para a etapa 3 (sem --env, Docker, compose
+# nem Jenkins).
+etapa_prechecagens_banco() {
+  etapa 1 "Pre-checagens (--apenas-banco)"
+  checar_root
   detectar_mysql_bin
   checar_acesso_mysql
   detectar_sabor_e_servico
@@ -587,8 +754,19 @@ etapa_jenkins_docker() {
 }
 
 # -----------------------------------------------------------------------------
-# [3] bind-address do banco
+# [3] Hardening e bind-address do banco (DEPLOY-02)
+#
+# Dois drop-ins [mysqld] (secao lida pelo MySQL 8 e pelo MariaDB):
+#   - zz-rotaperfumes-hardening.cnf: SEMPRE gravado (local_infile = 0, sql_mode
+#     estrito, utf8mb4/utf8mb4_unicode_ci). Nunca reinicia o banco: se o valor
+#     em execucao divergir, aplica com SET GLOBAL (nao PERSIST).
+#   - zz-rotaperfumes-bind.cnf: so bind-address = 0.0.0.0, gravado so quando o
+#     banco escuta apenas em loopback. E o UNICO que reinicia o servico.
+# O legado zz-rotaperfumes.cnf (bind + hardening juntos) e migrado: o -bind.cnf
+# e gravado ANTES de remover o legado, sem restart.
 # -----------------------------------------------------------------------------
+LEGADO_BACKUP=""
+
 bind_address_atual() {
   mysql_consulta "SHOW GLOBAL VARIABLES LIKE 'bind_address'" | cut -f2
 }
@@ -605,47 +783,186 @@ diretorio_dropin() {
   return 1
 }
 
+# Sucesso se o banco responder em ate 90s.
 aguardar_mysql() {
   local limite=$((SECONDS + 90))
   while ((SECONDS < limite)); do
     mysql_root -e 'SELECT 1' >/dev/null 2>&1 && return 0
     sleep 2
   done
-  falhar "O banco nao voltou apos o restart (journalctl -u $MYSQL_SERVICO)."
+  return 1
 }
 
-# Drop-in [mysqld] (secao lida tambem pelo MariaDB): alem do bind-address,
-# fixa local_infile = 0 (nenhum LOAD DATA no projeto), sql_mode estrito e o
-# charset/collation padrao do projeto (o padrao do MariaDB 11.4 seria
-# utf8mb4_uca1400_ai_ci).
+# salvar_backup DESTINO BACKUP: copia o arquivo atual (se existir).
+salvar_backup() {
+  rm -f -- "$2"
+  if [[ -f "$1" ]]; then cp -p -- "$1" "$2"; fi
+  return 0
+}
+
+# restaurar_backup DESTINO BACKUP: volta o arquivo anterior, ou remove o
+# DESTINO se ele nao existia antes.
+restaurar_backup() {
+  if [[ -f "$2" ]]; then
+    install -m 644 -o root -g root "$2" "$1"
+  else
+    rm -f -- "$1"
+  fi
+}
+
+# Valida a configuracao COMPLETA do servidor sem reiniciar.
+#   MySQL 8:  mysqld --validate-config
+#   MariaDB:  mariadbd --help --verbose (sai com erro em opcao desconhecida)
+validar_config_banco() {
+  local err="$TMP_DIR/validacao.err" bin rc=0 linha
+  if [[ "$MYSQL_SABOR" == mysql ]]; then
+    bin=$(command -v mysqld 2>/dev/null || printf '/usr/sbin/mysqld')
+    "$bin" --validate-config --user=mysql >/dev/null 2>"$err" || rc=$?
+  else
+    bin=$(command -v mariadbd 2>/dev/null || command -v mysqld 2>/dev/null || printf '/usr/sbin/mariadbd')
+    "$bin" --help --verbose --user=mysql >/dev/null 2>"$err" || rc=$?
+  fi
+  ((rc == 0)) && return 0
+  aviso "A validacao da configuracao do $(nome_sabor) falhou (codigo $rc):"
+  if [[ -s "$err" ]]; then
+    while IFS= read -r linha; do aviso "  $linha"; done < <(sed -n '1,15p' "$err")
+  fi
+  return 1
+}
+
+# Se o legado foi removido nesta execucao, devolve-o (rollback do hardening).
+restaurar_legado() {
+  [[ -n "$LEGADO_BACKUP" && -f "$LEGADO_BACKUP" ]] || return 0
+  install -m 644 -o root -g root "$LEGADO_BACKUP" "$1/$DROPIN_LEGADO"
+  aviso "Drop-in legado $1/$DROPIN_LEGADO restaurado."
+}
+
+# migrar_dropin_legado DIR: grava o -bind.cnf (com o endereco do legado) e so
+# depois remove o legado. Sem restart: o banco em execucao nao muda.
+migrar_dropin_legado() {
+  local dir=$1 legado="$1/$DROPIN_LEGADO" bind="$1/$DROPIN_BIND" tmp="$TMP_DIR/bind-legado.cnf" endereco
+  [[ -f "$legado" ]] || return 0
+  info "Drop-in legado encontrado: $legado. Migrando para $DROPIN_HARDENING + $DROPIN_BIND (sem restart)..."
+  endereco=$(sed -nE 's/^[[:space:]]*bind[-_]address[[:space:]]*=[[:space:]]*([^[:space:]#]+).*/\1/p' "$legado" | tail -n 1)
+  if [[ -n "$endereco" ]]; then
+    conteudo_dropin_bind "$endereco" >"$tmp"
+    if gravar_se_mudou "$tmp" "$bind"; then
+      ok "gravado $bind (bind-address = $endereco, vindo do legado)"
+    else
+      ok "$bind ja estava igual"
+    fi
+  fi
+  LEGADO_BACKUP="$TMP_DIR/legado.cnf.bkp"
+  cp -p -- "$legado" "$LEGADO_BACKUP"
+  rm -f -- "$legado"
+  ok "removido $legado"
+}
+
+# aplicar_hardening DIR: grava o drop-in de hardening (se mudou), valida e
+# aplica com SET GLOBAL o que divergir em execucao. Nunca reinicia.
+aplicar_hardening() {
+  local dir=$1 arq="$1/$DROPIN_HARDENING" tmp="$TMP_DIR/hardening.cnf" bkp="$TMP_DIR/hardening.cnf.bkp" vars div
+  conteudo_dropin_hardening "$MYSQL_SABOR" "$MYSQL_VERSAO" >"$tmp" ||
+    falhar "Sabor do banco desconhecido: '$MYSQL_SABOR'."
+  salvar_backup "$arq" "$bkp"
+  if gravar_se_mudou "$tmp" "$arq"; then
+    if ! validar_config_banco; then
+      restaurar_backup "$arq" "$bkp"
+      restaurar_legado "$dir"
+      falhar "Configuracao do $(nome_sabor) invalida com $arq. Arquivo anterior restaurado; $MYSQL_SERVICO NAO foi reiniciado."
+    fi
+    ok "gravado $arq (configuracao validada; sem restart)"
+  else
+    ok "$arq ja estava atualizado"
+  fi
+  vars=$(mysql_consulta "$(sql_variaveis_hardening)") || vars=""
+  div=$(valores_divergentes "$MYSQL_SABOR" "$MYSQL_VERSAO" <<<"$vars" | tr '\n' ' ')
+  div=${div% }
+  if [[ -z "$div" ]]; then
+    ok "valores em execucao ja conferem com o drop-in"
+    return 0
+  fi
+  info "Em execucao diverge(m): $div. Aplicando com SET GLOBAL (sem restart; vale para conexoes novas)..."
+  mysql_consulta "$(sql_set_global_hardening "$MYSQL_SABOR" "$MYSQL_VERSAO")" >/dev/null ||
+    falhar "SET GLOBAL falhou. O drop-in $arq passa a valer no proximo restart do $MYSQL_SERVICO."
+  ok "SET GLOBAL aplicado"
+}
+
+# gravar_dropin_bind DIR: so bind-address = 0.0.0.0. Reinicia o banco apenas
+# quando o arquivo mudou; restaura e reinicia de novo se o restart falhar.
 gravar_dropin_bind() {
-  local dir arq tmp
-  dir=$(diretorio_dropin) || falhar "Diretorio de configuracao do banco nao encontrado."
-  arq="$dir/zz-rotaperfumes.cnf"
-  tmp="$TMP_DIR/zz-rotaperfumes.cnf"
-  {
-    printf '# Gerado por deploy/setup-servidor.sh (rotaperfumes)\n[mysqld]\n'
-    printf 'bind-address = 0.0.0.0\n'
-    printf 'local_infile = 0\n'
-    printf 'sql_mode = STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION\n'
-    printf 'character_set_server = utf8mb4\n'
-    printf 'collation_server = utf8mb4_unicode_ci\n'
-  } >"$tmp"
-  install -m 644 -o root -g root "$tmp" "$arq"
+  local arq="$1/$DROPIN_BIND" tmp="$TMP_DIR/bind.cnf" bkp="$TMP_DIR/bind.cnf.bkp"
+  conteudo_dropin_bind >"$tmp"
+  salvar_backup "$arq" "$bkp"
+  if ! gravar_se_mudou "$tmp" "$arq"; then
+    info "$arq ja estava gravado; sem restart."
+    return 0
+  fi
+  if ! validar_config_banco; then
+    restaurar_backup "$arq" "$bkp"
+    falhar "Configuracao do $(nome_sabor) invalida com $arq. Arquivo anterior restaurado; $MYSQL_SERVICO NAO foi reiniciado."
+  fi
   info "Gravado $arq; reiniciando $MYSQL_SERVICO..."
-  systemctl restart "$MYSQL_SERVICO"
-  aguardar_mysql
+  if systemctl restart "$MYSQL_SERVICO" && aguardar_mysql; then
+    return 0
+  fi
+  aviso "O $MYSQL_SERVICO nao voltou apos o restart. Restaurando $arq e reiniciando de novo..."
+  restaurar_backup "$arq" "$bkp"
+  systemctl restart "$MYSQL_SERVICO" || aviso "O segundo restart do $MYSQL_SERVICO tambem falhou."
+  aguardar_mysql || aviso "O $(nome_sabor) ainda nao responde."
+  falhar "Restart do $MYSQL_SERVICO falhou com $arq (arquivo restaurado). Veja: journalctl -u $MYSQL_SERVICO"
+}
+
+# Conferencia final: so AVISO (nada e alterado aqui).
+conferir_hardening() {
+  local vars div persistidas schema tabelas n
+  vars=$(mysql_consulta "$(sql_variaveis_hardening)") || vars=""
+  div=$(valores_divergentes "$MYSQL_SABOR" "$MYSQL_VERSAO" <<<"$vars" | tr '\n' ' ')
+  div=${div% }
+  if [[ -n "$div" ]]; then
+    aviso "SHOW GLOBAL VARIABLES ainda diverge do drop-in em: $div."
+    aviso "  Outro arquivo pode sobrescrever: grep -rnE 'local_infile|sql_mode|character_set|collation' /etc/mysql"
+  else
+    ok "conferido: local_infile=OFF, sql_mode estrito, utf8mb4/$COLLATION_PROJETO"
+  fi
+  if [[ "$MYSQL_SABOR" == mysql ]]; then
+    persistidas=$(mysql_consulta "SELECT VARIABLE_NAME FROM performance_schema.persisted_variables WHERE VARIABLE_NAME IN ('local_infile','sql_mode','character_set_server','collation_server') ORDER BY VARIABLE_NAME" | tr '\n' ' ') ||
+      persistidas=""
+    persistidas=${persistidas% }
+    if [[ -n "$persistidas" ]]; then
+      aviso "SET PERSIST ativo para: $persistidas (mysqld-auto.cnf sobrescreve o drop-in no restart)."
+      aviso "  Para o drop-in valer: RESET PERSIST <variavel>; (uma por vez)"
+    fi
+  fi
+  schema=$(mysql_consulta "SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$DB_NOME'") || schema=""
+  if [[ -z "$schema" ]]; then
+    info "Schema $DB_NOME ainda nao existe (e criado com $COLLATION_PROJETO na etapa 5)."
+    return 0
+  fi
+  if [[ "$schema" != "$COLLATION_PROJETO" ]]; then
+    aviso "Schema $DB_NOME com collation $schema (esperado $COLLATION_PROJETO). O script NAO faz ALTER; abra um card."
+  fi
+  tabelas=$(mysql_consulta "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = '$DB_NOME' AND TABLE_TYPE = 'BASE TABLE' AND TABLE_COLLATION <> '$COLLATION_PROJETO' ORDER BY TABLE_NAME") ||
+    tabelas=""
+  if [[ -n "$tabelas" ]]; then
+    n=$(grep -c . <<<"$tabelas")
+    aviso "$n tabela(s) de $DB_NOME fora de $COLLATION_PROJETO: $(head -n 10 <<<"$tabelas" | paste -sd' ' -)$( ((n > 10)) && printf ' ...')"
+    aviso "  O script NAO faz ALTER TABLE; abra um card para a conversao."
+  fi
 }
 
 etapa_bind_address() {
-  etapa 3 "bind-address do $MYSQL_SABOR"
-  local skip bind
+  etapa 3 "Hardening e bind-address do $(nome_sabor)"
+  local skip bind dir
   skip=$(mysql_consulta 'SELECT @@skip_networking')
   [[ "$skip" == "0" || "$skip" == "OFF" ]] || falhar "skip_networking esta ativo: o banco nao aceita TCP."
+  dir=$(diretorio_dropin) || falhar "Diretorio de configuracao do banco nao encontrado."
+  migrar_dropin_legado "$dir"
+  aplicar_hardening "$dir"
   bind=$(bind_address_atual)
   if bind_so_loopback "$bind"; then
     info "bind-address atual: $bind (containers nao alcancam)."
-    gravar_dropin_bind
+    gravar_dropin_bind "$dir"
     bind=$(bind_address_atual)
     bind_so_loopback "$bind" &&
       falhar "bind-address continua '$bind'. Outro arquivo sobrescreve: grep -rn bind-address /etc/mysql"
@@ -654,6 +971,7 @@ etapa_bind_address() {
   DB_PORTA=$(mysql_consulta 'SELECT @@port')
   [[ "$DB_PORTA" =~ ^[0-9]+$ && "$DB_PORTA" != 0 ]] || falhar "Porta do banco invalida: $DB_PORTA"
   ok "porta do banco: $DB_PORTA"
+  conferir_hardening
 }
 
 # -----------------------------------------------------------------------------
@@ -704,7 +1022,7 @@ usuario_db_existe() {
 
 pedir_senha_admin() {
   local s1 s2
-  info "Escolha a senha do usuario MariaDB $DB_ADMIN (voce a digitara no Jenkins depois)."
+  info "Escolha a senha do usuario $DB_ADMIN do $(nome_sabor) (voce a digitara no Jenkins depois)."
   while true; do
     IFS= read -rsp "    Senha (min. 12 caracteres): " s1
     echo >&2
@@ -721,7 +1039,7 @@ pedir_senha_admin() {
 }
 
 pedir_senha_app_existente() {
-  IFS= read -rsp "    Senha ATUAL do usuario MariaDB $DB_APP (vai para o api.env): " SENHA_APP
+  IFS= read -rsp "    Senha ATUAL do usuario $DB_APP do $(nome_sabor) (vai para o api.env): " SENHA_APP
   echo >&2
   [[ -n "$SENHA_APP" ]] || falhar "Senha vazia."
 }
@@ -782,6 +1100,15 @@ avisar_chaves_com_dolar() {
   aviso "Coloque esses valores entre aspas SIMPLES no .env e rode o script de novo."
 }
 
+# SEC-37/DEPLOY-02: secret de TESTE (1x/2x/3x...AA) aceita qualquer token.
+# Avisa sem imprimir o valor.
+avisar_turnstile_teste() {
+  env_tem_turnstile_teste "$ARQ_ENV" || return 0
+  aviso "TURNSTILE_SECRET_KEY do --env e uma secret de TESTE da Cloudflare: o captcha fica desligado."
+  aviso "Desde o SEC-37 a API NAO sobe com ela (COOKIE_SECURE=true), salvo TURNSTILE_PERMITIR_SECRET_TESTE=true."
+  aviso "Troque pela secret real do site no Turnstile (docs/deploy-servidor.md, secao 4, item 5)."
+}
+
 avisar_turnstile_vazio() {
   grep -Eq '^[[:space:]]*TURNSTILE_SECRET_KEY[[:space:]]*=[[:space:]]*[^[:space:]]' "$ARQ_ENV" && return 0
   aviso "TURNSTILE_SECRET_KEY vazia no --env: o login sera recusado (fail-closed)."
@@ -793,6 +1120,7 @@ etapa_api_env() {
   jwt=$(openssl rand -base64 48 | tr -d '\n')
   avisar_chaves_com_dolar
   avisar_turnstile_vazio
+  avisar_turnstile_teste
   {
     filtrar_env <"$ARQ_ENV"
     linhas_api_env "$DB_PORTA" "$SENHA_APP" "$jwt" "$SITE_HOST" "$SITE_IP" "$HTTPS_PORT"
@@ -1090,6 +1418,12 @@ main() {
   preparar_temporarios
   trap limpar EXIT
   trap 'exit 130' INT TERM
+  if $APENAS_BANCO; then
+    etapa_prechecagens_banco
+    etapa_bind_address
+    printf '\nConcluido (--apenas-banco).\n'
+    return 0
+  fi
   etapa_prechecagens
   etapa_jenkins_docker
   etapa_bind_address

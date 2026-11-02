@@ -1184,6 +1184,8 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 ## Subindo o ambiente
 
+**Ferramentas (SETUP-01, Lote 29, 2026-11-01):** rode `make setup-check` para conferir e `make setup` para instalar o que falta (`scripts/setup-linux.sh` no Linux Debian/Ubuntu, `scripts/setup-windows.ps1` no Windows via winget). Os scripts trazem o Go na versão da diretiva `go` dos `go.mod` (1.26.0), o Node do `frontend/.nvmrc` (22.23.4, via nvm/nvm-windows), o `govulncheck` (com `$(go env GOPATH)/bin` no `PATH`), o cliente `mariadb` (≥ 11.4) e o Postman CLI (para rodar `postman/collection.json` pela linha de comando), além de git, make e openssl; o Docker (deploy) só é conferido. Pré-requisito do `make test` (TST-08): o Go precisa ser um Go **local** da versão do `go.mod`, primeiro no `PATH`, com `GOTOOLCHAIN=local`; com um `go` mais antigo e `GOTOOLCHAIN=auto`, o Go baixa o toolchain sozinho, e foi nesse cenário que o `go test -coverpkg` falhou com `go: no such tool "covdata"`. Detalhes em `CLAUDE.md` ("Instalação do ambiente").
+
 **Banco (DB-03, 2026-10-29):** MariaDB 11.4 LTS. Os alvos `make db-*`, inclusive o `make db-seed` (o `seedusers` chama o binário `mariadb`, sem fallback), exigem o cliente `mariadb` (MariaDB ≥ 11.4) no `PATH`. A API usa o driver Go `go-sql-driver/mysql`, compatível com o MariaDB.
 
 Antes, copie `.env.example` para `.env` na raiz e preencha **`DB_USUARIO` e `DB_SENHA`** (obrigatórios desde o SEC-11, Lote 12, sem default). Sem eles, os alvos `db-*` param com `SEC-11: defina DB_USUARIO/DB_SENHA no .env` e a API não sobe (`config: defina DB_USUARIO/DB_SENHA no .env`).
