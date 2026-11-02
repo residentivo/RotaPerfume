@@ -29,18 +29,31 @@ DB_PORT    := $(strip $(subst $(CR),,$(DB_PORT)))
 DB_NAME    := $(strip $(subst $(CR),,$(DB_NAME)))
 DB_TLS_CA  := $(strip $(subst $(CR),,$(DB_TLS_CA)))
 
-# Senha só pelo ambiente (lida nativamente pelo mariadb/mariadb.exe), nunca no argv.
+# Senha só pelo ambiente (lida nativamente pelo mariadb e pelo mysql), nunca no argv.
 MYSQL_PWD = $(DB_SENHA)
 # Git Bash/MSYS: impede a conversão de caminho POSIX no valor da senha.
 MSYS2_ENV_CONV_EXCL = MYSQL_PWD
 export
 
-# SEC-29: com DB_TLS_CA no .env, o cliente mariadb conecta por TLS conferindo
+# SEC-29: com DB_TLS_CA no .env, o cliente (mariadb ou mysql) conecta por TLS conferindo
 # a CA e o nome do servidor (DB_HOST precisa estar no SAN do certificado; o
 # cliente não tem equivalente ao DB_TLS_SERVER_NAME da API). Caminho relativo
 # vale a partir da raiz do projeto (onde o make roda). Sem DB_TLS_CA: como antes.
+# DB-CLIENTE: cliente de linha de comando dos alvos db-*: mariadb (padrão) ou
+# mysql (cliente oficial do MySQL 8, ex.: produção). Muda o binário e as opções
+# de TLS (o mysql não tem --ssl-verify-server-cert; usa --ssl-mode=VERIFY_IDENTITY).
+# DB_CLIENTE_BIN troca só o executável (padrão = DB_CLIENTE), ex.:
+#   make db-up DB_CLIENTE=mysql DB_CLIENTE_BIN=/usr/local/mysql/bin/mysql
+DB_CLIENTE ?= mariadb
+DB_CLIENTE := $(strip $(subst $(CR),,$(DB_CLIENTE)))
+DB_CLIENTE_BIN ?= $(DB_CLIENTE)
+ifeq ($(DB_CLIENTE),mysql)
+MYSQL_TLS_OPTS = $(if $(DB_TLS_CA),--ssl-mode=VERIFY_IDENTITY --ssl-ca="$(DB_TLS_CA)")
+else
 MYSQL_TLS_OPTS = $(if $(DB_TLS_CA),--ssl-ca="$(DB_TLS_CA)" --ssl-verify-server-cert)
+endif
 MYSQL_OPTS = --local-infile=0 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4 $(MYSQL_TLS_OPTS)
+DB_CLI = $(DB_CLIENTE_BIN) $(MYSQL_OPTS)
 
 help: ## Mostra esta ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -68,46 +81,53 @@ setup-check: ## SETUP-01: só confere versões (inclui covdata e GOTOOLCHAIN, pr
 # =============================================================================
 # Banco de dados
 # =============================================================================
-# SEC-11: pré-requisito de todo alvo que chama o mariadb (db-create, db-down,
+# SEC-11: pré-requisito de todo alvo que chama o cliente do banco (db-create, db-down,
 # db-fix-*, db-revert-*; db-up/db-seed herdam via db-create). Fica depois do
 # "help" para não virar o alvo padrão do make.
-db-check-env: ## Confere se DB_USUARIO/DB_SENHA estão definidos no .env (SEC-11)
+db-check-env: ## Confere DB_USUARIO/DB_SENHA no .env (SEC-11) e o cliente DB_CLIENTE (mariadb|mysql)
 	@test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD" || { echo "SEC-11: defina DB_USUARIO/DB_SENHA no .env"; exit 1; }
+	@case "$(DB_CLIENTE)" in mariadb|mysql) ;; *) echo "DB_CLIENTE=$(DB_CLIENTE) invalido: use mariadb ou mysql"; exit 1 ;; esac
+	@v=$$($(DB_CLIENTE_BIN) --version 2>&1) || { echo "DB_CLIENTE_BIN=$(DB_CLIENTE_BIN) nao encontrado no PATH"; exit 1; }; \
+	case "$(DB_CLIENTE):$$v" in \
+	  mysql:*MariaDB*) echo "DB_CLIENTE=mysql, mas '$(DB_CLIENTE_BIN)' e o cliente MariaDB ($$v)."; \
+	    echo "Instale o cliente oficial do MySQL 8 e aponte DB_CLIENTE_BIN para ele, ou use DB_CLIENTE=mariadb."; exit 1 ;; \
+	  mariadb:*) case "$$v" in *MariaDB*) ;; *) echo "DB_CLIENTE=mariadb, mas '$(DB_CLIENTE_BIN)' nao e o cliente MariaDB ($$v)"; exit 1 ;; esac ;; \
+	esac
 
 db-create: db-check-env ## Cria o banco de dados se não existir
-	mariadb $(MYSQL_OPTS) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+	$(DB_CLI) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 db-up: db-create ## Cria o schema (tabelas vazias)
 	@echo "=== Aplicando DDL de usuarios (vendedores + usuarios) ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/01_ddl_usuarios.sql
+	$(DB_CLI) $(DB_NAME) < sql/01_ddl_usuarios.sql
 	@echo "=== Aplicando DDL de refresh_tokens ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/06_ddl_refresh_tokens.sql
+	$(DB_CLI) $(DB_NAME) < sql/06_ddl_refresh_tokens.sql
 	@echo "=== Aplicando DDL de senha_historico ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/07_ddl_senha_historico.sql
+	$(DB_CLI) $(DB_NAME) < sql/07_ddl_senha_historico.sql
 	@echo "=== Aplicando DDL de clientes ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/09_ddl_clientes.sql
+	$(DB_CLI) $(DB_NAME) < sql/09_ddl_clientes.sql
 	@echo "=== Aplicando DDL de produtos ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/10_ddl_produtos.sql
+	$(DB_CLI) $(DB_NAME) < sql/10_ddl_produtos.sql
 	@echo "=== Aplicando DDL de pedidos (depende de clientes + vendedores) ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/04_ddl_pedidos.sql
+	$(DB_CLI) $(DB_NAME) < sql/04_ddl_pedidos.sql
 	@echo "=== Aplicando DDL de itens_pedido (depende de pedidos + produtos) ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/11_ddl_itens_pedido.sql
+	$(DB_CLI) $(DB_NAME) < sql/11_ddl_itens_pedido.sql
 	@echo "=== Aplicando DDL de pagamentos (depende de pedidos) ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/12_ddl_pagamentos.sql
+	$(DB_CLI) $(DB_NAME) < sql/12_ddl_pagamentos.sql
 	@echo "=== Aplicando DDL de carteiras (depende de clientes + vendedores) ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/14_ddl_carteiras.sql
+	$(DB_CLI) $(DB_NAME) < sql/14_ddl_carteiras.sql
 	@echo "=== Aplicando DDL de oportunidades (depende de clientes + vendedores) ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/15_ddl_oportunidades.sql
+	$(DB_CLI) $(DB_NAME) < sql/15_ddl_oportunidades.sql
 	@echo "=== Aplicando DDL de visitas (depende de clientes + vendedores) ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/16_ddl_visitas.sql
+	$(DB_CLI) $(DB_NAME) < sql/16_ddl_visitas.sql
 	@echo "=== Aplicando DDL de estoque (depende de produtos; ja sem a coluna origem da migracao 18) ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/17_ddl_estoque.sql
+	$(DB_CLI) $(DB_NAME) < sql/17_ddl_estoque.sql
 
 db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Seed: admin principal ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/02_seed_admin.sql
+	$(DB_CLI) $(DB_NAME) < sql/02_seed_admin.sql
 	@echo "=== Seed: usuarios dos 42 vendedores ==="
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/03_seed_vendedores.sql
+	$(DB_CLI) $(DB_NAME) < sql/03_seed_vendedores.sql
 	@echo ""
 	@echo "=== Corrigindo hashes (placeholder -> argon2id real) + criando admin ==="
 	cd backend/shared && go run ./cmd/resetpassword -list
@@ -118,63 +138,63 @@ db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	@echo "=== Admin: admin@rotaperfumes.com.br / Admin@123 ==="
 
 db-down: db-check-env ## Dropa o banco de dados (CUIDADO!)
-	mariadb $(MYSQL_OPTS) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
+	$(DB_CLI) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
 
 db-reset: db-down db-seed ## Recria o banco do zero com hashes validos
 
 db-fix-deve-trocar-senha: db-check-env ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
+	$(DB_CLI) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
 
 db-fix-tipo-reset: db-check-env ## Corrige o ENUM de senha_historico.tipo_reset em bancos existentes (nao destrutivo, sem apagar dados)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/13_alter_senha_historico_tipo_reset.sql
+	$(DB_CLI) $(DB_NAME) < sql/13_alter_senha_historico_tipo_reset.sql
 
 db-fix-estoque-origem: db-check-env ## Remove estoque.origem (migracao 18) em bancos criados com o 17 antigo (idempotente; perde o rastreio de origem)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/18_alter_estoque_drop_origem.sql
+	$(DB_CLI) $(DB_NAME) < sql/18_alter_estoque_drop_origem.sql
 
 db-revert-estoque-origem: db-check-env ## Reverte db-fix-estoque-origem (recria estoque.origem; linhas existentes voltam como import_csv)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/18_revert_estoque_drop_origem.sql
+	$(DB_CLI) $(DB_NAME) < sql/18_revert_estoque_drop_origem.sql
 
 db-fix-cnpj-unique: db-check-env ## Unifica clientes com CNPJ duplicado no menor id e cria UNIQUE uq_clientes_cnpj (APAGA as copias; backup em clientes_merge_backup_20260925*)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/19_alter_clientes_cnpj_unique.sql
+	$(DB_CLI) $(DB_NAME) < sql/19_alter_clientes_cnpj_unique.sql
 
 db-revert-cnpj-unique: db-check-env ## Reverte db-fix-cnpj-unique a partir das tabelas clientes_merge_backup_20260925*
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/19_revert_clientes_cnpj_unique.sql
+	$(DB_CLI) $(DB_NAME) < sql/19_revert_clientes_cnpj_unique.sql
 
 db-fix-cnpj-comment: db-check-env ## Atualiza o COMMENT de clientes.cnpj para o formato alfanumerico (so metadado, sem apagar dados)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/20_alter_clientes_cnpj_comment.sql
+	$(DB_CLI) $(DB_NAME) < sql/20_alter_clientes_cnpj_comment.sql
 
 db-revert-cnpj-comment: db-check-env ## Reverte db-fix-cnpj-comment (volta o COMMENT antigo "somente digitos")
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/20_revert_clientes_cnpj_comment.sql
+	$(DB_CLI) $(DB_NAME) < sql/20_revert_clientes_cnpj_comment.sql
 
 db-fix-revoked-reason: db-check-env ## Adiciona refresh_tokens.revoked_reason (SEC-07) em bancos existentes (nao destrutivo, legado fica NULL)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/21_alter_refresh_tokens_revoked_reason.sql
+	$(DB_CLI) $(DB_NAME) < sql/21_alter_refresh_tokens_revoked_reason.sql
 
 db-revert-revoked-reason: db-check-env ## Reverte db-fix-revoked-reason (remove a coluna; perde os motivos gravados)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/21_revert_refresh_tokens_revoked_reason.sql
+	$(DB_CLI) $(DB_NAME) < sql/21_revert_refresh_tokens_revoked_reason.sql
 
 db-fix-tokens-validos-desde: db-check-env ## Adiciona usuarios.tokens_validos_desde (SEC-08) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/22_alter_usuarios_tokens_validos_desde.sql
+	$(DB_CLI) $(DB_NAME) < sql/22_alter_usuarios_tokens_validos_desde.sql
 
 db-revert-tokens-validos-desde: db-check-env ## Reverte db-fix-tokens-validos-desde (remove a coluna; perde os cortes de token gravados)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/22_revert_usuarios_tokens_validos_desde.sql
+	$(DB_CLI) $(DB_NAME) < sql/22_revert_usuarios_tokens_validos_desde.sql
 
 db-fix-reuso-detectado: db-check-env ## Adiciona refresh_tokens.reuso_detectado_em (SEC-12) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/23_alter_refresh_tokens_reuso_detectado_em.sql
+	$(DB_CLI) $(DB_NAME) < sql/23_alter_refresh_tokens_reuso_detectado_em.sql
 
 db-revert-reuso-detectado: db-check-env ## Reverte db-fix-reuso-detectado (remove a coluna; perde as marcas de reuso gravadas)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/23_revert_refresh_tokens_reuso_detectado_em.sql
+	$(DB_CLI) $(DB_NAME) < sql/23_revert_refresh_tokens_reuso_detectado_em.sql
 
 db-fix-taxa-pct-check: db-check-env ## Cria o CHECK chk_pagamentos_taxa_pct (0 a 30) em bancos existentes (SEC-27; aborta sem alterar dados se houver taxa_pct fora da faixa)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/24_alter_pagamentos_taxa_pct_check.sql
+	$(DB_CLI) $(DB_NAME) < sql/24_alter_pagamentos_taxa_pct_check.sql
 
 db-revert-taxa-pct-check: db-check-env ## Reverte db-fix-taxa-pct-check (remove o CHECK; o teto de taxa_pct fica so no dominio)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/24_revert_pagamentos_taxa_pct_check.sql
+	$(DB_CLI) $(DB_NAME) < sql/24_revert_pagamentos_taxa_pct_check.sql
 
 db-fix-produtos-imagem: db-check-env ## Adiciona produtos.imagem + CHECK chk_produtos_imagem + UNIQUE uk_produtos_imagem (IMG-01) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/26_alter_produtos_imagem.sql
+	$(DB_CLI) $(DB_NAME) < sql/26_alter_produtos_imagem.sql
 
 db-revert-produtos-imagem: db-check-env ## Reverte db-fix-produtos-imagem (remove CHECK, UNIQUE e coluna; perde os vinculos produto->imagem, arquivos ficam orfaos)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/26_revert_produtos_imagem.sql
+	$(DB_CLI) $(DB_NAME) < sql/26_revert_produtos_imagem.sql
 
 # IMG-01: gera um PNG por produto (nome na diagonal) pelo mesmo caso de uso do
 # upload, no PRODUTO_IMAGENS_DIR (padrão backend/rotaperfumes-api/data/produtos-imagens).
@@ -185,7 +205,7 @@ db-gerar-imagens-produtos: db-check-env ## IMG-01: gera e grava a imagem PNG (no
 	cd backend/rotaperfumes-api && go run ./cmd/gerarimagens -confirmar $(GERAR_IMAGENS_FLAGS)
 
 db-seed-mes-atual: db-check-env ## Gera movimentacoes de exemplo no mes corrente (pedidos/itens/pagamentos/oportunidades/visitas/estoque/carteiras; idempotente, refaz so as linhas do seed do mes)
-	mariadb $(MYSQL_OPTS) $(DB_NAME) < sql/25_seed_movimentacoes_mes_atual.sql
+	$(DB_CLI) $(DB_NAME) < sql/25_seed_movimentacoes_mes_atual.sql
 
 db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
 	cd backend/shared && go run ./cmd/importclientes

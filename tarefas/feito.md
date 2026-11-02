@@ -2,7 +2,40 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-11-01 (fechamento do Lote 29, 🔵 SubBrain): o **Lote 29** foi fechado. **SEC-44, SEC-37 e DEPLOY-02** foram concluídos e entraram no bloco do lote, junto com a rodada final do 🔴 TestBrain e o **TST-11** (fechado). Não commitado, pendente do usuário. Antes, ainda em 2026-11-01 (novas decisões do usuário, 🔵 SubBrain): **TST-13 cancelado** e **SEC-43 fechado sem correção** (dev, risco aceito), no bloco do Lote 29; o card do SEC-29 ganhou nota de que as pendências 1 a 4 foram substituídas pelo SEC-44 (`fazendo.md`). Antes, ainda em 2026-11-01 (fechamento parcial do Lote 29, 🔵 SubBrain): **SEC-29, TST-09, TST-08 e SETUP-01** foram concluídos (bloco "Lote 29 de 2026-11-01"; não commitado, pendente do usuário). SEC-37 e DEPLOY-02 seguem em `fazendo.md`. Antes, ainda em 2026-11-01: o **TST-10** foi **cancelado** pelo usuário (Lote 29); o projeto foi migrado para um HD com Linux (sem exFAT, Node 22 via nvm). Antes, ainda em 2026-11-01: o CHORE-12 foi registrado (`c4c87af`). Antes, em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): o Lote 28 (SEC-19, SEC-23 e SEC-35) foi fechado; não commitado, pendente do usuário. Antes, ainda em 2026-10-31: o commit do Lote 27 foi registrado (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado pelo usuário via 🤍 MegaBrain). Antes, ainda em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+> Atualizado em 2026-11-02 (abertura dos Lotes 30, 31 e 32, 🔵 SubBrain): na triagem do 🤍 MegaBrain (somente MariaDB), **DOC-07** (substituído pelo DOC-08) e **DEPLOY-03** (sem MySQL) foram **cancelados** (bloco "Lote 30 de 2026-11-02: triagem" abaixo). Os Lotes 30, 31 e 32 estão em `fazendo.md`.
+>
+> Antes, em 2026-11-01 (fechamento do Lote 29, 🔵 SubBrain): o **Lote 29** foi fechado. **SEC-44, SEC-37 e DEPLOY-02** foram concluídos e entraram no bloco do lote, junto com a rodada final do 🔴 TestBrain e o **TST-11** (fechado). Não commitado, pendente do usuário. Antes, ainda em 2026-11-01 (novas decisões do usuário, 🔵 SubBrain): **TST-13 cancelado** e **SEC-43 fechado sem correção** (dev, risco aceito), no bloco do Lote 29; o card do SEC-29 ganhou nota de que as pendências 1 a 4 foram substituídas pelo SEC-44 (`fazendo.md`). Antes, ainda em 2026-11-01 (fechamento parcial do Lote 29, 🔵 SubBrain): **SEC-29, TST-09, TST-08 e SETUP-01** foram concluídos (bloco "Lote 29 de 2026-11-01"; não commitado, pendente do usuário). SEC-37 e DEPLOY-02 seguem em `fazendo.md`. Antes, ainda em 2026-11-01: o **TST-10** foi **cancelado** pelo usuário (Lote 29); o projeto foi migrado para um HD com Linux (sem exFAT, Node 22 via nvm). Antes, ainda em 2026-11-01: o CHORE-12 foi registrado (`c4c87af`). Antes, em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): o Lote 28 (SEC-19, SEC-23 e SEC-35) foi fechado; não commitado, pendente do usuário. Antes, ainda em 2026-10-31: o commit do Lote 27 foi registrado (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado pelo usuário via 🤍 MegaBrain). Antes, ainda em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## Lote 30 de 2026-11-02: triagem (2 cancelados)
+
+> Na abertura do Lote 30 (somente MariaDB + infra/TLS), o 🤍 MegaBrain fez a triagem pedida no bloco "Migração para somente MariaDB" de `afazer.md`. Com a decisão do usuário de 2026-11-02 (o MySQL deixa de ser usado; banco único MariaDB em Docker pelo `deploy/mariadb-docker.sh`), dois cards perderam o sentido e foram cancelados. Nenhuma mudança de código. O restante do lote está em `fazendo.md`.
+
+---
+
+## DOC-07: docs dizem MariaDB 11.4, mas a produção real é MySQL 8.0 — ❌ CANCELADO em 2026-11-02
+**Agentes:** 🌸 DataBrain (não executado)
+
+**Status:** cancelado na triagem do 🤍 MegaBrain (Lote 30). Motivo: **substituído pelo DOC-08** (documentação só com MariaDB). O DOC-07 pedia o contrário, alinhar a documentação com a produção MySQL 8.0, que deixa de existir.
+**Camadas:** Documentação, Infra (deploy), Ambiente (scripts de setup)
+**Origem:** decisão do usuário (2026-11-01), durante o SEC-44 (Lote 29).
+
+**Descrição original:** desde o DB-03 (Lote 23) a documentação, o `CLAUDE.md`, o `deploy/setup-servidor.sh` e os scripts do SETUP-01 assumem **MariaDB 11.4 LTS**. O ambiente real era outro: a **produção** (porta 3306) é **MySQL 8.0.46** nativo no host, e o **dev** (porta 3307) é MariaDB 11.8.8 em contêiner. Pedia revisar `docs/`, `CLAUDE.md`, `setup-servidor.sh` e `scripts/versoes.conf` para "prod MySQL 8, dev MariaDB" e anotar o impacto em SEC-30, SEC-31, DB-04 e DEPLOY-02.
+
+**O que ficou para outro card:** a revisão da documentação (inclusive o parâmetro `IMPORTAR_DUMP` e as descrições do `Jenkinsfile`, citados na nota de 2026-11-01) passa para o **DOC-08** e o **DEPLOY-06** (Lote 30, `fazendo.md`).
+
+---
+
+## DEPLOY-03: dump do MariaDB 11.x não importa no MySQL 8 (linha do sandbox mode) — ❌ CANCELADO em 2026-11-02
+**Agentes:** 🌸 DataBrain (não executado)
+
+**Status:** cancelado na triagem do 🤍 MegaBrain (Lote 30). Motivo: **sem MySQL** no projeto; o dump do dev (MariaDB) passa a ir para a produção também MariaDB, então a incompatibilidade deixa de existir.
+**Camadas:** Infra (deploy, Jenkinsfile)
+**Origem:** SEC-44/DEPLOY-02 (Lote 29, 2026-11-01).
+
+**Descrição original:** o `mariadb-dump` 11.x grava na 1ª linha `/*M!999999\- enable the sandbox mode */`, que o cliente/servidor MySQL 8 recusa. Afetava o estágio `IMPORTAR_DUMP` do `Jenkinsfile` e o `deploy/dump-local.ps1` no caminho dev (MariaDB) → prod (MySQL 8).
+
+**O que ficou para outro card:** o caminho inverso (dump do MySQL 26.10 atual importado no MariaDB, collation `utf8mb4_0900_ai_ci`) está no **DEPLOY-05**, item 2, como pendência do usuário.
 
 ---
 ## Lote 29 de 2026-11-01: 7 cards concluídos, 2 cancelados, 1 fechado sem correção
