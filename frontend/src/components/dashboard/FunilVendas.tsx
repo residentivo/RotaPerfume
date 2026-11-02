@@ -140,6 +140,11 @@ export function normalizarFunil(
 // Mensagem generica: o corpo do erro (400/401/500) nunca e exibido.
 export const ERRO_FUNIL = "Nao foi possivel carregar o funil de vendas. Tente novamente.";
 
+// FE-15: complemento do alerta quando os dados exibidos sao de outra janela.
+export function avisoDadosDaJanela(janela: FunilJanela): string {
+  return `Exibindo os dados de: ${JANELA_LABELS[janela]}.`;
+}
+
 // ─── Componente ──────────────────────────────────────────────────────────────
 
 export function FunilVendas({
@@ -160,10 +165,14 @@ export function FunilVendas({
   const [janela, setJanela] = useState<FunilJanela>("all");
   vlog(FILE, "FunilVendas", "inicializando estado do funil");
   const [funil, setFunil] = useState<FunilVendasDados | null>(null);
+  // FE-15: clicar de novo na janela que falhou refaz a busca (a janela nao
+  // muda, entao a chave precisa de outro componente).
+  vlog(FILE, "FunilVendas", "inicializando contador de nova tentativa");
+  const [tentativa, setTentativa] = useState(0);
 
   // Mesmo padrao do DashboardContent: loading/erro derivados da chave.
-  vlog(FILE, "FunilVendas", "montando chave da busca (janela=%s, recarga=%d)", janela, recarga);
-  const chave = `${janela}|${recarga}`;
+  vlog(FILE, "FunilVendas", "montando chave da busca (janela=%s, recarga=%d, tentativa=%d)", janela, recarga, tentativa);
+  const chave = `${janela}|${recarga}|${tentativa}`;
   const [resultado, setResultado] = useState<{ chave: string; erro: boolean } | null>(
     null
   );
@@ -198,9 +207,18 @@ export function FunilVendas({
     };
   }, [chave, janela]);
 
+  // FE-15: o desligamento (payload ou sessao) zera o funil, mas o aviso
+  // proprio do componente so dispara pelo `vendedor_desligado` do payload do
+  // funil. O desligamento da sessao ja e anunciado pelo layout (Navbar /
+  // CarteiraGuard) e pela tela que hospeda o componente (o Dashboard passa
+  // `forcarZeros` e mostra o aviso dele); repetir aqui duplicaria o aviso
+  // ou o mostraria fora de contexto. Com `forcarZeros` o aviso nunca aparece.
+  vlog(FILE, "FunilVendas", "calculando se o payload do funil indica vendedor desligado");
+  const desligadoNoPayload = !isAdmin && funil?.vendedor_desligado === true;
   vlog(FILE, "FunilVendas", "calculando se vendedor esta desligado (funil ou sessao)");
-  const vendedorDesligado =
-    !isAdmin && (funil?.vendedor_desligado === true || desligadoNaSessao);
+  const vendedorDesligado = desligadoNoPayload || (!isAdmin && desligadoNaSessao);
+  vlog(FILE, "FunilVendas", "calculando se mostra o aviso proprio de desligado");
+  const mostrarAvisoDesligado = desligadoNoPayload && !forcarZeros;
   vlog(FILE, "FunilVendas", "calculando se zera o funil (forcarZeros=%s, desligado=%s)", forcarZeros, vendedorDesligado);
   const zerar = !isAdmin && (forcarZeros || vendedorDesligado);
   vlog(FILE, "FunilVendas", "definindo funil exibido (zerar=%s)", zerar);
@@ -209,6 +227,24 @@ export function FunilVendas({
   const vazio = exibido.total_oportunidades <= 0;
   // Com erro e nenhuma carga bem-sucedida, o estado vazio seria falso.
   const ocultarVazio = erro && funil === null && !zerar;
+  // FE-15: depois de um erro na troca de janela, as barras continuam com os
+  // dados da janela anterior; a selecao (aria-pressed) volta para a janela
+  // desses dados e o alerta diz de qual janela eles sao. Sem dados ainda
+  // (erro na primeira carga) ou com o funil zerado, vale a janela pedida.
+  vlog(FILE, "FunilVendas", "definindo janela marcada no seletor (erro=%s)", erro);
+  const dadosDeOutraJanela = erro && !zerar && funil !== null && funil.janela !== janela;
+  const janelaMarcada: FunilJanela = dadosDeOutraJanela && funil ? funil.janela : janela;
+
+  vlog(FILE, "FunilVendas", "definindo handler de escolha da janela");
+  const escolherJanela = (j: FunilJanela) => {
+    vlog(FILE, "FunilVendas.escolherJanela", "janela escolhida (atual=%s, nova=%s, erro=%s)", janela, j, erro);
+    if (j === janela) {
+      // Mesma janela: so refaz a busca se a ultima falhou.
+      if (erro) setTentativa((t) => t + 1);
+      return;
+    }
+    setJanela(j);
+  };
 
   return (
     <Card className="mb-6">
@@ -225,11 +261,11 @@ export function FunilVendas({
               <button
                 key={j}
                 type="button"
-                onClick={() => setJanela(j)}
-                aria-pressed={janela === j}
+                onClick={() => escolherJanela(j)}
+                aria-pressed={janelaMarcada === j}
                 className={[
                   "rounded-md px-3 py-1.5 text-sm font-medium transition-all",
-                  janela === j
+                  janelaMarcada === j
                     ? "bg-primary-600 text-white shadow-xs"
                     : "text-slate-600 hover:bg-slate-100",
                 ]
@@ -246,10 +282,13 @@ export function FunilVendas({
       {erro && (
         <Alert variant="error" className="mb-4">
           {ERRO_FUNIL}
+          {dadosDeOutraJanela && funil && (
+            <> {avisoDadosDaJanela(funil.janela)}</>
+          )}
         </Alert>
       )}
 
-      {vendedorDesligado && !forcarZeros && (
+      {mostrarAvisoDesligado && (
         <Alert variant="warning" className="mb-4">
           Vendedor desligado. Nao ha oportunidades no funil da sua carteira;
           procure um administrador.

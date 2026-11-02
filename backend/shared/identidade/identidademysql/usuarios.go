@@ -153,6 +153,14 @@ func (r *Usuarios) Atualizar(ctx context.Context, id int64, v identidade.Usuario
 	return r.exec(ctx, "Usuarios.Atualizar", "update usuario", q, v.Nome, v.Role.String(), v.IDVendedor, id)
 }
 
+// AlternarAtivo inverte o status no próprio UPDATE (BUG-22): um único
+// statement, sem ler antes. O corte de sessão do inativo é gravado pelo caso
+// de uso (InvalidarSessoes) na mesma tx, depois da releitura.
+func (r *Usuarios) AlternarAtivo(ctx context.Context, id int64) error {
+	const q = `UPDATE usuarios SET ativo = NOT ativo WHERE id = ?`
+	return r.exec(ctx, "Usuarios.AlternarAtivo", "alternar ativo", q, id)
+}
+
 // DefinirAtivo ativa/inativa. Ao inativar grava também o corte de sessão,
 // para uma reativação não ressuscitar access tokens antigos (SEC-08).
 func (r *Usuarios) DefinirAtivo(ctx context.Context, id int64, ativo bool) error {
@@ -165,10 +173,38 @@ func (r *Usuarios) DefinirAtivo(ctx context.Context, id int64, ativo bool) error
 }
 
 // AtualizarSenha grava hash e deve_trocar_senha na mesma query, com o corte
-// de sessão (I-04).
-func (r *Usuarios) AtualizarSenha(ctx context.Context, id int64, h identidade.HashSenha, deveTrocarSenha bool) error {
-	const q = `UPDATE usuarios SET password_hash = ?, deve_trocar_senha = ?, tokens_validos_desde = ? WHERE id = ?`
-	return r.exec(ctx, "Usuarios.AtualizarSenha", "update password", q, h.Revelar(), deveTrocarSenha, identidade.CorteDeSessao(r.agora()), id)
+// de sessão (I-04), só se o hash gravado ainda for anterior (BUG-24): duas
+// trocas concorrentes não se sobrescrevem. Sem linha afetada, relê o
+// usuário (na mesma tx, quando houver): inexistente é
+// ErrUsuarioNaoEncontrado; existente é ErrSenhaAlteradaConcorrentemente.
+func (r *Usuarios) AtualizarSenha(ctx context.Context, id int64, anterior, novo identidade.HashSenha, deveTrocarSenha bool) error {
+	const q = `UPDATE usuarios SET password_hash = ?, deve_trocar_senha = ?, tokens_validos_desde = ? WHERE id = ? AND password_hash = ?`
+	res, err := r.q.ExecContext(ctx, q, novo.Revelar(), deveTrocarSenha, identidade.CorteDeSessao(r.agora()), id, anterior.Revelar())
+	if err != nil {
+		return fmt.Errorf("identidademysql: update password: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	vlog.Printf(arqUsuarios, "Usuarios.AtualizarSenha", "UPDATE usuarios afetadas=%d", n)
+	if n > 0 {
+		return nil
+	}
+	return r.motivoSemLinha(ctx, id)
+}
+
+// motivoSemLinha decide por que um UPDATE condicional não afetou linha:
+// o usuário não existe (ErrUsuarioNaoEncontrado) ou a condição mudou
+// (ErrSenhaAlteradaConcorrentemente).
+func (r *Usuarios) motivoSemLinha(ctx context.Context, id int64) error {
+	var um int
+	err := r.q.QueryRowContext(ctx, `SELECT 1 FROM usuarios WHERE id = ?`, id).Scan(&um)
+	vlog.Printf(arqUsuarios, "Usuarios.AtualizarSenha", "SELECT usuarios existe=%t", err == nil)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return identidade.ErrUsuarioNaoEncontrado
+	case err != nil:
+		return fmt.Errorf("identidademysql: reler usuário: %w", err)
+	}
+	return identidade.ErrSenhaAlteradaConcorrentemente
 }
 
 // InvalidarSessoes grava o corte de sessão (SEC-08), truncado ao segundo

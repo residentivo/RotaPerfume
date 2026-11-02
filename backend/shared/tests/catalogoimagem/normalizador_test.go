@@ -48,8 +48,10 @@ func TestIMG01_Normalizador_Aceita(t *testing.T) {
 		{"PNG", imgPNG(t, 20, 10), catalogo.TipoImagemPNG, ".png", 20, 10, false, nil},
 		{"JPEG", imgJPEG(t, 32, 24), catalogo.TipoImagemJPEG, ".jpg", 32, 24, false, nil},
 		{"PNG paletado (reencodado como PNG)", imgPNGPaletado(t), catalogo.TipoImagemPNG, ".png", 4, 4, false, nil},
-		{"WebP lossless 1x1 (gravado como veio)", webp1, catalogo.TipoImagemWebP, ".webp", 1, 1, true, nil},
-		{"WebP 300x200", imgWebP(300, 200), catalogo.TipoImagemWebP, ".webp", 300, 200, true, nil},
+		// SEC-34: WebP opaco vira JPEG q90; com transparência, PNG.
+		{"WebP lossless 1x1 opaco (convertido para JPEG)", webp1, catalogo.TipoImagemJPEG, ".jpg", 1, 1, false, nil},
+		{"WebP 300x200 opaco (convertido para JPEG)", imgWebP(300, 200), catalogo.TipoImagemJPEG, ".jpg", 300, 200, false, nil},
+		{"WebP com transparência (convertido para PNG)", imgWebPAlfa(5, 4, 0x80), catalogo.TipoImagemPNG, ".png", 5, 4, false, nil},
 		{"poliglota PNG + HTML depois do IEND (reencodado, sem payload)",
 			append(imgPNG(t, 8, 8), []byte("<html><script>alert('xss')</script></html>")...),
 			catalogo.TipoImagemPNG, ".png", 8, 8, false, []string{"<html", "<script", "alert("}},

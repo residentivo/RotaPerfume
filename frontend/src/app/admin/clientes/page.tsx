@@ -30,6 +30,7 @@ import { Cliente, ClienteInput } from "@/lib/types";
 import { formatCnpj } from "@/lib/cnpj";
 import { formatarData } from "@/lib/formatarData";
 import { vlog } from "@/lib/vlog";
+import { MAX_BUSCA } from "@/lib/busca";
 
 const FILE = "admin/clientes/page.tsx";
 
@@ -629,6 +630,7 @@ function ClientesContent() {
                   placeholder="Razao social ou CNPJ..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  maxLength={MAX_BUSCA}
                   icon={
                     <svg
                       className="h-5 w-5"

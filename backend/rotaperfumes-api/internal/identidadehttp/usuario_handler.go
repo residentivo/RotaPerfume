@@ -56,7 +56,7 @@ func (h *UsuarioHandler) CreateUsuario(w http.ResponseWriter, r *http.Request) {
 	if !enviado {
 		log.Printf("[usuarios] ATENÇÃO: usuário id=%d criado, mas email com senha inicial NÃO foi enviado", u.ID)
 	}
-	log.Printf("[usuarios] criado: id=%d por admin=%s email_enviado=%t", u.ID, p.Role(), enviado)
+	log.Printf("[usuarios] criado: id=%d por usuario_id=%d role=%s email_enviado=%t", u.ID, p.UserID(), p.Role(), enviado)
 	httpx.JSON(w, http.StatusCreated, novoUsuarioCriado(u, enviado), "")
 }
 
@@ -79,7 +79,7 @@ func (h *UsuarioHandler) UpdateUsuario(w http.ResponseWriter, r *http.Request) {
 		httpx.ResponderErro(w, tag, err)
 		return
 	}
-	log.Printf("[usuarios] atualizado: id=%d por admin=%s", id, p.Role())
+	log.Printf("[usuarios] atualizado: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	httpx.JSON(w, http.StatusOK, novoUsuarioResposta(u), "")
 }
 
@@ -103,7 +103,7 @@ func (h *UsuarioHandler) ToggleAtivoUsuario(w http.ResponseWriter, r *http.Reque
 		httpx.ResponderErro(w, tag, err)
 		return
 	}
-	log.Printf("[usuarios] ativo=%t: id=%d por admin=%s", u.Ativo, id, p.Role())
+	log.Printf("[usuarios] ativo=%t: id=%d por usuario_id=%d role=%s", u.Ativo, id, p.UserID(), p.Role())
 	httpx.JSON(w, http.StatusOK, novoUsuarioResposta(u), "")
 }
 

@@ -186,16 +186,40 @@ func TestClienteService_GetClienteByID(t *testing.T) {
 // ToggleAtivoCliente
 // ---------------------------------------------------------------------------
 
+// BUG-22 (Lote 31): numa tx, trava o cliente, (escopo de vendedor) confere
+// a carteira sob o lock, inverte no próprio UPDATE ou define o valor e relê.
+const (
+	reTravarClienteS  = `SELECT cliente_id_origem FROM clientes WHERE cliente_id_origem = \? FOR UPDATE`
+	reToggleClienteS  = `UPDATE clientes SET ativo = NOT ativo WHERE cliente_id_origem = \?`
+	reDefinirClienteS = `UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`
+)
+
+var reReleClienteS = `SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`
+
+func clienteRowsAtivoS(ativo bool) *sqlmock.Rows {
+	now := time.Now()
+	return sqlmock.NewRows([]string{
+		"cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
+		"data_cadastro", "ativo", "created_at", "updated_at",
+	}).AddRow(int64(1), "11222333000181", "Empresa Teste LTDA", "varejo", "São Paulo", "SP", "Centro", now, ativo, now, now)
+}
+
+func expectTravarClienteS(mock sqlmock.Sqlmock, id int64, existe bool) {
+	rows := sqlmock.NewRows([]string{"cliente_id_origem"})
+	if existe {
+		rows.AddRow(id)
+	}
+	mock.ExpectQuery(reTravarClienteS).WithArgs(id).WillReturnRows(rows)
+}
+
 func TestClienteService_ToggleAtivoCliente(t *testing.T) {
-	t.Run("ativo nil - inverte status atual (toggle)", func(t *testing.T) {
+	t.Run("ativo nil - inverte no próprio UPDATE e relê", func(t *testing.T) {
 		db, mock := newClienteTestDB(t)
-		// cliente atual está ativo=true
-		mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-			WithArgs(int64(1)).
-			WillReturnRows(clienteRows())
-		mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
-			WithArgs(false, int64(1)).
-			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectBegin()
+		expectTravarClienteS(mock, 1, true)
+		mock.ExpectExec(reToggleClienteS).WithArgs(int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectQuery(reReleClienteS).WithArgs(int64(1)).WillReturnRows(clienteRowsAtivoS(false))
+		mock.ExpectCommit()
 
 		casos := casosComercial(db, 0)
 		c, err := casos.AlternarAtivoCliente(context.Background(), principalAdmin(), 1, fixo[*bool](nil))
@@ -206,12 +230,11 @@ func TestClienteService_ToggleAtivoCliente(t *testing.T) {
 
 	t.Run("ativo explícito - define valor informado", func(t *testing.T) {
 		db, mock := newClienteTestDB(t)
-		mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-			WithArgs(int64(1)).
-			WillReturnRows(clienteRows())
-		mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
-			WithArgs(true, int64(1)).
-			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectBegin()
+		expectTravarClienteS(mock, 1, true)
+		mock.ExpectExec(reDefinirClienteS).WithArgs(true, int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectQuery(reReleClienteS).WithArgs(int64(1)).WillReturnRows(clienteRowsAtivoS(true))
+		mock.ExpectCommit()
 
 		casos := casosComercial(db, 0)
 		ativo := true
@@ -221,14 +244,11 @@ func TestClienteService_ToggleAtivoCliente(t *testing.T) {
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("cliente não encontrado no GetByID", func(t *testing.T) {
+	t.Run("cliente não encontrado no lock", func(t *testing.T) {
 		db, mock := newClienteTestDB(t)
-		mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-			WithArgs(int64(999)).
-			WillReturnRows(sqlmock.NewRows([]string{
-				"cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
-				"data_cadastro", "ativo", "created_at", "updated_at",
-			}))
+		mock.ExpectBegin()
+		expectTravarClienteS(mock, 999, false)
+		mock.ExpectRollback()
 
 		casos := casosComercial(db, 0)
 		c, err := casos.AlternarAtivoCliente(context.Background(), principalAdmin(), 999, fixo[*bool](nil))
@@ -237,14 +257,12 @@ func TestClienteService_ToggleAtivoCliente(t *testing.T) {
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("cliente some entre GetByID e SetAtivo (corrida) - ErrNotFound no SetAtivo", func(t *testing.T) {
+	t.Run("UPDATE sem linha (corrida) - ErrClienteNaoEncontrado e rollback", func(t *testing.T) {
 		db, mock := newClienteTestDB(t)
-		mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-			WithArgs(int64(1)).
-			WillReturnRows(clienteRows())
-		mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
-			WithArgs(false, int64(1)).
-			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectBegin()
+		expectTravarClienteS(mock, 1, true)
+		mock.ExpectExec(reToggleClienteS).WithArgs(int64(1)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectRollback()
 
 		casos := casosComercial(db, 0)
 		c, err := casos.AlternarAtivoCliente(context.Background(), principalAdmin(), 1, fixo[*bool](nil))

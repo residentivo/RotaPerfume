@@ -40,8 +40,8 @@ func (c *Casos) ListarPagamentos(ctx context.Context, p kernel.Principal, ler Le
 }
 
 // ObterPagamento devolve o pagamento; de pedido de outro vendedor responde
-// como inexistente (E-04). Falha ao ler o pedido do pagamento também é 404
-// (V-02: o FK garante o pedido; na dúvida, "sem acesso", nunca 500).
+// como inexistente (E-04). Pedido do pagamento inexistente também é 404;
+// erro de banco ao lê-lo é 500 com log (SEC-38, V-02).
 func (c *Casos) ObterPagamento(ctx context.Context, p kernel.Principal, id int64) (pag *vendas.Pagamento, err error) {
 	defer vlog.Trace(arqPagamentos, "Vendas.ObterPagamento", "id=%d", id)(&err)
 	e, err := c.noEscopo(ctx, p, vendas.ErrPagamentoNaoEncontrado)
@@ -81,7 +81,7 @@ func (c *Casos) CriarPagamento(ctx context.Context, p kernel.Principal, ler Leit
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[pagamentos] criado: pagamento_id=%d pedido_id=%d", pag.PagamentoID, pag.PedidoID)
+	log.Printf("[pagamentos] criado: pagamento_id=%d pedido_id=%d por usuario_id=%d role=%s", pag.PagamentoID, pag.PedidoID, p.UserID(), p.Role())
 	return appkit.RelerCriado(ctx, rotuloPagamentoRelido, pag.PagamentoID, pag, c.d.Pagamentos.PorID), nil
 }
 
@@ -109,7 +109,7 @@ func (c *Casos) AtualizarPagamento(ctx context.Context, p kernel.Principal, id i
 	if err = c.gravarEdicao(ctx, e, id, pag); err != nil {
 		return nil, err
 	}
-	log.Printf("[pagamentos] atualizado: pagamento_id=%d", id)
+	log.Printf("[pagamentos] atualizado: pagamento_id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return appkit.RelerAtualizado(ctx, "vendasapp", id, c.d.Pagamentos.PorID)
 }
 
@@ -131,7 +131,7 @@ func (c *Casos) ExcluirPagamento(ctx context.Context, p kernel.Principal, id int
 	if err != nil {
 		return err
 	}
-	log.Printf("[pagamentos] excluído: pagamento_id=%d", id)
+	log.Printf("[pagamentos] excluído: pagamento_id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return nil
 }
 
@@ -152,10 +152,11 @@ func (c *Casos) gravarEdicao(ctx context.Context, e kernel.Escopo, id int64, pag
 	if err != nil {
 		return err
 	}
-	log.Printf("[pagamentos] edição bloqueada: pagamento_id=%d quitado", id)
 	if err = atual.PodeEditar(); err != nil {
+		log.Printf("[pagamentos] edição bloqueada: pagamento_id=%d motivo=quitado", id)
 		return err
 	}
+	log.Printf("[pagamentos] edição bloqueada: pagamento_id=%d motivo=edicao_concorrente", id)
 	return vendas.ErrPagamentoJaQuitadoNaoPodeSerEditado
 }
 
@@ -176,18 +177,22 @@ func (c *Casos) pedidoNoEscopo(ctx context.Context, e kernel.Escopo, pedidoID in
 	return nil
 }
 
-// posseDoPagamento (Get, só no escopo restrito): QUALQUER falha ao ler o
-// pedido do pagamento é 404 "pagamento não encontrado" (V-02), com o log
-// operacional do legado; fora da carteira, o mesmo 404. O Delete faz a
-// mesma conferência sob lock (TxPedido.posseDoPagamentoTravada).
+// posseDoPagamento (Get, só no escopo restrito): pedido do pagamento
+// inexistente ou fora da carteira → 404 "pagamento não encontrado" (V-02);
+// outro erro ao lê-lo → 500 com log (SEC-38). O Delete faz a mesma
+// conferência sob lock (TxPedido.posseDoPagamentoTravada).
 func (c *Casos) posseDoPagamento(ctx context.Context, e kernel.Escopo, pedidoID int64, operacao string) error {
 	if !restrito(e) {
 		return nil
 	}
 	ped, err := c.d.Pedidos.PorID(ctx, pedidoID)
-	if err != nil {
-		log.Printf("[pagamentos] %s vendedor do pedido: %v", operacao, err)
+	if errors.Is(err, vendas.ErrPedidoNaoEncontrado) {
+		vlog.Printf(arqPagamentos, "Vendas.posseDoPagamento", "decisão pedido_inexistente pedido_id=%d", pedidoID)
 		return vendas.ErrPagamentoNaoEncontrado
+	}
+	if err != nil {
+		log.Printf("[pagamentos] %s vendedor do pedido: pedido_id=%d: %v", operacao, pedidoID, err)
+		return err
 	}
 	if !e.Permite(ped.VendedorID) {
 		vlog.Printf(arqPagamentos, "Vendas.posseDoPagamento", "decisão fora_da_carteira pedido_id=%d", pedidoID)

@@ -55,8 +55,20 @@ func TestCHORE06_HTTP_Duplicidade(t *testing.T) {
 				m.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegexH).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).WillReturnError(sql.ErrNoRows)
 				m.ExpectExec(carteiraCreateRegexH).WillReturnError(dup)
 				m.ExpectRollback()
-			}, "carteiras.uq_carteiras_cliente_vendedor_data", http.StatusConflict, "vínculo entre cliente e vendedor já cadastrado nesta data",
+			}, "carteiras.uk_carteiras_cliente_vendedor_inicio", http.StatusConflict, "vínculo entre cliente e vendedor já cadastrado nesta data",
 			"[carteiras] vinculo duplicado recusado"},
+		// CHORE-08 (Lote 31): só o uk_carteiras_cliente_vendedor_inicio é 409;
+		// um 1062 da PRIMARY é 500, como em produtos e estoque.
+		{"POST vendedores/{id}/clientes: PRIMARY → 500", http.MethodPost, "/api/vendedores/1/clientes", map[string]any{"cliente_id": 10},
+			func(m sqlmock.Sqlmock, dup error) {
+				m.ExpectQuery(vendedorExistsByIDRegexH).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+				m.ExpectQuery(clienteGetByIDRegexH).WithArgs(int64(10)).WillReturnRows(clienteGetByIDRowsH(10, "Cliente A"))
+				expectTravaClienteVinculoH(m, 10)
+				m.ExpectQuery(carteiraGetVinculoAtivoByClienteIDRegexH).WithArgs(int64(10)).WillReturnError(sql.ErrNoRows)
+				m.ExpectQuery(carteiraGetVinculoByClienteVendedorDataRegexH).WithArgs(int64(10), int64(1), sqlmock.AnyArg()).WillReturnError(sql.ErrNoRows)
+				m.ExpectExec(carteiraCreateRegexH).WillReturnError(dup)
+				m.ExpectRollback()
+			}, "carteiras.PRIMARY", http.StatusInternalServerError, "erro interno", ""},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {

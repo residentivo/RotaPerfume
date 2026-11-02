@@ -60,6 +60,7 @@ vi.mock("@/components/ui/Turnstile", async () => {
 });
 
 import LoginPage from "@/app/login/page";
+import { definirAvisoLogin, lerAvisoLogin, limparAvisoLogin } from "@/lib/avisoLogin";
 
 function usuario(role: User["role"] = "normal"): User {
   return { id: 1, nome: "Ana", email: "ana@x.com", role, ativo: true, id_vendedor: null };
@@ -90,6 +91,32 @@ beforeEach(() => {
   apiLoginMock.mockReset();
   captcha.reset.mockReset();
   captcha.enabled = false;
+  limparAvisoLogin();
+});
+
+// FE-17: aviso deixado pela troca de senha antes do router.replace("/login").
+describe("LoginPage - aviso de outra tela (FE-17)", () => {
+  it("mostra o aviso pendente uma vez e o consome", async () => {
+    definirAvisoLogin("Senha alterada. Faça login com a nova senha.");
+    const r = render(<LoginPage />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Senha alterada. Faça login com a nova senha.");
+    expect(lerAvisoLogin()).toBeNull();
+    r.unmount();
+    render(<LoginPage />);
+    expect(screen.queryByText("Senha alterada. Faça login com a nova senha.")).not.toBeInTheDocument();
+  });
+
+  it("o aviso pode ser fechado", async () => {
+    definirAvisoLogin("Senha alterada. Faça login com a nova senha.");
+    render(<LoginPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Fechar alerta" }));
+    expect(screen.queryByText("Senha alterada. Faça login com a nova senha.")).not.toBeInTheDocument();
+  });
+
+  it("sem aviso pendente nao mostra alerta", () => {
+    render(<LoginPage />);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });
 
 describe("LoginPage - sessao existente", () => {

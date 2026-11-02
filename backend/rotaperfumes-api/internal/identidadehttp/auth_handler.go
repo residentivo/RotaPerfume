@@ -55,7 +55,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // Refresh POST /api/auth/refresh: refresh_token no body ou no cookie;
 // rotação com tokens novos em cookies.
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
-	s, err := h.casos.RenovarSessao(r.Context(), refreshDoRequest(r), h.origem(r))
+	s, err := h.casos.RenovarSessao(r.Context(), refreshDoRequest(r, httpx.NomesCookiesPara(h.cookieSeguro)), h.origem(r))
 	if err != nil {
 		responderFalha(w, "[auth] Refresh", err)
 		return
@@ -67,7 +67,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 // Logout POST /api/auth/logout: revoga o refresh informado e limpa os
 // cookies; sempre 200 (idempotente).
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	h.casos.Logout(r.Context(), refreshDoRequest(r))
+	h.casos.Logout(r.Context(), refreshDoRequest(r, httpx.NomesCookiesPara(h.cookieSeguro)))
 	httpx.LimparCookiesSessao(w, h.cookieSeguro)
 	log.Printf("[auth] logout OK")
 	httpx.JSON(w, http.StatusOK, mensagemResposta{Mensagem: "logout realizado"}, "")
@@ -112,13 +112,13 @@ func (h *AuthHandler) origem(r *http.Request) identidadeapp.Origem {
 
 // refreshDoRequest: body opcional (erro de decode é ignorado, como no
 // legado); sem token no body, vale o cookie.
-func refreshDoRequest(r *http.Request) identidade.TokenOpaco {
+func refreshDoRequest(r *http.Request, nomes httpx.NomesCookies) identidade.TokenOpaco {
 	var req refreshRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	if req.RefreshToken != "" {
 		return identidade.NovoTokenOpaco(req.RefreshToken)
 	}
-	return identidade.NovoTokenOpaco(httpx.CookieRefreshDe(r))
+	return identidade.NovoTokenOpaco(httpx.CookieRefreshDe(r, nomes))
 }
 
 // responderFalha: as duas falhas de emissão de JWT são 500 com mensagem

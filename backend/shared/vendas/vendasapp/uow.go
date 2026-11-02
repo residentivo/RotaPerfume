@@ -76,19 +76,56 @@ func (r TxPedido) Excluir(ctx context.Context, e kernel.Escopo, id int64) error 
 	return r.Pedidos.Excluir(ctx, id)
 }
 
-// travarNoEscopo trava o pedido e o esconde como inexistente quando, sob o
-// lock, ele é de outro vendedor (E-04: nunca 403). Fecha o TOCTOU entre a
-// checagem de posse antes do decode e a escrita.
+// travarNoEscopo trava o pedido e o esconde como inexistente quando ele é
+// de outro vendedor (E-04: nunca 403). Fecha o TOCTOU entre a checagem de
+// posse antes do decode e a escrita. No escopo restrito (SEC-38), a ordem
+// é: (1) leitura sem lock (inexistente/fora da carteira → 404; infra →
+// 500), para o restrito não travar pedido alheio; (2) o lock (sumiu → 404;
+// infra → 500); (3) a posse de novo, sob o lock (→ 404). O admin só trava.
 func (r TxPedido) travarNoEscopo(ctx context.Context, e kernel.Escopo, id int64, rotulo string) (*vendas.Pedido, error) {
+	return r.travarComPosse(ctx, e, id, rotulo, vendas.ErrPedidoNaoEncontrado)
+}
+
+// travarComPosse é o roteiro do SEC-38 com o 404 de cada operação
+// (naoEncontrado): pedido não encontrado no PUT/DELETE de pedido e no POST
+// de pagamento; pagamento não encontrado no DELETE de pagamento.
+func (r TxPedido) travarComPosse(ctx context.Context, e kernel.Escopo, id int64, rotulo string, naoEncontrado error) (*vendas.Pedido, error) {
+	if restrito(e) {
+		if err := r.posseSemLock(ctx, e, id, rotulo, naoEncontrado); err != nil {
+			return nil, err
+		}
+	}
 	atual, err := r.Pedidos.TravarParaEscrita(ctx, id)
+	if errors.Is(err, vendas.ErrPedidoNaoEncontrado) {
+		return nil, naoEncontrado
+	}
 	if err != nil {
+		log.Printf("[pedidos] %s: travar pedido_id=%d: %v", rotulo, id, err)
 		return nil, err
 	}
 	if !e.Permite(atual.VendedorID) {
-		vlog.Printf(arqUoW, rotulo, "decisão fora_da_carteira id=%d", id)
-		return nil, vendas.ErrPedidoNaoEncontrado
+		vlog.Printf(arqUoW, rotulo, "decisão fora_da_carteira_sob_lock id=%d", id)
+		return nil, naoEncontrado
 	}
 	return atual, nil
+}
+
+// posseSemLock é o passo (1) do SEC-38: lê o vendedor sem lock e recusa o
+// pedido inexistente ou de outro vendedor (404) antes de travar.
+func (r TxPedido) posseSemLock(ctx context.Context, e kernel.Escopo, id int64, rotulo string, naoEncontrado error) error {
+	vendedorID, err := r.Pedidos.VendedorDoPedido(ctx, id)
+	if errors.Is(err, vendas.ErrPedidoNaoEncontrado) {
+		return naoEncontrado
+	}
+	if err != nil {
+		log.Printf("[pedidos] %s: vendedor do pedido_id=%d: %v", rotulo, id, err)
+		return err
+	}
+	if !e.Permite(vendedorID) {
+		vlog.Printf(arqUoW, rotulo, "decisão fora_da_carteira id=%d", id)
+		return naoEncontrado
+	}
+	return nil
 }
 
 // Criar grava o pedido e, se ele nasce Faturado (BUG-20), baixa o estoque
@@ -124,8 +161,9 @@ func (r TxPedido) CriarPagamento(ctx context.Context, e kernel.Escopo, d vendas.
 
 // ExcluirPagamento aplica o DELETE de pagamento na tx (SEC-35), na ordem de
 // lock pedido → pagamento (a mesma do Excluir do pedido): no escopo
-// restrito trava o pedido e confere a posse (V-02: qualquer falha → 404
-// "pagamento não encontrado"); o admin não trava o pedido. Depois trava o
+// restrito confere a posse e trava o pedido (V-02/SEC-38: inexistente ou
+// fora da carteira → 404 "pagamento não encontrado"; erro de banco → 500);
+// o admin não trava o pedido. Depois trava o
 // pagamento (sumiu ou mudou de pedido → 404), aplica a regra de quitado
 // (409) e apaga com o DELETE condicionado a não quitado.
 func (r TxPedido) ExcluirPagamento(ctx context.Context, e kernel.Escopo, id, pedidoID int64) error {
@@ -148,30 +186,31 @@ func (r TxPedido) ExcluirPagamento(ctx context.Context, e kernel.Escopo, id, ped
 }
 
 // posseDoPagamentoTravada é o posseDoPagamento do Delete sob lock: só no
-// escopo restrito, trava o pedido do pagamento; QUALQUER falha é 404
-// "pagamento não encontrado" (V-02), com o log operacional do legado.
+// escopo restrito, o roteiro do SEC-38 (leitura sem lock → lock → posse sob
+// o lock) com o 404 "pagamento não encontrado"; erro de banco → 500.
 func (r TxPedido) posseDoPagamentoTravada(ctx context.Context, e kernel.Escopo, pedidoID int64) error {
 	if !restrito(e) {
 		return nil
 	}
-	ped, err := r.Pedidos.TravarParaEscrita(ctx, pedidoID)
-	if err != nil {
-		log.Printf("[pagamentos] DeletePagamento vendedor do pedido: %v", err)
-		return vendas.ErrPagamentoNaoEncontrado
-	}
-	if !e.Permite(ped.VendedorID) {
-		vlog.Printf(arqUoW, "TxPedido.posseDoPagamentoTravada", "decisão fora_da_carteira pedido_id=%d", pedidoID)
-		return vendas.ErrPagamentoNaoEncontrado
-	}
-	return nil
+	_, err := r.travarComPosse(ctx, e, pedidoID, "TxPedido.posseDoPagamentoTravada", vendas.ErrPagamentoNaoEncontrado)
+	return err
 }
 
-// motivoBloqueio rotula a recusa do PUT para o vlog (sem valores).
+// motivoBloqueio rotula a recusa do PUT para o vlog (sem valores), um
+// rótulo por regra da máquina de status (CHORE-08).
 func motivoBloqueio(err error) string {
-	if errors.Is(err, vendas.ErrPedidoJaFaturadoNaoPodeAlterarItens) {
+	switch {
+	case errors.Is(err, vendas.ErrPedidoJaFaturadoNaoPodeAlterarItens):
 		return "itens_faturado"
+	case errors.Is(err, vendas.ErrPedidoFaturadoSoPodeIrParaEntregue):
+		return "status_faturado_so_entregue"
+	case errors.Is(err, vendas.ErrPedidoEntregueNaoPodeMudarStatus):
+		return "status_entregue_terminal"
+	case errors.Is(err, vendas.ErrPedidoEntregueSemFaturamento):
+		return "status_entregue_sem_faturamento"
+	default:
+		return "outro"
 	}
-	return "status_faturado"
 }
 
 // baixarEstoque dá baixa de cada item no dia do faturamento (delta = a

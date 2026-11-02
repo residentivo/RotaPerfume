@@ -52,10 +52,10 @@ func TestListEstoque_Success_Admin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	assert.Len(t, data, 1)
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(1), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -155,8 +155,8 @@ func TestGetEstoque_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "SKU-001", data["sku"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -263,8 +263,8 @@ func TestCreateEstoque_Success_Admin(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "SKU-001", data["sku"])
 	assert.Equal(t, false, data["ruptura"])
 
@@ -437,8 +437,8 @@ func TestUpdateEstoque_Success_Admin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(25), data["saldo"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())

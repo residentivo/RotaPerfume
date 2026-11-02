@@ -26,7 +26,7 @@ func HandlerHTTP(cfg *config.Config, checker httpx.ConsultaStatus, h Handlers) h
 // NovoRouter registra as 64 rotas da API com método e política obrigatórios.
 // Rotas() do router devolvido é a fonte da matriz ARQ-00.
 func NovoRouter(cfg *config.Config, checker httpx.ConsultaStatus, h Handlers) *httpx.Router {
-	r := httpx.NovoRouter(httpx.NovoAutenticador(identidadecrypto.NovoJWT(cfg), checker))
+	r := httpx.NovoRouter(httpx.NovoAutenticador(identidadecrypto.NovoJWT(cfg), checker).ComCookieSeguro(cfg.CookieSecure))
 	for _, rt := range rotas(h) {
 		r.Handle(rt)
 	}
@@ -103,7 +103,7 @@ func rotas(h Handlers) []httpx.Rota {
 		{Metodo: del, Padrao: "/api/vendedores/{id}/clientes/{clienteId}", Policy: admin, Arquivo: fVend, Funcao: "VendedorHandler.DesvincularCliente", Handler: h.Vendedor.DesvincularCliente},
 		{Metodo: get, Padrao: "/api/vendedores/{id}/clientes", Policy: autent, Arquivo: fVend, Funcao: "VendedorHandler.ListClientesDoVendedor", Handler: h.Vendedor.ListClientesDoVendedor},
 
-		// Clientes (acesso comum, escopo por carteira).
+		// Clientes (acesso comum, escopo pela carteira ativa: carteiras.data_fim IS NULL).
 		{Metodo: get, Padrao: "/api/clientes", Policy: autent, Arquivo: fCli, Funcao: "ClienteHandler.ListClientes", Handler: h.Cliente.ListClientes},
 		{Metodo: post, Padrao: "/api/clientes", Policy: autent, Arquivo: fCli, Funcao: "ClienteHandler.CreateCliente", Handler: h.Cliente.CreateCliente},
 		{Metodo: get, Padrao: "/api/clientes/{id}", Policy: autent, Arquivo: fCli, Funcao: "ClienteHandler.GetCliente", Handler: h.Cliente.GetCliente},
@@ -123,7 +123,8 @@ func rotas(h Handlers) []httpx.Rota {
 		{Metodo: del, Padrao: "/api/produtos/{id}/imagem", Policy: admin, Arquivo: fImg, Funcao: "ProdutoHandler.RemoverImagem", Handler: h.Produto.RemoverImagem},
 		{Metodo: get, Padrao: "/api/public/produtos/imagens/{arquivo}", Policy: publica, Arquivo: fImg, Funcao: "ImagemPublicaHandler.Servir", Handler: h.ImagemPublica.Servir},
 
-		// Pedidos (acesso comum, escopo por carteira).
+		// Pedidos (acesso comum; leitura com escopo por vendedor, pedidos.vendedor_id;
+		// escrita exige o cliente na carteira ativa do vendedor).
 		{Metodo: get, Padrao: "/api/pedidos", Policy: autent, Arquivo: fPed, Funcao: "PedidoHandler.ListPedidos", Handler: h.Pedido.ListPedidos},
 		{Metodo: post, Padrao: "/api/pedidos", Policy: autent, Arquivo: fPed, Funcao: "PedidoHandler.CreatePedido", Handler: h.Pedido.CreatePedido},
 		{Metodo: get, Padrao: "/api/pedidos/{id}", Policy: autent, Arquivo: fPed, Funcao: "PedidoHandler.GetPedido", Handler: h.Pedido.GetPedido},
@@ -137,14 +138,14 @@ func rotas(h Handlers) []httpx.Rota {
 		{Metodo: put, Padrao: "/api/pagamentos/{id}", Policy: autent, Arquivo: fPag, Funcao: "PagamentoHandler.UpdatePagamento", Handler: h.Pagamento.UpdatePagamento},
 		{Metodo: del, Padrao: "/api/pagamentos/{id}", Policy: autent, Arquivo: fPag, Funcao: "PagamentoHandler.DeletePagamento", Handler: h.Pagamento.DeletePagamento},
 
-		// Oportunidades (acesso comum, escopo por carteira).
+		// Oportunidades (acesso comum, escopo por vendedor: oportunidades.vendedor_id).
 		{Metodo: get, Padrao: "/api/oportunidades", Policy: autent, Arquivo: fOport, Funcao: "OportunidadeHandler.ListOportunidades", Handler: h.Oportunidade.ListOportunidades},
 		{Metodo: post, Padrao: "/api/oportunidades", Policy: autent, Arquivo: fOport, Funcao: "OportunidadeHandler.CreateOportunidade", Handler: h.Oportunidade.CreateOportunidade},
 		{Metodo: get, Padrao: "/api/oportunidades/{id}", Policy: autent, Arquivo: fOport, Funcao: "OportunidadeHandler.GetOportunidade", Handler: h.Oportunidade.GetOportunidade},
 		{Metodo: put, Padrao: "/api/oportunidades/{id}", Policy: autent, Arquivo: fOport, Funcao: "OportunidadeHandler.UpdateOportunidade", Handler: h.Oportunidade.UpdateOportunidade},
 		{Metodo: del, Padrao: "/api/oportunidades/{id}", Policy: autent, Arquivo: fOport, Funcao: "OportunidadeHandler.DeleteOportunidade", Handler: h.Oportunidade.DeleteOportunidade},
 
-		// Visitas (acesso comum, escopo por carteira).
+		// Visitas (acesso comum, escopo por vendedor: visitas.vendedor_id).
 		{Metodo: get, Padrao: "/api/visitas", Policy: autent, Arquivo: fVisita, Funcao: "VisitaHandler.ListVisitas", Handler: h.Visita.ListVisitas},
 		{Metodo: post, Padrao: "/api/visitas", Policy: autent, Arquivo: fVisita, Funcao: "VisitaHandler.CreateVisita", Handler: h.Visita.CreateVisita},
 		{Metodo: get, Padrao: "/api/visitas/{id}", Policy: autent, Arquivo: fVisita, Funcao: "VisitaHandler.GetVisita", Handler: h.Visita.GetVisita},

@@ -18,7 +18,11 @@ import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
 import { Paginador } from "@/components/ui/Paginador";
 import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
-import { PedidoModal, pedidoItensTravados } from "@/components/admin/PedidoModal";
+import {
+  PedidoModal,
+  friendlyPedidoError,
+  pedidoItensTravados,
+} from "@/components/admin/PedidoModal";
 import { PedidoItensDetalhe } from "@/components/admin/PedidoItensDetalhe";
 import {
   apiListPedidos,
@@ -30,6 +34,7 @@ import {
 import { Pedido, PedidoDetalhe, PedidoInput } from "@/lib/types";
 import { formatarData } from "@/lib/formatarData";
 import { vlog } from "@/lib/vlog";
+import { MAX_BUSCA } from "@/lib/busca";
 
 const FILE = "admin/pedidos/page.tsx";
 
@@ -480,8 +485,10 @@ function PedidosContent() {
       mostrarSucesso(`Pedido #${pedido.pedido_id_origem} excluido com sucesso.`);
     } catch (err) {
       vlog(FILE, "PedidosContent.handleDelete", "falha na exclusao; extraindo mensagem do erro");
+      // CHORE-07: o 409 de pedido faturado (lista desatualizada) ganha o
+      // texto amigavel; as demais mensagens passam sem mudanca.
       const message =
-        err instanceof Error ? err.message : "Erro ao excluir pedido.";
+        err instanceof Error ? friendlyPedidoError(err.message) : "Erro ao excluir pedido.";
       vlog(FILE, "PedidosContent.handleDelete", "exibindo mensagem de erro");
       setError(message);
     } finally {
@@ -662,6 +669,7 @@ function PedidosContent() {
                   placeholder="Razao social do cliente..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  maxLength={MAX_BUSCA}
                   icon={
                     <svg
                       className="h-5 w-5"

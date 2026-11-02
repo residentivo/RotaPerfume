@@ -24,7 +24,7 @@ const (
 	msgBUG16FaturadoSoEntregue = "pedido faturado só pode ter o status alterado para Entregue"
 	msgBUG16EntregueTerminal   = "pedido entregue não pode ter o status alterado"
 	msgBUG16EntregueSemFatura  = "pedido só pode ser marcado como Entregue depois de Faturado"
-	msgBUG16ItensFaturado      = "pedido já faturado: não é possível alterar os itens, apenas o status"
+	msgBUG16ItensFaturado      = "pedido faturado ou entregue: não é possível alterar os itens"
 )
 
 // bug16ItensIguaisH são os itens de validPedidoPayload() como o banco os lê.
@@ -40,7 +40,16 @@ func bug16PayloadH(status string) map[string]any {
 }
 
 func bug16ExpectLockH(mock sqlmock.Sqlmock, statusAtual string, itens *sqlmock.Rows) {
+	bug16ExpectLockPapelH(mock, false, statusAtual, itens)
+}
+
+// bug16ExpectLockPapelH: no escopo restrito, a posse é lida sem lock antes
+// do FOR UPDATE (SEC-38).
+func bug16ExpectLockPapelH(mock sqlmock.Sqlmock, restrito bool, statusAtual string, itens *sqlmock.Rows) {
 	mock.ExpectBegin()
+	if restrito {
+		expectLeituraPedidoH(mock, 1, 2)
+	}
 	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(statusAtual, int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexH).WithArgs(int64(1)).WillReturnRows(itens)
 }
@@ -77,7 +86,7 @@ func TestBUG16_HTTP_PUT_TransicaoProibida_400RollbackSemUpdate(t *testing.T) {
 					mock.ExpectQuery(itensByPedidoRegexH).WithArgs(int64(1)).WillReturnRows(itemPedidoRowsForHandler(1))
 					expectCarteiraAtivaH(mock, 2, 1)
 				}
-				bug16ExpectLockH(mock, c.atual, bug16ItensIguaisH())
+				bug16ExpectLockPapelH(mock, papel == "normal", c.atual, bug16ItensIguaisH())
 				mock.ExpectRollback()
 
 				status, body := doReq(t, http.MethodPut, server.URL+"/api/pedidos/1", generateToken(t, testCfg(), uid, papel), bug16PayloadH(c.destino))
@@ -228,7 +237,7 @@ func TestBUG16_HTTP_DELETE_TravasPorStatus(t *testing.T) {
 	}{
 		{"Entregue", false, http.StatusConflict, "pedido entregue não pode ser excluído"},
 		{"Entregue", true, http.StatusConflict, "pedido possui pagamentos vinculados"},
-		{"Faturado", false, http.StatusConflict, "pedido faturado não pode ser excluído, apenas ter o status alterado"},
+		{"Faturado", false, http.StatusConflict, "pedido faturado não pode ser excluído; só pode ter o status alterado para Entregue"},
 		{"Faturado", true, http.StatusConflict, "pedido possui pagamentos vinculados"},
 		{"Cancelado", false, http.StatusNoContent, ""},
 	}

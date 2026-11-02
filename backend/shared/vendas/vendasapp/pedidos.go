@@ -65,7 +65,7 @@ func (c *Casos) CriarPedido(ctx context.Context, p kernel.Principal, ler Leitor[
 	if ped, err = c.detalhe(ctx, novo.PedidoIDOrigem); err != nil {
 		return nil, err
 	}
-	log.Printf("[pedidos] criado: id=%d por usuario role=%s", ped.PedidoIDOrigem, p.Role())
+	log.Printf("[pedidos] criado: id=%d por usuario_id=%d role=%s", ped.PedidoIDOrigem, p.UserID(), p.Role())
 	return ped, nil
 }
 
@@ -96,7 +96,7 @@ func (c *Casos) AtualizarPedido(ctx context.Context, p kernel.Principal, id int6
 	if ped, err = c.detalhe(ctx, id); err != nil {
 		return nil, err
 	}
-	log.Printf("[pedidos] atualizado: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[pedidos] atualizado: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return ped, nil
 }
 
@@ -113,7 +113,7 @@ func (c *Casos) ExcluirPedido(ctx context.Context, p kernel.Principal, id int64)
 	if err = c.d.TxPedido.WithTx(ctx, func(r TxPedido) error { return r.Excluir(ctx, e, id) }); err != nil {
 		return err
 	}
-	log.Printf("[pedidos] excluído: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[pedidos] excluído: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return nil
 }
 

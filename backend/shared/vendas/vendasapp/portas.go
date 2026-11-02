@@ -62,6 +62,10 @@ type PedidosNaTx interface {
 	// SEC-26); preenche PedidoIDOrigem, Status e VendedorID.
 	// ErrPedidoNaoEncontrado sem linha.
 	TravarParaEscrita(ctx context.Context, id int64) (*vendas.Pedido, error)
+	// VendedorDoPedido lê só o vendedor, SEM lock (SEC-38: a posse é
+	// conferida antes de travar, para o restrito não travar pedido alheio).
+	// ErrPedidoNaoEncontrado sem linha.
+	VendedorDoPedido(ctx context.Context, id int64) (int64, error)
 	// ItensAtuais lê produto, quantidade, preço e desconto dos itens.
 	ItensAtuais(ctx context.Context, id int64) ([]vendas.ItemPedido, error)
 	// AtualizarCabecalho: ErrPedidoNaoEncontrado se nenhuma linha casar.

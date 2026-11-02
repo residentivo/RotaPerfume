@@ -410,7 +410,7 @@ func TestIntegracaoHTTP_SEC01_EscritaDeClientes(t *testing.T) {
 		require.Equal(t, http.StatusOK, status, body)
 		lista, _ := body["data"].([]any)
 		require.Len(t, lista, 1)
-		assert.Equal(t, float64(id), lista[0].(map[string]any)["cliente_id_origem"])
+		assert.Equal(t, float64(id), como[map[string]any](t, lista[0])["cliente_id_origem"])
 
 		// Outro vendedor não enxerga; e o próprio consegue editar.
 		tokB := c.tokenNormal(c.usuario("UB", vendB, true))
@@ -624,7 +624,7 @@ func TestIntegracaoHTTP_BUG04_DeleteVendedorDuasVezes(t *testing.T) {
 	hoje := time.Now().Format("2006-01-02")
 	require.Equal(t, hoje, data())
 	assert.Equal(t, 0, ativo(usu))
-	assert.True(t, strings.HasPrefix(dataMap(t, body)["data_desligamento"].(string), hoje))
+	assert.True(t, strings.HasPrefix(como[string](t, dataMap(t, body)["data_desligamento"]), hoje))
 
 	status, body = c.req("PATCH", fmt.Sprintf("/api/usuarios/%d/inativar", usu), c.admin, map[string]any{"ativo": true})
 	require.Equal(t, http.StatusOK, status, "%v", body)

@@ -134,14 +134,6 @@ export interface ApiError {
   message?: string;
 }
 
-export interface ResetPasswordRequest {
-  usuario_id: number;
-  nova_senha: string;
-  senha_atual?: string;
-  // Nome do campo alinhado com LoginRequest.captchaToken — ver comentário lá.
-  captchaToken?: string;
-}
-
 // === Dashboard ===
 
 export type DashboardPeriodo = "today" | "week" | "month";

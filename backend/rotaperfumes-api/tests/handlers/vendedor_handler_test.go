@@ -73,10 +73,10 @@ func TestListVendedores_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	require.Len(t, data, 2)
-	first := data[0].(map[string]any)
+	first := como[map[string]any](t, data[0])
 	assert.Equal(t, "Vendedor Um", first["nome"])
 	assert.Nil(t, first["data_desligamento"])
 
@@ -111,14 +111,14 @@ func TestListVendedores_AtivosEInativos(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].([]any)
+	data := como[[]any](t, body["data"])
 	require.Len(t, data, 2)
 
-	ativo := data[0].(map[string]any)
+	ativo := como[map[string]any](t, data[0])
 	assert.Equal(t, "Vendedor Ativo", ativo["nome"])
 	assert.Nil(t, ativo["data_desligamento"])
 
-	inativo := data[1].(map[string]any)
+	inativo := como[map[string]any](t, data[1])
 	assert.Equal(t, "Vendedor Inativo", inativo["nome"])
 	assert.NotNil(t, inativo["data_desligamento"])
 
@@ -146,7 +146,7 @@ func TestListVendedores_ListaVazia(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	// data pode ser null (slice nula) quando não há resultados.
-	assert.True(t, body["data"] == nil || len(body["data"].([]any)) == 0)
+	assert.True(t, body["data"] == nil || len(como[[]any](t, body["data"])) == 0)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -299,8 +299,8 @@ func TestListVendedores_EscopoUsuarioNormal(t *testing.T) {
 				require.True(t, ok, "data deve ser um array (nunca null)")
 				ids := []float64{}
 				for _, item := range lista {
-					v := item.(map[string]any)
-					ids = append(ids, v["id"].(float64))
+					v := como[map[string]any](t, item)
+					ids = append(ids, como[float64](t, v["id"]))
 					assert.ElementsMatch(t, []string{"id", "nome", "regiao", "uf", "data_desligamento"}, mapKeys(v))
 				}
 				assert.Equal(t, tc.wantIDs, ids)
@@ -361,12 +361,12 @@ func TestGetVendedor_Success_ComClientes(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "João Vendedor", data["nome"])
-	clientes := data["clientes"].([]any)
+	clientes := como[[]any](t, data["clientes"])
 	require.Len(t, clientes, 2)
-	primeiroCliente := clientes[0].(map[string]any)
+	primeiroCliente := como[map[string]any](t, clientes[0])
 	assert.Equal(t, "Cliente A", primeiroCliente["razao_social"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -396,10 +396,10 @@ func TestGetVendedor_Success_SemClientes(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "Maria Vendedora", data["nome"])
-	assert.True(t, data["clientes"] == nil || len(data["clientes"].([]any)) == 0)
+	assert.True(t, data["clientes"] == nil || len(como[[]any](t, data["clientes"])) == 0)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -477,10 +477,10 @@ func TestListClientesDoVendedor_Success_ComClientes(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	require.Len(t, data, 2)
-	primeiro := data[0].(map[string]any)
+	primeiro := como[map[string]any](t, data[0])
 	assert.Equal(t, "Cliente A", primeiro["razao_social"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -509,7 +509,7 @@ func TestListClientesDoVendedor_Success_SemClientes(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 	data, ok := body["data"].([]any)
 	assert.True(t, !ok || len(data) == 0)
 
@@ -593,7 +593,7 @@ func TestListClientesDoVendedor_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -653,8 +653,8 @@ func TestCreateVendedor_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(5), data["id"])
 	assert.Equal(t, "Novo Vendedor", data["nome"])
 
@@ -785,8 +785,8 @@ func TestUpdateVendedor_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "Novo Vendedor", data["nome"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -918,8 +918,8 @@ func TestDeleteVendedor_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(1), data["id"])
 	assert.NotNil(t, data["data_desligamento"])
 
@@ -982,8 +982,8 @@ func TestReativarVendedor_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(1), data["id"])
 	assert.Nil(t, data["data_desligamento"])
 
@@ -1127,8 +1127,8 @@ func TestVincularCliente_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "Cliente A", data["razao_social"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())

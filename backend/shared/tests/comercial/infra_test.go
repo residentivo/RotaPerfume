@@ -120,7 +120,7 @@ func TestARQ04_ChaveDuplicadaSemValorDoDriver(t *testing.T) {
 	assert.Same(t, comercial.ErrCNPJDuplicado, err)
 	assert.NotContains(t, err.Error(), "11222333000181")
 
-	mock.ExpectExec(`INSERT INTO carteiras`).WillReturnError(&mysql.MySQLError{Number: 1062, Message: "Duplicate entry '5-3-2026-01-01' for key 'carteiras.uq'"})
+	mock.ExpectExec(`INSERT INTO carteiras`).WillReturnError(&mysql.MySQLError{Number: 1062, Message: "Duplicate entry '5-3-2026-01-01' for key 'carteiras.uk_carteiras_cliente_vendedor_inicio'"})
 	err = comercialmysql.NovoCarteiras(db).Inserir(ctx, &comercial.Carteira{})
 	assert.Same(t, comercial.ErrVinculoDuplicado, err)
 	var me *mysql.MySQLError

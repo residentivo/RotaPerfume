@@ -322,25 +322,78 @@ describe("Estoque - CRUD (admin)", () => {
     expect(await within(d).findByText(new RegExp(msg))).toBeInTheDocument();
   });
 
-  it("CHORE-06: 409 de duplicidade mostra a mensagem do backend e orienta editar o existente", async () => {
-    api.apiCreateEstoque.mockRejectedValue(
-      new ApiError(409, "registro de estoque já cadastrado para este sku nesta data")
-    );
+  // UX-02: o 409 do POST explica que o registro pode ter sido criado pelo
+  // faturamento e oferece o atalho para editar o existente, achado pelo GET
+  // autenticado da listagem (sem endpoint novo).
+  const MSG_409 = "registro de estoque já cadastrado para este sku nesta data";
+  const ORIENTACAO_409 =
+    "registro de estoque já cadastrado para este sku nesta data. Ele pode ter sido criado pelo faturamento do dia. Edite o registro existente.";
+
+  async function criarDuplicado(sku: string, data: string) {
     render(<EstoquePage />);
     await screen.findByText("SKU-5");
     await esperarDebounce();
     await userEvent.click(screen.getByRole("button", { name: "+ Novo registro" }));
     const d = await dialogo();
-    await userEvent.type(within(d).getByLabelText("SKU"), "SKU-5");
-    await userEvent.type(within(d).getByLabelText("Data do snapshot"), "2026-01-01");
+    await userEvent.type(within(d).getByLabelText("SKU"), sku);
+    await userEvent.type(within(d).getByLabelText("Data do snapshot"), data);
     await userEvent.type(within(d).getByLabelText("Saldo"), "1");
     await userEvent.click(within(d).getByRole("button", { name: "Criar registro" }));
-    expect(
-      await within(d).findByText(
-        "registro de estoque já cadastrado para este sku nesta data. Edite o registro existente."
-      )
-    ).toBeInTheDocument();
+    return d;
+  }
+
+  it("UX-02: 409 orienta (menciona o faturamento) e o atalho abre o registro existente para o PUT", async () => {
+    api.apiCreateEstoque.mockRejectedValue(new ApiError(409, MSG_409));
+    api.apiUpdateEstoque.mockResolvedValue({ ...registro, saldo: 7 });
+    const d = await criarDuplicado("SKU-5", "2026-09-01");
+    expect(await within(d).findByText(ORIENTACAO_409)).toBeInTheDocument();
+    expect(api.apiListEstoque).toHaveBeenLastCalledWith(1, 20, {
+      sku: "SKU-5",
+      data_de: "2026-09-01",
+      data_ate: "2026-09-01",
+    });
+    expect(within(d).getByText(/Registro existente: #5 - SKU-5/)).toBeInTheDocument();
+
+    await userEvent.click(within(d).getByRole("button", { name: "Editar registro existente" }));
+    const ed = await dialogo();
+    expect(within(ed).getByText("Editar Estoque")).toBeInTheDocument();
+    expect(within(ed).getByLabelText("SKU")).toHaveValue("SKU-5");
+    expect(within(ed).getByLabelText("SKU")).toBeDisabled();
+    expect(within(ed).getByLabelText("Saldo")).toHaveValue(3);
+    expect(within(ed).queryByText(ORIENTACAO_409)).not.toBeInTheDocument();
+
+    await userEvent.clear(within(ed).getByLabelText("Saldo"));
+    await userEvent.type(within(ed).getByLabelText("Saldo"), "7");
+    await userEvent.click(within(ed).getByRole("button", { name: "Salvar alteracoes" }));
+    expect(await screen.findByText("Registro de estoque #5 (SKU-5) atualizado com sucesso.")).toBeInTheDocument();
+    expect(api.apiUpdateEstoque).toHaveBeenCalledWith(5, { saldo: 7 });
+    expect(api.apiCreateEstoque).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<[string, () => void]>([
+    ["a busca do existente falha", () => api.apiListEstoque.mockRejectedValueOnce(new TypeError("Failed to fetch"))],
+    ["a busca nao acha o registro exato", () => api.apiListEstoque.mockResolvedValueOnce(pagina([{ ...registro, data_snapshot: "2026-08-31" }]))],
+    ["a busca volta vazia", () => api.apiListEstoque.mockResolvedValueOnce(pagina([]))],
+  ])("UX-02: 409 quando %s: so a orientacao, sem atalho", async (_n, prepara) => {
+    api.apiCreateEstoque.mockImplementation(async () => {
+      prepara();
+      throw new ApiError(409, MSG_409);
+    });
+    const d = await criarDuplicado("SKU-5", "2026-09-01");
+    expect(await within(d).findByText(ORIENTACAO_409)).toBeInTheDocument();
+    expect(within(d).queryByRole("button", { name: "Editar registro existente" })).not.toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("UX-02: o atalho some ao reenviar o formulario", async () => {
+    api.apiCreateEstoque
+      .mockRejectedValueOnce(new ApiError(409, MSG_409))
+      .mockRejectedValueOnce(new ApiError(400, "saldo invalido"));
+    const d = await criarDuplicado("SKU-5", "2026-09-01");
+    await within(d).findByRole("button", { name: "Editar registro existente" });
+    await userEvent.click(within(d).getByRole("button", { name: "Criar registro" }));
+    expect(await within(d).findByText("saldo invalido")).toBeInTheDocument();
+    expect(within(d).queryByRole("button", { name: "Editar registro existente" })).not.toBeInTheDocument();
   });
 
   it("CHORE-06: erro que nao e 409 nao recebe a orientacao", async () => {

@@ -278,7 +278,7 @@ func TestARQ04_N1_PonteEscopo_ZeroValueEhSemAcesso(t *testing.T) {
 			c.expect(mock)
 			rec, body := getDashboard(h.GetVendedores, "/api/dashboard/vendedores")
 			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-			assert.Equal(t, c.total, body["pagination"].(map[string]any)["total"])
+			assert.Equal(t, c.total, como[map[string]any](t, body["pagination"])["total"])
 			assert.NoError(t, mock.ExpectationsWereMet(), "zero value e SemAcesso não consultam o banco")
 		})
 	}
@@ -304,20 +304,20 @@ func TestARQ06_O1_SemAcessoEZeroValueSemSQL(t *testing.T) {
 			h, mock := dashboardComEscopo(t, esc.e, esc.desligado)
 
 			_, body := getDashboard(h.GetMetrics, "/api/dashboard/metrics?periodo=today")
-			data := body["data"].(map[string]any)
+			data := como[map[string]any](t, body["data"])
 			assert.Equal(t, "today", data["periodo"])
 			assert.Equal(t, esc.desligado, data["vendedor_desligado"])
 			assert.Equal(t, 0.0, data["total_vendas"])
 			assert.Equal(t, []any{}, data["top_vendedores"])
 
 			_, body = getDashboard(h.GetVendas, "/api/dashboard/vendas?dias=3")
-			assert.Len(t, body["data"].(map[string]any)["pontos"], 3)
+			assert.Len(t, como[map[string]any](t, body["data"])["pontos"], 3)
 
 			_, body = getDashboard(h.GetVendedores, "/api/dashboard/vendedores")
 			assert.Equal(t, []any{}, body["data"])
 
 			_, body = getDashboard(h.GetClientes, "/api/dashboard/clientes")
-			assert.Equal(t, []any{}, body["data"].(map[string]any)["por_uf"])
+			assert.Equal(t, []any{}, como[map[string]any](t, body["data"])["por_uf"])
 
 			assert.NoError(t, mock.ExpectationsWereMet())
 			if esc.nome == "zero value" {

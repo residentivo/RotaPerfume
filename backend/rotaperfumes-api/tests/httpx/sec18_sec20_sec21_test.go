@@ -152,7 +152,7 @@ func setCookiesCrus(t *testing.T, w *httptest.ResponseRecorder) map[string]strin
 		nome, _, _ := strings.Cut(sc, "=")
 		crus[nome] = sc
 	}
-	require.Len(t, crus, 2, "access_token e refresh_token")
+	require.Contains(t, []int{2, 4}, len(crus), "2 cookies (+2 antigos expirados no modo seguro, SEC-33)")
 	return crus
 }
 
@@ -170,19 +170,20 @@ func TestSEC21_DefinirCookiesSessao_SecureDoParametro(t *testing.T) {
 			w := httptest.NewRecorder()
 			httpx.DefinirCookiesSessao(w, "acesso-x", "refresh-y", 90*time.Minute, seguro)
 			crus := setCookiesCrus(t, w)
+			n := httpx.NomesCookiesPara(seguro) // SEC-33: __Host- no modo seguro
 
-			acc, ref := atributos(crus[httpx.CookieAcesso]), atributos(crus[httpx.CookieRefresh])
-			assert.True(t, strings.HasPrefix(crus[httpx.CookieAcesso], "access_token=acesso-x;"))
-			assert.True(t, strings.HasPrefix(crus[httpx.CookieRefresh], "refresh_token=refresh-y;"))
+			acc, ref := atributos(crus[n.Acesso]), atributos(crus[n.Refresh])
+			assert.True(t, strings.HasPrefix(crus[n.Acesso], n.Acesso+"=acesso-x;"))
+			assert.True(t, strings.HasPrefix(crus[n.Refresh], n.Refresh+"=refresh-y;"))
 			for nome, a := range map[string]map[string]bool{"access": acc, "refresh": ref} {
 				assert.True(t, a["Path=/"], nome)
 				assert.True(t, a["HttpOnly"], nome)
 				assert.Equal(t, seguro, a["Secure"], "%s: Secure segue o parâmetro", nome)
 			}
 			assert.True(t, acc["SameSite=Strict"])
-			assert.True(t, acc["Max-Age=5400"], "MaxAge = TTL do JWT: %s", crus[httpx.CookieAcesso])
+			assert.True(t, acc["Max-Age=5400"], "MaxAge = TTL do JWT: %s", crus[n.Acesso])
 			assert.True(t, ref["SameSite=Lax"])
-			assert.True(t, ref["Max-Age=604800"], "refresh: 7 dias: %s", crus[httpx.CookieRefresh])
+			assert.True(t, ref["Max-Age=604800"], "refresh: 7 dias: %s", crus[n.Refresh])
 		})
 	}
 }
@@ -193,8 +194,9 @@ func TestSEC21_LimparCookiesSessao_MesmosAtributosDaCriacao(t *testing.T) {
 			w := httptest.NewRecorder()
 			httpx.LimparCookiesSessao(w, seguro)
 			crus := setCookiesCrus(t, w)
+			n := httpx.NomesCookiesPara(seguro) // SEC-33
 
-			for nome, sameSite := range map[string]string{httpx.CookieAcesso: "SameSite=Strict", httpx.CookieRefresh: "SameSite=Lax"} {
+			for nome, sameSite := range map[string]string{n.Acesso: "SameSite=Strict", n.Refresh: "SameSite=Lax"} {
 				sc := crus[nome]
 				a := atributos(sc)
 				assert.True(t, strings.HasPrefix(sc, nome+"=;"), "valor vazio: %s", sc)

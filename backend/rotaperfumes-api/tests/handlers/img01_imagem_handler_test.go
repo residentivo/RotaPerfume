@@ -72,7 +72,7 @@ func TestIMG01_Upload_Aceita_GravaPeloTipoDetectado(t *testing.T) {
 		{"PNG enviado como foto.jpg (image/jpeg)", "foto.jpg", "image/jpeg", img01PNG(t, 10, 10), ".png", "image/png"},
 		{"JPEG", "foto.jpeg", "image/jpeg", img01JPEG(t, 16, 16), ".jpg", "image/jpeg"},
 		{"JPEG como .png e Content-Type text/plain", "x.png", "text/plain", img01JPEG(t, 16, 16), ".jpg", "image/jpeg"},
-		{"WebP", "a.webp", "image/webp", img01WebP(), ".webp", "image/webp"},
+		{"WebP opaco (SEC-34: convertido para JPEG)", "a.webp", "image/webp", img01WebP(), ".jpg", "image/jpeg"},
 		{"sem filename nem Content-Type", "", "", img01PNG(t, 3, 3), ".png", "image/png"},
 		{"poliglota PNG + HTML depois do IEND", "x.png", "image/png", poliglota, ".png", "image/png"},
 		{"exatamente 1 MB", "grande.png", "image/png", img01PNGExato(t, catalogo.MaxImagemBytes), ".png", "image/png"},
@@ -171,7 +171,7 @@ func TestIMG01_Upload_TrocaApagaAntiga(t *testing.T) {
 
 	w := e.serve(img01UploadImagem(t, img01PNG(t, 5, 5), "nova.png", "image/png"))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Equal(t, []string{gravado.(string)}, e.arquivos(t))
+	assert.Equal(t, []string{como[string](t, gravado)}, e.arquivos(t))
 	assert.NoFileExists(t, filepath.Join(e.dir, img01Antiga))
 }
 
@@ -512,7 +512,7 @@ func TestIMG01_Upload_ReleituraFalha(t *testing.T) {
 	e.mock.ExpectQuery(reImg01Reler).WillReturnError(errors.New("conexão caiu"))
 	w := e.serve(img01UploadImagem(t, img01PNG(t, 3, 3), "a.png", "image/png"))
 	require.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Equal(t, []string{gravado.(string)}, e.arquivos(t))
+	assert.Equal(t, []string{como[string](t, gravado)}, e.arquivos(t))
 }
 
 // Montado sem armazenamento (Config sem PRODUTO_IMAGENS_DIR): upload/remoção
@@ -822,7 +822,7 @@ func TestIMG01_UploadDepoisLeituraPublica(t *testing.T) {
 	png := img01PNG(t, 6, 6)
 	w := e.serve(img01UploadImagem(t, png, "a.png", "image/png"))
 	require.Equal(t, http.StatusOK, w.Code)
-	w = e.serve(httptest.NewRequest(http.MethodGet, img01PrefixoURL+gravado.(string), nil))
+	w = e.serve(httptest.NewRequest(http.MethodGet, img01PrefixoURL+como[string](t, gravado), nil))
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "image/png", w.Header().Get("Content-Type"))
 	assert.Equal(t, "image/png", http.DetectContentType(w.Body.Bytes()))

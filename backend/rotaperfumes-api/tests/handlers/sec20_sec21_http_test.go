@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
+	"github.com/rotaperfumes/rotaperfumes-api/internal/httpx"
 	"github.com/rotaperfumes/shared/config"
 )
 
@@ -162,10 +163,10 @@ var sec21Fluxos = []sec21Fluxo{
 		return sec2xPost(t, s.URL+"/api/auth/login", host, "",
 			map[string]string{"email": "admin@test.com", "password": "senha-correta", "captchaToken": "ok"})
 	}},
-	{"refresh", false, func(t *testing.T, s *httptest.Server, mock sqlmock.Sqlmock, _ *config.Config, host string) *http.Response {
+	{"refresh", false, func(t *testing.T, s *httptest.Server, mock sqlmock.Sqlmock, cfg *config.Config, host string) *http.Response {
 		expectRefreshSucesso(mock)
 		return sec2xPost(t, s.URL+"/api/auth/refresh", host, "", map[string]string{},
-			&http.Cookie{Name: "refresh_token", Value: refreshTokenTexto})
+			&http.Cookie{Name: httpx.NomesCookiesPara(cfg.CookieSecure).Refresh, Value: refreshTokenTexto})
 	}},
 	{"logout", true, func(t *testing.T, s *httptest.Server, _ sqlmock.Sqlmock, _ *config.Config, host string) *http.Response {
 		return sec2xPost(t, s.URL+"/api/auth/logout", host, "", map[string]string{})
@@ -188,9 +189,16 @@ func TestSEC21_HTTP_SecureIndependeDoHost(t *testing.T) {
 					require.Equal(t, http.StatusOK, resp.StatusCode, "%s", raw)
 
 					crus := sec21SetCookies(t, resp)
-					require.Contains(t, crus, "access_token")
-					require.Contains(t, crus, "refresh_token")
-					for nome, sameSite := range map[string]string{"access_token": "SameSite=Strict", "refresh_token": "SameSite=Lax"} {
+					n := httpx.NomesCookiesPara(seguro) // SEC-33: __Host- no modo seguro
+					require.Contains(t, crus, n.Acesso)
+					require.Contains(t, crus, n.Refresh)
+					if seguro { // transição: os nomes antigos são expirados
+						for _, antigo := range []string{"access_token", "refresh_token"} {
+							a := sec21Attrs(crus[antigo])
+							assert.True(t, a["Max-Age=0"] && a["Secure"] && a["Path=/"], "antigo expirado: %s", crus[antigo])
+						}
+					}
+					for nome, sameSite := range map[string]string{n.Acesso: "SameSite=Strict", n.Refresh: "SameSite=Lax"} {
 						a := sec21Attrs(crus[nome])
 						assert.Equal(t, seguro, a["Secure"], "Secure segue COOKIE_SECURE, nunca o Host: %s", crus[nome])
 						assert.True(t, a["HttpOnly"], crus[nome])

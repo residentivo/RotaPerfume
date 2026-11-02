@@ -122,7 +122,7 @@ func TestSEC01_Update_CamposExtrasDeCarteiraIgnorados(t *testing.T) {
 			// prevalece sobre qualquer id do body.
 			status, body := doClienteReq(t, server.URL, "PUT", "/api/clientes/1", payload)
 			assert.Equal(t, http.StatusOK, status)
-			assert.True(t, body["success"].(bool))
+			assert.True(t, como[bool](t, body["success"]))
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -134,10 +134,11 @@ func TestSEC01_Toggle_PropriaCarteira_200(t *testing.T) {
 		nome      string
 		payload   map[string]any
 		novoAtivo bool
+		toggle    bool
 	}{
-		{"explicito false", map[string]any{"ativo": false}, false},
-		{"explicito true (mesmo valor)", map[string]any{"ativo": true}, true},
-		{"sem body (toggle)", nil, false},
+		{"explicito false", map[string]any{"ativo": false}, false, false},
+		{"explicito true (mesmo valor)", map[string]any{"ativo": true}, true, false},
+		{"sem body (toggle)", nil, false, true},
 	}
 	for _, tc := range casos {
 		t.Run(tc.nome, func(t *testing.T) {
@@ -147,14 +148,13 @@ func TestSEC01_Toggle_PropriaCarteira_200(t *testing.T) {
 
 			expectEscopoUsuarioH(mock, 2, 10)
 			expectCarteiraAtivaH(mock, 10, 1)
-			mock.ExpectQuery(reSelectClienteH).WithArgs(int64(1)).WillReturnRows(clienteRowsForHandler())
-			mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
-				WithArgs(tc.novoAtivo, int64(1)).
-				WillReturnResult(sqlmock.NewResult(0, 1))
+			expectToggleClienteTxH(mock, 1, 10, tc.toggle, tc.novoAtivo, "11222333000181")
 
 			status, body := doClienteReq(t, server.URL, "PATCH", "/api/clientes/1/inativar", tc.payload)
 			assert.Equal(t, http.StatusOK, status)
-			assert.Equal(t, tc.novoAtivo, body["data"].(map[string]any)["ativo"])
+			data, ok := body["data"].(map[string]any)
+			require.True(t, ok, "data deve ser objeto: %v", body)
+			assert.Equal(t, tc.novoAtivo, data["ativo"])
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -172,7 +172,9 @@ func TestSEC01_UpdateToggle_ClienteRemovidoAposChecagem_404(t *testing.T) {
 			m.ExpectExec(reUpdateClienteH).WillReturnResult(sqlmock.NewResult(0, 0))
 		}},
 		{"toggle", "PATCH", "/api/clientes/1/inativar", map[string]any{"ativo": false}, func(m sqlmock.Sqlmock) {
-			m.ExpectQuery(reSelectClienteH).WithArgs(int64(1)).WillReturnRows(emptyClienteRows())
+			m.ExpectBegin()
+			m.ExpectQuery(reTravarClienteH).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"cliente_id_origem"}))
+			m.ExpectRollback()
 		}},
 	}
 	for _, tc := range casos {

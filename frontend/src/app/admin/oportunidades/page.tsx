@@ -31,6 +31,7 @@ import { useSessionUser } from "@/lib/session";
 import { Oportunidade, OportunidadeInput, Vendedor, Cliente } from "@/lib/types";
 import { formatarData } from "@/lib/formatarData";
 import { vlog } from "@/lib/vlog";
+import { MAX_BUSCA } from "@/lib/busca";
 
 const FILE = "admin/oportunidades/page.tsx";
 
@@ -731,6 +732,7 @@ function OportunidadesContent() {
                   placeholder="Cliente, vendedor..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  maxLength={MAX_BUSCA}
                   icon={
                     <svg
                       className="h-5 w-5"

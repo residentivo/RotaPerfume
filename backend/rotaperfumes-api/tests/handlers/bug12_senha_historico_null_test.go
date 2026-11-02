@@ -87,13 +87,13 @@ func TestBUG12_SenhaHistorico_Handler_LinhaNull(t *testing.T) {
 
 				require.Equal(t, http.StatusOK, resp.StatusCode, "linha com NULL não pode virar 500")
 				body := decodeResponse(t, readBody(t, resp))
-				assert.True(t, body["success"].(bool))
-				data := body["data"].([]any)
+				assert.True(t, como[bool](t, body["success"]))
+				data := como[[]any](t, body["data"])
 				require.Len(t, data, len(c.linhas))
-				assert.Equal(t, float64(len(c.linhas)), body["pagination"].(map[string]any)["total"])
+				assert.Equal(t, float64(len(c.linhas)), como[map[string]any](t, body["pagination"])["total"])
 
 				for _, it := range data {
-					item := it.(map[string]any)
+					item := como[map[string]any](t, it)
 					switch item["id"] {
 					case float64(1):
 						assert.Equal(t, "", item["ip_origem"])

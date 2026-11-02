@@ -809,3 +809,25 @@ describe.each(TELAS)("FE-10 - $nome", (t) => {
     expect(contador()).toMatch(/^0 [a-z]+$/);
   });
 });
+
+// ─── CHORE-10: campo "Buscar" limitado a 100 caracteres ──────────────────────
+// So UX: o limite real (SEC-25, 400 acima de 100) continua no backend.
+
+describe.each(TELAS.filter((t) => t.nome !== "pagamentos"))("Busca $nome (CHORE-10)", (t) => {
+  beforeEach(() => mockPorPagina(t));
+
+  it("o campo Buscar tem maxLength 100 e nao aceita mais que isso", async () => {
+    await montarCarregada(t);
+    const busca = screen.getByLabelText("Buscar") as HTMLInputElement;
+    expect(busca).toHaveAttribute("maxLength", "100");
+    await userEvent.type(busca, "a".repeat(105));
+    expect(busca.value).toHaveLength(100);
+    await esperarDebounce();
+    await waitFor(() => {
+      const enviados = Object.values(ultima(t).filtros).filter(
+        (v): v is string => typeof v === "string" && v.startsWith("a")
+      );
+      expect(enviados).toEqual(["a".repeat(100)]);
+    });
+  });
+});

@@ -27,8 +27,10 @@ type Usuarios interface {
 	Atualizar(ctx context.Context, id int64, v identidade.UsuarioValidado) error
 	// DefinirAtivo(false) grava também o corte de sessão (I-04).
 	DefinirAtivo(ctx context.Context, id int64, ativo bool) error
-	// AtualizarSenha grava hash, deve_trocar_senha e o corte de sessão (I-04).
-	AtualizarSenha(ctx context.Context, id int64, h identidade.HashSenha, deveTrocarSenha bool) error
+	// AtualizarSenha grava hash, deve_trocar_senha e o corte de sessão (I-04),
+	// só se o hash gravado ainda for anterior (BUG-24); senão
+	// ErrSenhaAlteradaConcorrentemente (ou ErrUsuarioNaoEncontrado).
+	AtualizarSenha(ctx context.Context, id int64, anterior, novo identidade.HashSenha, deveTrocarSenha bool) error
 	// RegravarHash troca o hash só se ainda for antigo (condição no WHERE);
 	// não mexe no corte de sessão (SEC-13).
 	RegravarHash(ctx context.Context, id int64, antigo, novo identidade.HashSenha) error
@@ -73,7 +75,7 @@ type Transactor interface {
 // refresh tokens caem juntos ou nada. Dentro do WithTx só eles são usados.
 type TxSenha struct {
 	Usuarios interface {
-		AtualizarSenha(ctx context.Context, id int64, h identidade.HashSenha, deveTrocarSenha bool) error
+		AtualizarSenha(ctx context.Context, id int64, anterior, novo identidade.HashSenha, deveTrocarSenha bool) error
 	}
 	Historico interface {
 		Registrar(ctx context.Context, r *identidade.RegistroSenha) error
@@ -81,6 +83,30 @@ type TxSenha struct {
 	Tokens interface {
 		RevogarTodosDoUsuario(ctx context.Context, usuarioID int64, m identidade.MotivoRevogacao) error
 	}
+}
+
+// TxAtivoUsuario são os repositórios ligados à tx do PATCH /inativar de
+// usuário (BUG-22): UPDATE atômico (toggle ou valor), releitura e, se o
+// usuário ficou inativo, revogação dos refresh tokens e corte de sessão.
+// Tudo cai junto ou nada.
+type TxAtivoUsuario struct {
+	Usuarios interface {
+		// AlternarAtivo é o UPDATE ... SET ativo = NOT ativo; sem linha,
+		// ErrUsuarioNaoEncontrado.
+		AlternarAtivo(ctx context.Context, id int64) error
+		DefinirAtivo(ctx context.Context, id int64, ativo bool) error
+		PorID(ctx context.Context, id int64) (*identidade.Usuario, error)
+		InvalidarSessoes(ctx context.Context, id int64, corte time.Time) error
+	}
+	Tokens interface {
+		RevogarTodosDoUsuario(ctx context.Context, usuarioID int64, m identidade.MotivoRevogacao) error
+	}
+}
+
+// TransactorAtivoUsuario é o Unit of Work do PATCH /inativar de usuário
+// (db.Transactor[TxAtivoUsuario]).
+type TransactorAtivoUsuario interface {
+	WithTx(ctx context.Context, fn func(TxAtivoUsuario) error) error
 }
 
 // TransactorSenha é o Unit of Work da troca/reset de senha

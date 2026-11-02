@@ -62,10 +62,10 @@ func TestListarTodos_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	require.Len(t, data, 1)
-	item := data[0].(map[string]any)
+	item := como[map[string]any](t, data[0])
 	assert.Equal(t, float64(1), item["resetado_por_id"])
 	assert.Equal(t, "admin", item["tipo_reset"])
 	assert.Equal(t, "Usuario Teste", item["usuario_nome"], "usuario_nome deve estar sempre presente na resposta")
@@ -73,7 +73,7 @@ func TestListarTodos_Success(t *testing.T) {
 	_, hasHash := item["senha_hash_anterior"]
 	assert.False(t, hasHash, "senha_hash_anterior NÃO deve ser serializado na resposta HTTP")
 
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(1), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -102,9 +102,9 @@ func TestListarTodos_SemResetadoPor(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].([]any)
+	data := como[[]any](t, body["data"])
 	require.Len(t, data, 1)
-	item := data[0].(map[string]any)
+	item := como[map[string]any](t, data[0])
 	assert.Equal(t, "Usuario Teste", item["usuario_nome"], "usuario_nome deve estar sempre presente na resposta")
 	_, hasResetadoPorID := item["resetado_por_id"]
 	assert.False(t, hasResetadoPorID, "resetado_por_id não deve aparecer quando o próprio usuário trocou a senha")
@@ -223,9 +223,9 @@ func TestListarPorUsuario_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].([]any)
+	data := como[[]any](t, body["data"])
 	require.Len(t, data, 1)
-	item := data[0].(map[string]any)
+	item := como[map[string]any](t, data[0])
 	_, hasHash := item["senha_hash_anterior"]
 	assert.False(t, hasHash, "senha_hash_anterior NÃO deve ser serializado na resposta HTTP")
 	assert.Equal(t, "Usuario Teste", item["usuario_nome"], "usuario_nome deve estar sempre presente na resposta")
@@ -258,9 +258,9 @@ func TestListarPorUsuario_SemResetadoPor(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].([]any)
+	data := como[[]any](t, body["data"])
 	require.Len(t, data, 1)
-	item := data[0].(map[string]any)
+	item := como[map[string]any](t, data[0])
 	assert.Equal(t, "Usuario Teste", item["usuario_nome"], "usuario_nome deve estar sempre presente na resposta")
 	_, hasResetadoPorNome := item["resetado_por_nome"]
 	assert.False(t, hasResetadoPorNome, "resetado_por_nome não deve aparecer quando o próprio usuário trocou a senha")

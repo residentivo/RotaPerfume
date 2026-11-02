@@ -3,8 +3,11 @@
 // extensão e Content-Type do cliente: o tipo vem dos magic bytes
 // (http.DetectContentType), confirmado pelo DecodeConfig do PRÓPRIO formato,
 // com limite de dimensões antes do decode completo (decompression bomb) e
-// reencode de JPEG/PNG (remove EXIF e qualquer payload anexado; resolve
-// arquivos poliglotas). WebP é decodificado por inteiro e gravado como veio.
+// reencode de tudo o que é gravado (remove EXIF/XMP e qualquer payload
+// anexado; resolve arquivos poliglotas). SEC-34: o WebP (a x/image só
+// decodifica) é convertido para PNG se tiver algum pixel não opaco e para
+// JPEG q90 se for todo opaco; o tipo e a extensão gravados seguem a saída.
+// A saída tem teto de catalogo.MaxImagemSaidaBytes.
 //
 // Só os decoders de JPEG, PNG e WebP são usados, chamados diretamente (sem o
 // registro global do pacote image): um decoder registrado por outra
@@ -35,14 +38,51 @@ const (
 type codec struct {
 	config func(io.Reader) (image.Config, error)
 	decode func(io.Reader) (image.Image, error)
-	// encode nil: grava os bytes originais (WebP, sem encoder na x/image).
-	encode func(io.Writer, image.Image) error
+	// saida escolhe o formato gravado pela imagem decodificada.
+	saida func(image.Image) string
 }
 
 var codecs = map[string]codec{
-	catalogo.TipoImagemJPEG: {config: jpeg.DecodeConfig, decode: jpeg.Decode, encode: encodeJPEG},
-	catalogo.TipoImagemPNG:  {config: png.DecodeConfig, decode: png.Decode, encode: png.Encode},
-	catalogo.TipoImagemWebP: {config: webp.DecodeConfig, decode: webp.Decode},
+	catalogo.TipoImagemJPEG: {config: jpeg.DecodeConfig, decode: jpeg.Decode, saida: fixo(catalogo.TipoImagemJPEG)},
+	catalogo.TipoImagemPNG:  {config: png.DecodeConfig, decode: png.Decode, saida: fixo(catalogo.TipoImagemPNG)},
+	catalogo.TipoImagemWebP: {config: webp.DecodeConfig, decode: webp.Decode, saida: saidaDoWebP},
+}
+
+// encoders são os formatos que o adapter grava (sem WebP: a x/image não
+// tem encoder).
+var encoders = map[string]func(io.Writer, image.Image) error{
+	catalogo.TipoImagemJPEG: encodeJPEG,
+	catalogo.TipoImagemPNG:  png.Encode,
+}
+
+func fixo(tipo string) func(image.Image) string {
+	return func(image.Image) string { return tipo }
+}
+
+// saidaDoWebP (SEC-34): PNG se algum pixel não for opaco (preserva a
+// transparência); JPEG q90 se a imagem for toda opaca.
+func saidaDoWebP(img image.Image) string {
+	if opaca(img) {
+		return catalogo.TipoImagemJPEG
+	}
+	return catalogo.TipoImagemPNG
+}
+
+// opaca usa o Opaque() do tipo concreto quando existe; senão confere o
+// alfa pixel a pixel.
+func opaca(img image.Image) bool {
+	if o, ok := img.(interface{ Opaque() bool }); ok {
+		return o.Opaque()
+	}
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a != 0xffff {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func encodeJPEG(w io.Writer, img image.Image) error {
@@ -56,8 +96,9 @@ type Normalizador struct{}
 func Novo() Normalizador { return Normalizador{} }
 
 // Normalizar valida dados e devolve a imagem pronta para gravar. Vazio ou
-// conteúdo fora de JPEG/PNG/WebP → catalogo.ErrImagemInvalida; acima de
-// catalogo.MaxImagemBytes → catalogo.ErrImagemMuitoGrande. O erro do
+// conteúdo fora de JPEG/PNG/WebP → catalogo.ErrImagemInvalida; entrada
+// acima de catalogo.MaxImagemBytes ou saída (depois da conversão) acima de
+// catalogo.MaxImagemSaidaBytes → catalogo.ErrImagemMuitoGrande. O erro do
 // decoder nunca sobe (só o sentinela).
 func (Normalizador) Normalizar(dados []byte) (catalogo.ImagemNormalizada, error) {
 	switch {
@@ -76,12 +117,17 @@ func (Normalizador) Normalizar(dados []byte) (catalogo.ImagemNormalizada, error)
 	if err != nil {
 		return catalogo.ImagemNormalizada{}, err
 	}
-	saida, err := reencodar(c, img, dados)
+	tipoSaida := c.saida(img)
+	saida, err := reencodar(tipoSaida, img)
 	if err != nil {
 		return catalogo.ImagemNormalizada{}, err
 	}
-	vlog.Printf(arqNormalizador, "Normalizar", "imagem aceita tipo=%s bytes_entrada=%d bytes_saida=%d", tipo, len(dados), len(saida))
-	return catalogo.ImagemNormalizada{Tipo: tipo, Extensao: catalogo.ExtensaoDoTipo(tipo), Dados: saida}, nil
+	if len(saida) > catalogo.MaxImagemSaidaBytes {
+		vlog.Printf(arqNormalizador, "Normalizar", "saída acima do teto tipo=%s bytes_saida=%d", tipoSaida, len(saida))
+		return catalogo.ImagemNormalizada{}, catalogo.ErrImagemMuitoGrande
+	}
+	vlog.Printf(arqNormalizador, "Normalizar", "imagem aceita tipo=%s tipo_saida=%s bytes_entrada=%d bytes_saida=%d", tipo, tipoSaida, len(dados), len(saida))
+	return catalogo.ImagemNormalizada{Tipo: tipoSaida, Extensao: catalogo.ExtensaoDoTipo(tipoSaida), Dados: saida}, nil
 }
 
 // decodificar confere as dimensões pelo cabeçalho e só então decodifica a
@@ -104,14 +150,15 @@ func decodificar(c codec, dados []byte, tipo string) (image.Image, error) {
 	return img, nil
 }
 
-// reencodar gera os bytes gravados: JPEG/PNG reencodados (D1); WebP como
-// veio (já decodificado por inteiro).
-func reencodar(c codec, img image.Image, original []byte) ([]byte, error) {
-	if c.encode == nil {
-		return original, nil
+// reencodar gera os bytes gravados no formato de saída (D1, SEC-34): nada
+// do arquivo original passa adiante, só os pixels decodificados.
+func reencodar(tipoSaida string, img image.Image) ([]byte, error) {
+	encode, ok := encoders[tipoSaida]
+	if !ok {
+		return nil, catalogo.ErrImagemInvalida
 	}
 	var buf bytes.Buffer
-	if err := c.encode(&buf, img); err != nil {
+	if err := encode(&buf, img); err != nil {
 		vlog.Printf(arqNormalizador, "reencodar", "reencode falhou")
 		return nil, catalogo.ErrImagemInvalida
 	}

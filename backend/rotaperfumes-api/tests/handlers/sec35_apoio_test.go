@@ -40,3 +40,35 @@ func expectDeletePagamentoH(m sqlmock.Sqlmock, id, linhas int64) {
 	m.ExpectExec(deletePagamentoCondRegexH).WithArgs(id, "Pago", "Pago com atraso").
 		WillReturnResult(sqlmock.NewResult(0, linhas))
 }
+
+// reLeituraPedidoH é a leitura sem lock do SEC-38 (escopo restrito): a posse
+// é conferida antes do FOR UPDATE, para o restrito não travar pedido alheio.
+const reLeituraPedidoH = `^SELECT vendedor_id FROM pedidos WHERE pedido_id_origem = \?$`
+
+// expectLeituraPedidoH é a leitura sem lock (SEC-38), dentro da tx.
+func expectLeituraPedidoH(m sqlmock.Sqlmock, pedidoID, vendedorID int64) {
+	m.ExpectQuery(reLeituraPedidoH).WithArgs(pedidoID).WillReturnRows(sqlmock.NewRows([]string{"vendedor_id"}).AddRow(vendedorID))
+}
+
+// expectLockPedidoRestritoH é o roteiro do SEC-38 no escopo restrito: Begin
+// → leitura sem lock → FOR UPDATE, com o pedido do vendedorID.
+func expectLockPedidoRestritoH(m sqlmock.Sqlmock, pedidoID, vendedorID int64) {
+	m.ExpectBegin()
+	expectLeituraPedidoH(m, pedidoID, vendedorID)
+	m.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(pedidoID).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", vendedorID))
+}
+
+// expectLeituraPedidoErroH abre a tx e a leitura sem lock (SEC-38) falha
+// com err (sql.ErrNoRows = pedido inexistente → 404, sem lock).
+func expectLeituraPedidoErroH(m sqlmock.Sqlmock, pedidoID int64, err error) {
+	m.ExpectBegin()
+	m.ExpectQuery(reLeituraPedidoH).WithArgs(pedidoID).WillReturnError(err)
+}
+
+// expectPosseAlheiaH abre a tx e a leitura sem lock acha o pedido de outro
+// vendedor: 404 antes do FOR UPDATE (o restrito não trava pedido alheio).
+func expectPosseAlheiaH(m sqlmock.Sqlmock, pedidoID, vendedorDoPedido int64) {
+	m.ExpectBegin()
+	expectLeituraPedidoH(m, pedidoID, vendedorDoPedido)
+}

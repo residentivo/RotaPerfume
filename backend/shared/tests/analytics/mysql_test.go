@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -197,7 +198,7 @@ func TestAnalyticsmysql_SerieZeradaUsaORelogioInjetado(t *testing.T) {
 	db, mock := novoMock(t)
 	d := analyticsmysql.NovoDashboard(db, relogio)
 
-	mock.ExpectQuery(`AS data`).WithArgs(2).WillReturnError(errors.New("Error 1146: Table 'x.pedidos' doesn't exist"))
+	mock.ExpectQuery(`AS data`).WithArgs(2).WillReturnError(&mysql.MySQLError{Number: 1146, Message: "Table 'x.pedidos' doesn't exist"})
 	pontos, err := d.SerieVendas(ctx, e, analytics.DiasDe(2))
 	require.NoError(t, err)
 	assert.Equal(t, analytics.SerieZerada(2, hojeFixo), pontos, "sem a tabela")

@@ -1,9 +1,11 @@
 /**
  * apiClient.ts - Cliente HTTP com interceptador de 401 + refresh automático
  *
- * access_token e refresh_token são cookies HttpOnly definidos pelo backend:
- * o JS nunca os lê nem os envia manualmente — o navegador os anexa sozinho
- * em toda requisição feita com `credentials: "include"`.
+ * Os tokens de acesso e de refresh são cookies HttpOnly definidos pelo
+ * backend (SEC-33: `__Host-access_token`/`__Host-refresh_token` com
+ * COOKIE_SECURE=true; `access_token`/`refresh_token` só no dev HTTP): o JS
+ * nunca os lê nem os envia manualmente nem depende dos nomes — o navegador
+ * os anexa sozinho em toda requisição feita com `credentials: "include"`.
  *
  * Fluxo:
  * 1. fetchWithAuth() chama a API com credentials: "include" (cookie vai sozinho)
@@ -177,7 +179,7 @@ async function callRefreshToken(): Promise<RefreshStatus> {
   const timeoutId = setTimeout(() => controller.abort(), REFRESH_TIMEOUT);
   try {
     // refresh_token vai via cookie HttpOnly (credentials: "include");
-    // backend responde com novos Set-Cookie para access_token/refresh_token.
+    // backend responde com novos Set-Cookie dos dois tokens (nomes do SEC-33).
     vlog(F, "callRefreshToken", "enviando POST /api/auth/refresh");
     const res = await fetch(`${API_BASE}/api/auth/refresh`, {
       method: "POST",

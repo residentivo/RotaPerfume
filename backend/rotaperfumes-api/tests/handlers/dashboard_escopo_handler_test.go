@@ -113,7 +113,7 @@ func expectClientesMetricsEscopo(mock sqlmock.Sqlmock, vendedorID int64) {
 // (contagens 0 e listas [] — nunca null).
 func verifyClientesVazio(periodo string) func(t *testing.T, body map[string]any) {
 	return func(t *testing.T, body map[string]any) {
-		data := body["data"].(map[string]any)
+		data := como[map[string]any](t, body["data"])
 		assert.Len(t, data, 7)
 		assert.Equal(t, periodo, data["periodo"])
 		for _, k := range []string{"total_clientes", "total_ativos", "total_inativos", "novos_no_periodo"} {
@@ -161,7 +161,7 @@ func TestDashboardEscopo_Metrics_NormalVeSoVendedorB(t *testing.T) {
 
 			resp, body := doDashboardGet(t, server, "/api/dashboard/metrics?periodo="+periodo, token)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
-			data := body["data"].(map[string]any)
+			data := como[map[string]any](t, body["data"])
 			assert.Equal(t, periodo, data["periodo"])
 			assert.Equal(t, 50.0, data["total_vendas"])
 			assert.Equal(t, 1.0, data["total_vendas_qtd"])
@@ -171,10 +171,10 @@ func TestDashboardEscopo_Metrics_NormalVeSoVendedorB(t *testing.T) {
 			assert.Equal(t, false, data["vendedor_desligado"])
 
 			for _, chave := range []string{"top_vendedores", "metas_vendedores"} {
-				lista := data[chave].([]any)
+				lista := como[[]any](t, data[chave])
 				require.LessOrEqual(t, len(lista), 1, chave)
 				for _, item := range lista {
-					assert.Equal(t, float64(escopoVendedorB), item.(map[string]any)["id"], chave)
+					assert.Equal(t, float64(escopoVendedorB), como[map[string]any](t, item)["id"], chave)
 				}
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
@@ -209,11 +209,11 @@ func TestDashboardEscopo_Vendas_NormalFiltraVendedorB(t *testing.T) {
 
 			resp, body := doDashboardGet(t, server, "/api/dashboard/vendas"+tt.qs, token)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
-			data := body["data"].(map[string]any)
+			data := como[map[string]any](t, body["data"])
 			assert.Equal(t, float64(tt.dias), data["dias"])
-			pontos := data["pontos"].([]any)
+			pontos := como[[]any](t, data["pontos"])
 			require.Len(t, pontos, 1)
-			p := pontos[0].(map[string]any)
+			p := como[map[string]any](t, pontos[0])
 			assert.Equal(t, hoje, p["dia"])
 			assert.Equal(t, 50.0, p["total_vendas"])
 			assert.Equal(t, 1.0, p["total_pedidos"])
@@ -253,13 +253,13 @@ func TestDashboardEscopo_Vendedores_NormalSoLinhaB(t *testing.T) {
 
 			resp, body := doDashboardGet(t, server, "/api/dashboard/vendedores", token)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
-			pag := body["pagination"].(map[string]any)
+			pag := como[map[string]any](t, body["pagination"])
 			assert.Equal(t, float64(tt.total), pag["total"])
 			assert.Equal(t, tt.wantPages, pag["pages"])
-			lista := body["data"].([]any)
+			lista := como[[]any](t, body["data"])
 			if tt.comLinha {
 				require.Len(t, lista, 1)
-				linha := lista[0].(map[string]any)
+				linha := como[map[string]any](t, lista[0])
 				assert.Equal(t, float64(escopoVendedorB), linha["vendedor_id"])
 				assert.Equal(t, 50.0, linha["ticket_medio"])
 			} else {
@@ -294,7 +294,7 @@ func TestDashboardEscopo_SemVendedor_RespostaZerada(t *testing.T) {
 		verify func(t *testing.T, body map[string]any)
 	}{
 		{"metrics", "/api/dashboard/metrics?periodo=week", func(t *testing.T, body map[string]any) {
-			data := body["data"].(map[string]any)
+			data := como[map[string]any](t, body["data"])
 			assert.Len(t, data, 9)
 			assert.Equal(t, "week", data["periodo"])
 			assert.Equal(t, false, data["vendedor_desligado"])
@@ -305,25 +305,25 @@ func TestDashboardEscopo_SemVendedor_RespostaZerada(t *testing.T) {
 			assert.Equal(t, []any{}, data["metas_vendedores"])
 		}},
 		{"vendas default", "/api/dashboard/vendas", func(t *testing.T, body map[string]any) {
-			data := body["data"].(map[string]any)
+			data := como[map[string]any](t, body["data"])
 			assert.Equal(t, 30.0, data["dias"])
-			pontos := data["pontos"].([]any)
+			pontos := como[[]any](t, data["pontos"])
 			require.Len(t, pontos, 30)
 			for _, p := range pontos {
-				pm := p.(map[string]any)
+				pm := como[map[string]any](t, p)
 				assert.Equal(t, 0.0, pm["total_vendas"])
 				assert.Equal(t, 0.0, pm["total_pedidos"])
 				assert.NotEmpty(t, pm["dia"])
 			}
 		}},
 		{"vendas 7 dias", "/api/dashboard/vendas?dias=7", func(t *testing.T, body map[string]any) {
-			data := body["data"].(map[string]any)
+			data := como[map[string]any](t, body["data"])
 			assert.Equal(t, 7.0, data["dias"])
-			assert.Len(t, data["pontos"].([]any), 7)
+			assert.Len(t, como[[]any](t, data["pontos"]), 7)
 		}},
 		{"vendedores", "/api/dashboard/vendedores?page=2&limit=10", func(t *testing.T, body map[string]any) {
 			assert.Equal(t, []any{}, body["data"])
-			pag := body["pagination"].(map[string]any)
+			pag := como[map[string]any](t, body["pagination"])
 			assert.Equal(t, 2.0, pag["page"])
 			assert.Equal(t, 10.0, pag["limit"])
 			assert.Equal(t, 0.0, pag["total"])
@@ -346,7 +346,7 @@ func TestDashboardEscopo_SemVendedor_RespostaZerada(t *testing.T) {
 
 				resp, body := doDashboardGet(t, server, ep.path, token)
 				require.Equal(t, http.StatusOK, resp.StatusCode)
-				assert.True(t, body["success"].(bool))
+				assert.True(t, como[bool](t, body["success"]))
 				ep.verify(t, body)
 				assert.NoError(t, mock.ExpectationsWereMet())
 			})
@@ -441,9 +441,9 @@ func TestDashboardEscopo_Admin_SemFiltro(t *testing.T) {
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 			switch tt.nome {
 			case "metrics":
-				assert.Equal(t, false, body["data"].(map[string]any)["vendedor_desligado"])
+				assert.Equal(t, false, como[map[string]any](t, body["data"])["vendedor_desligado"])
 			case "clientes":
-				data := body["data"].(map[string]any)
+				data := como[map[string]any](t, body["data"])
 				assert.Equal(t, 10.0, data["total_clientes"])
 				// Sem linhas: listas vazias serializam como [] (nunca null).
 				assert.Equal(t, []any{}, data["por_segmento"])
@@ -498,7 +498,7 @@ func TestDashboardEscopo_VendedorDesligado_RespostaZerada(t *testing.T) {
 		verify func(t *testing.T, body map[string]any)
 	}{
 		{"metrics", "/api/dashboard/metrics?periodo=today", func(t *testing.T, body map[string]any) {
-			data := body["data"].(map[string]any)
+			data := como[map[string]any](t, body["data"])
 			assert.Len(t, data, 9)
 			assert.Equal(t, "today", data["periodo"])
 			assert.Equal(t, true, data["vendedor_desligado"])
@@ -509,16 +509,16 @@ func TestDashboardEscopo_VendedorDesligado_RespostaZerada(t *testing.T) {
 			assert.Equal(t, []any{}, data["metas_vendedores"])
 		}},
 		{"vendas", "/api/dashboard/vendas?dias=7", func(t *testing.T, body map[string]any) {
-			data := body["data"].(map[string]any)
-			pontos := data["pontos"].([]any)
+			data := como[map[string]any](t, body["data"])
+			pontos := como[[]any](t, data["pontos"])
 			require.Len(t, pontos, 7)
 			for _, p := range pontos {
-				assert.Equal(t, 0.0, p.(map[string]any)["total_vendas"])
+				assert.Equal(t, 0.0, como[map[string]any](t, p)["total_vendas"])
 			}
 		}},
 		{"vendedores", "/api/dashboard/vendedores", func(t *testing.T, body map[string]any) {
 			assert.Equal(t, []any{}, body["data"])
-			assert.Equal(t, 0.0, body["pagination"].(map[string]any)["total"])
+			assert.Equal(t, 0.0, como[map[string]any](t, body["pagination"])["total"])
 		}},
 		{"clientes", "/api/dashboard/clientes", verifyClientesVazio("month")},
 	}
@@ -535,7 +535,7 @@ func TestDashboardEscopo_VendedorDesligado_RespostaZerada(t *testing.T) {
 
 			resp, body := doDashboardGet(t, server, ep.path, token)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
-			assert.True(t, body["success"].(bool))
+			assert.True(t, como[bool](t, body["success"]))
 			ep.verify(t, body)
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
@@ -559,9 +559,9 @@ func TestDashboardEscopo_VendedorInexistente_RespostaZerada(t *testing.T) {
 
 			resp, body := doDashboardGet(t, server, path, token)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
-			assert.True(t, body["success"].(bool))
+			assert.True(t, como[bool](t, body["success"]))
 			if path == "/api/dashboard/metrics" {
-				data := body["data"].(map[string]any)
+				data := como[map[string]any](t, body["data"])
 				assert.Equal(t, false, data["vendedor_desligado"])
 				assert.Equal(t, 0.0, data["total_vendas"])
 			}
@@ -609,14 +609,14 @@ func TestDashboardEscopo_Clientes_NormalFiltraCarteira(t *testing.T) {
 
 	resp, body := doDashboardGet(t, server, "/api/dashboard/clientes", token)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "month", data["periodo"])
 	assert.Equal(t, 3.0, data["total_clientes"])
 	assert.Equal(t, 2.0, data["total_ativos"])
 	assert.Equal(t, 1.0, data["total_inativos"])
 	assert.Equal(t, 1.0, data["novos_no_periodo"])
-	assert.Len(t, data["por_segmento"].([]any), 1)
-	assert.Len(t, data["por_uf"].([]any), 1)
+	assert.Len(t, como[[]any](t, data["por_segmento"]), 1)
+	assert.Len(t, como[[]any](t, data["por_uf"]), 1)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

@@ -104,6 +104,10 @@ func (c *Casos) gravarNovaSenha(ctx context.Context, u *identidade.Usuario, cmd 
 	}
 	g := gravacaoSenha{usuario: u, novo: novo, tipo: identidade.TipoResetUsuario, origem: cmd.Origem}
 	if err := c.gravarSenhaNaTx(ctx, g); err != nil {
+		if errors.Is(err, identidade.ErrSenhaAlteradaConcorrentemente) {
+			log.Printf("[auth] reset-password: senha alterada por outra operação (rollback): user_id=%d", u.ID)
+			return identidade.ErrSenhaAlteradaConcorrentemente
+		}
 		log.Printf("[auth] reset-password: gravar senha: %v", err)
 		return fmt.Errorf("identidadeapp: trocar senha: gravar: %v", err) // sem %w: inexistente aqui é 500
 	}
@@ -136,7 +140,7 @@ func (c *Casos) gravarSenhaNaTx(ctx context.Context, g gravacaoSenha) error {
 		if err := tx.Historico.Registrar(ctx, r); err != nil {
 			return fmt.Errorf("identidadeapp: senha: histórico: %w", err)
 		}
-		if err := tx.Usuarios.AtualizarSenha(ctx, id, g.novo, g.deveTrocar); err != nil {
+		if err := tx.Usuarios.AtualizarSenha(ctx, id, g.usuario.Hash, g.novo, g.deveTrocar); err != nil {
 			return err
 		}
 		if err := tx.Tokens.RevogarTodosDoUsuario(ctx, id, identidade.MotivoSenha); err != nil {
@@ -192,7 +196,7 @@ func (c *Casos) AdminResetarSenha(ctx context.Context, p kernel.Principal, cmd C
 	if !emailEnviado {
 		log.Printf("[usuarios] ATENÇÃO: senha de usuario_id=%d resetada, mas email NÃO foi enviado", alvo.ID)
 	}
-	log.Printf("[usuarios] admin resetou senha: usuario_id=%d por admin=%s email_enviado=%t", alvo.ID, p.Role(), emailEnviado)
+	log.Printf("[usuarios] admin resetou senha: admin_id=%d alvo_id=%d role=%s email_enviado=%t", p.UserID(), alvo.ID, p.Role(), emailEnviado)
 	return emailEnviado, nil
 }
 
@@ -216,11 +220,16 @@ func (c *Casos) redefinirSenhaGerada(ctx context.Context, id int64, email, nome 
 }
 
 // erroGravacaoReset: usuário que sumiu entre a releitura e o UPDATE vira
-// 404 (como no legado); o resto (histórico, revogação, begin/commit), 500
+// 404 (como no legado); senha trocada por outra operação no meio, 409
+// (BUG-24); o resto (histórico, revogação, begin/commit), 500
 // com log.
 func erroGravacaoReset(err error) error {
 	if errors.Is(err, identidade.ErrUsuarioNaoEncontrado) {
 		return identidade.ErrUsuarioNaoEncontrado
+	}
+	if errors.Is(err, identidade.ErrSenhaAlteradaConcorrentemente) {
+		log.Printf("[usuarios] AdminResetPassword: senha alterada por outra operação (rollback)")
+		return identidade.ErrSenhaAlteradaConcorrentemente
 	}
 	log.Printf("[usuarios] AdminResetPassword: gravar senha: %v", err)
 	return fmt.Errorf("identidadeapp: reset de senha: gravar: %w", err)

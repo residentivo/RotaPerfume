@@ -107,6 +107,9 @@ func casosComercial(db *sql.DB, vendedorID int64) *comercialapp.Casos {
 		Vinculacao: shareddb.NewTransactor(db, func(q shareddb.Querier) comercialapp.TxVinculo {
 			return comercialapp.TxVinculo{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
 		}),
+		AtivoCliente: shareddb.NewTransactor(db, func(q shareddb.Querier) comercialapp.TxAtivoCliente {
+			return comercialapp.TxAtivoCliente{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
+		}),
 		Relogio: time.Now,
 	})
 }
@@ -196,6 +199,9 @@ func novosCasos(db *sql.DB, cfg *config.Config, email identidadeapp.EnviadorSenh
 		TrocaSenha: shareddb.NewTransactor(db, func(q shareddb.Querier) identidadeapp.TxSenha {
 			return identidadeapp.TxSenha{Usuarios: identidademysql.NovoUsuarios(q), Historico: identidademysql.NovoHistoricoSenhas(q),
 				Tokens: identidademysql.NovoRefreshTokens(q)}
+		}),
+		AtivoUsuario: shareddb.NewTransactor(db, func(q shareddb.Querier) identidadeapp.TxAtivoUsuario {
+			return identidadeapp.TxAtivoUsuario{Usuarios: identidademysql.NovoUsuarios(q), Tokens: identidademysql.NovoRefreshTokens(q)}
 		}),
 		Hasher:     identidadecrypto.NovoHasher(cfg.HashSenha),
 		Emissor:    identidadecrypto.NovoJWT(cfg),

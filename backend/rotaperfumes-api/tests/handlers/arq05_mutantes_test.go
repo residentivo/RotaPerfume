@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func arq05PayloadComValoresForjados() map[string]any {
+func arq05PayloadComValoresForjados(t *testing.T) map[string]any {
 	p := validPedidoPayload()
 	p["valor_total"] = 9999.0
-	itens := p["itens"].([]map[string]any)
+	itens := como[[]map[string]any](t, p["itens"])
 	for _, it := range itens {
 		it["valor_bruto"] = 9999.0
 	}
@@ -67,7 +67,7 @@ func TestARQ05_V03_ValoresDoPayloadIgnorados(t *testing.T) {
 			c.prepara(mock)
 
 			status, body := doReq(t, c.metodo, server.URL+c.url, generateToken(t, testCfg(), 1, "admin"),
-				arq05PayloadComValoresForjados())
+				arq05PayloadComValoresForjados(t))
 
 			require.Equal(t, c.wantStatus, status, "body: %v", body)
 			data, ok := body["data"].(map[string]any)

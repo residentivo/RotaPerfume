@@ -200,7 +200,7 @@ func TestRefresh_Sucesso(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
 	assert.Equal(t, true, body["success"])
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "Bearer", data["token_type"])
 	assert.Equal(t, float64(24*60*60), data["expires_in"])
 
@@ -591,7 +591,7 @@ func TestLogout_Cenarios(t *testing.T) {
 
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 			body := decodeResponse(t, readBody(t, resp))
-			assert.Equal(t, "logout realizado", body["data"].(map[string]any)["mensagem"])
+			assert.Equal(t, "logout realizado", como[map[string]any](t, body["data"])["mensagem"])
 
 			cleared := map[string]bool{}
 			for _, c := range resp.Cookies() {

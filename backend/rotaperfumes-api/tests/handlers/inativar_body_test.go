@@ -32,11 +32,8 @@ func inativarEndpoints() []inativarEndpoint {
 		{
 			nome: "clientes",
 			path: "/api/clientes/1/inativar",
-			expectToggle: func(mock sqlmock.Sqlmock, valorFinal, _ bool) {
-				mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-					WithArgs(int64(1)).WillReturnRows(clienteRowsForHandler())
-				mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
-					WithArgs(valorFinal, int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+			expectToggle: func(mock sqlmock.Sqlmock, valorFinal, toggle bool) {
+				expectToggleClienteTxH(mock, 1, semVendedorToggleH, toggle, valorFinal, "11222333000181")
 			},
 		},
 		{
@@ -57,20 +54,8 @@ func inativarEndpoints() []inativarEndpoint {
 		{
 			nome: "usuarios",
 			path: "/api/usuarios/1/inativar",
-			expectToggle: func(mock sqlmock.Sqlmock, valorFinal, _ bool) {
-				mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-					WithArgs(int64(1)).WillReturnRows(usuarioRowsForHandler(1, true))
-				if valorFinal {
-					mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-						WithArgs(valorFinal, int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
-				} else { // SEC-08: inativar grava também o corte de sessão
-					mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
-						WithArgs(valorFinal, sqlmock.AnyArg(), int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
-				}
-				if !valorFinal { // SEC-06: inativação revoga os refresh tokens
-					mock.ExpectExec(revokeAllByUserRegex).
-						WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).WillReturnResult(sqlmock.NewResult(0, 0))
-				}
+			expectToggle: func(mock sqlmock.Sqlmock, valorFinal, toggle bool) {
+				expectToggleUsuarioTxH(mock, 1, toggle, valorFinal)
 			},
 		},
 	}
@@ -122,7 +107,8 @@ func TestInativar_BodyValido_ToggleOuDefine(t *testing.T) {
 				status, body := doPatchInativar(t, server.URL+ep.path, b.body, b.semBody)
 
 				assert.Equal(t, http.StatusOK, status)
-				data := body["data"].(map[string]any)
+				data, ok := body["data"].(map[string]any)
+				require.True(t, ok, "data deve ser objeto: %v", body)
 				assert.Equal(t, b.wantAtivo, data["ativo"])
 				assert.NoError(t, mock.ExpectationsWereMet())
 			})

@@ -64,8 +64,10 @@ func TestSEC27_HTTP_TaxaForaDoLimite_400SemGravar(t *testing.T) {
 				if papel == "normal" {
 					uid = 2
 					expectEscopoUsuarioH(mock, 2, 2)
+					expectLockPedidoRestritoH(mock, 1, 2) // SEC-35/38: leitura sem lock e lock antes da validação
+				} else {
+					expectLockPedidoH(mock, 1, 2) // SEC-35: o pedido é travado antes da validação dos campos
 				}
-				expectLockPedidoH(mock, 1, 2) // SEC-35: o pedido é travado antes da validação dos campos
 				mock.ExpectRollback()
 				p := validPagamentoPayload()
 				p["taxa_pct"] = taxa

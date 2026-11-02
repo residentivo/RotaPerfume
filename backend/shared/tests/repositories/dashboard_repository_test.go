@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"github.com/rotaperfumes/shared/analytics"
 	"github.com/rotaperfumes/shared/analytics/analyticsmysql"
 	"github.com/rotaperfumes/shared/kernel"
@@ -13,13 +12,15 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // errTabelaNaoExiste simula o erro do driver MySQL quando a tabela não existe
 // (usado para testar o fallback de isTableNotFound).
-var errTabelaNaoExiste = errors.New("Error 1146: Table 'db.pedidos' doesn't exist")
+// (BUG-18: só o código 1146 do *mysql.MySQLError é reconhecido).
+var errTabelaNaoExiste = &mysql.MySQLError{Number: 1146, Message: "Table 'db.pedidos' doesn't exist"}
 
 func TestDashboardGetVendasTotais_Success(t *testing.T) {
 	testes := []struct {

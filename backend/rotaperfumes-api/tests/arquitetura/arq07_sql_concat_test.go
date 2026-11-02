@@ -206,6 +206,13 @@ func (a *analiseConcat) funcaoQueContem(n ast.Node) *ast.FuncDecl {
 
 // violacoesConcatSQL devolve as violações e quantas concatenações foram vistas.
 func violacoesConcatSQL(arqs []arquivo, pkg string) (violacoes []string, vistos int) {
+	return violacoesConcatSQLCom(arqs, pkg, nil)
+}
+
+// violacoesConcatSQLCom é violacoesConcatSQL com a allowlist (TST-07) das
+// funções que recebem o SQL pronto do chamador ("pkg.funcao"): o texto
+// delas é conferido no chamador, não ali.
+func violacoesConcatSQLCom(arqs []arquivo, pkg string, permitidas map[string]bool) (violacoes []string, vistos int) {
 	a := novaAnaliseConcat(arqs, pkg)
 	for _, arq := range arqs {
 		if arq.pkg != pkg {
@@ -227,7 +234,7 @@ func violacoesConcatSQL(arqs []arquivo, pkg string) (violacoes []string, vistos 
 				}
 			}
 			fn := a.funcaoQueContem(call)
-			if fn == nil {
+			if fn == nil || permitidas[pkg+"."+fn.Name.Name] {
 				return true
 			}
 			if _, ehConcat := texto.(*ast.BinaryExpr); ehConcat {
@@ -286,4 +293,63 @@ func marcadores(n int) string     { return strings.Repeat("?", n) }
 	v, vistos := violacoesConcatSQL([]arquivo{a}, pkgAnalyticsMySQL)
 	assert.Equal(t, 5, vistos)
 	assert.Len(t, v, 4, strings.Join(v, "\n"))
+}
+
+// TST-07 (Lote 31): a mesma regra em TODOS os adapters MariaDB (pacotes
+// *mysql) e no shared/db, com allowlist explícita e mínima dos helpers que
+// recebem o SQL pronto do chamador (o texto é conferido em quem chama).
+var helpersSQLPermitidos = map[string]bool{
+	modShared + "/db.ExecPorID":                     true, // db/linhas.go
+	modShared + "/db.Existe":                        true, // db/linhas.go
+	modShared + "/db.Inserir":                       true, // db/linhas.go
+	modShared + "/db.Consultar":                     true, // db/consulta.go
+	modShared + "/comercial/comercialmysql.paginar": true, // comercialmysql/linhas.go
+	modShared + "/vendas/vendasmysql.paginar":       true, // vendasmysql/linhas.go
+	modShared + "/comercial/comercialmysql.vinculo": true, // comercialmysql/carteiras.go
+}
+
+func pacotesSQL(arqs []arquivo) []string {
+	vistos := map[string]bool{}
+	var out []string
+	for _, a := range arqs {
+		if (strings.HasSuffix(a.pkg, "mysql") || a.pkg == modShared+"/db") && !vistos[a.pkg] {
+			vistos[a.pkg] = true
+			out = append(out, a.pkg)
+		}
+	}
+	return out
+}
+
+func TestTST07_ConcatenacaoSQLSoConstantes_TodosOsAdapters(t *testing.T) {
+	arqs := todosOsArquivos(t)
+	pkgs := pacotesSQL(arqs)
+	for _, esperado := range []string{"/catalogo/catalogomysql", "/comercial/comercialmysql", "/vendas/vendasmysql", "/identidade/identidademysql", "/analytics/analyticsmysql", "/db"} {
+		assert.Contains(t, pkgs, modShared+esperado, "pacote coberto")
+	}
+	var todas []string
+	for _, pkg := range pkgs {
+		v, _ := violacoesConcatSQLCom(arqs, pkg, helpersSQLPermitidos)
+		todas = append(todas, v...)
+	}
+	assert.Empty(t, todas, strings.Join(todas, "\n"))
+}
+
+// Controle negativo: um adapter fora da allowlist que concatena parâmetro
+// de função exportada reprova; o mesmo código com a função na allowlist
+// passa (a allowlist é por função, não por pacote).
+func TestTST07_ControleNegativo(t *testing.T) {
+	const pkg = modShared + "/catalogo/catalogomysql"
+	a := fonteSintetica(t, pkg, "x.go", `package catalogomysql
+
+const base = "SELECT * FROM produtos WHERE "
+
+type R struct{ q Q }
+
+func (r *R) Buscar(ctx C, where string) { _ = r.q.QueryContext(ctx, base+where) }
+func (r *R) Executar(ctx C, q string)   { _ = r.q.ExecContext(ctx, q) }
+`)
+	v, _ := violacoesConcatSQLCom([]arquivo{a}, pkg, helpersSQLPermitidos)
+	assert.Len(t, v, 2, strings.Join(v, "\n"))
+	v, _ = violacoesConcatSQLCom([]arquivo{a}, pkg, map[string]bool{pkg + ".Buscar": true})
+	assert.Len(t, v, 1, "só o Executar continua reprovado")
 }

@@ -42,7 +42,11 @@ var (
 	ErrSenhaReutilizada    = kernel.NovoErro(kernel.KindInvalido, "a nova senha não pode ser igual a uma das últimas senhas utilizadas")
 	ErrSenhaCurta          = kernel.NovoErro(kernel.KindInvalido, "senha deve ter pelo menos 8 caracteres")
 	ErrSenhaMuitoLonga     = kernel.NovoErro(kernel.KindInvalido, "senha excede o tamanho máximo permitido (72 bytes)")
-	ErrSenhaFraca          = kernel.NovoErro(kernel.KindInvalido, "senha deve conter ao menos 3 dos 4 tipos: letra minúscula, letra maiúscula, dígito e símbolo")
+	// ErrSenhaAlteradaConcorrentemente: a troca/reset perdeu a corrida para
+	// outra troca do mesmo usuário (UPDATE condicional ao hash lido sem linha
+	// afetada, BUG-24). 409, sem retry automático.
+	ErrSenhaAlteradaConcorrentemente = kernel.NovoErro(kernel.KindConflito, "a senha foi alterada por outra operação; tente novamente")
+	ErrSenhaFraca                    = kernel.NovoErro(kernel.KindInvalido, "senha deve conter ao menos 3 dos 4 tipos: letra minúscula, letra maiúscula, dígito e símbolo")
 
 	ErrUsuarioNaoEncontrado = kernel.NovoErro(kernel.KindNaoEncontrado, "usuário não encontrado")
 	// ErrAcessoRestritoAdmin: defesa em profundidade dos casos de uso de

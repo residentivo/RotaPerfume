@@ -59,7 +59,7 @@ func TestSEC35_Excluir_Restrito_OrdemDoSQL(t *testing.T) {
 	p, e := sec26Restrito(t)
 	pool, mock := novoMock(t)
 	mock.ExpectQuery(arq05PagamentoPorIDRe).WithArgs(int64(5)).WillReturnRows(arq05LinhaPagamento(5, 1))
-	sec26Lock(mock, 1, "Pendente", 2)
+	sec38LockRestrito(mock, 1, "Pendente", 2, 2)
 	sec35LockPagamento(mock, 5, 1, "Em aberto")
 	sec35Delete(mock, 5, 1)
 	mock.ExpectCommit()
@@ -89,7 +89,7 @@ func TestSEC35_Excluir_QuitadoSobLock_409Rollback(t *testing.T) {
 			pool, mock := novoMock(t)
 			// Fora da tx ainda "Em aberto": quitado entre a leitura e o lock.
 			mock.ExpectQuery(arq05PagamentoPorIDRe).WithArgs(int64(5)).WillReturnRows(arq05LinhaPagamento(5, 1))
-			sec26Lock(mock, 1, "Pendente", 2)
+			sec38LockRestrito(mock, 1, "Pendente", 2, 2)
 			sec35LockPagamento(mock, 5, 1, status)
 			mock.ExpectRollback()
 
@@ -120,23 +120,28 @@ func TestSEC35_Excluir_PosseSobLock_404Rollback(t *testing.T) {
 		prepara func(m sqlmock.Sqlmock)
 		log     string
 	}{
+		{"outro vendedor na leitura sem lock (SEC-38: não trava)", func(m sqlmock.Sqlmock) {
+			m.ExpectBegin()
+			sec38Leitura(m, 1, 99)
+		}, "[TxPedido.posseDoPagamentoTravada] decisão fora_da_carteira id=1"},
 		{"outro vendedor sob o lock", func(m sqlmock.Sqlmock) {
-			sec26Lock(m, 1, "Pendente", 99)
-		}, "[TxPedido.posseDoPagamentoTravada] decisão fora_da_carteira pedido_id=1"},
+			sec38LockRestrito(m, 1, "Pendente", 2, 99)
+		}, "[TxPedido.posseDoPagamentoTravada] decisão fora_da_carteira_sob_lock id=1"},
+		{"pedido inexistente na leitura sem lock", func(m sqlmock.Sqlmock) {
+			m.ExpectBegin()
+			m.ExpectQuery(sec38LeituraRe).WithArgs(int64(1)).WillReturnError(sql.ErrNoRows)
+		}, "[Pedidos.VendedorDoPedido] SELECT pedidos encontrado=false"},
 		{"pedido sumiu no lock", func(m sqlmock.Sqlmock) {
 			m.ExpectBegin()
+			sec38Leitura(m, 1, 2)
 			m.ExpectQuery(bug16StatusLockRe).WithArgs(int64(1)).WillReturnError(sql.ErrNoRows)
-		}, "[pagamentos] DeletePagamento vendedor do pedido:"},
-		{"erro de banco no lock do pedido (V-02)", func(m sqlmock.Sqlmock) {
-			m.ExpectBegin()
-			m.ExpectQuery(bug16StatusLockRe).WithArgs(int64(1)).WillReturnError(errors.New("conexão caiu"))
-		}, "[pagamentos] DeletePagamento vendedor do pedido:"},
+		}, "[Pedidos.VendedorDoPedido] SELECT pedidos encontrado=true"},
 		{"pagamento sumiu no lock", func(m sqlmock.Sqlmock) {
-			sec26Lock(m, 1, "Pendente", 2)
+			sec38LockRestrito(m, 1, "Pendente", 2, 2)
 			m.ExpectQuery(sec35LockPagamentoRe).WithArgs(int64(5)).WillReturnError(sql.ErrNoRows)
 		}, "[Pagamentos.TravarParaExcluir] SELECT pagamentos FOR UPDATE linhas=0"},
 		{"pedido do pagamento divergente", func(m sqlmock.Sqlmock) {
-			sec26Lock(m, 1, "Pendente", 2)
+			sec38LockRestrito(m, 1, "Pendente", 2, 2)
 			sec35LockPagamento(m, 5, 77, "Em aberto")
 		}, "[TxPedido.ExcluirPagamento] decisão pedido_divergente id=5"},
 	}
@@ -198,7 +203,11 @@ func TestSEC35_Criar_OrdemDoSQL(t *testing.T) {
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
 			pool, mock := novoMock(t)
-			sec26Lock(mock, 1, "Pendente", 2)
+			if c.nome == "admin" {
+				sec26Lock(mock, 1, "Pendente", 2) // admin: só o lock (SEC-38 não muda o admin)
+			} else {
+				sec38LockRestrito(mock, 1, "Pendente", 2, 2)
+			}
 			mock.ExpectExec(sec35InsertRe).WillReturnResult(sqlmock.NewResult(42, 1))
 			mock.ExpectCommit()
 			mock.ExpectQuery(arq05PagamentoPorIDRe).WithArgs(int64(42)).WillReturnRows(arq05LinhaPagamento(42, 1))
@@ -228,6 +237,9 @@ func TestSEC35_Criar_PedidoSumiuNoLock_404(t *testing.T) {
 		t.Run(c.nome, func(t *testing.T) {
 			pool, mock := novoMock(t)
 			mock.ExpectBegin()
+			if c.nome == "restrito" {
+				sec38Leitura(mock, 1, 2) // SEC-38: leitura sem lock antes do FOR UPDATE
+			}
 			mock.ExpectQuery(bug16StatusLockRe).WithArgs(int64(1)).WillReturnError(sql.ErrNoRows)
 			mock.ExpectRollback()
 
@@ -244,14 +256,14 @@ func TestSEC35_Criar_OutroVendedorSobLock_404Rollback(t *testing.T) {
 	out := bug16CapturarVlog(t)
 	p, e := sec26Restrito(t)
 	pool, mock := novoMock(t)
-	sec26Lock(mock, 1, "Pendente", 99)
+	sec38LockRestrito(mock, 1, "Pendente", 2, 99)
 	mock.ExpectRollback()
 
 	pag, err := novosCasos(pool, e).CriarPagamento(context.Background(), p, ler(sec35NovoPagamento()))
 	assert.Nil(t, pag)
 	assert.Same(t, vendas.ErrPedidoNaoEncontrado, err)
 	assert.NoError(t, mock.ExpectationsWereMet(), "sem INSERT")
-	assert.Contains(t, out.String(), "[TxPedido.CriarPagamento] decisão fora_da_carteira id=1")
+	assert.Contains(t, out.String(), "[TxPedido.CriarPagamento] decisão fora_da_carteira_sob_lock id=1")
 }
 
 func TestSEC35_Criar_ErroDeBancoNoLock_500(t *testing.T) {

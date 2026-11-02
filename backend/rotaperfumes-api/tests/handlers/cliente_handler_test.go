@@ -58,10 +58,10 @@ func TestListClientes_Success_Admin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	assert.Len(t, data, 1)
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(1), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -134,7 +134,7 @@ func TestListClientes_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -212,8 +212,8 @@ func TestGetCliente_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "Empresa Teste LTDA", data["razao_social"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -296,7 +296,7 @@ func TestGetCliente_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -329,7 +329,7 @@ func TestGetCliente_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.False(t, body["success"].(bool))
+	assert.False(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -346,13 +346,9 @@ func TestToggleAtivoCliente_Toggle_SemBody(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	// cliente atual está ativo=true -> toggle inverte para false
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(clienteRowsForHandler())
-	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
-		WithArgs(false, int64(1)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	// cliente atual está ativo=true -> toggle inverte para false no próprio
+	// UPDATE (BUG-22) e a resposta vem da releitura
+	expectToggleClienteTxH(mock, 1, semVendedorToggleH, true, false, "11222333000181")
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/clientes/1/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -363,7 +359,7 @@ func TestToggleAtivoCliente_Toggle_SemBody(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, false, data["ativo"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -377,12 +373,7 @@ func TestToggleAtivoCliente_ComBodyExplicito(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(clienteRowsForHandler())
-	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
-		WithArgs(true, int64(1)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	expectToggleClienteTxH(mock, 1, semVendedorToggleH, false, true, "11222333000181")
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/clientes/1/inativar", makeJSON(map[string]any{"ativo": true}))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -393,7 +384,7 @@ func TestToggleAtivoCliente_ComBodyExplicito(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, true, data["ativo"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -407,9 +398,9 @@ func TestToggleAtivoCliente_NaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-		WithArgs(int64(999)).
-		WillReturnRows(emptyClienteRows())
+	mock.ExpectBegin()
+	mock.ExpectQuery(reTravarClienteH).WithArgs(int64(999)).WillReturnRows(sqlmock.NewRows([]string{"cliente_id_origem"}))
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/clientes/999/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -453,12 +444,7 @@ func TestToggleAtivoCliente_PermitidoParaNaoAdmin(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(10)))
 	expectVendedorDesligado(mock, 10, false)
 	expectCarteiraAtivaH(mock, 10, 1)
-	mock.ExpectQuery(`SELECT ` + clienteColunasRegex + ` FROM clientes WHERE cliente_id_origem = \? LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(clienteRowsForHandler())
-	mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
-		WithArgs(false, int64(1)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	expectToggleClienteTxH(mock, 1, 10, true, false, "11222333000181")
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/clientes/1/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
@@ -469,7 +455,7 @@ func TestToggleAtivoCliente_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, false, data["ativo"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -512,8 +498,8 @@ func TestCreateCliente_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "Empresa Teste LTDA", data["razao_social"])
 	assert.Equal(t, float64(101), data["cliente_id_origem"])
 
@@ -550,7 +536,7 @@ func TestCreateCliente_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -688,8 +674,8 @@ func TestUpdateCliente_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "Empresa Teste LTDA", data["razao_social"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -724,7 +710,7 @@ func TestUpdateCliente_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

@@ -1,7 +1,6 @@
 import {
   LoginRequest,
   LoginResponse,
-  ResetPasswordRequest,
   User,
   MeResponse,
   UserRole,
@@ -169,27 +168,6 @@ export async function apiRefreshToken(refresh_token: string): Promise<{
 export async function apiMe(): Promise<MeResponse> {
   return fetchWithAuth<MeResponse>("/api/auth/me", {
     method: "GET",
-  });
-}
-
-export async function apiResetPassword(
-  usuarioId: number,
-  novaSenha: string,
-  senhaAtual?: string
-): Promise<{ message: string }> {
-  vlog(F, "apiResetPassword", "montando corpo do reset de senha, usuario_id:", usuarioId);
-  const body: ResetPasswordRequest = {
-    usuario_id: usuarioId,
-    nova_senha: novaSenha,
-  };
-  vlog(F, "apiResetPassword", "verificando se senha atual foi informada:", !!senhaAtual);
-  if (senhaAtual) {
-    vlog(F, "apiResetPassword", "incluindo senha atual no corpo");
-    body.senha_atual = senhaAtual;
-  }
-  return fetchWithAuth<{ message: string }>("/api/auth/reset-password", {
-    method: "POST",
-    body: JSON.stringify(body),
   });
 }
 

@@ -36,8 +36,9 @@ var (
 	ErrDescontoPctInvalido    = kernel.NovoErro(kernel.KindInvalido, "desconto_pct deve estar entre 0 e 100 em todos os itens")
 	// ErrPedidoJaFaturadoNaoPodeAlterarItens: pedido faturado (ou entregue,
 	// que é pós-faturamento) não troca os itens (dessincronizaria o estoque
-	// já baixado). O texto "apenas o status" é o contrato legado (R6).
-	ErrPedidoJaFaturadoNaoPodeAlterarItens = kernel.NovoErro(kernel.KindConflito, "pedido já faturado: não é possível alterar os itens, apenas o status")
+	// já baixado). Texto do CHORE-07 (Lote 31, aprovado pelo usuário): o
+	// antigo "apenas o status" ficou enganoso depois do BUG-16 (R6).
+	ErrPedidoJaFaturadoNaoPodeAlterarItens = kernel.NovoErro(kernel.KindConflito, "pedido faturado ou entregue: não é possível alterar os itens")
 	// Máquina de status (BUG-16, BUG-20): Faturado só segue para Entregue,
 	// Entregue é terminal e só se chega a Entregue a partir de Faturado (a
 	// baixa de estoque acontece na entrada em Faturado; pular essa etapa,
@@ -46,9 +47,10 @@ var (
 	ErrPedidoEntregueNaoPodeMudarStatus   = kernel.NovoErro(kernel.KindInvalido, "pedido entregue não pode ter o status alterado")
 	ErrPedidoEntregueSemFaturamento       = kernel.NovoErro(kernel.KindInvalido, "pedido só pode ser marcado como Entregue depois de Faturado")
 	// ErrPedidoPossuiPagamentosVinculados e ErrPedidoFaturadoNaoPodeSerExcluido
-	// são as duas travas da exclusão (V-01).
+	// são as duas travas da exclusão (V-01). Texto do Faturado: CHORE-07
+	// (Lote 31), alinhado ao BUG-16 (Faturado só segue para Entregue).
 	ErrPedidoPossuiPagamentosVinculados = kernel.NovoErro(kernel.KindConflito, "pedido possui pagamentos vinculados")
-	ErrPedidoFaturadoNaoPodeSerExcluido = kernel.NovoErro(kernel.KindConflito, "pedido faturado não pode ser excluído, apenas ter o status alterado")
+	ErrPedidoFaturadoNaoPodeSerExcluido = kernel.NovoErro(kernel.KindConflito, "pedido faturado não pode ser excluído; só pode ter o status alterado para Entregue")
 	// ErrPedidoEntregueNaoPodeSerExcluido (BUG-16): Entregue é pós-faturamento
 	// (estoque já baixado) e terminal; mesma trava da exclusão de Faturado.
 	ErrPedidoEntregueNaoPodeSerExcluido = kernel.NovoErro(kernel.KindConflito, "pedido entregue não pode ser excluído")

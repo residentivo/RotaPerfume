@@ -71,8 +71,8 @@ func TestBUG11_HTTP_CreateUsuario_Releitura(t *testing.T) {
 
 			require.Equal(t, http.StatusCreated, resp.StatusCode, "INSERT confirmado responde 201 mesmo se a releitura falhar")
 			body := decodeResponse(t, readBody(t, resp))
-			assert.True(t, body["success"].(bool))
-			data := body["data"].(map[string]any)
+			assert.True(t, como[bool](t, body["success"]))
+			data := como[map[string]any](t, body["data"])
 			assert.Equal(t, float64(9), data["id"])
 			assert.Equal(t, "novo@test.com", data["email"])
 			assert.Equal(t, true, data["email_enviado"])
@@ -164,7 +164,7 @@ func TestFE13_HTTP_SenhaHistorico_OrderBy(t *testing.T) {
 
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				body := decodeResponse(t, readBody(t, resp))
-				require.Len(t, body["data"].([]any), 1)
+				require.Len(t, como[[]any](t, body["data"]), 1)
 				assert.NoError(t, mock.ExpectationsWereMet())
 			})
 		}

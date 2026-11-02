@@ -113,7 +113,7 @@ func TestARQ07_ResetSenhas_ExecutarParaNoPrimeiroEmailQueFalha(t *testing.T) {
 		AddRow(int64(1), "Admin", "admin@rotaperfumes.com.br", "$2a$12$x", "admin", nil, true, false, time.Now(), time.Now(), nil, nil))
 	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()

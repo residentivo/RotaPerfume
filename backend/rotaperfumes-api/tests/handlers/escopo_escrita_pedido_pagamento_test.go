@@ -111,7 +111,7 @@ func TestCreatePedido_Normal_ForcaVendedorDoUsuario(t *testing.T) {
 	status, body := doReq(t, "POST", server.URL+"/api/pedidos", token, payload)
 
 	assert.Equal(t, http.StatusCreated, status)
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(7), data["vendedor_id"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -327,6 +327,7 @@ func TestUpdatePedido_Normal_NaoTrocaVendedor(t *testing.T) {
 	expectCarteiraAtivaH(mock, 2, 1)
 
 	mock.ExpectBegin()
+	expectLeituraPedidoH(mock, 1, 2) // SEC-38: posse lida sem lock antes do FOR UPDATE
 	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(2)))
 	mock.ExpectQuery(selectItensAtuaisTxRegexH).WithArgs(int64(1)).WillReturnRows(itensAtuaisRowsVazioH())
@@ -350,7 +351,7 @@ func TestUpdatePedido_Normal_NaoTrocaVendedor(t *testing.T) {
 	status, body := doReq(t, "PUT", server.URL+"/api/pedidos/1", token, payload)
 
 	assert.Equal(t, http.StatusOK, status)
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(2), data["vendedor_id"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -370,7 +371,7 @@ func TestCreatePagamento_Normal_Negado(t *testing.T) {
 			nome: "pedido de outro vendedor",
 			setup: func(mock sqlmock.Sqlmock) {
 				expectEscopoUsuarioH(mock, 2, 99)
-				expectLockPedidoH(mock, 1, 2) // SEC-35: posse sob o lock do pedido
+				expectPosseAlheiaH(mock, 1, 2) // SEC-38: recusado antes do lock
 				mock.ExpectRollback()
 			},
 			wantStatus: http.StatusNotFound,
@@ -380,7 +381,7 @@ func TestCreatePagamento_Normal_Negado(t *testing.T) {
 			nome: "pedido inexistente",
 			setup: func(mock sqlmock.Sqlmock) {
 				expectEscopoUsuarioH(mock, 2, 2)
-				expectLockPedidoErroH(mock, 1, sql.ErrNoRows)
+				expectLeituraPedidoErroH(mock, 1, sql.ErrNoRows)
 				mock.ExpectRollback()
 			},
 			wantStatus: http.StatusNotFound,
@@ -404,7 +405,7 @@ func TestCreatePagamento_Normal_Negado(t *testing.T) {
 			nome: "erro de banco ao buscar vendedor do pedido",
 			setup: func(mock sqlmock.Sqlmock) {
 				expectEscopoUsuarioH(mock, 2, 2)
-				expectLockPedidoErroH(mock, 1, sqlmock.ErrCancelled)
+				expectLeituraPedidoErroH(mock, 1, sqlmock.ErrCancelled)
 				mock.ExpectRollback()
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -443,12 +444,12 @@ func TestCreatePagamento_Normal_404IndistinguivelDeInexistente(t *testing.T) {
 
 	stOutro, bodyOutro := executar(func(m sqlmock.Sqlmock) {
 		expectEscopoUsuarioH(m, 2, 99)
-		expectLockPedidoH(m, 1, 2)
+		expectPosseAlheiaH(m, 1, 2)
 		m.ExpectRollback()
 	})
 	stInex, bodyInex := executar(func(m sqlmock.Sqlmock) {
 		expectEscopoUsuarioH(m, 2, 99)
-		expectLockPedidoErroH(m, 1, sql.ErrNoRows)
+		expectLeituraPedidoErroH(m, 1, sql.ErrNoRows)
 		m.ExpectRollback()
 	})
 
@@ -465,7 +466,7 @@ func TestCreatePagamento_Normal_ProprioEscopo(t *testing.T) {
 	token := generateToken(t, testCfg(), 2, "normal")
 
 	expectEscopoUsuarioH(mock, 2, 2)
-	expectLockPedidoH(mock, 1, 2) // SEC-35: posse e INSERT na tx, com o pedido travado
+	expectLockPedidoRestritoH(mock, 1, 2) // SEC-35/38: posse e INSERT na tx, com o pedido travado
 	mock.ExpectExec(insertPagamentoRegH).
 		WithArgs(int64(1), "PIX", uint8(1), 100.0, 0.0, 100.0, sqlmock.AnyArg(), nil, "Em aberto").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -477,7 +478,7 @@ func TestCreatePagamento_Normal_ProprioEscopo(t *testing.T) {
 	status, body := doReq(t, "POST", server.URL+"/api/pagamentos", token, validPagamentoPayload())
 
 	assert.Equal(t, http.StatusCreated, status)
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -609,7 +610,7 @@ func TestUpdatePagamento_Normal_ProprioEscopo(t *testing.T) {
 	status, body := doReq(t, "PUT", server.URL+"/api/pagamentos/1", token, payload)
 
 	assert.Equal(t, http.StatusOK, status)
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -642,7 +643,7 @@ func TestCreatePagamento_Admin_PedidoInexistente_404IgualNormal(t *testing.T) {
 	})
 	stNormal, bodyNormal := executar("normal", func(m sqlmock.Sqlmock) {
 		expectEscopoUsuarioH(m, 2, 99)
-		expectLockPedidoErroH(m, 1, sql.ErrNoRows)
+		expectLeituraPedidoErroH(m, 1, sql.ErrNoRows)
 		m.ExpectRollback()
 	})
 
@@ -681,6 +682,7 @@ func TestUpdatePedido_SEC26_PosseMudaAntesDoLock_404Rollback(t *testing.T) {
 	expectPedidoAtualH(mock, 1, 2)
 	expectCarteiraAtivaH(mock, 2, 1)
 	mock.ExpectBegin()
+	expectLeituraPedidoH(mock, 1, 2) // SEC-38: ainda do vendedor 2 na leitura sem lock
 	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(99)))
 	mock.ExpectRollback()

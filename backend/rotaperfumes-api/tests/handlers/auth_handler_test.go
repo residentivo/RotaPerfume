@@ -183,8 +183,8 @@ func TestLogin_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 
 	// Tokens agora vao via Set-Cookie (vulnerabilidade #1 mitigada).
 	var foundAccess, foundRefresh bool
@@ -207,8 +207,8 @@ func TestLogin_Success(t *testing.T) {
 	assert.False(t, hasAccessBody, "access_token nao deve estar no body")
 	assert.False(t, hasRefreshBody, "refresh_token nao deve estar no body")
 
-	assert.Equal(t, float64(1), data["user"].(map[string]any)["id"])
-	assert.Equal(t, "admin", data["user"].(map[string]any)["role"])
+	assert.Equal(t, float64(1), como[map[string]any](t, data["user"])["id"])
+	assert.Equal(t, "admin", como[map[string]any](t, data["user"])["role"])
 
 	// Verifica que todos os mocks foram chamados
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -236,7 +236,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.False(t, body["success"].(bool))
+	assert.False(t, como[bool](t, body["success"]))
 	assert.Equal(t, "credenciais inválidas", body["error"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -259,7 +259,7 @@ func TestLogin_UsuarioNaoExiste(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.False(t, body["success"].(bool))
+	assert.False(t, como[bool](t, body["success"]))
 	assert.Equal(t, "credenciais inválidas", body["error"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -522,8 +522,8 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// Mock: update password_hash + deve_trocar_senha (troca voluntária → false)
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(2)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+		WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(2), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// Mock: revoga todos os refresh tokens
@@ -543,7 +543,7 @@ func TestResetPassword_UsuarioNormal_TrocaPropriaSenha(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -597,7 +597,7 @@ func TestAdminResetPassword_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -891,8 +891,8 @@ func TestResetPassword_NovaSenhaForte_NaoReutilizada_Sucesso(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(2)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+		WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(2), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \?`).WithArgs(sqlmock.AnyArg(), "senha", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
@@ -909,7 +909,7 @@ func TestResetPassword_NovaSenhaForte_NaoReutilizada_Sucesso(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -970,8 +970,8 @@ func TestMe_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(3), data["id"])
 	assert.Equal(t, "João Silva", data["nome"])
 	assert.Equal(t, "normal", data["role"])

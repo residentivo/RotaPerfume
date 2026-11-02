@@ -2,8 +2,11 @@ import { User } from "./types";
 import { vlog } from "./vlog";
 
 // ============================================
-// SEGURANCA: access_token e refresh_token sao cookies HttpOnly
-// definidos pelo BACKEND via Set-Cookie. Por serem HttpOnly, o
+// SEGURANCA: os tokens de acesso e de refresh sao cookies HttpOnly
+// definidos pelo BACKEND via Set-Cookie (SEC-33: `__Host-access_token` e
+// `__Host-refresh_token` com COOKIE_SECURE=true; `access_token` e
+// `refresh_token` so no dev HTTP). O frontend nunca depende desses nomes.
+// Por serem HttpOnly, o
 // JavaScript do frontend NÃO consegue ler nem escrever esses cookies
 // (document.cookie nunca os expõe) — o navegador os envia sozinho em
 // toda requisição para a API (ver credentials: "include" em apiClient.ts).

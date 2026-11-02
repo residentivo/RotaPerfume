@@ -83,10 +83,10 @@ Raízes: `API` = backend/rotaperfumes-api, `SH` = backend/shared, `AT` = API/tes
 
 ## ARQ-05 Vendas
 - V-01 Escopo de pedido segue E-03..E-05; exclusão 409 com pagamentos ou status Faturado.
-- V-02 Escopo de pagamento herdado de pedido.vendedor_id; `pedido_id` não editável no update; pedido alheio → 404; falha ao buscar vendedor do pedido em Get/Delete → 404 (não 500).
+- V-02 Escopo de pagamento herdado de pedido.vendedor_id; `pedido_id` não editável no update; pedido alheio ou inexistente → 404. **SEC-38 (Lote 31, 2026-11-02):** erro de infraestrutura (banco fora, timeout, deadlock) ao buscar o vendedor do pedido em Get/Delete de pagamento passa a **500 com log** (`pedido_id` e erro), em vez de 404. No escopo restrito, `posseDoPagamentoTravada` e `travarNoEscopo` seguem a ordem: (1) leitura sem lock (`SELECT vendedor_id FROM pedidos`): inexistente/fora da carteira → 404, infra → 500, e o restrito nunca trava pedido alheio; (2) `TravarParaEscrita` (`FOR UPDATE`): sumiu → 404, outro erro → 500; (3) `Permite` de novo sob o lock → 404. O admin só trava (sem mudança).
 - V-03 valor_bruto/valor_total calculados no backend.
 - Riscos: comando AtualizarPagamento não aceita PedidoID; manter checagem de posse via pedido; TOCTOU pré-existente (não piorar).
-  - **TOCTOU de pedido e pagamento fechado nos Lotes 27 e 28:** pedido (PUT/DELETE) sob lock no SEC-26 (Lote 27); `CriarPagamento` e `ExcluirPagamento` em tx com lock pedido → pagamento e `DELETE` condicional a "não quitado" no SEC-35 (Lote 28, `TxPedido.CriarPagamento`/`ExcluirPagamento` em `SH/vendas/vendasapp/uow.go`); FK 1452 na criação → 404 "pedido não encontrado" (`db.ViolacaoFK`, `SH/db/fk.go`). V-02 mantido: erro no lock do pedido na exclusão restrita → 404 (resíduo: erro de infraestrutura escondido como 404, card SEC-38).
+  - **TOCTOU de pedido e pagamento fechado nos Lotes 27 e 28:** pedido (PUT/DELETE) sob lock no SEC-26 (Lote 27); `CriarPagamento` e `ExcluirPagamento` em tx com lock pedido → pagamento e `DELETE` condicional a "não quitado" no SEC-35 (Lote 28, `TxPedido.CriarPagamento`/`ExcluirPagamento` em `SH/vendas/vendasapp/uow.go`); FK 1452 na criação → 404 "pedido não encontrado" (`db.ViolacaoFK`, `SH/db/fk.go`). Erro no lock do pedido na exclusão restrita: 500 desde o SEC-38 (Lote 31; antes 404).
 
 ## ARQ-06 Dashboard
 - D-01 Escopo próprio (`resolverVendedorScopeBase`): desligado/inexistente/sem vendedor → 200 zerado com `vendedor_desligado`; nunca zerar VendedorID e seguir.

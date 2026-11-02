@@ -24,10 +24,11 @@ var (
 	ErrSKUDuplicado = kernel.NovoErro(kernel.KindConflito, "sku já cadastrado")
 
 	// IMG-01: imagem do produto. As mensagens são fixas (nunca o nome do
-	// arquivo do cliente). ErrImagemMuitoGrande é KindInvalido, mas o handler
-	// a responde como 413 antes do mapper.
+	// arquivo do cliente). ErrImagemMuitoGrande é KindMuitoGrande (413 pelo
+	// mapper, CHORE-10): arquivo enviado acima de 1 MB ou, depois da
+	// conversão, saída acima de MaxImagemSaidaBytes (SEC-34).
 	ErrImagemInvalida       = kernel.NovoErro(kernel.KindInvalido, "arquivo de imagem inválido (use JPEG, PNG ou WebP)")
-	ErrImagemMuitoGrande    = kernel.NovoErro(kernel.KindInvalido, "imagem excede 1 MB")
+	ErrImagemMuitoGrande    = kernel.NovoErro(kernel.KindMuitoGrande, "imagem excede 1 MB")
 	ErrImagemNaoEncontrada  = kernel.NovoErro(kernel.KindNaoEncontrado, "imagem não encontrada")
 	ErrImagensIndisponiveis = kernel.NovoErro(kernel.KindInterno, "erro interno")
 

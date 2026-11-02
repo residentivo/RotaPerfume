@@ -204,6 +204,21 @@ func (r *Pedidos) TravarParaEscrita(ctx context.Context, id int64) (*vendas.Pedi
 	return p, nil
 }
 
+// VendedorDoPedido lê o vendedor do pedido sem lock (SEC-38): a posse do
+// escopo restrito é conferida antes do FOR UPDATE.
+func (r *Pedidos) VendedorDoPedido(ctx context.Context, id int64) (int64, error) {
+	var vendedorID int64
+	err := r.q.QueryRowContext(ctx, `SELECT vendedor_id FROM pedidos WHERE pedido_id_origem = ?`, id).Scan(&vendedorID)
+	vlog.Printf(arqPedidos, "Pedidos.VendedorDoPedido", "SELECT pedidos encontrado=%t", err == nil)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, vendas.ErrPedidoNaoEncontrado
+	}
+	if err != nil {
+		return 0, fmt.Errorf("vendasmysql: vendedor do pedido: %w", err)
+	}
+	return vendedorID, nil
+}
+
 // ItensAtuais lê o conteúdo de negócio dos itens (para comparar com o PUT).
 func (r *Pedidos) ItensAtuais(ctx context.Context, id int64) ([]vendas.ItemPedido, error) {
 	const q = `SELECT produto_id, quantidade, preco_praticado, desconto_pct FROM itens_pedido WHERE pedido_id = ? ORDER BY item_id_origem ASC`

@@ -262,16 +262,18 @@ func load(exigirDB bool) (*Config, error) {
 	vlog.Printf("config.go", "load", "lendo SMTP_TLS_CA_FILE (vazio = só raízes do sistema)")
 	cfg.SMTPTLSCAFile = os.Getenv("SMTP_TLS_CA_FILE")
 
-	vlog.Printf("config.go", "load", "montando lista de origens CORS permitidas e verificando erro")
-	if cfg.CORSAllowedOrigins, err = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")); err != nil {
-		return nil, err
-	}
-	vlog.Printf("config.go", "load", "lendo TRUST_PROXY_HEADERS")
-	cfg.TrustProxyHeaders = getEnv("TRUST_PROXY_HEADERS", "false") == "true"
+	// COOKIE_SECURE antes do CORS (SEC-36): as origens de dev só entram com
+	// COOKIE_SECURE=false.
 	vlog.Printf("config.go", "load", "lendo COOKIE_SECURE (padrão true) e verificando erro")
 	if cfg.CookieSecure, err = parseCookieSecure(); err != nil {
 		return nil, err
 	}
+	vlog.Printf("config.go", "load", "montando lista de origens CORS permitidas e verificando erro")
+	if cfg.CORSAllowedOrigins, err = parseAllowedOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"), !cfg.CookieSecure); err != nil {
+		return nil, err
+	}
+	vlog.Printf("config.go", "load", "lendo TRUST_PROXY_HEADERS")
+	cfg.TrustProxyHeaders = getEnv("TRUST_PROXY_HEADERS", "false") == "true"
 	vlog.Printf("config.go", "load", "lendo TURNSTILE_SECRET_KEY")
 	cfg.TurnstileSecretKey = strings.TrimSpace(os.Getenv("TURNSTILE_SECRET_KEY"))
 	vlog.Printf("config.go", "load", "lendo TURNSTILE_PERMITIR_SECRET_TESTE (padrão false) e verificando erro")
@@ -545,8 +547,10 @@ func ParseSecurityAlertEmails(raw string) []string {
 	return emails
 }
 
-// defaultDevOrigins são as origens de desenvolvimento local sempre permitidas,
-// independente de CORS_ALLOWED_ORIGINS — cobre o frontend Next.js em dev.
+// defaultDevOrigins são as origens de desenvolvimento local (frontend
+// Next.js em dev). SEC-36: só entram com COOKIE_SECURE=false (dev em HTTP);
+// em produção, um processo local na porta 3000 não recebe CORS com
+// credentials. localhost explícito em CORS_ALLOWED_ORIGINS continua aceito.
 var defaultDevOrigins = []string{
 	"http://localhost:3000",
 	"http://127.0.0.1:3000",
@@ -558,14 +562,16 @@ var defaultDevOrigins = []string{
 var ErrCORSOrigemInvalida = errors.New("config: CORS_ALLOWED_ORIGINS não aceita \"*\" nem \"null\" (os cookies de sessão exigem origens explícitas)")
 
 // parseAllowedOrigins monta a lista final de origens permitidas: as origens de
-// dev local padrão mais o que vier em CORS_ALLOWED_ORIGINS (separadas por
-// vírgula). Comparação é sempre exata — sem prefix-match. Uma entrada "*" ou
-// "null" (sem diferenciar maiúsculas) é ErrCORSOrigemInvalida (SEC-17).
-func parseAllowedOrigins(raw string) ([]string, error) {
-	vlog.Printf("config.go", "parseAllowedOrigins", "alocando slice de origens com capacidade inicial")
+// dev local padrão (só com incluirDev, SEC-36) mais o que vier em
+// CORS_ALLOWED_ORIGINS (separadas por vírgula). Comparação é sempre exata —
+// sem prefix-match. Uma entrada "*" ou "null" (sem diferenciar maiúsculas) é
+// ErrCORSOrigemInvalida (SEC-17).
+func parseAllowedOrigins(raw string, incluirDev bool) ([]string, error) {
 	origins := make([]string, 0, len(defaultDevOrigins)+2)
-	vlog.Printf("config.go", "parseAllowedOrigins", "adicionando %d origens padrão de dev", len(defaultDevOrigins))
-	origins = append(origins, defaultDevOrigins...)
+	if incluirDev {
+		vlog.Printf("config.go", "parseAllowedOrigins", "decisão origens_dev_incluidas total=%d", len(defaultDevOrigins))
+		origins = append(origins, defaultDevOrigins...)
+	}
 
 	vlog.Printf("config.go", "parseAllowedOrigins", "iterando origens de CORS_ALLOWED_ORIGINS")
 	for _, o := range strings.Split(raw, ",") {

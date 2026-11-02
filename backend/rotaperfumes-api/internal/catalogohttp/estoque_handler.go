@@ -65,7 +65,7 @@ func (h *EstoqueHandler) CreateEstoque(w http.ResponseWriter, r *http.Request) {
 		httpx.ResponderErro(w, tag, err)
 		return
 	}
-	log.Printf("[estoque] criado manualmente: id=%d sku=%q por usuario role=%s", e.ID, e.SKU, principal.Role())
+	log.Printf("[estoque] criado manualmente: id=%d sku=%q por usuario_id=%d role=%s", e.ID, e.SKU, principal.UserID(), principal.Role())
 	httpx.JSON(w, http.StatusCreated, estoqueParaResposta(*e), "")
 }
 
@@ -91,6 +91,6 @@ func (h *EstoqueHandler) UpdateEstoque(w http.ResponseWriter, r *http.Request) {
 		httpx.ResponderErro(w, tag, err)
 		return
 	}
-	log.Printf("[estoque] atualizado manualmente: id=%d por usuario role=%s", id, principal.Role())
+	log.Printf("[estoque] atualizado manualmente: id=%d por usuario_id=%d role=%s", id, principal.UserID(), principal.Role())
 	httpx.JSON(w, http.StatusOK, estoqueParaResposta(*e), "")
 }

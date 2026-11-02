@@ -144,6 +144,21 @@ func (r *Clientes) Atualizar(ctx context.Context, id int64, c *comercial.Cliente
 	return err
 }
 
+// AlternarAtivo inverte o status no próprio UPDATE (BUG-22): um único
+// statement, sem ler antes, então dois toggles simultâneos se compõem.
+func (r *Clientes) AlternarAtivo(ctx context.Context, id int64) error {
+	res, err := r.q.ExecContext(ctx, `UPDATE clientes SET ativo = NOT ativo WHERE cliente_id_origem = ?`, id)
+	if err != nil {
+		return wrap("alternar ativo cliente", err)
+	}
+	n, _ := res.RowsAffected()
+	vlog.Printf(arqClientes, "Clientes.AlternarAtivo", "UPDATE clientes ativo toggle afetadas=%d", n)
+	if n == 0 {
+		return comercial.ErrClienteNaoEncontrado
+	}
+	return nil
+}
+
 // DefinirAtivo ativa/inativa o cliente. Como no legado, um erro de
 // RowsAffected conta como "nenhuma linha" (404).
 func (r *Clientes) DefinirAtivo(ctx context.Context, id int64, ativo bool) error {

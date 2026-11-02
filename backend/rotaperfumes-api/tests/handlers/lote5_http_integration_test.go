@@ -149,7 +149,7 @@ func TestIntegracaoHTTP_NEG02_CNPJAlfanumerico(t *testing.T) {
 		require.True(t, ok, "data deve ser array: %v", body)
 		out := []int64{}
 		for _, it := range lista {
-			out = append(out, int64(it.(map[string]any)["cliente_id_origem"].(float64)))
+			out = append(out, int64(como[float64](t, como[map[string]any](t, it)["cliente_id_origem"])))
 		}
 		return out
 	}

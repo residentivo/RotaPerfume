@@ -107,30 +107,56 @@ func (c *Casos) AtualizarUsuario(ctx context.Context, p kernel.Principal, id int
 	return u, nil
 }
 
-// AlternarAtivoUsuario aplica o PATCH /inativar: ativo nil inverte. Inativar
-// grava o corte de sessão (adapter) e revoga os refresh tokens (I-09); a
-// falha na revogação só é logada (o Autenticador já barra o inativo).
+// AlternarAtivoUsuario aplica o PATCH /inativar: ativo nil inverte no
+// próprio UPDATE (BUG-22: dois toggles simultâneos não se anulam); um valor
+// o define. Numa tx só: UPDATE, releitura e, se o usuário ficou inativo,
+// revogação dos refresh tokens (I-09) e corte de sessão (SEC-08). Falha em
+// qualquer etapa desfaz tudo (500).
 func (c *Casos) AlternarAtivoUsuario(ctx context.Context, p kernel.Principal, id int64, ativo *bool) (u *identidade.Usuario, err error) {
 	defer vlog.Trace(arqUsuarios, "Identidade.AlternarAtivoUsuario", "id=%d toggle=%t", id, ativo == nil)(&err)
 	if err := exigirAdmin(p); err != nil {
 		return nil, err
 	}
-	u, err = c.d.Usuarios.PorID(ctx, id)
+	err = c.d.AtivoUsuario.WithTx(ctx, func(tx TxAtivoUsuario) error {
+		var errTx error
+		u, errTx = c.alternarAtivoNaTx(ctx, tx, id, ativo)
+		return errTx
+	})
 	if err != nil {
 		return nil, err
 	}
-	novo := !u.Ativo
-	if ativo != nil {
-		novo = *ativo
+	if !u.Ativo {
+		log.Printf("[refresh] todos tokens revogados: usuario_id=%d motivo=%s", id, identidade.MotivoInativacao)
 	}
-	if err := c.d.Usuarios.DefinirAtivo(ctx, id, novo); err != nil {
+	vlog.Printf(arqUsuarios, "Identidade.AlternarAtivoUsuario", "decisão ativo=%t id=%d", u.Ativo, id)
+	return u, nil
+}
+
+// alternarAtivoNaTx: UPDATE atômico → releitura → (inativo) revogação e
+// corte. Inexistente sai do UPDATE como ErrUsuarioNaoEncontrado (404).
+func (c *Casos) alternarAtivoNaTx(ctx context.Context, tx TxAtivoUsuario, id int64, ativo *bool) (*identidade.Usuario, error) {
+	var err error
+	if ativo == nil {
+		err = tx.Usuarios.AlternarAtivo(ctx, id)
+	} else {
+		err = tx.Usuarios.DefinirAtivo(ctx, id, *ativo)
+	}
+	if err != nil {
 		return nil, err
 	}
-	u.Ativo = novo
-	if !novo {
-		c.revogarTodos(ctx, id, identidade.MotivoInativacao, "[usuarios] ToggleAtivoUsuario")
+	u, err := tx.Usuarios.PorID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("identidadeapp: releitura após alternar ativo: %v", err) // sem %w: vira 500
 	}
-	vlog.Printf(arqUsuarios, "Identidade.AlternarAtivoUsuario", "decisão ativo=%t id=%d", novo, id)
+	if u.Ativo {
+		return u, nil
+	}
+	if err := tx.Tokens.RevogarTodosDoUsuario(ctx, id, identidade.MotivoInativacao); err != nil {
+		return nil, fmt.Errorf("identidadeapp: inativar: revogar refresh tokens: %w", err)
+	}
+	if err := tx.Usuarios.InvalidarSessoes(ctx, id, c.agora()); err != nil {
+		return nil, fmt.Errorf("identidadeapp: inativar: corte de sessão: %w", err)
+	}
 	return u, nil
 }
 

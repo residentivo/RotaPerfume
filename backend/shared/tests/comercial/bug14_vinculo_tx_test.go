@@ -89,7 +89,7 @@ func TestBUG14_VincularCliente_FalhaDesfazTudo(t *testing.T) {
 		mock.ExpectQuery(reAtivoDoCliente).WillReturnRows(vinculoDeOutroVendedor())
 		mock.ExpectExec(reEncerrar).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(reDoDia).WillReturnRows(sqlmock.NewRows(colsCarteira))
-		mock.ExpectExec(reInserir).WillReturnError(&mysql.MySQLError{Number: 1062, Message: "Duplicate entry"})
+		mock.ExpectExec(reInserir).WillReturnError(&mysql.MySQLError{Number: 1062, Message: "Duplicate entry for key 'carteiras.uk_carteiras_cliente_vendedor_inicio'"})
 		mock.ExpectRollback()
 
 		_, err := novosCasos(pool, vinculoFake{}).VincularCliente(ctx, principal(t, kernel.RoleAdmin), 1, 2)

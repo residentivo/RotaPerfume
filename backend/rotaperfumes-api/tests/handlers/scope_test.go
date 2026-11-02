@@ -183,7 +183,7 @@ func TestEscopo_ListVendedores_Matriz(t *testing.T) {
 				data, _ := body["data"].([]any)
 				var ids []float64
 				for _, it := range data {
-					ids = append(ids, it.(map[string]any)["id"].(float64))
+					ids = append(ids, como[float64](t, como[map[string]any](t, it)["id"]))
 				}
 				assert.Equal(t, c.wantIDs, ids)
 				if c.wantIDs == nil {

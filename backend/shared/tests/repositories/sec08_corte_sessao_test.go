@@ -64,7 +64,7 @@ const (
 	reSetAtivoInativar = `^UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?$`
 	reSetAtivoAtivar   = `^UPDATE usuarios SET ativo = \? WHERE id = \?$`
 	reInvalidar        = `^UPDATE usuarios SET tokens_validos_desde = \? WHERE id = \?$`
-	reUpdateSenha      = `^UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?$`
+	reUpdateSenha      = `^UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?$`
 	reInativarVendedor = `^UPDATE usuarios SET ativo = 0, tokens_validos_desde = \? WHERE id_vendedor = \? AND ativo = 1$`
 )
 
@@ -126,8 +126,8 @@ func TestSEC08_UpdatePasswordHash_GravaCorte(t *testing.T) {
 			db, mock := newMock(t)
 			defer db.Close()
 			corte := novoArgCorte()
-			mock.ExpectExec(reUpdateSenha).WithArgs("h", deveTrocar, corte, int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
-			require.NoError(t, identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 9, identidade.NovoHashSenha("h"), deveTrocar))
+			mock.ExpectExec(reUpdateSenha).WithArgs("h", deveTrocar, corte, int64(9), "h0").WillReturnResult(sqlmock.NewResult(0, 1))
+			require.NoError(t, identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 9, identidade.NovoHashSenha("h0"), identidade.NovoHashSenha("h"), deveTrocar))
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
@@ -321,7 +321,7 @@ func TestIntegracaoSEC08_CorteDeSessao_Repositorio(t *testing.T) {
 	})
 	t.Run("UpdatePasswordHash grava corte", func(t *testing.T) {
 		antes := time.Now()
-		require.NoError(t, identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, id, identidade.NovoHashSenha("x2"), false))
+		require.NoError(t, identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, id, identidade.NovoHashSenha("x"), identidade.NovoHashSenha("x2"), false))
 		conferir(t, antes, time.Now())
 	})
 	t.Run("InvalidarSessoes grava exatamente o instante informado", func(t *testing.T) {

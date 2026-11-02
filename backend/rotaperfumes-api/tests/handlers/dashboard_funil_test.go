@@ -202,7 +202,7 @@ func TestDASH01_Funil_EscopoFixoSemSQL(t *testing.T) {
 			h, mock := dashboardComEscopo(t, e, false)
 			rec, body := getDashboard(h.GetFunil, "/api/dashboard/funil?janela=90d")
 			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-			data := body["data"].(map[string]any)
+			data := como[map[string]any](t, body["data"])
 			assert.Equal(t, "90d", data["janela"])
 			assert.Equal(t, false, data["vendedor_desligado"])
 			assert.Len(t, data["etapas"], 5)

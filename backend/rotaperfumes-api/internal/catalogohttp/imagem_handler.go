@@ -30,8 +30,7 @@ const (
 )
 
 const (
-	msgImagemMuitoGrande = "imagem excede 1 MB"
-	msgUploadProibido    = "requisição de upload recusada"
+	msgUploadProibido = "requisição de upload recusada"
 )
 
 // EnviarImagem POST /api/produtos/{id}/imagem (multipart, campo "imagem",
@@ -49,21 +48,21 @@ func (h *ProdutoHandler) EnviarImagem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !h.uploadPermitido(r) {
-		log.Printf("[produtos] upload de imagem recusado (anti-CSRF): id=%d por usuario role=%s", id, principal.Role())
+		log.Printf("[produtos] upload de imagem recusado (anti-CSRF): id=%d por usuario_id=%d role=%s", id, principal.UserID(), principal.Role())
 		httpx.JSON(w, http.StatusForbidden, nil, msgUploadProibido)
 		return
 	}
 	dados, err := lerImagemMultipart(w, r)
 	if err != nil {
-		responderErroImagem(w, tag, err)
+		httpx.ResponderErro(w, tag, err) // 413 pelo KindMuitoGrande (CHORE-10)
 		return
 	}
 	p, err := h.casos.DefinirImagemProduto(r.Context(), id, dados)
 	if err != nil {
-		responderErroImagem(w, tag, err)
+		httpx.ResponderErro(w, tag, err) // 413 pelo KindMuitoGrande (CHORE-10)
 		return
 	}
-	log.Printf("[produtos] imagem definida: id=%d arquivo=%s bytes_recebidos=%d por usuario role=%s", id, p.Imagem, len(dados), principal.Role())
+	log.Printf("[produtos] imagem definida: id=%d arquivo=%s bytes_recebidos=%d por usuario_id=%d role=%s", id, p.Imagem, len(dados), principal.UserID(), principal.Role())
 	httpx.JSON(w, http.StatusOK, produtoParaResposta(*p), "")
 }
 
@@ -85,7 +84,7 @@ func (h *ProdutoHandler) RemoverImagem(w http.ResponseWriter, r *http.Request) {
 		httpx.ResponderErro(w, tag, err)
 		return
 	}
-	log.Printf("[produtos] imagem zerada: id=%d por usuario role=%s", id, principal.Role())
+	log.Printf("[produtos] imagem zerada: id=%d por usuario_id=%d role=%s", id, principal.UserID(), principal.Role())
 	httpx.JSON(w, http.StatusOK, produtoParaResposta(*p), "")
 }
 
@@ -164,16 +163,6 @@ func erroDeLeitura(err, padrao error) error {
 		return catalogo.ErrImagemMuitoGrande
 	}
 	return padrao
-}
-
-// responderErroImagem: excesso de tamanho é 413 com a mensagem fixa; o
-// resto segue o mapper (400 inválida, 404 produto, 500).
-func responderErroImagem(w http.ResponseWriter, tag string, err error) {
-	if errors.Is(err, catalogo.ErrImagemMuitoGrande) {
-		httpx.JSON(w, http.StatusRequestEntityTooLarge, nil, msgImagemMuitoGrande)
-		return
-	}
-	httpx.ResponderErro(w, tag, err)
 }
 
 // ImagemPublicaHandler serve GET /api/public/produtos/imagens/{arquivo}

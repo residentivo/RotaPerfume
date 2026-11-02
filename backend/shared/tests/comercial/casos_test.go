@@ -62,6 +62,9 @@ func novosCasos(pool *sql.DB, v comercialapp.VinculoUsuario) *comercialapp.Casos
 		Vinculacao: db.NewTransactor(pool, func(q db.Querier) comercialapp.TxVinculo {
 			return comercialapp.TxVinculo{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
 		}),
+		AtivoCliente: db.NewTransactor(pool, func(q db.Querier) comercialapp.TxAtivoCliente {
+			return comercialapp.TxAtivoCliente{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
+		}),
 		Relogio: func() time.Time { return agoraFixo },
 	})
 }
@@ -83,6 +86,7 @@ func TestComercialapp_Novo_PanicSemDependencia(t *testing.T) {
 			Desligamento:      db.NewTransactor(pool, func(db.Querier) comercialapp.TxDesligamento { return comercialapp.TxDesligamento{} }),
 			ClienteNaCarteira: db.NewTransactor(pool, func(db.Querier) comercialapp.TxClienteNaCarteira { return comercialapp.TxClienteNaCarteira{} }),
 			Vinculacao:        db.NewTransactor(pool, func(db.Querier) comercialapp.TxVinculo { return comercialapp.TxVinculo{} }),
+			AtivoCliente:      db.NewTransactor(pool, func(db.Querier) comercialapp.TxAtivoCliente { return comercialapp.TxAtivoCliente{} }),
 		}
 		comercialapp.Novo(d) // sem relógio
 	})

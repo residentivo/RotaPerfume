@@ -1,7 +1,10 @@
 package analyticsmysql
 
 import (
+	"errors"
 	"strings"
+
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/rotaperfumes/shared/analytics"
 	"github.com/rotaperfumes/shared/kernel"
@@ -111,18 +114,16 @@ func clausulaJanelaAbertura(j analytics.Janela) string {
 	}
 }
 
-// tabelaInexistente reconhece "tabela não existe" pelo texto do erro, como
-// o isTableNotFound legado: as consultas de pedidos degradam para zero
-// nesse caso (instalação sem a tabela). É a única comparação de texto de
-// erro do pacote, mantida para não mudar o comportamento.
+// codigoTabelaInexistente é o ER_NO_SUCH_TABLE do MariaDB/MySQL.
+const codigoTabelaInexistente = 1146
+
+// tabelaInexistente reconhece "tabela não existe" SÓ pelo código 1146 do
+// driver (BUG-18): as consultas de pedidos degradam para zero nesse caso
+// (instalação sem a tabela). A comparação por texto do legado ("not found"
+// etc.) mascarava outros erros e saiu.
 func tabelaInexistente(err error) bool {
-	msg := err.Error()
-	for _, trecho := range []string{"doesn't exist", "not found", "Error 1146", "no such table"} {
-		if strings.Contains(msg, trecho) {
-			return true
-		}
-	}
-	return false
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == codigoTabelaInexistente
 }
 
 // marcadores devolve "?,?,…" com n placeholders (a lista do IN).

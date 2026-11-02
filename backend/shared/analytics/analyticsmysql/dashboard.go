@@ -155,14 +155,30 @@ func (r *Dashboard) MetasVendedores(ctx context.Context, e kernel.Escopo) ([]ana
 	return metas, nil
 }
 
+// LoteVendasDoMes limita o IN da soma de vendas do mês (BUG-18): a lista
+// de vendedores ativos é consultada em lotes deste tamanho, para o número
+// de placeholders não crescer com o cadastro.
+const LoteVendasDoMes = 100
+
 // vendasDoMes soma as vendas do mês dos vendedores (enriquecimento do
-// legado). Falha é silenciosa: a lista já tem os dados de meta; linha que
-// não escaneia é ignorada.
+// legado), em lotes de LoteVendasDoMes ids. Falha é silenciosa: a lista já
+// tem os dados de meta; o lote que falha fica sem vendas e linha que não
+// escaneia é ignorada.
 func (r *Dashboard) vendasDoMes(ctx context.Context, ids []any) map[int64]analytics.VendasDoMes {
 	vendas := make(map[int64]analytics.VendasDoMes)
+	for inicio := 0; inicio < len(ids); inicio += LoteVendasDoMes {
+		fim := min(inicio+LoteVendasDoMes, len(ids))
+		r.somarVendasDoLote(ctx, ids[inicio:fim], vendas)
+	}
+	vlog.Printf(arqDashboard, "Dashboard.vendasDoMes", "SELECT pedidos vendas do mes vendedores=%d lotes=%d", len(ids), (len(ids)+LoteVendasDoMes-1)/LoteVendasDoMes)
+	return vendas
+}
+
+// somarVendasDoLote roda o SELECT de um lote (até LoteVendasDoMes ids).
+func (r *Dashboard) somarVendasDoLote(ctx context.Context, ids []any, vendas map[int64]analytics.VendasDoMes) {
 	rows, err := r.q.QueryContext(ctx, sqlVendasDoMesInicio+marcadores(len(ids))+sqlVendasDoMesFim, ids...)
 	if err != nil {
-		return vendas
+		return
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -174,7 +190,6 @@ func (r *Dashboard) vendasDoMes(ctx context.Context, ids []any) map[int64]analyt
 		}
 		vendas[vendedorID] = analytics.VendasDoMes{Total: total.Float64, Quantidade: int(qtd.Int64)}
 	}
-	return vendas
 }
 
 // idsDe devolve os ids como argumentos do IN (int64, como o legado).

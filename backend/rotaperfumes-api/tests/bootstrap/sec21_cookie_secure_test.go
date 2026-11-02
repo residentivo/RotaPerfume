@@ -45,9 +45,18 @@ func TestSEC21_Montar_CookieSecureEAviso(t *testing.T) {
 			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 			scs := w.Result().Header.Values("Set-Cookie")
-			require.Len(t, scs, 2)
+			if seguro {
+				// SEC-33: __Host- + expiração dos nomes antigos, todos Secure.
+				require.Len(t, scs, 4)
+				assert.True(t, strings.HasPrefix(scs[0], "__Host-access_token=;"), scs[0])
+				assert.True(t, strings.HasPrefix(scs[1], "__Host-refresh_token=;"), scs[1])
+			} else {
+				require.Len(t, scs, 2)
+				assert.True(t, strings.HasPrefix(scs[0], "access_token=;"), scs[0])
+			}
 			for _, sc := range scs {
 				assert.Equal(t, seguro, strings.Contains(sc, "; Secure"), sc)
+				assert.NotContains(t, sc, "Domain=", sc)
 			}
 		})
 	}
