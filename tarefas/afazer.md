@@ -1,6 +1,12 @@
 # A Fazer
 
-> Atualizado em 2026-11-02 (abertura dos Lotes 30, 31 e 32, 🔵 SubBrain). O usuário pediu para executar **todas** as pendências, aprovou antecipadamente as decisões de produto/contrato pendentes nos cards (inclusive os textos do **CHORE-07** e os nomes de cookies do **SEC-33**) e pediu, ao final, o merge de todas as branches na `main` e o commit da `main`, para testar o site em produção. Saíram desta lista para `fazendo.md`:
+> Atualizado em 2026-11-02 (fechamento dos Lotes 30 e 31, 🔵 SubBrain). Os Lotes 30 e 31 foram fechados (`feito.md`). Voltaram para esta lista:
+> - **DEPLOY-05 (ALTA, pendente do usuário):** a revisão do `deploy/mariadb-docker.sh` foi concluída no Lote 30; falta a **execução no servidor** (passo a passo em `docs/deploy-servidor.md` §11). **Bloqueia o primeiro deploy da `main`:** sem a rede `rotaperfumes-db` e o container `rotaperfumes-mariadb`, o compose falha e o pipeline para.
+> - **ARQ-09 (Lote 32):** **adiado** pelo 🤍 MegaBrain por recomendação do 🟣 SecBrain (não executar antes do primeiro teste em produção).
+>
+> Entraram 12 cards novos no bloco "Achados dos Lotes 30 e 31": SEC-46, BACKUP-01 (MÉDIA) e SEC-47, CHORE-14, SEC-48, DB-07, SEC-49, CHORE-15, BUG-25, FE-18, TST-16, CHORE-16 (BAIXA). O **TST-14** foi cancelado (`feito.md`). Continuam aqui o **TST-04** (bloqueado) e o **DEP-03** (acompanhamento; agora 16 moderadas do `minimatch` via `eslint`, só dev, 0 altas). **Em seguida:** merge de todas as branches na `main` pelo 🤍 MegaBrain; antes do primeiro deploy, o usuário executa o DEPLOY-05.
+>
+> Antes, ainda em 2026-11-02 (abertura dos Lotes 30, 31 e 32, 🔵 SubBrain). O usuário pediu para executar **todas** as pendências, aprovou antecipadamente as decisões de produto/contrato pendentes nos cards (inclusive os textos do **CHORE-07** e os nomes de cookies do **SEC-33**) e pediu, ao final, o merge de todas as branches na `main` e o commit da `main`, para testar o site em produção. Saíram desta lista para `fazendo.md`:
 > - **Lote 30 de 2026-11-02 (somente MariaDB + infra/TLS):** DEPLOY-05, CHORE-13, DEPLOY-06, DEPLOY-04, DOC-08, TST-15, SEC-45, SEC-39, SEC-31, SEC-30, SEC-40, SEC-41, SEC-42, TST-12, DB-04 e DB-06 (DB-04 e DB-06 tratados juntos).
 > - **Lote 31 de 2026-11-02 (backend/frontend, BAIXA):** TST-06, BUG-18, TST-07, DOC-06, FE-15, UX-02, CHORE-07, BUG-22, SEC-32, SEC-33, BUG-23, CHORE-08, FE-16, CHORE-09, SEC-34, SEC-36, BUG-24, CHORE-10, FE-17, CHORE-11, SEC-38, LOG-03, CHORE-04 e CHORE-05.
 > - **Lote 32 de 2026-11-02:** ARQ-09 (valores monetários em centavos).
@@ -53,32 +59,245 @@
 
 ---
 
-## Achados do Lote 29 (TST-14; os demais foram para o Lote 30 ou cancelados)
+## DEPLOY-05: executar o `deploy/mariadb-docker.sh` no servidor e aposentar o MySQL — prioridade ALTA (pendente do usuário)
+
+**Status:** pendente **do usuário**; **bloqueia o primeiro deploy da `main`**. A revisão e os ajustes do script foram concluídos no Lote 30 (2026-11-02, 🌸 DataBrain e 🟣 SecBrain/SEC-45; ver `feito.md`). Voltou de `fazendo.md` no fechamento do lote.
+**Camadas:** Database, Deploy
+**Responsável:** usuário (execução no servidor) → 🔴 TestBrain (conferência)
+**Origem:** decisão do usuário em 2026-11-02 (somente MariaDB).
+
+**Por que bloqueia:** o `docker-compose.yml` da `main` espera a rede Docker `rotaperfumes-db` e o container `rotaperfumes-mariadb`. Sem eles, o compose falha e o pipeline para no primeiro deploy.
+
+**Passo a passo:** `docs/deploy-servidor.md` §11 ("Migração do MySQL para o MariaDB (DEPLOY-05)"). Em resumo:
+1. Fazer backup/dump dos dados do MySQL atual (atenção à collation `utf8mb4_0900_ai_ci` e a sintaxes exclusivas do MySQL no dump). Ver também o **BACKUP-01**.
+2. Parar e remover o MySQL e rodar `sudo bash deploy/mariadb-docker.sh` (rede `rotaperfumes-db`, IPs fixos, CA offline; `--dev-ip` para as máquinas de dev).
+3. Importar o dump no MariaDB.
+4. Atualizar a credencial Jenkins `rotaperfumes-db-admin`, o Secret file `rotaperfumes-api-env` (`rotaperfumes_app`), o `deploy/db-ca.fingerprint`/`deploy/ca-cert.pem` (CA nova) e os `.env` de dev (`casaos`).
+5. Rodar o deploy do Jenkins.
+
+**Critério de aceite:** MariaDB no container `rotaperfumes-mariadb` com o certificado da CA do projeto; API com `tls=ligado`; `make db-up` de uma máquina de dev com `casaos` passa; MySQL removido do servidor; pipeline da `main` verde. Junto, rodar a pendência do TST-15 (`TestTST15_MariadbDocker_Real`).
+
+---
+
+## ARQ-09: valores monetários em centavos (`int64`) — prioridade BAIXA/MÉDIA (ADIADO)
+
+**Status:** **adiado** (2026-11-02) pelo 🤍 MegaBrain, por recomendação do 🟣 SecBrain: refatoração ampla de dinheiro; **não executar antes do primeiro teste em produção** (validação dos Lotes 30/31). Voltou de `fazendo.md` (Lote 32, aberto e não executado). Antes: pendente (sai do Lote 21; executar após o ARQ-08, em lote próprio).
+**Camadas:** Database, Backend (Frontend se o formato do JSON mudar)
+**Responsável:** 🌸 DataBrain → 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** decisão P3 do 🤍 MegaBrain no ARQ-00 (2026-10-13).
+
+**Descrição:** no ARQ-05, o value object `Dinheiro` permanece `float64` encapsulado. Este card migra o cálculo interno para centavos (`int64`).
+
+**Invariantes do 🟣 SecBrain (2026-11-02), para quando o card for retomado:**
+- **contrato JSON inalterado:** valores em **reais decimais** (sem passar a centavos no JSON);
+- **schema inalterado:** colunas `DECIMAL(15,2)`, **sem migração**;
+- entrada decodificada com **`json.Number`** (sem passar por `float64`);
+- arredondamento **half away from zero**, explícito e testado;
+- **overflow verificado** nas somas e multiplicações em `int64` (substitui a nota N-9 sobre `+Inf` no `kernel.Dinheiro.Somar`).
+
+**Risco:** arredondamento em `valor_total` (itens, descontos e pagamentos); é preciso um teste de regressão comparando os totais antigos com os novos.
+
+**Critério de aceite:** cálculos monetários sem `float64`; totais existentes reproduzidos sem diferença; contrato JSON e schema inalterados; testes verdes sem perda de cobertura.
+
+---
+
+## Achados dos Lotes 30 e 31
+
+> Origem comum: especificação e revisão do 🟣 SecBrain, entregas dos devs e verificação do 🔴 TestBrain nos Lotes 30 e 31 (2026-11-02; ver `feito.md`). Nenhum deles bloqueou o fechamento dos lotes. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `backend/shared`.
+
+---
+
+## SEC-46: confirmação explícita em `make db-down/db-reset/db-rebuild` contra o banco real — prioridade MÉDIA
+
+**Status:** pendente.
+**Camadas:** Backend (tooling/Makefile)
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, Lote 30 (2026-11-02).
+
+**Descrição:** os alvos destrutivos `make db-down`, `db-reset` e `db-rebuild` rodam sem confirmação mesmo com `DB_HOST` fora do loopback e `DB_NAME=rotaperfumes` (o `.env` local hoje aponta para a produção).
+
+**Ação esperada:** nesses casos, exigir `CONFIRMAR=rotaperfumes` na linha de comando; sem ele, abortar com mensagem clara. Loopback e bancos descartáveis sem mudança.
+
+**Critério de aceite:** teste dos três alvos (aborta sem `CONFIRMAR`, segue com ele, loopback inalterado); `CLAUDE.md` e `.env.example` documentados.
+
+---
+
+## BACKUP-01: backup diário do MariaDB de produção — prioridade MÉDIA
+
+**Status:** pendente.
+**Camadas:** Database, Deploy
+**Responsável:** 🌸 DataBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain, Lote 30 (2026-11-02).
+
+**Descrição:** hoje não existe backup do banco de produção. Um `--recriar` do `mariadb-docker.sh`, uma troca de digest (SEC-31) ou um erro da conta `casaos` (que tem escrita a partir da LAN) pode apagar os dados sem volta.
+
+**Ação esperada:** rotina diária de dump (arquivo com permissão `600`, retenção configurável), documentada em `docs/deploy-servidor.md`; exigir/registrar um backup antes de qualquer `--recriar` ou upgrade de digest; procedimento de restauração testado.
+
+**Critério de aceite:** backup diário gerado com `600` e retenção; restauração testada num banco descartável; docs atualizadas.
+
+---
+
+## SEC-47: fixar por digest as imagens base dos `Dockerfile` — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Infra (build)
+**Responsável:** 🟡 BackBrain / 🟢 FrontBrain (🟣 SecBrain revisa)
+**Origem:** SEC-31 (Lote 30, 2026-11-02).
+
+**Descrição:** o SEC-31 fixou por digest as imagens do `Jenkinsfile` e do `mariadb-docker.sh`, mas `backend/Dockerfile`, `frontend/Dockerfile` e `deploy/Dockerfile.caddy` ainda usam tags mutáveis.
+
+**Ação esperada:** fixar as bases por `tag@sha256:` e incluí-las no `make deps-audit-imagens`.
+
+**Critério de aceite:** todas as bases com digest; `deps-audit-imagens` cobrindo os três arquivos; build verde.
+
+---
+
+## CHORE-14: remover a limpeza dos cookies sem prefixo (transição do SEC-33) — prioridade BAIXA
+
+**Status:** pendente; executar **7 dias ou mais depois do deploy do SEC-33** em produção.
+**Camadas:** Backend, Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** SEC-33 (Lote 31, 2026-11-02).
+
+**Descrição:** no modo seguro, o logout e a transição ainda limpam os cookies antigos (`access_token`/`refresh_token`, sem `__Host-`). Depois que os cookies antigos expirarem, esse código fica sem uso.
+
+**Ação esperada:** remover a limpeza dos nomes antigos no modo seguro (o dev continua com os nomes sem prefixo); ajustar os testes.
+
+**Critério de aceite:** modo seguro só emite/limpa `__Host-…`; testes verdes.
+
+---
+
+## SEC-48: reprocessar os `.webp` de produto já gravados — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Backend (shared/tools), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** SEC-34 e CHORE-09 (Lote 31, 2026-11-02).
+
+**Descrição:** o SEC-34 converte o WebP novo (PNG/JPEG), mas os `.webp` gravados antes continuam com EXIF e eventuais bytes anexados.
+
+**Ação esperada:** opção no comando `backend/shared/cmd/limpezaimagens` (com `-dry-run`) para reprocessar os `.webp` existentes pelo normalizador e atualizar `produtos.imagem` na mesma operação, sem deixar órfão nem referência quebrada.
+
+**Critério de aceite:** testes com diretório temporário (convertido, referência atualizada, `-dry-run` sem efeito, falha sem perda do original); docs atualizadas.
+
+---
+
+## DB-07: ligar `ONLY_FULL_GROUP_BY` no `SQL_MODE` do `mariadb-docker.sh` — prioridade BAIXA
+
+**Status:** pendente; depende de um MariaDB descartável para a integração.
+**Camadas:** Database, Testes
+**Responsável:** 🌸 DataBrain → 🔴 TestBrain
+**Origem:** DB-04 + DB-06 (Lote 30, 2026-11-02): o modo ficou desligado.
+
+**Descrição:** o `SQL_MODE` do `deploy/mariadb-docker.sh` ficou sem `ONLY_FULL_GROUP_BY`; um `GROUP BY` incompleto devolve valores arbitrários em vez de erro. O `sqlSerieVendas` já foi ajustado (`GROUP BY` da data).
+
+**Ação esperada:** rodar a suíte de integração (`INTEGRATION=1`) num MariaDB descartável com o modo ligado; corrigir as consultas que falharem; incluir o modo no `SQL_MODE` e documentar.
+
+**Critério de aceite:** integração verde com o modo ligado; `mariadb-docker.sh` e `docs/deploy-servidor.md` atualizados.
+
+---
+
+## SEC-49: `ValidarDBTLSObrigatorio` (SEC-42) no `shared/tools/resetpassword` — prioridade BAIXA
+
+**Status:** pendente.
+**Camada:** Backend (shared/tools)
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** SEC-42 (Lote 30, 2026-11-02).
+
+**Descrição:** o `SH/tools/resetpassword` chama `LoadDBTLS` direto e não aplica a regra do `DB_TLS_REQUIRED` (com `DB_HOST` remoto sem CA, conectaria em claro).
+
+**Ação esperada:** usar `ValidarDBTLSObrigatorio` como a API e as demais CLIs.
+
+**Critério de aceite:** teste do `resetpassword` recusando `DB_HOST` remoto sem `DB_TLS_CA` (e aceitando com `DB_TLS_REQUIRED=false`, com aviso).
+
+---
+
+## CHORE-15: remover o código morto `argon2idPepper.verificar` — prioridade BAIXA
+
+**Status:** pendente.
+**Camada:** Backend (shared)
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** SEC-32 (Lote 31, 2026-11-02).
+
+**Descrição:** `argon2idPepper.verificar` (`SH/identidade/identidadecrypto/hasher.go`, ~linha 171) ficou sem chamador.
+
+**Ação esperada:** remover, sem mudar o comportamento do `Hasher`.
+
+**Critério de aceite:** função removida; testes do SEC-22/SEC-32 verdes; cobertura sem queda.
+
+---
+
+## BUG-25: usuário apagado no meio da troca da própria senha responde 500 — prioridade BAIXA (decisão)
+
+**Status:** pendente; **decisão** do 🟣 SecBrain/🤍 MegaBrain.
+**Camada:** Backend (shared)
+**Responsável:** 🟣 SecBrain (decisão) → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** BUG-23/BUG-24 (Lote 31, 2026-11-02).
+
+**Descrição:** se o usuário for apagado durante a troca da própria senha, a resposta é 500; no reset admin o mesmo caso é 404.
+
+**Ação esperada:** decidir se a troca da própria senha passa a 404 (ou 401 de sessão inválida, como no refresh do BUG-23); aplicar e testar.
+
+**Critério de aceite:** decisão registrada; teste do caso; contrato documentado.
+
+---
+
+## FE-18: bloqueio de 1500 ms nos botões de ativo de clientes e usuários — prioridade BAIXA
+
+**Status:** pendente.
+**Camada:** Frontend
+**Responsável:** 🟢 FrontBrain → 🔴 TestBrain
+**Origem:** BUG-22 (Lote 31, 2026-11-02), complemento.
+
+**Descrição:** o BUG-22 deixou o toggle atômico no backend, mas os botões de ativo das telas de clientes e usuários não têm o bloqueio de 1500 ms que o BUG-17 colocou em produtos.
+
+**Ação esperada:** aplicar o mesmo bloqueio nas duas telas.
+
+**Critério de aceite:** teste de frontend (clique duplo dentro de 1500 ms gera uma só chamada); `tsc` e `eslint` limpos.
+
+---
+
+## TST-16: isolamento do teste real do `mariadb-docker.sh` e concorrência real do BUG-22 — prioridade BAIXA
+
+**Status:** pendente; depende de Docker/banco descartável.
+**Camadas:** Deploy (script), Testes
+**Responsável:** 🌸 DataBrain → 🔴 TestBrain
+**Origem:** TST-15 (Lote 30) e BUG-22 (Lote 31), 2026-11-02.
+
+**Descrição:** o `TestTST15_MariadbDocker_Real` usa os diretórios padrão de segredos e da CA do script, então não fica isolado de uma instalação real na mesma máquina. O BUG-22 não teve teste de concorrência contra banco real.
+
+**Ação esperada:** opções `--segredos-dir` e `--ca-dir` no `deploy/mariadb-docker.sh`, usadas pelo teste real com diretórios temporários; teste de integração com toggles concorrentes (clientes e usuários) num banco descartável.
+
+**Critério de aceite:** teste real sem tocar em `/root`; teste de concorrência verde; docs do script atualizadas.
+
+---
+
+## CHORE-16: renomear `seedusers.MySQLArgs`/`RunMySQL` e avaliar os pacotes `*mysql` — prioridade BAIXA
+
+**Status:** pendente (cosmético).
+**Camada:** Backend
+**Responsável:** 🟡 BackBrain
+**Origem:** CHORE-13/DOC-08 (Lote 30, 2026-11-02).
+
+**Descrição:** com somente MariaDB, `seedusers.MySQLArgs`/`RunMySQL` e os pacotes de adapter `*mysql` (`catalogomysql`, `vendasmysql` etc.) mantêm o nome antigo.
+
+**Ação esperada:** renomear as funções do `seedusers`; avaliar (custo × benefício) renomear os pacotes, sem mudança de comportamento.
+
+**Critério de aceite:** build e testes verdes; decisão sobre os pacotes registrada.
+
+---
+
+## Achados do Lote 29 (sem cards pendentes)
 
 > Origem comum: revisão do 🟣 SecBrain e entregas do 🟡 BackBrain e do 🔴 TestBrain no Lote 29 (SEC-29, TST-09, TST-08 e SETUP-01, 2026-11-01; ver `feito.md`). Nenhum deles bloqueou o fechamento desses cards. Executar em lote próprio, por decisão do 🤍 MegaBrain/usuário. Caminhos: `SH` = `backend/shared`.
+>
+> **2026-11-02 (fechamento do Lote 30):** o **TST-14** foi **cancelado** (os drop-ins do `setup-servidor.sh` deixaram de existir; coberto pelo `TestTST15_MariadbDocker_Real`; card em `feito.md`). Este bloco fica sem cards pendentes.
 >
 > **2026-11-02 (abertura do Lote 30):** SEC-39, SEC-40, SEC-41, SEC-42, TST-12, DB-06 e DEPLOY-04 foram para o **Lote 30** (`fazendo.md`). DOC-07 (substituído pelo DOC-08) e DEPLOY-03 (sem MySQL) foram **cancelados** (`feito.md`). Aqui fica só o TST-14, bloqueado.
 >
 > **2026-11-01 (decisões do usuário):** TST-13 cancelado e SEC-43 fechado como "não corrigir" (ambos em `feito.md`). DOC-07 entrou aqui (divergência MariaDB 11.4 × MySQL 8.0 em produção). SEC-39 a SEC-42 e TST-12 devem considerar a produção MySQL 8.0 e o SEC-44 (concluído, em `feito.md`).
 >
 > **2026-11-01 (fechamento do Lote 29):** entraram DB-06, DEPLOY-03, DEPLOY-04 e TST-14 (achados do SEC-44 e do DEPLOY-02), logo após o DOC-07.
-
----
-
-## TST-14: rodar `TestDEPLOY02_ValidateConfig_Docker` num ambiente com Docker — prioridade BAIXA
-
-**Status:** pendente, **bloqueado** (2026-11-02): o usuário desta máquina não tem acesso ao socket do Docker (`/var/run/docker.sock`), então o teste continua com skip aqui. Depende do usuário (rodar numa máquina com Docker ou liberar o acesso ao socket).
-**Camada:** Testes
-**Responsável:** 🔴 TestBrain
-**Origem:** DEPLOY-02 (Lote 29, 2026-11-01): o teste foi pulado por falta de Docker.
-
-**Descrição:** `TestDEPLOY02_ValidateConfig_Docker` (`tests/deploy/deploy02_hardening_test.go`) confere os drop-ins com `mysqld --validate-config`/`mariadbd --help --verbose` em contêineres reais, mas não rodou.
-
-**Ação esperada:** rodar o teste num ambiente com Docker, contra `mysql:8.0` e `mariadb:11.8`; corrigir o que aparecer.
-
-**Critério de aceite:** teste rodado sem skip e verde nas duas imagens; resultado registrado no card do DEPLOY-02 em `feito.md`.
-
-**Triagem (2026-11-02, 🤍 MegaBrain, somente MariaDB):** rodar **só com `mariadb`** (a imagem `mysql:8.0` sai do teste junto com o TST-15/DEPLOY-06, no Lote 30). O critério de aceite passa a ser "verde na imagem `mariadb`". Quando o Docker estiver acessível, rodar junto com a parte Docker do TST-15 (teste do `deploy/mariadb-docker.sh`).
 
 ---
 
@@ -136,7 +355,7 @@ Registrar o resultado na seção "Execução" do roteiro.
 
 ## DEP-03: vulnerabilidades altas de dev restantes (`braces` via `eslint-config-next`) — prioridade BAIXA
 
-**Status:** pendente (acompanhar o upstream). **2026-11-02:** a conferência do upstream entra no **Lote 31** (🟢 FrontBrain); se não houver correção publicada, o card continua aqui como acompanhamento, com a data da conferência.
+**Status:** pendente (acompanhar o upstream). **2026-11-02 (fechamento do Lote 31):** upstream conferido pelo 🟢 FrontBrain; as altas do `braces` saíram (**0 altas**), restam **16 moderadas** do `minimatch` via `eslint` (só dev). O card fica como acompanhamento. Antes: a conferência do upstream entrou no Lote 31.
 **Camada:** Frontend
 **Responsável:** 🟢 FrontBrain
 **Origem:** residual do DEP-01 (Lote 20, 2026-10-11; ver `feito.md`).

@@ -2,9 +2,320 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-11-02 (abertura dos Lotes 30, 31 e 32, 🔵 SubBrain): na triagem do 🤍 MegaBrain (somente MariaDB), **DOC-07** (substituído pelo DOC-08) e **DEPLOY-03** (sem MySQL) foram **cancelados** (bloco "Lote 30 de 2026-11-02: triagem" abaixo). Os Lotes 30, 31 e 32 estão em `fazendo.md`.
+> Atualizado em 2026-11-02 (fechamento dos Lotes 30 e 31, 🔵 SubBrain): o **Lote 30** (somente MariaDB + infra/TLS) e o **Lote 31** (backend/frontend, BAIXA) foram fechados (blocos abaixo). Lote 30: 15 cards concluídos (TST-15 com pendência de execução com Docker) e o **TST-14 cancelado**; o **DEPLOY-05** teve a revisão do script concluída, mas a execução no servidor voltou para `afazer.md` como pendência do usuário (ALTA, bloqueia o primeiro deploy da `main`). Lote 31: 24 cards concluídos. O **Lote 32 (ARQ-09)** foi **adiado** pelo 🤍 MegaBrain e voltou para `afazer.md`. Commits na branch `lote-30`: `9cb87eb` (Lote 30), `fd76dc7` (Lote 31 backend), `e4f115a` (Lote 31 frontend), `e325dcf` (merge do `lote-31` no `lote-30`) e `2a5995c` (verificação do 🔴 TestBrain). **Em seguida:** merge de todas as branches na `main` pelo 🤍 MegaBrain. **O primeiro deploy da `main` depende do DEPLOY-05** (rede `rotaperfumes-db` e container `rotaperfumes-mariadb` no servidor; sem eles o compose falha e o pipeline para).
+>
+> Antes, ainda em 2026-11-02 (abertura dos Lotes 30, 31 e 32, 🔵 SubBrain): na triagem do 🤍 MegaBrain (somente MariaDB), **DOC-07** (substituído pelo DOC-08) e **DEPLOY-03** (sem MySQL) foram **cancelados** (bloco "Lote 30 de 2026-11-02: triagem" abaixo). Os Lotes 30, 31 e 32 estão em `fazendo.md`.
 >
 > Antes, em 2026-11-01 (fechamento do Lote 29, 🔵 SubBrain): o **Lote 29** foi fechado. **SEC-44, SEC-37 e DEPLOY-02** foram concluídos e entraram no bloco do lote, junto com a rodada final do 🔴 TestBrain e o **TST-11** (fechado). Não commitado, pendente do usuário. Antes, ainda em 2026-11-01 (novas decisões do usuário, 🔵 SubBrain): **TST-13 cancelado** e **SEC-43 fechado sem correção** (dev, risco aceito), no bloco do Lote 29; o card do SEC-29 ganhou nota de que as pendências 1 a 4 foram substituídas pelo SEC-44 (`fazendo.md`). Antes, ainda em 2026-11-01 (fechamento parcial do Lote 29, 🔵 SubBrain): **SEC-29, TST-09, TST-08 e SETUP-01** foram concluídos (bloco "Lote 29 de 2026-11-01"; não commitado, pendente do usuário). SEC-37 e DEPLOY-02 seguem em `fazendo.md`. Antes, ainda em 2026-11-01: o **TST-10** foi **cancelado** pelo usuário (Lote 29); o projeto foi migrado para um HD com Linux (sem exFAT, Node 22 via nvm). Antes, ainda em 2026-11-01: o CHORE-12 foi registrado (`c4c87af`). Antes, em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): o Lote 28 (SEC-19, SEC-23 e SEC-35) foi fechado; não commitado, pendente do usuário. Antes, ainda em 2026-10-31: o commit do Lote 27 foi registrado (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado pelo usuário via 🤍 MegaBrain). Antes, ainda em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## Lote 31 de 2026-11-02 (backend/frontend, BAIXA): 24 cards concluídos
+
+> Aberto pelo 🤍 MegaBrain em 2026-11-02, com aprovação antecipada do usuário para as decisões de produto/contrato (textos do CHORE-07, nomes de cookies do SEC-33 e escolhas do SEC-34, SEC-36, SEC-38, BUG-24 e CHORE-09). Fechado pelo 🔵 SubBrain em 2026-11-02. Caminhos: `SH` = `backend/shared`, `API` = `backend/rotaperfumes-api`, `FE` = `frontend`.
+>
+> **Fluxo:** 🟣 SecBrain (especificação) → 🟡 BackBrain (backend/shared) → 🟢 FrontBrain (frontend) → 🔴 TestBrain (testes e verificação da integração dos Lotes 30/31) → 🔵 SubBrain (fechamento).
+>
+> **Commits (branch `lote-31`, depois mergeada no `lote-30` em `e325dcf`):** `fd76dc7` (backend), `e4f115a` (frontend) e `2a5995c` (verificação do 🔴 TestBrain, no `lote-30`).
+>
+> **Resultados finais (🔴 TestBrain):** Go **9759 testes, 0 falhas** (cobertura `shared` **91,8%**, API **94,5%**); vitest **1721 ok**; `tsc` e `eslint` limpos; `next build` ok (FE-16).
+>
+> **Mudanças de contrato HTTP (aprovadas antecipadamente):** textos das mensagens de pedido faturado/entregue (CHORE-07); nomes dos cookies de sessão com `__Host-` no modo seguro (SEC-33; **todas as sessões ativas caem no deploy**); WebP de produto convertido (SEC-34; o `imagem_url` pode terminar em `.png`/`.jpg`); erro de banco na posse do pagamento passa de 404 para 500 (SEC-38); troca de senha concorrente com reset admin → 409 (BUG-24); refresh de usuário apagado → 401 genérico em vez de 500 (BUG-23). **Schema:** sem mudança.
+>
+> **DEP-03:** upstream conferido; continua em `afazer.md` como acompanhamento (agora 16 moderadas do `minimatch` via `eslint`, só dev; 0 altas).
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados dos Lotes 30 e 31"):** CHORE-14, SEC-48, CHORE-15, BUG-25, FE-18, TST-16 (parte do BUG-22) e CHORE-16.
+
+---
+
+## TST-06: asserções de tipo sem checagem nos testes de handler — 2026-11-02
+**Agentes:** 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** asserções `x.(T)` dos testes de handler trocadas pela forma checada (`v, ok := …` + `require.True`/`require.IsType`), sem enfraquecer asserções. **Pendências:** nenhuma.
+
+---
+
+## BUG-18: Analytics, IN sem limite nas metas e detecção de "tabela não existe" por texto — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** `IN` das metas sem tamanho livre; tabela ausente detectada só pelo código 1146 (`*mysql.MySQLError`); contrato HTTP inalterado; testes dos dois pontos. **Pendências:** nenhuma.
+
+---
+
+## TST-07: teste de AST de concatenação SQL em todos os adapters — 2026-11-02
+**Agentes:** 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** varredura estendida a todos os adapters `*mysql`, com allowlist explícita dos helpers que recebem SQL pronto e controle negativo reprovando. **Pendências:** nenhuma.
+
+---
+
+## DOC-06: comentários de escopo das rotas em `rotas.go` — 2026-11-02
+**Agentes:** 🟡 BackBrain
+
+**Status:** concluído (Lote 31). **Entregas:** comentários de Oportunidades (escopo por vendedor, `oportunidades.vendedor_id`), Pedidos e Visitas alinhados ao filtro real, sem mudança de código. **Pendências:** nenhuma.
+
+---
+
+## FE-15: `FunilVendas`, aviso de desligado sem `forcarZeros` e seleção da janela após erro — 2026-11-02
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** regra do aviso de desligado definida para o uso sem `forcarZeros`; depois de erro na troca de janela, a seleção fica coerente com os dados exibidos; testes dos dois casos; DASH-01/FE-02 verdes. **Pendências:** nenhuma.
+
+---
+
+## UX-02: orientar o ajuste manual de estoque depois do snapshot do faturamento — 2026-11-02
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 31; avanço parcial no Lote 25). **Entregas:** o 409 do POST de estoque orienta a editar o registro existente (citando o faturamento), com atalho para o registro; teste de frontend; docs atualizadas. **Pendências:** nenhuma.
+
+---
+
+## CHORE-07: mensagens de pedido faturado/entregue depois do BUG-16 — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 31). Textos **aprovados antecipadamente** pelo usuário (2026-11-02). **Textos finais (`SH/vendas/erros.go`):** "pedido faturado só pode ter o status alterado para Entregue" e "pedido faturado não pode ser excluído; só pode ter o status alterado para Entregue" (substituem "…apenas o status" e "…apenas ter o status alterado"). `friendlyPedidoError`, testes, Postman e `postman/README.md` atualizados. **Pendências:** nenhuma.
+
+---
+
+## BUG-22: toggle de ativo de clientes e usuários atômico (padrão do BUG-17) — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** `UPDATE … SET ativo = NOT ativo` atômico sem valor explícito, `DefinirAtivo` com valor, releitura para a resposta; escopo de clientes (SEC-01) e revogação de sessão do inativado (SEC-06/SEC-08) preservados; contrato inalterado. **Pendências:** teste de concorrência real num banco descartável (card **TST-16**) e bloqueio de 1500 ms nos botões das telas (card **FE-18**).
+
+---
+
+## SEC-32: hash vazio ou malformado no banco permitia enumerar contas pelo tempo — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisou)
+
+**Status:** concluído (Lote 31). **Entregas:** hash não reconhecido (ou com parâmetros acima do teto) roda o hash descartável e responde como senha errada; teste que confirma a execução do hash nesse caminho (`SH/identidade/identidadecrypto/hasher.go`). **Pendências:** código morto `argon2idPepper.verificar` (card **CHORE-15**).
+
+---
+
+## SEC-33: prefixo `__Host-` nos cookies de sessão — 2026-11-02
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain
+
+**Status:** concluído (Lote 31). Troca **aprovada antecipadamente** pelo usuário, inclusive a queda das sessões. **Entregas:** no modo seguro, `__Host-access_token` e `__Host-refresh_token` (`Secure`, `Path=/`, sem `Domain`; o nome antigo nunca é aceito nesse modo); no dev sem `Secure` (`COOKIE_SECURE=false`) ficam os nomes antigos; logout/transição limpam também os cookies sem prefixo; testes, Postman e docs atualizados. **Pendências:** **as sessões ativas caem no deploy**; remover a limpeza dos cookies sem prefixo ≥7 dias depois do deploy (card **CHORE-14**).
+
+---
+
+## BUG-23: refresh de usuário apagado respondia 500 — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** usuário inexistente no refresh → 401 genérico, token revogado e cookies limpos (padrão do inativo, SEC-22); log só com o id. **Pendências:** caso parecido na troca da própria senha (500) virou o card de decisão **BUG-25**.
+
+---
+
+## CHORE-08: observações do 🔴 TestBrain no Lote 25 (log, vlog, NaN e 1062 de carteiras) — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisou o item 4)
+
+**Status:** concluído (Lote 31). **Entregas:** log da corrida de pagamento e rótulos do vlog refletem a decisão real; `TaxaPct` NaN/±Inf recusado no domínio (400); 1062 de carteiras só vira 409 no índice `uk_carteiras_cliente_vendedor_inicio` (PRIMARY → 500). **Pendências:** nenhuma.
+
+---
+
+## FE-16: `next build` do frontend — 2026-11-02
+**Agentes:** 🟢 FrontBrain
+
+**Status:** concluído (Lote 31), rodado por último no lote. **Resultado:** `next build` **ok** (Node 22 via nvm). **Pendências:** nenhuma.
+
+---
+
+## CHORE-09: limpeza de imagens órfãs de produto — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisou)
+
+**Status:** concluído (Lote 31). **Decisão:** comando, não tarefa periódica: `backend/shared/cmd/limpezaimagens` (lógica em `SH/tools/limpezaimagens`), com `-dry-run` e idades mínimas para apagar; só nomes `<uuid-v4>.(jpg|png|webp)` sem referência e `.tmp-*` antigos, sem seguir symlinks; logs só com totais. Testes com diretório temporário e docs. **Pendências:** reprocessar os `.webp` já gravados (card **SEC-48**).
+
+---
+
+## SEC-34: WebP de produto não era reencodado — 2026-11-02
+**Agentes:** 🟣 SecBrain (decisão) → 🟡 BackBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Decisão (opção 2, sem dependência nova):** o WebP recebido é convertido para **PNG** se tiver transparência e para **JPEG q90** se for todo opaco (`SH/catalogo/catalogoimagem/normalizador.go`); EXIF e bytes anexados descartados; saída limitada (`MaxImagemSaidaBytes`). **Contrato:** o `imagem_url` de um upload WebP passa a terminar em `.png`/`.jpg` (aprovado antecipadamente). **Pendências:** os `.webp` já gravados continuam como estavam (card **SEC-48**).
+
+---
+
+## SEC-36: origens de dev na allowlist de CORS em produção — 2026-11-02
+**Agentes:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** `localhost:3000`/`127.0.0.1:3000` só entram com `COOKIE_SECURE=false` (dev), também para o `uploadPermitido`; `Set-Cookie` removido do `Access-Control-Expose-Headers`; `.env.example` e `deploy/api.env.example` documentados; testes de config e de middleware. **Pendências:** nenhuma.
+
+---
+
+## BUG-24: troca de senha concorrente com reset admin — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisou)
+
+**Status:** concluído (Lote 31). **Decisão:** `AtualizarSenha` condicionado ao hash lido; 0 linhas afetadas → **409**, sem retry automático, com rollback do histórico e da revogação na mesma tx. Caminho normal sem mudança de contrato. **Pendências:** nenhuma.
+
+---
+
+## CHORE-10: `ErrImagemMuitoGrande` com `KindMuitoGrande` e `maxLength={100}` nas buscas — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** erro de imagem grande com `kernel.KindMuitoGrande` (continua 413 "imagem excede 1 MB", sem o caso especial no handler); `maxLength={100}` nos campos de busca das listagens; testes. **Pendências:** nenhuma.
+
+---
+
+## FE-17: depois de trocar a senha, ir direto para `/login` — 2026-11-02
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** no sucesso, `clearTokens()` + `router.replace("/login")` com a mensagem de senha alterada, sem chamada autenticada depois; fluxo SEC-23 preservado; teste da página. **Pendências:** nenhuma.
+
+---
+
+## CHORE-11: remover `apiResetPassword` morta do frontend — 2026-11-02
+**Agentes:** 🟢 FrontBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** função removida (mantida `apiChangePassword`); `tsc`, `eslint` e vitest verdes. **Pendências:** nenhuma.
+
+---
+
+## SEC-38: posse do pagamento escondia erro de banco como 404 — 2026-11-02
+**Agentes:** 🟣 SecBrain (decisão) → 🟡 BackBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Decisão:** inexistente/fora da carteira continua **404**; outro erro ao ler o pedido → **500** com log. Roteiro novo na posse travada (leitura do vendedor sem lock → lock → posse sob lock, `SH/vendas/vendasapp/uow.go`); V-02 e `postman/README.md` atualizados. **Pendências:** nenhuma.
+
+---
+
+## LOG-03: recusa do captcha logada com o motivo — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisou)
+
+**Status:** concluído (Lote 31). **Entregas:** log com o motivo (`success`, `hostname` ou `action`), sem valores recebidos, token ou secret; resposta continua 400 "captcha inválido ou ausente". **Pendências:** nenhuma.
+
+---
+
+## CHORE-04: gofmt/LF em 3 testes SEC12 de integração — 2026-11-02
+**Agentes:** 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** `gofmt -l` vazio nos 3 arquivos, sem mudar a lógica. **Pendências:** nenhuma.
+
+---
+
+## CHORE-05: logs de auditoria de escrita com o id do usuário — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain
+
+**Status:** concluído (Lote 31). **Entregas:** logs de create/update/delete/toggle de todos os contextos com id e role do Principal (sem PII), inclusive os pontos de `senha.go` e `usuario_handler.go`; testes de log. **Pendências:** nenhuma.
+
+---
+## Lote 30 de 2026-11-02 (somente MariaDB + infra/TLS): 15 cards concluídos, 1 cancelado, 1 devolvido ao backlog
+
+> Aberto pelo 🤍 MegaBrain em 2026-11-02, com aprovação antecipada do usuário. Fechado pelo 🔵 SubBrain em 2026-11-02. **Commit:** `9cb87eb` (branch `lote-30`), verificado pelo 🔴 TestBrain em `2a5995c`.
+>
+> **Fluxo:** 🟣 SecBrain (especificação e revisão SEC-45) → 🌸 DataBrain (`mariadb-docker.sh`, `setup-servidor.sh`, `sql_mode`) e 🟡 BackBrain (Makefile, config TLS, Jenkinsfile) → 🔵 SubBrain (DOC-08) → 🔴 TestBrain → 🔵 SubBrain (fechamento).
+>
+> **Decisões:** banco **só MariaDB**, e em produção **só pelo `deploy/mariadb-docker.sh`** (container `rotaperfumes-mariadb`, rede Docker `rotaperfumes-db`); o `deploy/mariadb-setup.sql` foi **removido** e o `setup-servidor.sh` deixou de cuidar do banco. `ONLY_FULL_GROUP_BY` fica **desligado** por ora (card **DB-07**). TLS mínimo **1.3** no cliente Go. `DB_TLS_REQUIRED` com padrão **true**.
+>
+> **Também:** o estágio "Testes Go" do `Jenkinsfile` passou a copiar `deploy/` e o `Jenkinsfile` no tar (os testes de deploy leem esses arquivos).
+>
+> **Mudanças de contrato HTTP:** nenhuma. **Schema:** sem mudança. **Config:** `DB_TLS_REQUIRED` (padrão `true`; `DB_HOST` fora do loopback sem `DB_TLS_CA` derruba a API/CLIs e o `db-check-env`, salvo `DB_TLS_REQUIRED=false` com aviso); `DB_TLS_CA_HOST_PATH` virou constante; `DB_CLIENTE=mysql` removido (fica `DB_CLIENTE_BIN`).
+>
+> **Pendências do usuário:**
+> 1. **DEPLOY-05 (ALTA, bloqueia o primeiro deploy da `main`):** rodar o `deploy/mariadb-docker.sh` no servidor e migrar os dados, conforme `docs/deploy-servidor.md` §11. Sem a rede `rotaperfumes-db` e o container `rotaperfumes-mariadb`, o compose falha e o pipeline para. Card de volta em `afazer.md`.
+> 2. **TST-15:** rodar uma vez numa máquina com Docker: `cd backend/shared && sudo -E env TST15_DOCKER=1 go test -count=1 -run TestTST15_MariadbDocker_Real ./tests/deploy/`.
+>
+> **Saíram do lote (em `afazer.md`, bloco "Achados dos Lotes 30 e 31"):** SEC-46, BACKUP-01, SEC-47, DB-07, SEC-49 e TST-16 (parte do `mariadb-docker.sh`).
+
+---
+
+## CHORE-13: MySQL fora do `Makefile`, `.env.example` e `CLAUDE.md` — 2026-11-02
+**Agentes:** 🟡 BackBrain
+
+**Status:** concluído (Lote 30). **Entregas:** ramo `DB_CLIENTE=mysql` removido; mantidos `DB_CLIENTE_BIN` e a checagem de que o executável é o cliente MariaDB; `.env.example`, `CLAUDE.md` e comentários do `Makefile` revisados. **Pendências:** nenhuma.
+
+---
+
+## DEPLOY-06: deploy só com MariaDB — 2026-11-02
+**Agentes:** 🌸 DataBrain → 🟡 BackBrain
+
+**Status:** concluído (Lote 30). **Decisão registrada:** o banco de produção sobe **só pelo `deploy/mariadb-docker.sh`**; o `setup-servidor.sh` deixa de cuidar do banco; o **`deploy/mariadb-setup.sql` foi removido**. Sabor MySQL retirado do `setup-servidor.sh`, `Jenkinsfile`, `docker-compose.yml` e `deploy/dump-local.ps1`. **Pendências:** nenhuma (execução no servidor no DEPLOY-05).
+
+---
+
+## DEPLOY-04: `setup-servidor.sh` com Jenkins em contêiner e numeração dos passos — 2026-11-02
+**Agentes:** 🌸 DataBrain
+
+**Status:** concluído (Lote 30). **Entregas:** `checar_jenkins` aceita o Jenkins em contêiner (`--jenkins-container`); `--apenas-banco`/`--skip-mysql` removidos (o script recusa e aponta para o `mariadb-docker.sh`, DEPLOY-06); numeração contínua dos passos; `docs/deploy-servidor.md` atualizado. **Pendências:** nenhuma.
+
+---
+
+## DOC-08: documentação só com MariaDB (substitui o DOC-07) — 2026-11-02
+**Agentes:** 🔵 SubBrain
+
+**Status:** concluído (Lote 30). **Entregas:** `docs/Instal_SSL.md` reescrito em torno do `mariadb-docker.sh` (geração, `--novo-cert`, `FLUSH SSL`, rollback); `casaos` e `.env` de dev documentados; menções a MySQL revisadas em `docs/`, `deploy/`, `postman/README.md` e `sql/` (fica só histórico explícito e nomes do protocolo/driver); `docs/deploy-servidor.md` §11 com o passo a passo da migração. **Pendências:** nenhuma.
+
+---
+
+## TST-15: testes sem MySQL e teste do `deploy/mariadb-docker.sh` — 2026-11-02
+**Agentes:** 🔴 TestBrain
+
+**Status:** **concluído com pendência** (Lote 30). **Entregas:** casos MySQL removidos dos testes; testes do `mariadb-docker.sh` em `SH/tests/deploy/` (`mariadb_docker_test.go` com stubs e `TestTST15_MariadbDocker_Real`, execução completa com Docker real, com skip sem `TST15_DOCKER=1`); `deploy02_hardening_test.go` saiu junto com os drop-ins. **Pendência do usuário:** rodar uma vez numa máquina com Docker e registrar o resultado aqui: `cd backend/shared && sudo -E env TST15_DOCKER=1 go test -count=1 -run TestTST15_MariadbDocker_Real ./tests/deploy/`. Isolamento dos diretórios no teste real: card **TST-16**.
+
+---
+
+## SEC-45: revisão de segurança do `deploy/mariadb-docker.sh` — 2026-11-02
+**Agentes:** 🟣 SecBrain → 🌸 DataBrain
+
+**Status:** concluído (Lote 30); correções aprovadas antecipadamente. **Entregas:** rede Docker `rotaperfumes-db` com **IPs fixos**; porta publicada só com `--dev-ip`, restrita por regra na chain `DOCKER-USER`; contas **por IP** (sem a LAN inteira nem `172.16.0.0/12`); convergência na reexecução (grants e `REQUIRE SSL` reaplicados); **CA offline** (chave fora do servidor); container endurecido. **Pendências:** aplicação no servidor (DEPLOY-05); confirmação antes de comandos destrutivos fora do loopback (**SEC-46**); backup (**BACKUP-01**).
+
+---
+
+## SEC-39: `REQUIRE SSL` nas contas do banco — 2026-11-02
+**Agentes:** 🌸 DataBrain (🟣 SecBrain revisou)
+
+**Status:** **resolvido** (Lote 30). O `mariadb-docker.sh` cria e reconfigura (idempotente) todas as contas com `REQUIRE SSL`; o `mariadb-setup.sql` foi removido (DEPLOY-06). **Pendências:** nenhuma.
+
+---
+
+## SEC-31: imagens fixadas por digest — 2026-11-02
+**Agentes:** 🌸 DataBrain (🟣 SecBrain revisou)
+
+**Status:** concluído (Lote 30). **Entregas:** `mariadb:11.4.13@sha256:d1891ede…` (Jenkinsfile e `deploy/mariadb-docker.sh`) e `golang:1.26.10-alpine@sha256:a2012b4a…` (Jenkinsfile); alvo novo `make deps-audit-imagens` (informativo: compara os digests fixados com o Docker Hub); procedimento de atualização no `CLAUDE.md`. **Pendências:** bases dos `Dockerfile` do backend, frontend e Caddy (card **SEC-47**).
+
+---
+
+## SEC-30: autenticação ed25519 nas contas do banco — 2026-11-02
+**Agentes:** 🌸 DataBrain → 🔴 TestBrain (🟣 SecBrain revisou)
+
+**Status:** concluído (Lote 30). **Entregas:** contas criadas pelo `mariadb-docker.sh` com `ed25519`. **Pendências:** vale no servidor quando o DEPLOY-05 for executado.
+
+---
+
+## SEC-40: confiança na CA do banco no Jenkins — 2026-11-02
+**Agentes:** 🟡 BackBrain (🟣 SecBrain revisou)
+
+**Status:** concluído (Lote 30). **Entregas:** `DB_TLS_CA_HOST_PATH` virou **constante** (não é mais parâmetro do job); fingerprint esperado versionado em `deploy/db-ca.fingerprint` e conferido pelo pipeline (`CA_FINGERPRINTS`); troca de CA exige atualizar o arquivo; rotação documentada. **Pendências:** nenhuma.
+
+---
+
+## SEC-41: `deploy/dump-local.ps1` com TLS — 2026-11-02
+**Agentes:** 🌸 DataBrain (🟣 SecBrain revisou)
+
+**Status:** concluído (Lote 30). **Entregas:** com `DB_TLS_CA`, o dump usa `--ssl-ca` + `--ssl-verify-server-cert` (cliente `mariadb`); menções a MySQL removidas. **Pendências:** sem `pwsh` nesta máquina (TST-13 cancelado), o script não foi executado aqui.
+
+---
+
+## SEC-42: TLS obrigatório com `DB_HOST` remoto — 2026-11-02
+**Agentes:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisou)
+
+**Status:** concluído (Lote 30). **Entregas:** `DB_TLS_REQUIRED` (padrão **true**): `DB_HOST` fora do loopback sem `DB_TLS_CA` derruba a API, as CLIs e o `db-check-env`; `DB_TLS_REQUIRED=false` só com aviso; documentado em `.env.example`, `deploy/api.env.example` e `CLAUDE.md`. **Pendências:** o `shared/tools/resetpassword` ainda chama `LoadDBTLS` direto (card **SEC-49**).
+
+---
+
+## TST-12: testes de TLS que faltaram no SEC-29 — 2026-11-02
+**Agentes:** 🔴 TestBrain (🟣 SecBrain decidiu o `MinVersion`)
+
+**Status:** concluído (Lote 30). **Entregas:** casos de certificado do servidor vencido e de servidor só com TLS antigo, recusados com erro claro. **Decisão:** `MinVersion` **TLS 1.3**. **Pendências:** nenhuma.
+
+---
+
+## DB-04 + DB-06: `ONLY_FULL_GROUP_BY` no `sql_mode` — 2026-11-02
+**Agentes:** 🌸 DataBrain → 🟡 BackBrain → 🔴 TestBrain
+
+**Status:** concluídos juntos (Lote 30). **Decisão:** `ONLY_FULL_GROUP_BY` fica **DESLIGADO** no `SQL_MODE` do `mariadb-docker.sh` por enquanto (a integração não pode rodar no banco de produção apontado pelo `.env` local). Prod e dev ficam alinhados (ambos MariaDB, sem o modo). Consultas revisadas: o `sqlSerieVendas` passou a `GROUP BY` da data. **Pendências:** ligar o modo depois de rodar a integração num MariaDB descartável (card **DB-07**).
+
+---
+
+## TST-14: rodar `TestDEPLOY02_ValidateConfig_Docker` com Docker — ❌ CANCELADO em 2026-11-02
+**Agentes:** 🔴 TestBrain (não executado)
+
+**Status:** cancelado no fechamento do Lote 30. Motivo: os drop-ins do `setup-servidor.sh` (e o `deploy02_hardening_test.go`) deixaram de existir com o DEPLOY-06; a validação da configuração do MariaDB em Docker real fica coberta pelo `TestTST15_MariadbDocker_Real` (pendência do TST-15).
 
 ---
 ## Lote 30 de 2026-11-02: triagem (2 cancelados)
