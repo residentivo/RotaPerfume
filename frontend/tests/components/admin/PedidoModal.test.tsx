@@ -18,7 +18,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api", () => api);
 
-import { PedidoModal } from "@/components/admin/PedidoModal";
+import { PedidoModal, friendlyPedidoError } from "@/components/admin/PedidoModal";
 import { clearSession, refreshSessionUser } from "@/lib/session";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -640,7 +640,7 @@ describe("PedidoModal - BUG-16 (transicoes de status e itens travados)", () => {
     itensHabilitados(false);
     expect(screen.getByTitle("Remover item")).toBeDisabled();
     expect(
-      screen.getByText(/Pedido ja faturado: nao e possivel alterar os itens, apenas o\s+status\./)
+      screen.getByText("Pedido faturado ou entregue: nao e possivel alterar os itens.")
     ).toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByLabelText("Status"), "Entregue");
@@ -694,8 +694,8 @@ describe("PedidoModal - BUG-16 (transicoes de status e itens travados)", () => {
       "O pedido so pode ser marcado como Entregue depois de Faturado.",
     ],
     [
-      "pedido já faturado: não é possível alterar os itens, apenas o status",
-      "Pedido ja faturado: nao e possivel alterar os itens, apenas o status.",
+      "pedido faturado ou entregue: não é possível alterar os itens",
+      "Pedido faturado ou entregue: nao e possivel alterar os itens.",
     ],
   ])("erro do backend '%s' vira mensagem amigavel", async (backend, amigavel) => {
     const onSubmit = vi.fn().mockRejectedValue(new Error(backend));
@@ -705,5 +705,36 @@ describe("PedidoModal - BUG-16 (transicoes de status e itens travados)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Salvar alteracoes" }));
     const alerta = await screen.findByText(amigavel);
     expect(alerta).toBeInTheDocument();
+  });
+});
+
+// CHORE-07: textos aprovados em 2026-11-02. O friendlyPedidoError casa so com
+// o texto novo; o texto legado ("... apenas o status" / "... apenas ter o
+// status alterado") passa sem traducao.
+describe("CHORE-07: friendlyPedidoError com os textos novos", () => {
+  it.each<[string, string]>([
+    [
+      "pedido faturado ou entregue: não é possível alterar os itens",
+      "Pedido faturado ou entregue: nao e possivel alterar os itens.",
+    ],
+    [
+      "pedido faturado não pode ser excluído; só pode ter o status alterado para Entregue",
+      "Pedido faturado nao pode ser excluido; so pode ter o status alterado para Entregue.",
+    ],
+  ])("'%s' vira '%s'", (backend, amigavel) => {
+    expect(friendlyPedidoError(backend)).toBe(amigavel);
+  });
+
+  it.each([
+    "pedido já faturado: não é possível alterar os itens, apenas o status",
+    "pedido faturado não pode ser excluído, apenas ter o status alterado",
+  ])("texto legado '%s' nao e traduzido", (legado) => {
+    expect(friendlyPedidoError(legado)).toBe(legado);
+  });
+
+  it("exclusao de faturado nao cai na regra de transicao de status", () => {
+    expect(
+      friendlyPedidoError("pedido faturado não pode ser excluído; só pode ter o status alterado para Entregue")
+    ).not.toBe("Pedido faturado so pode ter o status alterado para Entregue.");
   });
 });

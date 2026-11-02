@@ -1,18 +1,24 @@
 /**
  * Tela de troca de senha obrigatoria: exige sessao, valida a politica de
- * senha (tamanho, 3 de 4 classes, diferente da atual, confirmacao), redireciona
- * para o dashboard apos sucesso e trata erros (incluindo captcha).
+ * senha (tamanho, 3 de 4 classes, diferente da atual, confirmacao), no sucesso
+ * limpa a sessao local e vai direto para /login com o aviso (FE-17) e trata
+ * erros (incluindo captcha).
  */
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const replaceMock = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: replaceMock }) }));
+// Router estavel entre renders, como o do Next (o efeito de sessao depende dele).
+const routerMock = { replace: replaceMock };
+vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 
+const apiMeMock = vi.fn();
 const apiChangePasswordMock = vi.fn<(a: string, n: string, t?: string) => Promise<{ message: string }>>();
 vi.mock("@/lib/api", () => ({
   apiChangePassword: (a: string, n: string, t?: string) => apiChangePasswordMock(a, n, t),
+  // session.ts importa apiMe; nao deve ser chamada pela tela (FE-17).
+  apiMe: () => apiMeMock(),
 }));
 
 const captcha = vi.hoisted(() => ({ enabled: false, reset: vi.fn() }));
@@ -54,6 +60,8 @@ vi.mock("@/components/ui/Turnstile", async () => {
 });
 
 import TrocarSenhaPage from "@/app/trocar-senha/page";
+import { lerAvisoLogin, limparAvisoLogin } from "@/lib/avisoLogin";
+import { getSessionUser } from "@/lib/session";
 
 const SENHA_ATUAL = "Antiga@123";
 const SENHA_NOVA = "Nova@12345";
@@ -81,14 +89,15 @@ async function enviarValido() {
 let user: ReturnType<typeof userEvent.setup>;
 
 beforeEach(() => {
-  // O redirect pos-sucesso usa setTimeout(1500), cancelado no unmount desde o
-  // FE-11; fake timers + clearAllTimers garantem que nada vaza entre testes.
+  // Fake timers + clearAllTimers garantem que nada vaza entre testes (desde o
+  // FE-17 o sucesso nao agenda mais o redirect atrasado do FE-11).
   vi.useFakeTimers({ shouldAdvanceTime: true });
   user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
   replaceMock.mockReset();
   apiChangePasswordMock.mockReset();
   captcha.reset.mockReset();
   captcha.enabled = false;
+  limparAvisoLogin();
   logar();
 });
 
@@ -161,52 +170,36 @@ describe("TrocarSenhaPage - politica de senha", () => {
 });
 
 describe("TrocarSenhaPage - envio", () => {
-  it("sucesso mostra a confirmacao e vai para o dashboard apos 1,5s", async () => {
-    apiChangePasswordMock.mockResolvedValue({ message: "ok" });
-    render(<TrocarSenhaPage />);
-    await enviarValido();
-    expect(await screen.findByText("Senha alterada com sucesso!")).toBeInTheDocument();
-    expect(apiChangePasswordMock).toHaveBeenCalledWith(SENHA_ATUAL, SENHA_NOVA, undefined);
-
-    await act(async () => {
-      vi.advanceTimersByTime(1200);
-    });
-    expect(replaceMock).not.toHaveBeenCalledWith("/dashboard");
-    await act(async () => {
-      vi.advanceTimersByTime(400);
-    });
-    expect(replaceMock).toHaveBeenCalledWith("/dashboard");
-  });
-
-  // FE-11: o redirecionamento atrasado e cancelado se a tela desmontar antes.
-  it.each<[string, number]>([
-    ["logo apos o sucesso", 0],
-    ["no meio do prazo", 800],
-    // Margem: este arquivo usa shouldAdvanceTime (o relogio tambem anda em tempo real).
-    ["perto de vencer (1300ms)", 1300],
-  ])("unmount %s: nao redireciona para o dashboard", async (_n, decorrido) => {
-    apiChangePasswordMock.mockResolvedValue({ message: "ok" });
-    const { unmount } = render(<TrocarSenhaPage />);
-    await enviarValido();
-    await screen.findByText("Senha alterada com sucesso!");
-    await act(async () => {
-      vi.advanceTimersByTime(decorrido);
-    });
-    unmount();
-    expect(vi.getTimerCount()).toBe(0);
-    await act(async () => {
-      vi.advanceTimersByTime(5000);
-    });
-    expect(replaceMock).not.toHaveBeenCalledWith("/dashboard");
-  });
-
-  it("o alerta de sucesso pode ser fechado", async () => {
-    apiChangePasswordMock.mockResolvedValue({ message: "ok" });
-    render(<TrocarSenhaPage />);
-    await enviarValido();
-    await screen.findByText("Senha alterada com sucesso!");
-    await user.click(screen.getByRole("button", { name: "Fechar alerta" }));
-    expect(screen.queryByText("Senha alterada com sucesso!")).not.toBeInTheDocument();
+  // FE-17: a troca corta a sessao no backend (SEC-08); o sucesso limpa o
+  // estado local e vai direto para /login com o aviso, sem passar pelo
+  // dashboard e sem nenhuma chamada autenticada depois da troca.
+  it("sucesso limpa a sessao local e vai direto para /login com o aviso", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      apiChangePasswordMock.mockResolvedValue({ message: "ok" });
+      render(<TrocarSenhaPage />);
+      await enviarValido();
+      await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/login"));
+      expect(apiChangePasswordMock).toHaveBeenCalledWith(SENHA_ATUAL, SENHA_NOVA, undefined);
+      expect(apiChangePasswordMock).toHaveBeenCalledTimes(1);
+      expect(replaceMock).toHaveBeenCalledTimes(1);
+      expect(replaceMock).not.toHaveBeenCalledWith("/dashboard");
+      expect(localStorage.getItem("auth_user")).toBeNull();
+      expect(getSessionUser()).toBeNull();
+      expect(lerAvisoLogin()).toBe("Senha alterada. Faça login com a nova senha.");
+      // Nada agendado (o redirect atrasado para o dashboard saiu) e nenhuma
+      // requisicao depois da troca.
+      expect(vi.getTimerCount()).toBe(0);
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(apiMeMock).not.toHaveBeenCalled();
+      expect(replaceMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("mostra 'Alterando...' e desabilita o botao enquanto aguarda a API", async () => {
@@ -231,7 +224,8 @@ describe("TrocarSenhaPage - envio", () => {
     await enviarValido();
     expect(await screen.findByText(msg)).toBeInTheDocument();
     expect(captcha.reset).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText("Senha alterada com sucesso!")).not.toBeInTheDocument();
+    expect(lerAvisoLogin()).toBeNull();
+    expect(localStorage.getItem("auth_user")).not.toBeNull();
     expect(replaceMock).not.toHaveBeenCalled();
   });
 

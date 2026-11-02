@@ -25,10 +25,13 @@ import { vlog } from "@/lib/vlog";
 
 const F = "PedidoModal.tsx";
 
-// Traduz mensagens de erro do backend para textos mais amigaveis. Hoje trata
-// o 400 "cliente nao pertence a carteira deste vendedor" (escopo por carteira
-// aplicado em POST/PUT /api/pedidos para usuarios nao-admin).
-function friendlyPedidoError(message: string): string {
+// Traduz mensagens de erro do backend para textos mais amigaveis. Trata o 400
+// "cliente nao pertence a carteira deste vendedor" (escopo por carteira
+// aplicado em POST/PUT /api/pedidos para usuarios nao-admin), as regras de
+// status do BUG-16 e, desde o CHORE-07, os textos novos dos itens travados
+// (409 do PUT) e da exclusao de pedido faturado (409 do DELETE). Exportada
+// para a tela de pedidos traduzir o erro da exclusao.
+export function friendlyPedidoError(message: string): string {
   vlog(F, "friendlyPedidoError", "normalizando mensagem de erro do backend");
   const normalized = message
     .toLowerCase()
@@ -49,8 +52,13 @@ function friendlyPedidoError(message: string): string {
   if (normalized.includes("so pode ser marcado como entregue depois de faturado")) {
     return "O pedido so pode ser marcado como Entregue depois de Faturado.";
   }
-  if (normalized.includes("ja faturado") && normalized.includes("itens")) {
-    return "Pedido ja faturado: nao e possivel alterar os itens, apenas o status.";
+  // CHORE-07: textos aprovados em 2026-11-02 (casam so com o texto novo).
+  vlog(F, "friendlyPedidoError", "verificando erros de itens travados/exclusao de faturado");
+  if (normalized.includes("faturado ou entregue") && normalized.includes("alterar os itens")) {
+    return "Pedido faturado ou entregue: nao e possivel alterar os itens.";
+  }
+  if (normalized.includes("faturado nao pode ser excluido") && normalized.includes("alterado para entregue")) {
+    return "Pedido faturado nao pode ser excluido; so pode ter o status alterado para Entregue.";
   }
   return message;
 }
@@ -749,8 +757,7 @@ export function PedidoModal({
         <div>
           {itensTravados && (
             <Alert variant="info">
-              Pedido ja faturado: nao e possivel alterar os itens, apenas o
-              status.
+              Pedido faturado ou entregue: nao e possivel alterar os itens.
             </Alert>
           )}
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

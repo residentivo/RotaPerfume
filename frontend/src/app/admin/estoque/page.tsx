@@ -17,13 +17,14 @@ import { Select } from "@/components/ui/Select";
 import { Table, Column } from "@/components/ui/Table";
 import { Paginador } from "@/components/ui/Paginador";
 import { useMensagemTemporaria } from "@/lib/useMensagemTemporaria";
-import { EstoqueModal } from "@/components/admin/EstoqueModal";
+import { EstoqueDuplicadoError, EstoqueModal } from "@/components/admin/EstoqueModal";
 import { apiListEstoque, apiCreateEstoque, apiUpdateEstoque } from "@/lib/api";
 import { Estoque, EstoqueInput } from "@/lib/types";
 import { useSessionUser } from "@/lib/session";
 import { ApiError } from "@/lib/apiError";
 import { formatarData } from "@/lib/formatarData";
 import { vlog } from "@/lib/vlog";
+import { MAX_BUSCA } from "@/lib/busca";
 
 const FILE = "admin/estoque/page.tsx";
 
@@ -268,6 +269,30 @@ function EstoquePageContent() {
     setModalOpen(true);
   };
 
+  // UX-02: depois do 409 do POST, procura o registro existente (mesmo SKU e
+  // data) pelo GET autenticado da listagem (sku exato + data_de = data_ate),
+  // sem endpoint novo. Falha ou nada encontrado -> null (so a orientacao).
+  vlog(FILE, "EstoquePageContent", "definindo helper buscarRegistroExistente");
+  const buscarRegistroExistente = async (data: EstoqueInput): Promise<Estoque | null> => {
+    vlog(FILE, "EstoquePageContent.buscarRegistroExistente", "buscando registro do sku na data do snapshot");
+    const sku = data.sku.trim();
+    const dia = data.data_snapshot.slice(0, 10);
+    try {
+      const res = await apiListEstoque(1, 20, { sku, data_de: dia, data_ate: dia });
+      vlog(FILE, "EstoquePageContent.buscarRegistroExistente", "procurando o registro exato na resposta (qtd=%d)", res.data.length);
+      return (
+        res.data.find(
+          (r) =>
+            r.sku.trim().toUpperCase() === sku.toUpperCase() &&
+            r.data_snapshot.slice(0, 10) === dia
+        ) ?? null
+      );
+    } catch {
+      vlog(FILE, "EstoquePageContent.buscarRegistroExistente", "falha na busca do registro existente; sem atalho");
+      return null;
+    }
+  };
+
   vlog(FILE, "EstoquePageContent", "definindo handler handleModalSubmit");
   const handleModalSubmit = async (data: EstoqueInput) => {
     vlog(FILE, "EstoquePageContent.handleModalSubmit", "limpando erro");
@@ -308,6 +333,15 @@ function EstoquePageContent() {
       // mensagem do backend e orienta a editar o registro existente.
       vlog(FILE, "EstoquePageContent.handleModalSubmit", "verificando se e conflito 409 de duplicidade");
       const conflito = err instanceof ApiError && err.status === 409;
+      if (conflito && modalMode === "create") {
+        // UX-02: o snapshot do faturamento cria o registro do dia para o SKU;
+        // o usuario nao o criou, entao a mensagem explica e o modal oferece
+        // o atalho para editar (PUT) o registro existente.
+        vlog(FILE, "EstoquePageContent.handleModalSubmit", "409 na criacao; buscando registro existente para o atalho");
+        const existente = await buscarRegistroExistente(data);
+        vlog(FILE, "EstoquePageContent.handleModalSubmit", "relancando 409 com orientacao (atalho=%s)", existente !== null);
+        throw new EstoqueDuplicadoError(mensagemEstoqueDuplicado(message), existente);
+      }
       const friendly = conflito
         ? `${message.replace(/\.?\s*$/, ".")} Edite o registro existente.`
         : /403|forbidden|permiss|acesso negado/i.test(message)
@@ -483,6 +517,7 @@ function EstoquePageContent() {
                   placeholder="SKU..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  maxLength={MAX_BUSCA}
                   icon={
                     <svg
                       className="h-5 w-5"
@@ -581,9 +616,20 @@ function EstoquePageContent() {
         estoque={editingEstoque}
         onClose={() => setModalOpen(false)}
         onSubmit={handleModalSubmit}
+        onAbrirExistente={openEdit}
       />
     </div>
   );
+}
+
+// UX-02: texto do 409 do POST. Mantem a mensagem do backend e explica que o
+// registro pode ter sido criado pelo snapshot do faturamento.
+function mensagemEstoqueDuplicado(mensagemBackend: string): string {
+  vlog(FILE, "mensagemEstoqueDuplicado", "montando orientacao do 409");
+  const base = mensagemBackend.trim()
+    ? mensagemBackend.trim().replace(/\.?$/, ".")
+    : "Ja existe registro de estoque deste SKU nesta data.";
+  return `${base} Ele pode ter sido criado pelo faturamento do dia. Edite o registro existente.`;
 }
 
 export default function EstoquePage() {

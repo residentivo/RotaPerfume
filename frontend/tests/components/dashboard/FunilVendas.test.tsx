@@ -23,6 +23,7 @@ vi.mock("@/lib/session", () => ({
 import {
   ERRO_FUNIL,
   ETAPAS_FUNIL,
+  avisoDadosDaJanela,
   FunilVendas,
   JANELAS_FUNIL,
   JANELA_LABELS,
@@ -444,12 +445,22 @@ describe("FunilVendas - vendedor desligado (não admin)", () => {
     expect(screen.getByText(VAZIO)).toBeInTheDocument();
   });
 
-  it("desligado na sessão: zerado + aviso", async () => {
+  // FE-15: sem forcarZeros, o desligamento da sessao so zera; o aviso dele
+  // fica com o layout (Navbar/CarteiraGuard) e com a tela hospedeira.
+  it("desligado na sessão sem forcarZeros: zerado, sem o aviso próprio", async () => {
     useVendedorDesligadoMock.mockReturnValue(true);
     await renderCarregado({ isAdmin: false });
     expect(screen.getByText(VAZIO)).toBeInTheDocument();
     expect(screen.queryByText("1.234")).not.toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent(AVISO_DESLIGADO);
+    expect(screen.queryByText(AVISO_DESLIGADO)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("desligado na sessão + vendedor_desligado no payload, sem forcarZeros: um único aviso", async () => {
+    useVendedorDesligadoMock.mockReturnValue(true);
+    api.apiDashboardFunil.mockResolvedValue(funilCheio({ vendedor_desligado: true }));
+    await renderCarregado({ isAdmin: false });
+    expect(screen.getAllByText(AVISO_DESLIGADO)).toHaveLength(1);
   });
 
   it("vendedor_desligado no payload: zerado + aviso", async () => {
@@ -480,5 +491,81 @@ describe("FunilVendas - vendedor desligado (não admin)", () => {
     await renderCarregado({ isAdmin: false });
     expect(rodape("Oportunidades")).toBe("1.234");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+// FE-15: depois de um erro na troca de janela, a selecao volta para a janela
+// dos dados exibidos e o alerta diz de qual janela eles sao.
+describe("FunilVendas - selecao da janela depois de erro (FE-15)", () => {
+  it("erro ao trocar para 30d: 'Tudo' volta a ficar marcado e o alerta indica a janela dos dados", async () => {
+    await renderCarregado();
+    api.apiDashboardFunil.mockRejectedValueOnce(new ApiError(500, "falha"));
+    await userEvent.click(botaoJanela("30d"));
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent(ERRO_FUNIL);
+    expect(alerta).toHaveTextContent(avisoDadosDaJanela("all"));
+    expect(alerta).toHaveTextContent("Exibindo os dados de: Tudo.");
+    expect(botaoJanela("all")).toHaveAttribute("aria-pressed", "true");
+    expect(botaoJanela("30d")).toHaveAttribute("aria-pressed", "false");
+    expect(rodape("Oportunidades")).toBe("1.234");
+  });
+
+  it("clicar de novo na janela que falhou refaz a busca", async () => {
+    await renderCarregado();
+    api.apiDashboardFunil.mockRejectedValueOnce(new ApiError(500, "falha"));
+    await userEvent.click(botaoJanela("30d"));
+    await screen.findByRole("alert");
+    api.apiDashboardFunil.mockResolvedValueOnce(funilCheio({ janela: "30d", total_oportunidades: 30 }));
+    await userEvent.click(botaoJanela("30d"));
+    await waitFor(() => expect(rodape("Oportunidades")).toBe("30"));
+    expect(api.apiDashboardFunil).toHaveBeenLastCalledWith("30d");
+    expect(api.apiDashboardFunil).toHaveBeenCalledTimes(3);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(botaoJanela("30d")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("clicar na janela dos dados exibidos busca essa janela e limpa o erro", async () => {
+    await renderCarregado();
+    api.apiDashboardFunil.mockRejectedValueOnce(new ApiError(500, "falha"));
+    await userEvent.click(botaoJanela("30d"));
+    await screen.findByRole("alert");
+    api.apiDashboardFunil.mockResolvedValueOnce(funilCheio({ total_oportunidades: 7 }));
+    await userEvent.click(botaoJanela("all"));
+    await waitFor(() => expect(rodape("Oportunidades")).toBe("7"));
+    expect(api.apiDashboardFunil).toHaveBeenLastCalledWith("all");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("sem erro, clicar na janela já marcada não refaz a busca", async () => {
+    await renderCarregado();
+    await userEvent.click(botaoJanela("all"));
+    expect(api.apiDashboardFunil).toHaveBeenCalledTimes(1);
+  });
+
+  it("erro na primeira carga: a janela pedida continua marcada, sem o complemento", async () => {
+    api.apiDashboardFunil.mockRejectedValue(new ApiError(500, "falha"));
+    await renderCarregado();
+    const alerta = screen.getByRole("alert");
+    expect(alerta).toHaveTextContent(ERRO_FUNIL);
+    expect(alerta).not.toHaveTextContent(/Exibindo os dados de/);
+    expect(botaoJanela("all")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("erro na recarga da mesma janela: sem o complemento", async () => {
+    const r = await renderCarregado();
+    api.apiDashboardFunil.mockRejectedValueOnce(new ApiError(500, "falha"));
+    r.rerender(<FunilVendas isAdmin recarga={1} />);
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).not.toHaveTextContent(/Exibindo os dados de/);
+    expect(botaoJanela("all")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("com forcarZeros (funil zerado), a janela pedida continua marcada depois do erro", async () => {
+    await renderCarregado({ isAdmin: false, forcarZeros: true });
+    api.apiDashboardFunil.mockRejectedValueOnce(new ApiError(500, "falha"));
+    await userEvent.click(botaoJanela("90d"));
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).not.toHaveTextContent(/Exibindo os dados de/);
+    expect(botaoJanela("90d")).toHaveAttribute("aria-pressed", "true");
   });
 });

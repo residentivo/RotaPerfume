@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/Turnstile";
 import { apiLogin } from "@/lib/api";
 import { saveUser, getUser, isAdmin } from "@/lib/auth";
+import { lerAvisoLogin, limparAvisoLogin } from "@/lib/avisoLogin";
 import { vlog } from "@/lib/vlog";
 
 const FILE = "login/page.tsx";
@@ -29,12 +30,22 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   vlog(FILE, "LoginPage", "inicializando estado de erro geral");
   const [error, setError] = useState<string | null>(null);
+  // FE-17: aviso deixado por outra tela (ex.: "Senha alterada...") antes do
+  // router.replace("/login"). Lido no inicializador e limpo no efeito abaixo.
+  vlog(FILE, "LoginPage", "inicializando estado do aviso vindo de outra tela");
+  const [aviso, setAviso] = useState<string | null>(() => lerAvisoLogin());
   vlog(FILE, "LoginPage", "inicializando estado de erros por campo");
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; senha?: string }>({});
   vlog(FILE, "LoginPage", "inicializando estado do token do captcha");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   vlog(FILE, "LoginPage", "criando ref do widget Turnstile");
   const turnstileRef = useRef<TurnstileHandle>(null);
+
+  vlog(FILE, "LoginPage", "registrando efeito que consome o aviso de outra tela");
+  useEffect(() => {
+    vlog(FILE, "LoginPage.useEffect", "aviso exibido; limpando o pendente");
+    limparAvisoLogin();
+  }, []);
 
   vlog(FILE, "LoginPage", "registrando efeito de redirecionamento se ja autenticado");
   useEffect(() => {
@@ -151,6 +162,14 @@ export default function LoginPage() {
           <p className="mb-6 text-sm text-slate-500">
             Informe suas credenciais para acessar o sistema.
           </p>
+
+          {aviso && (
+            <div className="mb-4">
+              <Alert variant="success" onClose={() => setAviso(null)}>
+                {aviso}
+              </Alert>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4">

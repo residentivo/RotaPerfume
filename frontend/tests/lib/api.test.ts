@@ -44,12 +44,6 @@ const CASOS: Caso[] = [
     method: "POST", body: body({ refresh_token: "r1" }), noRefresh: true,
   }],
   ["apiMe", () => api.apiMe(), "/api/auth/me", { method: "GET" }],
-  ["apiResetPassword (com senha atual)", () => api.apiResetPassword(3, "nova", "velha"), "/api/auth/reset-password", {
-    method: "POST", body: body({ usuario_id: 3, nova_senha: "nova", senha_atual: "velha" }),
-  }],
-  ["apiResetPassword (sem senha atual)", () => api.apiResetPassword(3, "nova"), "/api/auth/reset-password", {
-    method: "POST", body: body({ usuario_id: 3, nova_senha: "nova" }),
-  }],
   ["apiChangePassword", () => api.apiChangePassword("a", "b", "tk"), "/api/auth/reset-password", {
     method: "POST", body: body({ senha_atual: "a", nova_senha: "b", captchaToken: "tk" }),
   }],

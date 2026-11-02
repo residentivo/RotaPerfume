@@ -11,12 +11,28 @@ import { vlog } from "@/lib/vlog";
 
 const F = "EstoqueModal.tsx";
 
+// UX-02: erro do 409 do POST (registro do mesmo SKU e data ja existe, talvez
+// criado pelo snapshot do faturamento). `existente` e o registro achado pelo
+// GET autenticado da listagem (null se a busca falhar ou nao achar); com ele,
+// o modal oferece o atalho para editar o registro existente (PUT).
+export class EstoqueDuplicadoError extends Error {
+  readonly existente: Estoque | null;
+
+  constructor(message: string, existente: Estoque | null) {
+    super(message);
+    this.name = "EstoqueDuplicadoError";
+    this.existente = existente;
+  }
+}
+
 interface EstoqueModalProps {
   open: boolean;
   mode: "create" | "edit";
   estoque: Estoque | null;
   onClose: () => void;
   onSubmit: (data: EstoqueInput) => Promise<void>;
+  // UX-02: abre o registro existente em modo edicao (atalho do 409).
+  onAbrirExistente?: (registro: Estoque) => void;
 }
 
 function todayStr(): string {
@@ -29,6 +45,7 @@ export function EstoqueModal({
   estoque,
   onClose,
   onSubmit,
+  onAbrirExistente,
 }: EstoqueModalProps) {
   vlog(F, "EstoqueModal", "criando estado sku, modo:", mode);
   const [sku, setSku] = useState("");
@@ -40,6 +57,8 @@ export function EstoqueModal({
   const [submitting, setSubmitting] = useState(false);
   vlog(F, "EstoqueModal", "criando estado error");
   const [error, setError] = useState<string | null>(null);
+  vlog(F, "EstoqueModal", "criando estado do registro existente (atalho do 409)");
+  const [existente, setExistente] = useState<Estoque | null>(null);
 
   // Reseta o formulario ao abrir (ou quando as props mudam com o modal
   // aberto) durante o render, sem setState em efeito — ver useResetOnOpen.
@@ -47,6 +66,8 @@ export function EstoqueModal({
   useResetOnOpen(open, [mode, estoque], () => {
     vlog(F, "EstoqueModal.reset", "limpando erro");
     setError(null);
+    vlog(F, "EstoqueModal.reset", "limpando registro existente do atalho");
+    setExistente(null);
     vlog(F, "EstoqueModal.reset", "limpando estado de envio");
     setSubmitting(false);
     vlog(F, "EstoqueModal.reset", "verificando se é edição com registro, id:", estoque?.id);
@@ -72,6 +93,8 @@ export function EstoqueModal({
     e.preventDefault();
     vlog(F, "EstoqueModal.handleSubmit", "limpando erro");
     setError(null);
+    vlog(F, "EstoqueModal.handleSubmit", "limpando registro existente do atalho");
+    setExistente(null);
 
     vlog(F, "EstoqueModal.handleSubmit", "validando SKU na criação");
     if (mode === "create" && !sku.trim()) {
@@ -118,6 +141,8 @@ export function EstoqueModal({
         err instanceof Error ? err.message : "Erro ao salvar registro de estoque.";
       vlog(F, "EstoqueModal.handleSubmit", "exibindo erro");
       setError(message);
+      vlog(F, "EstoqueModal.handleSubmit", "verificando se o erro traz o registro existente (UX-02)");
+      if (err instanceof EstoqueDuplicadoError) setExistente(err.existente);
     } finally {
       vlog(F, "EstoqueModal.handleSubmit", "finalizando envio");
       setSubmitting(false);
@@ -133,6 +158,23 @@ export function EstoqueModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert variant="error">{error}</Alert>}
+
+        {existente && onAbrirExistente && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            <span>
+              Registro existente: #{existente.id} - {existente.sku} (saldo{" "}
+              {existente.saldo})
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => onAbrirExistente(existente)}
+            >
+              Editar registro existente
+            </Button>
+          </div>
+        )}
 
         <Input
           label="SKU"

@@ -534,6 +534,26 @@ describe("BUG-16 - Excluir pedido por status", () => {
   });
 });
 
+// CHORE-07: lista desatualizada (pedido ja faturado por outra aba) -> o 409
+// do DELETE aparece com o texto amigavel novo.
+describe("CHORE-07 - 409 da exclusao de pedido faturado", () => {
+  it("mostra o texto amigavel novo", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    api.apiListPedidos.mockResolvedValue(pagina([pedido(5, { status: "Em separação" })]));
+    api.apiDeletePedido.mockRejectedValue(
+      new Error("pedido faturado não pode ser excluído; só pode ter o status alterado para Entregue")
+    );
+    render(<PedidosPage />);
+    await aposMontagem("Cliente 5");
+    await userEvent.click(screen.getByRole("button", { name: "Excluir" }));
+    expect(
+      await screen.findByText(
+        "Pedido faturado nao pode ser excluido; so pode ter o status alterado para Entregue."
+      )
+    ).toBeInTheDocument();
+  });
+});
+
 // ─── SEC-27: pagamento quitado vira "Ver" para o nao-admin ───────────────────
 
 describe("SEC-27 - acao Editar/Ver em pagamentos", () => {

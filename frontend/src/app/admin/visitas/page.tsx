@@ -31,6 +31,7 @@ import { useSessionUser } from "@/lib/session";
 import { Visita, VisitaInput, Vendedor, Cliente } from "@/lib/types";
 import { formatarData } from "@/lib/formatarData";
 import { vlog } from "@/lib/vlog";
+import { MAX_BUSCA } from "@/lib/busca";
 
 const FILE = "admin/visitas/page.tsx";
 
@@ -656,6 +657,7 @@ function VisitasContent() {
                   placeholder="Cliente, vendedor..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  maxLength={MAX_BUSCA}
                   icon={
                     <svg
                       className="h-5 w-5"

@@ -27,6 +27,7 @@ import {
 import { Produto, ProdutoInput } from "@/lib/types";
 import { urlImagemProduto } from "@/lib/imagemProduto";
 import { vlog } from "@/lib/vlog";
+import { MAX_BUSCA } from "@/lib/busca";
 
 const FILE = "admin/produtos/page.tsx";
 
@@ -599,6 +600,7 @@ function ProdutosPageContent() {
                   placeholder="Descricao ou SKU..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  maxLength={MAX_BUSCA}
                   icon={
                     <svg
                       className="h-5 w-5"

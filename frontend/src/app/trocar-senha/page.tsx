@@ -13,8 +13,9 @@ import {
   isTurnstileEnabled,
 } from "@/components/ui/Turnstile";
 import { apiChangePassword } from "@/lib/api";
-import { getUser } from "@/lib/auth";
-import { useTimeoutSeguro } from "@/lib/useMensagemTemporaria";
+import { clearTokens, getUser } from "@/lib/auth";
+import { AVISO_SENHA_ALTERADA, definirAvisoLogin } from "@/lib/avisoLogin";
+import { clearSession } from "@/lib/session";
 import { vlog } from "@/lib/vlog";
 
 const FILE = "trocar-senha/page.tsx";
@@ -32,8 +33,6 @@ export default function TrocarSenhaPage() {
   const [loading, setLoading] = useState(false);
   vlog(FILE, "TrocarSenhaPage", "inicializando estado de erro geral");
   const [error, setError] = useState<string | null>(null);
-  vlog(FILE, "TrocarSenhaPage", "inicializando estado de mensagem de sucesso");
-  const [success, setSuccess] = useState<string | null>(null);
   vlog(FILE, "TrocarSenhaPage", "inicializando estado de erros por campo");
   const [fieldErrors, setFieldErrors] = useState<{
     senhaAtual?: string;
@@ -44,8 +43,6 @@ export default function TrocarSenhaPage() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   vlog(FILE, "TrocarSenhaPage", "criando ref do widget Turnstile");
   const turnstileRef = useRef<TurnstileHandle>(null);
-  vlog(FILE, "TrocarSenhaPage", "obtendo agendador de timeout seguro");
-  const { agendar } = useTimeoutSeguro();
 
   vlog(FILE, "TrocarSenhaPage", "registrando efeito de verificacao de sessao");
   useEffect(() => {
@@ -119,8 +116,6 @@ export default function TrocarSenhaPage() {
     e.preventDefault();
     vlog(FILE, "TrocarSenhaPage.handleSubmit", "limpando erro geral");
     setError(null);
-    vlog(FILE, "TrocarSenhaPage.handleSubmit", "limpando mensagem de sucesso");
-    setSuccess(null);
     vlog(FILE, "TrocarSenhaPage.handleSubmit", "validando campos do formulario");
     if (!validate()) return;
 
@@ -130,12 +125,16 @@ export default function TrocarSenhaPage() {
     try {
       vlog(FILE, "TrocarSenhaPage.handleSubmit", "chamando apiChangePassword (captcha presente=%s)", captchaToken !== null);
       await apiChangePassword(senhaAtual, novaSenha, captchaToken ?? undefined);
-      vlog(FILE, "TrocarSenhaPage.handleSubmit", "senha alterada; exibindo mensagem de sucesso");
-      setSuccess("Senha alterada com sucesso!");
-      // Redirecionar para dashboard após breve delay. FE-11: o timer e
-      // cancelado se a tela desmontar antes (o usuario ja saiu da tela).
-      vlog(FILE, "TrocarSenhaPage.handleSubmit", "agendando redirecionamento para /dashboard em 1500ms");
-      agendar(() => router.replace("/dashboard"), 1500);
+      // FE-17: a troca corta as sessoes do usuario no backend (SEC-08), a
+      // atual inclusive. Ir para o dashboard daria 401 -> refresh recusado ->
+      // /login com "sessao expirada". Limpa o estado local e vai direto para
+      // o login com o aviso, sem nenhuma chamada autenticada depois da troca.
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "senha alterada; limpando sessao local");
+      clearTokens();
+      clearSession();
+      vlog(FILE, "TrocarSenhaPage.handleSubmit", "gravando aviso e redirecionando para /login");
+      definirAvisoLogin(AVISO_SENHA_ALTERADA);
+      router.replace("/login");
     } catch (err) {
       vlog(FILE, "TrocarSenhaPage.handleSubmit", "falha na troca de senha; extraindo mensagem do erro");
       const rawMessage = err instanceof Error ? err.message : "";
@@ -207,14 +206,6 @@ export default function TrocarSenhaPage() {
             <div className="mb-4">
               <Alert variant="error" onClose={() => setError(null)}>
                 {error}
-              </Alert>
-            </div>
-          )}
-
-          {success && (
-            <div className="mb-4">
-              <Alert variant="success" onClose={() => setSuccess(null)}>
-                {success}
               </Alert>
             </div>
           )}
