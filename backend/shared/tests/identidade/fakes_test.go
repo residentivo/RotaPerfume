@@ -30,7 +30,9 @@ type usuariosFake struct {
 	errInvalid error
 	ativos     []identidade.Usuario
 	senhas     []identidade.HashSenha
+	anteriores []identidade.HashSenha // hash anterior de cada AtualizarSenha (BUG-24)
 	invalidou  int
+	alternados int // AlternarAtivo (toggle atômico, BUG-22)
 	rehash     int
 	proximoID  int64
 }
@@ -98,9 +100,31 @@ func (f *usuariosFake) Atualizar(context.Context, int64, identidade.UsuarioValid
 	return f.errAtualiz
 }
 
-func (f *usuariosFake) DefinirAtivo(context.Context, int64, bool) error { return f.errAtivo }
+// DefinirAtivo e AlternarAtivo mudam o usuário do mapa (a releitura do
+// BUG-22 vê o valor gravado); sem o id, ErrUsuarioNaoEncontrado.
+func (f *usuariosFake) DefinirAtivo(_ context.Context, id int64, ativo bool) error {
+	return f.mudarAtivo(id, func(bool) bool { return ativo })
+}
 
-func (f *usuariosFake) AtualizarSenha(_ context.Context, _ int64, h identidade.HashSenha, _ bool) error {
+func (f *usuariosFake) AlternarAtivo(_ context.Context, id int64) error {
+	f.alternados++
+	return f.mudarAtivo(id, func(atual bool) bool { return !atual })
+}
+
+func (f *usuariosFake) mudarAtivo(id int64, novo func(bool) bool) error {
+	if f.errAtivo != nil {
+		return f.errAtivo
+	}
+	u, ok := f.porID[id]
+	if !ok {
+		return identidade.ErrUsuarioNaoEncontrado
+	}
+	u.Ativo = novo(u.Ativo)
+	return nil
+}
+
+func (f *usuariosFake) AtualizarSenha(_ context.Context, _ int64, anterior, h identidade.HashSenha, _ bool) error {
+	f.anteriores = append(f.anteriores, anterior)
 	if f.errSenha != nil {
 		return f.errSenha
 	}
@@ -248,6 +272,34 @@ func (t *txSenhaFake) WithTx(_ context.Context, fn func(identidadeapp.TxSenha) e
 	return nil
 }
 
+// txAtivoFake é o UoW do PATCH /inativar de usuário (BUG-22): guarda o
+// ativo de cada usuário, as revogações e os cortes antes da fn e os
+// restaura se ela falhar (rollback).
+type txAtivoFake struct {
+	a         *ambiente
+	commits   int
+	rollbacks int
+}
+
+func (t *txAtivoFake) WithTx(_ context.Context, fn func(identidadeapp.TxAtivoUsuario) error) error {
+	ativos := map[int64]bool{}
+	for id, u := range t.a.usuarios.porID {
+		ativos[id] = u.Ativo
+	}
+	revogados, invalidou := len(t.a.tokens.revogados), t.a.usuarios.invalidou
+	if err := fn(identidadeapp.TxAtivoUsuario{Usuarios: t.a.usuarios, Tokens: t.a.tokens}); err != nil {
+		for id, ativo := range ativos {
+			t.a.usuarios.porID[id].Ativo = ativo
+		}
+		t.a.tokens.revogados = t.a.tokens.revogados[:revogados]
+		t.a.usuarios.invalidou = invalidou
+		t.rollbacks++
+		return err
+	}
+	t.commits++
+	return nil
+}
+
 // hasherFake: o "hash" de s é "h:"+s.
 type hasherFake struct {
 	errGerar error
@@ -353,6 +405,7 @@ type ambiente struct {
 	email      emailFake
 	vendedores vendedoresFake
 	txSenha    *txSenhaFake
+	txAtivo    *txAtivoFake
 	agora      time.Time
 	// linhaDoTempo: "commit"/"rollback" do txSenha e "email" do emailFake.
 	linhaDoTempo []string
@@ -367,6 +420,7 @@ func novoAmbiente(us ...*identidade.Usuario) *ambiente {
 		agora: time.Date(2026, 10, 1, 12, 0, 0, 0, time.Local),
 	}
 	a.txSenha = &txSenhaFake{a: a}
+	a.txAtivo = &txAtivoFake{a: a}
 	a.email = emailFake{linhaDoTempo: &a.linhaDoTempo}
 	return a
 }
@@ -375,7 +429,8 @@ func (a *ambiente) deps() identidadeapp.Deps {
 	l := a.limite
 	return identidadeapp.Deps{
 		Usuarios: a.usuarios, Tokens: a.tokens, Historico: a.historico, Rotacao: txFake{a.tokens}, TrocaSenha: a.txSenha,
-		Hasher: a.hasher, Emissor: a.emissor, Refresh: geradorRefreshFake{}, Senhas: a.senhas,
+		AtivoUsuario: a.txAtivo,
+		Hasher:       a.hasher, Emissor: a.emissor, Refresh: geradorRefreshFake{}, Senhas: a.senhas,
 		Captcha: captchaFake{acoes: &a.acoesCaptcha}, Limites: identidadeapp.Limites{Login: l, Refresh: l, Reset: l},
 		Publicador: identidadeapp.SemPublicador{}, Email: a.email, Vendedores: a.vendedores,
 		Relogio: func() time.Time { return a.agora },

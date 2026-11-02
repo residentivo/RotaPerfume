@@ -83,8 +83,8 @@ func esperarReset(mock sqlmock.Sqlmock, u usuarioOPS01) *string {
 	mock.ExpectExec(`INSERT INTO senha_historico`).
 		WithArgs(u.id, sqlmock.AnyArg(), u.hash, identidadeapp.ResetMassaIPOrigem, identidadeapp.ResetMassaUserAgent, "admin").
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs(capturaHash{novo}, true, sqlmock.AnyArg(), u.id).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+		WithArgs(capturaHash{novo}, true, sqlmock.AnyArg(), u.id, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), u.id).

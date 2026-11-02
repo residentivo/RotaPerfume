@@ -1,6 +1,7 @@
 package vendas
 
 import (
+	"math"
 	"strings"
 	"time"
 
@@ -144,7 +145,9 @@ func (d DadosPagamento) validarValores() error {
 	if _, err := kernel.NovoDinheiro(d.Valor); err != nil {
 		return ErrValorInvalido
 	}
-	if d.TaxaPct < 0 || d.TaxaPct > TaxaPctMaxima {
+	// !(dentro do intervalo) recusa também NaN; ±Inf cai fora do intervalo
+	// (CHORE-08: a comparação direta era falsa para NaN).
+	if math.IsNaN(d.TaxaPct) || math.IsInf(d.TaxaPct, 0) || d.TaxaPct < 0 || d.TaxaPct > TaxaPctMaxima {
 		return ErrTaxaPctInvalida
 	}
 	if _, err := kernel.NovoDinheiro(d.ValorLiquido); err != nil {

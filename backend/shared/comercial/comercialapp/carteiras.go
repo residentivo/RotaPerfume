@@ -50,7 +50,7 @@ func (c *Casos) VincularCliente(ctx context.Context, p kernel.Principal, vendedo
 	if transferidoDe != 0 {
 		vlog.Printf(arqCarteiras, "Comercial.VincularCliente", "decisão transferida cliente_id=%d de_vendedor_id=%d", clienteID, transferidoDe)
 	}
-	log.Printf("[vendedores] cliente vinculado: vendedor_id=%d cliente_id=%d por usuario role=%s", vendedorID, clienteID, p.Role())
+	log.Printf("[vendedores] cliente vinculado: vendedor_id=%d cliente_id=%d por usuario_id=%d role=%s", vendedorID, clienteID, p.UserID(), p.Role())
 	return comercial.ResumoDoVinculo(cliente, vinculo), nil
 }
 
@@ -123,7 +123,7 @@ func (c *Casos) DesvincularCliente(ctx context.Context, p kernel.Principal, vend
 	if err = c.d.Carteiras.Encerrar(ctx, vinculo.CarteiraIDOrigem, c.agora()); err != nil {
 		return err
 	}
-	log.Printf("[vendedores] cliente desvinculado: vendedor_id=%d cliente_id=%d por usuario role=%s", vendedorID, clienteID, p.Role())
+	log.Printf("[vendedores] cliente desvinculado: vendedor_id=%d cliente_id=%d por usuario_id=%d role=%s", vendedorID, clienteID, p.UserID(), p.Role())
 	return nil
 }
 

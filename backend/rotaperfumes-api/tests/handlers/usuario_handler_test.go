@@ -57,10 +57,10 @@ func TestListUsuarios_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	require.Len(t, data, 1)
-	item := data[0].(map[string]any)
+	item := como[map[string]any](t, data[0])
 	assert.Equal(t, "usuario@test.com", item["email"])
 	_, hasHash := item["password_hash"]
 	assert.False(t, hasHash, "password_hash nunca deve ser exposto")
@@ -185,8 +185,8 @@ func TestCreateUsuario_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "usuario@test.com", data["email"])
 	assert.Equal(t, true, data["email_enviado"])
 
@@ -402,7 +402,7 @@ func TestUpdateUsuario_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -604,16 +604,9 @@ func TestToggleAtivoUsuario_Toggle_SemBody(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(usuarioRowsForHandler(1, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs(false, sqlmock.AnyArg(), int64(1)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	// SEC-06: inativação revoga os refresh tokens do usuário.
-	mock.ExpectExec(revokeAllByUserRegex).
-		WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	// BUG-22: toggle atômico (NOT ativo) e releitura na tx; SEC-06/08:
+	// inativação revoga os refresh tokens e grava o corte na mesma tx.
+	expectToggleUsuarioTxH(mock, 1, true, false)
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/usuarios/1/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -624,7 +617,8 @@ func TestToggleAtivoUsuario_Toggle_SemBody(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data, ok := body["data"].(map[string]any)
+	require.True(t, ok, "data deve ser objeto: %v", body)
 	assert.Equal(t, false, data["ativo"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -638,12 +632,7 @@ func TestToggleAtivoUsuario_ComBodyExplicito(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(usuarioRowsForHandler(1, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-		WithArgs(true, int64(1)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	expectToggleUsuarioTxH(mock, 1, false, true)
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/usuarios/1/inativar", makeJSON(map[string]any{"ativo": true}))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -654,7 +643,8 @@ func TestToggleAtivoUsuario_ComBodyExplicito(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data, ok := body["data"].(map[string]any)
+	require.True(t, ok, "data deve ser objeto: %v", body)
 	assert.Equal(t, true, data["ativo"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -668,9 +658,9 @@ func TestToggleAtivoUsuario_NaoEncontrado(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-		WithArgs(int64(999)).
-		WillReturnRows(emptyUsuarioRows())
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE usuarios SET ativo = NOT ativo WHERE id = \?`).WithArgs(int64(999)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/usuarios/999/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -732,12 +722,9 @@ func TestToggleAtivoUsuario_ErroInterno(t *testing.T) {
 	cfg := testCfg()
 	adminToken := generateToken(t, cfg, 1, "admin")
 
-	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-		WithArgs(int64(1)).
-		WillReturnRows(usuarioRowsForHandler(1, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs(false, sqlmock.AnyArg(), int64(1)).
-		WillReturnError(sqlmock.ErrCancelled)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE usuarios SET ativo = NOT ativo WHERE id = \?`).WithArgs(int64(1)).WillReturnError(sqlmock.ErrCancelled)
+	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("PATCH", server.URL+"/api/usuarios/1/inativar", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
@@ -791,7 +778,7 @@ func TestAdminResetPassword_Success_ViaUsuarioHandler(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, true, data["sucesso"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())

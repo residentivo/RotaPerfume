@@ -282,12 +282,12 @@ func TestUpdatePasswordHash_Success(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs("novo-hash-bcrypt", false, sqlmock.AnyArg(), int64(7)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+		WithArgs("novo-hash-bcrypt", false, sqlmock.AnyArg(), int64(7), "hash-anterior").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	ctx := context.Background()
-	err := identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, 7, identidade.NovoHashSenha("novo-hash-bcrypt"), false)
+	err := identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, 7, identidade.NovoHashSenha("hash-anterior"), identidade.NovoHashSenha("novo-hash-bcrypt"), false)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -333,12 +333,13 @@ func TestUpdatePasswordHash_NotFound(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs("hash", false, sqlmock.AnyArg(), int64(99999)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+		WithArgs("hash", false, sqlmock.AnyArg(), int64(99999), "hash-anterior").
 		WillReturnResult(sqlmock.NewResult(0, 0)) // 0 linhas afetadas
+	mock.ExpectQuery(`SELECT 1 FROM usuarios WHERE id = \?`).WithArgs(int64(99999)).WillReturnRows(sqlmock.NewRows([]string{"1"}))
 
 	ctx := context.Background()
-	err := identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, 99999, identidade.NovoHashSenha("hash"), false)
+	err := identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, 99999, identidade.NovoHashSenha("hash-anterior"), identidade.NovoHashSenha("hash"), false)
 
 	assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -348,12 +349,12 @@ func TestUpdatePasswordHash_DBError(t *testing.T) {
 	db, mock := newMock(t)
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs("hash", false, sqlmock.AnyArg(), int64(1)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+		WithArgs("hash", false, sqlmock.AnyArg(), int64(1), "hash-anterior").
 		WillReturnError(sql.ErrConnDone)
 
 	ctx := context.Background()
-	err := identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, 1, identidade.NovoHashSenha("hash"), false)
+	err := identidademysql.NovoUsuarios(db).AtualizarSenha(ctx, 1, identidade.NovoHashSenha("hash-anterior"), identidade.NovoHashSenha("hash"), false)
 
 	assert.Error(t, err)
 	assert.NotErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado, "erro de DB não é ErrNotFound")

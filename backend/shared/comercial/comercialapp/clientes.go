@@ -93,10 +93,10 @@ func (c *Casos) gravarCliente(ctx context.Context, cl *comercial.Cliente, vended
 
 func logCriado(id int64, p kernel.Principal, vendedorID int64, restrito bool) {
 	if restrito {
-		log.Printf("[clientes] criado: id=%d por usuario role=%s vendedor_id=%d carteira_vinculada=true", id, p.Role(), vendedorID)
+		log.Printf("[clientes] criado: id=%d por usuario_id=%d role=%s vendedor_id=%d carteira_vinculada=true", id, p.UserID(), p.Role(), vendedorID)
 		return
 	}
-	log.Printf("[clientes] criado: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[clientes] criado: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 }
 
 // AtualizarCliente grava os campos editáveis. A posse é checada ANTES de
@@ -116,30 +116,74 @@ func (c *Casos) AtualizarCliente(ctx context.Context, p kernel.Principal, id int
 	if err = c.d.Clientes.Atualizar(ctx, id, cl); err != nil {
 		return nil, cnpjDuplicado(err)
 	}
-	log.Printf("[clientes] atualizado: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[clientes] atualizado: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return appkit.RelerAtualizado(ctx, "comercialapp", id, c.d.Clientes.PorID)
 }
 
 // AlternarAtivoCliente aplica o PATCH /inativar (posse antes do body; ativo
-// nil = toggle).
+// nil = toggle). BUG-22: numa tx, trava o cliente, confere a carteira de
+// novo sob o lock (SEC-01: uma transferência no meio não deixa o vendedor
+// antigo alterar o cliente), inverte no próprio UPDATE (dois toggles
+// simultâneos não se anulam) e relê para a resposta.
 func (c *Casos) AlternarAtivoCliente(ctx context.Context, p kernel.Principal, id int64, ler Leitor[*bool]) (cl *comercial.Cliente, err error) {
 	defer vlog.Trace(arqClientes, "Comercial.AlternarAtivoCliente", "id=%d", id)(&err)
-	if err = c.autorizarEscritaCliente(ctx, p, id); err != nil {
+	e, err := c.noEscopo(ctx, p, comercial.ErrClienteNaoEncontrado)
+	if err != nil {
+		return nil, err
+	}
+	if err = c.exigirNaCarteira(ctx, e, id); err != nil {
 		return nil, err
 	}
 	ativo, err := ler()
 	if err != nil {
 		return nil, err
 	}
-	if cl, err = c.d.Clientes.PorID(ctx, id); err != nil {
+	err = c.d.AtivoCliente.WithTx(ctx, func(tx TxAtivoCliente) error {
+		var errTx error
+		cl, errTx = alternarAtivoClienteNaTx(ctx, tx, e, id, ativo)
+		return errTx
+	})
+	if err != nil {
 		return nil, err
 	}
-	cl.DefinirAtivo(ativo)
-	if err = c.d.Clientes.DefinirAtivo(ctx, id, cl.Ativo); err != nil {
-		return nil, err
-	}
-	log.Printf("[clientes] ativo=%t: id=%d por usuario role=%s", cl.Ativo, id, p.Role())
+	log.Printf("[clientes] ativo=%t: id=%d por usuario_id=%d role=%s", cl.Ativo, id, p.UserID(), p.Role())
 	return cl, nil
+}
+
+// alternarAtivoClienteNaTx: lock → carteira sob o lock (só no escopo de
+// vendedor) → UPDATE atômico (toggle) ou com o valor → releitura.
+func alternarAtivoClienteNaTx(ctx context.Context, tx TxAtivoCliente, e kernel.Escopo, id int64, ativo *bool) (*comercial.Cliente, error) {
+	if err := tx.Clientes.TravarParaVinculo(ctx, id); err != nil {
+		return nil, err
+	}
+	if err := carteiraSobLock(ctx, tx, e, id); err != nil {
+		return nil, err
+	}
+	var err error
+	if ativo == nil {
+		err = tx.Clientes.AlternarAtivo(ctx, id)
+	} else {
+		err = tx.Clientes.DefinirAtivo(ctx, id, *ativo)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return tx.Clientes.PorID(ctx, id)
+}
+
+// carteiraSobLock repete a checagem de carteira dentro da tx, depois do
+// lock do cliente: fora da carteira (ou transferido no meio) → 404.
+func carteiraSobLock(ctx context.Context, tx TxAtivoCliente, e kernel.Escopo, id int64) error {
+	vendedorID, restrito, err := e.Filtro()
+	if err != nil || !restrito {
+		return err
+	}
+	_, err = tx.Carteiras.VinculoAtivo(ctx, vendedorID, id)
+	if errors.Is(err, comercial.ErrVinculoNaoEncontrado) {
+		vlog.Printf(arqClientes, "Comercial.AlternarAtivoCliente", "decisão fora_da_carteira_sob_lock cliente_id=%d", id)
+		return comercial.ErrClienteNaoEncontrado
+	}
+	return err
 }
 
 // autorizarEscritaCliente: sem carteira ou cliente fora da carteira ativa

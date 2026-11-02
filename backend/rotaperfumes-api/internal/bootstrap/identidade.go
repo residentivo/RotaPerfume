@@ -61,6 +61,9 @@ func NovaIdentidade(pool *sql.DB, cfg *config.Config, ext ExtIdentidade) *identi
 				Tokens:    identidademysql.NovoRefreshTokens(q),
 			}
 		}),
+		AtivoUsuario: db.NewTransactor(pool, func(q db.Querier) identidadeapp.TxAtivoUsuario {
+			return identidadeapp.TxAtivoUsuario{Usuarios: identidademysql.NovoUsuarios(q), Tokens: identidademysql.NovoRefreshTokens(q)}
+		}),
 		Hasher:  identidadecrypto.NovoHasher(cfg.HashSenha),
 		Emissor: identidadecrypto.NovoJWT(cfg),
 		Refresh: identidadecrypto.GeradorRefresh{},

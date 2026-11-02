@@ -136,7 +136,10 @@ func (b *bitsLSB) bytes() []byte {
 
 // imgWebP monta um WebP lossless (VP8L) w x h de cor única. Cada código de
 // prefixo é "simples" com um símbolo de 8 bits; o pixel não ocupa bits.
-func imgWebP(w, h int) []byte {
+func imgWebP(w, h int) []byte { return imgWebPAlfa(w, h, 0xFF) }
+
+// imgWebPAlfa é o imgWebP com o alfa informado (0xFF = opaco; SEC-34).
+func imgWebPAlfa(w, h int, alfa uint64) []byte {
 	var bw bitsLSB
 	bw.put(0x2f, 8)
 	bw.put(uint64(w-1), 14)
@@ -146,7 +149,7 @@ func imgWebP(w, h int) []byte {
 	bw.put(0, 1)                                              // sem transform
 	bw.put(0, 1)                                              // sem color cache
 	bw.put(0, 1)                                              // sem meta prefix codes
-	for _, sym := range []uint64{0x40, 0x80, 0xC0, 0xFF, 0} { // verde, vermelho, azul, alfa, distância
+	for _, sym := range []uint64{0x40, 0x80, 0xC0, alfa, 0} { // verde, vermelho, azul, alfa, distância
 		bw.put(1, 1) // código simples
 		bw.put(0, 1) // 1 símbolo
 		bw.put(1, 1) // símbolo de 8 bits

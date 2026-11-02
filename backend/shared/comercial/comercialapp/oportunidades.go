@@ -56,7 +56,7 @@ func (c *Casos) CriarOportunidade(ctx context.Context, p kernel.Principal, ler L
 	if err = c.d.Oportunidades.Inserir(ctx, o); err != nil {
 		return nil, err
 	}
-	log.Printf("[oportunidades] criada: id=%d por usuario role=%s", o.OportunidadeID, p.Role())
+	log.Printf("[oportunidades] criada: id=%d por usuario_id=%d role=%s", o.OportunidadeID, p.UserID(), p.Role())
 	return appkit.RelerCriado(ctx, "[oportunidades] criada, mas falhou a releitura: id", o.OportunidadeID, o, c.d.Oportunidades.PorID), nil
 }
 
@@ -77,7 +77,7 @@ func (c *Casos) AtualizarOportunidade(ctx context.Context, p kernel.Principal, i
 	if err = c.d.Oportunidades.Atualizar(ctx, id, o); err != nil {
 		return nil, err
 	}
-	log.Printf("[oportunidades] atualizada: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[oportunidades] atualizada: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return appkit.RelerAtualizado(ctx, "comercialapp", id, c.d.Oportunidades.PorID)
 }
 
@@ -95,7 +95,7 @@ func (c *Casos) ExcluirOportunidade(ctx context.Context, p kernel.Principal, id 
 	if err = c.d.Oportunidades.Excluir(ctx, id); err != nil {
 		return err
 	}
-	log.Printf("[oportunidades] excluída: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[oportunidades] excluída: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return nil
 }
 

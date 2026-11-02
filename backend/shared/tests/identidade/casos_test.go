@@ -311,11 +311,13 @@ func TestAlternarAtivoUsuario_Ramos(t *testing.T) {
 	_, err = b.casos().AlternarAtivoUsuario(ctx, admin, 9, nil)
 	assert.ErrorIs(t, err, errInfra)
 
+	// BUG-22: a revogação entra na tx; falha desfaz a inativação (500).
 	c := novoAmbiente(usuarioAtivo(9, "a@b.c", "s", kernel.RoleNormal))
-	c.tokens.errTodos = errInfra // revogação falha: só loga (I-09)
-	u, err := c.casos().AlternarAtivoUsuario(ctx, admin, 9, nil)
-	require.NoError(t, err)
-	assert.False(t, u.Ativo)
+	c.tokens.errTodos = errInfra
+	_, err = c.casos().AlternarAtivoUsuario(ctx, admin, 9, nil)
+	assert.ErrorIs(t, err, errInfra)
+	assert.True(t, c.usuarios.porID[9].Ativo, "rollback: continua ativo")
+	assert.Equal(t, 1, c.txAtivo.rollbacks)
 }
 
 func TestObterSessao_Ramos(t *testing.T) {

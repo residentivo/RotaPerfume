@@ -6,15 +6,19 @@ import "regexp"
 // enviado; as dimensões são conferidas pelo cabeçalho ANTES do decode
 // completo (proteção contra decompression bomb).
 const (
-	MaxImagemBytes     = 1 << 20
-	MaxLadoImagemPx    = 4096
-	MaxPixelsImagem    = 16_000_000
-	TipoImagemJPEG     = "image/jpeg"
-	TipoImagemPNG      = "image/png"
-	TipoImagemWebP     = "image/webp"
-	extensaoImagemJPEG = ".jpg"
-	extensaoImagemPNG  = ".png"
-	extensaoImagemWebP = ".webp"
+	MaxImagemBytes = 1 << 20
+	// MaxImagemSaidaBytes é o teto dos bytes GRAVADOS (todos os formatos),
+	// depois do reencode/conversão (SEC-34: o WebP vira PNG e pode crescer).
+	// Acima disso, ErrImagemMuitoGrande.
+	MaxImagemSaidaBytes = 4 << 20
+	MaxLadoImagemPx     = 4096
+	MaxPixelsImagem     = 16_000_000
+	TipoImagemJPEG      = "image/jpeg"
+	TipoImagemPNG       = "image/png"
+	TipoImagemWebP      = "image/webp"
+	extensaoImagemJPEG  = ".jpg"
+	extensaoImagemPNG   = ".png"
+	extensaoImagemWebP  = ".webp"
 )
 
 // padraoNomeImagem é o único formato de nome aceito em disco e no banco:

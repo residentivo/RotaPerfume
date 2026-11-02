@@ -35,12 +35,18 @@ func (c *Casos) RenovarSessao(ctx context.Context, token identidade.TokenOpaco, 
 		return nil, err
 	}
 	u, err := c.d.Usuarios.PorID(ctx, rt.UsuarioID)
+	if errors.Is(err, identidade.ErrUsuarioNaoEncontrado) {
+		log.Printf("[auth] refresh: usuário inexistente user_id=%d", rt.UsuarioID)
+		c.recusarRefresh(ctx, rt, chave)
+		return nil, identidade.ErrRefreshRevogado
+	}
 	if err != nil {
 		log.Printf("[auth] refresh: GetByID: %v", err)
-		return nil, fmt.Errorf("identidadeapp: refresh: ler usuário: %v", err) // sem %w: inexistente aqui é 500
+		return nil, fmt.Errorf("identidadeapp: refresh: ler usuário: %v", err) // sem %w: só o inexistente vira 401 (BUG-23)
 	}
 	if !u.Ativo {
-		c.recusarRefreshInativo(ctx, rt, u.ID, chave)
+		log.Printf("[auth] refresh: usuário inativo, token revogado: user_id=%d", u.ID)
+		c.recusarRefresh(ctx, rt, chave)
 		return nil, identidade.ErrRefreshRevogado
 	}
 	s, err = c.rotacionar(ctx, rt, u, o)
@@ -52,13 +58,13 @@ func (c *Casos) RenovarSessao(ctx context.Context, token identidade.TokenOpaco, 
 	return s, nil
 }
 
-// recusarRefreshInativo trata o refresh de usuário inativo (SEC-22): revoga
-// o token apresentado (best-effort) e conta falha no rate limit por IP. A
-// resposta é a de token revogado, sem revelar que a conta está inativa.
-func (c *Casos) recusarRefreshInativo(ctx context.Context, rt *identidade.RefreshToken, usuarioID int64, chave string) {
-	log.Printf("[auth] refresh: usuário inativo, token revogado: user_id=%d", usuarioID)
+// recusarRefresh trata o refresh de usuário inativo (SEC-22) ou apagado
+// (BUG-23): revoga o token apresentado (motivo inativacao, best-effort) e
+// conta falha no rate limit por IP. A resposta é a de token revogado, sem
+// revelar se a conta está inativa ou não existe mais.
+func (c *Casos) recusarRefresh(ctx context.Context, rt *identidade.RefreshToken, chave string) {
 	if err := c.d.Tokens.Revogar(ctx, rt.ID, identidade.MotivoInativacao); err != nil {
-		log.Printf("[auth] refresh: revogar token de usuário inativo user_id=%d: %v", usuarioID, err)
+		log.Printf("[auth] refresh: revogar token de usuário inativo/inexistente user_id=%d: %v", rt.UsuarioID, err)
 	}
 	c.d.Limites.Refresh.RegistrarFalha(chave)
 }

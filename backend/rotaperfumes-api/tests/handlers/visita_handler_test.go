@@ -67,10 +67,10 @@ func TestListVisitas_Success_Admin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	assert.Len(t, data, 1)
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(1), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -111,7 +111,7 @@ func TestListVisitas_PermitidoParaNaoAdmin_ForcaCarteira(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -141,10 +141,10 @@ func TestListVisitas_SemVendedorVinculado_ListaVazia(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	assert.Len(t, data, 0)
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(0), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -221,7 +221,7 @@ func TestListVisitas_ListaVazia(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(0), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -252,8 +252,8 @@ func TestGetVisita_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "Positiva", data["resultado"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -334,7 +334,7 @@ func TestGetVisita_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -428,8 +428,8 @@ func TestCreateVisita_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(9), data["visita_id"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -480,8 +480,8 @@ func TestCreateVisita_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(5), data["vendedor_id"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -760,8 +760,8 @@ func TestUpdateVisita_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "Positiva", data["resultado"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -854,7 +854,7 @@ func TestUpdateVisita_PermitidoParaNaoAdmin_ForcaVendedorID(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

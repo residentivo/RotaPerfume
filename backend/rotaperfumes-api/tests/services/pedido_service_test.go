@@ -586,7 +586,7 @@ func TestPedidoService_UpdatePedido_ErroGenericoDoRepo(t *testing.T) {
 
 // TestPedidoService_UpdatePedido_FaturadoTentaAlterarItens_Erro409 cobre a
 // regra do SecBrain: pedido já "Faturado" não pode ter os itens alterados
-// (apenas o status) — deve propagar o erro sentinela do repositório para o
+// (só a transição permitida) — deve propagar o erro sentinela do repositório para o
 // handler mapear como HTTP 409.
 func TestPedidoService_UpdatePedido_FaturadoTentaAlterarItens_Erro409(t *testing.T) {
 	db, mock := newPedidoTestDB(t)

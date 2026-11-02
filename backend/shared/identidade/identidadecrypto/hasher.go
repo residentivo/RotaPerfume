@@ -13,7 +13,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
+	"sync/atomic"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
@@ -33,6 +35,14 @@ const (
 	argon2SaltBytes  = 16
 	argon2ChaveBytes = 32
 	prefixoArgon2id  = "$argon2id$"
+
+	// Teto dos parâmetros aceitos num hash gravado (SEC-32): acima disso o
+	// hash é recusado como malformado, para um registro adulterado não
+	// transformar o login num DoS de CPU/memória. A memória é relativa à
+	// configuração atual (4x).
+	fatorTetoMemoria = 4
+	tetoIteracoes    = 10
+	tetoParalelismo  = 16
 )
 
 // ErrPepperNaoConfigurado: nunca se gera hash sem pepper (Config montada à
@@ -49,6 +59,9 @@ type estrategia interface {
 // e bcrypt legado. Só o Argon2id gera hash.
 type Hasher struct {
 	argon2 argon2idPepper
+	// descartaveis conta as execuções do hash descartável (observabilidade
+	// e testes do SEC-32/I-16).
+	descartaveis atomic.Uint64
 }
 
 // NovoHasher monta o hasher com o pepper e os parâmetros da config.
@@ -67,10 +80,21 @@ func (h *Hasher) Gerar(s identidade.Senha) (identidade.HashSenha, error) {
 }
 
 // Verificar confere a senha contra o hash, em tempo constante no Argon2id.
-// Hash vazio, malformado ou desconhecido devolve false.
+// Hash vazio, malformado, com parâmetros acima do teto ou sem pepper
+// configurado devolve false DEPOIS de rodar o hash descartável: o tempo de
+// resposta é o de uma senha errada (SEC-32, I-16).
 func (h *Hasher) Verificar(hash identidade.HashSenha, s identidade.Senha) bool {
-	e := h.estrategiaDe(hash.Revelar())
-	return e.verificar(hash.Revelar(), s.Revelar())
+	v := hash.Revelar()
+	if (bcryptLegado{}).reconhece(v) {
+		return bcryptLegado{}.verificar(v, s.Revelar())
+	}
+	decodificado, motivo := h.argon2.reconhecer(v)
+	if motivo != "" {
+		log.Printf("[auth] hash_irreconhecido: motivo=%s", motivo)
+		h.ExecutarDescartavel(s)
+		return false
+	}
+	return h.argon2.conferir(decodificado, s.Revelar())
 }
 
 // PrecisaRehash: bcrypt legado ou Argon2id com parâmetros diferentes dos
@@ -82,8 +106,25 @@ func (h *Hasher) PrecisaRehash(hash identidade.HashSenha) bool {
 // ExecutarDescartavel roda um Argon2id com os parâmetros atuais e descarta o
 // resultado: o login de e-mail inexistente custa o mesmo que o de um
 // existente (I-16).
+//
+// Roda mesmo sem pepper (o HMAC com chave vazia custa o mesmo), para o
+// caminho de configuração quebrada não ficar mais rápido; só pula se os
+// parâmetros forem zero (o argon2 entraria em pânico).
 func (h *Hasher) ExecutarDescartavel(s identidade.Senha) {
-	_, _ = h.argon2.gerar(s.Revelar())
+	h.descartaveis.Add(1)
+	p := h.argon2.p
+	if p.MemoriaKiB == 0 || p.Iteracoes == 0 || p.Paralelismo == 0 {
+		return
+	}
+	salt := make([]byte, argon2SaltBytes)
+	_, _ = rand.Read(salt)
+	_ = argon2.IDKey(h.argon2.comPepper(s.Revelar()), salt, p.Iteracoes, p.MemoriaKiB, p.Paralelismo, argon2ChaveBytes)
+}
+
+// ExecucoesDescartaveis devolve quantas vezes o hash descartável rodou
+// neste Hasher (contador monotônico; SEC-32).
+func (h *Hasher) ExecucoesDescartaveis() uint64 {
+	return h.descartaveis.Load()
 }
 
 // estrategiaDe escolhe a Strategy pelo formato: bcrypt pelo prefixo; todo o
@@ -128,13 +169,49 @@ func (a argon2idPepper) gerar(senha string) (string, error) {
 }
 
 func (a argon2idPepper) verificar(hash, senha string) bool {
-	if a.p.Pepper == "" {
+	h, motivo := a.reconhecer(hash)
+	if motivo != "" {
 		return false
+	}
+	return a.conferir(h, senha)
+}
+
+// Motivos (enum fixo) do log hash_irreconhecido. Nunca o hash.
+const (
+	motivoHashVazio        = "vazio"
+	motivoPepperVazio      = "pepper_vazio"
+	motivoHashMalformado   = "malformado"
+	motivoParametrosNoTeto = "parametros_acima_do_teto"
+)
+
+// reconhecer decodifica o hash e aplica o teto de parâmetros. motivo vazio
+// = hash utilizável.
+func (a argon2idPepper) reconhecer(hash string) (*hashArgon2, string) {
+	if hash == "" {
+		return nil, motivoHashVazio
+	}
+	if a.p.Pepper == "" {
+		return nil, motivoPepperVazio
 	}
 	h, err := decodificarArgon2(hash)
 	if err != nil {
-		return false
+		return nil, motivoHashMalformado
 	}
+	if a.acimaDoTeto(h) {
+		return nil, motivoParametrosNoTeto
+	}
+	return h, ""
+}
+
+// acimaDoTeto: m > 4x a memória atual, t > 10 ou p > 16 (SEC-32).
+func (a argon2idPepper) acimaDoTeto(h *hashArgon2) bool {
+	return uint64(h.memoria) > fatorTetoMemoria*uint64(a.p.MemoriaKiB) ||
+		h.iteracoes > tetoIteracoes || h.paralelismo > tetoParalelismo
+}
+
+// conferir roda o Argon2id com os parâmetros do hash e compara em tempo
+// constante.
+func (a argon2idPepper) conferir(h *hashArgon2, senha string) bool {
 	calc := argon2.IDKey(a.comPepper(senha), h.salt, h.iteracoes, h.memoria, h.paralelismo, uint32(len(h.chave)))
 	return subtle.ConstantTimeCompare(calc, h.chave) == 1
 }

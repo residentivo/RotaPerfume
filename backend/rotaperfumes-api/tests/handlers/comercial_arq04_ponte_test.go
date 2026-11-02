@@ -58,9 +58,10 @@ func TestARQ04_PonteEscopo_Vendas_ErroDeInfra500(t *testing.T) {
 	}
 }
 
-// V-02 pela ponte: sem carteira, ou falha ao buscar o vendedor do pedido do
-// pagamento (Get/Delete) → 404 "pagamento não encontrado", nunca 500 nem o
-// registro; e falha na exclusão de um registro achado → 500.
+// V-02 pela ponte: sem carteira → 404 "pagamento não encontrado", nunca o
+// registro. SEC-38 (Lote 31): falha de banco ao buscar o vendedor do pedido
+// do pagamento (Get/Delete) passa a 500 (antes 404); falha na exclusão de um
+// registro achado → 500.
 func TestARQ04_PonteEscopo_Vendas_PosseEFalhas(t *testing.T) {
 	const (
 		rePagamento = `SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`
@@ -80,18 +81,38 @@ func TestARQ04_PonteEscopo_Vendas_PosseEFalhas(t *testing.T) {
 			func(m sqlmock.Sqlmock) {
 				m.ExpectQuery(reUsuarioVendedor).WithArgs(int64(2)).WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(nil))
 			}},
-		{"get pagamento: falha no vendedor do pedido", http.MethodGet, "/api/pagamentos/1", "normal", "pagamento não encontrado", http.StatusNotFound,
+		{"get pagamento: falha no vendedor do pedido (SEC-38: 500)", http.MethodGet, "/api/pagamentos/1", "normal", "erro interno", http.StatusInternalServerError,
 			func(m sqlmock.Sqlmock) {
 				restritoAtivo(m)
 				m.ExpectQuery(rePagamento).WithArgs(int64(1)).WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
 				m.ExpectQuery(rePedido).WithArgs(int64(1)).WillReturnError(errors.New("db down"))
 			}},
-		// SEC-35: na exclusão, o vendedor do pedido é lido sob lock (V-02 mantido).
-		{"delete pagamento: falha no vendedor do pedido", http.MethodDelete, "/api/pagamentos/1", "normal", "pagamento não encontrado", http.StatusNotFound,
+		// SEC-35/38: na exclusão, o vendedor do pedido é lido sem lock e
+		// depois sob lock; erro de banco em qualquer um é 500.
+		{"delete pagamento: falha na leitura sem lock (SEC-38: 500)", http.MethodDelete, "/api/pagamentos/1", "normal", "erro interno", http.StatusInternalServerError,
 			func(m sqlmock.Sqlmock) {
 				restritoAtivo(m)
 				m.ExpectQuery(rePagamento).WithArgs(int64(1)).WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
-				expectLockPedidoErroH(m, 1, errors.New("db down"))
+				m.ExpectBegin()
+				m.ExpectQuery(reLeituraPedidoH).WithArgs(int64(1)).WillReturnError(errors.New("db down"))
+				m.ExpectRollback()
+			}},
+		{"delete pagamento: falha no lock do pedido (SEC-38: 500)", http.MethodDelete, "/api/pagamentos/1", "normal", "erro interno", http.StatusInternalServerError,
+			func(m sqlmock.Sqlmock) {
+				restritoAtivo(m)
+				m.ExpectQuery(rePagamento).WithArgs(int64(1)).WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
+				m.ExpectBegin()
+				expectLeituraPedidoH(m, 1, 2)
+				m.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).WillReturnError(errors.New("db down"))
+				m.ExpectRollback()
+			}},
+		{"delete pagamento: pedido sumiu no lock → 404", http.MethodDelete, "/api/pagamentos/1", "normal", "pagamento não encontrado", http.StatusNotFound,
+			func(m sqlmock.Sqlmock) {
+				restritoAtivo(m)
+				m.ExpectQuery(rePagamento).WithArgs(int64(1)).WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
+				m.ExpectBegin()
+				expectLeituraPedidoH(m, 1, 2)
+				m.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}))
 				m.ExpectRollback()
 			}},
 		// SEC-35: erro de banco no lock do pagamento (admin) é 500.

@@ -38,6 +38,9 @@ func NovoComercial(pool *sql.DB) *comercialapp.Casos {
 		Vinculacao: db.NewTransactor(pool, func(q db.Querier) comercialapp.TxVinculo {
 			return comercialapp.TxVinculo{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
 		}),
+		AtivoCliente: db.NewTransactor(pool, func(q db.Querier) comercialapp.TxAtivoCliente {
+			return comercialapp.TxAtivoCliente{Clientes: comercialmysql.NovoClientes(q), Carteiras: comercialmysql.NovoCarteiras(q)}
+		}),
 		Relogio: time.Now,
 	})
 }

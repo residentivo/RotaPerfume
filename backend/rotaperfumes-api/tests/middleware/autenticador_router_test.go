@@ -45,7 +45,7 @@ func politica(protected, requireAdmin bool) httpx.Policy {
 // autenticador é o httpx.Autenticador com o JWT real e o checker informado
 // (nil: panic na montagem, I-03).
 func autenticador(cfg *config.Config, checker httpx.ConsultaStatus) *httpx.Autenticador {
-	return httpx.NovoAutenticador(identidadecrypto.NovoJWT(cfg), checker)
+	return httpx.NovoAutenticador(identidadecrypto.NovoJWT(cfg), checker).ComCookieSeguro(cfg.CookieSecure)
 }
 
 // semBanco é a variante "sem checker" (C11) dos testes antigos: o status

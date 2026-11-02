@@ -167,6 +167,9 @@ func TestARQ03_FalhaAoEmitirJWT_MensagensDoLegado(t *testing.T) {
 			return identidadeapp.TxSenha{Usuarios: identidademysql.NovoUsuarios(q), Historico: identidademysql.NovoHistoricoSenhas(q),
 				Tokens: identidademysql.NovoRefreshTokens(q)}
 		}),
+		AtivoUsuario: shareddb.NewTransactor(db, func(q shareddb.Querier) identidadeapp.TxAtivoUsuario {
+			return identidadeapp.TxAtivoUsuario{Usuarios: identidademysql.NovoUsuarios(q), Tokens: identidademysql.NovoRefreshTokens(q)}
+		}),
 		Hasher: identidadecrypto.NovoHasher(cfg.HashSenha), Emissor: emissorFalho{}, Refresh: identidadecrypto.GeradorRefresh{},
 		Senhas: identidadecrypto.GeradorSenha{}, Captcha: captchaOK{},
 		Limites:    identidadeapp.Limites{Login: ratelimit.Nova(5, time.Minute, time.Minute), Refresh: ratelimit.Nova(5, time.Minute, time.Minute), Reset: ratelimit.Nova(5, time.Minute, time.Minute)},
@@ -229,7 +232,7 @@ func TestARQ03_CreateUsuario_EmailFalhou(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
-	assert.Equal(t, false, decodeResponse(t, readBody(t, resp))["data"].(map[string]any)["email_enviado"])
+	assert.Equal(t, false, como[map[string]any](t, decodeResponse(t, readBody(t, resp))["data"])["email_enviado"])
 	assert.Contains(t, logs.String(), "email com senha inicial NÃO foi enviado")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

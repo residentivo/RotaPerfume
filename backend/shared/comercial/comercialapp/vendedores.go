@@ -77,7 +77,7 @@ func (c *Casos) CriarVendedor(ctx context.Context, p kernel.Principal, d comerci
 	if err = c.d.Vendedores.Inserir(ctx, v); err != nil {
 		return nil, err
 	}
-	log.Printf("[vendedores] criado: id=%d por usuario role=%s", v.ID, p.Role())
+	log.Printf("[vendedores] criado: id=%d por usuario_id=%d role=%s", v.ID, p.UserID(), p.Role())
 	return appkit.RelerCriado(ctx, "[vendedores] criado, mas falhou a releitura: id", v.ID, v, c.d.Vendedores.PorID), nil
 }
 
@@ -93,7 +93,7 @@ func (c *Casos) AtualizarVendedor(ctx context.Context, p kernel.Principal, id in
 	if err = c.d.Vendedores.Atualizar(ctx, id, v); err != nil {
 		return nil, err
 	}
-	log.Printf("[vendedores] atualizado: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[vendedores] atualizado: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return appkit.RelerAtualizado(ctx, "comercialapp", id, c.d.Vendedores.PorID)
 }
 
@@ -123,7 +123,7 @@ func (c *Casos) DesligarVendedor(ctx context.Context, p kernel.Principal, id int
 		return nil, err
 	}
 	vlog.Printf(arqVendedores, "Comercial.DesligarVendedor", "decisão desligado id=%d usuarios_inativados=%d refresh_tokens_revogados=%d", id, inativados, revogados)
-	log.Printf("[vendedores] inativado: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[vendedores] inativado: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return appkit.RelerAtualizado(ctx, "comercialapp", id, c.d.Vendedores.PorID)
 }
 
@@ -137,6 +137,6 @@ func (c *Casos) ReativarVendedor(ctx context.Context, p kernel.Principal, id int
 	if err = c.d.Vendedores.DefinirDesligamento(ctx, id, nil); err != nil {
 		return nil, err
 	}
-	log.Printf("[vendedores] reativado: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[vendedores] reativado: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return appkit.RelerAtualizado(ctx, "comercialapp", id, c.d.Vendedores.PorID)
 }

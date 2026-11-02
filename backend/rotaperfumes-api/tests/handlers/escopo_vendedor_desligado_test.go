@@ -116,7 +116,7 @@ func TestMe_VendedorDesligado(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	data := decodeResponse(t, readBody(t, resp))["data"].(map[string]any)
+	data := como[map[string]any](t, decodeResponse(t, readBody(t, resp))["data"])
 	assert.Equal(t, true, data["vendedor_desligado"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

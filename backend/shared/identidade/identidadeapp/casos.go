@@ -2,6 +2,7 @@ package identidadeapp
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"time"
@@ -36,15 +37,17 @@ type Deps struct {
 	Rotacao   Transactor
 	// TrocaSenha é o UoW da troca/reset de senha (BUG-15).
 	TrocaSenha TransactorSenha
-	Hasher     Hasher
-	Emissor    EmissorAcesso
-	Refresh    GeradorRefresh
-	Senhas     GeradorSenha
-	Captcha    VerificadorCaptcha
-	Limites    Limites
-	Publicador Publicador
-	Email      EnviadorSenhaInicial
-	Vendedores Vendedores
+	// AtivoUsuario é o UoW do PATCH /inativar de usuário (BUG-22).
+	AtivoUsuario TransactorAtivoUsuario
+	Hasher       Hasher
+	Emissor      EmissorAcesso
+	Refresh      GeradorRefresh
+	Senhas       GeradorSenha
+	Captcha      VerificadorCaptcha
+	Limites      Limites
+	Publicador   Publicador
+	Email        EnviadorSenhaInicial
+	Vendedores   Vendedores
 	// Relogio é a fonte de "agora" (expiração, janela de graça, cortes).
 	Relogio func() time.Time
 }
@@ -64,7 +67,7 @@ type Casos struct {
 
 // Novo monta os casos de uso. Dependência nil é erro de montagem: panic.
 func Novo(d Deps, o Opcoes) *Casos {
-	obrigatorias := []any{d.Usuarios, d.Tokens, d.Historico, d.Rotacao, d.TrocaSenha, d.Hasher, d.Emissor, d.Refresh,
+	obrigatorias := []any{d.Usuarios, d.Tokens, d.Historico, d.Rotacao, d.TrocaSenha, d.AtivoUsuario, d.Hasher, d.Emissor, d.Refresh,
 		d.Senhas, d.Captcha, d.Limites.Login, d.Limites.Refresh, d.Limites.Reset, d.Publicador, d.Email, d.Vendedores}
 	for _, dep := range obrigatorias {
 		if dep == nil {
@@ -94,15 +97,39 @@ func bloqueio(retry time.Duration) error {
 // bots óbvios. Fail-closed; token e secret nunca são logados. acao é a
 // action esperada do Turnstile (SEC-19); rotulo é só o prefixo do log.
 func (c *Casos) verificarCaptcha(ctx context.Context, token, ip, acao, rotulo string) error {
-	if err := c.d.Captcha.Verificar(ctx, token, ip, acao); err != nil {
-		if strings.TrimSpace(token) == "" {
-			log.Printf("[auth] %s: captchaToken ausente: ip=%s", rotulo, ip)
-		} else {
-			log.Printf("[auth] %s: falha na verificação de captcha: ip=%s", rotulo, ip)
-		}
-		return identidade.ErrCaptchaInvalido
+	err := c.d.Captcha.Verificar(ctx, token, ip, acao)
+	if err == nil {
+		return nil
 	}
-	return nil
+	switch motivo := motivoRecusaCaptcha(err); {
+	case strings.TrimSpace(token) == "":
+		log.Printf("[auth] %s: captchaToken ausente: ip=%s", rotulo, ip)
+	case motivo != "":
+		log.Printf("[auth] %s: captcha recusado: motivo=%s ip=%s", rotulo, motivo, ip)
+	default:
+		log.Printf("[auth] %s: falha na verificação de captcha: ip=%s", rotulo, ip)
+	}
+	return identidade.ErrCaptchaInvalido
+}
+
+// recusaComMotivo é satisfeita pela recusa do adapter do Turnstile (LOG-03),
+// sem importar o adapter (§4.1).
+type recusaComMotivo interface{ MotivoRecusa() string }
+
+// motivoRecusaCaptcha devolve o motivo da recusa só se for do enum fixo
+// (success|hostname|action); qualquer outro valor (ou erro sem motivo, como
+// rede ou secret ausente) devolve "". Nunca loga valores recebidos.
+func motivoRecusaCaptcha(err error) string {
+	var r recusaComMotivo
+	if !errors.As(err, &r) {
+		return ""
+	}
+	switch m := r.MotivoRecusa(); m {
+	case "success", "hostname", "action":
+		return m
+	default:
+		return ""
+	}
 }
 
 // emitirRefresh gera e grava um refresh token (no pool ou na tx da rotação).
@@ -114,16 +141,6 @@ func (c *Casos) emitirRefresh(ctx context.Context, tokens RefreshTokens, usuario
 	}
 	log.Printf("[refresh] token criado: usuario_id=%d ip=%s", usuarioID, o.IP)
 	return novo, nil
-}
-
-// revogarTodos revoga as sessões de refresh; falha só é logada (o chamador
-// já gravou a mudança principal).
-func (c *Casos) revogarTodos(ctx context.Context, usuarioID int64, m identidade.MotivoRevogacao, tagFalha string) {
-	if err := c.d.Tokens.RevogarTodosDoUsuario(ctx, usuarioID, m); err != nil {
-		log.Printf("%s: falha ao revogar refresh tokens do usuario_id=%d: %v", tagFalha, usuarioID, err)
-		return
-	}
-	log.Printf("[refresh] todos tokens revogados: usuario_id=%d motivo=%s", usuarioID, m)
 }
 
 // exigirAdmin é a defesa em profundidade dos casos de uso de gestão (I-05):

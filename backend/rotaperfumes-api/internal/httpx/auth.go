@@ -58,9 +58,10 @@ type ConsultaStatus interface {
 // O Principal só nasce aqui (O5), depois de tudo aprovado, e vai para o
 // contexto com chave de tipo não exportado (O4).
 type Autenticador struct {
-	tokens ValidadorAcesso
-	status ConsultaStatus
-	agora  func() time.Time
+	tokens  ValidadorAcesso
+	status  ConsultaStatus
+	agora   func() time.Time
+	cookies NomesCookies
 }
 
 // NovoAutenticador exige o validador e a consulta de status (I-03): nil é
@@ -69,7 +70,15 @@ func NovoAutenticador(tokens ValidadorAcesso, status ConsultaStatus) *Autenticad
 	if tokens == nil || status == nil {
 		panic("httpx: NovoAutenticador exige ValidadorAcesso e ConsultaStatus não nulos")
 	}
-	return &Autenticador{tokens: tokens, status: status, agora: time.Now}
+	return &Autenticador{tokens: tokens, status: status, agora: time.Now, cookies: CookiesSeguros}
+}
+
+// ComCookieSeguro escolhe o par de nomes do cookie de acesso pelo modo
+// (SEC-33): seguro (padrão) lê só __Host-access_token; dev (false) lê
+// access_token.
+func (a *Autenticador) ComCookieSeguro(seguro bool) *Autenticador {
+	a.cookies = NomesCookiesPara(seguro)
+	return a
 }
 
 // Exigir envolve next com a autenticação da política. Public não passa por
@@ -136,7 +145,7 @@ func (a *Autenticador) autenticar(next http.Handler, exigeAdmin, liberaTroca boo
 // validarToken extrai (I-02) e valida (I-01) o access token. msg != "" é a
 // mensagem do 401.
 func (a *Autenticador) validarToken(r *http.Request) (identidade.ClaimsAcesso, string) {
-	token, msg := tokenDoRequest(r)
+	token, msg := tokenDoRequest(r, a.cookies)
 	if msg != "" {
 		return identidade.ClaimsAcesso{}, msg
 	}
@@ -150,8 +159,9 @@ func (a *Autenticador) validarToken(r *http.Request) (identidade.ClaimsAcesso, s
 	return claims, ""
 }
 
-// tokenDoRequest: Bearer tem precedência; header malformado não cai no cookie.
-func tokenDoRequest(r *http.Request) (string, string) {
+// tokenDoRequest: Bearer tem precedência; header malformado não cai no
+// cookie. O cookie lido é o do par n (SEC-33: no modo seguro, só o __Host-).
+func tokenDoRequest(r *http.Request, n NomesCookies) (string, string) {
 	if h := r.Header.Get("Authorization"); h != "" {
 		partes := strings.SplitN(h, " ", 2)
 		if len(partes) != 2 || !strings.EqualFold(partes[0], "Bearer") {
@@ -162,7 +172,7 @@ func tokenDoRequest(r *http.Request) (string, string) {
 		}
 		return partes[1], ""
 	}
-	if c, err := r.Cookie(CookieAcesso); err == nil && c.Value != "" {
+	if c, err := r.Cookie(n.Acesso); err == nil && c.Value != "" {
 		return c.Value, ""
 	}
 	return "", msgHeaderAusente

@@ -83,7 +83,7 @@ func (h *ProdutoHandler) CreateProduto(w http.ResponseWriter, r *http.Request) {
 		httpx.ResponderErro(w, tag, err)
 		return
 	}
-	log.Printf("[produtos] criado: id=%d por usuario role=%s", p.ID, principal.Role())
+	log.Printf("[produtos] criado: id=%d por usuario_id=%d role=%s", p.ID, principal.UserID(), principal.Role())
 	httpx.JSON(w, http.StatusCreated, produtoParaResposta(*p), "")
 }
 
@@ -109,7 +109,7 @@ func (h *ProdutoHandler) UpdateProduto(w http.ResponseWriter, r *http.Request) {
 		httpx.ResponderErro(w, tag, err)
 		return
 	}
-	log.Printf("[produtos] atualizado: id=%d por usuario role=%s", id, principal.Role())
+	log.Printf("[produtos] atualizado: id=%d por usuario_id=%d role=%s", id, principal.UserID(), principal.Role())
 	httpx.JSON(w, http.StatusOK, produtoParaResposta(*p), "")
 }
 
@@ -136,7 +136,7 @@ func (h *ProdutoHandler) ToggleAtivoProduto(w http.ResponseWriter, r *http.Reque
 		httpx.ResponderErro(w, tag, err)
 		return
 	}
-	log.Printf("[produtos] ativo=%t: id=%d por usuario role=%s", p.Ativo, id, principal.Role())
+	log.Printf("[produtos] ativo=%t: id=%d por usuario_id=%d role=%s", p.Ativo, id, principal.UserID(), principal.Role())
 	httpx.JSON(w, http.StatusOK, produtoParaResposta(*p), "")
 }
 

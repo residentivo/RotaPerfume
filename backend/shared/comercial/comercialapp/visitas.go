@@ -53,7 +53,7 @@ func (c *Casos) CriarVisita(ctx context.Context, p kernel.Principal, ler Leitor[
 	if err = c.d.Visitas.Inserir(ctx, v); err != nil {
 		return nil, err
 	}
-	log.Printf("[visitas] criada: id=%d por usuario role=%s", v.VisitaID, p.Role())
+	log.Printf("[visitas] criada: id=%d por usuario_id=%d role=%s", v.VisitaID, p.UserID(), p.Role())
 	return appkit.RelerCriado(ctx, "[visitas] criada, mas falhou a releitura: id", v.VisitaID, v, c.d.Visitas.PorID), nil
 }
 
@@ -74,7 +74,7 @@ func (c *Casos) AtualizarVisita(ctx context.Context, p kernel.Principal, id int6
 	if err = c.d.Visitas.Atualizar(ctx, id, v); err != nil {
 		return nil, err
 	}
-	log.Printf("[visitas] atualizada: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[visitas] atualizada: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return appkit.RelerAtualizado(ctx, "comercialapp", id, c.d.Visitas.PorID)
 }
 
@@ -91,7 +91,7 @@ func (c *Casos) ExcluirVisita(ctx context.Context, p kernel.Principal, id int64)
 	if err = c.d.Visitas.Excluir(ctx, id); err != nil {
 		return err
 	}
-	log.Printf("[visitas] excluída: id=%d por usuario role=%s", id, p.Role())
+	log.Printf("[visitas] excluída: id=%d por usuario_id=%d role=%s", id, p.UserID(), p.Role())
 	return nil
 }
 

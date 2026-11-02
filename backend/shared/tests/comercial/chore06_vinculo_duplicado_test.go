@@ -39,7 +39,7 @@ func TestCHORE06_VincularCliente_CorridaNoInsert_409SemValor(t *testing.T) {
 	mock.ExpectQuery(reAtivoDoCliente).WillReturnRows(sqlmock.NewRows(colsCarteira))
 	mock.ExpectQuery(reDoDia).WillReturnRows(sqlmock.NewRows(colsCarteira))
 	mock.ExpectExec(`INSERT INTO carteiras`).WillReturnError(&mysql.MySQLError{Number: 1062,
-		Message: "Duplicate entry '2-1-2026-05-06' for key 'carteiras.uq_carteiras_cliente_vendedor_data'"})
+		Message: "Duplicate entry '2-1-2026-05-06' for key 'carteiras.uk_carteiras_cliente_vendedor_inicio'"})
 	mock.ExpectRollback()
 
 	r, err := novosCasos(pool, vinculoFake{}).VincularCliente(ctx, principal(t, kernel.RoleAdmin), 1, 2)

@@ -7,6 +7,7 @@ package config_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -57,14 +58,37 @@ func TestSEC17_Load_OrigensExplicitasOK(t *testing.T) {
 		// Só a entrada inteira igual a "*"/"null" é recusada.
 		{"https://null.example.com", []string{"https://null.example.com"}},
 	}
-	for _, c := range casos {
-		t.Run(c.origens, func(t *testing.T) {
-			sec17Env(t, c.origens)
+	// SEC-36: as origens de dev só entram com COOKIE_SECURE=false.
+	for _, dev := range []bool{false, true} {
+		for _, c := range casos {
+			t.Run(fmt.Sprintf("dev=%t/%s", dev, c.origens), func(t *testing.T) {
+				sec17Env(t, c.origens)
+				if dev {
+					t.Setenv("COOKIE_SECURE", "false")
+				}
 
-			cfg, err := config.Load()
-			require.NoError(t, err)
-			want := append([]string{"http://localhost:3000", "http://127.0.0.1:3000"}, c.extras...)
-			assert.Equal(t, want, cfg.CORSAllowedOrigins)
-		})
+				cfg, err := config.Load()
+				require.NoError(t, err)
+				var want []string
+				if dev {
+					want = append(want, "http://localhost:3000", "http://127.0.0.1:3000")
+				}
+				want = append(want, c.extras...)
+				assert.ElementsMatch(t, want, cfg.CORSAllowedOrigins)
+				if dev {
+					assert.Equal(t, want, cfg.CORSAllowedOrigins, "dev primeiro, depois as explícitas")
+				}
+			})
+		}
 	}
+}
+
+// SEC-36: localhost explícito em CORS_ALLOWED_ORIGINS continua aceito em
+// produção (decisão consciente de quem configura).
+func TestSEC36_Load_LocalhostExplicitoAceitoEmProducao(t *testing.T) {
+	sec17Env(t, "http://localhost:3000")
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.CookieSecure)
+	assert.Equal(t, []string{"http://localhost:3000"}, cfg.CORSAllowedOrigins)
 }

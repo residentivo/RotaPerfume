@@ -52,8 +52,8 @@ func TestGetMetrics_Success_Month(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "month", data["periodo"])
 	assert.Equal(t, float64(1000), data["total_vendas"])
 	assert.Equal(t, float64(5), data["total_pedidos"])
@@ -80,7 +80,7 @@ func TestGetMetrics_Success_Today(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "today", data["periodo"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -105,7 +105,7 @@ func TestGetMetrics_Success_Week(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "week", data["periodo"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -171,7 +171,7 @@ func TestGetMetrics_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -223,9 +223,9 @@ func TestGetVendas_Success_DiasDefault(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(30), data["dias"])
-	pontos := data["pontos"].([]any)
+	pontos := como[[]any](t, data["pontos"])
 	assert.Len(t, pontos, 30)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -252,9 +252,9 @@ func TestGetVendas_ComDiasCustom(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(7), data["dias"])
-	pontos := data["pontos"].([]any)
+	pontos := como[[]any](t, data["pontos"])
 	assert.Len(t, pontos, 7)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -282,9 +282,9 @@ func TestGetVendas_DiasForaDoIntervalo_UsaDefault(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(30), data["dias"])
-	pontos := data["pontos"].([]any)
+	pontos := como[[]any](t, data["pontos"])
 	assert.Len(t, pontos, 30)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -340,9 +340,9 @@ func TestGetVendas_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(30), data["dias"])
-	pontos := data["pontos"].([]any)
+	pontos := como[[]any](t, data["pontos"])
 	assert.Len(t, pontos, 30)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -375,7 +375,7 @@ func TestGetVendedores_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(0), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -434,7 +434,7 @@ func TestGetVendedores_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(0), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -480,7 +480,7 @@ func TestGetClientes_Success_Month(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "month", data["periodo"])
 	assert.Equal(t, float64(100), data["total_clientes"])
 	assert.Equal(t, float64(80), data["total_ativos"])
@@ -557,7 +557,7 @@ func TestGetClientes_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, "month", data["periodo"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())

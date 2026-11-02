@@ -64,5 +64,6 @@ func escreverHeadersCORS(h http.Header, origem string) {
 	h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
 	h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With, Accept, Origin")
 	h.Set("Access-Control-Max-Age", "86400")
-	h.Set("Access-Control-Expose-Headers", "Set-Cookie")
+	// Sem Access-Control-Expose-Headers: Set-Cookie nunca é exposto ao JS
+	// pelo navegador, o header não tinha efeito (SEC-36).
 }

@@ -118,7 +118,7 @@ func TestIntegracaoHTTP_SEC03_ListVendedores(t *testing.T) {
 		require.True(t, ok, "data deve ser array: %v", body)
 		out := []int64{}
 		for _, it := range lista {
-			out = append(out, int64(it.(map[string]any)["id"].(float64)))
+			out = append(out, int64(como[float64](t, como[map[string]any](t, it)["id"])))
 		}
 		return out
 	}

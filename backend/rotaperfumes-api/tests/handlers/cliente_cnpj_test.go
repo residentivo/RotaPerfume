@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-sql-driver/mysql"
@@ -106,7 +105,7 @@ func TestCreateCliente_CNPJ(t *testing.T) {
 				assert.Equal(t, tc.wantErr, body["error"])
 				assert.False(t, strings.Contains(raw, "uq_clientes_cnpj"), "não pode vazar detalhes do banco")
 			} else {
-				assert.Equal(t, tc.wantCNPJ, body["data"].(map[string]any)["cnpj"])
+				assert.Equal(t, tc.wantCNPJ, como[map[string]any](t, body["data"])["cnpj"])
 			}
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
@@ -214,8 +213,9 @@ func TestToggleAtivoCliente_CNPJLegadoDVInvalido(t *testing.T) {
 		name      string
 		payload   map[string]any
 		novoAtivo bool
+		toggle    bool
 	}{
-		{name: "toggle sem body", payload: nil, novoAtivo: false},
+		{name: "toggle sem body", payload: nil, novoAtivo: false, toggle: true},
 		{name: "explícito false", payload: map[string]any{"ativo": false}, novoAtivo: false},
 		{name: "explícito true", payload: map[string]any{"ativo": true}, novoAtivo: true},
 	}
@@ -225,20 +225,13 @@ func TestToggleAtivoCliente_CNPJLegadoDVInvalido(t *testing.T) {
 			defer server.Close()
 			defer db.Close()
 
-			now := time.Now()
-			rows := sqlmock.NewRows([]string{
-				"cliente_id_origem", "cnpj", "razao_social", "segmento", "cidade", "uf", "bairro",
-				"data_cadastro", "ativo", "created_at", "updated_at",
-			}).AddRow(int64(1), cnpjLegadoDVInvalidoH, "Legado LTDA", "varejo", "São Paulo", "SP", "Centro", now, true, now, now)
-			mock.ExpectQuery(reSelectClienteH).WithArgs(int64(1)).WillReturnRows(rows)
-			mock.ExpectExec(`UPDATE clientes SET ativo = \? WHERE cliente_id_origem = \?`).
-				WithArgs(tc.novoAtivo, int64(1)).
-				WillReturnResult(sqlmock.NewResult(0, 1))
+			expectToggleClienteTxH(mock, 1, semVendedorToggleH, tc.toggle, tc.novoAtivo, cnpjLegadoDVInvalidoH)
 
 			status, body, _ := doAdminClienteReq(t, server.URL+"/api/clientes/1/inativar", "PATCH", tc.payload)
 
 			require.Equal(t, http.StatusOK, status)
-			data := body["data"].(map[string]any)
+			data, ok := body["data"].(map[string]any)
+			require.True(t, ok, "data deve ser objeto: %v", body)
 			assert.Equal(t, tc.novoAtivo, data["ativo"])
 			assert.Equal(t, cnpjLegadoDVInvalidoH, data["cnpj"])
 			assert.NoError(t, mock.ExpectationsWereMet())

@@ -142,7 +142,7 @@ func TestLoad(t *testing.T) {
 				assert.False(t, c.Verbose)
 				assert.False(t, c.TrustProxyHeaders)
 				assert.True(t, c.CookieSecure, "SEC-21: COOKIE_SECURE vazio → true")
-				assert.Equal(t, []string{"http://localhost:3000", "http://127.0.0.1:3000"}, c.CORSAllowedOrigins)
+				assert.Empty(t, c.CORSAllowedOrigins, "SEC-36: com COOKIE_SECURE=true (padrão) as origens de dev não entram")
 			},
 		},
 		{

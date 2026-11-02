@@ -33,13 +33,15 @@ func TestSEC19_Load_HostnamesDerivadosDoCORS(t *testing.T) {
 		origens   string
 		want      []string
 	}{
-		{"ausente, só as origens de dev", nil, "", []string{"localhost", "127.0.0.1"}},
-		{"vazia conta como ausente", sp(""), "", []string{"localhost", "127.0.0.1"}},
-		{"só espaços conta como ausente", sp("   "), "", []string{"localhost", "127.0.0.1"}},
+		// SEC-36: em produção (COOKIE_SECURE=true, padrão) as origens de dev
+		// não entram no CORS, então localhost não é derivado.
+		{"ausente, produção sem origens: lista vazia", nil, "", nil},
+		{"vazia conta como ausente", sp(""), "", nil},
+		{"só espaços conta como ausente", sp("   "), "", nil},
 		{
 			"origens com porta, maiúsculas e repetição", nil,
 			"https://Ivo-Inspiron-15-3530:8443,https://192.168.168.106:8443,https://ivo-inspiron-15-3530",
-			[]string{"localhost", "127.0.0.1", "ivo-inspiron-15-3530", "192.168.168.106"},
+			[]string{"ivo-inspiron-15-3530", "192.168.168.106"},
 		},
 	}
 	for _, c := range casos {
@@ -51,6 +53,16 @@ func TestSEC19_Load_HostnamesDerivadosDoCORS(t *testing.T) {
 			assert.Equal(t, c.want, cfg.TurnstileHostnames)
 		})
 	}
+}
+
+// SEC-36: em dev (COOKIE_SECURE=false) as origens de dev entram no CORS e,
+// por derivação, localhost e 127.0.0.1 no Turnstile.
+func TestSEC36_Load_HostnamesDerivadosEmDevIncluemLocalhost(t *testing.T) {
+	sec19Env(t, nil, "https://ivo-inspiron-15-3530")
+	t.Setenv("COOKIE_SECURE", "false")
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"localhost", "127.0.0.1", "ivo-inspiron-15-3530"}, cfg.TurnstileHostnames)
 }
 
 func TestSEC19_Load_HostnamesExplicitosNormalizados(t *testing.T) {

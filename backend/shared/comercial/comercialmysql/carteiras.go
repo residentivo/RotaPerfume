@@ -23,9 +23,10 @@ const (
 	clienteResumoFrom    = ` FROM carteiras ca JOIN clientes c ON c.cliente_id_origem = ca.cliente_id`
 )
 
-// qualquerIndice: em carteiras o único índice único além da PK é
-// (cliente_id, vendedor_id, data_inicio); qualquer 1062 é esse.
-const qualquerIndice = ""
+// ukCarteirasClienteVendedorInicio é o índice único (cliente_id,
+// vendedor_id, data_inicio). Só o 1062 dele vira 409; um 1062 da PRIMARY
+// (ou de outro índice) é 500, como em produtos e estoque (CHORE-08).
+const ukCarteirasClienteVendedorInicio = "uk_carteiras_cliente_vendedor_inicio"
 
 // Carteiras é o repositório dos vínculos cliente↔vendedor (porta
 // comercialapp.Carteiras).
@@ -106,7 +107,7 @@ func (r *Carteiras) Inserir(ctx context.Context, c *comercial.Carteira) error {
 		INSERT INTO carteiras (cliente_id, vendedor_id, data_inicio, data_fim)
 		VALUES (?, ?, ?, ?)`
 	id, err := db.Inserir(ctx, r.q, "comercialmysql: inserir carteira", q, c.ClienteID, c.VendedorID, c.DataInicio, c.DataFim)
-	if db.ChaveDuplicada(err, qualquerIndice) {
+	if db.ChaveDuplicada(err, ukCarteirasClienteVendedorInicio) {
 		return comercial.ErrVinculoDuplicado
 	}
 	if err != nil {

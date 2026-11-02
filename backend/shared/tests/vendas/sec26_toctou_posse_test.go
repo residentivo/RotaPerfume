@@ -45,6 +45,23 @@ func sec26Lock(m sqlmock.Sqlmock, id int64, status string, vendedorID int64) {
 		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(status, vendedorID))
 }
 
+// sec38LeituraRe é a leitura sem lock do SEC-38 (escopo restrito).
+const sec38LeituraRe = `^SELECT vendedor_id FROM pedidos WHERE pedido_id_origem = \?$`
+
+// sec38Leitura: a posse lida sem lock, dentro da tx, antes do FOR UPDATE.
+func sec38Leitura(m sqlmock.Sqlmock, id, vendedorID int64) {
+	m.ExpectQuery(sec38LeituraRe).WithArgs(id).WillReturnRows(sqlmock.NewRows([]string{"vendedor_id"}).AddRow(vendedorID))
+}
+
+// sec38LockRestrito é o roteiro do SEC-38 no escopo restrito: Begin →
+// leitura sem lock (vendedorLido) → FOR UPDATE (vendedorTravado).
+func sec38LockRestrito(m sqlmock.Sqlmock, id int64, status string, vendedorLido, vendedorTravado int64) {
+	m.ExpectBegin()
+	sec38Leitura(m, id, vendedorLido)
+	m.ExpectQuery(bug16StatusLockRe).WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(status, vendedorTravado))
+}
+
 // sec26PreCheckPut é a checagem de posse antes do decode (E-05: 404 antes
 // do 400), mantida no escopo restrito.
 func sec26PreCheckPut(m sqlmock.Sqlmock, id int64) {
@@ -55,7 +72,7 @@ func sec26PreCheckPut(m sqlmock.Sqlmock, id int64) {
 // sec26PutSemMudarItens: pedido Faturado com os mesmos itens só regrava o
 // cabeçalho (sem troca de itens, sem baixa).
 func sec26PutSemMudarItens(m sqlmock.Sqlmock, id int64) {
-	sec26Lock(m, id, "Faturado", 2)
+	sec38LockRestrito(m, id, "Faturado", 2, 2)
 	m.ExpectQuery(bug16ItensAtuaRe).WithArgs(id).WillReturnRows(bug16ItensAtuais())
 	m.ExpectExec(`UPDATE pedidos`).WillReturnResult(sqlmock.NewResult(0, 1))
 	m.ExpectCommit()
@@ -67,14 +84,14 @@ func TestSEC26_PUT_PosseMudouEntreOPreCheckEOLock_404Rollback(t *testing.T) {
 	p, e := sec26Restrito(t)
 	pool, mock := novoMock(t)
 	sec26PreCheckPut(mock, 1)
-	sec26Lock(mock, 1, "Pendente", 99) // transferido para o vendedor 99 nesse meio-tempo
+	sec38LockRestrito(mock, 1, "Pendente", 2, 99) // transferido para o vendedor 99 entre a leitura e o lock
 	mock.ExpectRollback()
 
 	ped, err := novosCasos(pool, e).AtualizarPedido(context.Background(), p, 1, ler(pedidoValido()))
 	assert.Nil(t, ped)
 	assert.Same(t, vendas.ErrPedidoNaoEncontrado, err)
 	assert.NoError(t, mock.ExpectationsWereMet(), "sem leitura de itens, sem UPDATE")
-	assert.Contains(t, out.String(), "[TxPedido.Atualizar] decisão fora_da_carteira id=1")
+	assert.Contains(t, out.String(), "[TxPedido.Atualizar] decisão fora_da_carteira_sob_lock id=1")
 }
 
 func TestSEC26_PUT_InexistenteNoLock_404Rollback(t *testing.T) {
@@ -105,7 +122,7 @@ func TestSEC26_PUT_DonoSobOLock_Commit(t *testing.T) {
 func TestSEC26_DELETE_OrdemNaTx(t *testing.T) {
 	p, e := sec26Restrito(t)
 	pool, mock := novoMock(t)
-	sec26Lock(mock, 1, "Em separação", 2)
+	sec38LockRestrito(mock, 1, "Em separação", 2, 2)
 	mock.ExpectQuery(sec26PagamentosRe).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"1"}))
 	mock.ExpectExec(sec26DeleteItensRe).WithArgs(int64(1)).WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectExec(sec26DeletePedidoRe).WithArgs(int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -121,23 +138,32 @@ func TestSEC26_DELETE_Recusas_Rollback(t *testing.T) {
 		prepara func(m sqlmock.Sqlmock)
 		want    error
 	}{
-		{"inexistente no lock → 404", func(m sqlmock.Sqlmock) {
+		{"inexistente na leitura sem lock → 404, sem lock", func(m sqlmock.Sqlmock) {
 			m.ExpectBegin()
+			m.ExpectQuery(sec38LeituraRe).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"vendedor_id"}))
+		}, vendas.ErrPedidoNaoEncontrado},
+		{"de outro vendedor na leitura sem lock → 404, sem travar pedido alheio", func(m sqlmock.Sqlmock) {
+			m.ExpectBegin()
+			sec38Leitura(m, 1, 99)
+		}, vendas.ErrPedidoNaoEncontrado},
+		{"sumiu entre a leitura e o lock → 404", func(m sqlmock.Sqlmock) {
+			m.ExpectBegin()
+			sec38Leitura(m, 1, 2)
 			m.ExpectQuery(bug16StatusLockRe).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}))
 		}, vendas.ErrPedidoNaoEncontrado},
 		{"de outro vendedor sob o lock → 404, sem ler pagamentos", func(m sqlmock.Sqlmock) {
-			sec26Lock(m, 1, "Em separação", 99)
+			sec38LockRestrito(m, 1, "Em separação", 2, 99)
 		}, vendas.ErrPedidoNaoEncontrado},
 		{"com pagamento → 409", func(m sqlmock.Sqlmock) {
-			sec26Lock(m, 1, "Em separação", 2)
+			sec38LockRestrito(m, 1, "Em separação", 2, 2)
 			m.ExpectQuery(sec26PagamentosRe).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 		}, vendas.ErrPedidoPossuiPagamentosVinculados},
 		{"Faturado → 409", func(m sqlmock.Sqlmock) {
-			sec26Lock(m, 1, "Faturado", 2)
+			sec38LockRestrito(m, 1, "Faturado", 2, 2)
 			m.ExpectQuery(sec26PagamentosRe).WithArgs(int64(1)).WillReturnError(sql.ErrNoRows)
 		}, vendas.ErrPedidoFaturadoNaoPodeSerExcluido},
 		{"Entregue → 409", func(m sqlmock.Sqlmock) {
-			sec26Lock(m, 1, "Entregue", 2)
+			sec38LockRestrito(m, 1, "Entregue", 2, 2)
 			m.ExpectQuery(sec26PagamentosRe).WithArgs(int64(1)).WillReturnError(sql.ErrNoRows)
 		}, vendas.ErrPedidoEntregueNaoPodeSerExcluido},
 	}
@@ -190,7 +216,7 @@ func TestSEC26_TudoNaMesmaConexao(t *testing.T) {
 		p, e := sec26Restrito(t)
 		pool, mock := novoMock(t)
 		pool.SetMaxOpenConns(1)
-		sec26Lock(mock, 1, "Em separação", 2)
+		sec38LockRestrito(mock, 1, "Em separação", 2, 2)
 		mock.ExpectQuery(sec26PagamentosRe).WillReturnRows(sqlmock.NewRows([]string{"1"}))
 		mock.ExpectExec(sec26DeleteItensRe).WillReturnResult(sqlmock.NewResult(0, 2))
 		mock.ExpectExec(sec26DeletePedidoRe).WillReturnResult(sqlmock.NewResult(0, 1))

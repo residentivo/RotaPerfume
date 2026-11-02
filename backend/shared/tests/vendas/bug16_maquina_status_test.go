@@ -77,9 +77,9 @@ func TestBUG16_Erros_KindEMensagem(t *testing.T) {
 		{vendas.ErrPedidoFaturadoSoPodeIrParaEntregue, kernel.KindInvalido, "pedido faturado só pode ter o status alterado para Entregue"},
 		{vendas.ErrPedidoEntregueNaoPodeMudarStatus, kernel.KindInvalido, "pedido entregue não pode ter o status alterado"},
 		{vendas.ErrPedidoEntregueSemFaturamento, kernel.KindInvalido, "pedido só pode ser marcado como Entregue depois de Faturado"},
-		{vendas.ErrPedidoJaFaturadoNaoPodeAlterarItens, kernel.KindConflito, "pedido já faturado: não é possível alterar os itens, apenas o status"},
+		{vendas.ErrPedidoJaFaturadoNaoPodeAlterarItens, kernel.KindConflito, "pedido faturado ou entregue: não é possível alterar os itens"},
 		{vendas.ErrPedidoEntregueNaoPodeSerExcluido, kernel.KindConflito, "pedido entregue não pode ser excluído"},
-		{vendas.ErrPedidoFaturadoNaoPodeSerExcluido, kernel.KindConflito, "pedido faturado não pode ser excluído, apenas ter o status alterado"},
+		{vendas.ErrPedidoFaturadoNaoPodeSerExcluido, kernel.KindConflito, "pedido faturado não pode ser excluído; só pode ter o status alterado para Entregue"},
 		{vendas.ErrPedidoPossuiPagamentosVinculados, kernel.KindConflito, "pedido possui pagamentos vinculados"},
 	}
 	for _, c := range casos {

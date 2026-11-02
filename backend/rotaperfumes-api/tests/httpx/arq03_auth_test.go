@@ -88,8 +88,8 @@ func TestCookiesDeSessao(t *testing.T) {
 	w := httptest.NewRecorder()
 	httpx.DefinirCookiesSessao(w, "acesso", "refresh", time.Hour, true)
 	cs := w.Result().Cookies()
-	if assert.Len(t, cs, 2) {
-		assert.Equal(t, httpx.CookieAcesso, cs[0].Name)
+	if assert.Len(t, cs, 4, "SEC-33: 2 cookies __Host- + expiração dos 2 antigos") {
+		assert.Equal(t, httpx.CookiesSeguros.Acesso, cs[0].Name)
 		assert.True(t, cs[0].HttpOnly && cs[0].Secure)
 		assert.Equal(t, http.SameSiteStrictMode, cs[0].SameSite)
 		assert.Equal(t, 3600, cs[0].MaxAge)
@@ -100,7 +100,7 @@ func TestCookiesDeSessao(t *testing.T) {
 	w = httptest.NewRecorder()
 	httpx.DefinirCookiesSessao(w, "a", "r", time.Hour, true)
 	assert.True(t, w.Result().Cookies()[0].Secure, "SEC-21: Secure vem de COOKIE_SECURE, não de r.Host")
-	assert.Equal(t, "", httpx.CookieRefreshDe(local))
+	assert.Equal(t, "", httpx.CookieRefreshDe(local, httpx.CookiesSeguros))
 }
 
 // ARQ-07: PrincipalDoContexto (ponte do legado) deixou de ser exportada; o

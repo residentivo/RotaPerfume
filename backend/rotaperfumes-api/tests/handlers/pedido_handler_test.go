@@ -148,10 +148,10 @@ func TestListPedidos_Success_Admin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	assert.Len(t, data, 1)
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(1), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -182,7 +182,7 @@ func TestListPedidos_ComFiltrosEPaginacao(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(2), pagination["page"])
 	assert.Equal(t, float64(10), pagination["limit"])
 	assert.Equal(t, float64(25), pagination["total"])
@@ -261,7 +261,7 @@ func TestListPedidos_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -316,10 +316,10 @@ func TestGetPedido_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(230), data["valor_total"])
-	itens := data["itens"].([]any)
+	itens := como[[]any](t, data["itens"])
 	assert.Len(t, itens, 2)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -399,7 +399,7 @@ func TestGetPedido_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -465,8 +465,8 @@ func TestCreatePedido_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(100), data["pedido_id_origem"])
 	assert.Equal(t, float64(230), data["valor_total"])
 
@@ -495,7 +495,7 @@ func TestCreatePedido_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -715,8 +715,8 @@ func TestUpdatePedido_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(230), data["valor_total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -742,6 +742,7 @@ func TestUpdatePedido_PermitidoParaNaoAdmin(t *testing.T) {
 	expectCarteiraAtivaH(mock, 2, 1)
 
 	mock.ExpectBegin()
+	expectLeituraPedidoH(mock, 1, 2) // SEC-38
 	mock.ExpectQuery(selectStatusForUpdateRegexH).
 		WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow("Pendente", int64(2)))
@@ -780,7 +781,7 @@ func TestUpdatePedido_PermitidoParaNaoAdmin(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
+	assert.True(t, como[bool](t, body["success"]))
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -878,7 +879,7 @@ func TestUpdatePedido_NaoEncontrado(t *testing.T) {
 
 // TestUpdatePedido_JaFaturadoTentaAlterarItens_409 cobre a exigência do
 // SecBrain: pedido já "Faturado" não pode ter os itens alterados no PUT
-// (apenas o status) — o repositório retorna
+// (só a transição permitida) — o repositório retorna
 // ErrPedidoJaFaturadoNaoPodeAlterarItens, mapeado para HTTP 409.
 func TestUpdatePedido_JaFaturadoTentaAlterarItens_409(t *testing.T) {
 	server, db, mock := setupTestServer(t)
@@ -927,6 +928,15 @@ const existsPagamentoPorPedidoRegexH = `SELECT 1 FROM pagamentos WHERE pedido_id
 
 // expectTravaPedidoH: SEC-26, a exclusão abre a tx e trava o pedido
 // (status e vendedor 2, o mesmo dos fixtures) antes de qualquer checagem.
+// expectTravaPedidoRestritoH: no escopo restrito, a posse é lida sem lock
+// antes do FOR UPDATE (SEC-38).
+func expectTravaPedidoRestritoH(mock sqlmock.Sqlmock, id int64, status string) {
+	mock.ExpectBegin()
+	expectLeituraPedidoH(mock, id, 2)
+	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(id).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "vendedor_id"}).AddRow(status, int64(2)))
+}
+
 func expectTravaPedidoH(mock sqlmock.Sqlmock, id int64, status string) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(selectStatusForUpdateRegexH).WithArgs(id).
@@ -976,7 +986,7 @@ func TestDeletePedido_PermitidoParaNaoAdmin(t *testing.T) {
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(2)))
 	expectVendedorDesligado(mock, int64(2), false)
-	expectTravaPedidoH(mock, 1, "Em separação")
+	expectTravaPedidoRestritoH(mock, 1, "Em separação")
 	mock.ExpectQuery(existsPagamentoPorPedidoRegexH).
 		WithArgs(int64(1)).
 		WillReturnError(sql.ErrNoRows)
@@ -1037,14 +1047,14 @@ func TestDeletePedido_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	cfg := testCfg()
 	userToken := generateToken(t, cfg, 2, "normal")
 
-	// O lock (SEC-26) devolve vendedor_id=2, mas o usuário autenticado
-	// está vinculado ao vendedor 99: 404 e rollback, sem leitura de
-	// pagamentos nem DELETE.
+	// A leitura sem lock (SEC-38) devolve vendedor_id=2, mas o usuário
+	// autenticado está vinculado ao vendedor 99: 404 e rollback antes do
+	// lock, sem leitura de pagamentos nem DELETE.
 	mock.ExpectQuery(`SELECT id_vendedor FROM usuarios WHERE id = \? LIMIT 1`).
 		WithArgs(int64(2)).
 		WillReturnRows(sqlmock.NewRows([]string{"id_vendedor"}).AddRow(int64(99)))
 	expectVendedorDesligado(mock, int64(99), false)
-	expectTravaPedidoH(mock, 1, "Faturado")
+	expectPosseAlheiaH(mock, 1, 2)
 	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/pedidos/1", nil)
@@ -1112,7 +1122,7 @@ func TestDeletePedido_PagamentosVinculados_409(t *testing.T) {
 }
 
 // TestDeletePedido_Faturado_409 cobre a regra do SecBrain: pedido faturado
-// não pode ser excluído, apenas ter o status alterado.
+// não pode ser excluído; só pode ter o status alterado para Entregue (CHORE-07).
 func TestDeletePedido_Faturado_409(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
@@ -1136,7 +1146,7 @@ func TestDeletePedido_Faturado_409(t *testing.T) {
 
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.Equal(t, "pedido faturado não pode ser excluído, apenas ter o status alterado", body["error"])
+	assert.Equal(t, "pedido faturado não pode ser excluído; só pode ter o status alterado para Entregue", body["error"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

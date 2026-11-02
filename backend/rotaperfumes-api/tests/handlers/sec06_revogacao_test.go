@@ -48,17 +48,14 @@ func TestSEC06_InativarUsuario_RevogaRefreshTokens(t *testing.T) {
 	defer db.Close()
 	logs := capturarLog(t)
 
-	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-		WithArgs(int64(5)).WillReturnRows(usuarioRowsForHandler(5, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs(false, sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(revokeAllByUserRegex).
-		WithArgs(sqlmock.AnyArg(), "inativacao", int64(5)).WillReturnResult(sqlmock.NewResult(0, 3))
+	expectToggleUsuarioTxH(mock, 5, false, false)
 
 	status, body := patchInativarUsuario(t, server.URL+"/api/usuarios/5/inativar", map[string]any{"ativo": false})
 
 	assert.Equal(t, http.StatusOK, status)
-	assert.Equal(t, false, body["data"].(map[string]any)["ativo"])
+	data, ok := body["data"].(map[string]any)
+	require.True(t, ok, "data deve ser objeto: %v", body)
+	assert.Equal(t, false, data["ativo"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 	assert.NotContains(t, logs.String(), "falha ao revogar")
 }
@@ -68,12 +65,7 @@ func TestSEC06_ToggleParaInativo_RevogaRefreshTokens(t *testing.T) {
 	defer server.Close()
 	defer db.Close()
 
-	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-		WithArgs(int64(5)).WillReturnRows(usuarioRowsForHandler(5, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs(false, sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(revokeAllByUserRegex).
-		WithArgs(sqlmock.AnyArg(), "inativacao", int64(5)).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectToggleUsuarioTxH(mock, 5, true, false)
 
 	status, _ := patchInativarUsuario(t, server.URL+"/api/usuarios/5/inativar", nil)
 
@@ -87,37 +79,39 @@ func TestSEC06_AtivarUsuario_NaoRevoga(t *testing.T) {
 	defer db.Close()
 	logs := capturarLog(t)
 
-	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-		WithArgs(int64(5)).WillReturnRows(usuarioRowsForHandler(5, false))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-		WithArgs(true, int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
-	// Nenhuma expectativa de revogação: se o handler tentasse revogar, o
-	// sqlmock devolveria erro e o handler logaria "falha ao revogar".
+	// Nenhuma expectativa de revogação: se o caso de uso tentasse revogar,
+	// o sqlmock devolveria erro (rollback e 500).
+	expectToggleUsuarioTxH(mock, 5, false, true)
 
 	status, body := patchInativarUsuario(t, server.URL+"/api/usuarios/5/inativar", map[string]any{"ativo": true})
 
 	assert.Equal(t, http.StatusOK, status)
-	assert.Equal(t, true, body["data"].(map[string]any)["ativo"])
+	data, ok := body["data"].(map[string]any)
+	require.True(t, ok, "data deve ser objeto: %v", body)
+	assert.Equal(t, true, data["ativo"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 	assert.NotContains(t, logs.String(), "revogar")
 }
 
-func TestSEC06_InativarUsuario_FalhaNaRevogacao_LogaESegue200(t *testing.T) {
+// BUG-22 (Lote 31): a revogação entra na tx da inativação; falha desfaz
+// tudo (rollback) e responde 500. Antes (SEC-06) só logava e seguia 200.
+func TestSEC06_InativarUsuario_FalhaNaRevogacao_RollbackE500(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
 	logs := capturarLog(t)
 
+	mock.ExpectBegin()
+	expectUpdateAtivoUsuarioH(mock, 5, false, false)
 	mock.ExpectQuery(usuarioSelectRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-		WithArgs(int64(5)).WillReturnRows(usuarioRowsForHandler(5, true))
-	mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs(false, sqlmock.AnyArg(), int64(5)).WillReturnResult(sqlmock.NewResult(0, 1))
+		WithArgs(int64(5)).WillReturnRows(usuarioRowsForHandler(5, false))
 	mock.ExpectExec(revokeAllByUserRegex).
 		WithArgs(sqlmock.AnyArg(), "inativacao", int64(5)).WillReturnError(sqlmock.ErrCancelled)
+	mock.ExpectRollback()
 
 	status, _ := patchInativarUsuario(t, server.URL+"/api/usuarios/5/inativar", map[string]any{"ativo": false})
 
-	assert.Equal(t, http.StatusOK, status, "inativação já gravada; o middleware bloqueia o usuário inativo")
+	assert.Equal(t, http.StatusInternalServerError, status, "a inativação não fica gravada sem a revogação")
 	assert.NoError(t, mock.ExpectationsWereMet())
-	assert.Contains(t, logs.String(), "falha ao revogar refresh tokens do usuario_id=5")
+	assert.NotContains(t, logs.String(), "[refresh] todos tokens revogados: usuario_id=5", "log de sucesso só depois do commit")
 }

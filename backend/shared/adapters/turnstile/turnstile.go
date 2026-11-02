@@ -36,6 +36,25 @@ var (
 	ErrCaptchaInvalido = errors.New("turnstile: captcha inválido ou não verificável")
 )
 
+// Motivos de recusa (LOG-03): enum fixo, logado pelo caso de uso sem os
+// valores recebidos, sem token e sem secret.
+const (
+	MotivoSuccess  = "success"
+	MotivoHostname = "hostname"
+	MotivoAction   = "action"
+)
+
+// recusa é a recusa do siteverify com o motivo (LOG-03). errors.Is com
+// ErrCaptchaInvalido continua valendo (Unwrap).
+type recusa struct {
+	motivo  string
+	detalhe string
+}
+
+func (r *recusa) Error() string        { return ErrCaptchaInvalido.Error() + ": " + r.detalhe }
+func (r *recusa) Unwrap() error        { return ErrCaptchaInvalido }
+func (r *recusa) MotivoRecusa() string { return r.motivo }
+
 // secretsDeTeste são as secrets de teste documentadas pela Cloudflare
 // (sempre passa, sempre falha, token já usado). docs/deploy-servidor.md
 // documenta a primeira para a rede interna.
@@ -128,7 +147,7 @@ func (v *Verificador) Verificar(ctx context.Context, token, ip, acaoEsperada str
 		return fmt.Errorf("%w: resposta inesperada do Cloudflare: %v", ErrCaptchaInvalido, err)
 	}
 	if !r.Success {
-		return fmt.Errorf("%w: %v", ErrCaptchaInvalido, r.ErrorCodes)
+		return &recusa{motivo: MotivoSuccess, detalhe: fmt.Sprint(r.ErrorCodes)}
 	}
 	return v.conferirOrigem(r, acaoEsperada)
 }
@@ -140,10 +159,10 @@ func (v *Verificador) conferirOrigem(r respostaSiteverify, acaoEsperada string) 
 		return nil
 	}
 	if r.Hostname == "" || !v.hostnames[strings.ToLower(r.Hostname)] {
-		return fmt.Errorf("%w: hostname inesperado", ErrCaptchaInvalido)
+		return &recusa{motivo: MotivoHostname, detalhe: "hostname inesperado"}
 	}
 	if r.Action == "" || r.Action != acaoEsperada {
-		return fmt.Errorf("%w: action inesperada", ErrCaptchaInvalido)
+		return &recusa{motivo: MotivoAction, detalhe: "action inesperada"}
 	}
 	return nil
 }

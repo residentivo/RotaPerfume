@@ -203,44 +203,45 @@ func TestUsuarioService_ListUsuarios(t *testing.T) {
 func TestUsuarioService_ResetSenha(t *testing.T) {
 	t.Run("sucesso", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(1)).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+			WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(1), "hash-anterior").
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
 		// ARQ-07: o ResetSenha legado (sem chamador de produção) era hash + UPDATE;
 		// aqui, o hasher e o adapter de produção.
 		h, errHash := identidadecrypto.NovoHasher(usuarioTestCfg(false).HashSenha).Gerar(identidade.NovaSenha("nova-senha-123"))
 		require.NoError(t, errHash)
-		err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 1, h, false)
+		err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 1, identidade.NovoHashSenha("hash-anterior"), h, false)
 		require.NoError(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("usuário não encontrado", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(999)).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+			WithArgs(sqlmock.AnyArg(), false, sqlmock.AnyArg(), int64(999), "hash-anterior").
 			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT 1 FROM usuarios WHERE id = \?`).WithArgs(int64(999)).WillReturnRows(sqlmock.NewRows([]string{"1"}))
 
 		// ARQ-07: o ResetSenha legado (sem chamador de produção) era hash + UPDATE;
 		// aqui, o hasher e o adapter de produção.
 		h, errHash := identidadecrypto.NovoHasher(usuarioTestCfg(false).HashSenha).Gerar(identidade.NovaSenha("nova-senha-123"))
 		require.NoError(t, errHash)
-		err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 999, h, false)
+		err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 999, identidade.NovoHashSenha("hash-anterior"), h, false)
 		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("erro do repo é propagado", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
 			WillReturnError(sql.ErrConnDone)
 
 		// ARQ-07: o ResetSenha legado (sem chamador de produção) era hash + UPDATE;
 		// aqui, o hasher e o adapter de produção.
 		h, errHash := identidadecrypto.NovoHasher(usuarioTestCfg(false).HashSenha).Gerar(identidade.NovaSenha("nova-senha-123"))
 		require.NoError(t, errHash)
-		err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 1, h, false)
+		err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 1, identidade.NovoHashSenha("hash-anterior"), h, false)
 		assert.Error(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -321,9 +322,10 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 			WillReturnRows(usuarioRows())
 		mock.ExpectBegin()
 		mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
-		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1), sqlmock.AnyArg()).
 			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT 1 FROM usuarios WHERE id = \?`).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"1"}))
 		mock.ExpectRollback()
 
 		email := &fakeEmailService{}
@@ -331,6 +333,31 @@ func TestUsuarioService_AdminResetPassword(t *testing.T) {
 		enviado, err := casos.AdminResetarSenha(context.Background(), adminTeste(), identidadeapp.ComandoAdminResetarSenha{UsuarioID: 1})
 		assert.False(t, enviado)
 		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
+		assert.Zero(t, email.chamadas)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	// BUG-24: a senha mudou entre a leitura e o UPDATE (outra troca venceu):
+	// 409, rollback na mesma tx e nenhum e-mail.
+	t.Run("BUG-24: senha alterada por outra operação → 409 sem e-mail", func(t *testing.T) {
+		db, mock := newUsuarioTestDB(t)
+		esperarLeituraAlvo(mock)
+		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
+			WithArgs(int64(1)).
+			WillReturnRows(usuarioRows())
+		mock.ExpectBegin()
+		mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+			WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1), sqlmock.AnyArg()).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(`SELECT 1 FROM usuarios WHERE id = \?`).WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+		mock.ExpectRollback()
+
+		email := &fakeEmailService{}
+		casos := novosCasos(db, usuarioTestCfg(false), email, time.Now, identidadeapp.Opcoes{})
+		enviado, err := casos.AdminResetarSenha(context.Background(), adminTeste(), identidadeapp.ComandoAdminResetarSenha{UsuarioID: 1})
+		assert.False(t, enviado)
+		assert.ErrorIs(t, err, identidade.ErrSenhaAlteradaConcorrentemente)
 		assert.Zero(t, email.chamadas)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -562,15 +589,32 @@ func TestUsuarioService_UpdateUsuario(t *testing.T) {
 // ToggleAtivoUsuario
 // ---------------------------------------------------------------------------
 
+// BUG-22 (Lote 31): numa tx, UPDATE atômico (NOT ativo ou o valor),
+// releitura e, se ficou inativo, revogação + corte de sessão.
+const (
+	reToggleUsuarioS    = `UPDATE usuarios SET ativo = NOT ativo WHERE id = \?`
+	reRevogarTodosS     = `UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`
+	reInvalidarSessoesS = `UPDATE usuarios SET tokens_validos_desde = \? WHERE id = \?`
+	reInativarUsuarioS  = `UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`
+	reReativarUsuarioS  = `UPDATE usuarios SET ativo = \? WHERE id = \?`
+	reReleUsuarioS      = `\s+WHERE u\.id = \?\s+LIMIT 1`
+)
+
+func usuarioRowsAtivoS(ativo bool) *sqlmock.Rows {
+	now := time.Now()
+	return sqlmock.NewRows(usuarioColunasHeader()).
+		AddRow(int64(1), "Fulano", "fulano@test.com", "hash-bcrypt", "normal", nil, ativo, false, now, now, nil, nil)
+}
+
 func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
-	t.Run("ativo nil - inverte status atual (toggle)", func(t *testing.T) {
+	t.Run("ativo nil - inverte no próprio UPDATE, revoga e corta na tx", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-			WithArgs(int64(1)).
-			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
-			WithArgs(false, sqlmock.AnyArg(), int64(1)).
-			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectBegin()
+		mock.ExpectExec(reToggleUsuarioS).WithArgs(int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectQuery(usuarioColunasRegex + reReleUsuarioS).WithArgs(int64(1)).WillReturnRows(usuarioRowsAtivoS(false))
+		mock.ExpectExec(reRevogarTodosS).WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).WillReturnResult(sqlmock.NewResult(0, 2))
+		mock.ExpectExec(reInvalidarSessoesS).WithArgs(sqlmock.AnyArg(), int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectCommit()
 
 		casos := novosCasos(db, usuarioTestCfg(true), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
 		u, err := casos.AlternarAtivoUsuario(context.Background(), adminTeste(), 1, nil)
@@ -579,14 +623,12 @@ func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("ativo explícito", func(t *testing.T) {
+	t.Run("ativo explícito true - sem revogação", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-			WithArgs(int64(1)).
-			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET ativo = \? WHERE id = \?`).
-			WithArgs(true, int64(1)).
-			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectBegin()
+		mock.ExpectExec(reReativarUsuarioS).WithArgs(true, int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectQuery(usuarioColunasRegex + reReleUsuarioS).WithArgs(int64(1)).WillReturnRows(usuarioRowsAtivoS(true))
+		mock.ExpectCommit()
 
 		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
 		ativo := true
@@ -596,11 +638,11 @@ func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("usuário não encontrado no GetByID", func(t *testing.T) {
+	t.Run("usuário não encontrado no UPDATE - 404 e rollback", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-			WithArgs(int64(999)).
-			WillReturnError(sql.ErrNoRows)
+		mock.ExpectBegin()
+		mock.ExpectExec(reToggleUsuarioS).WithArgs(int64(999)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectRollback()
 
 		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
 		u, err := casos.AlternarAtivoUsuario(context.Background(), adminTeste(), 999, nil)
@@ -609,19 +651,20 @@ func TestUsuarioService_ToggleAtivoUsuario(t *testing.T) {
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("usuário some entre GetByID e SetAtivo (corrida)", func(t *testing.T) {
+	t.Run("falha no corte de sessão - rollback de tudo", func(t *testing.T) {
 		db, mock := newUsuarioTestDB(t)
-		mock.ExpectQuery(usuarioColunasRegex + `\s+WHERE u\.id = \?\s+LIMIT 1`).
-			WithArgs(int64(1)).
-			WillReturnRows(usuarioRows())
-		mock.ExpectExec(`UPDATE usuarios SET ativo = \?, tokens_validos_desde = \? WHERE id = \?`).
-			WithArgs(false, sqlmock.AnyArg(), int64(1)).
-			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectBegin()
+		mock.ExpectExec(reInativarUsuarioS).WithArgs(false, sqlmock.AnyArg(), int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectQuery(usuarioColunasRegex + reReleUsuarioS).WithArgs(int64(1)).WillReturnRows(usuarioRowsAtivoS(false))
+		mock.ExpectExec(reRevogarTodosS).WithArgs(sqlmock.AnyArg(), "inativacao", int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec(reInvalidarSessoesS).WithArgs(sqlmock.AnyArg(), int64(1)).WillReturnError(sql.ErrConnDone)
+		mock.ExpectRollback()
 
 		casos := novosCasos(db, usuarioTestCfg(false), &fakeEmailService{}, time.Now, identidadeapp.Opcoes{})
-		u, err := casos.AlternarAtivoUsuario(context.Background(), adminTeste(), 1, nil)
+		inativo := false
+		u, err := casos.AlternarAtivoUsuario(context.Background(), adminTeste(), 1, &inativo)
 		assert.Nil(t, u)
-		assert.ErrorIs(t, err, identidade.ErrUsuarioNaoEncontrado)
+		assert.ErrorIs(t, err, sql.ErrConnDone)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -670,8 +713,8 @@ func esperarLeituraAlvo(mock sqlmock.Sqlmock) {
 func esperarTxReset(mock sqlmock.Sqlmock) {
 	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO senha_historico`).WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-		WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1)).
+	mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+		WithArgs(sqlmock.AnyArg(), true, sqlmock.AnyArg(), int64(1), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE refresh_tokens SET revoked_at = \?, revoked_reason = \? WHERE usuario_id = \? AND revoked_at IS NULL`).
 		WithArgs(sqlmock.AnyArg(), "senha", int64(1)).WillReturnResult(sqlmock.NewResult(0, 0))

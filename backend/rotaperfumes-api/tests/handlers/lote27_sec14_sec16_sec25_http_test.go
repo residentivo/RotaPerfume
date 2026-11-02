@@ -150,7 +150,7 @@ func TestSEC16_HTTP_ListProdutos_PageMaxInt_ClampEm10000(t *testing.T) {
 	w := lote27Serve(server, lote27Req(t, http.MethodGet, "/api/produtos?page=9223372036854775807&limit=100", nil, tok))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	body := decodeResponse(t, w.Body.Bytes())
-	pag := body["pagination"].(map[string]any)
+	pag := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(10_000), pag["page"])
 	assert.Equal(t, float64(100), pag["limit"])
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -170,7 +170,7 @@ func TestSEC16_HTTP_ListProdutos_PageForaDaFaixaDoInt_Pagina1(t *testing.T) {
 
 	w := lote27Serve(server, lote27Req(t, http.MethodGet, "/api/produtos?page=99999999999999999999&limit=100", nil, tok))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	pag := decodeResponse(t, w.Body.Bytes())["pagination"].(map[string]any)
+	pag := como[map[string]any](t, decodeResponse(t, w.Body.Bytes())["pagination"])
 	assert.Equal(t, float64(1), pag["page"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

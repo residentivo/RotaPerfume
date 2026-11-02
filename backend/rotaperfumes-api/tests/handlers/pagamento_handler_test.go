@@ -80,10 +80,10 @@ func TestListPagamentos_Success_UsuarioComum(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].([]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[[]any](t, body["data"])
 	assert.Len(t, data, 1)
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(1), pagination["total"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -159,7 +159,7 @@ func TestListPagamentos_ComFiltrosEPaginacao(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	pagination := body["pagination"].(map[string]any)
+	pagination := como[map[string]any](t, body["pagination"])
 	assert.Equal(t, float64(2), pagination["page"])
 	assert.Equal(t, float64(10), pagination["limit"])
 	assert.Equal(t, float64(25), pagination["total"])
@@ -268,8 +268,8 @@ func TestGetPagamento_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(1), data["pagamento_id"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -391,8 +391,8 @@ func TestCreatePagamento_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(1), data["pagamento_id"])
 	assert.Equal(t, float64(1), data["pedido_id"])
 
@@ -618,8 +618,8 @@ func TestUpdatePagamento_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	assert.True(t, body["success"].(bool))
-	data := body["data"].(map[string]any)
+	assert.True(t, como[bool](t, body["success"]))
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(1), data["pagamento_id"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -654,7 +654,7 @@ func TestUpdatePagamento_IgnoraPedidoIDNoPayload(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body := decodeResponse(t, readBody(t, resp))
-	data := body["data"].(map[string]any)
+	data := como[map[string]any](t, body["data"])
 	assert.Equal(t, float64(1), data["pedido_id"]) // permanece o do banco
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -791,8 +791,9 @@ func TestDeletePagamento_Success(t *testing.T) {
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
-	// SEC-35: posse e status sob lock (pedido → pagamento), DELETE condicionado.
-	expectLockPedidoH(mock, 1, 2)
+	// SEC-35/38: posse lida sem lock, depois status sob lock (pedido →
+	// pagamento), DELETE condicionado.
+	expectLockPedidoRestritoH(mock, 1, 2)
 	expectLockPagamentoH(mock, 1, 1, "Em aberto")
 	expectDeletePagamentoH(mock, 1, 1)
 	mock.ExpectCommit()
@@ -858,7 +859,7 @@ func TestDeletePagamento_NegadoParaNaoAdminForaDaCarteira(t *testing.T) {
 	mock.ExpectQuery(`SELECT ` + pagamentoColunasRegexH + pagamentoFromRegexH + ` WHERE pagamento_id = \? LIMIT 1`).
 		WithArgs(int64(1)).
 		WillReturnRows(pagamentoRowsForHandler(1, 1, 100.0))
-	expectLockPedidoH(mock, 1, 2) // SEC-35: posse conferida sob o lock do pedido
+	expectPosseAlheiaH(mock, 1, 2) // SEC-38: recusado na leitura sem lock (não trava pedido alheio)
 	mock.ExpectRollback()
 
 	req, _ := http.NewRequest("DELETE", server.URL+"/api/pagamentos/1", nil)

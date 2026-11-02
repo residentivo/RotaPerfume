@@ -71,7 +71,7 @@ func casos() []caso {
 		{"Usuarios.AtualizarSenha", "usuarios.go", func(t *testing.T) []string {
 			db, m := novoMock(t)
 			m.ExpectExec("UPDATE usuarios SET password_hash").WillReturnResult(sqlmock.NewResult(0, 1))
-			if err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 1, identidade.NovoHashSenha(hash), false); err != nil {
+			if err := identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 1, identidade.NovoHashSenha("anterior"), identidade.NovoHashSenha(hash), false); err != nil {
 				t.Fatalf("AtualizarSenha: %v", err)
 			}
 			return []string{hash}

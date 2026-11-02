@@ -3,13 +3,13 @@ package services_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"github.com/rotaperfumes/shared/analytics"
 	"github.com/rotaperfumes/shared/analytics/analyticsapp"
 	"github.com/rotaperfumes/shared/kernel"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -227,7 +227,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 
 	t.Run("tabela nao existe (erro reconhecido) retorna shape {dias, pontos} com serie vazia", func(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
-		errTabelaNaoExiste := errors.New("Error 1146: Table 'db.pedidos' doesn't exist")
+		errTabelaNaoExiste := &mysql.MySQLError{Number: 1146, Message: "Table 'db.pedidos' doesn't exist"}
 		mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data`).
 			WithArgs(4).
 			WillReturnError(errTabelaNaoExiste)

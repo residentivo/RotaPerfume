@@ -128,6 +128,23 @@ type TxVinculo struct {
 	}
 }
 
+// TxAtivoCliente são os repositórios ligados à tx do PATCH /inativar de
+// cliente (BUG-22): trava a linha do cliente (a mesma trava da vinculação,
+// BUG-14), confere a carteira de novo sob o lock, inverte/define o ativo
+// num UPDATE atômico e relê para a resposta.
+type TxAtivoCliente struct {
+	Clientes interface {
+		TravarParaVinculo(ctx context.Context, id int64) error
+		// AlternarAtivo é o UPDATE ... SET ativo = NOT ativo (toggle atômico).
+		AlternarAtivo(ctx context.Context, id int64) error
+		DefinirAtivo(ctx context.Context, id int64, ativo bool) error
+		PorID(ctx context.Context, id int64) (*comercial.Cliente, error)
+	}
+	Carteiras interface {
+		VinculoAtivo(ctx context.Context, vendedorID, clienteID int64) (*comercial.Carteira, error)
+	}
+}
+
 // Transactor é o Unit of Work (db.Transactor satisfaz).
 type Transactor[R any] interface {
 	WithTx(ctx context.Context, fn func(R) error) error

@@ -100,27 +100,35 @@ func TestAuthService_GetUsuarioByEmail(t *testing.T) {
 
 func TestAuthService_ResetPassword(t *testing.T) {
 	erroBanco := errors.New("deadlock")
+	semLinha := func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 0)) }
 
+	// releitura: nil = sem SELECT; senão, as linhas devolvidas pelo SELECT 1
+	// que decide entre inexistente e senha trocada no meio (BUG-24).
 	casos := []struct {
 		nome       string
 		deveTrocar bool
 		resultado  func(*sqlmock.ExpectedExec)
+		releitura  *sqlmock.Rows
 		wantErrIs  error
 	}{
-		{"sucesso forçando troca", true, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 1)) }, nil},
-		{"sucesso sem forçar troca", false, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 1)) }, nil},
-		{"usuário inexistente", true, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 0)) }, identidade.ErrUsuarioNaoEncontrado},
-		{"erro do banco", false, func(e *sqlmock.ExpectedExec) { e.WillReturnError(erroBanco) }, erroBanco},
+		{"sucesso forçando troca", true, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 1)) }, nil, nil},
+		{"sucesso sem forçar troca", false, func(e *sqlmock.ExpectedExec) { e.WillReturnResult(sqlmock.NewResult(0, 1)) }, nil, nil},
+		{"usuário inexistente", true, semLinha, sqlmock.NewRows([]string{"1"}), identidade.ErrUsuarioNaoEncontrado},
+		{"senha alterada por outra operação", true, semLinha, sqlmock.NewRows([]string{"1"}).AddRow(1), identidade.ErrSenhaAlteradaConcorrentemente},
+		{"erro do banco", false, func(e *sqlmock.ExpectedExec) { e.WillReturnError(erroBanco) }, nil, erroBanco},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
 			defer db.Close()
-			c.resultado(mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \?`).
-				WithArgs("novo-hash", c.deveTrocar, sqlmock.AnyArg(), int64(9)))
+			c.resultado(mock.ExpectExec(`UPDATE usuarios SET password_hash = \?, deve_trocar_senha = \?, tokens_validos_desde = \? WHERE id = \? AND password_hash = \?`).
+				WithArgs("novo-hash", c.deveTrocar, sqlmock.AnyArg(), int64(9), "hash-anterior"))
+			if c.releitura != nil {
+				mock.ExpectQuery(`SELECT 1 FROM usuarios WHERE id = \?`).WithArgs(int64(9)).WillReturnRows(c.releitura)
+			}
 
-			err = identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 9, identidade.NovoHashSenha("novo-hash"), c.deveTrocar)
+			err = identidademysql.NovoUsuarios(db).AtualizarSenha(context.Background(), 9, identidade.NovoHashSenha("hash-anterior"), identidade.NovoHashSenha("novo-hash"), c.deveTrocar)
 			if c.wantErrIs != nil {
 				assert.ErrorIs(t, err, c.wantErrIs)
 			} else {
