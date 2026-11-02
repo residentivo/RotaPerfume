@@ -45,6 +45,7 @@ func depsCom(t *testing.T, conn resetpassword.Conexao, abrirErr error) resetpass
 func TestARQ07_CLIResetpassword_ListSemPepper(t *testing.T) {
 	t.Setenv("DB_USUARIO", "u")
 	t.Setenv("DB_SENHA", "s")
+	arq07SemTLSHerdado(t)
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp), sqlmock.MonitorPingsOption(true))
 	require.NoError(t, err)
 	mock.ExpectPing()
@@ -60,6 +61,7 @@ func TestARQ07_CLIResetpassword_ListSemPepper(t *testing.T) {
 func TestARQ07_CLIResetpassword_Falhas(t *testing.T) {
 	t.Setenv("DB_USUARIO", "u")
 	t.Setenv("DB_SENHA", "s")
+	arq07SemTLSHerdado(t)
 	t.Run("duas fontes de senha", func(t *testing.T) {
 		ex := rodarCLI(t, depsCom(t, nil, nil), "", "-password", "x", "-password-stdin", "-list")
 		assert.Equal(t, cmdutil.SaidaErro, ex.codigo)
@@ -110,4 +112,13 @@ func TestARQ07_CLIResetpassword_DepsPadrao(t *testing.T) {
 	conn, err := d.AbrirBanco("u:s@tcp(127.0.0.1:1)/x")
 	require.NoError(t, err, "sql.Open não conecta")
 	require.NoError(t, conn.Close())
+}
+
+// arq07SemTLSHerdado isola o teste do .env (que o Makefile exporta): sem
+// DB_HOST remoto nem DB_TLS_CA herdados (SEC-29/SEC-42; a CA não é versionada).
+func arq07SemTLSHerdado(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{"DB_HOST", "DB_TLS_CA", "DB_TLS_SERVER_NAME", "DB_TLS_REQUIRED"} {
+		t.Setenv(k, "")
+	}
 }

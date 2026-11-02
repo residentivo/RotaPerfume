@@ -102,6 +102,21 @@ func TestRepositorios_ExecComNotFound(t *testing.T) {
 			},
 		},
 		{
+			// BUG-22 (Lote 31): o toggle é o próprio UPDATE, sem ler antes.
+			nome: "ClienteRepository.AlternarAtivo", sqlRe: `^UPDATE clientes SET ativo = NOT ativo WHERE cliente_id_origem = \?$`,
+			args: []driver.Value{int64(5)}, naoEncontrado: comercial.ErrClienteNaoEncontrado,
+			chama: func(ctx context.Context, db *sql.DB) error {
+				return comercialmysql.NovoClientes(db).AlternarAtivo(ctx, 5)
+			},
+		},
+		{
+			nome: "UsuarioRepository.AlternarAtivo", sqlRe: `^UPDATE usuarios SET ativo = NOT ativo WHERE id = \?$`,
+			args: []driver.Value{int64(5)}, naoEncontrado: identidade.ErrUsuarioNaoEncontrado,
+			chama: func(ctx context.Context, db *sql.DB) error {
+				return identidademysql.NovoUsuarios(db).AlternarAtivo(ctx, 5)
+			},
+		},
+		{
 			nome: "UsuarioRepository.SetAtivo", sqlRe: `UPDATE usuarios SET ativo = \? WHERE id = \?`,
 			args: []driver.Value{true, int64(5)}, naoEncontrado: identidade.ErrUsuarioNaoEncontrado,
 			chama: func(ctx context.Context, db *sql.DB) error {

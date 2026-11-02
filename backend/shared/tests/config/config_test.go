@@ -131,7 +131,7 @@ func TestLoad(t *testing.T) {
 				"DB_NAME": "", "DB_USUARIO": "u", "DB_SENHA": "s", "VERBOSE": "", "LOG_LEVEL": "",
 				"CORS_ALLOWED_ORIGINS": "", "TRUST_PROXY_HEADERS": "", "JWT_ISSUER": "", "COOKIE_SECURE": "",
 				"REFRESH_REUSE_SUPPRESS_WINDOW": "", "REFRESH_CLEANUP_INTERVAL": "", "REFRESH_TOKEN_RETENCAO": "",
-				"DB_TLS_REQUIRED": "",
+				"DB_TLS_REQUIRED": "", "DB_TLS_CA": "", "DB_TLS_SERVER_NAME": "",
 			},
 			check: func(t *testing.T, c *config.Config) {
 				assert.Equal(t, "localhost", c.DBHost)
@@ -154,6 +154,8 @@ func TestLoad(t *testing.T) {
 				"DB_USUARIO": "u", "DB_SENHA": "s",
 				"CORS_ALLOWED_ORIGINS": " https://a.com , ,https://b.com", "TRUST_PROXY_HEADERS": "true",
 				"COOKIE_SECURE": "false", "DB_HOST": "", "DB_TLS_REQUIRED": "",
+				// SEC-29: sem DB_TLS_CA herdado do .env (a CA não é versionada).
+				"DB_TLS_CA": "", "DB_TLS_SERVER_NAME": "",
 			},
 			check: func(t *testing.T, c *config.Config) {
 				assert.Equal(t, 2*time.Hour, c.JWTTTL)

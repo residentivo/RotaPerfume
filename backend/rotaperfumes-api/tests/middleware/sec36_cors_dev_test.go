@@ -24,6 +24,8 @@ func sec36Load(t *testing.T, cookieSecure string) *config.Config {
 		"DB_USUARIO":      "u", "DB_SENHA": "s", "DB_HOST": "localhost", "COOKIE_SECURE": cookieSecure,
 		"CORS_ALLOWED_ORIGINS": "https://app.rotaperfumes.com", "TURNSTILE_HOSTNAMES": "",
 		"TURNSTILE_SECRET_KEY": "", "DB_TLS_CA": "", "DB_TLS_SERVER_NAME": "",
+		// SEC-42 (Lote 30): sem DB_TLS_REQUIRED herdado do ambiente.
+		"DB_TLS_REQUIRED": "",
 	} {
 		t.Setenv(k, v)
 	}
