@@ -72,7 +72,9 @@ func sec29Gravar(t *testing.T, nome string, dados []byte) string {
 }
 
 func TestSEC29_SemDBTLSCA_DSNInalterado(t *testing.T) {
+	// SEC-42: host "h" não é loopback; sem TLS só com DB_TLS_REQUIRED=false.
 	sec29Env(t, nil, nil)
+	t.Setenv("DB_TLS_REQUIRED", "false")
 	cfg, err := config.Load()
 	require.NoError(t, err)
 	assert.False(t, cfg.DBTLS.Ativo())
@@ -82,6 +84,7 @@ func TestSEC29_SemDBTLSCA_DSNInalterado(t *testing.T) {
 
 	// Só espaços conta como ausente.
 	sec29Env(t, sp("   "), nil)
+	t.Setenv("DB_TLS_REQUIRED", "false")
 	cfg, err = config.Load()
 	require.NoError(t, err)
 	assert.Equal(t, "u:p@tcp(h:3306)/db"+sec29SufixoDSN, cfg.DSN())

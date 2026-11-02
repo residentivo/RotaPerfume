@@ -2,10 +2,18 @@
 # =============================================================================
 # Instalacao automatica do rotaperfumes no servidor da LAN (card DEPLOY-01).
 #
-# Prepara o servidor (Docker/Jenkins/banco MySQL 8 ou MariaDB/ufw), cria o
-# banco e os usuarios,
-# gera o api.env de producao, cria/atualiza o job Jenkins "rotaperfumes-deploy"
-# e dispara o primeiro build.
+# Prepara o servidor (Docker/Jenkins/ufw), gera o api.env de producao,
+# cria/atualiza o job Jenkins "rotaperfumes-deploy" e dispara o primeiro build.
+#
+# BANCO (DEPLOY-06): este script NAO instala nem configura banco. O unico
+# caminho oficial do banco em producao e o deploy/mariadb-docker.sh (MariaDB
+# 11.4 em Docker, rede rotaperfumes-db, TLS e contas ed25519). Rode-o ANTES:
+#   sudo bash deploy/mariadb-docker.sh --ca-key <midia>/ca-key.pem [--dev-ip IP ...]
+# Aqui so se confere que o container esta no ar e se le a senha do
+# rotaperfumes_app gerada por ele (para o api.env).
+#
+# Jenkins (DEPLOY-04): nativo (servico systemd "jenkins") ou em container
+# (com o socket do Docker do host e o CLI docker + compose dentro dele).
 #
 # NAO cria, altera nem apaga credenciais no Jenkins: o cadastro das 2
 # credenciais e MANUAL (o script pausa, explica e depois so VERIFICA via GET).
@@ -13,8 +21,6 @@
 # Uso rapido (no servidor):
 #   curl -fsSLO https://raw.githubusercontent.com/residentivo/RotaPerfume/main/deploy/setup-servidor.sh
 #   sudo bash setup-servidor.sh --env /tmp/.env --dump /tmp/rotaperfumes-AAAAMMDD-HHMMSS.sql.gz
-# So o hardening/bind-address do banco (servidor ja instalado, DEPLOY-02):
-#   sudo bash setup-servidor.sh --apenas-banco
 #
 # Re-executavel: cada etapa confere o estado antes de mudar algo.
 # Regras: nunca "set -x"; segredos nunca vao para argv, log ou tela.
@@ -22,33 +28,26 @@
 set -euo pipefail
 umask 077
 
-readonly TOTAL_ETAPAS=11
 readonly JOB_NOME="rotaperfumes-deploy"
 readonly REPO_URL="https://github.com/residentivo/RotaPerfume.git"
 readonly DB_NOME="rotaperfumes"
 readonly DB_APP="rotaperfumes_app"
 readonly DB_ADMIN="rotaperfumes_admin"
-readonly DB_HOST_DOCKER="172.16.0.0/255.240.0.0"
-readonly FAIXA_DOCKER="172.16.0.0/12"
+# Banco: container e rede criados pelo deploy/mariadb-docker.sh (SEC-45).
+readonly DB_REDE="rotaperfumes-db"
+readonly DB_PORTA_INTERNA="3306"
 readonly DUMP_DIR="/opt/rotaperfumes/dumps"
 readonly DUMP_DESTINO="$DUMP_DIR/rotaperfumes.sql.gz"
+# Jenkins em container sem bind de $DUMP_DIR: o dump vai para o JENKINS_HOME.
+readonly DUMP_DIR_JENKINS_CONTAINER="/var/jenkins_home/rotaperfumes-dumps"
 readonly CRED_API_ENV="rotaperfumes-api-env"
 readonly CRED_DB_ADMIN="rotaperfumes-db-admin"
 readonly COMPOSE_MINIMO="2.17.0"
 readonly PLUGINS_EXIGIDOS=(workflow-job workflow-cps git credentials plain-credentials credentials-binding)
 # Chaves do api.env que o script sempre define (as do --env sao descartadas).
 readonly CHAVES_SOBRESCRITAS=(DB_HOST DB_PORT DB_NAME DB_USUARIO DB_SENHA JWT_SECRET CORS_ALLOWED_ORIGINS TRUST_PROXY_HEADERS COOKIE_SECURE)
-# Drop-ins [mysqld] do banco (DEPLOY-02): hardening sempre; bind so se loopback.
-readonly DROPIN_HARDENING="zz-rotaperfumes-hardening.cnf"
-readonly DROPIN_BIND="zz-rotaperfumes-bind.cnf"
-readonly DROPIN_LEGADO="zz-rotaperfumes.cnf"
-readonly COLLATION_PROJETO="utf8mb4_unicode_ci"
-readonly SQL_MODE_MARIADB="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
-# MySQL 8: mantem ONLY_FULL_GROUP_BY (padrao do 8.0). NO_AUTO_CREATE_USER nao existe no 8.0.
-readonly SQL_MODE_MYSQL="ONLY_FULL_GROUP_BY,$SQL_MODE_MARIADB"
-# character_set_collations existe no MariaDB >= 11.2 (no 11.2+ ele faz o
-# "CHARACTER SET utf8mb4" sem COLLATE cair em utf8mb4_uca1400_ai_ci).
-readonly MARIADB_MIN_CHARSET_COLLATIONS="11.2"
+# Etapas (numeracao continua, igual com Jenkins nativo ou em container).
+readonly TOTAL_ETAPAS=9
 
 # Opcoes (preenchidas por ler_argumentos)
 ARQ_ENV=""
@@ -58,23 +57,20 @@ SITE_HOST="ivo-inspiron-15-3530"
 SITE_IP="192.168.168.106"
 HTTPS_PORT="8443"
 JENKINS_URL="http://localhost:8888"
-PULAR_MYSQL=false
+JENKINS_CONTAINER=""
+DB_CONTAINER="rotaperfumes-mariadb"
+DB_SEGREDOS_DIR="/root/rotaperfumes-mariadb"
 PULAR_BUILD=false
 REMOVER_ENTRADAS=false
-APENAS_BANCO=false
 
 # Estado
+ETAPA_ATUAL=0
 USUARIO=""
 USUARIO_HOME=""
 USUARIO_GRUPO=""
-MYSQL_BIN=""
-MYSQL_ROOT_SENHA=""
-MYSQL_SABOR=""
-MYSQL_VERSAO=""
-MYSQL_SERVICO=""
-DB_PORTA=""
+JENKINS_MODO=""   # nativo | container
+DUMP_PATH_JOB="$DUMP_DESTINO"
 SENHA_APP=""
-SENHA_ADMIN=""
 API_ENV_SAIDA=""
 TMP_DIR=""
 CURL_CFG=""
@@ -88,7 +84,10 @@ ARQUIVOS_SECRETOS=()
 # -----------------------------------------------------------------------------
 # Mensagens
 # -----------------------------------------------------------------------------
-etapa() { printf '\n==> [%s/%s] %s\n' "$1" "$TOTAL_ETAPAS" "$2"; }
+etapa() {
+  ETAPA_ATUAL=$((ETAPA_ATUAL + 1))
+  printf '\n==> [%s/%s] %s\n' "$ETAPA_ATUAL" "$TOTAL_ETAPAS" "$1"
+}
 info() { printf '    %s\n' "$*"; }
 ok() { printf '    OK: %s\n' "$*"; }
 aviso() { printf '    AVISO: %s\n' "$*" >&2; }
@@ -107,9 +106,11 @@ aviso_destacado() {
 uso() {
   cat <<'EOF'
 Uso: sudo bash setup-servidor.sh --env ARQUIVO [opcoes]
-     sudo bash setup-servidor.sh --apenas-banco
 
-Obrigatorio (exceto com --apenas-banco):
+Antes (banco, DEPLOY-06): sudo bash deploy/mariadb-docker.sh [--ca-key ...] [--dev-ip ...]
+Este script nao instala nem configura banco.
+
+Obrigatorio:
   --env ARQUIVO               .env de origem (ex. /tmp/.env copiado do Windows).
                               DB_*, JWT_SECRET, CORS, TRUST_PROXY_HEADERS e
                               COOKIE_SECURE (sempre true) sao substituidos; o resto (SMTP, Turnstile...) e mantido.
@@ -122,18 +123,17 @@ Opcoes:
   --https-port PORTA          Porta HTTPS do Caddy (padrao 8443)
   --jenkins-url URL           URL do Jenkins vista do servidor
                               (padrao http://localhost:8888)
-  --apenas-banco              So aplica o hardening (local_infile, sql_mode,
-                              charset/collation) e o bind-address do banco
-                              (MySQL 8 ou MariaDB) e sai. Nao usa --env,
-                              Docker, compose nem Jenkins. Para servidor
-                              ja instalado.
-  --skip-mysql                Nao cria banco/usuarios no MySQL/MariaDB (pede a
-                              senha atual do rotaperfumes_app para o api.env).
+  --jenkins-container NOME    Container do Jenkins (padrao: detectado pela
+                              imagem jenkins/*; sem container = Jenkins nativo)
+  --db-container NOME         Container do MariaDB (padrao rotaperfumes-mariadb)
+  --db-segredos DIR           Senhas do mariadb-docker.sh
+                              (padrao /root/rotaperfumes-mariadb)
   --skip-build                Nao dispara o build no final.
   --remove-inputs             Apaga o --env e o --dump originais no final.
   -h, --help                  Mostra esta ajuda.
 
 Fluxo:
+  Servidor: sudo bash deploy/mariadb-docker.sh ...   (banco, uma vez)
   Windows:  scp deploy/dumps/<arquivo>.sql.gz .env USUARIO@ivo-inspiron-15-3530:/tmp/
   Servidor: curl -fsSLO https://raw.githubusercontent.com/residentivo/RotaPerfume/main/deploy/setup-servidor.sh
             sudo bash setup-servidor.sh --env /tmp/.env --dump /tmp/<arquivo>.sql.gz
@@ -146,6 +146,7 @@ EOF
 # -----------------------------------------------------------------------------
 # Limpeza de temporarios com segredo
 # -----------------------------------------------------------------------------
+
 apagar_seguro() {
   local arq=$1
   [[ -e "$arq" ]] || return 0
@@ -205,29 +206,6 @@ versao_ge() {
     if ((x < y)); then return 1; fi
   done
   return 0
-}
-
-# Sucesso se TODOS os enderecos do bind-address forem loopback.
-bind_so_loopback() {
-  local valor=${1// /}
-  [[ -n "$valor" ]] || return 1
-  local -a partes
-  IFS=, read -ra partes <<<"$valor"
-  local p
-  for p in "${partes[@]}"; do
-    case "$p" in
-      127.* | localhost | ::1) ;;
-      *) return 1 ;;
-    esac
-  done
-  return 0
-}
-
-# Escapa um literal SQL entre aspas simples (barra invertida e aspa simples).
-sql_escape() {
-  local s=${1//\\/\\\\}
-  s=${s//\'/\'\'}
-  printf '%s' "$s"
 }
 
 # Substituicoes entre aspas: no bash >= 5.2 (patsub_replacement) um "&" sem
@@ -302,12 +280,14 @@ valor_env() {
 }
 
 # Linhas acrescentadas ao api.env. Args: porta senha_app jwt host ip https_port
+# DB_HOST = container do mariadb-docker.sh na rede rotaperfumes-db (SEC-45);
+# a porta e a interna do container (3306).
 linhas_api_env() {
   local senha jwt
   senha=$(valor_env "$2") || return 1
   jwt=$(valor_env "$3") || return 1
   printf '\n# --- Definido por deploy/setup-servidor.sh ---\n'
-  printf 'DB_HOST=host.docker.internal\n'
+  printf 'DB_HOST=%s\n' "$DB_CONTAINER"
   printf 'DB_PORT=%s\n' "$1"
   printf 'DB_NAME=%s\n' "$DB_NOME"
   printf 'DB_USUARIO=%s\n' "$DB_APP"
@@ -326,28 +306,6 @@ plugins_faltantes() {
     obj=$({ grep -o '{[^{}]*}' <<<"$json" || true; } | { grep -F "\"shortName\":\"$nome\"" || true; })
     [[ "$obj" == *'"active":true'* ]] || printf '%s\n' "$nome"
   done
-}
-
-# SQL de banco/usuarios. Args: senha_app senha_admin ('' = manter a atual).
-gerar_sql() {
-  local host="'$DB_HOST_DOCKER'"
-  # sql_mode vazio so nesta sessao: garante que "\\" seja escape (sem NO_BACKSLASH_ESCAPES).
-  printf "SET SESSION sql_mode = '';\n"
-  printf 'CREATE DATABASE IF NOT EXISTS %s CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n' "$DB_NOME"
-  sql_usuario "$DB_APP" "$1"
-  printf 'GRANT SELECT, INSERT, UPDATE, DELETE ON %s.* TO %s@%s;\n' "$DB_NOME" "'$DB_APP'" "$host"
-  sql_usuario "$DB_ADMIN" "$2"
-  printf 'GRANT ALL PRIVILEGES ON %s.* TO %s@%s;\n' "$DB_NOME" "'$DB_ADMIN'" "$host"
-  printf 'FLUSH PRIVILEGES;\n'
-}
-
-sql_usuario() {
-  [[ -n "$2" ]] || return 0
-  local conta senha
-  conta="'$1'@'$DB_HOST_DOCKER'"
-  senha=$(sql_escape "$2")
-  printf "CREATE USER IF NOT EXISTS %s IDENTIFIED BY '%s';\n" "$conta" "$senha"
-  printf "ALTER USER %s IDENTIFIED BY '%s';\n" "$conta" "$senha"
 }
 
 xml_param_string() {
@@ -412,133 +370,29 @@ EOF
 EOF
 }
 
-# --- Hardening do banco (DEPLOY-02) ------------------------------------------
-
-# Nome legivel do sabor para mensagens. Arg: SABOR (mysql|mariadb; padrao $MYSQL_SABOR).
-nome_sabor() {
-  case "${1:-$MYSQL_SABOR}" in
-    mysql) printf 'MySQL' ;;
-    mariadb) printf 'MariaDB' ;;
-    *) printf 'banco' ;;
-  esac
-}
-
-# sql_mode_esperado SABOR -> lista do drop-in de hardening.
-sql_mode_esperado() {
-  case "$1" in
-    mysql) printf '%s' "$SQL_MODE_MYSQL" ;;
-    mariadb) printf '%s' "$SQL_MODE_MARIADB" ;;
-    *) return 1 ;;
-  esac
-}
-
-# Sucesso se o sabor/versao aceita character_set_collations (MariaDB >= 11.2).
-usa_character_set_collations() {
-  [[ "$1" == mariadb ]] || return 1
-  versao_ge "$(normalizar_versao "$2")" "$MARIADB_MIN_CHARSET_COLLATIONS"
-}
-
-# "a, B ,c" -> "A,B,C" ordenado e sem repeticoes (para comparar como conjunto).
-sql_mode_normalizado() {
-  local s=${1^^}
-  s=${s//[[:space:]]/}
-  local -a itens
-  IFS=, read -ra itens <<<"$s"
-  ((${#itens[@]} == 0)) && return 0
-  printf '%s\n' "${itens[@]}" | sed '/^$/d' | sort -u | paste -sd, -
-}
-
-# sql_mode_igual A B -> sucesso se os dois sql_mode tem os mesmos modos.
-sql_mode_igual() {
-  [[ "$(sql_mode_normalizado "$1")" == "$(sql_mode_normalizado "$2")" ]]
-}
-
-# conteudo_dropin_hardening SABOR VERSAO -> stdout. Sem bind-address e sem
-# opcoes exclusivas do outro sabor (nada de NO_AUTO_CREATE_USER nem
-# default_collation_for_utf8mb4).
-conteudo_dropin_hardening() {
-  local modo
-  modo=$(sql_mode_esperado "$1") || return 1
-  printf '# Gerado por deploy/setup-servidor.sh (rotaperfumes, DEPLOY-02): hardening.\n'
-  printf '# Nao edite: o script regrava este arquivo. O bind fica em %s.\n' "$DROPIN_BIND"
-  printf '[mysqld]\n'
-  printf 'local_infile = 0\n'
-  printf 'sql_mode = %s\n' "$modo"
-  printf 'character_set_server = utf8mb4\n'
-  printf 'collation_server = %s\n' "$COLLATION_PROJETO"
-  if usa_character_set_collations "$1" "$2"; then
-    printf 'character_set_collations = utf8mb4=%s\n' "$COLLATION_PROJETO"
-  fi
-}
-
-# conteudo_dropin_bind [ENDERECO] -> stdout (so o bind-address; padrao
-# 0.0.0.0, o ENDERECO so vem da migracao do legado).
-conteudo_dropin_bind() {
-  printf '# Gerado por deploy/setup-servidor.sh (rotaperfumes, DEPLOY-02): bind-address.\n'
-  printf '# Gravado so porque o banco escutava apenas em loopback (containers nao alcancam).\n'
-  printf '[mysqld]\n'
-  printf 'bind-address = %s\n' "${1:-0.0.0.0}"
-}
-
-# SET GLOBAL (nao PERSIST: o drop-in e a fonte da verdade no proximo restart).
-sql_set_global_hardening() {
-  local modo
-  modo=$(sql_mode_esperado "$1") || return 1
-  printf "SET GLOBAL local_infile = 0, sql_mode = '%s', character_set_server = 'utf8mb4', collation_server = '%s'" \
-    "$modo" "$COLLATION_PROJETO"
-  if usa_character_set_collations "$1" "$2"; then
-    printf ", character_set_collations = 'utf8mb4=%s'" "$COLLATION_PROJETO"
-  fi
-  printf '\n'
-}
-
-# Consulta das variaveis conferidas (saida "nome<TAB>valor").
-sql_variaveis_hardening() {
-  printf "SHOW GLOBAL VARIABLES WHERE Variable_name IN ('local_infile','sql_mode','character_set_server','collation_server','character_set_collations')"
-}
-
-# valores_divergentes SABOR VERSAO < "nome<TAB>valor" -> nomes que divergem
-# do esperado (um por linha). Variavel esperada ausente tambem diverge.
-valores_divergentes() {
-  local sabor=$1 versao=$2 modo nome valor
-  modo=$(sql_mode_esperado "$sabor") || return 1
-  local -A vistos=()
-  while IFS=$'\t' read -r nome valor || [[ -n "$nome" ]]; do
-    nome=${nome,,}
-    valor=${valor%$'\r'}
-    [[ -n "$nome" ]] || continue
-    vistos[$nome]=1
-    case "$nome" in
-      local_infile) [[ "${valor^^}" == OFF || "$valor" == 0 ]] || printf 'local_infile\n' ;;
-      sql_mode) sql_mode_igual "$valor" "$modo" || printf 'sql_mode\n' ;;
-      character_set_server) [[ "${valor,,}" == utf8mb4 ]] || printf 'character_set_server\n' ;;
-      collation_server) [[ "${valor,,}" == "$COLLATION_PROJETO" ]] || printf 'collation_server\n' ;;
-      character_set_collations)
-        usa_character_set_collations "$sabor" "$versao" || continue
-        valor=${valor,,}
-        [[ ",${valor//[[:space:]]/}," == *",utf8mb4=$COLLATION_PROJETO,"* ]] || printf 'character_set_collations\n'
-        ;;
-    esac
-  done
-  local esperadas=(local_infile sql_mode character_set_server collation_server)
-  usa_character_set_collations "$sabor" "$versao" && esperadas+=(character_set_collations)
-  for nome in "${esperadas[@]}"; do
-    [[ -n "${vistos[$nome]:-}" ]] || printf '%s\n' "$nome"
-  done
-}
-
-# gravar_se_mudou TMP DESTINO -> 0 = gravou (conteudo novo), 1 = ja estava igual.
-gravar_se_mudou() {
-  if [[ -f "$2" ]] && cmp -s -- "$1" "$2"; then
-    return 1
-  fi
-  install -m 644 -o root -g root "$1" "$2"
-  return 0
-}
-
 # Sucesso se o arquivo .env traz uma secret de TESTE do Turnstile (Cloudflare).
 env_tem_turnstile_teste() {
   grep -Eq '^[[:space:]]*(export[[:space:]]+)?TURNSTILE_SECRET_KEY[[:space:]]*=[[:space:]]*["'"'"']?[123]x0{31}AA["'"'"']?[[:space:]]*$' "$1"
+}
+
+# Imagem de Jenkins na saida do "docker ps" (nome[/...]:tag).
+eh_imagem_jenkins() {
+  [[ "$1" =~ (^|/)jenkins(/[^:[:space:]]+)?(:|@|$) ]]
+}
+
+# caminho_no_container MOUNTS CAMINHO_HOST -> caminho visto dentro do
+# container, se algum bind (linhas "origem|destino") cobrir o caminho.
+caminho_no_container() {
+  local mounts=$1 alvo=$2 origem destino
+  while IFS='|' read -r origem destino; do
+    [[ -n "$origem" && -n "$destino" ]] || continue
+    origem=${origem%/}
+    if [[ "$alvo" == "$origem" || "$alvo" == "$origem/"* ]]; then
+      printf '%s%s' "${destino%/}" "${alvo#"$origem"}"
+      return 0
+    fi
+  done <<<"$mounts"
+  return 1
 }
 
 # -----------------------------------------------------------------------------
@@ -558,10 +412,13 @@ ler_argumentos() {
       --site-ip) exigir_valor "$@"; SITE_IP=$2; shift 2 ;;
       --https-port) exigir_valor "$@"; HTTPS_PORT=$2; shift 2 ;;
       --jenkins-url) exigir_valor "$@"; JENKINS_URL=${2%/}; shift 2 ;;
-      --skip-mysql) PULAR_MYSQL=true; shift ;;
+      --jenkins-container) exigir_valor "$@"; JENKINS_CONTAINER=$2; shift 2 ;;
+      --db-container) exigir_valor "$@"; DB_CONTAINER=$2; shift 2 ;;
+      --db-segredos) exigir_valor "$@"; DB_SEGREDOS_DIR=${2%/}; shift 2 ;;
       --skip-build) PULAR_BUILD=true; shift ;;
       --remove-inputs) REMOVER_ENTRADAS=true; shift ;;
-      --apenas-banco) APENAS_BANCO=true; shift ;;
+      --apenas-banco | --skip-mysql)
+        falhar "A opcao $1 saiu (DEPLOY-06): o banco e so o deploy/mariadb-docker.sh (sudo bash deploy/mariadb-docker.sh --help)." ;;
       -h | --help) uso; exit 0 ;;
       *) falhar "Opcao desconhecida: $1 (veja --help)." ;;
     esac
@@ -570,17 +427,20 @@ ler_argumentos() {
 }
 
 validar_argumentos() {
-  $APENAS_BANCO || [[ -n "$ARQ_ENV" ]] || falhar "Informe --env ARQUIVO (veja --help)."
+  [[ -n "$ARQ_ENV" ]] || falhar "Informe --env ARQUIVO (veja --help)."
   [[ "$SITE_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || falhar "--site-host invalido."
   [[ "$SITE_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || falhar "--site-ip invalido (IPv4)."
   [[ "$HTTPS_PORT" =~ ^[0-9]{1,5}$ ]] && ((HTTPS_PORT >= 1 && HTTPS_PORT <= 65535)) ||
     falhar "--https-port invalida."
   [[ "$TURNSTILE_SITE_KEY" =~ ^[A-Za-z0-9_-]*$ ]] || falhar "--turnstile-site-key invalida."
   [[ "$JENKINS_URL" =~ ^https?://[^[:space:]]+$ ]] || falhar "--jenkins-url invalida."
+  [[ -z "$JENKINS_CONTAINER" || "$JENKINS_CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || falhar "--jenkins-container invalido."
+  [[ "$DB_CONTAINER" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || falhar "--db-container invalido."
+  [[ "$DB_SEGREDOS_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || falhar "--db-segredos precisa ser caminho absoluto."
 }
 
 # -----------------------------------------------------------------------------
-# [1] Pre-checagens
+# Pre-checagens
 # -----------------------------------------------------------------------------
 checar_root() {
   [[ $EUID -eq 0 ]] || falhar "Rode como root: sudo bash $0 ..."
@@ -599,7 +459,7 @@ checar_root_e_usuario() {
 
 checar_comandos() {
   local cmd faltando=()
-  for cmd in docker curl openssl gzip install runuser systemctl getent; do
+  for cmd in docker curl openssl gzip install getent; do
     command -v "$cmd" >/dev/null 2>&1 || faltando+=("$cmd")
   done
   ((${#faltando[@]} == 0)) || falhar "Comandos ausentes: ${faltando[*]}"
@@ -626,104 +486,62 @@ checar_entradas() {
   fi
 }
 
+# DEPLOY-04: Jenkins nativo (systemd) ou em container. Resultado em
+# JENKINS_MODO (nativo|container) e JENKINS_CONTAINER.
 checar_jenkins() {
-  if systemctl cat jenkins >/dev/null 2>&1; then
+  if [[ -z "$JENKINS_CONTAINER" ]] && systemctl cat jenkins >/dev/null 2>&1; then
     id jenkins >/dev/null 2>&1 || falhar "Servico jenkins existe, mas o usuario 'jenkins' nao."
+    command -v runuser >/dev/null 2>&1 || falhar "Comando 'runuser' ausente (Jenkins nativo)."
+    JENKINS_MODO=nativo
     ok "Jenkins nativo (servico systemd 'jenkins')"
     return 0
   fi
-  local imagens
-  imagens=$(docker ps --format '{{.Image}}' 2>/dev/null || true)
-  if [[ "$imagens" =~ (^|[[:space:]/])jenkins(/|:|[[:space:]]|$) ]]; then
-    falhar "Jenkins roda em CONTAINER. Este script so suporta Jenkins nativo (systemd):
-       o pipeline precisa do CLI docker + compose e do /var/run/docker.sock dentro
-       do container do Jenkins. Monte o socket, instale o docker-ce-cli e o compose
-       plugin na imagem e siga o passo a passo manual de docs/deploy-servidor.md."
+  if [[ -z "$JENKINS_CONTAINER" ]]; then
+    local nome imagem achados=()
+    while read -r nome imagem; do
+      eh_imagem_jenkins "$imagem" && achados+=("$nome")
+    done < <(docker ps --format '{{.Names}} {{.Image}}' 2>/dev/null || true)
+    ((${#achados[@]} > 0)) || falhar "Jenkins nao encontrado (nem servico systemd 'jenkins', nem container com imagem jenkins). Use --jenkins-container NOME."
+    ((${#achados[@]} == 1)) || falhar "Mais de um container de Jenkins (${achados[*]}): escolha com --jenkins-container NOME."
+    JENKINS_CONTAINER=${achados[0]}
   fi
-  falhar "Jenkins nao encontrado como servico systemd 'jenkins'."
+  [[ "$(docker inspect -f '{{.State.Running}}' "$JENKINS_CONTAINER" 2>/dev/null)" == true ]] ||
+    falhar "Container do Jenkins '$JENKINS_CONTAINER' nao esta rodando."
+  JENKINS_MODO=container
+  ok "Jenkins em container ($JENKINS_CONTAINER)"
 }
 
-# Producao: MySQL 8.0 (cliente "mysql"). MariaDB: cliente "mariadb" (a partir
-# do 11.x o pacote pode nao trazer mais o symlink "mysql").
-detectar_mysql_bin() {
-  if command -v mariadb >/dev/null 2>&1; then
-    MYSQL_BIN=mariadb
-  elif command -v mysql >/dev/null 2>&1; then
-    MYSQL_BIN=mysql
-  else
-    falhar "Cliente mysql (ou mariadb) nao encontrado no servidor. O servidor do banco esta instalado?"
-  fi
-}
-
-# Executa o cliente como root; a senha (se houver) vai so no ambiente do comando.
-mysql_root() {
-  if [[ -n "$MYSQL_ROOT_SENHA" ]]; then
-    MYSQL_PWD=$MYSQL_ROOT_SENHA "$MYSQL_BIN" -uroot "$@"
-  else
-    "$MYSQL_BIN" -uroot "$@"
-  fi
-}
-
-mysql_consulta() { mysql_root -N -B -e "$1"; }
-
-checar_acesso_mysql() {
-  if mysql_root -e 'SELECT 1' >/dev/null 2>&1; then
-    ok "acesso root ao banco via socket"
-    return 0
-  fi
-  info "Acesso root via socket falhou."
-  IFS= read -rsp "    Senha do root do banco (MySQL/MariaDB): " MYSQL_ROOT_SENHA
-  echo >&2
-  mysql_root -e 'SELECT 1' >/dev/null 2>&1 || falhar "Nao foi possivel acessar o banco como root."
-  ok "acesso root ao banco com senha"
-}
-
-detectar_sabor_e_servico() {
-  local versao candidatos s
-  versao=$(mysql_consulta 'SELECT VERSION()')
-  MYSQL_VERSAO=$versao
-  if [[ "$versao" == *MariaDB* ]]; then
-    MYSQL_SABOR=mariadb
-    candidatos=(mariadb mysql mysqld)
-  else
-    MYSQL_SABOR=mysql
-    candidatos=(mysql mysqld mariadb)
-  fi
-  for s in "${candidatos[@]}"; do
-    if systemctl cat "$s" >/dev/null 2>&1; then
-      MYSQL_SERVICO=$s
-      break
-    fi
+# DEPLOY-06: o banco e do deploy/mariadb-docker.sh. Aqui so se confere.
+checar_banco_docker() {
+  local rodando ip
+  rodando=$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null || true)
+  [[ "$rodando" == true ]] ||
+    falhar "Container do banco '$DB_CONTAINER' nao esta rodando. Rode antes: sudo bash deploy/mariadb-docker.sh (ver --help; este script nao instala banco)."
+  docker network inspect "$DB_REDE" >/dev/null 2>&1 ||
+    falhar "Rede docker '$DB_REDE' nao existe. Rode antes: sudo bash deploy/mariadb-docker.sh"
+  ip=$(docker inspect -f "{{with index .NetworkSettings.Networks \"$DB_REDE\"}}{{.IPAddress}}{{end}}" "$DB_CONTAINER")
+  [[ -n "$ip" ]] || falhar "O container '$DB_CONTAINER' nao esta na rede '$DB_REDE'. Rode: sudo bash deploy/mariadb-docker.sh --recriar"
+  local arq
+  for arq in "$DB_SEGREDOS_DIR/$DB_APP.senha" "$DB_SEGREDOS_DIR/$DB_ADMIN.senha"; do
+    [[ -s "$arq" ]] || falhar "Senha nao encontrada: $arq (gerada pelo deploy/mariadb-docker.sh; use --db-segredos)."
   done
-  [[ -n "$MYSQL_SERVICO" ]] || falhar "Servico systemd do banco nao encontrado (mariadb/mysql/mysqld)."
-  ok "$(nome_sabor) $versao (servico $MYSQL_SERVICO)"
+  ok "MariaDB do mariadb-docker.sh: container $DB_CONTAINER na rede $DB_REDE ($ip)"
 }
 
 etapa_prechecagens() {
-  etapa 1 "Pre-checagens"
+  etapa "Pre-checagens"
   checar_root_e_usuario
   checar_comandos
   checar_compose
   checar_entradas
   checar_jenkins
-  detectar_mysql_bin
-  checar_acesso_mysql
-  detectar_sabor_e_servico
-}
-
-# --apenas-banco: so o necessario para a etapa 3 (sem --env, Docker, compose
-# nem Jenkins).
-etapa_prechecagens_banco() {
-  etapa 1 "Pre-checagens (--apenas-banco)"
-  checar_root
-  detectar_mysql_bin
-  checar_acesso_mysql
-  detectar_sabor_e_servico
+  checar_banco_docker
 }
 
 # -----------------------------------------------------------------------------
-# [2] Jenkins no grupo docker
+# Jenkins com acesso ao Docker
 # -----------------------------------------------------------------------------
+
 aguardar_jenkins() {
   local limite=$((SECONDS + 180)) codigo
   info "Aguardando $JENKINS_URL/login responder 200 (ate 180s)..."
@@ -738,8 +556,7 @@ aguardar_jenkins() {
   falhar "Jenkins nao respondeu 200 em $JENKINS_URL/login (confira --jenkins-url)."
 }
 
-etapa_jenkins_docker() {
-  etapa 2 "Usuario jenkins no grupo docker"
+etapa_jenkins_docker_nativo() {
   getent group docker >/dev/null || falhar "Grupo 'docker' nao existe."
   if [[ " $(id -nG jenkins) " == *" docker "* ]]; then
     ok "jenkins ja esta no grupo docker"
@@ -753,230 +570,33 @@ etapa_jenkins_docker() {
   ok "jenkins acessa o Docker"
 }
 
-# -----------------------------------------------------------------------------
-# [3] Hardening e bind-address do banco (DEPLOY-02)
-#
-# Dois drop-ins [mysqld] (secao lida pelo MySQL 8 e pelo MariaDB):
-#   - zz-rotaperfumes-hardening.cnf: SEMPRE gravado (local_infile = 0, sql_mode
-#     estrito, utf8mb4/utf8mb4_unicode_ci). Nunca reinicia o banco: se o valor
-#     em execucao divergir, aplica com SET GLOBAL (nao PERSIST).
-#   - zz-rotaperfumes-bind.cnf: so bind-address = 0.0.0.0, gravado so quando o
-#     banco escuta apenas em loopback. E o UNICO que reinicia o servico.
-# O legado zz-rotaperfumes.cnf (bind + hardening juntos) e migrado: o -bind.cnf
-# e gravado ANTES de remover o legado, sem restart.
-# -----------------------------------------------------------------------------
-LEGADO_BACKUP=""
-
-bind_address_atual() {
-  mysql_consulta "SHOW GLOBAL VARIABLES LIKE 'bind_address'" | cut -f2
+# Container: o pipeline precisa do CLI docker + compose e do socket do host
+# dentro do container. So confere (nao altera o container do Jenkins).
+etapa_jenkins_docker_container() {
+  aguardar_jenkins
+  docker exec "$JENKINS_CONTAINER" docker ps >/dev/null 2>&1 ||
+    falhar "O Jenkins em container ($JENKINS_CONTAINER) nao acessa o Docker do host: monte /var/run/docker.sock, instale o docker-ce-cli na imagem e de ao usuario do Jenkins acesso ao socket (docs/deploy-servidor.md)."
+  local v
+  v=$(docker exec "$JENKINS_CONTAINER" docker compose version --short 2>/dev/null) ||
+    falhar "Sem o plugin 'docker compose' dentro do container $JENKINS_CONTAINER (instale o docker-compose-plugin na imagem)."
+  v=$(normalizar_versao "$v")
+  versao_ge "$v" "$COMPOSE_MINIMO" || falhar "docker compose $v < $COMPOSE_MINIMO dentro do container $JENKINS_CONTAINER."
+  ok "Jenkins em container acessa o Docker do host (compose $v)"
 }
 
-diretorio_dropin() {
-  local d
-  if [[ "$MYSQL_SABOR" == mariadb ]]; then d=/etc/mysql/mariadb.conf.d; else d=/etc/mysql/mysql.conf.d; fi
-  for d in "$d" /etc/mysql/conf.d /etc/my.cnf.d; do
-    if [[ -d "$d" ]]; then
-      printf '%s' "$d"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# Sucesso se o banco responder em ate 90s.
-aguardar_mysql() {
-  local limite=$((SECONDS + 90))
-  while ((SECONDS < limite)); do
-    mysql_root -e 'SELECT 1' >/dev/null 2>&1 && return 0
-    sleep 2
-  done
-  return 1
-}
-
-# salvar_backup DESTINO BACKUP: copia o arquivo atual (se existir).
-salvar_backup() {
-  rm -f -- "$2"
-  if [[ -f "$1" ]]; then cp -p -- "$1" "$2"; fi
-  return 0
-}
-
-# restaurar_backup DESTINO BACKUP: volta o arquivo anterior, ou remove o
-# DESTINO se ele nao existia antes.
-restaurar_backup() {
-  if [[ -f "$2" ]]; then
-    install -m 644 -o root -g root "$2" "$1"
+etapa_jenkins_docker() {
+  etapa "Jenkins com acesso ao Docker ($JENKINS_MODO)"
+  if [[ "$JENKINS_MODO" == container ]]; then
+    etapa_jenkins_docker_container
   else
-    rm -f -- "$1"
+    etapa_jenkins_docker_nativo
   fi
-}
-
-# Valida a configuracao COMPLETA do servidor sem reiniciar.
-#   MySQL 8:  mysqld --validate-config
-#   MariaDB:  mariadbd --help --verbose (sai com erro em opcao desconhecida)
-validar_config_banco() {
-  local err="$TMP_DIR/validacao.err" bin rc=0 linha
-  if [[ "$MYSQL_SABOR" == mysql ]]; then
-    bin=$(command -v mysqld 2>/dev/null || printf '/usr/sbin/mysqld')
-    "$bin" --validate-config --user=mysql >/dev/null 2>"$err" || rc=$?
-  else
-    bin=$(command -v mariadbd 2>/dev/null || command -v mysqld 2>/dev/null || printf '/usr/sbin/mariadbd')
-    "$bin" --help --verbose --user=mysql >/dev/null 2>"$err" || rc=$?
-  fi
-  ((rc == 0)) && return 0
-  aviso "A validacao da configuracao do $(nome_sabor) falhou (codigo $rc):"
-  if [[ -s "$err" ]]; then
-    while IFS= read -r linha; do aviso "  $linha"; done < <(sed -n '1,15p' "$err")
-  fi
-  return 1
-}
-
-# Se o legado foi removido nesta execucao, devolve-o (rollback do hardening).
-restaurar_legado() {
-  [[ -n "$LEGADO_BACKUP" && -f "$LEGADO_BACKUP" ]] || return 0
-  install -m 644 -o root -g root "$LEGADO_BACKUP" "$1/$DROPIN_LEGADO"
-  aviso "Drop-in legado $1/$DROPIN_LEGADO restaurado."
-}
-
-# migrar_dropin_legado DIR: grava o -bind.cnf (com o endereco do legado) e so
-# depois remove o legado. Sem restart: o banco em execucao nao muda.
-migrar_dropin_legado() {
-  local dir=$1 legado="$1/$DROPIN_LEGADO" bind="$1/$DROPIN_BIND" tmp="$TMP_DIR/bind-legado.cnf" endereco
-  [[ -f "$legado" ]] || return 0
-  info "Drop-in legado encontrado: $legado. Migrando para $DROPIN_HARDENING + $DROPIN_BIND (sem restart)..."
-  endereco=$(sed -nE 's/^[[:space:]]*bind[-_]address[[:space:]]*=[[:space:]]*([^[:space:]#]+).*/\1/p' "$legado" | tail -n 1)
-  if [[ -n "$endereco" ]]; then
-    conteudo_dropin_bind "$endereco" >"$tmp"
-    if gravar_se_mudou "$tmp" "$bind"; then
-      ok "gravado $bind (bind-address = $endereco, vindo do legado)"
-    else
-      ok "$bind ja estava igual"
-    fi
-  fi
-  LEGADO_BACKUP="$TMP_DIR/legado.cnf.bkp"
-  cp -p -- "$legado" "$LEGADO_BACKUP"
-  rm -f -- "$legado"
-  ok "removido $legado"
-}
-
-# aplicar_hardening DIR: grava o drop-in de hardening (se mudou), valida e
-# aplica com SET GLOBAL o que divergir em execucao. Nunca reinicia.
-aplicar_hardening() {
-  local dir=$1 arq="$1/$DROPIN_HARDENING" tmp="$TMP_DIR/hardening.cnf" bkp="$TMP_DIR/hardening.cnf.bkp" vars div
-  conteudo_dropin_hardening "$MYSQL_SABOR" "$MYSQL_VERSAO" >"$tmp" ||
-    falhar "Sabor do banco desconhecido: '$MYSQL_SABOR'."
-  salvar_backup "$arq" "$bkp"
-  if gravar_se_mudou "$tmp" "$arq"; then
-    if ! validar_config_banco; then
-      restaurar_backup "$arq" "$bkp"
-      restaurar_legado "$dir"
-      falhar "Configuracao do $(nome_sabor) invalida com $arq. Arquivo anterior restaurado; $MYSQL_SERVICO NAO foi reiniciado."
-    fi
-    ok "gravado $arq (configuracao validada; sem restart)"
-  else
-    ok "$arq ja estava atualizado"
-  fi
-  vars=$(mysql_consulta "$(sql_variaveis_hardening)") || vars=""
-  div=$(valores_divergentes "$MYSQL_SABOR" "$MYSQL_VERSAO" <<<"$vars" | tr '\n' ' ')
-  div=${div% }
-  if [[ -z "$div" ]]; then
-    ok "valores em execucao ja conferem com o drop-in"
-    return 0
-  fi
-  info "Em execucao diverge(m): $div. Aplicando com SET GLOBAL (sem restart; vale para conexoes novas)..."
-  mysql_consulta "$(sql_set_global_hardening "$MYSQL_SABOR" "$MYSQL_VERSAO")" >/dev/null ||
-    falhar "SET GLOBAL falhou. O drop-in $arq passa a valer no proximo restart do $MYSQL_SERVICO."
-  ok "SET GLOBAL aplicado"
-}
-
-# gravar_dropin_bind DIR: so bind-address = 0.0.0.0. Reinicia o banco apenas
-# quando o arquivo mudou; restaura e reinicia de novo se o restart falhar.
-gravar_dropin_bind() {
-  local arq="$1/$DROPIN_BIND" tmp="$TMP_DIR/bind.cnf" bkp="$TMP_DIR/bind.cnf.bkp"
-  conteudo_dropin_bind >"$tmp"
-  salvar_backup "$arq" "$bkp"
-  if ! gravar_se_mudou "$tmp" "$arq"; then
-    info "$arq ja estava gravado; sem restart."
-    return 0
-  fi
-  if ! validar_config_banco; then
-    restaurar_backup "$arq" "$bkp"
-    falhar "Configuracao do $(nome_sabor) invalida com $arq. Arquivo anterior restaurado; $MYSQL_SERVICO NAO foi reiniciado."
-  fi
-  info "Gravado $arq; reiniciando $MYSQL_SERVICO..."
-  if systemctl restart "$MYSQL_SERVICO" && aguardar_mysql; then
-    return 0
-  fi
-  aviso "O $MYSQL_SERVICO nao voltou apos o restart. Restaurando $arq e reiniciando de novo..."
-  restaurar_backup "$arq" "$bkp"
-  systemctl restart "$MYSQL_SERVICO" || aviso "O segundo restart do $MYSQL_SERVICO tambem falhou."
-  aguardar_mysql || aviso "O $(nome_sabor) ainda nao responde."
-  falhar "Restart do $MYSQL_SERVICO falhou com $arq (arquivo restaurado). Veja: journalctl -u $MYSQL_SERVICO"
-}
-
-# Conferencia final: so AVISO (nada e alterado aqui).
-conferir_hardening() {
-  local vars div persistidas schema tabelas n
-  vars=$(mysql_consulta "$(sql_variaveis_hardening)") || vars=""
-  div=$(valores_divergentes "$MYSQL_SABOR" "$MYSQL_VERSAO" <<<"$vars" | tr '\n' ' ')
-  div=${div% }
-  if [[ -n "$div" ]]; then
-    aviso "SHOW GLOBAL VARIABLES ainda diverge do drop-in em: $div."
-    aviso "  Outro arquivo pode sobrescrever: grep -rnE 'local_infile|sql_mode|character_set|collation' /etc/mysql"
-  else
-    ok "conferido: local_infile=OFF, sql_mode estrito, utf8mb4/$COLLATION_PROJETO"
-  fi
-  if [[ "$MYSQL_SABOR" == mysql ]]; then
-    persistidas=$(mysql_consulta "SELECT VARIABLE_NAME FROM performance_schema.persisted_variables WHERE VARIABLE_NAME IN ('local_infile','sql_mode','character_set_server','collation_server') ORDER BY VARIABLE_NAME" | tr '\n' ' ') ||
-      persistidas=""
-    persistidas=${persistidas% }
-    if [[ -n "$persistidas" ]]; then
-      aviso "SET PERSIST ativo para: $persistidas (mysqld-auto.cnf sobrescreve o drop-in no restart)."
-      aviso "  Para o drop-in valer: RESET PERSIST <variavel>; (uma por vez)"
-    fi
-  fi
-  schema=$(mysql_consulta "SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$DB_NOME'") || schema=""
-  if [[ -z "$schema" ]]; then
-    info "Schema $DB_NOME ainda nao existe (e criado com $COLLATION_PROJETO na etapa 5)."
-    return 0
-  fi
-  if [[ "$schema" != "$COLLATION_PROJETO" ]]; then
-    aviso "Schema $DB_NOME com collation $schema (esperado $COLLATION_PROJETO). O script NAO faz ALTER; abra um card."
-  fi
-  tabelas=$(mysql_consulta "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = '$DB_NOME' AND TABLE_TYPE = 'BASE TABLE' AND TABLE_COLLATION <> '$COLLATION_PROJETO' ORDER BY TABLE_NAME") ||
-    tabelas=""
-  if [[ -n "$tabelas" ]]; then
-    n=$(grep -c . <<<"$tabelas")
-    aviso "$n tabela(s) de $DB_NOME fora de $COLLATION_PROJETO: $(head -n 10 <<<"$tabelas" | paste -sd' ' -)$( ((n > 10)) && printf ' ...')"
-    aviso "  O script NAO faz ALTER TABLE; abra um card para a conversao."
-  fi
-}
-
-etapa_bind_address() {
-  etapa 3 "Hardening e bind-address do $(nome_sabor)"
-  local skip bind dir
-  skip=$(mysql_consulta 'SELECT @@skip_networking')
-  [[ "$skip" == "0" || "$skip" == "OFF" ]] || falhar "skip_networking esta ativo: o banco nao aceita TCP."
-  dir=$(diretorio_dropin) || falhar "Diretorio de configuracao do banco nao encontrado."
-  migrar_dropin_legado "$dir"
-  aplicar_hardening "$dir"
-  bind=$(bind_address_atual)
-  if bind_so_loopback "$bind"; then
-    info "bind-address atual: $bind (containers nao alcancam)."
-    gravar_dropin_bind "$dir"
-    bind=$(bind_address_atual)
-    bind_so_loopback "$bind" &&
-      falhar "bind-address continua '$bind'. Outro arquivo sobrescreve: grep -rn bind-address /etc/mysql"
-  fi
-  ok "bind-address: ${bind:-(todas as interfaces)}"
-  DB_PORTA=$(mysql_consulta 'SELECT @@port')
-  [[ "$DB_PORTA" =~ ^[0-9]+$ && "$DB_PORTA" != 0 ]] || falhar "Porta do banco invalida: $DB_PORTA"
-  ok "porta do banco: $DB_PORTA"
-  conferir_hardening
 }
 
 # -----------------------------------------------------------------------------
-# [4] Firewall
+# Firewall (so a porta HTTPS; a do banco e do mariadb-docker.sh/DOCKER-USER)
 # -----------------------------------------------------------------------------
+
 ufw_ativo() {
   command -v ufw >/dev/null 2>&1 || return 1
   local status
@@ -984,114 +604,72 @@ ufw_ativo() {
   [[ "${status,,}" == *"status: active"* ]]
 }
 
-# Remove e reinsere no topo: o allow da faixa docker precisa vir antes do deny.
-ufw_liberar_docker() {
-  local regra=(allow from "$FAIXA_DOCKER" to any port "$DB_PORTA" proto tcp)
-  ufw delete "${regra[@]}" >/dev/null 2>&1 || true
-  ufw insert 1 "${regra[@]}" >/dev/null 2>&1 || ufw "${regra[@]}" >/dev/null
-}
-
 etapa_firewall() {
-  etapa 4 "Firewall (ufw)"
+  etapa "Firewall (ufw)"
+  info "Banco: nada a fazer aqui. A porta do MariaDB so e publicada com --dev-ip do"
+  info "  deploy/mariadb-docker.sh e e restringida na chain DOCKER-USER (o ufw nao ve portas do Docker)."
   if ufw_ativo; then
-    ufw_liberar_docker
-    ufw deny "$DB_PORTA/tcp" >/dev/null
     ufw allow "$HTTPS_PORT/tcp" >/dev/null
-    ok "ufw: $DB_PORTA liberada so para $FAIXA_DOCKER; $HTTPS_PORT/tcp liberada"
+    ok "ufw: $HTTPS_PORT/tcp liberada"
     return 0
   fi
   aviso_destacado \
-    "ufw INATIVO: com bind-address 0.0.0.0 a porta $DB_PORTA do banco fica aberta na LAN." \
-    "O script NAO ativa o firewall. Sugestao (confira antes o acesso SSH):" \
+    "ufw INATIVO. O script NAO ativa o firewall. Sugestao (confira antes o acesso SSH):" \
     "  sudo ufw allow OpenSSH" \
-    "  sudo ufw allow from $FAIXA_DOCKER to any port $DB_PORTA proto tcp" \
-    "  sudo ufw deny $DB_PORTA/tcp" \
     "  sudo ufw allow $HTTPS_PORT/tcp" \
     "  sudo ufw allow 8888/tcp      # Jenkins, se acessado de outra maquina" \
     "  sudo ufw enable"
 }
 
 # -----------------------------------------------------------------------------
-# [5] Banco e usuarios
+# Dump
 # -----------------------------------------------------------------------------
-usuario_db_existe() {
-  local n
-  n=$(mysql_consulta "SELECT COUNT(*) FROM mysql.user WHERE User='$1' AND Host='$DB_HOST_DOCKER'")
-  [[ "$n" != "0" ]]
+instalar_dump_nativo() {
+  install -d -m 750 -o root -g jenkins "$DUMP_DIR"
+  install -m 640 -o root -g jenkins "$ARQ_DUMP" "$DUMP_DESTINO"
+  runuser -u jenkins -- test -r "$DUMP_DESTINO" || falhar "jenkins nao consegue ler $DUMP_DESTINO."
+  DUMP_PATH_JOB=$DUMP_DESTINO
+  ok "dump em $DUMP_DESTINO (root:jenkins 640)"
 }
 
-pedir_senha_admin() {
-  local s1 s2
-  info "Escolha a senha do usuario $DB_ADMIN do $(nome_sabor) (voce a digitara no Jenkins depois)."
-  while true; do
-    IFS= read -rsp "    Senha (min. 12 caracteres): " s1
-    echo >&2
-    if ((${#s1} < 12)); then
-      aviso "Senha curta demais."
-      continue
-    fi
-    IFS= read -rsp "    Repita a senha: " s2
-    echo >&2
-    [[ "$s1" == "$s2" ]] && break
-    aviso "As senhas nao conferem. Tente de novo."
-  done
-  SENHA_ADMIN=$s1
-}
-
-pedir_senha_app_existente() {
-  IFS= read -rsp "    Senha ATUAL do usuario $DB_APP do $(nome_sabor) (vai para o api.env): " SENHA_APP
-  echo >&2
-  [[ -n "$SENHA_APP" ]] || falhar "Senha vazia."
-}
-
-# Decide se as senhas serao (re)definidas. Retorno em SENHA_APP/SENHA_ADMIN.
-decidir_senhas() {
-  local resp=s admin_existe=false
-  usuario_db_existe "$DB_ADMIN" && admin_existe=true
-  if usuario_db_existe "$DB_APP" || $admin_existe; then
-    info "Usuarios do rotaperfumes ja existem no banco."
-    info "Redefinir as senhas exige ATUALIZAR as 2 credenciais no Jenkins (etapa 9)."
-    read -rp "    Redefinir as senhas? [s/N] " resp
+# Container: se $DUMP_DIR estiver num bind do Jenkins, usa o caminho visto
+# por ele; senao copia para o JENKINS_HOME (docker cp) com dono do Jenkins.
+instalar_dump_container() {
+  local mounts destino uid gid
+  mounts=$(docker inspect -f '{{range .Mounts}}{{.Source}}|{{.Destination}}{{println}}{{end}}' "$JENKINS_CONTAINER")
+  uid=$(docker exec "$JENKINS_CONTAINER" id -u)
+  gid=$(docker exec "$JENKINS_CONTAINER" id -g)
+  [[ "$uid" =~ ^[0-9]+$ && "$gid" =~ ^[0-9]+$ ]] || falhar "uid/gid do Jenkins no container inesperado."
+  if destino=$(caminho_no_container "$mounts" "$DUMP_DESTINO"); then
+    install -d -m 750 -o root -g "$gid" "$DUMP_DIR"
+    install -m 640 -o root -g "$gid" "$ARQ_DUMP" "$DUMP_DESTINO"
+    info "dump em $DUMP_DESTINO (bind do Jenkins: $destino)"
+  else
+    destino="$DUMP_DIR_JENKINS_CONTAINER/rotaperfumes.sql.gz"
+    docker exec -u 0 "$JENKINS_CONTAINER" install -d -m 700 -o "$uid" -g "$gid" "$DUMP_DIR_JENKINS_CONTAINER"
+    docker cp "$ARQ_DUMP" "$JENKINS_CONTAINER:$destino" >/dev/null
+    docker exec -u 0 "$JENKINS_CONTAINER" chown "$uid:$gid" "$destino"
+    docker exec -u 0 "$JENKINS_CONTAINER" chmod 600 "$destino"
+    info "dump copiado para $JENKINS_CONTAINER:$destino (sem bind de $DUMP_DIR no container)"
   fi
-  if [[ "$resp" =~ ^[sS] ]]; then
-    SENHA_APP=$(openssl rand -hex 24)
-    pedir_senha_admin
-    return 0
-  fi
-  if usuario_db_existe "$DB_APP"; then pedir_senha_app_existente; else SENHA_APP=$(openssl rand -hex 24); fi
-  $admin_existe || pedir_senha_admin
+  docker exec "$JENKINS_CONTAINER" test -r "$destino" || falhar "o Jenkins ($JENKINS_CONTAINER) nao consegue ler $destino."
+  DUMP_PATH_JOB=$destino
+  ok "DUMP_PATH do job: $DUMP_PATH_JOB"
 }
 
-etapa_banco() {
-  etapa 5 "Banco $DB_NOME e usuarios"
-  if $PULAR_MYSQL; then
-    info "--skip-mysql: banco/usuarios nao serao alterados."
-    pedir_senha_app_existente
-    return 0
-  fi
-  decidir_senhas
-  gerar_sql "$SENHA_APP" "$SENHA_ADMIN" | mysql_root
-  ok "banco $DB_NOME (utf8mb4) e usuarios $DB_APP / $DB_ADMIN @'$DB_HOST_DOCKER'"
-}
-
-# -----------------------------------------------------------------------------
-# [6] Dump
-# -----------------------------------------------------------------------------
 etapa_dump() {
-  etapa 6 "Dump do banco"
+  etapa "Dump do banco"
   if [[ -z "$ARQ_DUMP" ]]; then
     info "Sem --dump: nada a instalar."
     return 0
   fi
-  install -d -m 750 -o root -g jenkins "$DUMP_DIR"
-  install -m 640 -o root -g jenkins "$ARQ_DUMP" "$DUMP_DESTINO"
-  runuser -u jenkins -- test -r "$DUMP_DESTINO" || falhar "jenkins nao consegue ler $DUMP_DESTINO."
-  ok "dump em $DUMP_DESTINO (root:jenkins 640)"
+  if [[ "$JENKINS_MODO" == container ]]; then instalar_dump_container; else instalar_dump_nativo; fi
 }
 
 # -----------------------------------------------------------------------------
-# [7] api.env
+# api.env
 # -----------------------------------------------------------------------------
+
 avisar_chaves_com_dolar() {
   local chaves
   chaves=$(chaves_com_dolar <"$ARQ_ENV" | sort -u | tr '\n' ' ')
@@ -1114,27 +692,36 @@ avisar_turnstile_vazio() {
   aviso "TURNSTILE_SECRET_KEY vazia no --env: o login sera recusado (fail-closed)."
 }
 
+# Senha do rotaperfumes_app: lida do arquivo do mariadb-docker.sh (nunca impressa).
+ler_senha_app() {
+  SENHA_APP=$(<"$DB_SEGREDOS_DIR/$DB_APP.senha")
+  [[ "$SENHA_APP" =~ ^[A-Za-z0-9]+$ ]] || falhar "Senha em $DB_SEGREDOS_DIR/$DB_APP.senha fora do formato esperado."
+}
+
 etapa_api_env() {
-  etapa 7 "Gerando o api.env de producao"
+  etapa "Gerando o api.env de producao"
   local tmp="$TMP_DIR/api.env" jwt
   jwt=$(openssl rand -base64 48 | tr -d '\n')
+  ler_senha_app
   avisar_chaves_com_dolar
   avisar_turnstile_vazio
   avisar_turnstile_teste
   {
     filtrar_env <"$ARQ_ENV"
-    linhas_api_env "$DB_PORTA" "$SENHA_APP" "$jwt" "$SITE_HOST" "$SITE_IP" "$HTTPS_PORT"
+    linhas_api_env "$DB_PORTA_INTERNA" "$SENHA_APP" "$jwt" "$SITE_HOST" "$SITE_IP" "$HTTPS_PORT"
   } >"$tmp" || falhar "Senha do app contem aspas simples; nao cabe no env_file."
+  SENHA_APP=""
   API_ENV_SAIDA="$USUARIO_HOME/rotaperfumes-api.env"
   ARQUIVOS_SECRETOS+=("$API_ENV_SAIDA")
   install -m 600 -o "$USUARIO" -g "$USUARIO_GRUPO" "$tmp" "$API_ENV_SAIDA"
   apagar_seguro "$tmp"
-  ok "gravado $API_ENV_SAIDA (600, $USUARIO); JWT_SECRET novo"
+  ok "gravado $API_ENV_SAIDA (600, $USUARIO); JWT_SECRET novo; DB_HOST=$DB_CONTAINER"
 }
 
 # -----------------------------------------------------------------------------
-# [8] Jenkins REST (job + leitura)
+# Jenkins REST (job + leitura)
 # -----------------------------------------------------------------------------
+
 cabecalho() {
   { grep -i "^$1:" "$2" || true; } | tail -1 | cut -d: -f2- | tr -d '\r' | sed 's/^[[:space:]]*//'
 }
@@ -1220,7 +807,7 @@ publicar_job() {
 }
 
 etapa_jenkins_job() {
-  etapa 8 "Job Jenkins $JOB_NOME"
+  etapa "Job Jenkins $JOB_NOME"
   aguardar_jenkins
   pedir_token_jenkins
   validar_login_jenkins
@@ -1229,17 +816,15 @@ etapa_jenkins_job() {
 }
 
 # -----------------------------------------------------------------------------
-# [9] Pausa para as credenciais MANUAIS
+# Pausa para as credenciais MANUAIS
 # -----------------------------------------------------------------------------
+
 credencial_existe() {
   jenkins_req GET "/credentials/store/system/domain/_/credential/$1/api/json?tree=id"
   [[ "$HTTP_CODE" == 200 ]]
 }
 
 instrucoes_credenciais() {
-  local senha_admin="a senha que voce escolheu na etapa 5"
-  $PULAR_MYSQL && senha_admin="a senha ATUAL do $DB_ADMIN"
-  [[ -z "$SENHA_ADMIN" ]] && ! $PULAR_MYSQL && senha_admin="a senha ATUAL do $DB_ADMIN (nao foi alterada)"
   cat <<EOF
 
     ---------------------------------------------------------------------
@@ -1254,7 +839,9 @@ instrucoes_credenciais() {
        (se ja existir: abra a credencial > Update > envie o arquivo novo)
     c) Add Credentials:
          Kind: Username with password | Username: $DB_ADMIN
-         Password: $senha_admin | ID: $CRED_DB_ADMIN
+         Password: conteudo de $DB_SEGREDOS_DIR/$DB_ADMIN.senha
+                   (gerada pelo mariadb-docker.sh; leia no servidor com
+                    sudo cat, sem colar em chat/log) | ID: $CRED_DB_ADMIN
     d) Apague o rotaperfumes-api.env do Windows:
          Remove-Item .\\rotaperfumes-api.env
     ---------------------------------------------------------------------
@@ -1262,7 +849,7 @@ EOF
 }
 
 etapa_credenciais() {
-  etapa 9 "Credenciais no Jenkins (cadastro MANUAL)"
+  etapa "Credenciais no Jenkins (cadastro MANUAL)"
   instrucoes_credenciais
   local resp faltando id
   while true; do
@@ -1281,14 +868,15 @@ etapa_credenciais() {
 }
 
 # -----------------------------------------------------------------------------
-# [10] Build
+# Build
 # -----------------------------------------------------------------------------
+
 disparar_build() {
   local importar=false local_fila
   [[ -n "$ARQ_DUMP" ]] && importar=true
   jenkins_req POST "/job/$JOB_NOME/buildWithParameters" \
     --data-urlencode "IMPORTAR_DUMP=$importar" \
-    --data-urlencode "DUMP_PATH=$DUMP_DESTINO" \
+    --data-urlencode "DUMP_PATH=$DUMP_PATH_JOB" \
     --data-urlencode "SITE_HOST=$SITE_HOST" \
     --data-urlencode "SITE_IP=$SITE_IP" \
     --data-urlencode "HTTPS_PORT=$HTTPS_PORT" \
@@ -1350,7 +938,7 @@ resultado_build() {
 }
 
 etapa_build() {
-  etapa 10 "Primeiro build"
+  etapa "Primeiro build"
   if $PULAR_BUILD; then
     info "--skip-build: rode o job $JOB_NOME manualmente (Construir com parametros)."
     return 0
@@ -1367,8 +955,9 @@ etapa_build() {
 }
 
 # -----------------------------------------------------------------------------
-# [11] Resumo
+# Resumo
 # -----------------------------------------------------------------------------
+
 exportar_ca_caddy() {
   local destino="$USUARIO_HOME/rotaperfumes-caddy-root.crt" tmp="$TMP_DIR/root.crt"
   docker cp rotaperfumes-caddy-1:/data/caddy/pki/authorities/local/root.crt "$tmp" >/dev/null 2>&1 || return 1
@@ -1401,13 +990,19 @@ tratar_entradas() {
 }
 
 etapa_resumo() {
-  etapa 11 "Resumo"
+  etapa "Resumo"
   info "Acesso: https://$SITE_HOST:$HTTPS_PORT  (se o PC nao resolver o nome, adicione"
   info "  '$SITE_IP  $SITE_HOST' em C:\\Windows\\System32\\drivers\\etc\\hosts)"
   instrucoes_ca
   info "Turnstile: cadastre o hostname '$SITE_HOST' no site do Turnstile (Cloudflare)."
   [[ -z "$TURNSTILE_SITE_KEY" ]] && aviso "Sem --turnstile-site-key: o widget nao aparece; rode o job com TURNSTILE_SITE_KEY."
-  [[ -n "$ARQ_DUMP" ]] && info "Depois de conferir os dados, apague o dump: sudo rm $DUMP_DESTINO"
+  if [[ -n "$ARQ_DUMP" ]]; then
+    if [[ "$JENKINS_MODO" == container && "$DUMP_PATH_JOB" != "$DUMP_DESTINO" ]]; then
+      info "Depois de conferir os dados, apague o dump: sudo docker exec $JENKINS_CONTAINER rm $DUMP_PATH_JOB"
+    else
+      info "Depois de conferir os dados, apague o dump: sudo rm $DUMP_DESTINO"
+    fi
+  fi
   info "Proximos deploys: Jenkins > $JOB_NOME > Construir com parametros (IMPORTAR_DUMP desmarcado)."
   tratar_entradas
 }
@@ -1418,17 +1013,9 @@ main() {
   preparar_temporarios
   trap limpar EXIT
   trap 'exit 130' INT TERM
-  if $APENAS_BANCO; then
-    etapa_prechecagens_banco
-    etapa_bind_address
-    printf '\nConcluido (--apenas-banco).\n'
-    return 0
-  fi
   etapa_prechecagens
   etapa_jenkins_docker
-  etapa_bind_address
   etapa_firewall
-  etapa_banco
   etapa_dump
   etapa_api_env
   etapa_jenkins_job

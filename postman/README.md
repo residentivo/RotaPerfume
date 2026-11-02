@@ -1188,6 +1188,10 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 **Banco (DB-03, 2026-10-29):** MariaDB 11.4 LTS. Os alvos `make db-*`, inclusive o `make db-seed` (o `seedusers` chama o binário `mariadb`, sem fallback), exigem o cliente `mariadb` (MariaDB ≥ 11.4) no `PATH`. A API usa o driver Go `go-sql-driver/mysql`, compatível com o MariaDB.
 
+**Somente MariaDB (Lote 30, DOC-08, 2026-11-02):** em produção o banco é o container `rotaperfumes-mariadb` do `deploy/mariadb-docker.sh` (TLS obrigatório, contas `ed25519` + `REQUIRE SSL`; ver `docs/deploy-servidor.md` e `docs/Instal_SSL.md`). Máquinas de dev autorizadas (`--dev-ip`) acessam esse mesmo banco com a conta `casaos` e `DB_TLS_CA=deploy/ca-cert.pem` (`docs/Instal_SSL.md`, passo 11). Com `DB_HOST` fora do loopback, `DB_TLS_CA` é obrigatório (SEC-42).
+
+> **Atenção:** os comandos abaixo (`make db-reset`, `make gen-hash`) **apagam e recriam** o banco. Rode-os só num banco **descartável** (MariaDB 11.4 local em container, `DB_HOST=127.0.0.1`), **nunca** com o `.env` apontando para o servidor `192.168.168.106` (produção). O mesmo vale para `INTEGRATION=1`.
+
 Antes, copie `.env.example` para `.env` na raiz e preencha **`DB_USUARIO` e `DB_SENHA`** (obrigatórios desde o SEC-11, Lote 12, sem default). Sem eles, os alvos `db-*` param com `SEC-11: defina DB_USUARIO/DB_SENHA no .env` e a API não sobe (`config: defina DB_USUARIO/DB_SENHA no .env`).
 
 > **Formato do `.env` (SEC-11):** o `make` lê o arquivo inteiro (`-include .env`) e exporta todas as variáveis. Em **qualquer** valor, evite `$`, `#`, aspas, espaços nas pontas e começar com `/`, e salve o arquivo com final de linha LF. Precedência: `make DB_SENHA=x` na linha de comando > `.env` > variável do shell. A senha chega ao cliente `mariadb` por `MYSQL_PWD`, nunca por `-p` na linha de comando. Para rodar um script de `sql/` à mão: `MYSQL_PWD="$DB_SENHA" mariadb --local-infile=0 -u $DB_USUARIO -h $DB_HOST -P $DB_PORT --default-character-set=utf8mb4 $DB_NAME < sql/<script>.sql`.

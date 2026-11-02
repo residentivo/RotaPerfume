@@ -33,7 +33,8 @@ type Config struct {
 	DBUsuario string
 	DBSenha   string
 	// DBTLS é o TLS da conexão com o banco (SEC-29), via DB_TLS_CA e
-	// DB_TLS_SERVER_NAME. Valor zero = sem TLS (DSN sem tls=).
+	// DB_TLS_SERVER_NAME. Valor zero = sem TLS (DSN sem tls=), só aceito com
+	// DB_HOST loopback ou DB_TLS_REQUIRED=false (SEC-42).
 	DBTLS DBTLS
 
 	// JWT
@@ -296,6 +297,10 @@ func load(exigirDB bool) (*Config, error) {
 
 	vlog.Printf("config.go", "load", "carregando TLS do banco (DB_TLS_CA/DB_TLS_SERVER_NAME) e verificando erro")
 	if cfg.DBTLS, err = LoadDBTLS(); err != nil {
+		return nil, err
+	}
+	vlog.Printf("config.go", "load", "aplicando DB_TLS_REQUIRED ao DB_HOST (SEC-42) e verificando erro")
+	if err := ValidarDBTLSObrigatorio(cfg.DBHost, cfg.DBTLS); err != nil {
 		return nil, err
 	}
 

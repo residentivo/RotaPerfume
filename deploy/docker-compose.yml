@@ -13,17 +13,23 @@
 #                      origem (URLs relativas): serve a LAN e o dominio do tunnel.
 #   TURNSTILE_SITE_KEY chave PUBLICA do Turnstile (embutida no bundle)
 #
-# O MariaDB roda no HOST (fora do compose): a API acessa via host.docker.internal.
+# DEPLOY-06: o banco e o container MariaDB 11.4 "rotaperfumes-mariadb", criado
+# FORA do compose por deploy/mariadb-docker.sh, so na rede Docker EXTERNA
+# "rotaperfumes-db" (172.30.42.0/24; MariaDB em 172.30.42.2). A API entra nessa
+# rede com IP fixo 172.30.42.10 (a conta rotaperfumes_app so aceita esse IP) e
+# fala com o banco pelo nome do container, porta 3306 interna (nenhuma porta do
+# banco publicada para a API). A rede precisa existir antes do "up" (o script a
+# cria); sem ela o compose falha.
 # Segredos da API ficam em ./api.env (gerado pelo Jenkins, nunca versionado).
 #
-# SEC-29 (TLS API <-> banco; producao = MySQL 8.0 do host na 3306): a CA e
-# montada DIRETO do host, pelo caminho absoluto
-#   DB_TLS_CA_HOST_PATH  (default /etc/mysql/ssl/ca.pem; parametro do Jenkins)
+# SEC-29/SEC-40 (TLS API <-> banco): a CA e montada DIRETO do host, pelo
+# caminho absoluto
+#   DB_TLS_CA_HOST_PATH  (/etc/mysql/ssl/ca.pem; constante no Jenkinsfile)
 # O bind e resolvido pelo daemon no HOST, entao funciona com o Jenkins em
 # container (usando o socket do host) e nativo. Arquivo inexistente faz o
 # "up" falhar (create_host_path: false) em vez de criar um diretorio.
-# Como o host.docker.internal pode nao estar no SAN, o nome conferido e
-#   DB_TLS_SERVER_NAME   (default: SITE_IP) - precisa estar no SAN
+# DB_HOST/DB_PORT e o nome conferido no certificado (DB_TLS_SERVER_NAME) sao
+# fixados aqui (rotaperfumes-mariadb:3306; o nome esta no SAN do certificado).
 # Ver docs/Instal_SSL.md.
 
 name: rotaperfumes
@@ -40,8 +46,11 @@ services:
     # as variaveis. Sem API_ENV_FILE e sem ./api.env o compose falha (de proposito).
     env_file:
       - ${API_ENV_FILE:-./api.env}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      default: {}
+      # DEPLOY-06: IP fixo; e o host das contas do banco (rotaperfumes_app@'172.30.42.10').
+      rotaperfumes-db:
+        ipv4_address: 172.30.42.10
     labels:
       # SEC-29: sha256 da CA (exportado pelo Jenkins no Deploy). Mudou a CA,
       # muda a label e o compose recria o container (o bind de arquivo fica
@@ -50,10 +59,17 @@ services:
     environment:
       # IMG-01: imagens de produto no volume nomeado (o container e read_only).
       PRODUTO_IMAGENS_DIR: /data/produtos-imagens
+      # DEPLOY-06: banco pela rede rotaperfumes-db, pelo nome do container.
+      # Fixado aqui (ganha do api.env): um api.env antigo com
+      # host.docker.internal (ou outra porta) nao quebra o deploy. Porta =
+      # a interna do container, nao a publicada no host.
+      DB_HOST: rotaperfumes-mariadb
+      DB_PORT: "3306"
       # SEC-29: TLS com o banco. Fixados aqui (ganham do api.env) para
-      # casar com o bind mount abaixo; ver docs/deploy-servidor.md.
+      # casar com o bind mount abaixo e com o SAN; ver docs/deploy-servidor.md.
+      # SEC-42: com DB_TLS_CA definido, DB_TLS_REQUIRED (padrao true) passa.
       DB_TLS_CA: /etc/rotaperfumes/db-ca.pem
-      DB_TLS_SERVER_NAME: ${DB_TLS_SERVER_NAME:-${SITE_IP:-192.168.168.106}}
+      DB_TLS_SERVER_NAME: rotaperfumes-mariadb
     volumes:
       - produto_imagens:/data/produtos-imagens
       # SEC-29: CA do banco no HOST (publica; 644 para o uid 65532 da
@@ -137,6 +153,11 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+networks:
+  # DEPLOY-06: criada por deploy/mariadb-docker.sh (subnet 172.30.42.0/24).
+  rotaperfumes-db:
+    external: true
 
 volumes:
   caddy_data:

@@ -23,7 +23,7 @@ import (
 	"github.com/rotaperfumes/shared/tools/seedusers"
 )
 
-var errMySQL = errors.New("mariadb saiu com código 1")
+var errMariaDB = errors.New("mariadb saiu com código 1")
 
 const (
 	sqlAdmin = "INSERT INTO usuarios VALUES ('admin', '" + seedusers.PlaceholderAdmin + "');\n"
@@ -82,7 +82,7 @@ func (e *execucoes) runner(falharEm string) seedusers.SQLRunner {
 			e.conteudos[filepath.Base(file)] = string(b)
 		}
 		if filepath.Base(file) == falharEm {
-			return errMySQL
+			return errMariaDB
 		}
 		return nil
 	}
@@ -218,7 +218,7 @@ func TestRun_Erros(t *testing.T) {
 			nome:   "mariadb falha no segundo arquivo",
 			root:   func(t *testing.T) (string, error) { return raizFalsa(t), nil },
 			falhar: "03_seed_vendedores.sql",
-			errIs:  errMySQL,
+			errIs:  errMariaDB,
 			errSub: "mariadb falhou em",
 		},
 	}

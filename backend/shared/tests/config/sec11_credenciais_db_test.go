@@ -61,6 +61,10 @@ func sec11Base() map[string]*string {
 		"TURNSTILE_HOSTNAMES":           nil,
 		"DB_TLS_CA":                     nil,
 		"DB_TLS_SERVER_NAME":            nil,
+		// SEC-42: sem DB_HOST herdado do .env exportado pelo make (host
+		// remoto sem DB_TLS_CA derrubaria o Load).
+		"DB_HOST":         nil,
+		"DB_TLS_REQUIRED": nil,
 	}
 }
 

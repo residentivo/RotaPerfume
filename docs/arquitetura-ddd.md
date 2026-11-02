@@ -11,6 +11,8 @@
 >
 > **Banco (DB-03, 2026-10-29):** o servidor passou de MySQL para **MariaDB 11.4 LTS**. O driver Go continua sendo o `go-sql-driver/mysql` (compatível com o MariaDB) e os pacotes de adapter mantêm o sufixo `<ctx>mysql` (decisão de escopo: nenhum pacote foi renomeado). Nas seções abaixo, "MySQL" no nome de pacote, do driver ou de tipo (`*mysql.MySQLError`) continua valendo; onde o texto fala do comportamento do servidor (InnoDB, isolamento, erro 1062), vale igualmente para o MariaDB. Para os alvos `make db-*` e `db-seed`, o cliente `mariadb` (MariaDB ≥ 11.4) precisa estar no `PATH`.
 >
+> **Somente MariaDB (Lote 30, DOC-08, 2026-11-02):** o MySQL saiu também da produção. O banco de produção é o container `rotaperfumes-mariadb` do `deploy/mariadb-docker.sh` (rede `rotaperfumes-db`, TLS 1.3 no cliente Go, contas `ed25519` + `REQUIRE SSL`); ver `docs/deploy-servidor.md`, seção 3. Menções a "integração MySQL" ou "MySQL local" nas seções históricas abaixo valem hoje para um **MariaDB 11.4 descartável** (nunca o banco do servidor).
+>
 > No ARQ-00 este documento era **só desenho** (nenhum código foi movido naquele card). O código foi migrado do ARQ-01 ao ARQ-07; ver a seção 10.
 >
 > **Status (2026-10-13):** revisado pelo 🟣 SecBrain, **aprovado com ressalvas**. Os obrigatórios O1 a O9 e os recomendados R-a a R-g já estão incorporados (ver §0.2). Decisões P1 a P4 tomadas (ver §0.1).
@@ -1926,7 +1928,7 @@ Todos têm controle negativo (fonte sintética que a regra precisa reprovar).
 ### 10.9 Como rodar os testes (unitários e de integração)
 
 - **Unitários:** `make test` (os dois módulos), ou `go test ./...` em `backend/shared` e em `backend/rotaperfumes-api`. Cobertura combinada (portão do Lote 21): `make cover-combinada`.
-- **Integração (MySQL local):** os testes `*_integration_test.go` e `TestIntegracao*` são pulados (`t.Skip`) sem `INTEGRATION=1`. **Só `INTEGRATION=1` não basta:** as variáveis `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USUARIO` e `DB_SENHA` precisam estar **no ambiente do processo** (SEC-11: sem default; os testes não leem o `.env` sozinhos). Sem elas, parte dos testes é pulada e outra falha ao conectar, e um resultado "verde" pode não ter tocado o banco. Rode **com `-p 1`**: os pacotes de integração usam o mesmo banco e, em paralelo, interferem entre si.
+- **Integração (MariaDB 11.4 descartável; nunca o banco do servidor, DOC-08):** os testes `*_integration_test.go` e `TestIntegracao*` são pulados (`t.Skip`) sem `INTEGRATION=1`. **Só `INTEGRATION=1` não basta:** as variáveis `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USUARIO` e `DB_SENHA` precisam estar **no ambiente do processo** (SEC-11: sem default; os testes não leem o `.env` sozinhos). Sem elas, parte dos testes é pulada e outra falha ao conectar, e um resultado "verde" pode não ter tocado o banco. Rode **com `-p 1`**: os pacotes de integração usam o mesmo banco e, em paralelo, interferem entre si.
   - Git Bash (na raiz do repositório):
 
     ```bash

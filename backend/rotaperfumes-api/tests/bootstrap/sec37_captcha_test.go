@@ -137,7 +137,7 @@ func sec37EnvValido(t *testing.T) {
 		"JWT_SECRET": "segredo-sec37-com-pelo-menos-32-bytes!", "JWT_TTL": "1h",
 		"PASSWORD_PEPPER": "pepper-sec37-com-pelo-menos-32-bytes!!", "DB_USUARIO": "u", "DB_SENHA": "s",
 		"COOKIE_SECURE": "", "TURNSTILE_PERMITIR_SECRET_TESTE": "", "TURNSTILE_HOSTNAMES": "",
-		"DB_TLS_CA": "", "DB_TLS_SERVER_NAME": "", "CORS_ALLOWED_ORIGINS": "", "PRODUTO_IMAGENS_DIR": t.TempDir(),
+		"DB_TLS_CA": "", "DB_TLS_SERVER_NAME": "", "DB_HOST": "", "DB_TLS_REQUIRED": "", "CORS_ALLOWED_ORIGINS": "", "PRODUTO_IMAGENS_DIR": t.TempDir(),
 		"ARGON2_MEMORIA_KIB": "", "ARGON2_ITERACOES": "", "ARGON2_PARALELISMO": "",
 		"REFRESH_REUSE_SUPPRESS_WINDOW": "", "REFRESH_CLEANUP_INTERVAL": "", "REFRESH_TOKEN_RETENCAO": "",
 	} {

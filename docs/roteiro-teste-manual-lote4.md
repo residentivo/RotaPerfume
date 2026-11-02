@@ -51,7 +51,7 @@ Marque cada checkbox depois de conferir. Use o DevTools aberto na aba **Network*
 
    - [ ] 1.1 O comando termina sem erro. Se aparecer `ERROR 1062 ... uq_clientes_cnpj`, **pare** e reporte: sobrou alguma cópia e o índice não foi criado (nenhum dado foi perdido).
 
-3. Verificação (cole no `mysql` ou no Workbench):
+3. Verificação (cole no cliente `mariadb`; na época, `mysql` ou Workbench):
 
    ```sql
    SELECT COUNT(*) AS clientes FROM clientes;
@@ -281,7 +281,7 @@ Logado com `rafael.carvalho@...`.
 
 ## Testes automatizados
 
-Rodam com `make test` (Go), `make test-frontend` (Vitest) e, com MySQL local, `INTEGRATION=1`:
+Rodam com `make test` (Go), `make test-frontend` (Vitest) e, com um banco local descartável (MySQL na época; hoje MariaDB 11.4, nunca o banco do servidor; DOC-08), `INTEGRATION=1`:
 
 ```bash
 cd backend/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/services/ -coverpkg=./... -run Integracao -count=1 -v

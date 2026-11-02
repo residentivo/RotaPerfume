@@ -263,9 +263,17 @@ func TestSEC11_Makefile_AlvosDeBancoDependemDeDbCheckEnv(t *testing.T) {
 	// *-dump, com ou sem .exe) exige db-check-env. Ao menos uma receita precisa
 	// casar, senão o teste ficaria verde vazio (o que aconteceu ao trocar
 	// mysql por mariadb no DB-03).
-	reCliente := regexp.MustCompile(`(^|[\s;&|(@])(mysql|mariadb)(-dump)?(\.exe)?\s`)
+	// CHORE-13: as receitas chamam o cliente por $(DB_CLI), que expande para
+	// $(DB_CLIENTE_BIN) $(MYSQL_OPTS) (padrão mariadb); o próprio db-check-env
+	// só roda "$(DB_CLIENTE_BIN) --version" (sem conectar) e fica de fora.
+	assert.Regexp(t, `^DB_CLI\s*=\s*\$\(DB_CLIENTE_BIN\)\s+\$\(MYSQL_OPTS\)\s*$`, mk.linhaDaVariavel(t, "DB_CLI"))
+	assert.Regexp(t, `,mariadb\)\s*$`, mk.linhaDaVariavel(t, "DB_CLIENTE_BIN"), "DB_CLIENTE_BIN cai para mariadb quando vazio")
+	reCliente := regexp.MustCompile(`(^|[\s;&|(@])((mysql|mariadb)(-dump)?(\.exe)?\s|\$\(DB_CLI\)(\s|$))`)
 	casaram := 0
 	for _, a := range mk.ordem {
+		if a == "db-check-env" {
+			continue
+		}
 		for _, l := range mk.regras[a].receita {
 			if reCliente.MatchString(l) {
 				casaram++

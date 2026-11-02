@@ -6,6 +6,8 @@
 **Tempo estimado:** 35 a 50 minutos (a seção 3 apaga e recria o banco de dev).
 **Autor:** SubBrain (2026-09-27)
 
+> **Nota (DOC-08, 2026-11-02): roteiro histórico, da época do MySQL.** Hoje o banco é somente MariaDB 11.4: onde aparece o cliente `mysql` (ou o MySQL Workbench), use o cliente `mariadb` com as mesmas opções (`MYSQL_PWD="<senha>" mariadb ...`; com `DB_TLS_CA`, acrescente `--ssl-ca=<CA> --ssl-verify-server-cert`). As seções que apagam e recriam o banco (`make db-reset`, `db-down`, `db-rebuild`) **só** podem rodar num banco **descartável** (MariaDB local em container, com um `.env` próprio), nunca com o `.env` apontando para o servidor `192.168.168.106` (banco de produção; ver `docs/deploy-servidor.md`, seção 3.8).
+
 Marque cada checkbox depois de conferir. Se algo divergir, anote o caso e encaminhe ao SubBrain.
 
 ---

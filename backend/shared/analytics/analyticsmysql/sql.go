@@ -67,8 +67,10 @@ const (
 		FROM pedidos
 		WHERE data_pedido >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
 		  AND status NOT IN ('cancelado', 'devolvido')`
+	// DB-04/DB-06: GROUP BY pelo alias do SELECT (pedidos não tem coluna
+	// "data"): vale com e sem ONLY_FULL_GROUP_BY no MariaDB.
 	sqlSerieVendasFim = `
-		GROUP BY DATE_FORMAT(data_pedido, '%Y-%m-%d')
+		GROUP BY data
 		ORDER BY data ASC`
 	sqlDiasDaSerie = `SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL n DAY), '%Y-%m-%d') AS dia
 	      FROM (

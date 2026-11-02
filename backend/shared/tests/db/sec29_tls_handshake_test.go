@@ -1,6 +1,6 @@
 package db_test
 
-// SEC-29: handshake TLS real entre o driver e um servidor MySQL mínimo em
+// SEC-29: handshake TLS real entre o driver e um servidor mínimo do protocolo do MariaDB em
 // 127.0.0.1 (SSLRequest → TLS → login → OK). O certificado do servidor é
 // assinado por uma CA gerada no teste e só tem SAN DNS "mariadb.sec29".
 //   - CA certa + DB_TLS_SERVER_NAME=mariadb.sec29 → conecta, log com tls=ligado;

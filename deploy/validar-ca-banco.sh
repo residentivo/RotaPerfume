@@ -7,26 +7,39 @@
 # tambem nao conseguiria. Assim funciona com o Jenkins em container (o
 # arquivo nunca passa pelo workspace) e com o Jenkins nativo.
 #
-#   docker run --rm -i --user 65532:65532 --network bridge \
+#   CA_FINGERPRINTS="$(cat deploy/db-ca.fingerprint)" \
+#   docker run --rm -i --user 65532:65532 --network rotaperfumes-db \
 #     --mount type=bind,source=<caminho no host>,target=/etc/rotaperfumes/db-ca.pem,readonly \
-#     -e SITE_IP -e DB_HOST_PORT -e TLS_NOME --entrypoint bash mariadb:11.4 -s < deploy/validar-ca-banco.sh
+#     -e DB_ALVO=rotaperfumes-mariadb -e DB_HOST_PORT=3306 -e TLS_NOME=rotaperfumes-mariadb \
+#     -e CA_FINGERPRINTS --entrypoint bash "$DB_CLIENT_IMAGE" -s < deploy/validar-ca-banco.sh
 #
 # Entradas (ambiente):
-#   CA            arquivo da CA (padrao /etc/rotaperfumes/db-ca.pem)
-#   SITE_IP       IP do servidor de banco (conexao do teste N1)
-#   DB_HOST_PORT  porta do banco no host (3306 em producao)
-#   TLS_NOME      nome conferido no certificado (IP ou DNS do SAN)
-# Saida: mensagens no stderr; no stdout, so o sha256 do arquivo (label do
-# compose, B1). Codigo != 0 = nao fazer deploy nem import.
+#   CA               arquivo da CA (padrao /etc/rotaperfumes/db-ca.pem)
+#   CA_FINGERPRINTS  SEC-40, OBRIGATORIO: conteudo do deploy/db-ca.fingerprint
+#                    (versionado): SHA-256 do DER de cada certificado aceito,
+#                    hex minusculo sem ':', um por linha (ate dois na rotacao);
+#                    linhas vazias e "#..." sao ignoradas. Calcular com
+#                      openssl x509 -in ca.pem -noout -fingerprint -sha256 \
+#                        | cut -d= -f2 | tr -d : | tr A-F a-f
+#   DB_ALVO          host/IP onde o s_client conecta (padrao: SITE_IP). Na
+#                    rede rotaperfumes-db: rotaperfumes-mariadb (SEC-45)
+#   SITE_IP          legado: alvo quando DB_ALVO esta vazio
+#   DB_HOST_PORT     porta do banco no alvo (3306)
+#   TLS_NOME         nome conferido no certificado (IP ou DNS do SAN)
+# Saida: mensagens no stderr (inclui o fingerprint de cada certificado); no
+# stdout, so o sha256 do arquivo (label do compose, B1). Codigo != 0 = nao
+# fazer deploy nem import.
 #
 # Regras: so blocos CERTIFICATE (chave privada = recusa); cada certificado e
-# validado (vencido = falha; aviso de 30 dias e de CA:TRUE); por fim
-# openssl s_client -starttls mysql confere que a CA valida o certificado que
-# o servidor serve HOJE para TLS_NOME.
+# validado (vencido = falha; aviso de 30 dias e de CA:TRUE) e precisa estar
+# em CA_FINGERPRINTS (SEC-40: um certificado fora da lista = falha, mesmo
+# que o resto passe); por fim openssl s_client -starttls mysql confere que a
+# CA valida o certificado que o servidor serve HOJE para TLS_NOME.
 set -euo pipefail
 
 CA="${CA:-/etc/rotaperfumes/db-ca.pem}"
-: "${SITE_IP:?SITE_IP obrigatorio}" "${DB_HOST_PORT:?DB_HOST_PORT obrigatorio}" "${TLS_NOME:?TLS_NOME obrigatorio}"
+DB_ALVO="${DB_ALVO:-${SITE_IP:-}}"
+: "${DB_ALVO:?DB_ALVO (ou SITE_IP) obrigatorio}" "${DB_HOST_PORT:?DB_HOST_PORT obrigatorio}" "${TLS_NOME:?TLS_NOME obrigatorio}"
 
 TRAB=$(mktemp -d)
 trap 'rm -rf "$TRAB"' EXIT
@@ -36,6 +49,25 @@ msg() { echo "$*" >&2; }
 if ! [[ "$TLS_NOME" =~ ^[A-Za-z0-9.-]+$ ]] || [ "$TLS_NOME" = "0.0.0.0" ]; then
   falhar "DB_TLS_SERVER_NAME invalido: '$TLS_NOME' (hostname ou IPv4 do SAN)"
 fi
+if ! [[ "$DB_ALVO" =~ ^[A-Za-z0-9.-]+$ ]] || [ "$DB_ALVO" = "0.0.0.0" ]; then
+  falhar "DB_ALVO invalido: '$DB_ALVO' (hostname ou IPv4)"
+fi
+[[ "$DB_HOST_PORT" =~ ^[0-9]{1,5}$ ]] || falhar "DB_HOST_PORT invalida: '$DB_HOST_PORT'"
+
+# SEC-40: lista de fingerprints aceitos (vazia = falha: fail closed).
+declare -A ACEITOS=()
+while IFS= read -r linha || [ -n "$linha" ]; do
+  linha=${linha%$'\r'}
+  linha=${linha#"${linha%%[![:space:]]*}"}
+  linha=${linha%"${linha##*[![:space:]]}"}
+  [ -z "$linha" ] && continue
+  [[ "$linha" == \#* ]] && continue
+  [[ "$linha" =~ ^[0-9a-f]{64}$ ]] || falhar "CA_FINGERPRINTS com linha invalida ('$linha'): esperado SHA-256 em hex minusculo sem ':' (deploy/db-ca.fingerprint)"
+  ACEITOS[$linha]=1
+done <<< "${CA_FINGERPRINTS:-}"
+[ "${#ACEITOS[@]}" -gt 0 ] || falhar "CA_FINGERPRINTS vazio: passe o conteudo do deploy/db-ca.fingerprint (-e CA_FINGERPRINTS)"
+[ "${#ACEITOS[@]}" -le 2 ] || msg "AVISO: ${#ACEITOS[@]} fingerprints aceitos; o esperado e 1 (ou 2 durante a rotacao)."
+
 [ -r "$CA" ] || falhar "arquivo da CA nao legivel pelo uid $(id -u) (o da API): confira DB_TLS_CA_HOST_PATH e o chmod 644 NO HOST (docs/Instal_SSL.md, passo 5)"
 
 PEM="$TRAB/ca.pem"
@@ -55,6 +87,7 @@ CERTS=("$TRAB"/cert-*.pem)
 [ -e "${CERTS[0]}" ] || falhar "nenhum certificado PEM no arquivo"
 TOTAL=${#CERTS[@]}
 i=0
+FORA=0
 for c in "${CERTS[@]}"; do
   i=$((i + 1))
   openssl x509 -in "$c" -noout 2>/dev/null || falhar "certificado $i/$TOTAL invalido"
@@ -69,7 +102,16 @@ for c in "${CERTS[@]}"; do
   if ! openssl x509 -in "$c" -noout -ext basicConstraints 2>/dev/null | grep -q 'CA:TRUE'; then
     msg "  AVISO: sem CA:TRUE - confira se o arquivo e a CA (ca.pem) e nao o certificado do servidor."
   fi
+  FP=$(openssl x509 -in "$c" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f')
+  if [ -n "${ACEITOS[$FP]:-}" ]; then
+    msg "  fingerprint $FP: na lista (deploy/db-ca.fingerprint)"
+  else
+    msg "  fingerprint $FP: NAO esta em deploy/db-ca.fingerprint"
+    FORA=$((FORA + 1))
+  fi
 done
+# SEC-40: todo certificado do arquivo do host precisa estar na lista.
+[ "$FORA" -eq 0 ] || falhar "$FORA de $TOTAL certificado(s) do arquivo do host fora de deploy/db-ca.fingerprint (CA trocada no servidor sem commit do fingerprint, ou arquivo adulterado). Deploy abortado; a API e o banco nao foram tocados."
 
 # N1: a CA valida o certificado que o servidor serve hoje, para TLS_NOME?
 if [[ "$TLS_NOME" =~ ^[0-9.]+$ ]]; then
@@ -77,10 +119,10 @@ if [[ "$TLS_NOME" =~ ^[0-9.]+$ ]]; then
 else
   VERIF=(-verify_hostname "$TLS_NOME" -servername "$TLS_NOME")
 fi
-if ! SAIDA=$(timeout 15 openssl s_client -starttls mysql -connect "$SITE_IP:$DB_HOST_PORT" \
+if ! SAIDA=$(timeout 15 openssl s_client -starttls mysql -connect "$DB_ALVO:$DB_HOST_PORT" \
                -CAfile "$PEM" -verify_return_error "${VERIF[@]}" </dev/null 2>&1); then
   printf '%s\n' "$SAIDA" | grep -iE 'verify error|verify return code|errno|connect|didn.t' | head -5 >&2 || true
-  falhar "a CA NAO valida o certificado servido em $SITE_IP:$DB_HOST_PORT para o nome $TLS_NOME (CA desatualizada, nome fora do SAN ou TLS desligado no servidor). A API e o banco nao foram tocados."
+  falhar "a CA NAO valida o certificado servido em $DB_ALVO:$DB_HOST_PORT para o nome $TLS_NOME (CA desatualizada, nome fora do SAN ou TLS desligado no servidor). A API e o banco nao foram tocados."
 fi
 printf '%s\n' "$SAIDA" | grep -m1 'Verify return code' | sed 's/^ */  s_client: /' >&2
 

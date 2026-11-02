@@ -1,0 +1,193 @@
+package deploy_test
+
+// Stubs do ensaio do deploy/mariadb-docker.sh (TST-15). Ficam em $FAKE/bin,
+// no começo do PATH; o estado "do servidor" fica em $FAKE/state e as chamadas
+// em $FAKE/log. Nada fala com Docker, iptables ou systemd de verdade.
+
+// docker: rede, container, imagem, exec (SQL do root) e run (clientes).
+const stubDocker = `#!/bin/bash
+S="$FAKE/state"
+echo "docker $*" >>"$FAKE/log"
+case "$1" in
+  info|build|pull) exit 0 ;;
+  ps)
+    if [[ "$*" == *-aq* ]]; then [[ -f "$S/criado" ]] && echo cid123; fi
+    exit 0 ;;
+  network)
+    case "$2" in
+      create)
+        shift 2
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --subnet) echo "$2" >"$S/rede"; shift 2 ;;
+            --ip-range) echo "$2" >"$S/iprange"; shift 2 ;;
+            --gateway|--driver|--label) shift 2 ;;
+            *) shift ;;
+          esac
+        done
+        exit 0 ;;
+      inspect)
+        [[ -f "$S/rede" ]] || exit 1
+        case "$*" in
+          *.Subnet*) echo "$(cat "$S/rede") " ;;
+          *.IPRange*) cat "$S/iprange" 2>/dev/null ;;
+        esac
+        exit 0 ;;
+    esac
+    exit 0 ;;
+  inspect)
+    [[ -f "$S/criado" ]] || exit 1
+    case "$*" in
+      *State.Running*) cat "$S/rodando" 2>/dev/null || echo true ;;
+      *IPAMConfig*) cat "$S/ip" ;;
+      *"len .NetworkSettings"*) echo 1 ;;
+      *PortBindings*) cat "$S/portas" ;;
+      *ReadonlyRootfs*) cat "$S/readonly" ;;
+      *Config.User*) cat "$S/user" ;;
+      *"{{.Image}}"*) echo sha256:img ;;
+    esac
+    exit 0 ;;
+  image) echo sha256:img; exit 0 ;;
+  port) [[ -f "$S/portas" ]] && grep -q HostPort "$S/portas" && echo "0.0.0.0:3306"; exit 0 ;;
+  rm) rm -f "$S/criado"; exit 0 ;;
+  start|stop|logs) exit 0 ;;
+  run)
+    if [[ " $* " == *" -d "* ]]; then
+      echo "$*" >"$S/run_args"
+      touch "$S/criado"
+      ip=""; portas="{}"; ro=false; user=""
+      shift
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --ip) ip=$2; shift 2 ;;
+          -p) IFS=: read -r h p _ <<<"$2"; portas="{\"3306/tcp\":[{\"HostIp\":\"$h\",\"HostPort\":\"$p\"}]}"; shift 2 ;;
+          --read-only) ro=true; shift ;;
+          --user) user=$2; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      echo "$ip" >"$S/ip"; echo "$portas" >"$S/portas"; echo "$ro" >"$S/readonly"; echo "$user" >"$S/user"
+      exit 0
+    fi
+    case "$*" in
+      *"--entrypoint mariadbd"*) echo "mariadbd  Ver 11.4.13-MariaDB for debian-linux-gnu" ;;
+      *"--entrypoint id"*"-u mysql"*) echo 999 ;;
+      *"--entrypoint id"*"-g mysql"*) echo 999 ;;
+      *--skip-ssl*) [[ -f "$S/aceita_sem_tls" ]] && exit 0; exit 1 ;;
+      *--ssl-verify-server-cert*) echo "  conectado como rotaperfumes_admin@172.30.42.20, 11.4.13-MariaDB, TLSv1.3" ;;
+    esac
+    exit 0 ;;
+  exec)
+    a="$*"
+    if [[ "$a" != *" -e "* ]]; then echo "-- stdin" >>"$S/sql"; cat >>"$S/sql"; exit 0; fi
+    case "$a" in
+      *skip_networking*) echo 0 ;;
+      *"FLUSH SSL"*) echo "FLUSH SSL" >>"$S/sql" ;;
+      *"SELECT VERSION()"*) echo 11.4.13-MariaDB ;;
+      *have_ssl*) printf 'have_ssl\tYES\n' ;;
+      *PLUGINS*) echo 1 ;;
+      *"SELECT User, Host"*) cat "$S/contas" 2>/dev/null ;;
+      *"CONCAT('    '"*) echo "    (contas)" ;;
+      *"CONCAT(User, '@', Host)"*) cat "$S/outras" 2>/dev/null ;;
+      *ssl_type*) echo 0 ;;
+    esac
+    exit 0 ;;
+esac
+exit 0
+`
+
+// iptables com estado: uma chain por arquivo ($S/chain_<nome>), no formato
+// do "iptables -S" (o IP ganha /32, como no iptables real).
+const stubIptables = `#!/bin/bash
+S="$FAKE/state"
+echo "iptables $*" >>"$FAKE/log"
+args=("$@")
+[[ "${args[0]}" == -w ]] && args=("${args[@]:1}")
+op=${args[0]}; chain=${args[1]}; rest=("${args[@]:2}")
+if [[ -f "$S/sem_docker_user" && "$chain" == DOCKER-USER ]]; then
+  echo "iptables: No chain/target/match by that name." >&2; exit 1
+fi
+norm() {
+  local -a v=("$@") out=(); local i=0 x
+  while ((i < ${#v[@]})); do
+    out+=("${v[i]}")
+    if [[ "${v[i]}" == --ctorigdst || "${v[i]}" == -s ]]; then
+      i=$((i + 1)); x=${v[i]}; [[ "$x" == */* ]] || x=$x/32; out+=("$x")
+    fi
+    i=$((i + 1))
+  done
+  echo "${out[*]}"
+}
+f="$S/chain_$chain"
+touch "$f"
+case "$op" in
+  -S) echo "-N $chain"; cat "$f" ;;
+  -C) grep -qxF -- "-A $chain $(norm "${rest[@]}")" "$f" ;;
+  -I) r=$(norm "${rest[@]:1}"); { echo "-A $chain $r"; cat "$f"; } >"$f.tmp"; mv "$f.tmp" "$f" ;;
+  -D) r=$(norm "${rest[@]}"); { grep -vxF -- "-A $chain $r" "$f" || true; } >"$f.tmp"; mv "$f.tmp" "$f" ;;
+  -A) echo "-A $chain $(norm "${rest[@]}")" >>"$f" ;;
+  *) echo "iptables stub: op $op" >&2; exit 2 ;;
+esac
+`
+
+// iptables-restore --noflush: ":CHAIN" esvazia a chain; "-A" acrescenta.
+const stubIptablesRestore = `#!/bin/bash
+S="$FAKE/state"
+echo "iptables-restore $*" >>"$FAKE/log"
+while IFS= read -r l; do
+  echo "$l" >>"$S/restore_in"
+  case "$l" in
+    :*) c=${l#:}; c=${c%% *}; : >"$S/chain_$c" ;;
+    "-A "*) c=$(awk '{print $2}' <<<"$l"); echo "$l" >>"$S/chain_$c" ;;
+  esac
+done
+`
+
+// systemctl: restart da unit roda o script de firewall gerado (com o
+// iptables falso), como o systemd faria.
+const stubSystemctl = `#!/bin/bash
+echo "systemctl $*" >>"$FAKE/log"
+if [[ "$1" == restart && "$2" == rotaperfumes-db-firewall.service ]]; then
+  bash /usr/local/sbin/rotaperfumes-db-firewall
+  exit $?
+fi
+exit 0
+`
+
+// install/chown sem -o/-g: no user namespace só o uid 0 está mapeado.
+const stubInstall = `#!/bin/bash
+args=()
+while [[ $# -gt 0 ]]; do case "$1" in -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac; done
+exec /usr/bin/install "${args[@]}"
+`
+
+const stubChown = "#!/bin/bash\nexit 0\n"
+
+const stubGetent = `#!/bin/bash
+[[ "$1" == passwd ]] && exit 2
+exec /usr/bin/getent "$@"
+`
+
+const stubSs = `#!/bin/bash
+[[ -f "$FAKE/state/porta_ocupada" ]] && echo "LISTEN 0 4096 0.0.0.0:3306 0.0.0.0:*"
+exit 0
+`
+
+// timeout só envolve o "openssl s_client" (porta publicada).
+const stubTimeout = `#!/bin/bash
+echo "timeout $*" >>"$FAKE/log"
+echo "Verify return code: 0 (ok)"
+exit 0
+`
+
+// Roda o script real, sem cópia/sed: user namespace (EUID 0) + mount
+// namespace com binds dos caminhos fixos do script para o $FAKE.
+const runnerEnsaio = `#!/bin/bash
+set -euo pipefail
+mount --bind "$FAKE/root" /root
+mount --bind "$FAKE/opt" /opt
+mount --bind "$FAKE/sbin" /usr/local/sbin
+mount --bind "$FAKE/systemd" /etc/systemd/system
+export PATH="$FAKE/bin:$PATH"
+exec bash "$SCRIPT" "$@"
+`

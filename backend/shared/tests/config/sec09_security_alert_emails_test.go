@@ -59,6 +59,9 @@ func TestSEC09_Load_SecurityAlertEmails(t *testing.T) {
 			t.Setenv("DB_USUARIO", "u")
 			t.Setenv("DB_SENHA", "s")
 			t.Setenv("SECURITY_ALERT_EMAILS", c.raw)
+			// SEC-42: sem DB_HOST remoto herdado do ambiente.
+			t.Setenv("DB_HOST", "")
+			t.Setenv("DB_TLS_REQUIRED", "")
 			cfg, err := config.Load()
 			require.NoError(t, err)
 			if c.want == nil {

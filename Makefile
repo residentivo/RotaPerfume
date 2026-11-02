@@ -2,7 +2,7 @@
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
-	audit deps-audit deps-audit-go deps-audit-frontend \
+	audit deps-audit deps-audit-go deps-audit-frontend deps-audit-imagens \
 	setup setup-check
 
 # =============================================================================
@@ -28,30 +28,25 @@ DB_HOST    := $(strip $(subst $(CR),,$(DB_HOST)))
 DB_PORT    := $(strip $(subst $(CR),,$(DB_PORT)))
 DB_NAME    := $(strip $(subst $(CR),,$(DB_NAME)))
 DB_TLS_CA  := $(strip $(subst $(CR),,$(DB_TLS_CA)))
+DB_TLS_REQUIRED := $(strip $(subst $(CR),,$(DB_TLS_REQUIRED)))
 
-# Senha só pelo ambiente (lida nativamente pelo mariadb e pelo mysql), nunca no argv.
+# Senha só pelo ambiente (lida nativamente pelo cliente mariadb), nunca no argv.
 MYSQL_PWD = $(DB_SENHA)
 # Git Bash/MSYS: impede a conversão de caminho POSIX no valor da senha.
 MSYS2_ENV_CONV_EXCL = MYSQL_PWD
 export
 
-# SEC-29: com DB_TLS_CA no .env, o cliente (mariadb ou mysql) conecta por TLS conferindo
-# a CA e o nome do servidor (DB_HOST precisa estar no SAN do certificado; o
-# cliente não tem equivalente ao DB_TLS_SERVER_NAME da API). Caminho relativo
-# vale a partir da raiz do projeto (onde o make roda). Sem DB_TLS_CA: como antes.
-# DB-CLIENTE: cliente de linha de comando dos alvos db-*: mariadb (padrão) ou
-# mysql (cliente oficial do MySQL 8, ex.: produção). Muda o binário e as opções
-# de TLS (o mysql não tem --ssl-verify-server-cert; usa --ssl-mode=VERIFY_IDENTITY).
-# DB_CLIENTE_BIN troca só o executável (padrão = DB_CLIENTE), ex.:
-#   make db-up DB_CLIENTE=mysql DB_CLIENTE_BIN=/usr/local/mysql/bin/mysql
-DB_CLIENTE ?= mariadb
-DB_CLIENTE := $(strip $(subst $(CR),,$(DB_CLIENTE)))
-DB_CLIENTE_BIN ?= $(DB_CLIENTE)
-ifeq ($(DB_CLIENTE),mysql)
-MYSQL_TLS_OPTS = $(if $(DB_TLS_CA),--ssl-mode=VERIFY_IDENTITY --ssl-ca="$(DB_TLS_CA)")
-else
+# SEC-29/CHORE-13: com DB_TLS_CA no .env, o cliente mariadb conecta por TLS
+# conferindo a CA e o nome do servidor (--ssl-ca + --ssl-verify-server-cert;
+# DB_HOST precisa estar no SAN do certificado: o cliente não tem equivalente ao
+# DB_TLS_SERVER_NAME da API). Caminho relativo vale a partir da raiz do projeto
+# (onde o make roda). SEC-42: sem DB_TLS_CA, só com DB_HOST loopback
+# (localhost, 127.x.x.x, ::1) ou DB_TLS_REQUIRED=false (conferido no db-check-env).
+# CHORE-13: o projeto usa só o cliente MariaDB. DB_CLIENTE_BIN troca o
+# executável (padrão mariadb), que o db-check-env confere ser o cliente MariaDB:
+#   make db-up DB_CLIENTE_BIN=/opt/mariadb/bin/mariadb
+DB_CLIENTE_BIN := $(or $(strip $(subst $(CR),,$(DB_CLIENTE_BIN))),mariadb)
 MYSQL_TLS_OPTS = $(if $(DB_TLS_CA),--ssl-ca="$(DB_TLS_CA)" --ssl-verify-server-cert)
-endif
 MYSQL_OPTS = --local-infile=0 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4 $(MYSQL_TLS_OPTS)
 DB_CLI = $(DB_CLIENTE_BIN) $(MYSQL_OPTS)
 
@@ -84,15 +79,18 @@ setup-check: ## SETUP-01: só confere versões (inclui covdata e GOTOOLCHAIN, pr
 # SEC-11: pré-requisito de todo alvo que chama o cliente do banco (db-create, db-down,
 # db-fix-*, db-revert-*; db-up/db-seed herdam via db-create). Fica depois do
 # "help" para não virar o alvo padrão do make.
-db-check-env: ## Confere DB_USUARIO/DB_SENHA no .env (SEC-11) e o cliente DB_CLIENTE (mariadb|mysql)
+db-check-env: ## Confere DB_USUARIO/DB_SENHA (SEC-11), o TLS exigido para host remoto (SEC-42) e o cliente MariaDB (DB_CLIENTE_BIN)
 	@test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD" || { echo "SEC-11: defina DB_USUARIO/DB_SENHA no .env"; exit 1; }
-	@case "$(DB_CLIENTE)" in mariadb|mysql) ;; *) echo "DB_CLIENTE=$(DB_CLIENTE) invalido: use mariadb ou mysql"; exit 1 ;; esac
-	@v=$$($(DB_CLIENTE_BIN) --version 2>&1) || { echo "DB_CLIENTE_BIN=$(DB_CLIENTE_BIN) nao encontrado no PATH"; exit 1; }; \
-	case "$(DB_CLIENTE):$$v" in \
-	  mysql:*MariaDB*) echo "DB_CLIENTE=mysql, mas '$(DB_CLIENTE_BIN)' e o cliente MariaDB ($$v)."; \
-	    echo "Instale o cliente oficial do MySQL 8 e aponte DB_CLIENTE_BIN para ele, ou use DB_CLIENTE=mariadb."; exit 1 ;; \
-	  mariadb:*) case "$$v" in *MariaDB*) ;; *) echo "DB_CLIENTE=mariadb, mas '$(DB_CLIENTE_BIN)' nao e o cliente MariaDB ($$v)"; exit 1 ;; esac ;; \
-	esac
+	@case "$(DB_TLS_REQUIRED)" in ""|true|false) ;; *) echo "SEC-42: DB_TLS_REQUIRED=$(DB_TLS_REQUIRED) invalido: use true ou false"; exit 1 ;; esac; \
+	h=$$(printf '%s' "$(DB_HOST)" | tr 'A-Z' 'a-z'); \
+	if [ "$$h" = localhost ] || [ "$$h" = ::1 ] || [ "$$h" = "[::1]" ] || printf '%s' "$$h" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$$'; then :; \
+	elif [ -n "$(DB_TLS_CA)" ]; then :; \
+	elif [ "$(DB_TLS_REQUIRED)" = false ]; then echo "AVISO (SEC-42): DB_TLS_REQUIRED=false: conexao SEM TLS com DB_HOST=$(DB_HOST) (fora do loopback); usuario e senha em texto claro"; \
+	else echo "SEC-42: DB_HOST=$(DB_HOST) nao e loopback (localhost, 127.x.x.x, ::1) e DB_TLS_CA esta vazio: defina DB_TLS_CA no .env (ou, so sabendo do risco, DB_TLS_REQUIRED=false)"; exit 1; fi
+	@test -z "$(DB_TLS_CA)" -o -r "$(DB_TLS_CA)" || { echo "SEC-29: DB_TLS_CA=$(DB_TLS_CA) nao encontrado/legivel (caminho relativo vale a partir da raiz do projeto)"; exit 1; }
+	@test -z "$(DB_CLIENTE)" || { echo "CHORE-13: DB_CLIENTE nao existe mais (o projeto usa so o cliente MariaDB): remova do .env; para outro executavel use DB_CLIENTE_BIN"; exit 1; }
+	@v=$$($(DB_CLIENTE_BIN) --version 2>&1) || { echo "DB_CLIENTE_BIN=$(DB_CLIENTE_BIN) nao encontrado no PATH (instale o cliente MariaDB: make setup)"; exit 1; }; \
+	case "$$v" in *MariaDB*) ;; *) echo "DB_CLIENTE_BIN=$(DB_CLIENTE_BIN) nao e o cliente MariaDB ($$v)"; exit 1 ;; esac
 
 db-create: db-check-env ## Cria o banco de dados se não existir
 	$(DB_CLI) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
@@ -336,7 +334,7 @@ deps: ## Instala dependências Go
 # (ex.: mensalmente e antes de cada deploy). Só reporta; não atualiza nada.
 GO_MODULES = backend/shared backend/rotaperfumes-api
 
-deps-audit: deps-audit-go deps-audit-frontend ## SEC-13: audita dependências Go + npm (vulnerabilidades e desatualizadas)
+deps-audit: deps-audit-go deps-audit-frontend deps-audit-imagens ## SEC-13: audita dependências Go + npm (vulnerabilidades e desatualizadas) e os digests das imagens (SEC-31)
 
 deps-audit-go: ## SEC-13: lista módulos Go desatualizados e roda govulncheck (falha se houver vulnerabilidade alcançável)
 	@status=0; for m in $(GO_MODULES); do \
@@ -356,6 +354,44 @@ deps-audit-frontend: ## SEC-13: npm audit (falha em severidade high+) e npm outd
 	cd frontend && npm outdated || true
 	@echo "=== frontend: npm audit --omit=dev --audit-level=high ==="
 	cd frontend && npm audit --omit=dev --audit-level=high
+
+# SEC-31: imagens fixadas por digest (tag@sha256:...) no Jenkinsfile e no
+# deploy/mariadb-docker.sh. Só informa: para cada referência, compara o digest
+# fixado com o digest atual da mesma tag e o da tag sem o patch (ex.: 11.4,
+# 1.26-alpine) no Docker Hub (docker buildx imagetools ou, sem docker, curl ao
+# registry com token anônimo). Nunca falha. Para atualizar: trocar a string
+# nos dois arquivos (mesmo digest do mariadb), make test, backup e
+# sudo bash deploy/mariadb-docker.sh --recriar (ver comentário no Jenkinsfile).
+IMAGENS_FIXADAS_EM = Jenkinsfile deploy/mariadb-docker.sh
+IMAGEM_ACCEPT = application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json
+
+deps-audit-imagens: ## SEC-31: compara os digests fixados (Jenkinsfile, mariadb-docker.sh) com os das tags atuais no Docker Hub (informativo, nunca falha)
+	@digest_remoto() { \
+	  if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then \
+	    docker buildx imagetools inspect "$$1:$$2" --format '{{.Manifest.Digest}}' 2>/dev/null && return; \
+	  fi; \
+	  command -v curl >/dev/null 2>&1 || return 1; \
+	  case "$$1" in */*) repo="$$1" ;; *) repo="library/$$1" ;; esac; \
+	  tok=$$(curl -fsS --max-time 15 "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$$repo:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p'); \
+	  [ -n "$$tok" ] || return 1; \
+	  curl -fsSI --max-time 15 -H "Authorization: Bearer $$tok" -H "Accept: $(IMAGEM_ACCEPT)" \
+	    "https://registry-1.docker.io/v2/$$repo/manifests/$$2" | tr -d '\r' | awk -F': ' 'tolower($$1)=="docker-content-digest"{print $$2}' | grep -E '^sha256:[0-9a-f]{64}$$'; \
+	}; \
+	refs=$$(grep -hoE '[a-z0-9._/-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}' $(IMAGENS_FIXADAS_EM) 2>/dev/null | sort -u); \
+	[ -n "$$refs" ] || { echo "AVISO (SEC-31): nenhuma imagem fixada por digest em $(IMAGENS_FIXADAS_EM)"; exit 0; }; \
+	command -v docker >/dev/null 2>&1 || echo "AVISO (SEC-31): docker nao encontrado; consultando o registry por curl"; \
+	for ref in $$refs; do \
+	  img=$${ref%%:*}; resto=$${ref#*:}; tag=$${resto%%@*}; fixado=$${ref#*@}; \
+	  flutuante=$$(printf '%s' "$$tag" | sed -E 's/^([0-9]+\.[0-9]+)\.[0-9]+/\1/'); \
+	  echo "=== $$img:$$tag (fixado $$fixado) ==="; \
+	  for t in $$tag $$flutuante; do \
+	    atual=$$(digest_remoto "$$img" "$$t") || atual=""; \
+	    if [ -z "$$atual" ]; then echo "  $$img:$$t: AVISO: nao foi possivel consultar o digest (sem docker/curl ou sem rede)"; \
+	    elif [ "$$atual" = "$$fixado" ]; then echo "  $$img:$$t: igual ao fixado"; \
+	    else echo "  $$img:$$t: DIFERENTE: atual $$atual (atualize: ver SEC-31 no Jenkinsfile)"; fi; \
+	    [ "$$t" = "$$flutuante" ] && break; \
+	  done; \
+	done; exit 0
 
 # =============================================================================
 # Seed de usuários (gera hash argon2id com PASSWORD_PEPPER)

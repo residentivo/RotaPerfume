@@ -2,6 +2,7 @@
 
 **Banco:** MariaDB 11.4 LTS (desde o DB-03; antes, MySQL), schema `rotaperfumes` (padrão do `Makefile`: `DB_NAME?=rotaperfumes`), charset `utf8mb4`, collation `utf8mb4_unicode_ci` (definidos no `make db-create`).
 **Requisitos:** cliente `mariadb` (MariaDB ≥ 11.4) no `PATH` para todos os alvos `make db-*`, inclusive o `make db-seed` (o `seedusers` em Go chama o binário `mariadb`, sem fallback para `mysql`). A API e os importadores usam o driver Go `go-sql-driver/mysql`, compatível com o MariaDB; por isso os pacotes de adapter continuam com o sufixo `mysql` (`<contexto>mysql`).
+**Servidor (Lote 30, DOC-08, 2026-11-02):** somente MariaDB. Em produção, o container `rotaperfumes-mariadb` (imagem `mariadb:11.4` fixada por digest) criado pelo `deploy/mariadb-docker.sh`, na rede Docker `rotaperfumes-db`, com TLS obrigatório e contas `ed25519` + `REQUIRE SSL` (`rotaperfumes_app`, só DML, para a API; `rotaperfumes_admin` para import e migrações; `casaos` para os `make db-*` das máquinas de dev autorizadas). O `sql_mode` do servidor é `STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION` (sem `ONLY_FULL_GROUP_BY`, DB-04/DB-06). Os dados do MySQL antigo são migrados só como dados, sobre o schema de `sql/` (DEPLOY-05). Detalhes: `docs/deploy-servidor.md` (seções 3 e 11) e `docs/Instal_SSL.md`. **Integração e recriação de banco (`INTEGRATION=1`, `make db-down`/`db-reset`/`db-rebuild`/`db-seed`) só em banco descartável**, nunca com o `.env` apontando para o servidor.
 **Fonte da verdade:** os scripts em `sql/` (DDLs mais as migrações de alteração, em ordem numérica). Em caso de divergência entre este manual e um script, vale o script.
 **Autor:** SubBrain (2026-09-25, card DOC-02; atualizado no Lote 5 com o NEG-02, CNPJ alfanumérico, no Lote 6 com a migração 21 e `refresh_tokens.revoked_reason`, no Lote 8 com a migração 22 e `usuarios.tokens_validos_desde` e, no Lote 11, 2026-09-26, card DOC-04, com o detalhamento de todas as tabelas; no Lote 12, 2026-09-27, com DB-01 (`estoque` no `db-up`), SEC-11 (credenciais do banco), SEC-12 (migração 23, `refresh_tokens.reuso_detectado_em`) e CHORE-02 (limpeza de `refresh_tokens`); no Lote 26, 2026-10-31, com o IMG-01 (migração 26, `produtos.imagem`, seção 13.1)).
 
@@ -904,6 +905,8 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 ## 23. Credenciais do banco e uso do cliente `mariadb` (SEC-11, Lote 12, 2026-09-27; DB-03)
 
 > **DB-03 (2026-10-29):** o banco passou a ser o **MariaDB 11.4 LTS**. O `Makefile`, o `seedusers` e os cabeçalhos de `sql/` chamam o cliente `mariadb` (que continua lendo `MYSQL_PWD`); o `MYSQL_OPTS` agora usa `--local-infile=0` (SEC-28). O driver Go segue sendo o `go-sql-driver/mysql`.
+>
+> **Lote 30 (CHORE-13/SEC-42, 2026-11-02):** só o cliente MariaDB (`DB_CLIENTE` saiu; `DB_CLIENTE_BIN` aponta outro executável, conferido como MariaDB). Com `DB_TLS_CA`, os alvos `db-*` passam `--ssl-ca` + `--ssl-verify-server-cert`. `DB_HOST` fora do loopback (`localhost`, `127.0.0.0/8`, `::1`) sem `DB_TLS_CA` faz o `db-check-env`, a API e as CLIs falharem, salvo `DB_TLS_REQUIRED=false` (com aviso; nunca em produção). As contas do servidor usam `ed25519`: o cliente precisa do plugin `client_ed25519` (cliente `mariadb` 11.x).
 
 ### 23.1 Credenciais obrigatórias, sem default
 

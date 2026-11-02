@@ -107,6 +107,7 @@ Todos os 42 usuários "normal" usam a mesma senha padrão (valor redigido deste 
 
 **Observação:** `MYSQL_LOCAL_INFILE=1` habilitado em `.env` — necessário para import de CSV; risco baixo/controlado pois não há `LOAD DATA LOCAL INFILE` com dado não confiável nos handlers.
 **Atualização (DB-03, 2026-10-29):** o banco passou a ser MariaDB 11.4 LTS. O `Makefile` e o `Jenkinsfile` chamam o cliente `mariadb` com `--local-infile=0` (SEC-28), e o drop-in do `deploy/setup-servidor.sh` grava `local_infile = 0` no servidor MariaDB.
+**Atualização (Lote 30, DOC-08, 2026-11-02):** somente MariaDB. O `setup-servidor.sh` não configura mais banco (DEPLOY-06); o `local_infile = 0` vem do `zz-rotaperfumes.cnf` da imagem criada pelo `deploy/mariadb-docker.sh` (container `rotaperfumes-mariadb`), junto com TLS obrigatório e contas `ed25519` + `REQUIRE SSL` (SEC-30/SEC-39). `MYSQL_PWD` continua sendo o nome da variável lida pelo cliente `mariadb`.
 
 ---
 

@@ -3,7 +3,7 @@ package db_test
 // F-08 / ARQ-05 (TestBrain): o mascaramento do DSN no log de db.Open,
 // testado de FORA do pacote (convenção: nenhum teste interno em pacote de
 // produção). maskDSN só roda depois de um ping bem-sucedido; aqui o ping é
-// respondido por um servidor MySQL mínimo em 127.0.0.1 (handshake v10 +
+// respondido por um servidor mínimo do protocolo do MariaDB em 127.0.0.1 (handshake v10 +
 // OK para o login e para o COM_PING), sem banco real. SEC-15: senhas com
 // '@', ':', '/' e '%' (TestSEC15_MaskDSN_SenhaComSeparadores).
 
@@ -22,7 +22,7 @@ import (
 	"github.com/rotaperfumes/shared/db"
 )
 
-// fakeMySQL aceita conexões e responde OK a tudo (login, COM_PING) até o
+// fakeMySQL (protocolo cliente/servidor do MariaDB, herdado do MySQL) aceita conexões e responde OK a tudo (login, COM_PING) até o
 // COM_QUIT. Devolve o host:porta.
 func fakeMySQL(t *testing.T) string {
 	t.Helper()
@@ -73,11 +73,11 @@ func atenderMySQL(c net.Conn) {
 	)
 	caps := uint32(clientLongPassword | clientProtocol41 | clientTransactions | clientSecureConn | clientPluginAuth)
 	var hs bytes.Buffer
-	hs.WriteByte(10)                  // protocol version
-	hs.WriteString("8.0.36-fake\x00") // server version
-	hs.Write([]byte{1, 0, 0, 0})      // connection id
-	hs.WriteString("abcdefgh")        // auth-plugin-data-part-1
-	hs.WriteByte(0)                   // filler
+	hs.WriteByte(10)                           // protocol version
+	hs.WriteString("11.4.13-MariaDB-fake\x00") // server version
+	hs.Write([]byte{1, 0, 0, 0})               // connection id
+	hs.WriteString("abcdefgh")                 // auth-plugin-data-part-1
+	hs.WriteByte(0)                            // filler
 	_ = binary.Write(&hs, binary.LittleEndian, uint16(caps))
 	hs.WriteByte(45)             // charset utf8mb4
 	hs.Write([]byte{0x02, 0x00}) // status flags

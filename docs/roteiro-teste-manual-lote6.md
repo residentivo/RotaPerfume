@@ -227,7 +227,7 @@ Use o `qa.lote6@...` (reativado no fim da seção 1). As queries usam `<QA>`.
 
 ## Testes automatizados
 
-Rodam com `make test` (Go), `make test-frontend` (Vitest) e, com MySQL local, `INTEGRATION=1`:
+Rodam com `make test` (Go), `make test-frontend` (Vitest) e, com um banco local descartável (MySQL na época; hoje MariaDB 11.4, nunca o banco do servidor; DOC-08), `INTEGRATION=1`:
 
 ```bash
 cd backend/rotaperfumes-api && INTEGRATION=1 go test ./tests/handlers/ ./tests/services/ -coverpkg=./... -count=1
