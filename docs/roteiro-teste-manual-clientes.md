@@ -32,6 +32,8 @@ Marque cada checkbox depois de conferir no navegador, com o DevTools aberto na a
 
    O usuário desligado passou a ser o `thiago.silva` (id 4) em 2026-09-26 (DOC-03). O `henrique.rodrigues` (id 2), usado antes, está com `ativo = 0` e não faz login. Antes de começar, confira que o usuário 4 continua ativo (`SELECT id, ativo, id_vendedor FROM usuarios WHERE id = 4;`, esperado `ativo` = 1 e `id_vendedor` = 3). Se estiver inativo, reative-o na tela de Usuários e anote para desfazer no fim.
 
+   > **DEPLOY-07 (Lote 33, 2026-11-04): o `thiago.silva` nasce inativo.** Desde o DEPLOY-07, o `sql/03_seed_vendedores.sql` grava `ativo = 0` nos usuários dos vendedores desligados (vendedores 1, 3, 9, 30, 37 e 38), e o login dele responde `401 "credenciais inválidas"`. Num banco de dev recém-semeado, a reativação acima é **sempre** necessária (tela **Usuários** → ativar o id 4, ou `UPDATE usuarios SET ativo = 1 WHERE id = 4;`); no fim, volte com `UPDATE usuarios SET ativo = 0 WHERE id = 4;`. Nunca no banco de produção.
+
    > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** os usuários do seed (`sql/03_seed_vendedores.sql`, como `rafael.carvalho` e `thiago.silva`) nascem com `deve_trocar_senha = 1`, assim como os usuários criados ou com a senha resetada pelo admin (inclusive o temporário abaixo). Com a flag ligada, a API responde `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password`, e o frontend leva para `/trocar-senha`. Antes de começar, confira (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE id IN (1, 4, 5);`), troque a senha de quem estiver com `1` e faça login de novo.
 
 3. Usuário temporário sem vendedor (defina a senha pela tela de Usuários como admin):

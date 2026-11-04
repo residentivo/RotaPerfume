@@ -21,6 +21,8 @@ Marque cada checkbox depois de conferir. Nas partes de navegador, deixe o DevToo
    | normal com vendedor ativo | `rafael.carvalho@rotaperfumes.com.br` | 5 | 4 - Rafael Carvalho |
    | normal com vendedor **desligado** | `thiago.silva@rotaperfumes.com.br` | 4 | 3 - Thiago Silva (`data_desligamento` = 2025-07-26) |
 
+   > **DEPLOY-07 (Lote 33, 2026-11-04): o `thiago.silva` nasce inativo.** Desde o DEPLOY-07, o `sql/03_seed_vendedores.sql` grava `ativo = 0` nos usuários dos vendedores desligados (vendedores 1, 3, 9, 30, 37 e 38), e o login do `thiago.silva` responde `401 "credenciais inválidas"`. O item 4.2 (login do desligado com o aviso da carteira) exige o usuário **ativo**: reative-o **no banco de dev** antes de começar (como admin, tela **Usuários** → ativar o id 4, ou `UPDATE usuarios SET ativo = 1 WHERE id = 4;`) e, no fim, volte com `UPDATE usuarios SET ativo = 0 WHERE id = 4;`. Nunca no banco de produção.
+
    > **Troca de senha obrigatória (SEC-23, Lote 28, 2026-10-31):** os usuários do seed (`sql/03_seed_vendedores.sql`, como `rafael.carvalho` e `thiago.silva`) nascem com `deve_trocar_senha = 1`, assim como os usuários criados ou com a senha resetada pelo admin. Com a flag ligada, a API responde `403` `"troca de senha obrigatória"` em todas as rotas protegidas, exceto `GET /api/auth/me` e `POST /api/auth/reset-password`, e o frontend leva para `/trocar-senha`. Antes de começar, confira (`SELECT id, email, deve_trocar_senha FROM usuarios WHERE id IN (1, 4, 5);`), troque a senha de quem estiver com `1` e faça login de novo.
 
 3. CNPJs de teste (nenhum existe na base: os 3000 clientes atuais são numéricos):

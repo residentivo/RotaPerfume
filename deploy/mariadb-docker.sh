@@ -30,7 +30,7 @@
 #   7. banco rotaperfumes e contas (todas ed25519 + REQUIRE SSL), convergidas:
 #        rotaperfumes_app   @ 172.30.42.10 (API)            -> so DML
 #        rotaperfumes_admin @ 172.30.42.20 (import/migracao) -> ALL em rotaperfumes
-#        casaos             @ cada --dev-ip (make db-*)      -> ALL em rotaperfumes e rotaperfumes\_%
+#        casaos             @ cada --dev-ip (make db-*)      -> ALL em rotaperfumes
 #      contas do projeto com outro host sao removidas (DROP USER)
 #   8. testa a conexao TLS verificada pela rede interna (e a recusa sem TLS);
 #      com --dev-ip, tambem o certificado servido em SITE_IP:PORTA
@@ -117,7 +117,8 @@ Uso: sudo bash $0 [opcoes]
                       pendrive). Lida de la, nunca copiada. Exigida quando o
                       certificado do servidor precisa ser (re)emitido.
   --nova-ca           gera uma CA NOVA (primeira instalacao ou troca de CA).
-                      Implica --novo-cert. Atualize deploy/db-ca.fingerprint.
+                      Implica --novo-cert. Grave o fingerprint impresso em
+                      deploy/db-ca.fingerprint (so a CA de producao).
   --novo-cert         reemite o certificado do servidor (exige a chave da CA)
   --recriar           remove e recria o container (os dados ficam em --dados)
   --imagem-base REF   imagem base, mariadb:<versao>@sha256:<64 hex>
@@ -533,12 +534,20 @@ done
   echo "-A \$CHAIN -j DROP"
   echo 'COMMIT'
 } | iptables-restore -w --noflush
-REGRA=(-p tcp -m conntrack --ctorigdst "\$SITE_IP" --ctorigdstport "\$PORTA" -j "\$CHAIN")
+# DEPLOY-08: --ctdir ORIGINAL. O tuple original (--ctorigdst/--ctorigdstport)
+# e o mesmo nas duas direcoes: sem o ctdir, a RESPOSTA do container (origem
+# $IP_DB) tambem saltava para a chain, nao casava nenhum -s de dev e caia no
+# DROP (o SYN-ACK morria: timeout da maquina liberada).
+REGRA=(-p tcp -m conntrack --ctorigdst "\$SITE_IP" --ctorigdstport "\$PORTA" --ctdir ORIGINAL -j "\$CHAIN")
+# O novo salto entra ANTES de tirar os antigos: sem janela aberta (com o
+# antigo ainda no lugar a porta so fica mais fechada).
 iptables -w -C DOCKER-USER "\${REGRA[@]}" 2>/dev/null || iptables -w -I DOCKER-USER 1 "\${REGRA[@]}"
-# Saltos antigos (outro IP/porta) saem depois que o novo esta no lugar.
+# Saltos antigos (outro IP/porta, ou sem --ctdir ORIGINAL) saem depois.
 while read -r -a partes; do
-  linha="\${partes[*]}"
-  [[ "\$linha" == *"--ctorigdst \$SITE_IP/32 "* && "\$linha" == *"--ctorigdstport \$PORTA "* ]] && continue
+  linha="\${partes[*]} "
+  # iptables -S omite o /32 no match conntrack (libxtables); aceita as duas formas.
+  [[ ( "\$linha" == *"--ctorigdst \$SITE_IP "* || "\$linha" == *"--ctorigdst \$SITE_IP/32 "* ) \\
+    && "\$linha" == *"--ctorigdstport \$PORTA "* && "\$linha" == *"--ctdir ORIGINAL "* ]] && continue
   partes[0]=-D
   iptables -w "\${partes[@]}"
 done < <(iptables -w -S DOCKER-USER | grep -E -- "-j \$CHAIN( |\\\$)" || true)
@@ -578,7 +587,7 @@ if $PUBLICAR || { [[ -f "$FW_UNIT_ARQ" ]] && [[ "$CONTAINER" == "$CONTAINER_PADR
   systemctl daemon-reload
   systemctl enable "$FW_UNIT" >/dev/null 2>&1 || die "systemctl enable $FW_UNIT falhou"
   systemctl restart "$FW_UNIT" || die "a unit $FW_UNIT falhou (journalctl -u $FW_UNIT); porta NAO publicada"
-  iptables -w -C DOCKER-USER -p tcp -m conntrack --ctorigdst "$SITE_IP" --ctorigdstport "$PORTA" -j "$FW_CHAIN" 2>/dev/null \
+  iptables -w -C DOCKER-USER -p tcp -m conntrack --ctorigdst "$SITE_IP" --ctorigdstport "$PORTA" --ctdir ORIGINAL -j "$FW_CHAIN" 2>/dev/null \
     || die "salto para $FW_CHAIN nao esta em DOCKER-USER apos a unit; porta NAO publicada"
   iptables -w -S "$FW_CHAIN" | grep -qx -- "-A $FW_CHAIN -j DROP" || die "chain $FW_CHAIN sem o DROP final"
   if $PUBLICAR; then
@@ -690,13 +699,12 @@ EOF
   for ip in "${DEV_IPS[@]+"${DEV_IPS[@]}"}"; do
     cat <<EOF
 
--- make db-* da maquina de dev $ip (db-down/db-create precisam de DROP/CREATE;
--- rotaperfumes\\_% = bancos de teste).
+-- make db-* da maquina do admin $ip (db-down/db-create precisam de DROP/CREATE).
+-- DEPLOY-07: so o banco $DB_NOME (bancos de teste nao existem em producao).
 CREATE USER IF NOT EXISTS '$DB_MAKE'@'$ip' IDENTIFIED VIA ed25519 USING PASSWORD('$SENHA_MAKE') REQUIRE SSL;
 ALTER USER '$DB_MAKE'@'$ip' IDENTIFIED VIA ed25519 USING PASSWORD('$SENHA_MAKE') REQUIRE SSL;
 REVOKE ALL PRIVILEGES, GRANT OPTION FROM '$DB_MAKE'@'$ip';
 GRANT ALL PRIVILEGES ON \`$DB_NOME\`.* TO '$DB_MAKE'@'$ip';
-GRANT ALL PRIVILEGES ON \`rotaperfumes\\_%\`.* TO '$DB_MAKE'@'$ip';
 EOF
     if [[ -n "$CASAOS_NATIVE_MOTIVO" ]]; then
       # SEC-30, saida de emergencia (so casaos): cliente sem ed25519.
@@ -740,9 +748,17 @@ fi
 
 info "Contas:"
 root_sql -e "SELECT CONCAT('    ', User, '@', Host, '  ', COALESCE(JSON_VALUE(Priv, '$.plugin'), '?')) FROM mysql.global_priv WHERE User NOT IN ('mariadb.sys', 'PUBLIC') AND User <> '' ORDER BY User, Host"
-OUTRAS=$(root_sql -e "SELECT CONCAT(User, '@', Host) FROM mysql.global_priv WHERE NOT (User = 'root' AND Host = 'localhost') AND User NOT IN ('mariadb.sys', 'PUBLIC', '$DB_APP', '$DB_ADMIN', '$DB_MAKE') ORDER BY User, Host")
+# DEPLOY-08: healthcheck@{localhost,127.0.0.1,::1} vem do entrypoint da imagem
+# oficial (healthcheck.sh, so USAGE): esperadas, nao removidas. Avisa so se
+# tiverem algo alem de USAGE (global, banco, tabela, coluna, rotina, papel, proxy).
+readonly HC_HOSTS="'localhost', '127.0.0.1', '::1'"
+OUTRAS=$(root_sql -e "SELECT CONCAT(User, '@', Host) FROM mysql.global_priv WHERE NOT (User = 'root' AND Host = 'localhost') AND NOT (User = 'healthcheck' AND Host IN ($HC_HOSTS)) AND User NOT IN ('mariadb.sys', 'PUBLIC', '$DB_APP', '$DB_ADMIN', '$DB_MAKE') ORDER BY User, Host")
 if [[ -n "$OUTRAS" ]]; then
-  aviso "contas fora do esperado (root@localhost, mariadb.sys e as do projeto): $(tr '\n' ' ' <<<"$OUTRAS")- confira e remova se nao forem suas."
+  aviso "contas fora do esperado (root@localhost, mariadb.sys, healthcheck locais e as do projeto): $(tr '\n' ' ' <<<"$OUTRAS")- confira e remova se nao forem suas."
+fi
+HC_ALEM_USAGE=$(root_sql -e "SELECT CONCAT(hc.User, '@', hc.Host) FROM mysql.global_priv hc WHERE hc.User = 'healthcheck' AND hc.Host IN ($HC_HOSTS) AND (COALESCE(JSON_VALUE(hc.Priv, '$.access'), '0') <> '0' OR EXISTS (SELECT 1 FROM mysql.db x WHERE x.User = hc.User AND x.Host = hc.Host) OR EXISTS (SELECT 1 FROM mysql.tables_priv x WHERE x.User = hc.User AND x.Host = hc.Host) OR EXISTS (SELECT 1 FROM mysql.columns_priv x WHERE x.User = hc.User AND x.Host = hc.Host) OR EXISTS (SELECT 1 FROM mysql.procs_priv x WHERE x.User = hc.User AND x.Host = hc.Host) OR EXISTS (SELECT 1 FROM mysql.roles_mapping x WHERE x.User = hc.User AND x.Host = hc.Host) OR EXISTS (SELECT 1 FROM mysql.proxies_priv x WHERE x.User = hc.User AND x.Host = hc.Host)) ORDER BY hc.Host")
+if [[ -n "$HC_ALEM_USAGE" ]]; then
+  aviso "contas healthcheck locais com privilegios ALEM de USAGE: $(tr '\n' ' ' <<<"$HC_ALEM_USAGE")- o entrypoint da imagem so concede USAGE; confira SHOW GRANTS e revogue o excedente."
 fi
 FALTANDO=$(root_sql -e "SELECT COUNT(*) FROM mysql.global_priv WHERE User IN ('$DB_APP', '$DB_ADMIN', '$DB_MAKE') AND COALESCE(JSON_VALUE(Priv, '$.ssl_type'), '0') <> '1'")
 [[ "$FALTANDO" == 0 ]] || die "ha conta do projeto sem REQUIRE SSL (ssl_type <> ANY)"
@@ -767,45 +783,142 @@ if cliente --skip-ssl -e 'SELECT 1' >/dev/null 2>&1; then
   die "conexao SEM TLS foi aceita (require_secure_transport/REQUIRE SSL nao estao valendo)"
 fi
 info "Conexao sem TLS recusada: OK."
+# DEPLOY-08: o certificado EM USO pelo mariadbd e o do arquivo? (datas do
+# certificado servido na sessao TLS acima x $SSL_DIR/server-cert.pem; o serial
+# e aleatorio a cada emissao, entao datas iguais = mesmo arquivo carregado,
+# inclusive depois de um FLUSH SSL).
+SERVIDO=$(cliente --ssl-ca=/ca.pem --ssl-verify-server-cert \
+  -e "SELECT GROUP_CONCAT(VARIABLE_VALUE ORDER BY VARIABLE_NAME SEPARATOR '|') FROM information_schema.SESSION_STATUS WHERE VARIABLE_NAME IN ('Ssl_server_not_after', 'Ssl_server_not_before')") \
+  || die "nao consegui ler as datas do certificado em uso (Ssl_server_not_after/before) pela conexao TLS"
 unset SENHA_ADMIN
-if $PUBLICAR; then
-  if SAIDA=$(timeout 15 openssl s_client -starttls mysql -connect "$SITE_IP:$PORTA" \
-               -CAfile "$SSL_DIR/ca.pem" -verify_return_error -verify_ip "$SITE_IP" </dev/null 2>&1); then
-    info "Porta publicada $SITE_IP:$PORTA: certificado verificado (s_client -verify_ip): OK."
-  else
-    printf '%s\n' "$SAIDA" | grep -iE 'verify error|verify return code|errno|connect' | head -5 >&2 || true
-    die "openssl s_client nao validou o certificado servido em $SITE_IP:$PORTA"
-  fi
+data_epoch() { date -u -d "$1" +%s 2>/dev/null || echo "invalida:$1"; }
+SERV_FIM=$(data_epoch "${SERVIDO%%|*}")
+SERV_INI=$(data_epoch "${SERVIDO#*|}")
+ARQ_FIM=$(data_epoch "$(openssl x509 -in "$SSL_DIR/server-cert.pem" -noout -enddate | cut -d= -f2)")
+ARQ_INI=$(data_epoch "$(openssl x509 -in "$SSL_DIR/server-cert.pem" -noout -startdate | cut -d= -f2)")
+if [[ "$SERVIDO" != *"|"* || "$SERV_FIM" != "$ARQ_FIM" || "$SERV_INI" != "$ARQ_INI" ]]; then
+  die "o certificado em uso pelo mariadbd (validade: ${SERVIDO:-vazio}) nao e o de $SSL_DIR/server-cert.pem: rode de novo com --novo-cert (faz FLUSH SSL) ou --recriar"
 fi
+info "Certificado em uso = $SSL_DIR/server-cert.pem (mesma validade): OK."
+
+# DEPLOY-08: le os primeiros bytes da porta e devolve "greeting", "erro1130"
+# ou outra coisa. O mariadbd fala primeiro: pacote = 3 bytes de tamanho +
+# 1 de sequencia (00) + payload (0x0a = greeting do protocolo 10; 0xff + codigo
+# little-endian = erro; 1130 = 0x046a = "Host ... is not allowed to connect").
+resposta_porta() { # ip porta
+  local hex
+  hex=$(timeout 5 bash -c 'exec 3<>"/dev/tcp/$1/$2" && head -c 16 <&3' _ "$1" "$2" 2>/dev/null \
+          | od -An -v -tx1 | tr -d ' \n') || true
+  if [[ "${hex:6:4}" == "000a" ]]; then
+    echo greeting
+  elif [[ "${hex:6:8}" == "00ff6a04" ]]; then
+    echo erro1130
+  else
+    echo "inesperada:${hex:-nada}"
+  fi
+}
+
+if $PUBLICAR; then
+  # DEPLOY-08: daqui o s_client na porta publicada NAO funciona: a conexao sai
+  # do proprio servidor, chega ao mariadbd pelo DNAT com origem no gateway da
+  # rede/IP do host, sem conta para esse host, e o mariadbd manda o ERRO 1130
+  # antes do greeting (o -starttls mysql desiste: "Cipher is (NONE)"). Entao:
+  # (a) o certificado do arquivo (o que esta em uso, conferido acima) vale para
+  #     $SITE_IP pela CA;
+  openssl verify -CAfile "$SSL_DIR/ca.pem" -verify_ip "$SITE_IP" "$SSL_DIR/server-cert.pem" >/dev/null 2>&1 \
+    || die "o certificado $SSL_DIR/server-cert.pem nao valida pela CA para o IP $SITE_IP (openssl verify -verify_ip)"
+  info "Certificado valido pela CA para o IP $SITE_IP (openssl verify -verify_ip): OK."
+  # (b) a porta publicada responde e quem responde e o mariadbd.
+  RESP=$(resposta_porta "$SITE_IP" "$PORTA")
+  case "$RESP" in
+    greeting) info "Porta publicada $SITE_IP:$PORTA: greeting do mariadbd: OK." ;;
+    erro1130) info "Porta publicada $SITE_IP:$PORTA: mariadbd respondeu (erro 1130, esperado vindo do servidor, que nao esta em --dev-ip): OK." ;;
+    *) die "a porta publicada $SITE_IP:$PORTA nao respondeu como o mariadbd (${RESP}; esperado greeting ou erro 1130). Confira docker port $CONTAINER e o firewall." ;;
+  esac
+  # (c) o TLS real da porta publicada so pode ser testado de um --dev-ip.
+  cat <<EOF
+  Teste TLS da porta publicada: rode NA MAQUINA DO ADMIN (${DEV_IPS[*]}), com a
+  copia da CA (deploy/ca-producao.pem, passo 3 abaixo):
+    openssl s_client -starttls mysql -connect $SITE_IP:$PORTA -CAfile deploy/ca-producao.pem -verify_return_error -verify_ip $SITE_IP </dev/null 2>/dev/null | grep -E 'Verify return code|Cipher is'
+  Esperado: "Cipher is" com uma cifra (TLS_AES_...), NUNCA "(NONE)", e
+  "Verify return code: 0 (ok)". Sem handshake o s_client tambem imprime
+  "Verify return code: 0 (ok)" (enganoso): so vale junto com a cifra.
+EOF
+fi
+
+# DEPLOY-07: fingerprint da CA de DEV (MariaDB do CasaOS, porta 3307,
+# deploy/ca-cert.pem). Nunca pode ir para o deploy/db-ca.fingerprint.
+readonly CA_DEV_FP="ef31b6565518b18bbd5ababf94db6bca76de356f8e0f013491dbec7f5aedb37b"
+CA_SUBJECT=$(openssl x509 -in "$SSL_DIR/ca.pem" -noout -subject)
 
 cat <<EOF
 
 Pronto. MariaDB no container $CONTAINER (imagem $IMAGEM, base $IMAGEM_BASE),
 rede $REDE_NOME ($IP_DB:3306)$($PUBLICAR && printf ', publicado em %s:%s para %s' "$SITE_IP" "$PORTA" "${DEV_IPS[*]}").
 
-CA do banco ($SSL_DIR/ca.pem), fingerprint SHA-256 (formato do deploy/db-ca.fingerprint):
+CA do banco de PRODUCAO ($SSL_DIR/ca.pem):
+  $CA_SUBJECT
+  fingerprint SHA-256 (formato do deploy/db-ca.fingerprint):
   $CA_FP
 
 Senhas (so root le; nao foram impressas):
   $SEGREDOS_DIR/root.senha              root@localhost (docker exec -it $CONTAINER mariadb -uroot -p)
   $SEGREDOS_DIR/$DB_APP.senha   API: DB_SENHA do Secret file rotaperfumes-api-env
-  $SEGREDOS_DIR/$DB_ADMIN.senha credencial Jenkins rotaperfumes-db-admin (import)
-  $SEGREDOS_DIR/$DB_MAKE.senha             .env das maquinas de dev (make db-*)
+  $SEGREDOS_DIR/$DB_ADMIN.senha credencial Jenkins rotaperfumes-db-admin (import) e seed-producao.sh
+EOF
+if $PUBLICAR; then
+  printf '  %s/%s.senha             .env.producao da maquina do admin (--dev-ip)\n' "$SEGREDOS_DIR" "$DB_MAKE"
+fi
+cat <<EOF
 
 Proximos passos:
   1. api.env (Secret file rotaperfumes-api-env): DB_HOST=$CONTAINER DB_PORT=3306
      DB_USUARIO=$DB_APP DB_TLS_SERVER_NAME=$CONTAINER; a API entra na rede
      $REDE_NOME com ipv4_address $IP_API (deploy/docker-compose.yml).
-  2. deploy/db-ca.fingerprint precisa conter $CA_FP
-     (senao o estagio "CA do banco" do Jenkins recusa a CA).
-  3. Maquinas de dev (so as de --dev-ip): copie $SSL_DIR/ca.pem para
-     deploy/ca-cert.pem e no .env use
-       DB_HOST=$SITE_IP  DB_PORT=$PORTA  DB_USUARIO=$DB_MAKE  DB_SENHA=<$DB_MAKE.senha>
-       DB_TLS_CA=deploy/ca-cert.pem
-     (cliente mariadb com o plugin client_ed25519).
+  2. Grave $CA_FP em deploy/db-ca.fingerprint
+     como a UNICA linha util (na primeira instalacao, sem a CA de dev) e faca o
+     commit ANTES do push na main (senao o estagio "CA do banco" do Jenkins
+     recusa a CA).
+  3. NAO copie esta CA para deploy/ca-cert.pem: esse arquivo e a CA do MariaDB
+     de DEV (CasaOS, 3307).
+EOF
+if $PUBLICAR; then
+  cat <<EOF
+     Na maquina do admin (so as de --dev-ip), copie $SSL_DIR/ca.pem para
+     deploy/ca-producao.pem (no .gitignore) e use um arquivo SEPARADO,
+     .env.producao (no .gitignore), nunca o .env de dev:
+       # ATENCAO: este .env aponta para PRODUCAO; make db-* apaga dados reais.
+       DB_HOST=$SITE_IP
+       DB_PORT=$PORTA
+       DB_USUARIO=$DB_MAKE
+       DB_SENHA=<conteudo de $SEGREDOS_DIR/$DB_MAKE.senha>
+       DB_TLS_CA=deploy/ca-producao.pem
+     Uso: make <alvo> ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=$SITE_IP/$DB_NOME
+     (o .env nao e lido; sem o CONFIRMO_PRODUCAO os alvos make db-* recusam
+     este host). Cliente mariadb com o plugin client_ed25519.
+EOF
+fi
+cat <<EOF
+  4. Seed inicial: sudo bash deploy/seed-producao.sh (docs/deploy-servidor.md
+     §11); nunca make db-seed contra este banco.
 EOF
 if $CA_MUDOU; then
-  aviso "CA NOVA: atualize deploy/db-ca.fingerprint e deploy/ca-cert.pem no repositorio e nas maquinas de dev."
+  aviso "CA NOVA: troque o fingerprint em deploy/db-ca.fingerprint (rotacao de producao: a linha antiga pode ficar ate o deploy; NUNCA a CA de dev); deploy/ca-cert.pem (dev) NAO muda."
+fi
+# P2: confere o deploy/db-ca.fingerprint do checkout de onde o script roda.
+FP_REPO="$(dirname "$0")/db-ca.fingerprint"
+if [[ -r "$FP_REPO" ]]; then
+  FPS_REPO=$(grep -Ev '^[[:space:]]*(#|$)' "$FP_REPO" | tr -d ' \t\r' || true)
+  if grep -qxF "$CA_DEV_FP" <<<"$FPS_REPO"; then
+    aviso "$FP_REPO contem o fingerprint da CA de DEV ($CA_DEV_FP): remova essa linha (a CA de dev nunca vale em producao)."
+  fi
+  if grep -qxF "$CA_FP" <<<"$FPS_REPO"; then
+    info "$FP_REPO ja contem $CA_FP: OK."
+  elif [[ -z "$FPS_REPO" ]]; then
+    aviso "$FP_REPO ainda nao tem fingerprint: grave $CA_FP (passo 2)."
+  else
+    aviso "$FP_REPO NAO contem $CA_FP: troque pelo fingerprint desta CA (passo 2)."
+  fi
 fi
 if [[ -s "$CA_DIR/ca-key.pem" ]]; then
   aviso "a chave da CA esta NO SERVIDOR ($CA_DIR/ca-key.pem). Copie para midia offline (pendrive cifrado) e apague daqui: shred -u $CA_DIR/ca-key.pem. Depois, use --ca-key <midia>/ca-key.pem para reemitir."

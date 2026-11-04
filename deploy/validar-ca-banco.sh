@@ -8,7 +8,7 @@
 # arquivo nunca passa pelo workspace) e com o Jenkins nativo.
 #
 #   CA_FINGERPRINTS="$(cat deploy/db-ca.fingerprint)" \
-#   docker run --rm -i --user 65532:65532 --network rotaperfumes-db \
+#   docker run --rm -i --user 65532:65532 --network rotaperfumes-db --ip 172.30.42.20 \
 #     --mount type=bind,source=<caminho no host>,target=/etc/rotaperfumes/db-ca.pem,readonly \
 #     -e DB_ALVO=rotaperfumes-mariadb -e DB_HOST_PORT=3306 -e TLS_NOME=rotaperfumes-mariadb \
 #     -e CA_FINGERPRINTS --entrypoint bash "$DB_CLIENT_IMAGE" -s < deploy/validar-ca-banco.sh
@@ -35,6 +35,11 @@
 # em CA_FINGERPRINTS (SEC-40: um certificado fora da lista = falha, mesmo
 # que o resto passe); por fim openssl s_client -starttls mysql confere que a
 # CA valida o certificado que o servidor serve HOJE para TLS_NOME.
+# DEPLOY-08: exige handshake real (certificado do peer e "Cipher is" diferente
+# de "(NONE)"), alem do rc 0 e do "Verify return code: 0 (ok)": sem handshake
+# o s_client tambem imprime "Verify return code: 0 (ok)". O container precisa
+# de um IP com conta no MariaDB (--ip 172.30.42.20); de outro IP o mariadbd
+# manda o erro 1130 antes do greeting.
 set -euo pipefail
 
 CA="${CA:-/etc/rotaperfumes/db-ca.pem}"
@@ -119,12 +124,32 @@ if [[ "$TLS_NOME" =~ ^[0-9.]+$ ]]; then
 else
   VERIF=(-verify_hostname "$TLS_NOME" -servername "$TLS_NOME")
 fi
-if ! SAIDA=$(timeout 15 openssl s_client -starttls mysql -connect "$DB_ALVO:$DB_HOST_PORT" \
-               -CAfile "$PEM" -verify_return_error "${VERIF[@]}" </dev/null 2>&1); then
+RC=0
+SAIDA=$(timeout 15 openssl s_client -starttls mysql -connect "$DB_ALVO:$DB_HOST_PORT" \
+          -CAfile "$PEM" -verify_return_error "${VERIF[@]}" </dev/null 2>&1) || RC=$?
+falha_verificacao() {
   printf '%s\n' "$SAIDA" | grep -iE 'verify error|verify return code|errno|connect|didn.t' | head -5 >&2 || true
   falhar "a CA NAO valida o certificado servido em $DB_ALVO:$DB_HOST_PORT para o nome $TLS_NOME (CA desatualizada, nome fora do SAN ou TLS desligado no servidor). A API e o banco nao foram tocados."
+}
+# O s_client -starttls mysql nao mostra o texto do erro: diante de um pacote
+# de erro (0xff) no lugar do greeting ele imprime "Only MySQL protocol
+# version 10 is supported".
+if grep -qE 'is not allowed to connect|Only MySQL protocol version 10' <<<"$SAIDA"; then
+  falhar "o MariaDB respondeu com erro no lugar do greeting em $DB_ALVO:$DB_HOST_PORT (provavel erro 1130, IP de origem sem conta): o container de validacao precisa de --ip 172.30.42.20 (conta rotaperfumes_admin). A API e o banco nao foram tocados."
+fi
+grep -qi 'verify error' <<<"$SAIDA" && falha_verificacao
+CIFRA=$(grep -m1 -oE 'Cipher is [^ ]+' <<<"$SAIDA" | cut -d' ' -f3 || true)
+SEM_PEER=false
+grep -q 'no peer certificate available' <<<"$SAIDA" && SEM_PEER=true
+if $SEM_PEER || [[ -z "$CIFRA" || "$CIFRA" == "(NONE)" ]]; then
+  printf '%s\n' "$SAIDA" | grep -iE 'verify error|errno|connect|didn.t|Cipher is|peer certificate' | head -5 >&2 || true
+  falhar "sem handshake TLS com $DB_ALVO:$DB_HOST_PORT (sem certificado do peer ou \"Cipher is ${CIFRA:-?}\"): TLS desligado, IP de origem sem conta (erro 1130; o container precisa de --ip 172.30.42.20) ou porta errada. A API e o banco nao foram tocados."
+fi
+if [[ "$RC" -ne 0 ]] || ! grep -q 'Verify return code: 0 (ok)' <<<"$SAIDA"; then
+  falha_verificacao
 fi
 printf '%s\n' "$SAIDA" | grep -m1 'Verify return code' | sed 's/^ */  s_client: /' >&2
+msg "  s_client: Cipher is $CIFRA"
 
 msg "CA do banco OK ($TOTAL certificado(s))"
 sha256sum "$CA" | cut -d' ' -f1

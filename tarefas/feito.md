@@ -2,11 +2,83 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-11-02 (fechamento dos Lotes 30 e 31, 🔵 SubBrain): o **Lote 30** (somente MariaDB + infra/TLS) e o **Lote 31** (backend/frontend, BAIXA) foram fechados (blocos abaixo). Lote 30: 15 cards concluídos (TST-15 com pendência de execução com Docker) e o **TST-14 cancelado**; o **DEPLOY-05** teve a revisão do script concluída, mas a execução no servidor voltou para `afazer.md` como pendência do usuário (ALTA, bloqueia o primeiro deploy da `main`). Lote 31: 24 cards concluídos. O **Lote 32 (ARQ-09)** foi **adiado** pelo 🤍 MegaBrain e voltou para `afazer.md`. Commits na branch `lote-30`: `9cb87eb` (Lote 30), `fd76dc7` (Lote 31 backend), `e4f115a` (Lote 31 frontend), `e325dcf` (merge do `lote-31` no `lote-30`) e `2a5995c` (verificação do 🔴 TestBrain). **Em seguida:** merge de todas as branches na `main` pelo 🤍 MegaBrain. **O primeiro deploy da `main` depende do DEPLOY-05** (rede `rotaperfumes-db` e container `rotaperfumes-mariadb` no servidor; sem eles o compose falha e o pipeline para).
+> Atualizado em 2026-11-04 (fechamento do Lote 33, 🔵 SubBrain): o **DEPLOY-07** (instalação limpa do MariaDB de produção, CAs de dev e produção separadas, seed em produção) foi concluído no código e nas docs (bloco "Lote 33 de 2026-11-04" abaixo; **não commitado**). A **execução no servidor** é o card **DEPLOY-08** (ALTA, pendente do usuário, `afazer.md`), que bloqueia o primeiro deploy da `main`. O **DEPLOY-05** foi retirado de `afazer.md` (substituído pelo DEPLOY-07; registro no mesmo bloco).
+>
+> Antes, em 2026-11-02 (fechamento dos Lotes 30 e 31, 🔵 SubBrain): o **Lote 30** (somente MariaDB + infra/TLS) e o **Lote 31** (backend/frontend, BAIXA) foram fechados (blocos abaixo). Lote 30: 15 cards concluídos (TST-15 com pendência de execução com Docker) e o **TST-14 cancelado**; o **DEPLOY-05** teve a revisão do script concluída, mas a execução no servidor voltou para `afazer.md` como pendência do usuário (ALTA, bloqueia o primeiro deploy da `main`). Lote 31: 24 cards concluídos. O **Lote 32 (ARQ-09)** foi **adiado** pelo 🤍 MegaBrain e voltou para `afazer.md`. Commits na branch `lote-30`: `9cb87eb` (Lote 30), `fd76dc7` (Lote 31 backend), `e4f115a` (Lote 31 frontend), `e325dcf` (merge do `lote-31` no `lote-30`) e `2a5995c` (verificação do 🔴 TestBrain). **Em seguida:** merge de todas as branches na `main` pelo 🤍 MegaBrain. **O primeiro deploy da `main` depende do DEPLOY-05** (rede `rotaperfumes-db` e container `rotaperfumes-mariadb` no servidor; sem eles o compose falha e o pipeline para).
 >
 > Antes, ainda em 2026-11-02 (abertura dos Lotes 30, 31 e 32, 🔵 SubBrain): na triagem do 🤍 MegaBrain (somente MariaDB), **DOC-07** (substituído pelo DOC-08) e **DEPLOY-03** (sem MySQL) foram **cancelados** (bloco "Lote 30 de 2026-11-02: triagem" abaixo). Os Lotes 30, 31 e 32 estão em `fazendo.md`.
 >
 > Antes, em 2026-11-01 (fechamento do Lote 29, 🔵 SubBrain): o **Lote 29** foi fechado. **SEC-44, SEC-37 e DEPLOY-02** foram concluídos e entraram no bloco do lote, junto com a rodada final do 🔴 TestBrain e o **TST-11** (fechado). Não commitado, pendente do usuário. Antes, ainda em 2026-11-01 (novas decisões do usuário, 🔵 SubBrain): **TST-13 cancelado** e **SEC-43 fechado sem correção** (dev, risco aceito), no bloco do Lote 29; o card do SEC-29 ganhou nota de que as pendências 1 a 4 foram substituídas pelo SEC-44 (`fazendo.md`). Antes, ainda em 2026-11-01 (fechamento parcial do Lote 29, 🔵 SubBrain): **SEC-29, TST-09, TST-08 e SETUP-01** foram concluídos (bloco "Lote 29 de 2026-11-01"; não commitado, pendente do usuário). SEC-37 e DEPLOY-02 seguem em `fazendo.md`. Antes, ainda em 2026-11-01: o **TST-10** foi **cancelado** pelo usuário (Lote 29); o projeto foi migrado para um HD com Linux (sem exFAT, Node 22 via nvm). Antes, ainda em 2026-11-01: o CHORE-12 foi registrado (`c4c87af`). Antes, em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): o Lote 28 (SEC-19, SEC-23 e SEC-35) foi fechado; não commitado, pendente do usuário. Antes, ainda em 2026-10-31: o commit do Lote 27 foi registrado (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", no branch `lote-27`, criado a partir de `main`; informado pelo usuário via 🤍 MegaBrain). Antes, ainda em 2026-10-31: o Lote 27 (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o Lote 26 (IMG-01, imagem do produto) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-31: o DB-05 (`make db-seed-mes-atual`) foi fechado pelo 🔵 SubBrain. Antes, em 2026-10-30: o Lote 25 (BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21) foi fechado pelo 🔵 SubBrain. Antes, ainda em 2026-10-30: o Lote 24 (SEC-18, SEC-20, SEC-21 e SEC-22) foi fechado pelo 🔵 SubBrain. Em 2026-10-29: o commit do Lote 22 (DASH-01) foi registrado (`4b7ec21` "Dashboard com funil", conferido pelo 🤍 MegaBrain no git).
+
+---
+## Lote 33 de 2026-11-04: 1 card concluído (DEPLOY-07) e 1 substituído (DEPLOY-05)
+
+Aberto e fechado em 2026-11-04 pelo 🤍 MegaBrain. Passos: 🟣 SecBrain especificando → 🟡 BackBrain e 🌸 DataBrain → 🔴 TestBrain + 🔵 SubBrain (docs) → ajustes finais do 🟡 BackBrain (guarda por host e porta, `.env.example`) → 🔵 SubBrain fechando. **Não commitado** (pendente do usuário). Testes finais (🟡 BackBrain): `go clean -testcache && make -k test` com 2067 PASS e 0 FAIL; `make lint` ok.
+
+**Cards criados em `afazer.md`** (bloco "Achados do Lote 33 (DEPLOY-07)"): DEPLOY-08 (ALTA, pendente do usuário), SEC-50, SEC-53, TST-17, OPS-02, CHORE-18 (MÉDIA), SEC-51, SEC-52 (risco aceito), CHORE-17, BUG-26 e DOC-09 (BAIXA).
+
+---
+
+## DEPLOY-07: instalação limpa do MariaDB de produção, sem MySQL: §11 reescrita, CAs de dev e produção separadas, seed em produção — 2026-11-04
+
+**Status:** ✅ concluído no código e nas docs. **A execução no servidor está pendente do usuário** (passos da §11 de `docs/deploy-servidor.md`), no card **DEPLOY-08** (`afazer.md`).
+**Camadas:** Database, Deploy, Docs, Testes
+**Responsável:** 🟣 SecBrain (especificação) → 🟡 BackBrain e 🌸 DataBrain → 🔴 TestBrain → 🔵 SubBrain.
+**Origem:** pedido do usuário em 2026-11-04, depois de o primeiro build da `main` falhar no estágio "CA do banco" com `bind source path does not exist: /etc/mysql/ssl/ca.pem` (o `deploy/mariadb-docker.sh` ainda não rodou no servidor 192.168.168.106). Substitui o DEPLOY-05.
+
+**Decisões do usuário (2026-11-04):** não existe MySQL no ambiente. Produção = MariaDB 11.4 **novo** (`rotaperfumes-mariadb`, porta 3306), com CA nova (`--nova-ca`), porta publicada só para a máquina do admin (`--dev-ip <IP do admin>`), seed com o admin e os 42 vendedores reais **inativos**, sem migração de dados. O MariaDB 11.8 do CasaOS (`192.168.168.106:3307`) continua como banco de dev oficial, com `deploy/ca-cert.pem` (CA de dev `RotaPerfumes_MySQL_CA`, não versionada, fingerprint `ef31b656...`).
+
+**Pontos resolvidos (especificação do 🟣 SecBrain):**
+- **(a) Fingerprint:** `deploy/db-ca.fingerprint` fixa só a CA de produção; a de dev é proibida. Na entrega, o arquivo tem só o cabeçalho, e o Jenkinsfile falha com "deploy/db-ca.fingerprint sem fingerprint: rode mariadb-docker.sh --nova-ca e grave o CA_FP (DEPLOY-07)" até o commit do `CA_FP`.
+- **(b) Resumo do script:** não manda mais copiar a CA para `deploy/ca-cert.pem`. Manda gravar o `CA_FP` e, com `--dev-ip`, usar `.env.producao` + `deploy/ca-producao.pem` (ambos no `.gitignore`).
+- **(c) Seed em produção:** script próprio (`deploy/seed-producao.sh`), de dentro da rede `rotaperfumes-db`, com senha do admin gerada (ou digitada) e troca obrigatória; `make db-seed` nunca roda contra a produção.
+- **(d) Porta 3306:** só com `--dev-ip`; a API e o Jenkins usam a rede interna.
+
+**Entregas:**
+- 🟡 **BackBrain:**
+  - `deploy/mariadb-docker.sh`: resumo final novo; confere o fingerprint do repositório e avisa se for o de dev; GRANT em ``rotaperfumes\_%`` removido (`casaos` só com `ALL ON rotaperfumes.*`).
+  - `deploy/db-ca.fingerprint` só com o cabeçalho, e guarda no Jenkinsfile.
+  - Novo `deploy/seed-producao.sh`: 7 etapas; opções `--pepper-file`, `--admin-senha-prompt`, `--admin-senha-arquivo` e `--forcar`; `resetpassword -create-admin` em `GO_IMAGE` na rede `rotaperfumes-db` (IP `172.30.42.20`); não roda `-all-users`.
+  - `resetpassword` com `deve_trocar_senha = 1` no `UpsertAdmin`/`UpsertByEmail` e a opção `-password-out`.
+  - Makefile:
+    - sem senha fixa de admin; `fix-hash`/`fix-admin` com `-password-prompt`;
+    - `ENV_ARQUIVO` (só pela linha de comando);
+    - `db-up` lendo `sql/ordem-ddl.txt`;
+    - guarda `db-guard-producao` (`CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>` só pela linha de comando), que nos **ajustes finais** passou a olhar **host e porta**: `PRODUCAO_HOSTS_LAN` (`192.168.168.106`, `ivo-inspiron-15-3530`) só com `DB_PORT` vazio ou 3306, e `PRODUCAO_HOSTS_REDE` (`rotaperfumes-mariadb`, `172.30.42.2`) em qualquer porta. O CasaOS em `192.168.168.106:3307` passa.
+  - `.env.example` corrigido: `deploy/ca-cert.pem` é a CA de dev do CasaOS, e o exemplo usa `DB_HOST=192.168.168.106`, `DB_PORT=3307`.
+  - `.gitignore` com `deploy/ca-producao.pem` e `.env.producao`.
+- 🌸 **DataBrain:** `sql/ordem-ddl.txt` (ordem única da DDL, usada pelo `make db-up` e pelo `seed-producao.sh`); `sql/02_seed_admin.sql` com `deve_trocar_senha = 1`; `sql/03_seed_vendedores.sql` com `INSERT IGNORE` e os usuários dos vendedores desligados (1, 3, 9, 30, 37 e 38) sempre `ativo = 0`.
+- 🔴 **TestBrain:**
+  - Rodada do lote: `make test` com 2067 ok, 0 falhas e 42 pulados; lint ok; cobertura `shared` 91,8% e API 94,5%.
+  - Reescritos: `TestSEC45` (aceita 0 a 2 fingerprints e proíbe `ef31b656...`), `TestSEC40_ValidarCABanco_CADevRecusada` e TST-15 com os textos novos.
+  - Novos: `deploy07_seed_producao_ensaio_test.go`, `tests/config/deploy07_seeds_sql_test.go` e, na API, `tests/handlers/deploy07_login_placeholder_test.go`. O `helpers_test.go` limpa `MYSQL_PWD`/`DB_*`/`PASSWORD_PEPPER`.
+- 🔵 **SubBrain (docs):**
+  - `docs/deploy-servidor.md`: §11 reescrita como "Instalação inicial da produção (DEPLOY-07)", em 12 passos e sem MySQL/migração. Também ajustados: cabeçalho (dev x produção), §0, §3.4, §3.7, §3.8 (guarda por host e porta), §7 e troubleshooting.
+  - `docs/Instal_SSL.md`: casos de CA sem reaproveitar a CA de dev, §6, §8, §9.2 e §10; §11 com o CasaOS como dev e o `.env.producao` para o admin; sem o grant ``rotaperfumes\_%``.
+  - `docs/manual-base-de-dados.md`: cabeçalho; ponto a confirmar 10 fechado; pendências 23.4, itens 1 e 2, resolvidas.
+  - Roteiros `lote4`, `lote5`, `dashboard`, `clientes` e `vendedor-desligado`, e `postman/README.md`/`collection.json`: o `thiago.silva` nasce `ativo = 0`, então é preciso reativá-lo no banco de dev antes do cenário do `403` e voltar no fim.
+  - Coleção com a variável `{{senha_admin}}` no lugar da senha fixa.
+
+**Pendências → cards em `afazer.md`:**
+- execução no servidor → **DEPLOY-08**;
+- `INTEGRATION=1` direto sem guarda → **SEC-50**;
+- conta somente-leitura → **SEC-51**;
+- build do `resetpassword` sem `--cap-drop ALL` (risco aceito) → **SEC-52**;
+- export de `MYSQL_PWD`/`DB_*` aos alvos `test*` → **SEC-53**;
+- teste real do `seed-producao.sh`, `TST15_DOCKER=1` e `shellcheck` → **TST-17**;
+- SMTP para o reset dos vendedores → **OPS-02**;
+- `casaos.senha` gerada sem `--dev-ip` → **CHORE-17**;
+- hostname real do servidor na guarda → **CHORE-18**;
+- `--forcar` sem terminal → **BUG-26**;
+- `CLAUDE.md` (aguardando o usuário) → **DOC-09**.
+
+Resolvidas no próprio lote: o `.env.example` (pendência 9) e a guarda contra o CasaOS (pendência 10, agora por host e porta).
+
+---
+
+## DEPLOY-05: executar o `deploy/mariadb-docker.sh` no servidor e aposentar o MySQL — 🔁 SUBSTITUÍDO em 2026-11-04
+
+**Status:** retirado de `afazer.md` no fechamento do Lote 33. A revisão do script tinha sido concluída no Lote 30 (2026-11-02). A migração a partir do MySQL (backup/dump, remoção do MySQL, importação) deixou de existir porque **não há MySQL no ambiente**. O trabalho foi substituído pelo **DEPLOY-07** (instalação limpa, acima) e a execução no servidor ficou no **DEPLOY-08** (`afazer.md`).
 
 ---
 ## Lote 31 de 2026-11-02 (backend/frontend, BAIXA): 24 cards concluídos

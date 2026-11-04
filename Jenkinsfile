@@ -137,15 +137,26 @@ pipeline {
                     # SEC-40: fingerprints aceitos (versionados); o script falha se
                     # algum certificado do arquivo do host nao estiver na lista.
                     [ -r deploy/db-ca.fingerprint ] || { echo "deploy/db-ca.fingerprint ausente (SEC-40)" >&2; exit 1; }
+                    # DEPLOY-07: so comentarios (instalacao nova sem o fingerprint
+                    # commitado) = falha com mensagem clara, antes do container.
+                    # "|| true": grep sem linha sai 1 e o pipefail derrubaria mudo.
+                    FPS=$(grep -Ev '^[[:space:]]*(#|$)' deploy/db-ca.fingerprint || true)
+                    if [ -z "$FPS" ]; then
+                      echo "deploy/db-ca.fingerprint sem fingerprint: rode mariadb-docker.sh --nova-ca e grave o CA_FP (DEPLOY-07)" >&2
+                      exit 1
+                    fi
                     echo "Fingerprints SHA-256 aceitos para a CA do banco:"
-                    grep -Ev '^[[:space:]]*(#|$)' deploy/db-ca.fingerprint | sed 's/^/  /'
+                    printf '%s\\n' "$FPS" | sed 's/^/  /'
                     # DEPLOY-06: s_client em rotaperfumes-mariadb:3306 pela rede
                     # interna, conferindo o mesmo nome (-verify_hostname).
                     export CA_FINGERPRINTS="$(cat deploy/db-ca.fingerprint)" \\
                            DB_ALVO="$DB_HOST_INTERNO" DB_HOST_PORT=3306 TLS_NOME="$DB_HOST_INTERNO"
                     # --mount (e nao -v): caminho inexistente no host = erro, e
                     # nao um diretorio criado no lugar do arquivo.
-                    SHA=$(docker run --rm -i --user 65532:65532 --network "$DB_REDE" \\
+                    # DEPLOY-08: --ip $DB_CLIENTE_IP (conta rotaperfumes_admin):
+                    # de um IP sem conta o mariadbd manda o erro 1130 antes do
+                    # greeting e o s_client nao faz handshake.
+                    SHA=$(docker run --rm -i --user 65532:65532 --network "$DB_REDE" --ip "$DB_CLIENTE_IP" \\
                             --mount "type=bind,source=$DB_TLS_CA_HOST_PATH,target=/etc/rotaperfumes/db-ca.pem,readonly" \\
                             -e DB_ALVO -e DB_HOST_PORT -e TLS_NOME -e CA_FINGERPRINTS \\
                             --entrypoint bash "$DB_CLIENT_IMAGE" -s < deploy/validar-ca-banco.sh)

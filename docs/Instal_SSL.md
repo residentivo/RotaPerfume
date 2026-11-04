@@ -4,7 +4,9 @@
 >
 > **Leia antes:** os comandos rodam **no HOST** (shell do servidor, via SSH ou terminal local), como root (`sudo`), **nunca dentro de um container**. O script nunca imprime senhas nem usa `set -x`; não cole o conteúdo de `*.senha` nem de `ca-key.pem` em chat, log ou ticket.
 >
-> **Servidor ainda com o MySQL antigo?** Siga primeiro a seção "Migração do MySQL para o MariaDB (DEPLOY-05)" do [`docs/deploy-servidor.md`](deploy-servidor.md#11-migração-do-mysql-para-o-mariadb-deploy-05). Ela usa os passos deste roteiro na ordem certa.
+> **Primeira instalação da produção?** Siga a seção "Instalação inicial da produção (DEPLOY-07)" do [`docs/deploy-servidor.md`](deploy-servidor.md#11-instalação-inicial-da-produção-deploy-07). Ela usa os passos deste roteiro na ordem certa (CA nova com `--nova-ca`, seed, fingerprint e deploy).
+>
+> **Duas CAs, nunca misturadas (DEPLOY-07, 2026-11-04):** a CA de **produção** é gerada pelo `mariadb-docker.sh --nova-ca` (`CN=RotaPerfumes_MariaDB_CA`), fica no servidor em `/etc/mysql/ssl/ca.pem` e é a única em `deploy/db-ca.fingerprint`. A CA de **dev** é a do MariaDB 11.8 do CasaOS (porta 3307), em `deploy/ca-cert.pem` (`CN=RotaPerfumes_MySQL_CA`, fingerprint `ef31b656...`, não versionada): ela nunca vai para o `deploy/db-ca.fingerprint`, e a CA de produção nunca é copiada para `deploy/ca-cert.pem`.
 
 ## 0. Visão geral
 
@@ -24,7 +26,7 @@ Quem confia na CA:
 
 - **API** (container, uid 65532): `DB_TLS_CA=/etc/rotaperfumes/db-ca.pem`, montado do host a partir de `/etc/mysql/ssl/ca.pem`; `DB_HOST=rotaperfumes-mariadb`, `DB_TLS_SERVER_NAME=rotaperfumes-mariadb` (fixados no `docker-compose.yml`).
 - **Jenkins**: estágio `CA do banco` (valida o arquivo do host contra `deploy/db-ca.fingerprint`, SEC-40, e contra o certificado servido) e `Importar dump` (cliente `mariadb --ssl-ca --ssl-verify-server-cert`).
-- **Máquinas de dev** (só as de `--dev-ip`): cópia da CA em `deploy/ca-cert.pem` (`DB_TLS_CA` do `.env`).
+- **Máquina do admin** (só as de `--dev-ip`): cópia da CA de produção em `deploy/ca-producao.pem` (`DB_TLS_CA` do `.env.producao`, seção 11). O `deploy/ca-cert.pem` é a CA de dev (CasaOS) e não confia neste servidor.
 
 ## 1. Opções do script usadas neste roteiro
 
@@ -37,7 +39,7 @@ sudo bash deploy/mariadb-docker.sh --help
 | `--ca-key ARQ` | chave da CA existente, na mídia offline. **Lida de lá, nunca copiada.** Exigida quando o certificado do servidor precisa ser (re)emitido |
 | `--nova-ca` | gera uma CA **nova** (primeira instalação ou troca de CA). Implica `--novo-cert`. Faz backup de `/etc/mysql/ssl` em `/etc/mysql/ssl.bak-AAAAMMDD-HHMMSS` |
 | `--novo-cert` | reemite só o certificado do servidor (mesma CA; exige a chave) |
-| `--dev-ip IP` | repetível; publica `192.168.168.106:3306` para esses IPs e cria `casaos@IP` |
+| `--dev-ip IP` | repetível; publica `192.168.168.106:3306` só para esses IPs (na prática, a máquina do admin) e cria `casaos@IP` |
 | `--recriar` | remove e recria o container (dados ficam em `/var/lib/rotaperfumes/mariadb`) |
 | `--imagem-base REF` | outra imagem base, formato `mariadb:<versão>@sha256:<64 hex>` |
 | `--sem-read-only` | só se o container não subir com `--read-only` |
@@ -51,11 +53,12 @@ Escolha **um** caso:
 
 | Caso | Situação | Comando |
 |---|---|---|
-| A | já existe uma CA própria em `/etc/mysql/ssl/ca.pem` (ex.: a do SEC-29) e a chave dela está na mídia offline | `sudo bash deploy/mariadb-docker.sh --ca-key /media/<pendrive>/ca-key.pem` |
-| B | quer reaproveitar outra CA existente (ex.: a de `deploy/ca-cert.pem`, cujo fingerprint já está em `deploy/db-ca.fingerprint`) | copie **só o certificado público** dela para `/etc/mysql/ssl/ca.pem` (`install -m 644 -o root -g root ca.pem /etc/mysql/ssl/ca.pem`) e rode como no caso A, com `--ca-key` apontando para a chave dessa CA |
-| C | não há CA | `sudo bash deploy/mariadb-docker.sh --nova-ca` (gera `CN=RotaPerfumes_MariaDB_CA`) |
+| A | não há CA de produção (**primeira instalação**, decisão do DEPLOY-07) | `sudo bash deploy/mariadb-docker.sh --nova-ca --dev-ip <IP do admin>` (gera `CN=RotaPerfumes_MariaDB_CA`) |
+| B | a CA de produção já existe em `/etc/mysql/ssl/ca.pem` e a chave dela está na mídia offline (reexecução, renovação) | `sudo bash deploy/mariadb-docker.sh --ca-key /media/<pendrive>/ca-key.pem [--dev-ip ... (a mesma lista)]` |
 
-Acrescente `--dev-ip <IP>` (uma vez por máquina de dev) só quando a porta 3306 do host estiver livre (na migração, só no passo 7; ver `docs/deploy-servidor.md`).
+**Nunca** reaproveite a CA de dev (`deploy/ca-cert.pem`, CasaOS) em produção: ela não entra em `/etc/mysql/ssl/ca.pem` nem em `deploy/db-ca.fingerprint`.
+
+`--dev-ip <IP>` é opcional: só para a máquina do admin que precisa acessar o banco de produção (seção 11). A porta 3306 do host precisa estar livre (o script aborta se outro serviço a ocupa).
 
 O que o script faz com os certificados (etapa `[3/8]`):
 
@@ -80,8 +83,8 @@ O último valor precisa estar em `deploy/db-ca.fingerprint` (seção 6). Se não
 
 A chave da CA é a peça mais sensível: com ela qualquer um emite um certificado que a API aceita. Ela **não fica no servidor**.
 
-- Casos A e B: a chave já está na mídia; o script só a lê (`--ca-key`) e nunca a copia.
-- Caso C (`--nova-ca`): o script grava a chave nova em `/root/rotaperfumes-ca/ca-key.pem` (600) e, no fim, avisa para tirá-la de lá. Faça logo:
+- Caso B: a chave já está na mídia; o script só a lê (`--ca-key`) e nunca a copia.
+- Caso A (`--nova-ca`): o script grava a chave nova em `/root/rotaperfumes-ca/ca-key.pem` (600) e, no fim, avisa para tirá-la de lá. Faça logo:
 
 ```bash
 sudo cp /root/rotaperfumes-ca/ca-key.pem /media/<pendrive-cifrado>/ca-key.pem
@@ -102,9 +105,11 @@ docker run --rm --network rotaperfumes-db --cap-drop ALL \
   --mount type=bind,source=/etc/mysql/ssl/ca.pem,target=/ca.pem,readonly \
   --entrypoint openssl "$IMG" s_client -starttls mysql -connect rotaperfumes-mariadb:3306 \
   -CAfile /ca.pem -verify_return_error -verify_hostname rotaperfumes-mariadb </dev/null 2>/dev/null \
-  | grep 'Verify return code'
-# Verify return code: 0 (ok)
+  | grep -E 'Verify return code|Cipher is'
+# esperado: "Cipher is TLS_AES_..." (nunca "(NONE)") e "Verify return code: 0 (ok)"
 ```
+
+> **DEPLOY-08:** `Verify return code: 0 (ok)` sozinho é enganoso. Se o `mariadbd` recusar o host de origem (erro 1130, `Host '...' is not allowed to connect`, enviado **antes** do greeting), o `s_client` não faz handshake e imprime `no peer certificate available`, `Cipher is (NONE)` e, mesmo assim, `Verify return code: 0 (ok)`. Exija as duas linhas. Pela rede interna, o MariaDB só aceita as origens com conta (`172.30.42.10`, `172.30.42.20`): sem `--ip 172.30.42.20` no `docker run` acima, o container pega um IP dinâmico (`172.30.42.128/25`) e recebe o erro 1130; acrescente `--ip 172.30.42.20` se isso acontecer (e não rode ao mesmo tempo que outro cliente com esse IP).
 
 O próprio script já testa, na etapa `[8/8]`, uma conexão TLS verificada com `rotaperfumes_admin` a partir de `172.30.42.20` e **aborta** se uma conexão `--skip-ssl` for aceita.
 
@@ -119,12 +124,15 @@ sudo docker exec rotaperfumes-mariadb mariadb --defaults-extra-file=/run/rotaper
 
 Esperado: `rotaperfumes_app@172.30.42.10` e `rotaperfumes_admin@172.30.42.20` com `ed25519` e `ssl_type = 1` (`REQUIRE SSL`); `casaos@<cada --dev-ip>` igual; `root@localhost`; `require_secure_transport = ON`.
 
-**Da máquina de dev** (só com `--dev-ip`), com a cópia da CA:
+**Da máquina do admin** (só com `--dev-ip`), com a cópia da CA de produção (seção 11):
 
 ```bash
-openssl s_client -starttls mysql -connect 192.168.168.106:3306 -CAfile deploy/ca-cert.pem \
-  -verify_return_error -verify_ip 192.168.168.106 </dev/null 2>/dev/null | grep 'Verify return code'
+openssl s_client -starttls mysql -connect 192.168.168.106:3306 -CAfile deploy/ca-producao.pem \
+  -verify_return_error -verify_ip 192.168.168.106 </dev/null 2>/dev/null | grep -E 'Verify return code|Cipher is'
+# esperado: "Cipher is TLS_AES_..." (nunca "(NONE)") e "Verify return code: 0 (ok)"
 ```
+
+Só funciona de uma máquina em `--dev-ip`. Do próprio servidor o teste nunca faz handshake (a origem chega pelo DNAT sem conta e o `mariadbd` responde com o erro 1130); por isso o script, com `--dev-ip`, confere o certificado offline (`openssl verify -verify_ip`) e lê os primeiros bytes da porta publicada (greeting ou erro 1130).
 
 De uma máquina **fora** da lista `--dev-ip`, a conexão na 3306 não pode abrir (o `DROP` da chain `ROTAPERFUMES-DB`): `timeout 5 bash -c '</dev/tcp/192.168.168.106/3306' && echo ABERTA || echo bloqueada`.
 
@@ -145,7 +153,7 @@ Só o `ca.pem` (público) é montado na API. A `server-key.pem` continua 600.
 - **`DB_TLS_CA_HOST_PATH`** deixou de ser parâmetro do job: é constante no `environment` do `Jenkinsfile` (`/etc/mysql/ssl/ca.pem`, caminho do **host**, resolvido pelo daemon Docker; funciona com o Jenkins em container). `DB_TLS_SERVER_NAME` também saiu: o nome conferido é sempre `rotaperfumes-mariadb`.
 - **`deploy/db-ca.fingerprint`** (versionado): SHA-256 do DER de cada certificado aceito no arquivo da CA, em hex minúsculo sem `:`, um por linha (linhas vazias e `#` são ignoradas; no máximo dois, só durante uma troca de CA). O `validar-ca-banco.sh` **falha** se algum certificado do arquivo do host não estiver na lista, mesmo que o resto passe. Isso impede que alguém troque a CA no servidor sem um commit revisado.
 - Calcular o valor: `openssl x509 -in /etc/mysql/ssl/ca.pem -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f` (o script imprime o mesmo valor no fim).
-- O teste `TestSEC45_FingerprintVersionadoConfereComCA` confere que o `deploy/ca-cert.pem` da máquina (quando existe) está na lista: as máquinas de dev precisam da mesma CA da produção.
+- Só a CA de produção entra na lista (DEPLOY-07). O teste `TestSEC45_FingerprintVersionadoConfereComCA` confere o formato (0 a 2 fingerprints) e **proíbe** o fingerprint da CA de dev (`ef31b656...`, `deploy/ca-cert.pem`); o `TestSEC40_ValidarCABanco_CADevRecusada` confere que o estágio `CA do banco` recusa a CA de dev. Na primeira instalação o arquivo tem só o cabeçalho, e o estágio falha com `deploy/db-ca.fingerprint sem fingerprint: rode mariadb-docker.sh --nova-ca e grave o CA_FP (DEPLOY-07)` até o commit do `CA_FP` (`docs/deploy-servidor.md` §11, passo 4).
 
 **Secret file `rotaperfumes-api-env`** (modelo: `deploy/api.env.example`):
 
@@ -183,8 +191,8 @@ Não há passo manual: a cada execução o script roda, pelo stdin (nunca no arg
 | Conta | Host | Privilégios | Uso |
 |---|---|---|---|
 | `rotaperfumes_app` | `172.30.42.10` | `SELECT, INSERT, UPDATE, DELETE ON rotaperfumes.*` | API (`DB_SENHA` do Secret file) |
-| `rotaperfumes_admin` | `172.30.42.20` | `ALL ON rotaperfumes.*` | import do Jenkins (`rotaperfumes-db-admin`) e migrações |
-| `casaos` | cada `--dev-ip` | `ALL ON rotaperfumes.*` e ``ALL ON `rotaperfumes\_%`.*`` | `make db-*` e `make dev-api` das máquinas de dev |
+| `rotaperfumes_admin` | `172.30.42.20` | `ALL ON rotaperfumes.*` | import do Jenkins (`rotaperfumes-db-admin`), `deploy/seed-producao.sh` e migrações |
+| `casaos` | cada `--dev-ip` | `ALL ON rotaperfumes.*` (só esse banco, DEPLOY-07) | `make <alvo> ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=...` da máquina do admin (seção 11) |
 
 **Cliente sem ed25519.** O cliente precisa do plugin `client_ed25519` (vem no cliente `mariadb` 11.x e no Connector/C; o MySQL Workbench e o cliente `mysql` do Oracle **não** têm). O driver Go (`go-sql-driver/mysql`) suporta ed25519. Só para `casaos`, existe a saída de emergência `--casaos-native-motivo "<motivo, 10 a 300 caracteres>"` (`mysql_native_password`, ainda com `REQUIRE SSL`; motivo em `/root/rotaperfumes-mariadb/casaos-native.motivo`). Volte ao ed25519 rodando de novo sem a opção.
 
@@ -214,7 +222,7 @@ O script grava em `/etc/mysql/ssl/ca.pem` **só a CA nova** e passa a servir o c
 1. Backup (acima) e, se puder, avise os usuários.
 2. `sudo bash deploy/mariadb-docker.sh --nova-ca [--dev-ip ...]`. O backup automático vai para `/etc/mysql/ssl.bak-*`. Anote o fingerprint impresso no fim.
 3. No repositório, acrescente o fingerprint novo em `deploy/db-ca.fingerprint` (pode manter a linha antiga por enquanto; no máximo duas), commit e push na `main`. O job valida a CA nova, o sha256 muda, a label `rotaperfumes.db-ca-sha256` muda e a API é **recriada** com a CA nova.
-4. Atualize `deploy/ca-cert.pem` nas máquinas de dev (`scp <usuario>@192.168.168.106:/etc/mysql/ssl/ca.pem deploy/ca-cert.pem`).
+4. Na máquina do admin, atualize **`deploy/ca-producao.pem`** (`scp <usuario>@192.168.168.106:/etc/mysql/ssl/ca.pem deploy/ca-producao.pem`). O `deploy/ca-cert.pem` (CA de dev, CasaOS) **não muda** numa troca de CA de produção.
 5. Tire a chave nova do servidor (seção 3).
 6. Num commit seguinte, remova a linha do fingerprint antigo.
 
@@ -232,29 +240,33 @@ Se o `ca.pem` do host for trocado à mão sem atualizar o `deploy/db-ca.fingerpr
 - **CA trocada com problema (9.2):** restaure `ca.pem`, `server-cert.pem` e `server-key.pem` do backup `/etc/mysql/ssl.bak-*`, rode o `FLUSH SSL` acima, garanta que o fingerprint antigo está em `deploy/db-ca.fingerprint` e rode o job (o sha256 volta e a API é recriada com a CA antiga). A chave antiga continua na mídia offline.
 - **Imagem nova com problema (SEC-31):** `sudo bash deploy/mariadb-docker.sh --recriar --imagem-base '<string anterior>' [--dev-ip ...]` e reverta o commit do digest. Só volte **patch** dentro do 11.4 (o `MARIADB_AUTO_UPGRADE=1` atualiza o datadir para a versão nova; downgrade de versão menor não é suportado: restaure o backup).
 - **Não há volta para "sem TLS":** a API sempre exige TLS verificado (o compose fixa `DB_TLS_CA`) e o servidor exige `require_secure_transport`. `DB_TLS_REQUIRED=false` não é rollback de produção.
-- **Migração inteira (voltar ao MySQL):** ver o item "Rollback da migração" no `docs/deploy-servidor.md`, seção 11.
+- **Instalação inicial com problema (antes de haver dados reais):** o banco de produção nasce só com o seed; para refazê-lo, use o `deploy/seed-producao.sh --forcar` (`docs/deploy-servidor.md` §11, passo 6). Não há banco anterior para onde voltar.
 
-## 11. DEV: máquinas de desenvolvimento (`--dev-ip`, `casaos`, `.env`)
+## 11. DEV (CasaOS) e acesso do admin à produção (`--dev-ip`, `casaos`, `.env.producao`)
 
-As máquinas de dev acessam o mesmo MariaDB do servidor pela porta publicada `192.168.168.106:3306`, **só** se o IP delas estiver na lista `--dev-ip` (use IP fixo ou reserva no DHCP: a conta e o firewall são por IP). O MariaDB 11.8 da porta 3307 (CasaOS) usado antes do Lote 30 não faz parte do fluxo oficial.
+**Banco de desenvolvimento (oficial, DEPLOY-07):** o MariaDB 11.8 do CasaOS, no mesmo servidor, porta **3307**, com a CA de dev em `deploy/ca-cert.pem` (`CN=RotaPerfumes_MySQL_CA`, fingerprint `ef31b656...`; não versionada, `.gitignore`). É para ele que o `.env` padrão da raiz aponta (`DB_HOST=192.168.168.106`, `DB_PORT=3307`, `DB_TLS_CA=deploy/ca-cert.pem`, como no `.env.example`). Os dados dele são de desenvolvimento e não vão para a produção. Essa CA **não** muda quando a CA de produção é criada ou trocada.
 
-1. No servidor: `sudo bash deploy/mariadb-docker.sh --dev-ip <IP da máquina> [--dev-ip <outra>]` (com `--recriar` se a lista mudou).
-2. Na máquina de dev, copie a CA (pública) e confira o fingerprint:
+**Acesso à produção, só para a máquina do admin.** A porta `192.168.168.106:3306` só é publicada com `--dev-ip`, e só para os IPs da lista (use IP fixo ou reserva no DHCP: a conta e o firewall são por IP). A máquina do admin usa arquivos **separados**, ambos no `.gitignore`: `deploy/ca-producao.pem` e `.env.producao`.
+
+1. No servidor: `sudo bash deploy/mariadb-docker.sh --dev-ip <IP do admin>` (com `--recriar` se a lista mudou; repita sempre a mesma lista).
+2. Na máquina do admin, copie a CA de produção (pública) e confira o fingerprint:
    ```bash
-   scp <usuario>@192.168.168.106:/etc/mysql/ssl/ca.pem deploy/ca-cert.pem
-   openssl x509 -in deploy/ca-cert.pem -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f
-   # precisa estar em deploy/db-ca.fingerprint
+   scp <usuario>@192.168.168.106:/etc/mysql/ssl/ca.pem deploy/ca-producao.pem
+   openssl x509 -in deploy/ca-producao.pem -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f
+   # precisa ser a linha de deploy/db-ca.fingerprint
    ```
-   `deploy/ca-cert.pem` não é versionado (`.gitignore`).
-3. `.env` da raiz:
+   **Nunca** copie a CA de produção para `deploy/ca-cert.pem` (sobrescreveria a CA de dev).
+3. `.env.producao` na raiz (modo 600):
    ```
+   # ATENCAO: PRODUCAO (dados reais). Use só com ENV_ARQUIVO=.env.producao.
    DB_HOST=192.168.168.106
    DB_PORT=3306
    DB_NAME=rotaperfumes
    DB_USUARIO=casaos
    DB_SENHA=<conteúdo de /root/rotaperfumes-mariadb/casaos.senha>
-   DB_TLS_CA=deploy/ca-cert.pem
+   DB_TLS_CA=deploy/ca-producao.pem
    ```
-   O caminho relativo vale a partir da raiz do projeto para `make dev-api`, `go test` e `make db-*`. Com `DB_HOST` fora do loopback, `DB_TLS_CA` é obrigatório (SEC-42); **não** use `DB_TLS_REQUIRED=false`. Conferência: o log de `make dev-api` mostra `tls=ligado (custom)` e `min=TLS1.3`; `make db-*` passa `--ssl-ca --ssl-verify-server-cert` ao cliente `mariadb` (com `client_ed25519`).
+   `DB_TLS_SERVER_NAME` fica vazio: `192.168.168.106` está no SAN. Com `DB_HOST` fora do loopback, `DB_TLS_CA` é obrigatório (SEC-42); **não** use `DB_TLS_REQUIRED=false`. O cliente `mariadb` precisa do `client_ed25519`.
+4. Uso: `make <alvo> ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=192.168.168.106/rotaperfumes`. O `ENV_ARQUIVO` (só na linha de comando) faz o `make` ler esse arquivo **no lugar** do `.env`. A guarda `db-guard-producao` recusa todo alvo que escreve no banco quando o destino é a produção (host e porta: `192.168.168.106`/`ivo-inspiron-15-3530` com `DB_PORT` vazio ou 3306, ou `rotaperfumes-mariadb`/`172.30.42.2` em qualquer porta; o CasaOS em `192.168.168.106:3307` passa), salvo o `CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>` na linha de comando. Para só conferir: `make db-check-env ENV_ARQUIVO=.env.producao`.
 
-> **Integração só em banco descartável.** Esse `.env` aponta para o banco **de produção**, e o `casaos` tem `ALL` nele. **Nunca** rode `INTEGRATION=1`, `make db-down`, `make db-reset`, `make db-rebuild`, `make db-seed` nem `make db-import-*` com ele. Testes de integração e recriação de banco só num banco **descartável**: um MariaDB 11.4 local em container (`DB_HOST=127.0.0.1`, `.env` separado) ou o container temporário do `TestTST15_MariadbDocker_Real`. O grant em `rotaperfumes\_%` não é autorização para testar no servidor de produção.
+> **Aviso forte: dados reais.** Com o `.env.producao`, a conta `casaos` tem `ALL` no banco de produção. **Nunca** rode `make db-down`, `db-reset`, `db-rebuild`, `db-seed`, `db-import-*`, `db-seed-mes-atual`, `gen-hash`, `fix-hash` nem `reset-senhas-ativos` contra ele, mesmo com o `CONFIRMO_PRODUCAO`. Não use o `.env.producao` com `make dev-api`, `make test`, `go test` com `INTEGRATION=1` nem com as CLIs Go (a guarda não cobre esses casos). Testes de integração e recriação de banco só num banco de dev ou **descartável** (MariaDB 11.4 local em container, `DB_HOST=127.0.0.1`, ou o container temporário do `TestTST15_MariadbDocker_Real`).

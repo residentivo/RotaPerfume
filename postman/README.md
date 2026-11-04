@@ -51,8 +51,10 @@ Para testar endpoints que exigem **role admin**, alterne a variável `token` par
 | Campo | Valor |
 |-------|-------|
 | Email | `admin@rotaperfumes.com.br` |
-| Senha | `Admin@123` |
+| Senha | variável `{{senha_admin}}` da coleção (vazia por padrão) |
 | Role | `admin` |
+
+> **Senha do admin (DEPLOY-07, Lote 33, 2026-11-04):** não existe mais senha fixa de admin. No banco **local/dev**, o `make db-seed` grava o `SEED_ADMIN_PASSWORD` do `.env` ou imprime a senha gerada (`ADMIN_PASSWORD=...`), com `deve_trocar_senha = 1` (troca obrigatória no 1º login); `make fix-admin` pede a senha no terminal (`-password-prompt`). Preencha `{{senha_admin}}` com a senha que vale hoje no seu banco local (o `Admin@123` de antes só existe num banco local antigo). Em **produção**, a senha inicial do admin é gerada pelo `deploy/seed-producao.sh` (`docs/deploy-servidor.md` §11) e nunca deve ir para a coleção nem para um ambiente do Postman salvo.
 
 ### Vendedor (42 vendedores, dados de seed/dev)
 
@@ -61,7 +63,7 @@ Formato de e-mail: `<slug-nome>@rotaperfumes.com.br`
 Exemplos (todos com a senha de seed, ver a nota abaixo):
 - `rafael.carvalho@rotaperfumes.com.br` (id 5, vendedor 4 ativo; usado na requisição "Login — Vendedor")
 - `carla.carvalho@rotaperfumes.com.br`
-- `thiago.silva@rotaperfumes.com.br` (id 4, vendedor 3 **desligado**: faz login, mas as rotas da carteira respondem `403`)
+- `thiago.silva@rotaperfumes.com.br` (id 4, vendedor 3 **desligado**). Desde o DEPLOY-07 (Lote 33, 2026-11-04) o `sql/03_seed_vendedores.sql` grava `ativo = 0` nos usuários dos vendedores desligados, e o login dele responde `401` `"credenciais inválidas"`. Para testar o `403` `"acesso bloqueado: vendedor desligado"` das rotas da carteira, reative-o antes **no banco de dev** (tela Usuários ou `UPDATE usuarios SET ativo = 1 WHERE id = 4;`) e volte para `ativo = 0` no fim.
 
 > **Senha de seed (DOC-03, 2026-09-26):** não existe senha fixa de vendedor. O `make db-seed` grava nos usuários de seed o valor de `SEED_USER_PASSWORD` do `.env` ou, se ela não estiver definida, uma senha aleatória de 16 caracteres impressa no console (`USER_PASSWORD=...`), a mesma para todos (ver o cabeçalho de `sql/03_seed_vendedores.sql`). Na collection, informe essa senha na variável `senha_vendedor`. O nome `@HASH_MUDAR_123` no SQL é legado, e `Mudar@123` **não** confere com o banco local.
 >
@@ -1204,9 +1206,11 @@ A collection inclui scripts de teste em JavaScript em cada request. Os testes ve
 
 **Banco (DB-03, 2026-10-29):** MariaDB 11.4 LTS. Os alvos `make db-*`, inclusive o `make db-seed` (o `seedusers` chama o binário `mariadb`, sem fallback), exigem o cliente `mariadb` (MariaDB ≥ 11.4) no `PATH`. A API usa o driver Go `go-sql-driver/mysql`, compatível com o MariaDB.
 
-**Somente MariaDB (Lote 30, DOC-08, 2026-11-02):** em produção o banco é o container `rotaperfumes-mariadb` do `deploy/mariadb-docker.sh` (TLS obrigatório, contas `ed25519` + `REQUIRE SSL`; ver `docs/deploy-servidor.md` e `docs/Instal_SSL.md`). Máquinas de dev autorizadas (`--dev-ip`) acessam esse mesmo banco com a conta `casaos` e `DB_TLS_CA=deploy/ca-cert.pem` (`docs/Instal_SSL.md`, passo 11). Com `DB_HOST` fora do loopback, `DB_TLS_CA` é obrigatório (SEC-42).
+**Somente MariaDB (Lote 30, DOC-08, 2026-11-02):** em produção o banco é o container `rotaperfumes-mariadb` do `deploy/mariadb-docker.sh` (TLS obrigatório, contas `ed25519` + `REQUIRE SSL`; ver `docs/deploy-servidor.md` e `docs/Instal_SSL.md`). Com `DB_HOST` fora do loopback, `DB_TLS_CA` é obrigatório (SEC-42).
 
-> **Atenção:** os comandos abaixo (`make db-reset`, `make gen-hash`) **apagam e recriam** o banco. Rode-os só num banco **descartável** (MariaDB 11.4 local em container, `DB_HOST=127.0.0.1`), **nunca** com o `.env` apontando para o servidor `192.168.168.106` (produção). O mesmo vale para `INTEGRATION=1`.
+**Dev x produção (DEPLOY-07, Lote 33, 2026-11-04):** o banco de **desenvolvimento** oficial é o MariaDB 11.8 do CasaOS (`192.168.168.106:3307`), com a CA de dev em `deploy/ca-cert.pem` (`.env` padrão). A **produção** (`rotaperfumes-mariadb`, 3306, CA própria) nasce do `deploy/mariadb-docker.sh --nova-ca` + `deploy/seed-producao.sh` (admin com troca obrigatória e os 42 vendedores **inativos**), e só a máquina do admin a acessa (`--dev-ip`), por um `.env.producao` separado com `DB_TLS_CA=deploy/ca-producao.pem` e `make <alvo> ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=192.168.168.106/rotaperfumes` (`docs/deploy-servidor.md` §11 e `docs/Instal_SSL.md` §11). A guarda `db-guard-producao` do Makefile recusa os alvos que escrevem no banco quando o destino é a produção, olhando host **e** porta (`192.168.168.106`/`ivo-inspiron-15-3530` com `DB_PORT` vazio ou 3306, ou `rotaperfumes-mariadb`/`172.30.42.2` em qualquer porta; o CasaOS na 3307 passa), salvo esse `CONFIRMO_PRODUCAO` na linha de comando.
+
+> **Atenção:** os comandos abaixo (`make db-reset`, `make gen-hash`) **apagam e recriam** o banco. Rode-os só num banco de dev ou **descartável** (MariaDB 11.4 local em container, `DB_HOST=127.0.0.1`), **nunca** contra o banco de produção (dados reais). O mesmo vale para `INTEGRATION=1`, que ainda **não** passa pela guarda `db-guard-producao` quando o `go test` é chamado direto.
 
 Antes, copie `.env.example` para `.env` na raiz e preencha **`DB_USUARIO` e `DB_SENHA`** (obrigatórios desde o SEC-11, Lote 12, sem default). Sem eles, os alvos `db-*` param com `SEC-11: defina DB_USUARIO/DB_SENHA no .env` e a API não sobe (`config: defina DB_USUARIO/DB_SENHA no .env`).
 

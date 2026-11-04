@@ -74,6 +74,14 @@ case "$1" in
       *"--entrypoint id"*"-u mysql"*) echo 999 ;;
       *"--entrypoint id"*"-g mysql"*) echo 999 ;;
       *--skip-ssl*) [[ -f "$S/aceita_sem_tls" ]] && exit 0; exit 1 ;;
+      *Ssl_server_not_after*)
+        # DEPLOY-08: validade do certificado em uso = a do arquivo montado
+        # (ou $S/cert_em_uso, simulando um mariadbd com outro certificado).
+        if [[ -f "$S/cert_em_uso" ]]; then cat "$S/cert_em_uso"; exit 0; fi
+        src=$(grep -oE 'source=[^,]*/ca\.pem' <<<"$*" | head -n1); d=${src#source=}; d=${d%/ca.pem}
+        fim=$(openssl x509 -in "$d/server-cert.pem" -noout -enddate | cut -d= -f2)
+        ini=$(openssl x509 -in "$d/server-cert.pem" -noout -startdate | cut -d= -f2)
+        echo "$fim|$ini" ;;
       *--ssl-verify-server-cert*) echo "  conectado como rotaperfumes_admin@172.30.42.20, 11.4.13-MariaDB, TLSv1.3" ;;
     esac
     exit 0 ;;
@@ -88,7 +96,8 @@ case "$1" in
       *PLUGINS*) echo 1 ;;
       *"SELECT User, Host"*) cat "$S/contas" 2>/dev/null ;;
       *"CONCAT('    '"*) echo "    (contas)" ;;
-      *"CONCAT(User, '@', Host)"*) cat "$S/outras" 2>/dev/null ;;
+      *"mysql.global_priv hc"*) echo "$a" >>"$S/sql_healthcheck"; cat "$S/healthcheck_alem_usage" 2>/dev/null ;;
+      *"CONCAT(User, '@', Host)"*) echo "$a" >>"$S/sql_outras"; cat "$S/outras" 2>/dev/null ;;
       *ssl_type*) echo 0 ;;
     esac
     exit 0 ;;
@@ -96,8 +105,10 @@ esac
 exit 0
 `
 
-// iptables com estado: uma chain por arquivo ($S/chain_<nome>), no formato
-// do "iptables -S" (o IP ganha /32, como no iptables real).
+// iptables com estado: uma chain por arquivo ($S/chain_<nome>), com o IP
+// normalizado para /32. Como no iptables real (libxtables), o "-S" omite o
+// /32 do --ctorigdst (o -s mantém); com $S/ctorigdst_com_32 o "-S" o mantém
+// (DEPLOY-08: o script deve aceitar as duas formas).
 const stubIptables = `#!/bin/bash
 S="$FAKE/state"
 echo "iptables $*" >>"$FAKE/log"
@@ -121,7 +132,9 @@ norm() {
 f="$S/chain_$chain"
 touch "$f"
 case "$op" in
-  -S) echo "-N $chain"; cat "$f" ;;
+  -S) echo "-N $chain"
+      if [[ -f "$S/ctorigdst_com_32" ]]; then cat "$f"
+      else sed -E 's#(--ctorigdst [0-9.]+)/32( |$)#\1\2#' "$f"; fi ;;
   -C) grep -qxF -- "-A $chain $(norm "${rest[@]}")" "$f" ;;
   -I) r=$(norm "${rest[@]:1}"); { echo "-A $chain $r"; cat "$f"; } >"$f.tmp"; mv "$f.tmp" "$f" ;;
   -D) r=$(norm "${rest[@]}"); { grep -vxF -- "-A $chain $r" "$f" || true; } >"$f.tmp"; mv "$f.tmp" "$f" ;;
@@ -173,11 +186,14 @@ const stubSs = `#!/bin/bash
 exit 0
 `
 
-// timeout só envolve o "openssl s_client" (porta publicada).
+// timeout só envolve a leitura da porta publicada (DEPLOY-08: bash -c com
+// /dev/tcp). Responde com os bytes de $S/porta_resposta (padrão do ensaio: o
+// erro 1130 que o servidor recebe de verdade); sem o arquivo, simula o
+// timeout (sai 124 sem bytes).
 const stubTimeout = `#!/bin/bash
 echo "timeout $*" >>"$FAKE/log"
-echo "Verify return code: 0 (ok)"
-exit 0
+[[ -f "$FAKE/state/porta_resposta" ]] || exit 124
+cat "$FAKE/state/porta_resposta"
 `
 
 // Roda o script real, sem cópia/sed: user namespace (EUID 0) + mount

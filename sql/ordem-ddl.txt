@@ -1,0 +1,21 @@
+# DEPLOY-07: ordem de aplicacao da DDL num banco vazio (schema completo, tabelas
+# vazias). Lido pelo `make db-up` (dev) e pelo deploy/seed-producao.sh (producao).
+# Um arquivo de sql/ por linha; linhas vazias e "#..." sao ignoradas. As
+# migracoes (alter/revert) NAO entram aqui: a DDL abaixo ja e o estado final.
+01_ddl_usuarios.sql
+06_ddl_refresh_tokens.sql
+07_ddl_senha_historico.sql
+09_ddl_clientes.sql
+10_ddl_produtos.sql
+# pedidos depende de clientes + vendedores
+04_ddl_pedidos.sql
+# itens_pedido depende de pedidos + produtos
+11_ddl_itens_pedido.sql
+# pagamentos depende de pedidos
+12_ddl_pagamentos.sql
+# carteiras, oportunidades e visitas dependem de clientes + vendedores
+14_ddl_carteiras.sql
+15_ddl_oportunidades.sql
+16_ddl_visitas.sql
+# estoque depende de produtos (ja sem a coluna origem da migracao 18)
+17_ddl_estoque.sql

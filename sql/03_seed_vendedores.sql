@@ -10,6 +10,20 @@
 --           homônimos recebem o sufixo da UF, ex.: henrique.oliveira.pr@)
 --   password_hash = placeholder (não é um hash válido; ninguém loga com ele)
 --
+-- DEPLOY-07 (Lote 33, 2026-11-04):
+--   * Os usuários entram com INSERT IGNORE (antes era REPLACE INTO). Rodar de
+--     novo num banco em uso NÃO apaga nem recria linhas: o usuário que já
+--     existe (mesmo e-mail, uk_usuarios_email) fica como está (id, hash,
+--     ativo, deve_trocar_senha, refresh_tokens e senha_historico preservados).
+--   * Vendedores desligados (data_desligamento preenchida: ids 1, 3, 9, 30,
+--     37 e 38) têm o usuário SEMPRE com ativo = 0: já no INSERT e, para linhas
+--     antigas, pelo UPDATE no fim deste arquivo (idempotente; só desativa).
+--   * Em PRODUÇÃO este arquivo é aplicado só pelo deploy/seed-producao.sh, que
+--     depois inativa TODOS os usuários não-admin (os 42 vendedores são reais e
+--     entram inativos) e não roda o -all-users. Nunca rode `make db-seed` em
+--     produção. Este arquivo não exige variável de sessão: o `make db-seed`
+--     (dev) continua funcionando igual.
+--
 -- ATENÇÃO: a senha real NÃO é definida neste arquivo. O `make db-seed`, logo
 -- depois deste script, roda `go run ./cmd/resetpassword -all-users`
 -- (backend/shared), que troca todos os placeholders pelo Argon2id (com PASSWORD_PEPPER) de:
@@ -78,22 +92,24 @@ INSERT IGNORE INTO `vendedores` (`id`, `nome`, `regiao`, `uf`, `data_admissao`, 
 (42, 'Felipe Lima', 'Recife', 'PE', '2021-07-31', NULL, 85000.00);
 
 -- ------------------------------------------------------------
--- Usuários dos vendedores (INSERT IGNORE para idempotência)
+-- Usuários dos vendedores (INSERT IGNORE para idempotência; nunca REPLACE,
+-- que apagaria a linha, levando em cascata refresh_tokens e senha_historico,
+-- e a recriaria com outro id)
 -- Formato de email: <nome>.<sobrenome>@rotaperfumes.com.br
 -- Minúsculas, acentos removidos, nome e sobrenome separados por ponto.
 -- Homônimos: sufixo .<uf> (ex.: vinicius.lopes.mg@ e vinicius.lopes.rs@)
 -- ------------------------------------------------------------
 
-REPLACE INTO `usuarios` (`nome`, `email`, `password_hash`, `role`, `id_vendedor`, `ativo`, `deve_trocar_senha`) VALUES
-('Henrique Rodrigues', 'henrique.rodrigues@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 1, 1, 1),
+INSERT IGNORE INTO `usuarios` (`nome`, `email`, `password_hash`, `role`, `id_vendedor`, `ativo`, `deve_trocar_senha`) VALUES
+('Henrique Rodrigues', 'henrique.rodrigues@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 1, 0, 1),
 ('Carla Carvalho', 'carla.carvalho@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 2, 1, 1),
-('Thiago Silva', 'thiago.silva@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 3, 1, 1),
+('Thiago Silva', 'thiago.silva@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 3, 0, 1),
 ('Rafael Carvalho', 'rafael.carvalho@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 4, 1, 1),
 ('Zeca Ferreira', 'zeca.ferreira@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 5, 1, 1),
 ('Zeca Costa', 'zeca.costa@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 6, 1, 1),
 ('Débora Ribeiro', 'debora.ribeiro@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 7, 1, 1),
 ('Olívia Fernandes', 'olivia.fernandes@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 8, 1, 1),
-('Thiago Ribeiro', 'thiago.ribeiro@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 9, 1, 1),
+('Thiago Ribeiro', 'thiago.ribeiro@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 9, 0, 1),
 ('Vinícius Pereira', 'vinicius.pereira@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 10, 1, 1),
 ('Mariana Lima', 'mariana.lima@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 11, 1, 1),
 ('Lucas Ribeiro', 'lucas.ribeiro@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 12, 1, 1),
@@ -114,19 +130,31 @@ REPLACE INTO `usuarios` (`nome`, `email`, `password_hash`, `role`, `id_vendedor`
 ('João Soares', 'joao.soares@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 27, 1, 1),
 ('Rafael Soares', 'rafael.soares@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 28, 1, 1),
 ('Diego Ribeiro', 'diego.ribeiro@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 29, 1, 1),
-('Carla Lopes', 'carla.lopes@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 30, 1, 1),
+('Carla Lopes', 'carla.lopes@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 30, 0, 1),
 ('Vinícius Lopes', 'vinicius.lopes.mg@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 31, 1, 1),
 ('Nathan Alves', 'nathan.alves@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 32, 1, 1),
 ('Mariana Ribeiro', 'mariana.ribeiro@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 33, 1, 1),
 ('Henrique Oliveira', 'henrique.oliveira.pr@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 34, 1, 1),
 ('Sabrina Pereira', 'sabrina.pereira@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 35, 1, 1),
 ('Henrique Oliveira', 'henrique.oliveira.sp@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 36, 1, 1),
-('Vinícius Lopes', 'vinicius.lopes.rs@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 37, 1, 1),
-('Paulo Pereira', 'paulo.pereira@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 38, 1, 1),
+('Vinícius Lopes', 'vinicius.lopes.rs@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 37, 0, 1),
+('Paulo Pereira', 'paulo.pereira@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 38, 0, 1),
 ('Vinícius Carvalho', 'vinicius.carvalho@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 39, 1, 1),
 ('Bruno Souza', 'bruno.souza@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 40, 1, 1),
 ('Henrique Alves', 'henrique.alves@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 41, 1, 1),
 ('Felipe Lima', 'felipe.lima@rotaperfumes.com.br', @HASH_MUDAR_123, 'normal', 42, 1, 1);
+
+-- ------------------------------------------------------------
+-- Desligados sempre inativos (vale também para linhas criadas antes do
+-- DEPLOY-07, quando o seed gravava ativo = 1 para todos). Só desativa; nunca
+-- ativa ninguém e não toca em usuários de vendedores ativos.
+-- ------------------------------------------------------------
+UPDATE `usuarios` u
+JOIN `vendedores` v ON v.id = u.id_vendedor
+SET u.ativo = 0
+WHERE v.data_desligamento IS NOT NULL
+  AND u.role = 'normal'
+  AND u.ativo <> 0;
 
 -- ------------------------------------------------------------
 -- Confirmação

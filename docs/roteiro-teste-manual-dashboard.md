@@ -29,12 +29,15 @@ Marque cada checkbox depois de conferir no navegador. Os números de referência
      FROM usuarios u JOIN vendedores v ON v.id = u.id_vendedor
     WHERE u.id = 4;
    -- esperado: ativo = 1, id_vendedor = 3, data_desligamento = 2025-07-26
+   -- (DEPLOY-07: o seed grava ativo = 0; reative antes, ver a nota abaixo)
 
    -- Clientes ainda na carteira ativa do vendedor 3 (usado no item 3.5)
    SELECT COUNT(*) FROM carteiras WHERE vendedor_id = 3 AND data_fim IS NULL;
    ```
 
    Outros usuários com vendedor desligado na base (levantamento de 2026-09-24, corrigido em 2026-09-26): ids 10, 38 e 39, além do id 2, hoje inativo.
+
+   > **DEPLOY-07 (Lote 33, 2026-11-04): o `thiago.silva` nasce inativo.** Desde o DEPLOY-07, o `sql/03_seed_vendedores.sql` grava `ativo = 0` nos usuários dos vendedores desligados (vendedores 1, 3, 9, 30, 37 e 38; inclusive os ids 10, 38 e 39 acima), e o login do `thiago.silva` responde `401 "credenciais inválidas"`. Os casos deste roteiro com o desligado (login permitido, aviso e `403` na carteira) exigem o usuário **ativo**: reative-o **no banco de dev** antes de começar (como admin, tela **Usuários** → ativar o id 4, ou `UPDATE usuarios SET ativo = 1 WHERE id = 4;`) e, no fim, volte com `UPDATE usuarios SET ativo = 0 WHERE id = 4;`. Nunca no banco de produção.
 
 3. Usuário temporário sem vendedor (defina a senha pela tela de Usuários como admin):
    ```sql

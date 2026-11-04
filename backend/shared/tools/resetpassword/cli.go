@@ -111,6 +111,7 @@ func lerOpcoes(args []string, amb cmdutil.Ambiente) (Options, error) {
 	fs.StringVar(&opts.Password, "password", "", "DEPRECIADA (fica no histórico do shell): senha em texto puro; prefira -password-prompt ou -password-stdin")
 	fs.BoolVar(&opts.PasswordStdin, "password-stdin", false, "lê a senha da 1ª linha do stdin")
 	fs.BoolVar(&opts.PasswordPrompt, "password-prompt", false, "pede a senha no terminal, sem eco e com confirmação (Git Bash: use winpty)")
+	fs.StringVar(&opts.PasswordOut, "password-out", "", "gera uma senha aleatória e a grava neste arquivo NOVO (0600), nunca no stdout; não combina com as outras fontes de senha")
 	fs.StringVar(&opts.Role, "role", "normal", "papel (admin|normal) — usado ao criar novo usuário")
 	fs.StringVar(&opts.Nome, "nome", "", "nome completo — usado ao criar novo usuário (padrão: derivado do email)")
 	fs.Int64Var(&opts.IDVendedor, "id-vendedor", 0, "id do vendedor vinculado (opcional, usado ao criar)")

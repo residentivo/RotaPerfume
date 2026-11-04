@@ -19,6 +19,12 @@
 SET NAMES utf8mb4;
 
 -- UPSERT: insere se não existe (id=1), ou atualiza hash se já existe.
+-- DEPLOY-07 (Lote 33, 2026-11-04): deve_trocar_senha = 1 no INSERT e no
+-- ON DUPLICATE KEY UPDATE. O admin do seed sempre entra (ou volta) obrigado a
+-- trocar a senha no primeiro login, inclusive em produção, onde a senha vem
+-- do `resetpassword -create-admin` chamado pelo deploy/seed-producao.sh (o
+-- -create-admin também grava deve_trocar_senha = 1, no INSERT e no UPDATE
+-- do UpsertAdmin/UpsertByEmail).
 INSERT INTO `usuarios` (
     `id`,
     `nome`,
@@ -26,7 +32,8 @@ INSERT INTO `usuarios` (
     `password_hash`,
     `role`,
     `id_vendedor`,
-    `ativo`
+    `ativo`,
+    `deve_trocar_senha`
 ) VALUES (
     1,
     'Administrador Principal',
@@ -34,13 +41,15 @@ INSERT INTO `usuarios` (
     '$2a$12$XXXXPLACEHOLDER_ADMIN_PRECISA_SER_GERADO_PELO_GOXXXX',
     'admin',
     NULL,
+    1,
     1
 )
 ON DUPLICATE KEY UPDATE
     `password_hash` = VALUES(`password_hash`),
     `nome` = VALUES(`nome`),
     `email` = VALUES(`email`),
-    `ativo` = VALUES(`ativo`);
+    `ativo` = VALUES(`ativo`),
+    `deve_trocar_senha` = VALUES(`deve_trocar_senha`);
 
 -- Confirmação
 SELECT
@@ -49,6 +58,7 @@ SELECT
     email,
     role,
     ativo,
+    deve_trocar_senha,
     created_at,
     CASE
         WHEN password_hash LIKE '%PLACEHOLDER%' THEN '[PLACEHOLDER - rodar make gen-hash]'

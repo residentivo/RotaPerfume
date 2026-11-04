@@ -9,6 +9,7 @@
 //	cd backend/shared && go run ./cmd/resetpassword -email=admin@rotaperfumes.com.br -password-prompt -role=admin
 //	printf '%s\n' "$NOVA_SENHA" | go run ./cmd/resetpassword -all-users -password-stdin
 //	cd backend/shared && go run ./cmd/resetpassword -create-admin   # SEED_ADMIN_PASSWORD do .env ou aleatória
+//	cd backend/shared && go run ./cmd/resetpassword -create-admin -password-out /caminho/novo.senha   # gerada, só no arquivo (0600)
 //
 // Exige DB_USUARIO e DB_SENHA no .env (e PASSWORD_PEPPER, salvo em -list). -password=... ainda funciona, mas é
 // depreciada (fica no histórico do shell) e gera aviso no stderr. No Git Bash

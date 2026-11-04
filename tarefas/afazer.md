@@ -1,6 +1,10 @@
 # A Fazer
 
-> Atualizado em 2026-11-02 (fechamento dos Lotes 30 e 31, 🔵 SubBrain). Os Lotes 30 e 31 foram fechados (`feito.md`). Voltaram para esta lista:
+> Atualizado em 2026-11-04 (fechamento do Lote 33, 🔵 SubBrain). O **DEPLOY-07** foi concluído no código e nas docs e está em `feito.md` (não commitado). O **DEPLOY-05** saiu desta lista (substituído pelo DEPLOY-07; registro em `feito.md`). Entraram 11 cards novos no bloco "Achados do Lote 33 (DEPLOY-07)", logo abaixo: **DEPLOY-08** (ALTA, pendente do usuário: executar a §11 de `docs/deploy-servidor.md` no servidor; **bloqueia o primeiro deploy da `main`**), **SEC-50**, **SEC-53**, **TST-17**, **OPS-02** e **CHORE-18** (MÉDIA) e **SEC-51**, **SEC-52** (risco aceito), **CHORE-17**, **BUG-26** e **DOC-09** (BAIXA). O restante do backlog não mudou.
+>
+> Antes, ainda em 2026-11-04 (abertura do Lote 33, 🔵 SubBrain). O primeiro build da `main` falhou no estágio "CA do banco" (`bind source path does not exist: /etc/mysql/ssl/ca.pem`): o `deploy/mariadb-docker.sh` ainda não rodou no servidor. O usuário informou que **não existe MySQL no ambiente**; o **DEPLOY-05** foi **substituído pelo DEPLOY-07** (instalação limpa do MariaDB 11.4 de produção, CA nova de produção, CA de dev preservada, seed em produção), card novo que foi direto para o **Lote 33 de 2026-11-04** (`fazendo.md`). O DEPLOY-05 fica abaixo só como histórico, com a nota de substituição. O restante do backlog não mudou.
+>
+> Antes, em 2026-11-02 (fechamento dos Lotes 30 e 31, 🔵 SubBrain). Os Lotes 30 e 31 foram fechados (`feito.md`). Voltaram para esta lista:
 > - **DEPLOY-05 (ALTA, pendente do usuário):** a revisão do `deploy/mariadb-docker.sh` foi concluída no Lote 30; falta a **execução no servidor** (passo a passo em `docs/deploy-servidor.md` §11). **Bloqueia o primeiro deploy da `main`:** sem a rede `rotaperfumes-db` e o container `rotaperfumes-mariadb`, o compose falha e o pipeline para.
 > - **ARQ-09 (Lote 32):** **adiado** pelo 🤍 MegaBrain por recomendação do 🟣 SecBrain (não executar antes do primeiro teste em produção).
 >
@@ -59,23 +63,159 @@
 
 ---
 
-## DEPLOY-05: executar o `deploy/mariadb-docker.sh` no servidor e aposentar o MySQL — prioridade ALTA (pendente do usuário)
+# Achados do Lote 33 (DEPLOY-07), 2026-11-04
 
-**Status:** pendente **do usuário**; **bloqueia o primeiro deploy da `main`**. A revisão e os ajustes do script foram concluídos no Lote 30 (2026-11-02, 🌸 DataBrain e 🟣 SecBrain/SEC-45; ver `feito.md`). Voltou de `fazendo.md` no fechamento do lote.
+> Pendências do DEPLOY-07 (`feito.md`, "Lote 33 de 2026-11-04"). O DEPLOY-08 vem primeiro: sem ele não há produção. A OPS-02 e a CHORE-18 convém resolver antes ou junto do DEPLOY-08.
+
+## DEPLOY-08: executar a §11 de `docs/deploy-servidor.md` no servidor (instalação inicial da produção) — prioridade ALTA (pendente do usuário)
+
+**Status:** pendente **do usuário**; **bloqueia o primeiro deploy da `main`**. Código e docs prontos no DEPLOY-07 (Lote 33, `feito.md`). Substitui a parte de execução do antigo DEPLOY-05.
+**Camadas:** Deploy, Database
+**Responsável:** usuário (servidor `192.168.168.106`, Jenkins e máquina do admin) → 🔴 TestBrain (conferência dos resultados) → 🔵 SubBrain (fechamento)
+**Origem:** fechamento do DEPLOY-07 (2026-11-04).
+
+**Por que bloqueia:** a `main` espera a rede Docker `rotaperfumes-db`, o container `rotaperfumes-mariadb`, a CA de produção em `deploy/db-ca.fingerprint` (hoje só o cabeçalho: o estágio "CA do banco" falha com `deploy/db-ca.fingerprint sem fingerprint: ...`), o banco semeado e as credenciais do Jenkins.
+
+**Passo a passo:** `docs/deploy-servidor.md` §11 ("Instalação inicial da produção (DEPLOY-07)"), 12 passos:
+1. checkout com o DEPLOY-07 em `/root/rotaperfumes`;
+2. `sudo bash deploy/mariadb-docker.sh --nova-ca --dev-ip <IP do admin>` e anotar o `CA_FP`;
+3. chave da CA para mídia offline e `shred`;
+4. `CA_FP` como única linha útil de `deploy/db-ca.fingerprint`, `make test`, commit (sem push);
+5. `PASSWORD_PEPPER` novo, Secret file `rotaperfumes-api-env` e credencial `rotaperfumes-db-admin`;
+6. `sudo bash deploy/seed-producao.sh --pepper-file <arq>` (senha do admin em `/root/rotaperfumes-mariadb/admin-app.senha`);
+7. conferências SQL (13 tabelas, admin ativo com `deve_trocar_senha = 1` e Argon2id, 42 vendedores, 0 não-admin ativos);
+8. checklist pré-push (`IMPORTAR_DUMP` desmarcado);
+9. push na `main`;
+10. 1º login do admin com troca obrigatória e ativação dos vendedores (depende da **OPS-02**);
+11. `.env.producao` + `deploy/ca-producao.pem` na máquina do admin;
+12. `TestTST15_MariadbDocker_Real` numa máquina com Docker (ver **TST-17**).
+
+**Critério de aceite:** container `rotaperfumes-mariadb` 11.4 com a CA de produção; `deploy/db-ca.fingerprint` commitado só com o fingerprint dela; estágios "CA do banco", "Deploy" e "Smoke test" verdes; log da API com `tls=ligado (custom)` e `min=TLS1.3`; admin logado e com a senha trocada; `/root/rotaperfumes-ca/ca-key.pem`, `/root/pepper-producao.txt` e `/root/rotaperfumes-mariadb/admin-app.senha` apagados do servidor.
+
+---
+
+## SEC-50: guarda de produção nos testes Go com `INTEGRATION=1` chamados direto — prioridade MÉDIA
+
+**Status:** pendente.
+**Camadas:** Backend (testes), Config
+**Responsável:** 🟣 SecBrain (especifica) → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** DEPLOY-07 (Lote 33, 2026-11-04).
+
+**Descrição:** a guarda `db-guard-producao` do Makefile protege o `make test-integration`, mas um `go test` com `INTEGRATION=1` chamado direto lê `DB_*` do `.env`/ambiente sem nenhuma checagem. Com um `.env` (ou `.env.producao`) apontando para a produção, os testes de integração apagariam ou alterariam dados reais.
+
+**Proposta inicial:** um helper comum dos testes de integração que recuse o mesmo critério da guarda (host e porta: `PRODUCAO_HOSTS_LAN` com `DB_PORT` vazio ou 3306; `PRODUCAO_HOSTS_REDE` em qualquer porta), sem válvula ou com válvula explícita só para banco descartável. Teste que confere que a lista do helper é igual à do Makefile.
+
+**Critério de aceite:** `INTEGRATION=1 go test ./...` com `DB_HOST`/`DB_PORT` de produção falha antes de qualquer conexão; com o CasaOS (`192.168.168.106:3307`) ou com o loopback, segue normal.
+
+---
+
+## SEC-53: Makefile exporta `MYSQL_PWD`/`DB_*` do `.env` para os alvos `test*` — prioridade MÉDIA
+
+**Status:** pendente (🟣 SecBrain avaliar).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🔴 TestBrain no DEPLOY-07 (Lote 33, 2026-11-04).
+
+**Descrição:** o `Makefile` faz `-include .env` (ou `include $(ENV_ARQUIVO)`) seguido de `export` geral, então `MYSQL_PWD`, `DB_*`, `PASSWORD_PEPPER` e outros segredos do `.env` chegam ao ambiente de todos os processos dos alvos `test*`. Com um `.env` de produção, o segredo de produção vai para os processos de teste. No DEPLOY-07, o `helpers_test.go` passou a limpar `MYSQL_PWD`/`DB_*`/`PASSWORD_PEPPER` dentro dos testes Go, mas isso não cobre os outros processos filhos.
+
+**A avaliar:** `unexport` dessas variáveis nos alvos `test*` (ou um export seletivo só onde o cliente `mariadb` precisa) e o efeito no `test-integration`.
+
+---
+
+## TST-17: testes reais com Docker do `seed-producao.sh` e do `mariadb-docker.sh` (`TST15_DOCKER=1`) e `shellcheck` nos scripts — prioridade MÉDIA
+
+**Status:** pendente (exige uma máquina com Docker que **não** seja o servidor; esta máquina não tem acesso ao socket do Docker).
+**Camadas:** Testes, Deploy
+**Responsável:** 🔴 TestBrain (usuário roda onde houver Docker)
+**Origem:** DEPLOY-07 (Lote 33, 2026-11-04); continua a pendência do TST-15.
+
+**Descrição:**
+- O `deploy/seed-producao.sh` só tem testes estáticos e de ensaio (`deploy07_seed_producao_test.go`, `deploy07_seed_producao_ensaio_test.go`). Falta um teste real, no padrão do `TestTST15_MariadbDocker_Real`: container descartável criado pelo `mariadb-docker.sh`, seed, conferências (13 tabelas, admin `1 1 1`, 0 não-admin ativos), recusa da 2ª execução e `--forcar`.
+- O `TestTST15_MariadbDocker_Real` (`TST15_DOCKER=1`) ainda não rodou (`docs/deploy-servidor.md` §11, passo 12).
+- O `shellcheck` não está instalado no ambiente: incluir no `make setup`/`scripts/versoes.conf` (ou documentar) e rodar em `deploy/*.sh` e `scripts/*.sh`.
+
+**Relacionado:** TST-16 (isolamento do teste real do `mariadb-docker.sh`).
+
+---
+
+## OPS-02: SMTP de produção para o reset de senha dos vendedores — prioridade MÉDIA
+
+**Status:** pendente (decisão/ação do usuário; pré-requisito do passo 10 do DEPLOY-08).
+**Camadas:** Deploy (Secret file), Ops
+**Responsável:** usuário (credenciais SMTP) → 🟣 SecBrain (se precisar de fluxo alternativo)
+**Origem:** 🔵 SubBrain no DEPLOY-07 (Lote 33, 2026-11-04).
+
+**Descrição:** em produção os 42 vendedores nascem inativos e com hash placeholder. O admin os ativa na tela **Usuários** em dois passos: **Resetar** (`POST /api/admin/reset-password`: gera a senha, grava com troca obrigatória e envia **só por e-mail**) e o botão de status (`PATCH /api/usuarios/{id}/inativar`; o reset sozinho não ativa). Sem `SMTP_*` no Secret file `rotaperfumes-api-env`, a resposta vem com `email_enviado = false` e a senha gerada não chega a ninguém (não aparece na tela nem no log).
+
+**A decidir:** configurar o SMTP de produção (ex.: Gmail com senha de app, `SMTP_*` e `SECURITY_ALERT_EMAILS`) antes do passo 10 do DEPLOY-08, ou definir um fluxo alternativo seguro para entregar a senha inicial.
+
+---
+
+## CHORE-18: hostname do servidor na guarda `db-guard-producao` — prioridade MÉDIA
+
+**Status:** pendente (o usuário confirma o hostname; depois 🟡 BackBrain).
+**Camadas:** Config (Makefile), Docs
+**Responsável:** usuário → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🤍 MegaBrain no fechamento do DEPLOY-07 (Lote 33, 2026-11-04).
+
+**Descrição:** o `PRODUCAO_HOSTS_LAN` do Makefile tem `ivo-inspiron-15-3530` fixo, mas o `deploy/mariadb-docker.sh` usa `$(hostname)` do servidor como `SITE_HOST` (entra no SAN do certificado). Se o hostname real do servidor for outro, um `DB_HOST=<hostname real>` com porta 3306 passaria pela guarda.
+
+**A fazer:** conferir `hostname` no servidor (e o SAN: `openssl x509 -in /etc/mysql/ssl/server-cert.pem -noout -ext subjectAltName`); se for diferente, ajustar o `PRODUCAO_HOSTS_LAN`, o teste da guarda e as docs que citam `ivo-inspiron-15-3530`.
+
+---
+
+## SEC-51: conta somente-leitura em produção para a máquina do admin — prioridade BAIXA
+
+**Status:** pendente.
 **Camadas:** Database, Deploy
-**Responsável:** usuário (execução no servidor) → 🔴 TestBrain (conferência)
-**Origem:** decisão do usuário em 2026-11-02 (somente MariaDB).
+**Responsável:** 🟣 SecBrain → 🌸 DataBrain/🟡 BackBrain (`mariadb-docker.sh`) → 🔴 TestBrain
+**Origem:** DEPLOY-07 (Lote 33, 2026-11-04).
 
-**Por que bloqueia:** o `docker-compose.yml` da `main` espera a rede Docker `rotaperfumes-db` e o container `rotaperfumes-mariadb`. Sem eles, o compose falha e o pipeline para no primeiro deploy.
+**Descrição:** com `--dev-ip`, a conta `casaos` da máquina do admin tem `ALL ON rotaperfumes.*` na produção. Para consultas do dia a dia, uma conta só com `SELECT` reduziria o estrago de um engano (a guarda do Makefile não cobre clientes externos, como o `mariadb` manual ou uma IDE). Avaliar uma conta `*_ro` por `--dev-ip`, com senha própria, e deixar o `ALL` só para migrações.
 
-**Passo a passo:** `docs/deploy-servidor.md` §11 ("Migração do MySQL para o MariaDB (DEPLOY-05)"). Em resumo:
-1. Fazer backup/dump dos dados do MySQL atual (atenção à collation `utf8mb4_0900_ai_ci` e a sintaxes exclusivas do MySQL no dump). Ver também o **BACKUP-01**.
-2. Parar e remover o MySQL e rodar `sudo bash deploy/mariadb-docker.sh` (rede `rotaperfumes-db`, IPs fixos, CA offline; `--dev-ip` para as máquinas de dev).
-3. Importar o dump no MariaDB.
-4. Atualizar a credencial Jenkins `rotaperfumes-db-admin`, o Secret file `rotaperfumes-api-env` (`rotaperfumes_app`), o `deploy/db-ca.fingerprint`/`deploy/ca-cert.pem` (CA nova) e os `.env` de dev (`casaos`).
-5. Rodar o deploy do Jenkins.
+---
 
-**Critério de aceite:** MariaDB no container `rotaperfumes-mariadb` com o certificado da CA do projeto; API com `tls=ligado`; `make db-up` de uma máquina de dev com `casaos` passa; MySQL removido do servidor; pipeline da `main` verde. Junto, rodar a pendência do TST-15 (`TestTST15_MariadbDocker_Real`).
+## SEC-52: build do `resetpassword` no `seed-producao.sh` sem `--cap-drop ALL` — prioridade BAIXA (risco aceito)
+
+**Status:** **risco aceito** no DEPLOY-07 (2026-11-04); card para reavaliar.
+**Camadas:** Deploy
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain
+**Origem:** DEPLOY-07 (Lote 33, 2026-11-04).
+
+**Descrição:** a etapa 5 do `deploy/seed-producao.sh` compila o `resetpassword` num container `GO_IMAGE` com `--security-opt no-new-privileges:true`, mas sem `--cap-drop ALL`/`--read-only` e com a rede padrão (baixa os módulos do proxy do Go). O container não tem rede do banco nem segredos, e o binário roda depois com `--cap-drop ALL` e `--read-only`. Avaliar endurecer (ex.: `--cap-drop ALL`, cache de módulos em `tmpfs`/volume, ou módulos pré-baixados) sem quebrar o build.
+
+---
+
+## CHORE-17: `mariadb-docker.sh` gera `casaos.senha` mesmo sem `--dev-ip` — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Deploy
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🔴 TestBrain no DEPLOY-07 (Lote 33, 2026-11-04).
+
+**Descrição:** sem `--dev-ip` não há conta `casaos`, mas o script ainda gera `/root/rotaperfumes-mariadb/casaos.senha`. Gerar só quando houver `--dev-ip` (e decidir o que fazer com o arquivo quando a lista ficar vazia), mantendo a regra de não trocar senhas na reexecução.
+
+---
+
+## BUG-26: `seed-producao.sh --forcar` sem terminal sai sem a mensagem "exige um terminal" — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Deploy
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🔴 TestBrain no DEPLOY-07 (Lote 33, 2026-11-04).
+
+**Descrição:** com `--forcar` e sem terminal, o script cai por `set -e` na leitura da confirmação, sem a mensagem `--forcar exige um terminal para a confirmacao`. Nada é alterado (a recusa vem antes da DDL), mas o erro fica obscuro. Ajustar a checagem para falhar com a mensagem clara e cobrir no teste.
+
+---
+
+## DOC-09: `CLAUDE.md` com o banco de dev, o `seed-producao.sh` e a guarda de produção — prioridade BAIXA
+
+**Status:** **aguardando o usuário** (o `CLAUDE.md` é instrução do projeto: a equipe não o altera sem pedido direto do usuário).
+**Camadas:** Docs
+**Responsável:** usuário (ou um agente, com a autorização dele)
+**Origem:** DEPLOY-07 (Lote 33, 2026-11-04).
+
+**Texto sugerido** (no parágrafo "Banco:" do `CLAUDE.md`): "Banco de dev: MariaDB 11.8 do CasaOS (`192.168.168.106:3307`, CA `deploy/ca-cert.pem`). Produção: seed inicial só pelo `deploy/seed-producao.sh` (`docs/deploy-servidor.md` §11); a guarda `db-guard-producao` do Makefile recusa os alvos que escrevem no banco contra a produção (host e porta), salvo `CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>` na linha de comando; acesso do admin pelo `.env.producao` (`ENV_ARQUIVO`)."
 
 ---
 

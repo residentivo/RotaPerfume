@@ -57,11 +57,14 @@ func precisaOpenSSL(t *testing.T) {
 
 // ambienteLimpo é o os.Environ() sem o que mudaria o comportamento dos stubs
 // ou do bash: FAKE* herdados do shell e BASH_ENV/ENV (arquivo carregado pelo
-// bash não interativo).
+// bash não interativo). DEPLOY-07: também sem MYSQL_PWD, DB_* e
+// PASSWORD_PEPPER (o Makefile exporta o .env local, que aponta para um banco
+// real): nenhum segredo de verdade chega aos scripts e stubs.
 func ambienteLimpo() []string {
 	var out []string
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "FAKE") || strings.HasPrefix(kv, "BASH_ENV=") || strings.HasPrefix(kv, "ENV=") {
+		if strings.HasPrefix(kv, "FAKE") || strings.HasPrefix(kv, "BASH_ENV=") || strings.HasPrefix(kv, "ENV=") ||
+			strings.HasPrefix(kv, "MYSQL_PWD=") || strings.HasPrefix(kv, "DB_") || strings.HasPrefix(kv, "PASSWORD_PEPPER=") {
 			continue
 		}
 		out = append(out, kv)

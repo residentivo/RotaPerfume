@@ -1,8 +1,10 @@
 # Deploy no servidor da LAN (`ivo-inspiron-15-3530`) com Docker + Jenkins
 
-> Card **DEPLOY-01** (Lote 13, 2026-09-30); banco em Docker desde o Lote 30 (DEPLOY-05/DEPLOY-06, DOC-08, 2026-11-02). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/Dockerfile.caddy`, `deploy/api.env.example`, `deploy/mariadb-docker.sh`, `deploy/validar-ca-banco.sh`, `deploy/db-ca.fingerprint`, `deploy/dump-local.ps1`, `deploy/setup-servidor.sh`, `backend/Dockerfile`, `frontend/Dockerfile`. O antigo `deploy/mariadb-setup.sql` saiu do repositório (SEC-39).
+> Card **DEPLOY-01** (Lote 13, 2026-09-30); banco em Docker desde o Lote 30 (DEPLOY-06, DOC-08, 2026-11-02); instalação inicial da produção reescrita no **DEPLOY-07** (Lote 33, 2026-11-04). Arquivos envolvidos: `Jenkinsfile`, `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/Dockerfile.caddy`, `deploy/api.env.example`, `deploy/mariadb-docker.sh`, `deploy/seed-producao.sh`, `deploy/validar-ca-banco.sh`, `deploy/db-ca.fingerprint`, `deploy/dump-local.ps1`, `deploy/setup-servidor.sh`, `sql/ordem-ddl.txt`, `backend/Dockerfile`, `frontend/Dockerfile`. O antigo `deploy/mariadb-setup.sql` saiu do repositório (SEC-39).
 >
-> **Servidor ainda com o MySQL antigo?** Faça a **seção 11 (Migração do MySQL para o MariaDB, DEPLOY-05)** **antes** de levar o Lote 30 para a `main`. A rede `rotaperfumes-db` e o container `rotaperfumes-mariadb` precisam existir antes do primeiro deploy da `main` com o compose novo; sem eles o `docker compose up` falha e o estágio `CA do banco` para o job.
+> **Primeira instalação da produção?** Siga a **[seção 11 (Instalação inicial da produção, DEPLOY-07)](#11-instalação-inicial-da-produção-deploy-07)** **antes** do primeiro deploy da `main`: MariaDB 11.4 novo com CA própria, seed com o admin e os 42 vendedores inativos, fingerprint da CA commitado e credenciais do Jenkins. Sem a rede `rotaperfumes-db` e o container `rotaperfumes-mariadb`, o estágio `CA do banco` para o job (e o `docker compose up` falharia).
+>
+> **Dev x produção:** o banco de **desenvolvimento** é o MariaDB 11.8 do CasaOS, no mesmo servidor, porta 3307 (`192.168.168.106:3307`), com a CA de dev em `deploy/ca-cert.pem` (`.env` padrão). A **produção** é o container `rotaperfumes-mariadb` (porta 3306, CA de produção, fingerprint em `deploy/db-ca.fingerprint`). As duas CAs nunca se misturam.
 
 ## 0. Instalação automática (recomendado)
 
@@ -21,7 +23,7 @@ As **duas credenciais do Jenkins** continuam sendo cadastradas **à mão**: o `s
    # ou, com uma CA existente cuja chave está na mídia offline:
    sudo bash deploy/mariadb-docker.sh --ca-key /media/<pendrive>/ca-key.pem
    ```
-   Acrescente `--dev-ip <IP>` (uma vez por máquina de dev) se as máquinas de dev precisam do banco (seção 3.3).
+   Acrescente `--dev-ip <IP>` só para a máquina do admin que precisa acessar o banco de produção (seção 3.3 e seção 11, passo 11). Numa instalação nova, o seed inicial é o `deploy/seed-producao.sh` (seção 11, passo 6), nunca o `make db-seed`.
 2. **No Windows**, na raiz do projeto, copie o dump e o `.env` para o `/tmp` do servidor:
    ```powershell
    scp deploy\dumps\rotaperfumes-AAAAMMDD-HHMMSS.sql.gz .env SEU_USUARIO@ivo-inspiron-15-3530:/tmp/
@@ -160,7 +162,7 @@ Etapas (`[n/8]`):
 5. **Rede `rotaperfumes-db` e firewall** (seções 3.2 e 3.3).
 6. **Container** `rotaperfumes-mariadb`: só na rede `rotaperfumes-db` com IP `172.30.42.2`, `--user` do `mysql` da imagem, `--cap-drop ALL`, `no-new-privileges`, `--read-only` (com `tmpfs` em `/run/mysqld` e `/tmp`; `--sem-read-only` só se não subir), `restart unless-stopped`, datadir em `/var/lib/rotaperfumes/mariadb`, `MARIADB_ROOT_HOST=localhost`, `MARIADB_AUTO_UPGRADE=1`, logs `json-file` 5 × 10 MB.
 7. **Banco `rotaperfumes` e contas** (seção 3.4), convergidas a cada execução.
-8. **Teste de conexão TLS:** cliente descartável em `172.30.42.20` conecta com `--ssl-verify-server-cert`; uma conexão `--skip-ssl` aceita **aborta** o script. Com `--dev-ip`, confere também o certificado servido em `192.168.168.106:3306` (`openssl s_client -verify_ip`).
+8. **Teste de conexão TLS:** cliente descartável em `172.30.42.20` conecta com `--ssl-verify-server-cert`; uma conexão `--skip-ssl` aceita **aborta** o script. Confere também que o certificado **em uso** pelo `mariadbd` é o de `/etc/mysql/ssl/server-cert.pem` (mesma validade). Com `--dev-ip` (DEPLOY-08): `openssl verify -verify_ip 192.168.168.106` do certificado e leitura dos primeiros bytes de `192.168.168.106:3306` (greeting do MariaDB ou erro 1130 = porta publicada servida pelo `mariadbd`; nada, timeout ou outra resposta **aborta**). Não usa `openssl s_client` na porta publicada: do próprio servidor a conexão chega ao `mariadbd` pelo DNAT com uma origem sem conta (gateway da rede ou IP do host), e o `mariadbd` responde com o erro 1130 antes do greeting, sem handshake TLS. O teste TLS real da porta publicada é feito na máquina do `--dev-ip` (o script imprime o comando; ver §11 passo 11). As contas `healthcheck@localhost`, `@127.0.0.1` e `@::1`, criadas pelo entrypoint da imagem oficial (só `USAGE`), são esperadas; o script só avisa se tiverem mais que `USAGE`.
 
 No fim, imprime o fingerprint da CA (formato do `deploy/db-ca.fingerprint`), onde está cada senha e os próximos passos. Avisa se a chave da CA ainda estiver no servidor.
 
@@ -176,9 +178,10 @@ No fim, imprime o fingerprint da CA (formato do `deploy/db-ca.fingerprint`), ond
 ### 3.3 Porta para as máquinas de dev (`--dev-ip`) e firewall `DOCKER-USER`
 
 - Sem `--dev-ip`: **nenhuma** porta publicada e nenhuma conta `casaos`.
-- Com `--dev-ip IP` (repetível, um IPv4 por máquina): publica `-p 192.168.168.106:3306:3306` (nunca `0.0.0.0`) e cria a chain `ROTAPERFUMES-DB` com `-s <IP>/32 -j RETURN` por máquina e `-j DROP` no fim, com um salto no topo de `DOCKER-USER` (`-p tcp -m conntrack --ctorigdst 192.168.168.106 --ctorigdstport 3306 -j ROTAPERFUMES-DB`). A recarga é atômica (`iptables-restore --noflush`).
+- Com `--dev-ip IP` (repetível, um IPv4 por máquina): publica `-p 192.168.168.106:3306:3306` (nunca `0.0.0.0`) e cria a chain `ROTAPERFUMES-DB` com `-s <IP>/32 -j RETURN` por máquina e `-j DROP` no fim, com um salto no topo de `DOCKER-USER` (`-p tcp -m conntrack --ctorigdst 192.168.168.106 --ctorigdstport 3306 --ctdir ORIGINAL -j ROTAPERFUMES-DB`). A recarga é atômica (`iptables-restore --noflush`).
+- **`--ctdir ORIGINAL` é obrigatório (DEPLOY-08):** o tuple original (`--ctorigdst`/`--ctorigdstport`) é o mesmo nos pacotes de ida e de volta. Sem o `--ctdir ORIGINAL`, a resposta do container (origem `172.30.42.2`) também salta para a chain, não casa nenhum `-s <IP>/32` e cai no `DROP`: o SYN-ACK morre e a máquina liberada recebe timeout na 3306. A reexecução do script insere o salto novo **antes** de remover o antigo (sem `--ctdir`), então não há janela aberta.
 - Persistência: `/usr/local/sbin/rotaperfumes-db-firewall` (root, 700) + unit `rotaperfumes-db-firewall.service` (`After=docker.service`, `PartOf=docker.service`, habilitada), que reaplica a regra depois de um reboot ou restart do Docker. Rodar sem `--dev-ip` depois de já ter usado a opção recarrega a chain só com o `DROP` (fail closed).
-- O ufw **não** filtra portas publicadas pelo Docker; a proteção é a chain acima. Confira: `sudo iptables -S ROTAPERFUMES-DB` e `sudo iptables -S DOCKER-USER | grep ROTAPERFUMES-DB`.
+- O ufw **não** filtra portas publicadas pelo Docker; a proteção é a chain acima. Confira: `sudo iptables -S ROTAPERFUMES-DB` e `sudo iptables -S DOCKER-USER | grep ROTAPERFUMES-DB`, que deve mostrar **uma** linha, com `--ctdir ORIGINAL` (`-A DOCKER-USER -p tcp -m conntrack --ctorigdst 192.168.168.106 --ctorigdstport 3306 --ctdir ORIGINAL -j ROTAPERFUMES-DB`). Um salto sem `--ctdir` é de antes do DEPLOY-08 e bloqueia as respostas: rode o script de novo.
 - **Repita sempre a mesma lista de `--dev-ip`.** Lista diferente = porta diferente do container = o script pede `--recriar`; IPs que saíram perdem a conta `casaos`.
 
 ### 3.4 Contas e senhas
@@ -189,7 +192,7 @@ Todas `IDENTIFIED VIA ed25519` + `REQUIRE SSL` (SEC-30/SEC-39), criadas e altera
 |---|---|---|---|---|
 | `rotaperfumes_app` | `172.30.42.10` | `SELECT, INSERT, UPDATE, DELETE ON rotaperfumes.*` | `rotaperfumes_app.senha` | `DB_SENHA` do Secret file `rotaperfumes-api-env` |
 | `rotaperfumes_admin` | `172.30.42.20` | `ALL ON rotaperfumes.*` | `rotaperfumes_admin.senha` | credencial `rotaperfumes-db-admin` |
-| `casaos` | cada `--dev-ip` | `ALL ON rotaperfumes.*` e ``ALL ON `rotaperfumes\_%`.*`` | `casaos.senha` | `.env` das máquinas de dev |
+| `casaos` | cada `--dev-ip` | `ALL ON rotaperfumes.*` (só esse banco, DEPLOY-07) | `casaos.senha` | `.env.producao` da máquina do admin (seção 11, passo 11) |
 | `root` | `localhost` | (todos) | `root.senha` | só `docker exec` (socket) |
 
 A cada execução: `CREATE USER IF NOT EXISTS` + `ALTER USER` (converge plugin, senha e TLS), `REVOKE ALL` + `GRANT` (converge privilégios), `DROP USER` de toda conta do projeto com host fora do desejado, remoção de contas anônimas e do banco `test`, e aviso de contas desconhecidas. Root no banco: `sudo docker exec -it rotaperfumes-mariadb mariadb --defaults-extra-file=/run/rotaperfumes/root.cnf`.
@@ -203,7 +206,7 @@ A cada build, o estágio **`CA do banco`**:
 1. confere que `deploy/db-ca.fingerprint` existe e imprime os fingerprints aceitos;
 2. roda `deploy/validar-ca-banco.sh` (enviado por stdin) num container descartável de `DB_CLIENT_IMAGE` (traz `bash` e `openssl`), como **uid 65532** (o da API distroless), na rede `rotaperfumes-db`, com o arquivo do host em `--mount type=bind,...,readonly` (caminho inexistente é erro, em vez de virar diretório). Se o uid 65532 não conseguir ler, a API também não conseguiria, e o job para;
 3. o script recusa qualquer bloco PEM que não seja `CERTIFICATE` (uma chave privada não pode ser montada na API), separa **cada** certificado e valida todos: parse, `-checkend 0` (vencido = falha), aviso de 30 dias e de `CA:TRUE`, subject e fingerprint no log, e **todo** certificado precisa estar em `deploy/db-ca.fingerprint` (SEC-40; um fora da lista = falha);
-4. **confere a CA contra o servidor**, antes de parar a API ou importar: `openssl s_client -starttls mysql -connect rotaperfumes-mariadb:3306 -CAfile <CA> -verify_return_error -verify_hostname rotaperfumes-mariadb`. Se a CA não validar o certificado servido hoje para esse nome, o job para e nada é alterado;
+4. **confere a CA contra o servidor**, antes de parar a API ou importar: `openssl s_client -starttls mysql -connect rotaperfumes-mariadb:3306 -CAfile <CA> -verify_return_error -verify_hostname rotaperfumes-mariadb`. O container de validação usa `--ip 172.30.42.20` (conta `rotaperfumes_admin`; de um IP sem conta o `mariadbd` responde com o erro 1130 antes do greeting) e exige handshake real (`Cipher is` ≠ `(NONE)`, certificado do peer presente) além do `Verify return code: 0 (ok)` (DEPLOY-08). Se a CA não validar o certificado servido hoje para esse nome, o job para e nada é alterado;
 5. grava o sha256 do arquivo em `deploy/db-ca.sha256` (apagado no `post`).
 
 No estágio **Deploy**, o pipeline exporta `DB_CA_SHA256` e o compose o grava na label `rotaperfumes.db-ca-sha256` do serviço `api`. O `docker compose up -d` não recria o container quando só o conteúdo de um arquivo montado muda (e o bind fica preso ao inode antigo quando o arquivo é substituído); com a label, CA nova significa container novo, já com a CA atual.
@@ -235,12 +238,13 @@ Só suba **patch** do 11.4 assim. Mudança de versão menor/maior é card própr
 - Conteúdo: SHA-256 do DER de cada certificado aceito no arquivo da CA do host, hex minúsculo sem `:`, um por linha (`#` e linhas vazias ignoradas). Normal: **um**; durante uma troca de CA, **dois** (o antigo sai num commit seguinte).
 - Calcular: `openssl x509 -in /etc/mysql/ssl/ca.pem -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f` (o `mariadb-docker.sh` imprime o mesmo valor no fim).
 - Toda troca de CA no servidor exige um commit revisado desse arquivo; sem ele, o estágio `CA do banco` barra o deploy e a API continua com a CA anterior. Isso impede que um arquivo trocado no host (por engano ou por um atacante) passe a ser a CA confiada pela API.
-- O `deploy/ca-cert.pem` das máquinas de dev é a mesma CA: o teste `TestSEC45_FingerprintVersionadoConfereComCA` confere que ele está na lista.
+- Só a CA de **produção** entra na lista (DEPLOY-07). O `deploy/ca-cert.pem` é a CA de **dev** (MariaDB do CasaOS, porta 3307, `CN=RotaPerfumes_MySQL_CA`, fingerprint `ef31b656...`) e **não** pode estar no arquivo: os testes (`TestSEC45_FingerprintVersionadoConfereComCA`, `TestDEPLOY07_CADevNuncaEmProducao`) garantem que ele não está, e o `mariadb-docker.sh` avisa se encontrar essa linha. Na primeira instalação o arquivo só tem o cabeçalho; sem nenhuma linha útil, o estágio `CA do banco` falha com `deploy/db-ca.fingerprint sem fingerprint: rode mariadb-docker.sh --nova-ca e grave o CA_FP (DEPLOY-07)`.
 
 ### 3.8 Regra: integração só em banco descartável
 
 - `INTEGRATION=1`, `make db-down`, `make db-reset`, `make db-rebuild`, `make db-seed` e `make db-import-*` **apagam ou sobrescrevem dados**. Só rode contra um banco **descartável**: um MariaDB 11.4 local em container (`DB_HOST=127.0.0.1`, `.env` separado) ou o container temporário do `TestTST15_MariadbDocker_Real`.
-- **Nunca** com o `.env` de dev apontando para `192.168.168.106` (conta `casaos`, que tem `ALL` no banco de produção). O grant em `rotaperfumes\_%` não autoriza testes no servidor de produção.
+- **Nunca** contra o banco de produção (conta `casaos` do `.env.producao`, que tem `ALL` em `rotaperfumes.*`, com dados reais).
+- **Guarda `db-guard-producao` (DEPLOY-07):** todo alvo do `Makefile` que escreve no banco (`db-create`, `db-up`, `db-seed`, `db-down`, `db-reset`, `db-rebuild`, `db-fix-*`, `db-revert-*`, `db-import-*`, `db-seed-mes-atual`, `db-gerar-imagens-produtos`, `gen-hash`, `fix-hash`, `fix-admin`, `reset-senhas-ativos`, `test-integration`) depende dela. A guarda olha **host e porta**: é produção `DB_HOST` = `192.168.168.106` ou `ivo-inspiron-15-3530` (`PRODUCAO_HOSTS_LAN`) com `DB_PORT` vazio ou `3306` (a porta publicada com `--dev-ip`), ou `DB_HOST` = `rotaperfumes-mariadb` ou `172.30.42.2` (`PRODUCAO_HOSTS_REDE`, rede Docker) em qualquer porta. O MariaDB de dev do CasaOS, no mesmo host, porta `3307` (`192.168.168.106:3307`), **passa**. Em produção o alvo é recusado, salvo `CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>` **na linha de comando** (no `.env` ou no ambiente não vale). O seed de produção é o `deploy/seed-producao.sh`, nunca `make db-seed`. A guarda **não** cobre `go test` com `INTEGRATION=1` chamado direto (pendência do DEPLOY-07).
 - Os agentes da equipe também seguem a regra: nenhum `make db-*` nem `INTEGRATION=1` com o `.env` atual.
 
 ---
@@ -314,7 +318,7 @@ Kind **Username with password**: o usuário do GitHub e um **Personal Access Tok
 
 ## 7. Dump de um banco MariaDB de origem e primeira carga
 
-Use esta seção para levar dados de **outro MariaDB** (ex.: um banco local) para o servidor. Para trazer os dados do **MySQL antigo** do servidor, use a seção 11 (só dados, sem o DDL do MySQL).
+Use esta seção só se for preciso levar dados de **outro MariaDB** para o servidor. A instalação inicial da produção (seção 11) **não** importa dump: o banco nasce com o seed do `deploy/seed-producao.sh`, e os dados do MariaDB do CasaOS são de desenvolvimento. Importar um dump **sobrescreve** as tabelas de produção (dados reais): faça backup antes (seção 9).
 
 1. **No Windows**, na raiz do projeto:
    ```powershell
@@ -463,14 +467,19 @@ As imagens da aplicação são sempre `:latest`, sem tag por versão. Para volta
 | API não conecta no banco (`connection refused`, `no such host` ou timeout) | Container `rotaperfumes-mariadb` parado ou fora da rede `rotaperfumes-db` | `docker ps --filter name=rotaperfumes-mariadb`; `docker logs rotaperfumes-mariadb`; rode o script (com `--recriar` se ele pedir) |
 | API: `Access denied for user 'rotaperfumes_app'` | `DB_SENHA` do Secret file diferente de `rotaperfumes_app.senha`, ou API fora do IP `172.30.42.10` | Confira a credencial `rotaperfumes-api-env` e o `ipv4_address` do compose |
 | API não sobe: `config: DB_TLS_CA é obrigatório quando DB_HOST não é loopback ...` | `DB_TLS_CA` vazio com host remoto (SEC-42) | Defina `DB_TLS_CA` (o compose de produção já define). Não use `DB_TLS_REQUIRED=false` |
+| `openssl s_client` com `no peer certificate available`, `Cipher is (NONE)` e `Verify return code: 0 (ok)` (rc 1) | Não houve handshake TLS: o `mariadbd` recusou o host de origem (erro 1130 antes do greeting). Do próprio servidor isso sempre acontece na porta publicada (DNAT, origem sem conta); pela rede interna, quando o cliente não usa `--ip 172.30.42.20` | Teste a porta publicada **da máquina do `--dev-ip`** (§11 passo 11) exigindo `Cipher is` ≠ `(NONE)`; pela rede interna, `docker run ... --ip 172.30.42.20`. O `mariadb-docker.sh` não usa mais o `s_client` na porta publicada (DEPLOY-08) |
 | Estágio **CA do banco**: "bind source path does not exist" ou "nao legivel pelo uid 65532" | `/etc/mysql/ssl/ca.pem` ausente, ou arquivo/diretório sem permissão para "outros" | `docs/Instal_SSL.md` passo 5 (`chmod 644`/`755` **no host**) |
+| Estágio **CA do banco**: "deploy/db-ca.fingerprint sem fingerprint: rode mariadb-docker.sh --nova-ca e grave o CA_FP (DEPLOY-07)" | Primeira instalação: o arquivo só tem o cabeçalho | Seção 11, passos 2 e 4 (rodar o script, commitar o `CA_FP` como única linha útil) |
 | Estágio **CA do banco**: "fora de deploy/db-ca.fingerprint" | CA trocada no servidor sem commit do fingerprint (ou arquivo adulterado) | Confira a CA do host; se a troca foi legítima, commit do fingerprint novo (seção 3.7) |
+| `mariadb-docker.sh` avisa "contem o fingerprint da CA de DEV" | A linha `ef31b656...` (CA de dev, `deploy/ca-cert.pem`) está em `deploy/db-ca.fingerprint` | Remova essa linha e commite: a CA de dev nunca vale em produção (seção 3.7) |
+| `make db-*`: "DEPLOY-07: DB_HOST=... DB_PORT=... e o banco de PRODUCAO: alvo recusado" | Guarda `db-guard-producao`: host do servidor com `DB_PORT` vazio/3306, ou host da rede Docker (o dev do CasaOS é a porta 3307) | Confira se era mesmo para a produção. Se sim (e o alvo não apaga dados), repita com `CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>` na linha de comando (seção 3.8) |
+| `seed-producao.sh`: "a tabela usuarios ja tem N linha(s)" | O banco já foi semeado | Nada foi alterado. Não rode de novo; `--forcar` só numa instalação ainda sem uso (inativa todos os não-admin e troca a senha do admin) |
 | Estágio **CA do banco**: "nao e certificado", "invalido", "VENCIDO" ou "NAO valida o certificado servido" | Arquivo com chave, CA vencida, CA que não assinou o certificado em uso ou banco fora do ar | `docs/Instal_SSL.md` passos 2, 4 e 9 |
 | API: `x509: certificate signed by unknown authority` | A API ainda monta a CA antiga depois de uma troca de CA (`--nova-ca`) | Rode o job (a label do sha256 recria a API) depois do commit do fingerprint (`docs/Instal_SSL.md` passo 9.2) |
 | API: `x509: certificate is valid for ..., not rotaperfumes-mariadb` | Certificado do servidor emitido fora do script ou com SAN antigo | `sudo bash deploy/mariadb-docker.sh --novo-cert --ca-key ...` |
 | Estágio **Importar dump** falha com "Dump nao encontrado/legivel" | Arquivo fora do `DUMP_PATH` ou sem permissão para o usuário do Jenkins | Seção 7.2/7.3 (`chown`/`chmod`), ou o `DUMP_PATH` informado pelo `setup-servidor.sh` (Jenkins em container) |
 | Import falha com `Access denied` | Credencial `rotaperfumes-db-admin` com senha diferente de `rotaperfumes_admin.senha` | Atualize a credencial (seção 5.2) |
-| `make db-*` da máquina de dev: `Access denied for user 'casaos'@'<IP>'` ou timeout | IP da máquina fora da lista `--dev-ip` (ou mudou por DHCP) | Rode o script com o `--dev-ip` certo (e `--recriar` se a lista mudou); fixe o IP |
+| `make db-* ENV_ARQUIVO=.env.producao` da máquina do admin: `Access denied for user 'casaos'@'<IP>'` ou timeout | IP da máquina fora da lista `--dev-ip` (ou mudou por DHCP) | Rode o script com o `--dev-ip` certo (e `--recriar` se a lista mudou); fixe o IP |
 | Cliente: `Authentication plugin 'client_ed25519' cannot be loaded` | Cliente sem ed25519 (ex.: `mysql` do Oracle, Workbench) | Use o cliente `mariadb` 11.x; em último caso, `--casaos-native-motivo` (`docs/Instal_SSL.md` passo 8) |
 | `mariadb-docker.sh`: "rode de novo com --recriar" | Container existente difere do desejado (rede, porta, `--dev-ip`, read-only, usuário) | Confira a lista `--dev-ip`; rode com `--recriar` (o banco fica fora do ar alguns segundos) |
 | `mariadb-docker.sh`: "o container parou" com escrita negada fora de `/var/lib/mysql` | `--read-only` incompatível com a imagem | `--recriar --sem-read-only` |
@@ -482,213 +491,241 @@ As imagens da aplicação são sempre `:latest`, sem tag por versão. Para volta
 
 ---
 
-## 11. Migração do MySQL para o MariaDB (DEPLOY-05)
+## 11. Instalação inicial da produção (DEPLOY-07)
 
-> **Execução do usuário**, uma vez, no servidor `192.168.168.106`. Pré-requisito: a branch do Lote 30 revisada, **ainda não** mergeada na `main`. Sem acesso ao Docker nesta máquina, a equipe não executou nada disto contra o servidor real.
+> **Execução do usuário**, uma vez, no servidor `192.168.168.106` (`ivo-inspiron-15-3530`) e na máquina do admin. A equipe não tem acesso ao servidor nem ao Docker dele: nada desta seção foi executado contra o servidor real.
 >
-> **Por que esta ordem:** a `main` com o Lote 30 espera a rede `rotaperfumes-db`, o container `rotaperfumes-mariadb` com os dados e as credenciais novas. Se o merge vier antes, o primeiro deploy falha (rede externa inexistente; estágio `CA do banco` sem o banco) e o `pollSCM` dispara esse deploy sozinho em até 2 minutos.
+> **Cenário (decisões do usuário, 2026-11-04):** não há banco anterior a aproveitar. O MariaDB 11.4 de produção (`rotaperfumes-mariadb`) nasce **vazio**, com uma CA **nova** (`--nova-ca`), a porta 3306 publicada **só** para a máquina do admin (`--dev-ip`) e o seed inicial: schema de `sql/`, o admin (senha gerada, troca obrigatória no 1º login) e os 42 vendedores **reais**, todos **inativos**. **Não há importação de dados:** o MariaDB 11.8 do CasaOS (porta 3307) continua sendo o banco de **desenvolvimento**, com a CA de dev em `deploy/ca-cert.pem`, e os dados dele não vão para a produção.
 >
-> **Janela:** os passos 4 a 6 são feitos de uma vez. Escritas no MySQL depois do dump do passo 4 se perdem. Faça os passos 2 a 7 no mesmo dia (ver o aviso do passo 2).
+> **Por que esta ordem:** a `main` espera a rede `rotaperfumes-db`, o container `rotaperfumes-mariadb`, a CA de produção fixada em `deploy/db-ca.fingerprint`, o banco semeado e as credenciais do Jenkins. O push do passo 9 dispara o deploy (`pollSCM`, até ~2 min). Enquanto faltar algo, o estágio `CA do banco` recusa o build **antes** do `Deploy`, e nada muda no servidor.
 
-Preparo: traga a branch do Lote 30 para o servidor (o `main` ainda não tem os arquivos novos), por exemplo:
+| Passo | Onde | O quê |
+|---|---|---|
+| 1 | servidor | checkout do repositório com o DEPLOY-07 |
+| 2 | servidor | `mariadb-docker.sh --nova-ca --dev-ip <IP do admin>`; anotar o `CA_FP` |
+| 3 | servidor | chave da CA para mídia offline e `shred` |
+| 4 | máquina de dev | `CA_FP` em `deploy/db-ca.fingerprint`, `make test`, commit (sem push) |
+| 5 | servidor + Jenkins | `PASSWORD_PEPPER` novo, Secret file `rotaperfumes-api-env` e credencial `rotaperfumes-db-admin` |
+| 6 | servidor | `seed-producao.sh --pepper-file ...` |
+| 7 | servidor | conferências SQL |
+| 8 | todos | checklist pré-push |
+| 9 | máquina de dev | push na `main` (deploy) |
+| 10 | navegador | 1º login do admin e ativação dos vendedores |
+| 11 | máquina do admin | `.env.producao` + `deploy/ca-producao.pem` |
+| 12 | máquina com Docker (não o servidor) | teste real do `mariadb-docker.sh` |
+
+### Passo 1. Código no servidor
+
+O checkout no servidor precisa ter o DEPLOY-07 (`deploy/seed-producao.sh`, `sql/ordem-ddl.txt` e o `deploy/mariadb-docker.sh` atual). Não é preciso branch especial:
 
 ```bash
-sudo git clone --branch lote-30 --depth 1 https://github.com/residentivo/RotaPerfume.git /root/rotaperfumes-lote30
-# ou: scp -r deploy sql de uma máquina com a branch para /root/rotaperfumes-lote30/
+sudo git clone --depth 1 https://github.com/residentivo/RotaPerfume.git /root/rotaperfumes
+# já clonado antes:
+#   sudo git -C /root/rotaperfumes pull --ff-only
+sudo test -f /root/rotaperfumes/deploy/seed-producao.sh && echo "DEPLOY-07 presente"
 ```
 
-Nos passos abaixo, os comandos rodam como root (`sudo -i`), com `umask 077`, a partir de `/root/rotaperfumes-lote30`.
+- Se o commit do DEPLOY-07 já foi para a `main` do GitHub, o build que esse push disparou para no estágio `CA do banco` (`deploy/db-ca.fingerprint sem fingerprint: ...` ou `bind source path does not exist: /etc/mysql/ssl/ca.pem`). É o esperado nesta fase: o estágio roda antes do `Deploy` e nada muda no servidor.
+- Se ainda não está no GitHub, copie da máquina de dev `deploy/`, `sql/` e `backend/shared/` para `/root/rotaperfumes/` (`scp -r`/`rsync`; o `seed-producao.sh` compila o `resetpassword` a partir de `backend/shared`). Não copie `.env`, `.env.producao` nem `deploy/ca-cert.pem`.
 
-### Passo 1. Backup do MySQL e de `/etc/mysql/ssl`
+Nos passos 2, 3, 5, 6 e 7, os comandos rodam **no servidor**, como root (`sudo -i`), com `umask 077`, a partir de `/root/rotaperfumes`.
+
+### Passo 2. MariaDB de produção com CA nova
 
 ```bash
 sudo -i
 umask 077
-mkdir -p /root/migracao-mariadb && cd /root/migracao-mariadb
-D=$(date +%Y%m%d-%H%M%S)
-
-# MySQL nativo (pacote apt; root pelo socket):
-mysqldump --single-transaction --routines --triggers --events --set-gtid-purged=OFF --no-tablespaces \
-  --default-character-set=utf8mb4 --databases rotaperfumes | gzip > "backup-mysql-$D.sql.gz"
-# MySQL em container (troque <container_mysql>; a senha não vai para o argv):
-#   read -rsp 'Senha do root do MySQL: ' MYSQL_PWD; echo; export MYSQL_PWD
-#   docker exec -i -e MYSQL_PWD <container_mysql> mysqldump -uroot --single-transaction --routines \
-#     --triggers --events --set-gtid-purged=OFF --no-tablespaces --default-character-set=utf8mb4 \
-#     --databases rotaperfumes | gzip > "backup-mysql-$D.sql.gz"
-#   unset MYSQL_PWD
-gzip -t "backup-mysql-$D.sql.gz" && echo "backup ok"
-
-# Certificados atuais (se existirem):
-[ -d /etc/mysql/ssl ] && tar -C /etc/mysql -czf "backup-etc-mysql-ssl-$D.tgz" ssl
-chmod 600 /root/migracao-mariadb/*
+cd /root/rotaperfumes
+bash deploy/mariadb-docker.sh --nova-ca --dev-ip <IP da máquina do admin>
 ```
 
-Copie os dois arquivos para mídia offline. Guarde também uma cópia do Secret file `rotaperfumes-api-env` **atual** e a senha atual do `rotaperfumes_admin` (necessárias para o rollback antes do passo 7).
-
-### Passo 2. Subir o MariaDB lado a lado (sem `--dev-ip`)
-
-```bash
-cd /root/rotaperfumes-lote30
-bash deploy/mariadb-docker.sh --ca-key /media/<pendrive>/ca-key.pem
-```
-
-- **Sem `--dev-ip`**: o MariaDB não publica porta, e a porta 3306 do host continua com o MySQL. A API em produção (versão antiga) segue falando com o MySQL.
-- Qual CA usar (`docs/Instal_SSL.md`, passo 2): `--ca-key` com a chave da CA que já está em `/etc/mysql/ssl/ca.pem` (caso A), ou a de outra CA existente copiada para lá (caso B), ou `--nova-ca` se não houver CA (caso C; nesse caso tire a chave do servidor no passo 9).
+- `--nova-ca` gera a CA de produção (`CN=RotaPerfumes_MariaDB_CA`, chave em `/root/rotaperfumes-ca/ca-key.pem`, que sai do servidor no passo 3) e o certificado do servidor (SAN `IP:192.168.168.106, DNS:rotaperfumes-mariadb, DNS:localhost, IP:127.0.0.1, DNS:<hostname>`). O script cria a rede `rotaperfumes-db`, o container, o banco `rotaperfumes` **vazio**, as contas e as senhas em `/root/rotaperfumes-mariadb/` (seções 3.1 a 3.4).
+- `--dev-ip <IP>` publica `192.168.168.106:3306` **só** para esse IP (chain `ROTAPERFUMES-DB` em `DOCKER-USER`, seção 3.3) e cria a conta `casaos@<IP>` (`ALL ON rotaperfumes.*`), usada pelo `.env.producao` do passo 11. Use IP fixo (ou reserva no DHCP) na máquina do admin. **Repita sempre a mesma lista** de `--dev-ip` em toda execução do script: lista diferente faz o script pedir `--recriar`, e um IP que sai da lista perde a conta. **Sem `--dev-ip`, nada é publicado** e não há conta `casaos`; a API e o Jenkins não precisam da porta (usam a rede interna).
 - Confira:
   ```bash
-  docker ps --filter name=rotaperfumes-mariadb --format '{{.Names}} {{.Status}}'
+  docker ps --filter name=rotaperfumes-mariadb --format '{{.Names}} {{.Image}} {{.Status}}'
   docker network inspect rotaperfumes-db -f '{{range .IPAM.Config}}{{.Subnet}} {{.IPRange}}{{end}}'   # 172.30.42.0/24 172.30.42.128/25
-  ss -ltnp | grep ':3306 '                                                                           # ainda o MySQL
+  ss -ltnp | grep ':3306 '              # 192.168.168.106:3306 (docker-proxy); nada além disso
+  iptables -S ROTAPERFUMES-DB           # -s <IP do admin>/32 -j RETURN e, no fim, -j DROP
+  iptables -S DOCKER-USER | grep ROTAPERFUMES-DB   # uma linha, com --ctdir ORIGINAL (DEPLOY-08)
   ```
-- Anote o fingerprint da CA impresso no fim (passo 6).
-- **Aviso:** se o MySQL usa os arquivos de `/etc/mysql/ssl` (drop-in do SEC-29), o script reemite `server-cert.pem`/`server-key.pem` ali (o SAN muda) e passa o dono da chave para o uid do `mysql` da imagem. O MySQL em execução continua com o certificado já carregado, mas **não reinicie o MySQL** (nem o servidor) até o passo 7: num restart ele não leria a chave nova. Se precisar reiniciar, restaure antes o backup do passo 1 numa cópia e aponte o MySQL para ela.
+- **Anote o `CA_FP`**: é o valor impresso no fim, em "CA do banco de PRODUCAO ... fingerprint SHA-256 (formato do deploy/db-ca.fingerprint)". Ele vai para o passo 4. Nesta fase, o resumo também avisa que o `deploy/db-ca.fingerprint` "ainda nao tem fingerprint" e que a chave da CA está no servidor (passo 3). Os dois avisos são esperados.
+- **Não** copie esta CA para `deploy/ca-cert.pem`: esse arquivo é a CA de **dev** (CasaOS). Na máquina do admin, a CA de produção vai para `deploy/ca-producao.pem` (passo 11).
 
-### Passo 3. Schema do repositório pela rede interna
+### Passo 3. Chave da CA para mídia offline
 
-O schema vem de `sql/` (o mesmo do `make db-up`), **não** do MySQL: o DDL do MySQL traz `utf8mb4_0900_ai_ci` e outras sintaxes que o MariaDB não aceita.
+A chave da CA permite emitir certificados que a API aceita: ela **não fica no servidor** (`docs/Instal_SSL.md`, passo 3).
 
 ```bash
-cd /root/rotaperfumes-lote30
+cp /root/rotaperfumes-ca/ca-key.pem /media/<pendrive-cifrado>/ca-key.pem
+cp /etc/mysql/ssl/ca.pem /root/rotaperfumes-ca/server-ext.cnf /media/<pendrive-cifrado>/
+cmp /root/rotaperfumes-ca/ca-key.pem /media/<pendrive-cifrado>/ca-key.pem && \
+  shred -u /root/rotaperfumes-ca/ca-key.pem
+```
+
+Guarde uma segunda cópia (outro pendrive cifrado ou cofre de senhas). Para renovar o certificado depois, use `--ca-key /media/<pendrive>/ca-key.pem` (`docs/Instal_SSL.md`, passo 9.1).
+
+### Passo 4. Fingerprint da CA no repositório (máquina de dev; sem push)
+
+Na raiz do repositório, na máquina de dev, com o `CA_FP` do passo 2:
+
+```bash
+printf '%s\n' '<CA_FP do passo 2>' >> deploy/db-ca.fingerprint
+grep -Ev '^[[:space:]]*(#|$)' deploy/db-ca.fingerprint        # uma linha só: o CA_FP (64 hex minúsculos)
+env -u INTEGRATION make test
+git add deploy/db-ca.fingerprint
+git commit -m "DEPLOY-07: fingerprint da CA de producao"
+```
+
+- Mantenha as 3 linhas de cabeçalho (`#`); a **única** linha útil é o `CA_FP`. **Nunca** acrescente o fingerprint da CA de dev (`ef31b656...`, `deploy/ca-cert.pem`): o teste `TestDEPLOY07_CADevNuncaEmProducao` falha e o `mariadb-docker.sh` avisa.
+- Para conferir no servidor: `openssl x509 -in /etc/mysql/ssl/ca.pem -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f`.
+- **Não faça push ainda**: o push é o passo 9, depois das credenciais e do seed.
+
+### Passo 5. `PASSWORD_PEPPER` novo e credenciais do Jenkins
+
+O banco é novo, então o pepper também é **novo** (nada a reaproveitar do dev). Ele vai para o Secret file **e** para o seed (passo 6): os dois precisam do **mesmo** valor, senão o admin não consegue logar. Depois de definido, **nunca troque** (todas as senhas Argon2id deixam de valer).
+
+1. No servidor, gere o pepper e monte o `api.env` a partir de `deploy/api.env.example` (os segredos vão por `printf`, um builtin do bash, e nunca aparecem no argv):
+   ```bash
+   cd /root/rotaperfumes
+   openssl rand -base64 48 | tr -d '\n' > /root/pepper-producao.txt
+   chmod 600 /root/pepper-producao.txt
+   A=/root/rotaperfumes-api.env
+   {
+     grep -Ev '^(DB_SENHA|JWT_SECRET|PASSWORD_PEPPER)=' deploy/api.env.example
+     printf 'DB_SENHA=%s\n' "$(cat /root/rotaperfumes-mariadb/rotaperfumes_app.senha)"
+     printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 48 | tr -d '\n')"
+     printf 'PASSWORD_PEPPER=%s\n' "$(cat /root/pepper-producao.txt)"
+     printf 'DB_TLS_SERVER_NAME=rotaperfumes-mariadb\n'
+   } > "$A"
+   chmod 600 "$A"
+   nano "$A"
+   ```
+   O arquivo já sai com `DB_HOST=rotaperfumes-mariadb`, `DB_PORT=3306`, `DB_NAME=rotaperfumes`, `DB_USUARIO=rotaperfumes_app`, `COOKIE_SECURE=true` e `TRUST_PROXY_HEADERS=true` do modelo (`DB_HOST`/`DB_PORT`/`DB_TLS_CA`/`DB_TLS_SERVER_NAME` são fixados pelo `docker-compose.yml` de qualquer forma). No editor, preencha o resto conforme a seção 5.1: `TURNSTILE_SECRET_KEY` **real** (seção 4), `SMTP_*` e `SECURITY_ALERT_EMAILS` (o SMTP é **necessário** para ativar os vendedores no passo 10) e confira `CORS_ALLOWED_ORIGINS`. **Não** inclua `DB_TLS_REQUIRED=false`.
+2. Leve o arquivo para a máquina de onde você acessa o Jenkins, sem passar por chat ou e-mail. Por exemplo, no servidor: `install -m 600 -o <seu_usuario> "$A" /home/<seu_usuario>/rotaperfumes-api.env`; na sua máquina: `scp <seu_usuario>@192.168.168.106:rotaperfumes-api.env .`
+3. Jenkins → Gerenciar Jenkins → Credentials → System → Global credentials:
+   - **Secret file** com ID `rotaperfumes-api-env` (se já existir: abra → **Update** → envie o arquivo novo).
+   - **Username with password** com ID `rotaperfumes-db-admin`: usuário `rotaperfumes_admin`, senha = `sudo cat /root/rotaperfumes-mariadb/rotaperfumes_admin.senha` (lida no terminal do servidor e colada direto no Jenkins).
+4. Apague as cópias: na sua máquina, o `rotaperfumes-api.env`; no servidor, `shred -u /home/<seu_usuario>/rotaperfumes-api.env /root/rotaperfumes-api.env`. **Mantenha** o `/root/pepper-producao.txt` até o passo 6.
+
+> Não use o `setup-servidor.sh` com o `.env` de dev para gerar o Secret file: ele copia o `PASSWORD_PEPPER` do `--env` (o de dev), que não é o do seed de produção.
+
+### Passo 6. Seed inicial (`deploy/seed-producao.sh`)
+
+```bash
+cd /root/rotaperfumes
+bash deploy/seed-producao.sh --pepper-file /root/pepper-producao.txt
+```
+
+- O `--pepper-file` precisa ser arquivo regular do root com modo 600 ou 400 (o do passo 5 já é); sem a opção, o script pede o pepper no terminal, sem eco e com confirmação. O valor tem de ser o **mesmo** `PASSWORD_PEPPER` do Secret file, com 32 caracteres ou mais.
+- As 7 etapas (`[n/7]`; detalhes em `bash deploy/seed-producao.sh --help`): (1) confere root, Docker, container, rede, CA, senha do `rotaperfumes_admin`, `sql/ordem-ddl.txt`, seeds, pepper e o destino da senha do admin, sem mudar nada; (2) **recusa** se a tabela `usuarios` já tem linhas (banco já semeado; `--forcar` exige digitar o nome do banco, reaplica tudo, troca a senha do admin e inativa **todos** os não-admin: só numa instalação ainda sem uso); (3) DDL na ordem de `sql/ordem-ddl.txt` (a mesma do `make db-up`); (4) `sql/02_seed_admin.sql` e `sql/03_seed_vendedores.sql` e `UPDATE usuarios SET ativo = 0 WHERE role <> 'admin'`; (5) compila o `resetpassword` num container `GO_IMAGE` (sem rede do banco nem segredos; baixa os módulos do proxy do Go, então o servidor precisa de internet); (6) `resetpassword -create-admin` num container na rede `rotaperfumes-db` (IP `172.30.42.20`, conta `rotaperfumes_admin`, TLS verificado), com os segredos num `--env-file` temporário 600 apagado com `shred`; (7) conferência.
+- **Senha do admin:** gerada e **nunca impressa**, gravada em `/root/rotaperfumes-mariadb/admin-app.senha` (600, só root; o script recusa se o arquivo já existir). Outro destino: `--admin-senha-arquivo ARQ`. Para digitar a senha em vez de gerar: `--admin-senha-prompt` (exige terminal). Em qualquer caso, o admin fica com `deve_trocar_senha = 1`.
+- O script **não** roda `-all-users`: os 42 vendedores ficam com o hash placeholder (ninguém loga com ele) e inativos até o passo 10.
+- **Nunca** use `make db-seed`, `make db-reset` ou `make fix-hash` contra este banco (a guarda `db-guard-producao` recusa; seção 3.8).
+- Depois do seed: guarde uma cópia do pepper num cofre de senhas ou na mídia offline do passo 3 (sem ele, nenhuma senha de produção funciona se o Secret file se perder) e apague o arquivo do servidor:
+  ```bash
+  shred -u /root/pepper-producao.txt
+  ```
+  O pepper continua no Secret file `rotaperfumes-api-env`.
+
+### Passo 7. Conferências SQL
+
+Pela rede interna, com o mesmo cliente do `seed-producao.sh` e do estágio `Importar dump` (imagem fixada = `IMAGEM_BASE`/`DB_CLIENT_IMAGE`, conta `rotaperfumes_admin` em `172.30.42.20`, senha por `MYSQL_PWD`, nunca no argv):
+
+```bash
 IMG='mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620'   # = IMAGEM_BASE
 admin_sql() {
   MYSQL_PWD=$(cat /root/rotaperfumes-mariadb/rotaperfumes_admin.senha) \
   docker run --rm -i -e MYSQL_PWD --network rotaperfumes-db --ip 172.30.42.20 \
     --cap-drop ALL --security-opt no-new-privileges:true \
     --mount type=bind,source=/etc/mysql/ssl/ca.pem,target=/ca.pem,readonly \
-    "$IMG" mariadb --local-infile=0 -h rotaperfumes-mariadb -P 3306 -u rotaperfumes_admin \
+    --entrypoint mariadb "$IMG" --local-infile=0 -h rotaperfumes-mariadb -P 3306 -u rotaperfumes_admin \
       --ssl-ca=/ca.pem --ssl-verify-server-cert --default-character-set=utf8mb4 "$@"
 }
-# Ordem do make db-up (sem seeds: os dados vêm do MySQL no passo 4)
-for f in 01_ddl_usuarios 06_ddl_refresh_tokens 07_ddl_senha_historico 09_ddl_clientes 10_ddl_produtos \
-         04_ddl_pedidos 11_ddl_itens_pedido 12_ddl_pagamentos 14_ddl_carteiras 15_ddl_oportunidades \
-         16_ddl_visitas 17_ddl_estoque; do
-  echo "== $f"; admin_sql rotaperfumes < "sql/$f.sql" || { echo "FALHOU em $f"; break; }
-done
-admin_sql rotaperfumes -e 'SHOW TABLES'
+admin_sql rotaperfumes <<'SQL'
+SELECT COUNT(*) AS tabelas FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'rotaperfumes';
+SELECT id, email, role, ativo, deve_trocar_senha, LEFT(password_hash, 10) AS hash FROM usuarios WHERE role = 'admin';
+SELECT COUNT(*) AS vendedores FROM vendedores;
+SELECT COUNT(*) AS nao_admin, SUM(ativo <> 0) AS nao_admin_ativos FROM usuarios WHERE role <> 'admin';
+SQL
 ```
 
-A senha vai por `MYSQL_PWD` no ambiente do processo `docker` (repassada com `-e MYSQL_PWD` sem valor), nunca no argv. Os DDL de `sql/` já incluem as migrações 08 e 13 a 26.
+Esperado: `tabelas` = 13; uma linha de admin (`admin@rotaperfumes.com.br`) com `ativo` = 1, `deve_trocar_senha` = 1 e `hash` começando com `$argon2id$`; `vendedores` = 42; `nao_admin` = 42 e `nao_admin_ativos` = 0. Qualquer diferença: **não** siga para o push; veja a saída do `seed-producao.sh`.
 
-### Passo 4. Dados do MySQL: dump só de dados, import, `TRUNCATE`, contagem e `shred`
+### Passo 8. Checklist pré-push
 
-Pare a API antiga para não haver escrita depois do dump (o site fica fora do ar até o passo 6):
+- [ ] `docker ps` mostra `rotaperfumes-mariadb` `Up` e `docker network inspect rotaperfumes-db` funciona;
+- [ ] `/etc/mysql/ssl/ca.pem` legível por "outros" (`sudo -u nobody cat /etc/mysql/ssl/ca.pem >/dev/null && echo OK`; `docs/Instal_SSL.md`, passo 5);
+- [ ] o fingerprint de `/etc/mysql/ssl/ca.pem` é a **única** linha útil do `deploy/db-ca.fingerprint` **commitado** (passo 4), e não é o da CA de dev (`ef31b656...`);
+- [ ] a chave da CA saiu do servidor (`test ! -e /root/rotaperfumes-ca/ca-key.pem && echo OK`);
+- [ ] Secret file `rotaperfumes-api-env` cadastrado ou atualizado (passo 5), com o **mesmo** `PASSWORD_PEPPER` do seed, `JWT_SECRET` novo, `TURNSTILE_SECRET_KEY` real, `SMTP_*`, `COOKIE_SECURE=true` e sem `DB_TLS_REQUIRED=false`; credencial `rotaperfumes-db-admin` cadastrada;
+- [ ] seed conferido (passo 7);
+- [ ] job `rotaperfumes-deploy` criado (seção 6) e o parâmetro **`IMPORTAR_DUMP` desmarcado** (padrão `false`, que é o valor usado pelo `pollSCM`). Não há dump a importar: marcado, ele **sobrescreveria** o banco de produção;
+- [ ] `make deps-audit` rodado (`CLAUDE.md`: antes de cada deploy).
+
+### Passo 9. Push na `main` (dispara o deploy)
+
+Na máquina de dev:
 
 ```bash
-docker stop rotaperfumes-api-1
+git push origin main
 ```
 
-Confira se as colunas batem (linhas só no MySQL quebram o import; linhas só no MariaDB recebem o valor padrão):
-
-```bash
-cd /root/migracao-mariadb
-Q="SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rotaperfumes' ORDER BY 1,2"
-mysql -N -B -e "$Q" > colunas-mysql.txt          # MySQL em container: docker exec -i -e MYSQL_PWD <container_mysql> mysql -uroot -N -B -e "$Q"
-admin_sql -N -B -e "$Q" > colunas-mariadb.txt
-diff colunas-mysql.txt colunas-mariadb.txt
-```
-
-Linhas `<` (coluna que o MySQL tem e o repositório não, ex.: `estoque.origem` sem a migração 18) de tabelas da lista abaixo: pare e decida antes de seguir (aplicar no MySQL a migração correspondente de `sql/`, já com o backup do passo 1, ou abrir um card). Tabelas que só existem no MySQL (ex.: `clientes_merge_backup_*`) ficam de fora porque o dump lista as tabelas.
-
-Dump só de dados, no servidor, em arquivo 600 em `/root`:
-
-```bash
-TABELAS="vendedores usuarios refresh_tokens senha_historico clientes produtos pedidos itens_pedido pagamentos carteiras oportunidades visitas estoque"
-mysqldump --no-create-info --skip-triggers --complete-insert --hex-blob --single-transaction \
-  --set-gtid-purged=OFF --no-tablespaces --default-character-set=utf8mb4 \
-  rotaperfumes $TABELAS > /root/migracao-mariadb/dados.sql
-# MySQL em container: docker exec -i -e MYSQL_PWD <container_mysql> mysqldump -uroot <mesmas opções> rotaperfumes $TABELAS > ...
-chmod 600 /root/migracao-mariadb/dados.sql
-```
-
-Import, sessões e contagem:
-
-```bash
-admin_sql rotaperfumes < /root/migracao-mariadb/dados.sql
-admin_sql rotaperfumes -e 'TRUNCATE TABLE refresh_tokens'      # sessões antigas não valem
-for t in $TABELAS; do
-  a=$(mysql -N -B -e "SELECT COUNT(*) FROM rotaperfumes.\`$t\`")
-  b=$(admin_sql -N -B -e "SELECT COUNT(*) FROM rotaperfumes.\`$t\`")
-  printf '%-16s mysql=%-8s mariadb=%s\n' "$t" "$a" "$b"
-done
-```
-
-Esperado: contagens iguais em todas as tabelas, exceto `refresh_tokens` (MariaDB = 0). Divergência: não siga; para refazer, `admin_sql -e 'DROP DATABASE rotaperfumes'`, rode o `mariadb-docker.sh` de novo (recria o banco vazio) e repita os passos 3 e 4.
-
-Apague os arquivos intermediários (o backup do passo 1 fica):
-
-```bash
-shred -u /root/migracao-mariadb/dados.sql /root/migracao-mariadb/colunas-*.txt
-```
-
-### Passo 5. Credenciais do Jenkins e CA pública
-
-1. **Secret file `rotaperfumes-api-env`** (Update com o arquivo novo, seção 5.1): `DB_HOST=rotaperfumes-mariadb`, `DB_PORT=3306`, `DB_USUARIO=rotaperfumes_app`, `DB_SENHA` = conteúdo de `/root/rotaperfumes-mariadb/rotaperfumes_app.senha`. Mantenha `JWT_SECRET`, `PASSWORD_PEPPER` e o resto. **Não** coloque `DB_TLS_REQUIRED=false`. (Alternativa: `setup-servidor.sh --env ...` gera o arquivo, mas com `JWT_SECRET` novo.)
-2. **Credencial `rotaperfumes-db-admin`** (seção 5.2): usuário `rotaperfumes_admin`, senha = conteúdo de `/root/rotaperfumes-mariadb/rotaperfumes_admin.senha`.
-3. **CA pública** em `/etc/mysql/ssl/ca.pem`, modo 644, com `/etc/mysql` e `/etc/mysql/ssl` em 755 (`docs/Instal_SSL.md`, passo 5):
-   ```bash
-   ls -ld /etc/mysql /etc/mysql/ssl; ls -l /etc/mysql/ssl/ca.pem
-   sudo -u nobody cat /etc/mysql/ssl/ca.pem >/dev/null && echo "legivel por outros: OK"
-   ```
-
-Não dispare builds do job entre este passo e o 6: a versão antiga da `main` usaria as credenciais novas contra o MySQL.
-
-### Passo 6. Só então: merge e push na `main` (dispara o Jenkins)
-
-Antes do merge, confira:
-
-- [ ] `docker ps` mostra `rotaperfumes-mariadb` rodando e `docker network inspect rotaperfumes-db` funciona;
-- [ ] o fingerprint de `/etc/mysql/ssl/ca.pem` (`openssl x509 -in /etc/mysql/ssl/ca.pem -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f`) está em `deploy/db-ca.fingerprint` **da branch**. O valor versionado hoje foi calculado a partir do `deploy/ca-cert.pem` de dev; se for diferente do servidor, troque o arquivo e faça o commit **antes** do merge;
-- [ ] Secret file e credencial do passo 5 atualizados.
-
-Faça o merge e o push na `main`. Em até ~2 minutos o `pollSCM` dispara o job com `IMPORTAR_DUMP` **desmarcado** (os dados já estão no MariaDB). Acompanhe: `CA do banco` validada pela rede interna, `Deploy` (a API entra na rede `rotaperfumes-db` com `172.30.42.10`) e `Smoke test` verde. Depois:
+Em até ~2 minutos o `pollSCM` dispara o job `rotaperfumes-deploy` com os valores padrão. Estágios esperados: `Checkout` → `Testes Go` → `Build` → `CA do banco` (lista o fingerprint aceito, cada certificado com `na lista (deploy/db-ca.fingerprint)`, `s_client: Verify return code: 0 (ok)` e `CA do banco validada: /etc/mysql/ssl/ca.pem (sha256 ...)`) → `Importar dump` (pulado: `IMPORTAR_DUMP=false`) → `Deploy` (a API entra na rede `rotaperfumes-db` com `172.30.42.10`) → `Smoke test` verde. Depois, no servidor:
 
 ```bash
 docker logs rotaperfumes-api-1 2>&1 | grep -E 'TLS do banco|conexão MariaDB estabelecida'
-# ... server_name=rotaperfumes-mariadb, min=TLS1.3 ... tls=ligado (custom)
+# [server] TLS do banco: ligado (ca=/etc/rotaperfumes/db-ca.pem, server_name=rotaperfumes-mariadb, min=TLS1.3)
+# [db] conexão MariaDB estabelecida (host=..., tls=ligado (custom))
 ```
 
-Faça login no site e confira algumas telas com dados (clientes, pedidos, dashboard).
+Falhou? A seção 10 (Troubleshooting) cobre os erros de cada estágio. O `CA do banco` roda antes do `Deploy`: se ele falhar, nada foi alterado.
 
-**Rollback da migração (até o passo 7):** o MySQL continua no ar. `git revert -m 1 <commit do merge>` e push na `main`; volte o Secret file e a credencial `rotaperfumes-db-admin` às cópias do passo 1; se o passo 2 trocou a CA (casos B ou C), restaure `/etc/mysql/ssl` do `backup-etc-mysql-ssl-*.tgz`. O job reimplanta a versão antiga contra o MySQL. Escritas feitas no MariaDB nesse meio-tempo não voltam sozinhas.
+### Passo 10. Primeiro login do admin e ativação dos vendedores
 
-### Passo 7. Parar o MySQL e publicar a porta para as máquinas de dev
+1. No servidor, leia a senha inicial **no terminal** (não cole em chat, log ou ticket): `sudo cat /root/rotaperfumes-mariadb/admin-app.senha`.
+2. Acesse `https://ivo-inspiron-15-3530:8443` (CA do Caddy instalada, seção 8) e faça login com `admin@rotaperfumes.com.br`. Com `deve_trocar_senha = 1`, o frontend leva para `/trocar-senha`, e a API responde `403` `"troca de senha obrigatória"` em todas as outras rotas protegidas até a troca (SEC-23). Troque a senha e faça login de novo.
+3. Apague o arquivo da senha inicial: `sudo shred -u /root/rotaperfumes-mariadb/admin-app.senha`.
+4. **Ativar os vendedores:** os 42 usuários de vendedor estão **inativos** e com hash placeholder (ninguém loga). Para cada vendedor que vai usar o sistema, como admin, na tela **Usuários**: confira o e-mail cadastrado (o seed usa `nome.sobrenome@rotaperfumes.com.br`), clique em **Resetar** (a API gera uma senha aleatória, grava com troca obrigatória no 1º login e a envia **por e-mail**; `POST /api/admin/reset-password`) e **ative** o usuário pelo botão de status (`PATCH /api/usuarios/{id}/inativar`). O reset sozinho não ativa o usuário.
+   - O reset depende do **SMTP** do Secret file: sem SMTP, a resposta vem com `email_enviado = false` e a senha gerada não chega a ninguém (não aparece na tela nem no log). Configure o `SMTP_*` antes.
+   - Usuários de vendedores desligados (vendedores 1, 3, 9, 30, 37 e 38) continuam inativos.
+   - Não use `make reset-senhas-ativos` nem o `resetpassword -all-users` para isso.
 
-Só depois de o site funcionar com o MariaDB:
+### Passo 11. Máquina do admin: `.env.producao`
 
-```bash
-# MySQL nativo:
-systemctl disable --now mysql
-# MySQL em container:
-#   docker update --restart=no <container_mysql> && docker stop <container_mysql>
-ss -ltnp | grep ':3306 ' || echo "3306 livre"
+Só a máquina do `--dev-ip` (passo 2) alcança `192.168.168.106:3306`. Ela usa **arquivos separados** para a produção; o `.env` padrão continua apontando para o banco de **dev** do CasaOS (`DB_HOST=192.168.168.106`, `DB_PORT=3307`, `DB_TLS_CA=deploy/ca-cert.pem`; a guarda `db-guard-producao` deixa passar a porta 3307).
 
-cd /root/rotaperfumes-lote30          # ou o workspace do job, já com a main nova
-bash deploy/mariadb-docker.sh --recriar --dev-ip <IP da máquina de dev> [--dev-ip <outra>]
-```
+1. Na raiz do repositório, copie a CA de produção (pública) e confira o fingerprint:
+   ```bash
+   scp <seu_usuario>@192.168.168.106:/etc/mysql/ssl/ca.pem deploy/ca-producao.pem
+   openssl x509 -in deploy/ca-producao.pem -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f
+   # igual à linha útil de deploy/db-ca.fingerprint
+   git check-ignore deploy/ca-producao.pem .env.producao       # os dois precisam aparecer (estão no .gitignore)
+   ```
+2. Crie o `.env.producao` (modo 600) com:
+   ```
+   # ATENCAO: PRODUCAO (dados reais). Use só com ENV_ARQUIVO=.env.producao.
+   DB_HOST=192.168.168.106
+   DB_PORT=3306
+   DB_NAME=rotaperfumes
+   DB_USUARIO=casaos
+   DB_SENHA=<conteúdo de /root/rotaperfumes-mariadb/casaos.senha>
+   DB_TLS_CA=deploy/ca-producao.pem
+   ```
+   Leia a senha no terminal do servidor (`ssh -t <seu_usuario>@192.168.168.106 sudo cat /root/rotaperfumes-mariadb/casaos.senha`) e cole direto no editor. `DB_TLS_SERVER_NAME` fica vazio: o IP `192.168.168.106` está no SAN do certificado (o cliente `mariadb` dos alvos `make db-*` confere o próprio `DB_HOST`). O cliente precisa do plugin `client_ed25519` (cliente `mariadb` 11.x).
+3. Uso: `ENV_ARQUIVO` faz o `make` ler o `.env.producao` **no lugar** do `.env`, e só vale na linha de comando. Os alvos que escrevem no banco ainda exigem a confirmação explícita da guarda `db-guard-producao`:
+   ```bash
+   make db-check-env ENV_ARQUIVO=.env.producao
+   openssl s_client -starttls mysql -connect 192.168.168.106:3306 -CAfile deploy/ca-producao.pem \
+     -verify_return_error -verify_ip 192.168.168.106 </dev/null 2>/dev/null | grep -E 'Verify return code|Cipher is'
+   # esperado: "Cipher is TLS_AES_..." (nunca "(NONE)") E "Verify return code: 0 (ok)"
+   make <alvo> ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=192.168.168.106/rotaperfumes
+   ```
+   O `Verify return code: 0 (ok)` **sozinho é enganoso**: sem handshake (ex.: o `mariadbd` recusou o host com o erro 1130, ou a máquina não está em `--dev-ip`) o `s_client` também o imprime, junto com `no peer certificate available` e `Cipher is (NONE)`. Só vale com uma cifra de verdade em `Cipher is`. Esse teste só funciona de uma máquina listada em `--dev-ip`; do próprio servidor ele nunca faz handshake (DEPLOY-08).
 
-- `--recriar` é obrigatório (a porta publicada muda); o banco fica fora do ar alguns segundos e a API reconecta sozinha. O certificado já está válido, então não precisa de `--ca-key`.
-- As regras antigas do ufw para a 3306 (`172.16.0.0/12`, `deny 3306`) não servem mais: remova-as (`ufw status numbered`, `ufw delete <n>`). A porta é filtrada pela chain `ROTAPERFUMES-DB`.
-- Dados do MySQL: guarde **no máximo 30 dias** (`/var/lib/mysql` no nativo; o volume no container) e o backup do passo 1 na mídia offline. Depois: nativo, `apt remove` do servidor MySQL e apagar o datadir (confira antes que `/etc/mysql/ssl/ca.pem` continua lá: a API e o Jenkins usam esse caminho); container, `docker rm -v <container_mysql>` (e `docker volume rm`, se o volume for nomeado).
+> **Aviso forte: dados reais.** Com o `.env.producao`, a conta `casaos` tem `ALL` no banco de produção. **Nunca** rode `make db-down`, `db-reset`, `db-rebuild`, `db-seed`, `db-import-*`, `db-seed-mes-atual`, `gen-hash`, `fix-hash` nem `reset-senhas-ativos` contra ele, mesmo com o `CONFIRMO_PRODUCAO`: eles apagam, sobrescrevem ou trocam senhas reais. Faça backup (seção 9) antes de qualquer migração (`db-fix-*`). Não use o `.env.producao` com `make dev-api`, `make test`, `go test` com `INTEGRATION=1` nem com as CLIs Go (a guarda não cobre esses casos). Nunca copie a CA de produção para `deploy/ca-cert.pem` nem o conteúdo do `.env.producao` para o `.env`.
 
-### Passo 8. `.env` das máquinas de dev
-
-Em cada máquina de `--dev-ip` (detalhes em `docs/Instal_SSL.md`, passo 11): copie `/etc/mysql/ssl/ca.pem` para `deploy/ca-cert.pem` e use no `.env`:
-
-```
-DB_HOST=192.168.168.106
-DB_PORT=3306
-DB_USUARIO=casaos
-DB_SENHA=<conteúdo de /root/rotaperfumes-mariadb/casaos.senha>
-DB_TLS_CA=deploy/ca-cert.pem
-```
-
-Teste com `make db-check-env` e `make dev-api` (log com `tls=ligado (custom)`). **Esse `.env` aponta para o banco de produção**: nada de `make db-down`/`db-reset`/`db-rebuild`/`db-seed`/`db-import-*` nem `INTEGRATION=1` com ele (seção 3.8).
-
-### Passo 9. Chave da CA para mídia offline
-
-Se o passo 2 usou `--nova-ca`, a chave ficou em `/root/rotaperfumes-ca/ca-key.pem`: copie para mídia offline (duas cópias) e apague com `shred -u /root/rotaperfumes-ca/ca-key.pem` (`docs/Instal_SSL.md`, passo 3). Com `--ca-key`, nada ficou no servidor (o script avisa se ficou).
-
-### Passo 10. Teste real do script (`TestTST15_MariadbDocker_Real`)
+### Passo 12. Teste real do script (`TestTST15_MariadbDocker_Real`)
 
 Numa máquina **com Docker que não seja o servidor** (o teste usa `/root/rotaperfumes-ca`, `/root/rotaperfumes-mariadb` e `/opt/rotaperfumes/mariadb-imagem`, e se recusa a rodar se os dois primeiros já existirem), como root, na raiz do repositório:
 
@@ -698,3 +735,5 @@ sudo -E env "PATH=$PATH" TST15_DOCKER=1 go test -count=1 -run TestTST15_MariadbD
 ```
 
 Ele sobe um container `tst15-mariadb` numa rede `tst15-db` (`172.30.243.0/24`) com `--nova-ca`, confere as contas ed25519, `REQUIRE SSL`, a recusa sem TLS, nenhuma porta sem `--dev-ip`, a reexecução sem troca de senha e o `--novo-cert` com `FLUSH SSL`, e limpa tudo no fim. Se puder, rode-o **antes** do passo 2. Registre o resultado no card TST-15.
+
+O `deploy/seed-producao.sh` ainda **não** tem teste real com Docker (só testes estáticos e de ensaio em `backend/shared/tests/deploy/`); a primeira execução real é a do passo 6. Pendência registrada no card DEPLOY-07.

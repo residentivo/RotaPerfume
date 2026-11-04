@@ -37,8 +37,8 @@ const senhaGerada = "GeradaXYZ0123456"
 var hsTeste = config.HashSenha{Pepper: "pepper-de-teste-com-pelo-menos-32-bytes", MemoriaKiB: 64, Iteracoes: 1, Paralelismo: 1}
 
 var (
-	reUpdateAdmin = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, ativo = 1, tokens_validos_desde = ? WHERE email = ?")
-	reUpdateEmail = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, tokens_validos_desde = ? WHERE email = ?")
+	reUpdateAdmin = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, ativo = 1, deve_trocar_senha = 1, tokens_validos_desde = ? WHERE email = ?")
+	reUpdateEmail = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ?, deve_trocar_senha = 1, tokens_validos_desde = ? WHERE email = ?")
 	reUpdateAll   = regexp.QuoteMeta("UPDATE usuarios SET password_hash = ? WHERE password_hash LIKE '%PLACEHOLDER%'")
 	reInsert      = "INSERT INTO usuarios"
 	reExisteAdmin = regexp.QuoteMeta("SELECT EXISTS(SELECT 1 FROM usuarios WHERE email = 'admin@rotaperfumes.com.br')")

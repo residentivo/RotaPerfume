@@ -470,9 +470,12 @@ func TestDB01_Estoque17SemOrigemEAplicadoNoDbUp(t *testing.T) {
 	assert.NotContains(t, create, "import_csv")
 
 	mk := lerMakefile(t)
+	// DEPLOY-07: o db-up aplica a lista de sql/ordem-ddl.txt (DDL_ORDEM).
 	receita := strings.Join(mk.regras["db-up"].receita, "\n")
-	i17 := strings.Index(receita, "sql/17_ddl_estoque.sql")
-	iProd := strings.Index(receita, "sql/10_ddl_produtos.sql")
+	require.Contains(t, receita, "$(DDL_ORDEM)", "db-up aplica a ordem de sql/ordem-ddl.txt")
+	ordem := "\n" + lerTexto(t, filepath.Join(root, "sql", "ordem-ddl.txt"))
+	i17 := strings.Index(ordem, "\n17_ddl_estoque.sql\n")
+	iProd := strings.Index(ordem, "\n10_ddl_produtos.sql\n")
 	require.GreaterOrEqual(t, i17, 0, "db-up precisa aplicar o 17")
 	if iProd >= 0 {
 		assert.Greater(t, i17, iProd, "estoque depois de produtos (FK)")

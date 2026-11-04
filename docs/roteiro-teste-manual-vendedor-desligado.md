@@ -35,7 +35,9 @@ Marque cada checkbox depois de conferir no navegador, com o DevTools aberto na a
     WHERE u.email = 'thiago.silva@rotaperfumes.com.br';
    ```
 
-   Esperado: `id` = 4, `ativo` = 1, `id_vendedor` = 3, `data_desligamento` = 2025-07-26. Se `ativo` = 0 (por exemplo, porque alguém desligou o vendedor 3 pela tela de Vendedores), o login responde `401 "credenciais inválidas"` (desde o SEC-22, Lote 24, a mesma resposta de senha errada; antes era `"usuário inativo"`) e o roteiro não pode ser executado com esse usuário. Nesse caso, reative o usuário 4 na tela de Usuários (o vendedor 3 continua desligado) e anote isso para desfazer no fim.
+   > **DEPLOY-07 (Lote 33, 2026-11-04): o `thiago.silva` nasce inativo.** Desde o DEPLOY-07, o `sql/03_seed_vendedores.sql` grava `ativo = 0` nos usuários dos vendedores desligados (vendedores 1, 3, 9, 30, 37 e 38), inclusive em linhas que já existiam; com isso o login do `thiago.silva` responde `401 "credenciais inválidas"`. Este roteiro testa o usuário **ativo** com vendedor desligado (login permitido e `403` nas rotas da carteira), então **reative o usuário 4 no banco de dev antes de começar**: como admin, tela **Usuários** → ativar o id 4, ou `UPDATE usuarios SET ativo = 1 WHERE id = 4;`. No fim (item 8.5), volte para `ativo = 0`. Rodar `make db-seed`/`make db-reset` de novo também o inativa. Nunca faça isso no banco de produção.
+
+   Esperado (depois da reativação acima): `id` = 4, `ativo` = 1, `id_vendedor` = 3, `data_desligamento` = 2025-07-26. Se `ativo` = 0 (seed do DEPLOY-07, ou porque alguém desligou o vendedor 3 pela tela de Vendedores), o login responde `401 "credenciais inválidas"` (desde o SEC-22, Lote 24, a mesma resposta de senha errada; antes era `"usuário inativo"`) e o roteiro não pode ser executado com esse usuário. Nesse caso, reative o usuário 4 na tela de Usuários (o vendedor 3 continua desligado) e anote isso para desfazer no fim.
 
 4. Para os cenários de troca de vínculo (seção 5), use **dois navegadores** (ou uma janela anônima): um com o admin e outro com o usuário normal.
 5. Anote o vínculo original do usuário 5 para desfazer no fim: `SELECT id_vendedor, ativo FROM usuarios WHERE id = 5;` (esperado: `id_vendedor` = 4, `ativo` = 1).
@@ -91,7 +93,7 @@ for (const p of ["/api/clientes", "/api/pedidos", "/api/pagamentos", "/api/oport
 - [ ] 4.1 `/dashboard` abre normalmente e mostra o aviso "Vendedor desligado. O vendedor vinculado ao seu usuario possui data de desligamento...".
 - [ ] 4.2 Os KPIs (Minhas Vendas R$ 0,00, Meus Pedidos 0, Meu Ticket Medio R$ 0,00, Minha Meta "-") e o gráfico ("Minhas Vendas nos Últimos N Dias", "Total: R$ 0,00") continuam **visíveis e zerados** (UI-02 opção b). Os clientes também aparecem zerados.
 - [ ] 4.3 `/trocar-senha` abre e permite trocar a senha (`POST /api/auth/reset-password` responde 200). A troca apaga os cookies e exige novo login: entre com a nova senha e **restaure a senha original**.
-- [ ] 4.4 "Sair" funciona e leva para `/login`. O login do `thiago.silva` continua permitido, porque o usuário está com `ativo = 1`. Um vendedor desligado **pela tela de Vendedores** depois do BUG-05 tem os usuários inativados, e esses usuários recebem `401 "credenciais inválidas"` no login (SEC-22, Lote 24; antes era `"usuário inativo"`; veja a nota da seção 5).
+- [ ] 4.4 "Sair" funciona e leva para `/login`. O login do `thiago.silva` continua permitido, porque o usuário está com `ativo = 1` (reativado no passo 0.3; pelo seed, desde o DEPLOY-07, ele nasce com `ativo = 0` e o login dá `401`). Um vendedor desligado **pela tela de Vendedores** depois do BUG-05 tem os usuários inativados, e esses usuários recebem `401 "credenciais inválidas"` no login (SEC-22, Lote 24; antes era `"usuário inativo"`; veja a nota da seção 5).
 
 ## 5. Desligamento sem novo login (bloqueio reativo)
 
@@ -132,7 +134,7 @@ for (const p of ["/api/clientes", "/api/pedidos", "/api/pagamentos", "/api/oport
 - [ ] 8.2 Usuário 5 com vínculo restaurado para o vendedor 4 e `ativo = 1` (`SELECT id_vendedor, ativo FROM usuarios WHERE id = 5;`).
 - [ ] 8.3 Pedidos de teste excluídos.
 - [ ] 8.4 Senha do `thiago.silva` (id 4) restaurada (item 4.3).
-- [ ] 8.5 Se o usuário 4 foi reativado no passo 0.3, volte o `ativo` dele ao valor anotado.
+- [ ] 8.5 Usuário 4 reativado no passo 0.3: volte para `ativo = 0` (`UPDATE usuarios SET ativo = 0 WHERE id = 4;`, ou a tela de Usuários), o estado do seed desde o DEPLOY-07.
 
 ---
 

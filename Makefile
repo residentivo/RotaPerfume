@@ -1,4 +1,4 @@
-.PHONY: help reset-senhas-simular reset-senhas-ativos db-gerar-imagens-produtos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-produtos-imagem db-revert-produtos-imagem db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint \
+.PHONY: help db-guard-producao fix-admin test-integration reset-senhas-simular reset-senhas-ativos db-gerar-imagens-produtos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-produtos-imagem db-revert-produtos-imagem db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
@@ -13,7 +13,14 @@
 # shell; "make DB_SENHA=x" na linha de comando ganha de tudo.
 # Formato do .env: DB_SENHA sem "$", "#", aspas, espaços nas pontas e sem
 # começar com "/" (o make e o Git Bash interpretariam esses caracteres).
+ifeq ($(origin ENV_ARQUIVO),command line)
+# DEPLOY-07: outro arquivo NO LUGAR do .env (ex.: .env.producao da maquina do
+# admin); o .env NAO e lido. So pela linha de comando:
+#   make db-up ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>
+include $(ENV_ARQUIVO)
+else
 -include .env
+endif
 
 DB_NAME ?= rotaperfumes
 DB_HOST ?= localhost
@@ -92,36 +99,49 @@ db-check-env: ## Confere DB_USUARIO/DB_SENHA (SEC-11), o TLS exigido para host r
 	@v=$$($(DB_CLIENTE_BIN) --version 2>&1) || { echo "DB_CLIENTE_BIN=$(DB_CLIENTE_BIN) nao encontrado no PATH (instale o cliente MariaDB: make setup)"; exit 1; }; \
 	case "$$v" in *MariaDB*) ;; *) echo "DB_CLIENTE_BIN=$(DB_CLIENTE_BIN) nao e o cliente MariaDB ($$v)"; exit 1 ;; esac
 
-db-create: db-check-env ## Cria o banco de dados se não existir
+# DEPLOY-07: o banco de PRODUCAO (container rotaperfumes-mariadb) nunca recebe
+# make db-*/fix-*/import por engano. Todo alvo que escreve no banco depende
+# desta guarda. Producao =
+#   DB_HOST em PRODUCAO_HOSTS_LAN (IP/hostname do servidor) com DB_PORT vazio
+#   ou 3306 (a porta publicada com --dev-ip), OU
+#   DB_HOST em PRODUCAO_HOSTS_REDE (nome/IP na rede docker), qualquer porta.
+# O MariaDB de DEV do CasaOS roda no MESMO host, porta 3307: passa.
+# Producao aborta, salvo CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME> NA LINHA DE
+# COMANDO (no .env ou no ambiente nao vale, para nao virar confirmacao
+# permanente). O seed inicial de producao e o deploy/seed-producao.sh.
+PRODUCAO_HOSTS_LAN := 192.168.168.106 ivo-inspiron-15-3530
+PRODUCAO_HOSTS_REDE := rotaperfumes-mariadb 172.30.42.2
+db-guard-producao: ## DEPLOY-07: recusa o banco de producao (salvo CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME> na linha de comando)
+	@h=$$(printf '%s' "$(DB_HOST)" | tr 'A-Z' 'a-z' | sed 's/\.$$//'); \
+	porta="$(DB_PORT)"; prod=false; \
+	for p in $(PRODUCAO_HOSTS_REDE); do [ "$$h" = "$$p" ] && prod=true; done; \
+	for p in $(PRODUCAO_HOSTS_LAN); do \
+	  if [ "$$h" = "$$p" ] && { [ -z "$$porta" ] || [ "$$porta" = 3306 ]; }; then prod=true; fi; \
+	done; \
+	$$prod || exit 0; \
+	if [ "$(origin CONFIRMO_PRODUCAO)" = "command line" ] && [ "$(CONFIRMO_PRODUCAO)" = "$(DB_HOST)/$(DB_NAME)" ]; then \
+	  echo "AVISO (DEPLOY-07): $(DB_HOST):$${porta:-3306} e PRODUCAO; confirmado por CONFIRMO_PRODUCAO=$(DB_HOST)/$(DB_NAME)."; exit 0; \
+	fi; \
+	echo "DEPLOY-07: DB_HOST=$(DB_HOST) DB_PORT=$${porta:-3306} e o banco de PRODUCAO: alvo recusado (make db-* apaga/altera dados reais)."; \
+	echo "  O dev (CasaOS) e a porta 3307. Seed inicial de producao: sudo bash deploy/seed-producao.sh no servidor."; \
+	echo "  Se for mesmo producao, repita com CONFIRMO_PRODUCAO=$(DB_HOST)/$(DB_NAME) na linha de comando."; \
+	exit 1
+
+db-create: db-guard-producao db-check-env ## Cria o banco de dados se não existir
 	$(DB_CLI) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
-db-up: db-create ## Cria o schema (tabelas vazias)
-	@echo "=== Aplicando DDL de usuarios (vendedores + usuarios) ==="
-	$(DB_CLI) $(DB_NAME) < sql/01_ddl_usuarios.sql
-	@echo "=== Aplicando DDL de refresh_tokens ==="
-	$(DB_CLI) $(DB_NAME) < sql/06_ddl_refresh_tokens.sql
-	@echo "=== Aplicando DDL de senha_historico ==="
-	$(DB_CLI) $(DB_NAME) < sql/07_ddl_senha_historico.sql
-	@echo "=== Aplicando DDL de clientes ==="
-	$(DB_CLI) $(DB_NAME) < sql/09_ddl_clientes.sql
-	@echo "=== Aplicando DDL de produtos ==="
-	$(DB_CLI) $(DB_NAME) < sql/10_ddl_produtos.sql
-	@echo "=== Aplicando DDL de pedidos (depende de clientes + vendedores) ==="
-	$(DB_CLI) $(DB_NAME) < sql/04_ddl_pedidos.sql
-	@echo "=== Aplicando DDL de itens_pedido (depende de pedidos + produtos) ==="
-	$(DB_CLI) $(DB_NAME) < sql/11_ddl_itens_pedido.sql
-	@echo "=== Aplicando DDL de pagamentos (depende de pedidos) ==="
-	$(DB_CLI) $(DB_NAME) < sql/12_ddl_pagamentos.sql
-	@echo "=== Aplicando DDL de carteiras (depende de clientes + vendedores) ==="
-	$(DB_CLI) $(DB_NAME) < sql/14_ddl_carteiras.sql
-	@echo "=== Aplicando DDL de oportunidades (depende de clientes + vendedores) ==="
-	$(DB_CLI) $(DB_NAME) < sql/15_ddl_oportunidades.sql
-	@echo "=== Aplicando DDL de visitas (depende de clientes + vendedores) ==="
-	$(DB_CLI) $(DB_NAME) < sql/16_ddl_visitas.sql
-	@echo "=== Aplicando DDL de estoque (depende de produtos; ja sem a coluna origem da migracao 18) ==="
-	$(DB_CLI) $(DB_NAME) < sql/17_ddl_estoque.sql
+# DEPLOY-07: a ordem da DDL fica em sql/ordem-ddl.txt (a mesma usada pelo
+# deploy/seed-producao.sh). Linhas vazias e "#..." sao ignoradas.
+DDL_ORDEM := $(shell grep -Ev '^[[:space:]]*(\#|$$)' sql/ordem-ddl.txt 2>/dev/null)
 
-db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
+db-up: db-guard-producao db-create ## Cria o schema (tabelas vazias) na ordem de sql/ordem-ddl.txt
+	@test -n "$(DDL_ORDEM)" || { echo "DEPLOY-07: sql/ordem-ddl.txt ausente ou vazio"; exit 1; }
+	@for f in $(DDL_ORDEM); do \
+	  echo "=== Aplicando DDL sql/$$f ==="; \
+	  $(DB_CLI) $(DB_NAME) < "sql/$$f" || exit 1; \
+	done
+
+db-seed: db-guard-producao db-up ## Cria o schema, carrega dados e corrige hashes (DEV; producao: deploy/seed-producao.sh)
 	@echo "=== Seed: admin principal ==="
 	$(DB_CLI) $(DB_NAME) < sql/02_seed_admin.sql
 	@echo "=== Seed: usuarios dos 42 vendedores ==="
@@ -133,65 +153,65 @@ db-seed: db-up ## Cria o schema, carrega dados e corrige hashes
 	cd backend/shared && go run ./cmd/resetpassword -all-users
 	@echo ""
 	@echo "=== Seed completo com hashes validos! ==="
-	@echo "=== Admin: admin@rotaperfumes.com.br / Admin@123 ==="
+	@echo "=== Admin: admin@rotaperfumes.com.br (senha: SEED_ADMIN_PASSWORD do .env ou a ADMIN_PASSWORD impressa acima; troca obrigatoria no 1o login) ==="
 
-db-down: db-check-env ## Dropa o banco de dados (CUIDADO!)
+db-down: db-guard-producao db-check-env ## Dropa o banco de dados (CUIDADO!)
 	$(DB_CLI) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
 
-db-reset: db-down db-seed ## Recria o banco do zero com hashes validos
+db-reset: db-guard-producao db-down db-seed ## Recria o banco do zero com hashes validos
 
-db-fix-deve-trocar-senha: db-check-env ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
+db-fix-deve-trocar-senha: db-guard-producao db-check-env ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
 	$(DB_CLI) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
 
-db-fix-tipo-reset: db-check-env ## Corrige o ENUM de senha_historico.tipo_reset em bancos existentes (nao destrutivo, sem apagar dados)
+db-fix-tipo-reset: db-guard-producao db-check-env ## Corrige o ENUM de senha_historico.tipo_reset em bancos existentes (nao destrutivo, sem apagar dados)
 	$(DB_CLI) $(DB_NAME) < sql/13_alter_senha_historico_tipo_reset.sql
 
-db-fix-estoque-origem: db-check-env ## Remove estoque.origem (migracao 18) em bancos criados com o 17 antigo (idempotente; perde o rastreio de origem)
+db-fix-estoque-origem: db-guard-producao db-check-env ## Remove estoque.origem (migracao 18) em bancos criados com o 17 antigo (idempotente; perde o rastreio de origem)
 	$(DB_CLI) $(DB_NAME) < sql/18_alter_estoque_drop_origem.sql
 
-db-revert-estoque-origem: db-check-env ## Reverte db-fix-estoque-origem (recria estoque.origem; linhas existentes voltam como import_csv)
+db-revert-estoque-origem: db-guard-producao db-check-env ## Reverte db-fix-estoque-origem (recria estoque.origem; linhas existentes voltam como import_csv)
 	$(DB_CLI) $(DB_NAME) < sql/18_revert_estoque_drop_origem.sql
 
-db-fix-cnpj-unique: db-check-env ## Unifica clientes com CNPJ duplicado no menor id e cria UNIQUE uq_clientes_cnpj (APAGA as copias; backup em clientes_merge_backup_20260925*)
+db-fix-cnpj-unique: db-guard-producao db-check-env ## Unifica clientes com CNPJ duplicado no menor id e cria UNIQUE uq_clientes_cnpj (APAGA as copias; backup em clientes_merge_backup_20260925*)
 	$(DB_CLI) $(DB_NAME) < sql/19_alter_clientes_cnpj_unique.sql
 
-db-revert-cnpj-unique: db-check-env ## Reverte db-fix-cnpj-unique a partir das tabelas clientes_merge_backup_20260925*
+db-revert-cnpj-unique: db-guard-producao db-check-env ## Reverte db-fix-cnpj-unique a partir das tabelas clientes_merge_backup_20260925*
 	$(DB_CLI) $(DB_NAME) < sql/19_revert_clientes_cnpj_unique.sql
 
-db-fix-cnpj-comment: db-check-env ## Atualiza o COMMENT de clientes.cnpj para o formato alfanumerico (so metadado, sem apagar dados)
+db-fix-cnpj-comment: db-guard-producao db-check-env ## Atualiza o COMMENT de clientes.cnpj para o formato alfanumerico (so metadado, sem apagar dados)
 	$(DB_CLI) $(DB_NAME) < sql/20_alter_clientes_cnpj_comment.sql
 
-db-revert-cnpj-comment: db-check-env ## Reverte db-fix-cnpj-comment (volta o COMMENT antigo "somente digitos")
+db-revert-cnpj-comment: db-guard-producao db-check-env ## Reverte db-fix-cnpj-comment (volta o COMMENT antigo "somente digitos")
 	$(DB_CLI) $(DB_NAME) < sql/20_revert_clientes_cnpj_comment.sql
 
-db-fix-revoked-reason: db-check-env ## Adiciona refresh_tokens.revoked_reason (SEC-07) em bancos existentes (nao destrutivo, legado fica NULL)
+db-fix-revoked-reason: db-guard-producao db-check-env ## Adiciona refresh_tokens.revoked_reason (SEC-07) em bancos existentes (nao destrutivo, legado fica NULL)
 	$(DB_CLI) $(DB_NAME) < sql/21_alter_refresh_tokens_revoked_reason.sql
 
-db-revert-revoked-reason: db-check-env ## Reverte db-fix-revoked-reason (remove a coluna; perde os motivos gravados)
+db-revert-revoked-reason: db-guard-producao db-check-env ## Reverte db-fix-revoked-reason (remove a coluna; perde os motivos gravados)
 	$(DB_CLI) $(DB_NAME) < sql/21_revert_refresh_tokens_revoked_reason.sql
 
-db-fix-tokens-validos-desde: db-check-env ## Adiciona usuarios.tokens_validos_desde (SEC-08) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
+db-fix-tokens-validos-desde: db-guard-producao db-check-env ## Adiciona usuarios.tokens_validos_desde (SEC-08) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
 	$(DB_CLI) $(DB_NAME) < sql/22_alter_usuarios_tokens_validos_desde.sql
 
-db-revert-tokens-validos-desde: db-check-env ## Reverte db-fix-tokens-validos-desde (remove a coluna; perde os cortes de token gravados)
+db-revert-tokens-validos-desde: db-guard-producao db-check-env ## Reverte db-fix-tokens-validos-desde (remove a coluna; perde os cortes de token gravados)
 	$(DB_CLI) $(DB_NAME) < sql/22_revert_usuarios_tokens_validos_desde.sql
 
-db-fix-reuso-detectado: db-check-env ## Adiciona refresh_tokens.reuso_detectado_em (SEC-12) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
+db-fix-reuso-detectado: db-guard-producao db-check-env ## Adiciona refresh_tokens.reuso_detectado_em (SEC-12) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
 	$(DB_CLI) $(DB_NAME) < sql/23_alter_refresh_tokens_reuso_detectado_em.sql
 
-db-revert-reuso-detectado: db-check-env ## Reverte db-fix-reuso-detectado (remove a coluna; perde as marcas de reuso gravadas)
+db-revert-reuso-detectado: db-guard-producao db-check-env ## Reverte db-fix-reuso-detectado (remove a coluna; perde as marcas de reuso gravadas)
 	$(DB_CLI) $(DB_NAME) < sql/23_revert_refresh_tokens_reuso_detectado_em.sql
 
-db-fix-taxa-pct-check: db-check-env ## Cria o CHECK chk_pagamentos_taxa_pct (0 a 30) em bancos existentes (SEC-27; aborta sem alterar dados se houver taxa_pct fora da faixa)
+db-fix-taxa-pct-check: db-guard-producao db-check-env ## Cria o CHECK chk_pagamentos_taxa_pct (0 a 30) em bancos existentes (SEC-27; aborta sem alterar dados se houver taxa_pct fora da faixa)
 	$(DB_CLI) $(DB_NAME) < sql/24_alter_pagamentos_taxa_pct_check.sql
 
-db-revert-taxa-pct-check: db-check-env ## Reverte db-fix-taxa-pct-check (remove o CHECK; o teto de taxa_pct fica so no dominio)
+db-revert-taxa-pct-check: db-guard-producao db-check-env ## Reverte db-fix-taxa-pct-check (remove o CHECK; o teto de taxa_pct fica so no dominio)
 	$(DB_CLI) $(DB_NAME) < sql/24_revert_pagamentos_taxa_pct_check.sql
 
-db-fix-produtos-imagem: db-check-env ## Adiciona produtos.imagem + CHECK chk_produtos_imagem + UNIQUE uk_produtos_imagem (IMG-01) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
+db-fix-produtos-imagem: db-guard-producao db-check-env ## Adiciona produtos.imagem + CHECK chk_produtos_imagem + UNIQUE uk_produtos_imagem (IMG-01) em bancos existentes (nao destrutivo, linhas existentes ficam NULL)
 	$(DB_CLI) $(DB_NAME) < sql/26_alter_produtos_imagem.sql
 
-db-revert-produtos-imagem: db-check-env ## Reverte db-fix-produtos-imagem (remove CHECK, UNIQUE e coluna; perde os vinculos produto->imagem, arquivos ficam orfaos)
+db-revert-produtos-imagem: db-guard-producao db-check-env ## Reverte db-fix-produtos-imagem (remove CHECK, UNIQUE e coluna; perde os vinculos produto->imagem, arquivos ficam orfaos)
 	$(DB_CLI) $(DB_NAME) < sql/26_revert_produtos_imagem.sql
 
 # IMG-01: gera um PNG por produto (nome na diagonal) pelo mesmo caso de uso do
@@ -199,37 +219,37 @@ db-revert-produtos-imagem: db-check-env ## Reverte db-fix-produtos-imagem (remov
 # Flags extras: make db-gerar-imagens-produtos GERAR_IMAGENS_FLAGS=-sobrescrever
 # (ou -dry-run para só simular).
 GERAR_IMAGENS_FLAGS ?=
-db-gerar-imagens-produtos: db-check-env ## IMG-01: gera e grava a imagem PNG (nome na diagonal) dos produtos sem imagem (GERAR_IMAGENS_FLAGS=-sobrescrever troca todas)
+db-gerar-imagens-produtos: db-guard-producao db-check-env ## IMG-01: gera e grava a imagem PNG (nome na diagonal) dos produtos sem imagem (GERAR_IMAGENS_FLAGS=-sobrescrever troca todas)
 	cd backend/rotaperfumes-api && go run ./cmd/gerarimagens -confirmar $(GERAR_IMAGENS_FLAGS)
 
-db-seed-mes-atual: db-check-env ## Gera movimentacoes de exemplo no mes corrente (pedidos/itens/pagamentos/oportunidades/visitas/estoque/carteiras; idempotente, refaz so as linhas do seed do mes)
+db-seed-mes-atual: db-guard-producao db-check-env ## Gera movimentacoes de exemplo no mes corrente (pedidos/itens/pagamentos/oportunidades/visitas/estoque/carteiras; idempotente, refaz so as linhas do seed do mes)
 	$(DB_CLI) $(DB_NAME) < sql/25_seed_movimentacoes_mes_atual.sql
 
-db-import-clientes: ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
+db-import-clientes: db-guard-producao ## Importa dados/crm/clientes.csv para a tabela clientes (upsert idempotente)
 	cd backend/shared && go run ./cmd/importclientes
 
-db-import-produtos: ## Importa dados/erp/produtos.csv para a tabela produtos (upsert idempotente)
+db-import-produtos: db-guard-producao ## Importa dados/erp/produtos.csv para a tabela produtos (upsert idempotente)
 	cd backend/shared && go run ./cmd/importprodutos
 
-db-import-pedidos: ## Importa dados/erp/pedidos.csv e itens_pedido.csv (upsert idempotente, nesta ordem)
+db-import-pedidos: db-guard-producao ## Importa dados/erp/pedidos.csv e itens_pedido.csv (upsert idempotente, nesta ordem)
 	cd backend/shared && go run ./cmd/importpedidos
 
-db-import-pagamentos: ## Importa dados/erp/pagamentos.csv para a tabela pagamentos (upsert idempotente, depende de pedidos já importados)
+db-import-pagamentos: db-guard-producao ## Importa dados/erp/pagamentos.csv para a tabela pagamentos (upsert idempotente, depende de pedidos já importados)
 	cd backend/shared && go run ./cmd/importpagamentos
 
-db-import-carteiras: ## Importa dados/crm/carteira.csv para a tabela carteiras (upsert idempotente, depende de clientes e vendedores já importados)
+db-import-carteiras: db-guard-producao ## Importa dados/crm/carteira.csv para a tabela carteiras (upsert idempotente, depende de clientes e vendedores já importados)
 	cd backend/shared && go run ./cmd/importcarteiras
 
-db-import-oportunidades: ## Importa dados/crm/oportunidades.csv para a tabela oportunidades (upsert idempotente, depende de clientes e vendedores já importados)
+db-import-oportunidades: db-guard-producao ## Importa dados/crm/oportunidades.csv para a tabela oportunidades (upsert idempotente, depende de clientes e vendedores já importados)
 	cd backend/shared && go run ./cmd/importoportunidades
 
-db-import-visitas: ## Importa dados/crm/visitas.csv para a tabela visitas (upsert idempotente, depende de clientes e vendedores já importados)
+db-import-visitas: db-guard-producao ## Importa dados/crm/visitas.csv para a tabela visitas (upsert idempotente, depende de clientes e vendedores já importados)
 	cd backend/shared && go run ./cmd/importvisitas
 
-db-import-estoque: ## Importa dados/erp/estoque.csv para a tabela estoque (upsert idempotente, depende de produtos já importados)
+db-import-estoque: db-guard-producao ## Importa dados/erp/estoque.csv para a tabela estoque (upsert idempotente, depende de produtos já importados)
 	cd backend/shared && go run ./cmd/importestoque
 
-db-rebuild: db-down db-seed db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque ## Recria o banco do zero e importa todos os dados
+db-rebuild: db-guard-producao db-down db-seed db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque ## Recria o banco do zero e importa todos os dados
 
 db-export: ## Exporta as tabelas do banco para CSV em export/crm e export/erp (mesmo formato de dados/)
 	cd backend/shared && go run ./cmd/exportdados
@@ -313,7 +333,7 @@ cover-combinada: build-shared ## ARQ-01: cobertura combinada API+shared (-coverp
 # (SEC-11; o "-include .env" + "export" acima as exporta) e devem rodar com
 # "go test -p 1" (os pacotes usam o mesmo banco). Este alvo não passa -p 1:
 # ver os comandos em docs/arquitetura-ddd.md §10.9.
-test-integration: ## Roda testes de integração (requer MariaDB e DB_* no .env; prefira -p 1, ver docs/arquitetura-ddd.md §10.9)
+test-integration: db-guard-producao ## Roda testes de integração (requer MariaDB e DB_* no .env; prefira -p 1, ver docs/arquitetura-ddd.md §10.9)
 	INTEGRATION=1 $(MAKE) test
 
 test-frontend:
@@ -362,7 +382,7 @@ deps-audit-frontend: ## SEC-13: npm audit (falha em severidade high+) e npm outd
 # registry com token anônimo). Nunca falha. Para atualizar: trocar a string
 # nos dois arquivos (mesmo digest do mariadb), make test, backup e
 # sudo bash deploy/mariadb-docker.sh --recriar (ver comentário no Jenkinsfile).
-IMAGENS_FIXADAS_EM = Jenkinsfile deploy/mariadb-docker.sh
+IMAGENS_FIXADAS_EM = Jenkinsfile deploy/mariadb-docker.sh deploy/seed-producao.sh
 IMAGEM_ACCEPT = application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json
 
 deps-audit-imagens: ## SEC-31: compara os digests fixados (Jenkinsfile, mariadb-docker.sh) com os das tags atuais no Docker Hub (informativo, nunca falha)
@@ -396,26 +416,30 @@ deps-audit-imagens: ## SEC-31: compara os digests fixados (Jenkinsfile, mariadb-
 # =============================================================================
 # Seed de usuários (gera hash argon2id com PASSWORD_PEPPER)
 # =============================================================================
-gen-hash: ## aplica os seeds com hash gerado (sem alterar sql/)
+gen-hash: db-guard-producao ## aplica os seeds com hash gerado (sem alterar sql/)
 	cd backend/shared && go run ./cmd/seedusers
 
 reset-senhas-simular: ## OPS-01: lista os usuários ativos que o reset em massa atingiria (não grava)
 	cd backend/rotaperfumes-api && go run ./cmd/resetsenhas
 
-reset-senhas-ativos: ## OPS-01: nova senha Argon2id + e-mail para TODOS os usuários ativos (exige SMTP)
+reset-senhas-ativos: db-guard-producao ## OPS-01: nova senha Argon2id + e-mail para TODOS os usuários ativos (exige SMTP)
 	cd backend/rotaperfumes-api && go run ./cmd/resetsenhas -executar
 
-fix-hash: ## Lista usuários e corrige TODOS os PLACEHOLDER + cria admin (se faltar)
+# DEPLOY-07: sem senha fixa. A senha e pedida no terminal (sem eco, com
+# confirmacao); no Git Bash rode o comando via winpty. O admin fica com
+# deve_trocar_senha = 1 (troca obrigatoria no 1o login).
+fix-hash: db-guard-producao ## Lista usuários e corrige TODOS os PLACEHOLDER + cria admin (se faltar); senha pedida no terminal
 	cd backend/shared && go run ./cmd/resetpassword -list
-	@echo.
-	@echo "=== Corrigindo todos os PLACEHOLDER + criando admin ==="
-	cd backend/shared && go run ./cmd/resetpassword -all-users -password=Admin@123
-	cd backend/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
-	@echo.
-	@echo "=== CORRIGIDO! Credenciais: admin@rotaperfumes.com.br / Admin@123 ==="
+	@echo ""
+	@echo "=== Corrigindo todos os PLACEHOLDER (senha dos usuarios) ==="
+	cd backend/shared && go run ./cmd/resetpassword -all-users -password-prompt
+	@echo "=== Criando/atualizando o admin (senha do admin) ==="
+	cd backend/shared && go run ./cmd/resetpassword -create-admin -password-prompt
+	@echo ""
+	@echo "=== CORRIGIDO! Admin: admin@rotaperfumes.com.br (senha digitada acima; troca obrigatoria no 1o login) ==="
 
-fix-admin: ## Garante que admin existe (cria se não existir) com senha Admin@123
-	cd backend/shared && go run ./cmd/resetpassword -create-admin -password=Admin@123
+fix-admin: db-guard-producao ## Garante que admin existe (cria se não existir); senha pedida no terminal, troca obrigatoria no 1o login
+	cd backend/shared && go run ./cmd/resetpassword -create-admin -password-prompt
 
 # =============================================================================
 # Audit

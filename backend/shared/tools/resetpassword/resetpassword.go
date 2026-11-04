@@ -10,6 +10,7 @@
 //	cd backend/shared && go run ./cmd/resetpassword -email=admin@rotaperfumes.com.br -password-prompt -role=admin
 //	printf '%s\n' "$NOVA_SENHA" | go run ./cmd/resetpassword -all-users -password-stdin
 //	cd backend/shared && go run ./cmd/resetpassword -create-admin   # SEED_ADMIN_PASSWORD do .env ou aleatória
+//	cd backend/shared && go run ./cmd/resetpassword -create-admin -password-out /caminho/novo.senha   # gerada, só no arquivo (0600)
 //
 // Fontes de senha (no máximo uma):
 //   - -password-prompt: lê do terminal sem eco, com confirmação. No Git Bash
@@ -21,10 +22,18 @@
 //   - nenhuma: SEED_ADMIN_PASSWORD / SEED_USER_PASSWORD do .env
 //     (-create-admin / -all-users) ou senha aleatória impressa no console.
 //
+// -password-out ARQ (DEPLOY-07): gera uma senha aleatória (ignora as env
+// SEED_*) e a grava num arquivo NOVO (O_CREATE|O_EXCL, modo 0600), nunca no
+// stdout (que só diz "senha gravada em ARQ"). Não combina com as fontes de
+// senha acima nem com -list. Se a gravação no banco falhar, o arquivo é
+// apagado (a senha nele não valeria).
+//
 // Comportamento:
 //   - -list: lista usuários com status do hash (PLACEHOLDER / OK / BCRYPT_LEGADO / MISSING_ADMIN).
 //   - -create-admin: garante que o admin existe (INSERT se não existe, UPDATE se existe).
 //   - -email=...: UPSERT do usuário (cria se não existe, atualiza se existe).
+//   - -create-admin e -email gravam deve_trocar_senha = 1 (DEPLOY-07): a
+//     senha definida aqui vale só até o primeiro login.
 //   - -all-users: substitui todos os hashes PLACEHOLDER pela senha informada.
 package resetpassword
 
@@ -70,8 +79,9 @@ type Options struct {
 	CreateAdmin bool   // -create-admin
 	List        bool   // -list
 
-	PasswordStdin  bool // -password-stdin: lê a senha da 1ª linha do stdin
-	PasswordPrompt bool // -password-prompt: lê a senha do terminal, sem eco
+	PasswordStdin  bool   // -password-stdin: lê a senha da 1ª linha do stdin
+	PasswordPrompt bool   // -password-prompt: lê a senha do terminal, sem eco
+	PasswordOut    string // -password-out: grava a senha GERADA neste arquivo novo (0600)
 
 	// HashSenha são o pepper e os parâmetros Argon2id (config.LoadHashSenha no
 	// comando). Não é flag; só é exigido pelas ações que gravam senha.
@@ -135,6 +145,10 @@ func ResolverSenha(opts Options, stdin io.Reader, isTerminal func() bool, readNo
 	switch {
 	case fontes > 1:
 		return "", errors.New("resetpassword: uso: informe no máximo uma fonte de senha (-password, -password-stdin ou -password-prompt)")
+	case opts.PasswordOut != "" && fontes > 0:
+		return "", errors.New("resetpassword: uso: -password-out grava uma senha GERADA; não combine com -password, -password-stdin ou -password-prompt")
+	case opts.PasswordOut != "" && opts.List:
+		return "", errors.New("resetpassword: uso: -password-out não vale com -list")
 	case opts.Password != "":
 		fmt.Fprintln(stderr, AvisoPasswordDepreciada)
 		return opts.Password, nil
@@ -216,38 +230,35 @@ func Run(ctx context.Context, db DB, opts Options, out io.Writer, gen PasswordGe
 		}
 
 	case opts.CreateAdmin:
-		password, err := senhaOuEnv(opts.Password, "SEED_ADMIN_PASSWORD", out, gen,
-			"=== Senha gerada (guarde!) ===", "ADMIN_PASSWORD", "==============================")
+		password, concluir, err := escolherSenha(opts, "SEED_ADMIN_PASSWORD", out, gen, rotulosSenha{
+			"=== Senha gerada (guarde!) ===", "ADMIN_PASSWORD", "=============================="})
 		if err != nil {
 			return err
 		}
-		if err := UpsertAdmin(ctx, db, opts.HashSenha, password); err != nil {
+		if err := concluir(UpsertAdmin(ctx, db, opts.HashSenha, password)); err != nil {
 			return fmt.Errorf("resetpassword: create-admin: %w", err)
 		}
 		listarFinal(ctx, db, out)
 
 	case opts.AllUsers:
-		password, err := senhaOuEnv(opts.Password, "SEED_USER_PASSWORD", out, gen,
+		password, concluir, err := escolherSenha(opts, "SEED_USER_PASSWORD", out, gen, rotulosSenha{
 			"=== Senha gerada (todos os usuários PLACEHOLDER usarão esta) ===", "USER_PASSWORD",
-			"================================================================")
+			"================================================================"})
 		if err != nil {
 			return err
 		}
-		if err := UpdateAllPlaceholders(ctx, db, opts.HashSenha, password); err != nil {
+		if err := concluir(UpdateAllPlaceholders(ctx, db, opts.HashSenha, password)); err != nil {
 			return fmt.Errorf("resetpassword: update all: %w", err)
 		}
 		listarFinal(ctx, db, out)
 
 	case opts.Email != "":
-		password := opts.Password
-		if password == "" {
-			pwd, err := gerarEImprimir(out, gen, "=== Senha gerada ===", "PASSWORD", "====================")
-			if err != nil {
-				return err
-			}
-			password = pwd
+		password, concluir, err := escolherSenha(opts, "", out, gen, rotulosSenha{
+			"=== Senha gerada ===", "PASSWORD", "===================="})
+		if err != nil {
+			return err
 		}
-		if err := UpsertByEmail(ctx, db, opts.HashSenha, opts.Email, password, opts.Role, opts.Nome, opts.IDVendedor); err != nil {
+		if err := concluir(UpsertByEmail(ctx, db, opts.HashSenha, opts.Email, password, opts.Role, opts.Nome, opts.IDVendedor)); err != nil {
 			return fmt.Errorf("resetpassword: upsert: %w", err)
 		}
 		listarFinal(ctx, db, out)
@@ -258,22 +269,42 @@ func Run(ctx context.Context, db DB, opts Options, out io.Writer, gen PasswordGe
 	return nil
 }
 
-// senhaOuEnv devolve, por prioridade: a senha informada, a env envKey ou uma
-// senha gerada (impressa em out com o cabeçalho/rodapé dados).
-func senhaOuEnv(password, envKey string, out io.Writer, gen PasswordGenerator, cabecalho, chave, rodape string) (string, error) {
-	if password != "" {
-		return password, nil
+// tamanhoSenhaGerada é o tamanho das senhas aleatórias do comando.
+const tamanhoSenhaGerada = 16
+
+// rotulosSenha são o cabeçalho, a chave e o rodapé da senha gerada impressa.
+type rotulosSenha struct{ cabecalho, chave, rodape string }
+
+// concluirAcao recebe o erro da gravação no banco e o devolve; com
+// -password-out, apaga o arquivo se houve erro e avisa onde a senha ficou se
+// deu certo.
+type concluirAcao func(errAcao error) error
+
+func semConclusao(errAcao error) error { return errAcao }
+
+// escolherSenha devolve, por prioridade: a senha informada (flags), a senha
+// gerada em arquivo (-password-out), a env envKey (se não vazia) ou uma senha
+// gerada impressa em out com os rótulos dados.
+func escolherSenha(opts Options, envKey string, out io.Writer, gen PasswordGenerator, r rotulosSenha) (string, concluirAcao, error) {
+	if opts.Password != "" {
+		return opts.Password, semConclusao, nil
 	}
-	if envPwd := os.Getenv(envKey); envPwd != "" {
-		log.Printf("resetpassword: usando %s do .env", envKey)
-		return envPwd, nil
+	if opts.PasswordOut != "" {
+		return gerarEmArquivo(opts.PasswordOut, out, gen)
 	}
-	return gerarEImprimir(out, gen, cabecalho, chave, rodape)
+	if envKey != "" {
+		if envPwd := os.Getenv(envKey); envPwd != "" {
+			log.Printf("resetpassword: usando %s do .env", envKey)
+			return envPwd, semConclusao, nil
+		}
+	}
+	pwd, err := gerarEImprimir(out, gen, r.cabecalho, r.chave, r.rodape)
+	return pwd, semConclusao, err
 }
 
 // gerarEImprimir gera uma senha de 16 caracteres e a imprime em out.
 func gerarEImprimir(out io.Writer, gen PasswordGenerator, cabecalho, chave, rodape string) (string, error) {
-	pwd, err := gen(16)
+	pwd, err := gen(tamanhoSenhaGerada)
 	if err != nil {
 		return "", fmt.Errorf("gerar senha: %w", err)
 	}
@@ -281,6 +312,47 @@ func gerarEImprimir(out io.Writer, gen PasswordGenerator, cabecalho, chave, roda
 	fmt.Fprintf(out, "%s=%s\n", chave, pwd)
 	fmt.Fprintln(out, rodape)
 	return pwd, nil
+}
+
+// gerarEmArquivo (-password-out, DEPLOY-07) gera uma senha e a grava, com
+// "\n" no fim, num arquivo NOVO (O_EXCL: arquivo existente = erro, nada é
+// gravado no banco) com modo 0600. A senha nunca vai para out. O concluir
+// devolvido apaga o arquivo se a ação no banco falhar.
+func gerarEmArquivo(caminho string, out io.Writer, gen PasswordGenerator) (string, concluirAcao, error) {
+	pwd, err := gen(tamanhoSenhaGerada)
+	if err != nil {
+		return "", nil, fmt.Errorf("resetpassword: gerar senha: %w", err)
+	}
+	if err := gravarArquivoNovo(caminho, pwd); err != nil {
+		return "", nil, fmt.Errorf("resetpassword: -password-out: %w", err)
+	}
+	concluir := func(errAcao error) error {
+		if errAcao != nil {
+			if errRm := os.Remove(caminho); errRm != nil {
+				log.Printf("resetpassword: -password-out: não consegui apagar %s: %v", caminho, errRm)
+			}
+			return errAcao
+		}
+		fmt.Fprintf(out, "resetpassword: senha gravada em %s (0600; não foi impressa)\n", caminho)
+		return nil
+	}
+	return pwd, concluir, nil
+}
+
+// gravarArquivoNovo cria caminho (O_CREATE|O_EXCL, 0600) e grava senha + "\n".
+// Se a escrita falhar, o arquivo parcial é removido.
+func gravarArquivoNovo(caminho, senha string) error {
+	f, err := os.OpenFile(caminho, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, errW := io.WriteString(f, senha+"\n")
+	errC := f.Close()
+	if err := errors.Join(errW, errC); err != nil {
+		_ = os.Remove(caminho)
+		return err
+	}
+	return nil
 }
 
 // listarFinal imprime a lista de usuários após a ação; falha só gera log.
@@ -300,9 +372,10 @@ func UpsertAdmin(ctx context.Context, db DB, hs config.HashSenha, password strin
 
 	// Tenta UPDATE primeiro; se afetou 0 linhas, faz INSERT. SEC-08: grava
 	// também o corte de sessão (tokens_validos_desde), derrubando os access
-	// tokens emitidos com a senha anterior.
+	// tokens emitidos com a senha anterior. DEPLOY-07: deve_trocar_senha = 1
+	// (no UPDATE e no INSERT): a senha definida aqui só vale até o 1º login.
 	res, err := db.ExecContext(ctx,
-		`UPDATE usuarios SET password_hash = ?, ativo = 1, tokens_validos_desde = ? WHERE email = ?`,
+		`UPDATE usuarios SET password_hash = ?, ativo = 1, deve_trocar_senha = 1, tokens_validos_desde = ? WHERE email = ?`,
 		hashStr, corteDeSessaoAgora(), AdminEmail,
 	)
 	if err != nil {
@@ -316,8 +389,8 @@ func UpsertAdmin(ctx context.Context, db DB, hs config.HashSenha, password strin
 
 	// Admin não existe — INSERT.
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO usuarios (nome, email, password_hash, role, id_vendedor, ativo)
-		VALUES (?, ?, ?, 'admin', NULL, 1)`,
+		INSERT INTO usuarios (nome, email, password_hash, role, id_vendedor, ativo, deve_trocar_senha)
+		VALUES (?, ?, ?, 'admin', NULL, 1, 1)`,
 		"Administrador Principal", AdminEmail, hashStr,
 	)
 	if err != nil {
@@ -334,9 +407,10 @@ func UpsertByEmail(ctx context.Context, db DB, hs config.HashSenha, email, passw
 		return fmt.Errorf("argon2id: %w", err)
 	}
 
-	// UPDATE primeiro (SEC-08: com corte de sessão, ver corteDeSessaoAgora).
+	// UPDATE primeiro (SEC-08: com corte de sessão, ver corteDeSessaoAgora;
+	// DEPLOY-07: deve_trocar_senha = 1 no UPDATE e no INSERT).
 	res, err := db.ExecContext(ctx,
-		`UPDATE usuarios SET password_hash = ?, tokens_validos_desde = ? WHERE email = ?`,
+		`UPDATE usuarios SET password_hash = ?, deve_trocar_senha = 1, tokens_validos_desde = ? WHERE email = ?`,
 		hashStr, corteDeSessaoAgora(), email,
 	)
 	if err != nil {
@@ -358,8 +432,8 @@ func UpsertByEmail(ctx context.Context, db DB, hs config.HashSenha, email, passw
 		idVend = sql.NullInt64{Int64: idVendedor, Valid: true}
 	}
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO usuarios (nome, email, password_hash, role, id_vendedor, ativo)
-		VALUES (?, ?, ?, ?, ?, 1)`,
+		INSERT INTO usuarios (nome, email, password_hash, role, id_vendedor, ativo, deve_trocar_senha)
+		VALUES (?, ?, ?, ?, ?, 1, 1)`,
 		nome, email, hashStr, role, idVend,
 	)
 	if err != nil {

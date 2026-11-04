@@ -194,19 +194,32 @@ func TestSEC45_SanSemHostDockerInternal(t *testing.T) {
 	assert.NotRegexp(t, `(?m)^[^#]*-p "?0\.0\.0\.0`, md)
 }
 
+// fpCADev é o fingerprint SHA-256 da CA de DEV (MariaDB do CasaOS, porta
+// 3307, deploy/ca-cert.pem). DEPLOY-07: nunca pode estar no
+// deploy/db-ca.fingerprint (roda também no Jenkins, onde o ca-cert.pem não
+// existe).
+const fpCADev = "ef31b6565518b18bbd5ababf94db6bca76de356f8e0f013491dbec7f5aedb37b"
+
+// DEPLOY-07 / SEC-45: deploy/db-ca.fingerprint lista só a CA de PRODUCAO.
+// Zero fingerprints é o estado pré-instalação (o Jenkins falha fechado, ver
+// TestDEPLOY07_Jenkinsfile_FingerprintVazioFalhaClaro e
+// TestSEC40_ValidarCABanco_CADevRecusada).
 func TestSEC45_FingerprintVersionadoConfereComCA(t *testing.T) {
-	precisaOpenSSL(t)
-	fps := linhasUteis(lerRaiz(t, "deploy", "db-ca.fingerprint"))
-	require.NotEmpty(t, fps)
+	bruto := lerRaiz(t, "deploy", "db-ca.fingerprint")
+	assert.Regexp(t, `(?m)^#.*CA de PRODUCAO`, bruto, "cabeçalho identifica a CA de produção")
+	fps := linhasUteis(bruto)
 	assert.LessOrEqual(t, len(fps), 2, "até dois na rotação")
 	for _, fp := range fps {
 		assert.Regexp(t, `^[0-9a-f]{64}$`, fp)
 	}
+	assert.NotContains(t, fps, fpCADev, "a CA de dev (CasaOS) não pode estar no db-ca.fingerprint")
 	ca := caminhoRaiz(t, "deploy", "ca-cert.pem")
 	if _, err := os.Stat(ca); err != nil {
-		t.Skip("deploy/ca-cert.pem ausente nesta máquina")
+		t.Log("deploy/ca-cert.pem ausente nesta máquina (Jenkins): só a constante fpCADev foi conferida")
+		return
 	}
-	assert.Contains(t, fps, fingerprint(t, ca), "deploy/ca-cert.pem precisa estar no deploy/db-ca.fingerprint")
+	precisaOpenSSL(t)
+	assert.NotContains(t, fps, fingerprint(t, ca), "deploy/ca-cert.pem é a CA de dev; não pode estar no db-ca.fingerprint")
 }
 
 func linhasUteis(s string) []string {
@@ -284,7 +297,7 @@ type ensaio struct {
 
 const (
 	siteIP    = "192.168.168.106"
-	saltoFW   = "-A DOCKER-USER -p tcp -m conntrack --ctorigdst 192.168.168.106/32 --ctorigdstport 3306 -j ROTAPERFUMES-DB"
+	saltoFW   = "-A DOCKER-USER -p tcp -m conntrack --ctorigdst 192.168.168.106/32 --ctorigdstport 3306 --ctdir ORIGINAL -j ROTAPERFUMES-DB"
 	segredos  = "root/rotaperfumes-mariadb"
 	hostTeste = "srv-teste"
 )
@@ -324,7 +337,26 @@ func novoEnsaio(t *testing.T) *ensaio {
 	}
 	escrever(t, filepath.Join(e.dir, "runner.sh"), runnerEnsaio, 0o755)
 	e.setState("chain_DOCKER-USER", "-A DOCKER-USER -j RETURN\n")
+	// DEPLOY-08: do próprio servidor a porta publicada responde com o erro
+	// 1130 (origem pelo DNAT sem conta), como no servidor real.
+	e.setState("porta_resposta", string(pacoteErro1130("172.30.42.1")))
 	return e
+}
+
+// pacoteErro1130 monta o pacote que o mariadbd manda antes do greeting a um
+// host sem conta: 3 bytes de tamanho (LE), sequência 0, 0xff, código 1130 (LE).
+func pacoteErro1130(host string) []byte {
+	payload := append([]byte{0xff, 0x6a, 0x04}, []byte("Host '"+host+"' is not allowed to connect to this MariaDB server")...)
+	n := len(payload)
+	return append([]byte{byte(n), byte(n >> 8), byte(n >> 16), 0x00}, payload...)
+}
+
+// pacoteGreeting monta o início de um greeting do protocolo 10.
+func pacoteGreeting() []byte {
+	payload := append([]byte{0x0a}, []byte("5.5.5-11.4.13-MariaDB\x00")...)
+	payload = append(payload, make([]byte, 40)...)
+	n := len(payload)
+	return append([]byte{byte(n), byte(n >> 8), byte(n >> 16), 0x00}, payload...)
 }
 
 func (e *ensaio) setState(nome, conteudo string) {
@@ -491,7 +523,22 @@ func TestTST15_Ensaio_PrimeiraInstalacaoSemDevIP(t *testing.T) {
 	assert.Contains(t, r.out, fingerprint(t, ca), "fingerprint no formato do deploy/db-ca.fingerprint")
 	assert.True(t, e.existe("root/rotaperfumes-ca/ca-key.pem"))
 	assert.Contains(t, r.out, "a chave da CA esta NO SERVIDOR")
-	assert.Contains(t, r.out, "CA NOVA: atualize deploy/db-ca.fingerprint")
+	assert.Contains(t, r.out, "CA NOVA: troque o fingerprint em deploy/db-ca.fingerprint")
+	assert.Contains(t, r.out, "NUNCA a CA de dev")
+	// DEPLOY-07: a CA de produção nunca vai para deploy/ca-cert.pem (CA de dev).
+	assert.Contains(t, r.out, "NAO copie esta CA para deploy/ca-cert.pem")
+	assert.NotRegexp(t, `(?i)cop(ie|iar)[^\n]*para\s+deploy/ca-cert\.pem`, strings.ReplaceAll(r.out, "NAO copie esta CA para deploy/ca-cert.pem", ""))
+	// Sem --dev-ip: o resumo final não cita a conta casaos nem o bloco de
+	// .env para a máquina do admin. (A etapa 4 ainda lista o arquivo
+	// casaos.senha gerado: pendência anotada no relatório do DEPLOY-07.)
+	iResumo := strings.Index(r.out, "\nPronto. MariaDB")
+	require.GreaterOrEqual(t, iResumo, 0, r.out)
+	resumo := r.out[iResumo:]
+	assert.NotContains(t, resumo, "casaos.senha")
+	assert.NotContains(t, r.out, "DB_USUARIO=casaos")
+	assert.NotContains(t, r.out, ".env.producao")
+	assert.NotContains(t, r.out, "deploy/ca-producao.pem")
+	assert.Contains(t, r.out, "sudo bash deploy/seed-producao.sh")
 	assert.Contains(t, r.out, "Conexao sem TLS recusada: OK.")
 	assert.NotContains(t, log, "timeout ", "sem --dev-ip não há s_client na porta publicada")
 	assert.NotContains(t, r.out, "BEGIN PRIVATE KEY")
@@ -499,16 +546,33 @@ func TestTST15_Ensaio_PrimeiraInstalacaoSemDevIP(t *testing.T) {
 
 // --dev-ip: chain com RETURN por IP + DROP, salto em DOCKER-USER (salto
 // antigo removido), unit systemd, porta só no IP da LAN, casaos por IP.
+// DEPLOY-08: roda com o "iptables -S" nas duas formas do --ctorigdst (sem
+// /32, como o iptables real imprime, e com /32).
 func TestTST15_Ensaio_DevIPFirewallEContas(t *testing.T) {
+	for _, com32 := range []bool{false, true} {
+		nome := "ctorigdst_sem_32_iptables_real"
+		if com32 {
+			nome = "ctorigdst_com_32"
+		}
+		t.Run(nome, func(t *testing.T) { ensaioDevIPFirewallEContas(t, com32) })
+	}
+}
+
+func ensaioDevIPFirewallEContas(t *testing.T, com32 bool) {
 	e := novoEnsaio(t)
-	// Salto antigo (outra porta) de uma execução anterior.
-	e.setState("chain_DOCKER-USER", "-A DOCKER-USER -p tcp -m conntrack --ctorigdst 192.168.168.106/32 --ctorigdstport 3307 -j ROTAPERFUMES-DB\n-A DOCKER-USER -j RETURN\n")
+	if com32 {
+		e.setState("ctorigdst_com_32", "")
+	}
+	// Saltos antigos (outra porta; outro IP) de uma execução anterior.
+	e.setState("chain_DOCKER-USER", "-A DOCKER-USER -p tcp -m conntrack --ctorigdst 192.168.168.106/32 --ctorigdstport 3307 -j ROTAPERFUMES-DB\n"+
+		"-A DOCKER-USER -p tcp -m conntrack --ctorigdst 192.168.168.99/32 --ctorigdstport 3306 -j ROTAPERFUMES-DB\n"+
+		saltoSemCtdir+"\n-A DOCKER-USER -j RETURN\n")
 	r := e.rodar("--nova-ca", "--dev-ip", "192.168.168.50", "--dev-ip", "192.168.168.51", "--dev-ip", "192.168.168.50")
 	require.NoError(t, r.err, r.out)
 
 	assert.Equal(t, "-A ROTAPERFUMES-DB -s 192.168.168.50/32 -j RETURN\n-A ROTAPERFUMES-DB -s 192.168.168.51/32 -j RETURN\n-A ROTAPERFUMES-DB -j DROP\n",
 		e.state("chain_ROTAPERFUMES-DB"), "IPs repetidos entram uma vez; DROP no fim")
-	assert.Equal(t, saltoFW+"\n-A DOCKER-USER -j RETURN\n", e.state("chain_DOCKER-USER"), "salto novo no topo; antigo (3307) removido")
+	assert.Equal(t, saltoFW+"\n-A DOCKER-USER -j RETURN\n", e.state("chain_DOCKER-USER"), "salto novo no topo; antigos (porta 3307, IP .99, sem --ctdir) removidos")
 
 	fw := e.arq("sbin/rotaperfumes-db-firewall")
 	assert.Contains(t, fw, "DEV_IPS=(192.168.168.50 192.168.168.51)")
@@ -528,23 +592,46 @@ func TestTST15_Ensaio_DevIPFirewallEContas(t *testing.T) {
 	assert.Less(t, iFW, iRun, "firewall ativo ANTES de publicar a porta")
 
 	assert.Contains(t, e.state("run_args"), "-p "+siteIP+":3306:3306")
-	assert.Contains(t, log, "timeout 15 openssl s_client -starttls mysql -connect "+siteIP+":3306")
-	assert.Contains(t, log, "-verify_ip "+siteIP)
+	// DEPLOY-08: sem s_client na porta publicada (do servidor nunca há
+	// handshake); lê os primeiros bytes da porta e confere o cert offline.
+	assert.NotContains(t, log, "s_client")
+	assert.Contains(t, log, "timeout 5 bash -c")
+	assert.Contains(t, log, "_ "+siteIP+" 3306")
+	assert.Contains(t, r.out, "Certificado valido pela CA para o IP "+siteIP+" (openssl verify -verify_ip): OK.")
+	assert.Contains(t, r.out, "Porta publicada "+siteIP+":3306: mariadbd respondeu (erro 1130")
+	assert.Contains(t, r.out, "Certificado em uso = ")
+	assert.Contains(t, r.out, "openssl s_client -starttls mysql -connect "+siteIP+":3306 -CAfile deploy/ca-producao.pem -verify_return_error -verify_ip "+siteIP)
+	assert.Contains(t, r.out, `"Cipher is" com uma cifra`)
+	assert.Contains(t, r.out, "NUNCA \"(NONE)\"")
 
 	sql := e.state("sql")
 	s := e.senhas()
 	for _, ip := range []string{"192.168.168.50", "192.168.168.51"} {
 		assert.Contains(t, sql, "CREATE USER IF NOT EXISTS 'casaos'@'"+ip+"' IDENTIFIED VIA ed25519 USING PASSWORD('"+s["casaos"]+"') REQUIRE SSL;")
 		assert.Contains(t, sql, "GRANT ALL PRIVILEGES ON `rotaperfumes`.* TO 'casaos'@'"+ip+"';")
-		assert.Contains(t, sql, "GRANT ALL PRIVILEGES ON `rotaperfumes\\_%`.* TO 'casaos'@'"+ip+"';")
+		// DEPLOY-07: sem GRANT em rotaperfumes\_% (bancos de teste não existem em produção).
+		assert.NotContains(t, sql, "GRANT ALL PRIVILEGES ON `rotaperfumes\\_%`.* TO 'casaos'@'"+ip+"';")
 	}
 	assert.Equal(t, 1, strings.Count(sql, "CREATE USER IF NOT EXISTS 'casaos'@'192.168.168.50'"))
 	assert.NotContains(t, sql, "mysql_native_password")
+
+	// DEPLOY-07: com --dev-ip o resumo manda a CA para deploy/ca-producao.pem
+	// e o .env para .env.producao (nunca o .env de dev nem o ca-cert.pem).
+	assert.Contains(t, r.out, ".env.producao")
+	assert.Contains(t, r.out, "deploy/ca-producao.pem")
+	assert.Contains(t, r.out, "DB_TLS_CA=deploy/ca-producao.pem")
+	assert.Contains(t, r.out, "casaos.senha")
+	assert.Contains(t, r.out, "DB_USUARIO=casaos")
+	assert.Contains(t, r.out, "CONFIRMO_PRODUCAO="+siteIP+"/rotaperfumes")
+	assert.Contains(t, r.out, "NAO copie esta CA para deploy/ca-cert.pem")
+	assert.NotContains(t, r.out, "DB_TLS_CA=deploy/ca-cert.pem")
+	assert.NotContains(t, r.out, s["casaos"], "senha do casaos nunca na saída")
 
 	// Reexecução: salto não duplica, chain igual, senhas iguais.
 	antes := e.senhas()
 	r2 := e.rodar("--dev-ip", "192.168.168.50", "--dev-ip", "192.168.168.51")
 	require.NoError(t, r2.err, r2.out)
+	assert.Equal(t, saltoFW+"\n-A DOCKER-USER -j RETURN\n", e.state("chain_DOCKER-USER"), "reexecução mantém o salto atual")
 	assert.Equal(t, 1, contaLinhas(e.state("chain_DOCKER-USER"), "-j ROTAPERFUMES-DB"))
 	assert.Equal(t, 3, len(linhas(e.state("chain_ROTAPERFUMES-DB"))))
 	assert.Equal(t, antes, e.senhas(), "reexecução não troca senha")
@@ -587,7 +674,7 @@ func TestTST15_Ensaio_ConvergenciaDeContas(t *testing.T) {
 			}
 			assert.NotContains(t, sql, "x'y", "host fora do padrão não vai para o SQL")
 			assert.Contains(t, r.out, "conta casaos com host fora do padrao NAO removida")
-			assert.Contains(t, r.out, "contas fora do esperado (root@localhost, mariadb.sys e as do projeto): intruso@%")
+			assert.Contains(t, r.out, "contas fora do esperado (root@localhost, mariadb.sys, healthcheck locais e as do projeto): intruso@%")
 			iCreate := strings.Index(sql, "CREATE USER")
 			iDrop := strings.Index(sql, "DROP USER")
 			assert.Less(t, iCreate, iDrop, "cria as desejadas antes de remover as antigas")

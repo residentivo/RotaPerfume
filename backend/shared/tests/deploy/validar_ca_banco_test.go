@@ -18,9 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// DEPLOY-08: $FAKE/sclient_saida (com $FAKE/sclient_rc) substitui a saída
+// padrão de handshake bem-sucedido.
 const stubTimeoutCA = `#!/bin/bash
 printf '%s\n' "$*" >>"$FAKE/sclient"
 [[ -f "$FAKE/sclient_falha" ]] && { echo "verify error:num=62:hostname mismatch"; exit 1; }
+if [[ -f "$FAKE/sclient_saida" ]]; then cat "$FAKE/sclient_saida"; exit "$(cat "$FAKE/sclient_rc" 2>/dev/null || echo 0)"; fi
+echo "Server certificate"
+echo "New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384"
 echo "Verify return code: 0 (ok)"
 `
 
@@ -158,14 +163,43 @@ func TestSEC45_ValidarCABanco_AlvoENome(t *testing.T) {
 	})
 }
 
-// O fingerprint versionado aceita a CA de deploy/ca-cert.pem no script real.
-func TestSEC40_ValidarCABanco_FingerprintDoRepositorio(t *testing.T) {
-	ca := caminhoRaiz(t, "deploy", "ca-cert.pem")
-	if _, err := os.Stat(ca); err != nil {
-		t.Skip("deploy/ca-cert.pem ausente nesta máquina")
+// DEPLOY-07: o deploy/db-ca.fingerprint do repositório (só a CA de
+// PRODUCAO, ou vazio antes da instalação) RECUSA a CA de dev
+// (deploy/ca-cert.pem, quando existe nesta máquina) e qualquer CA fora da
+// lista, no script real.
+func TestSEC40_ValidarCABanco_CADevRecusada(t *testing.T) {
+	precisaOpenSSL(t)
+	descartavel, _ := gerarCA(t, t.TempDir(), "RotaPerfumes_MySQL_CA")
+	cas := map[string]string{"CA descartável": descartavel}
+	if dev := caminhoRaiz(t, "deploy", "ca-cert.pem"); func() bool { _, err := os.Stat(dev); return err == nil }() {
+		cas["deploy/ca-cert.pem (dev)"] = dev
 	}
-	r := rodarValidarCA(t, t.TempDir(), ca, "CA_FINGERPRINTS="+lerRaiz(t, "deploy", "db-ca.fingerprint"),
-		"DB_ALVO=rotaperfumes-mariadb", "DB_HOST_PORT=3306", "TLS_NOME=rotaperfumes-mariadb")
-	require.NoError(t, r.err, r.stderr)
-	assert.Contains(t, r.stderr, ": na lista")
+	repo := lerRaiz(t, "deploy", "db-ca.fingerprint")
+	fpProdFalso := strings.Repeat("ab", 32)
+	alvo := []string{"DB_ALVO=rotaperfumes-mariadb", "DB_HOST_PORT=3306", "TLS_NOME=rotaperfumes-mariadb"}
+	for nome, ca := range cas {
+		fp := fingerprint(t, ca)
+		casos := []struct {
+			nome, lista string
+		}{
+			{"lista do repositorio", repo},
+			{"fingerprint de producao falso", "# CA de PRODUCAO\n" + fpProdFalso + "\n"},
+		}
+		for _, c := range casos {
+			t.Run(nome+"/"+c.nome, func(t *testing.T) {
+				require.NotContains(t, linhasUteis(c.lista), fp, "pré-condição: a CA testada não está na lista")
+				dir := t.TempDir()
+				r := rodarValidarCA(t, dir, ca, append([]string{"CA_FINGERPRINTS=" + c.lista}, alvo...)...)
+				require.Error(t, r.err, r.stderr)
+				if len(linhasUteis(c.lista)) == 0 {
+					assert.Contains(t, r.stderr, "CA_FINGERPRINTS vazio", "lista vazia falha fechado")
+				} else {
+					assert.Contains(t, r.stderr, "fingerprint "+fp+": NAO esta em deploy/db-ca.fingerprint")
+					assert.Contains(t, r.stderr, "fora de deploy/db-ca.fingerprint")
+				}
+				assert.Empty(t, r.sclient, "s_client nem roda com a CA recusada")
+				assert.Empty(t, r.stdout, "sem sha256 no stdout")
+			})
+		}
+	}
 }
