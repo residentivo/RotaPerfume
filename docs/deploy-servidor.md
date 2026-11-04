@@ -83,7 +83,7 @@ Navegador (LAN)                          Navegador (internet)
         porta 192.168.168.106:3306 só com --dev-ip (chain ROTAPERFUMES-DB em DOCKER-USER)
 ```
 
-- O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `GO_IMAGE`, fixada por digest) → `Build` (imagens do compose) → `CA do banco` (valida a CA do banco no host contra `deploy/db-ca.fingerprint` e contra o certificado servido pela rede interna, seção 3.5) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy, acessando direto `https://SITE_IP:HTTPS_PORT`, e `/api/health` no mesmo endereço com um Host qualquer, como faz o tunnel).
+- O **Jenkins** (`http://ivo-inspiron-15-3530:8888/`) clona `residentivo/RotaPerfume` (branch `main`) e roda o `Jenkinsfile`, com estes estágios: `Checkout` → `Testes Go` (vet + test dentro de `GO_IMAGE`, fixada por digest) → `Testes Frontend` (TST-18: `npm ci`, `npm run lint` e `npm test` do `frontend/` dentro de `NODE_IMAGE`, fixada por digest; código por stdin, sem bind mount nem segredos) → `Build` (imagens do compose) → `CA do banco` (valida a CA do banco no host contra `deploy/db-ca.fingerprint` e contra o certificado servido pela rede interna, seção 3.5) → `Importar dump` (só com `IMPORTAR_DUMP=true`) → `Deploy` (`up -d`) → `Smoke test` (`/api/health` e `/login` pelo Caddy, acessando direto `https://SITE_IP:HTTPS_PORT`, e `/api/health` no mesmo endereço com um Host qualquer, como faz o tunnel).
 - A API e o frontend **não** publicam porta no host. Só o Caddy publica a `HTTPS_PORT` (8443), que atende a LAN, `https://localhost:8443` no próprio servidor e o **Cloudflare Tunnel**. O banco não publica porta, salvo para as máquinas de `--dev-ip`.
 - **Cloudflare Tunnel:** no `cloudflared` do host, aponte o hostname público para a porta 8443 do servidor (hoje `https://192.168.168.106:8443`) com **No TLS Verify** ligado (`noTLSVerify: true`), porque o certificado é da CA interna do Caddy. Hosts desconhecidos caem no site curinga do Caddy. O Caddy só aceita o header `CF-Connecting-IP` (IP real do visitante) de conexões vindas do próprio servidor (o `SITE_IP` ou o gateway docker `172.16.0.0/12`). Cadastre também o domínio do tunnel no Turnstile.
 - **HTTPS é obrigatório:** os cookies de autenticação são `Secure` (`COOKIE_SECURE=true`, o default; desde o SEC-21 a decisão não depende mais do `Host` da requisição). Por HTTP o login "funciona", mas a sessão não se mantém. (Pelo tunnel o navegador fala HTTPS com a Cloudflare, então funciona.)
@@ -100,7 +100,7 @@ Navegador (LAN)                          Navegador (internet)
 | `IMPORTAR_DUMP` | `false` | Importa o dump no MariaDB do container `rotaperfumes-mariadb`. **Sobrescreve as tabelas** |
 | `DUMP_PATH` | `/opt/rotaperfumes/dumps/rotaperfumes.sql.gz` | Caminho do dump visível para o agente Jenkins |
 
-**Constantes do `environment` (não são parâmetros):** `DB_TLS_CA_HOST_PATH=/etc/mysql/ssl/ca.pem` (SEC-40; caminho absoluto no **host**), `DB_REDE=rotaperfumes-db`, `DB_HOST_INTERNO=rotaperfumes-mariadb`, `DB_HOST_PORT=3306` (porta interna do container), `DB_CLIENTE_IP=172.30.42.20`, `GO_IMAGE` e `DB_CLIENT_IMAGE` (fixadas por digest, SEC-31, seção 3.6). Os antigos parâmetros `DB_TLS_CA_HOST_PATH` e `DB_TLS_SERVER_NAME` saíram: o nome conferido no certificado é sempre `rotaperfumes-mariadb`.
+**Constantes do `environment` (não são parâmetros):** `DB_TLS_CA_HOST_PATH=/etc/mysql/ssl/ca.pem` (SEC-40; caminho absoluto no **host**), `DB_REDE=rotaperfumes-db`, `DB_HOST_INTERNO=rotaperfumes-mariadb`, `DB_HOST_PORT=3306` (porta interna do container), `DB_CLIENTE_IP=172.30.42.20`, `GO_IMAGE`, `NODE_IMAGE` e `DB_CLIENT_IMAGE` (fixadas por digest, SEC-31, seção 3.6). Os antigos parâmetros `DB_TLS_CA_HOST_PATH` e `DB_TLS_SERVER_NAME` saíram: o nome conferido no certificado é sempre `rotaperfumes-mariadb`.
 
 ### Credenciais Jenkins exigidas
 
@@ -219,7 +219,7 @@ Na API, `DB_TLS_CA` definido liga o TLS verificado com **TLS 1.3 mínimo** (TST-
 
 ### 3.6 Atualizar a imagem do MariaDB (digest, SEC-31)
 
-As imagens base são fixadas pelo digest do **índice multi-arch** (a tag sozinha pode ser republicada). A imagem do MariaDB aparece em **dois** lugares, com a **mesma string** (um teste confere): `IMAGEM_BASE` no `deploy/mariadb-docker.sh` e `DB_CLIENT_IMAGE` no `Jenkinsfile`. O `GO_IMAGE` do `Jenkinsfile` segue o mesmo formato.
+As imagens base são fixadas pelo digest do **índice multi-arch** (a tag sozinha pode ser republicada). A imagem do MariaDB aparece em **dois** lugares, com a **mesma string** (um teste confere): `IMAGEM_BASE` no `deploy/mariadb-docker.sh` e `DB_CLIENT_IMAGE` no `Jenkinsfile`. O `GO_IMAGE` e o `NODE_IMAGE` do `Jenkinsfile` seguem o mesmo formato (`golang:<patch>-alpine@sha256:...` com a versão do `go.mod`; `node:<patch>-alpine@sha256:...` com a versão do `frontend/.nvmrc`, conferida por teste). Para eles basta trocar a string no `Jenkinsfile` (`docker buildx imagetools inspect node:22.23-alpine --format '{{.Manifest.Digest}}'`) e rodar `make test`; os passos 2, 4 e 5 abaixo são só do MariaDB.
 
 1. Veja se há digest novo: `make deps-audit-imagens` (só informa, nunca falha; usa `docker buildx imagetools` ou o registry do Docker Hub via `curl`). Ou, numa máquina com Docker:
    ```bash
@@ -671,7 +671,7 @@ Na máquina de dev:
 git push origin main
 ```
 
-Em até ~2 minutos o `pollSCM` dispara o job `rotaperfumes-deploy` com os valores padrão. Estágios esperados: `Checkout` → `Testes Go` → `Build` → `CA do banco` (lista o fingerprint aceito, cada certificado com `na lista (deploy/db-ca.fingerprint)`, `s_client: Verify return code: 0 (ok)` e `CA do banco validada: /etc/mysql/ssl/ca.pem (sha256 ...)`) → `Importar dump` (pulado: `IMPORTAR_DUMP=false`) → `Deploy` (a API entra na rede `rotaperfumes-db` com `172.30.42.10`) → `Smoke test` verde. Depois, no servidor:
+Em até ~2 minutos o `pollSCM` dispara o job `rotaperfumes-deploy` com os valores padrão. Estágios esperados: `Checkout` → `Testes Go` → `Testes Frontend` → `Build` → `CA do banco` (lista o fingerprint aceito, cada certificado com `na lista (deploy/db-ca.fingerprint)`, `s_client: Verify return code: 0 (ok)` e `CA do banco validada: /etc/mysql/ssl/ca.pem (sha256 ...)`) → `Importar dump` (pulado: `IMPORTAR_DUMP=false`) → `Deploy` (a API entra na rede `rotaperfumes-db` com `172.30.42.10`) → `Smoke test` verde. Depois, no servidor:
 
 ```bash
 docker logs rotaperfumes-api-1 2>&1 | grep -E 'TLS do banco|conexão MariaDB estabelecida'

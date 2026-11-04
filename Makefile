@@ -385,7 +385,7 @@ deps-audit-frontend: ## SEC-13: npm audit (falha em severidade high+) e npm outd
 IMAGENS_FIXADAS_EM = Jenkinsfile deploy/mariadb-docker.sh deploy/seed-producao.sh
 IMAGEM_ACCEPT = application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json
 
-deps-audit-imagens: ## SEC-31: compara os digests fixados (Jenkinsfile, mariadb-docker.sh) com os das tags atuais no Docker Hub (informativo, nunca falha)
+deps-audit-imagens: ## SEC-31: compara os digests fixados (Jenkinsfile: golang, node e mariadb; mariadb-docker.sh) com os das tags atuais no Docker Hub (informativo, nunca falha)
 	@digest_remoto() { \
 	  if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then \
 	    docker buildx imagetools inspect "$$1:$$2" --format '{{.Manifest.Digest}}' 2>/dev/null && return; \

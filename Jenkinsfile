@@ -53,11 +53,15 @@ pipeline {
         // pode ser republicada. Como atualizar:
         //   docker buildx imagetools inspect mariadb:11.4 --format '{{.Manifest.Digest}}'
         //   (golang: idem com golang:1.26-alpine; versao do Go = go.mod)
+        //   (node: idem com node:22.23-alpine; versao do Node = frontend/.nvmrc,
+        //   a mesma linha 22 do NODE_VERSION do frontend/Dockerfile)
         //   -> trocar "<tag com patch>@sha256:<digest>" aqui; o do mariadb TAMBEM
         //   no IMAGEM_BASE do deploy/mariadb-docker.sh (mesma string) -> make test
         //   -> backup do banco -> sudo bash deploy/mariadb-docker.sh --recriar.
         // "make deps-audit-imagens" mostra se ha digest novo (so informa).
         GO_IMAGE             = 'golang:1.26.10-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308'
+        // TST-18: estagio "Testes Frontend" (npm ci + lint + vitest).
+        NODE_IMAGE           = 'node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914'
         // Cliente do MariaDB 11.4 LTS (mesma imagem do servidor); a imagem 11.x
         // so tem o comando "mariadb" (sem o symlink "mysql").
         DB_CLIENT_IMAGE      = 'mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620'
@@ -94,16 +98,46 @@ pipeline {
                 // deploy/, Jenkinsfile, .gitignore): cmdutil.FindProjectRoot procura
                 // backend/shared/go.mod; os testes de config leem o Makefile e os
                 // .sql da raiz, e os de tests/deploy e o sec37 leem deploy/*, o
-                // Jenkinsfile e o .gitignore (falham de proposito se ausentes). Ficam de fora os
+                // Jenkinsfile e o .gitignore (falham de proposito se ausentes). O TST-18
+                // le frontend/.nvmrc, frontend/Dockerfile, frontend/package*.json e
+                // frontend/tests (estagio "Testes Frontend"). Ficam de fora os
                 // dumps e o api.env (segredo) do deploy/.
                 sh '''#!/bin/bash
                     set -euo pipefail
                     tar -cf - --exclude=deploy/dumps --exclude=deploy/api.env \
                         backend/shared backend/rotaperfumes-api sql Makefile deploy Jenkinsfile .gitignore \
+                        frontend/.nvmrc frontend/Dockerfile frontend/package.json frontend/package-lock.json frontend/tests \
                       | docker run --rm -i -e CGO_ENABLED=0 -e GOFLAGS=-mod=readonly "$GO_IMAGE" sh -ec '
                           mkdir -p /src && tar -xf - -C /src
                           cd /src/backend/shared && go vet ./... && go test ./...
                           cd /src/backend/rotaperfumes-api && go vet ./... && go test ./...
+                        '
+                '''
+            }
+        }
+
+        stage('Testes Frontend') {
+            steps {
+                // TST-18: mesmo padrao do "Testes Go" (codigo por stdin/tar, sem
+                // bind mount). Vai so o frontend/ rastreado, sem node_modules,
+                // .next, coverage, tsbuildinfo e .env (o npm ci reinstala pelo
+                // lockfile, reprodutivel). Dois testes leem arquivos do backend
+                // pelo layout do repositorio (../backend/...): o contrato de
+                // erros do PedidoModal (backend/shared/vendas/erros.go) e a massa
+                // cruzada do CNPJ (backend/shared/cnpj/testdata/casos_cruzados.json);
+                // vao junto, no mesmo caminho relativo.
+                sh '''#!/bin/bash
+                    set -euo pipefail
+                    tar -cf - --exclude=frontend/node_modules --exclude=frontend/.next \
+                        --exclude=frontend/coverage --exclude=frontend/tsconfig.tsbuildinfo \
+                        --exclude=frontend/.env --exclude=frontend/.env.local \
+                        frontend backend/shared/vendas/erros.go backend/shared/cnpj/testdata/casos_cruzados.json \
+                      | docker run --rm -i -e CI=true -e NEXT_TELEMETRY_DISABLED=1 "$NODE_IMAGE" sh -ec '
+                          mkdir -p /src && tar -xf - -C /src
+                          cd /src/frontend
+                          npm ci --no-audit --no-fund
+                          npm run lint
+                          npm test
                         '
                 '''
             }
