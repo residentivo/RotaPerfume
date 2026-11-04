@@ -1,4 +1,4 @@
 # CA de PRODUCAO (rotaperfumes-mariadb @ 192.168.168.106, CN=RotaPerfumes_MariaDB_CA).
 # Uma linha: SHA-256 em hex minusculo sem ':' (impresso pelo deploy/mariadb-docker.sh --nova-ca).
 # NUNCA incluir a CA de dev (deploy/ca-cert.pem, CN=RotaPerfumes_MySQL_CA).
-f8dbaf591f5517f8bc49cd24133191a565bd1c0d02a8e58eb1af353cf59aaf70
+f31ee820625cd562ac11e13f5efaff8049563c8e29b958587f58fc3e5d8a04c2
