@@ -91,15 +91,15 @@ pipeline {
                 // tambem com Jenkins em container. Testes de integracao so rodam
                 // com INTEGRATION=1, entao aqui sao pulados (sem MariaDB).
                 // O layout do repositorio e preservado (backend/..., sql/, Makefile,
-                // deploy/, Jenkinsfile): cmdutil.FindProjectRoot procura
+                // deploy/, Jenkinsfile, .gitignore): cmdutil.FindProjectRoot procura
                 // backend/shared/go.mod; os testes de config leem o Makefile e os
-                // .sql da raiz, e os de tests/deploy e o sec37 leem deploy/* e o
-                // Jenkinsfile (falham de proposito se ausentes). Ficam de fora os
+                // .sql da raiz, e os de tests/deploy e o sec37 leem deploy/*, o
+                // Jenkinsfile e o .gitignore (falham de proposito se ausentes). Ficam de fora os
                 // dumps e o api.env (segredo) do deploy/.
                 sh '''#!/bin/bash
                     set -euo pipefail
                     tar -cf - --exclude=deploy/dumps --exclude=deploy/api.env \
-                        backend/shared backend/rotaperfumes-api sql Makefile deploy Jenkinsfile \
+                        backend/shared backend/rotaperfumes-api sql Makefile deploy Jenkinsfile .gitignore \
                       | docker run --rm -i -e CGO_ENABLED=0 -e GOFLAGS=-mod=readonly "$GO_IMAGE" sh -ec '
                           mkdir -p /src && tar -xf - -C /src
                           cd /src/backend/shared && go vet ./... && go test ./...
