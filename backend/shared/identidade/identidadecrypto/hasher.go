@@ -49,9 +49,12 @@ const (
 // mão sem config.Load).
 var ErrPepperNaoConfigurado = errors.New("identidadecrypto: pepper de senha não configurado")
 
-// estrategia é uma forma de hash reconhecida (Strategy, §5.6).
+// estrategia é uma forma de hash reconhecida (Strategy, §5.6). Só decide o
+// rehash: a verificação fica no Verificar, que trata o bcrypt legado à parte
+// e, no Argon2id, roda o hash descartável quando o hash é irreconhecido
+// (SEC-32, I-16). CHORE-15: o antigo argon2idPepper.verificar não tinha
+// chamador e foi removido.
 type estrategia interface {
-	verificar(hash, senha string) bool
 	precisaRehash(hash string) bool
 }
 
@@ -149,7 +152,8 @@ func (bcryptLegado) verificar(hash, senha string) bool {
 
 func (bcryptLegado) precisaRehash(string) bool { return true }
 
-// argon2idPepper é a estratégia atual: gera e verifica.
+// argon2idPepper é a estratégia atual: gera, reconhece e confere (a
+// verificação completa, com o hash descartável, é o Hasher.Verificar).
 type argon2idPepper struct{ p config.HashSenha }
 
 func (a argon2idPepper) gerar(senha string) (string, error) {
@@ -166,14 +170,6 @@ func (a argon2idPepper) gerar(senha string) (string, error) {
 	return fmt.Sprintf("%sv=%d$m=%d,t=%d,p=%d$%s$%s",
 		prefixoArgon2id, argon2.Version, a.p.MemoriaKiB, a.p.Iteracoes, a.p.Paralelismo,
 		b64.EncodeToString(salt), b64.EncodeToString(chave)), nil
-}
-
-func (a argon2idPepper) verificar(hash, senha string) bool {
-	h, motivo := a.reconhecer(hash)
-	if motivo != "" {
-		return false
-	}
-	return a.conferir(h, senha)
 }
 
 // Motivos (enum fixo) do log hash_irreconhecido. Nunca o hash.

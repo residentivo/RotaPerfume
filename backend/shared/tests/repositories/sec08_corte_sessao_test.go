@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/rotaperfumes/shared/identidade/identidademysql"
-	"os"
 	"testing"
 	"time"
 
@@ -24,9 +23,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rotaperfumes/shared/config"
-	shareddb "github.com/rotaperfumes/shared/db"
 	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/testkit/integracao"
 )
 
 // argCorte casa com um time.Time sem fração de segundo, dentro de
@@ -222,38 +220,11 @@ func TestSEC08_GetStatusByID_Corte(t *testing.T) {
 // Integração com o MySQL local (INTEGRATION=1)
 // ---------------------------------------------------------------------------
 
-func envOrSEC08(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
+// abrirDBSEC08 abre o MariaDB de integração (SEC-50: integracao.Abrir pula
+// sem INTEGRATION=1/credenciais e recusa a produção antes de conectar).
 func abrirDBSEC08(t *testing.T) *sql.DB {
 	t.Helper()
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
-	}
-	// SEC-11: sem fallback de credenciais; sem DB_USUARIO/DB_SENHA, pula.
-	usuario, senha := os.Getenv("DB_USUARIO"), os.Getenv("DB_SENHA")
-	if usuario == "" || senha == "" {
-		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
-	}
-	// SEC-29: mesmo TLS do config.Load (DB_TLS_CA/DB_TLS_SERVER_NAME do ambiente).
-	dbTLS, err := config.LoadDBTLS()
-	require.NoError(t, err, "DB_TLS_CA/DB_TLS_SERVER_NAME inválidos")
-	cfg := &config.Config{
-		DBHost:    envOrSEC08("DB_HOST", "localhost"),
-		DBPort:    envOrSEC08("DB_PORT", "3306"),
-		DBName:    envOrSEC08("DB_NAME", "rotaperfumes"),
-		DBUsuario: usuario,
-		DBSenha:   senha,
-		DBTLS:     dbTLS,
-	}
-	db, err := shareddb.Open(cfg.DSN())
-	require.NoError(t, err, "MySQL local indisponível")
-	t.Cleanup(func() { db.Close() })
-	return db
+	return integracao.Abrir(t)
 }
 
 // TestIntegracaoSEC08_CorteDeSessao_Repositorio: usuário temporário

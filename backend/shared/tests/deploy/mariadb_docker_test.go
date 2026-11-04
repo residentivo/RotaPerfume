@@ -406,10 +406,16 @@ func (e *ensaio) rodar(args ...string) saidaEnsaio {
 	return saidaEnsaio{out: string(out), err: err}
 }
 
+// senhas lê os arquivos de senha que existem (CHORE-17: casaos.senha só com
+// --dev-ip; arquivo ausente fica fora do mapa).
 func (e *ensaio) senhas() map[string]string {
 	out := map[string]string{}
 	for _, u := range []string{"root", "rotaperfumes_app", "rotaperfumes_admin", "casaos"} {
-		out[u] = strings.TrimSpace(e.arq(filepath.Join(segredos, u+".senha")))
+		rel := filepath.Join(segredos, u+".senha")
+		if !e.existe(rel) {
+			continue
+		}
+		out[u] = strings.TrimSpace(e.arq(rel))
 	}
 	return out
 }
@@ -529,8 +535,11 @@ func TestTST15_Ensaio_PrimeiraInstalacaoSemDevIP(t *testing.T) {
 	assert.Contains(t, r.out, "NAO copie esta CA para deploy/ca-cert.pem")
 	assert.NotRegexp(t, `(?i)cop(ie|iar)[^\n]*para\s+deploy/ca-cert\.pem`, strings.ReplaceAll(r.out, "NAO copie esta CA para deploy/ca-cert.pem", ""))
 	// Sem --dev-ip: o resumo final não cita a conta casaos nem o bloco de
-	// .env para a máquina do admin. (A etapa 4 ainda lista o arquivo
-	// casaos.senha gerado: pendência anotada no relatório do DEPLOY-07.)
+	// .env para a máquina do admin. CHORE-17: nem gera o casaos.senha.
+	assert.NoFileExists(t, filepath.Join(e.dir, segredos, "casaos.senha"), "sem --dev-ip não há conta casaos")
+	assert.NotContains(t, s, "casaos")
+	assert.Len(t, s, 3, "root, app e admin")
+	assert.NotContains(t, r.out, "casaos.senha")
 	iResumo := strings.Index(r.out, "\nPronto. MariaDB")
 	require.GreaterOrEqual(t, iResumo, 0, r.out)
 	resumo := r.out[iResumo:]
@@ -626,6 +635,12 @@ func ensaioDevIPFirewallEContas(t *testing.T, com32 bool) {
 	assert.Contains(t, r.out, "NAO copie esta CA para deploy/ca-cert.pem")
 	assert.NotContains(t, r.out, "DB_TLS_CA=deploy/ca-cert.pem")
 	assert.NotContains(t, r.out, s["casaos"], "senha do casaos nunca na saída")
+	// CHORE-17: com --dev-ip o casaos.senha existe, 600, no formato do script.
+	assert.Regexp(t, `^[A-Za-z0-9]{32}$`, s["casaos"])
+	st, err = os.Stat(filepath.Join(e.dir, segredos, "casaos.senha"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), st.Mode().Perm())
+	assert.NotContains(t, e.log(), s["casaos"], "senha do casaos nunca no argv do docker")
 
 	// Reexecução: salto não duplica, chain igual, senhas iguais.
 	antes := e.senhas()
@@ -829,6 +844,41 @@ func TestTST15_Ensaio_DivergenciaExigeRecriar(t *testing.T) {
 	require.NoError(t, r.err, r.out)
 	assert.Contains(t, e.log(), "docker rm -f rotaperfumes-mariadb")
 	assert.Contains(t, e.state("run_args"), "-p "+siteIP+":3306:3306")
+}
+
+// CHORE-17: reexecução sem --dev-ip depois de uma com --dev-ip remove a conta
+// casaos, mas mantém o casaos.senha com a mesma senha (reaproveitada se o
+// --dev-ip voltar) e avisa como descartar.
+func TestCHORE17_Ensaio_SemDevIPMantemCasaosSenha(t *testing.T) {
+	e := novoEnsaio(t)
+	r := e.rodar("--nova-ca", "--dev-ip", "192.168.168.50")
+	require.NoError(t, r.err, r.out)
+	antes := e.senhas()
+	require.Regexp(t, `^[A-Za-z0-9]{32}$`, antes["casaos"])
+
+	e.setState("contas", "casaos\t192.168.168.50\nrotaperfumes_admin\t172.30.42.20\nrotaperfumes_app\t172.30.42.10\n")
+	// O estado "sql" acumula as execuções: confere só o trecho desta.
+	inicio := len(e.state("sql"))
+	r = e.rodar("--recriar")
+	require.NoError(t, r.err, r.out)
+	assert.Equal(t, antes, e.senhas(), "casaos.senha mantido, com a mesma senha")
+	st, err := os.Stat(filepath.Join(e.dir, segredos, "casaos.senha"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), st.Mode().Perm())
+	assert.Contains(t, r.out, "Sem --dev-ip: conta casaos removida; /"+segredos+"/casaos.senha mantido (reaproveitado se --dev-ip voltar). Para descartar: shred -u.")
+	sql := e.state("sql")[inicio:]
+	assert.NotContains(t, sql, "CREATE USER IF NOT EXISTS 'casaos'@")
+	assert.Contains(t, sql, "DROP USER IF EXISTS 'casaos'@'192.168.168.50';")
+	assert.NotContains(t, r.out, antes["casaos"], "senha do casaos nunca na saída")
+	assert.NotContains(t, r.out, "DB_USUARIO=casaos")
+
+	// --dev-ip de volta: a mesma senha é reaproveitada.
+	inicio = len(e.state("sql"))
+	r = e.rodar("--dev-ip", "192.168.168.50", "--recriar")
+	require.NoError(t, r.err, r.out)
+	assert.Equal(t, antes, e.senhas())
+	assert.Contains(t, e.state("sql")[inicio:], "CREATE USER IF NOT EXISTS 'casaos'@'192.168.168.50' IDENTIFIED VIA ed25519 USING PASSWORD('"+antes["casaos"]+"') REQUIRE SSL;")
+	assert.NotContains(t, r.out, "Sem --dev-ip: conta casaos removida")
 }
 
 // Sem --dev-ip, mas com a unit de uma execução anterior: chain recarregada só

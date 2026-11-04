@@ -479,9 +479,17 @@ senha_arquivo() { # arquivo -> cria se faltar (reexecucao nao troca senha)
 if [[ ! -s "$SEGREDOS_DIR/root.senha" ]] && $DADOS_INICIALIZADOS; then
   die "$DADOS_DIR ja tem dados, mas $SEGREDOS_DIR/root.senha nao existe (senha do root desconhecida). Restaure o arquivo ou use outro --dados."
 fi
-for u in root "$DB_APP" "$DB_ADMIN" "$DB_MAKE"; do
+for u in root "$DB_APP" "$DB_ADMIN"; do
   senha_arquivo "$SEGREDOS_DIR/$u.senha"
 done
+# CHORE-17: casaos.senha so com --dev-ip (sem --dev-ip nao ha conta casaos).
+# Lista vazia com o arquivo ja existente: o arquivo fica (a senha volta a ser
+# usada se --dev-ip voltar; reexecucao nunca troca senha).
+if $PUBLICAR; then
+  senha_arquivo "$SEGREDOS_DIR/$DB_MAKE.senha"
+elif [[ -e "$SEGREDOS_DIR/$DB_MAKE.senha" ]]; then
+  info "Sem --dev-ip: conta $DB_MAKE removida; $SEGREDOS_DIR/$DB_MAKE.senha mantido (reaproveitado se --dev-ip voltar). Para descartar: shred -u."
+fi
 ROOT_SENHA=$(<"$SEGREDOS_DIR/root.senha")
 install -m 400 -o "$MYSQL_UID" -g "$MYSQL_GID" "$SEGREDOS_DIR/root.senha" "$SEGREDOS_DIR/container/root.senha"
 # SEC-45 item 4: root.cnf montado read-only no container (aceito).
@@ -667,10 +675,16 @@ info "MariaDB $(root_sql -e 'SELECT VERSION()') pronto; TLS: $(root_sql -e "SHOW
 etapa "Banco $DB_NOME e contas"
 SENHA_APP=$(<"$SEGREDOS_DIR/$DB_APP.senha")
 SENHA_ADMIN=$(<"$SEGREDOS_DIR/$DB_ADMIN.senha")
-SENHA_MAKE=$(<"$SEGREDOS_DIR/$DB_MAKE.senha")
-for s in "$SENHA_APP" "$SENHA_ADMIN" "$SENHA_MAKE"; do
+SENHAS_CONFERIR=("$SENHA_APP" "$SENHA_ADMIN")
+SENHA_MAKE=""
+if $PUBLICAR; then # CHORE-17: casaos.senha so existe/importa com --dev-ip
+  SENHA_MAKE=$(<"$SEGREDOS_DIR/$DB_MAKE.senha")
+  SENHAS_CONFERIR+=("$SENHA_MAKE")
+fi
+for s in "${SENHAS_CONFERIR[@]}"; do
   [[ "$s" =~ ^[A-Za-z0-9]{20,}$ ]] || die "senha em $SEGREDOS_DIR fora do formato [A-Za-z0-9]{20,} (gerada fora do script?)"
 done
+unset SENHAS_CONFERIR
 
 # Contas desejadas (user@host); o resto das contas do projeto sai (convergencia).
 DESEJADAS=("$DB_APP@$IP_API" "$DB_ADMIN@$IP_ADMIN")

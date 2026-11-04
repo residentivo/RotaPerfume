@@ -117,46 +117,70 @@ func TestDEPLOY07_Makefile_SemSenhaFixa(t *testing.T) {
 // deploy07Make roda "make db-guard-producao" numa cópia do Makefile, sem .env.
 func deploy07Make(t *testing.T, env []string, args ...string) (string, error) {
 	t.Helper()
+	return makeAlvo(t, copiaDoMakefile(t), "db-guard-producao", env, args...)
+}
+
+// copiaDoMakefile copia o Makefile do projeto para um diretório temporário
+// (sem .env, sem sql/, sem backend/): nada ali conecta em banco.
+func copiaDoMakefile(t *testing.T) string {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("usa sh")
-	}
-	makeBin, err := exec.LookPath("make")
-	if err != nil {
-		t.Skip("make não encontrado")
 	}
 	dir := t.TempDir()
 	dados, err := os.ReadFile(filepath.Join(raizProjeto(t), "Makefile"))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Makefile"), dados, 0o644))
-	cmd := exec.Command(makeBin, append([]string{"-s", "db-guard-producao"}, args...)...)
+	return dir
+}
+
+// makeAlvo roda "make -s <alvo> args..." em dir com ambiente mínimo (PATH,
+// HOME=dir, LC_ALL=C) mais env; nada do ambiente do go test (MAKEFLAGS,
+// DB_*, .env real) vaza para o make.
+func makeAlvo(t *testing.T, dir, alvo string, env []string, args ...string) (string, error) {
+	t.Helper()
+	makeBin, err := exec.LookPath("make")
+	if err != nil {
+		t.Skip("make não encontrado")
+	}
+	cmd := exec.Command(makeBin, append([]string{"-s", alvo}, args...)...)
 	cmd.Dir = dir
 	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "LC_ALL=C"}, env...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
+// casoGuardaProducao: produção = host do servidor na porta 3306 (ou sem
+// porta) ou o nome/IP do container na rede docker (qualquer porta). O dev do
+// CasaOS é o mesmo host na porta 3307 e passa. A mesma tabela roda contra o
+// db-guard-producao do Makefile (DEPLOY-07) e contra o
+// integracao.ValidarNaoProducao dos testes Go (SEC-50).
+type casoGuardaProducao struct {
+	host, porta string // porta "" = DB_PORT vazio na linha de comando
+	recusa      bool
+}
+
+var casosGuardaProducao = []casoGuardaProducao{
+	{"192.168.168.106", "3306", true},
+	{"192.168.168.106", "", true},
+	{"192.168.168.106", "3307", false},
+	{"192.168.168.106", "03306", true}, // porta como número (o cliente conecta na 3306)
+	{"192.168.168.106", "+3306", true},
+	{"192.168.168.106", "03307", false},
+	{"IVO-INSPIRON-15-3530", "3306", true},
+	{"ivo-inspiron-15-3530", "3307", false},
+	{"rotaperfumes-mariadb", "3306", true},
+	{"rotaperfumes-mariadb", "3307", true},
+	{"ROTAPERFUMES-MARIADB.", "3306", true},
+	{"172.30.42.2", "3306", true},
+	{"172.30.42.2", "13306", true},
+	{"127.0.0.1", "3306", false},
+	{"localhost", "3306", false},
+	{"192.168.168.107", "3306", false},
+}
+
 func TestDEPLOY07_Makefile_GuardaRecusaProducao(t *testing.T) {
-	// Produção = host do servidor na porta 3306 (ou sem porta) ou o nome/IP do
-	// container na rede docker (qualquer porta). O dev do CasaOS é o mesmo
-	// host na porta 3307 e passa.
-	casos := []struct {
-		host, porta string // porta "" = DB_PORT vazio na linha de comando
-		recusa      bool
-	}{
-		{"192.168.168.106", "3306", true},
-		{"192.168.168.106", "", true},
-		{"192.168.168.106", "3307", false},
-		{"IVO-INSPIRON-15-3530", "3306", true},
-		{"ivo-inspiron-15-3530", "3307", false},
-		{"rotaperfumes-mariadb", "3306", true},
-		{"rotaperfumes-mariadb", "3307", true},
-		{"ROTAPERFUMES-MARIADB.", "3306", true},
-		{"172.30.42.2", "3306", true},
-		{"172.30.42.2", "13306", true},
-		{"127.0.0.1", "3306", false},
-		{"localhost", "3306", false},
-		{"192.168.168.107", "3306", false},
-	}
+	casos := casosGuardaProducao
 	for _, c := range casos {
 		t.Run(c.host+":"+c.porta, func(t *testing.T) {
 			out, err := deploy07Make(t, nil, "DB_HOST="+c.host, "DB_PORT="+c.porta)

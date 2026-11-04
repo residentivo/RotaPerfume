@@ -449,7 +449,7 @@ func TestGetEnvEDSN(t *testing.T) {
 	t.Setenv("RP_TESTE_CHEIA", "valor")
 	assert.Equal(t, "valor", resetpassword.GetEnv("RP_TESTE_CHEIA", "padrão"))
 
-	for _, k := range []string{"DB_USUARIO", "DB_SENHA", "DB_HOST", "DB_PORT", "DB_NAME", "DB_TLS_CA", "DB_TLS_SERVER_NAME"} {
+	for _, k := range []string{"DB_USUARIO", "DB_SENHA", "DB_HOST", "DB_PORT", "DB_NAME", "DB_TLS_CA", "DB_TLS_SERVER_NAME", "DB_TLS_REQUIRED"} {
 		t.Setenv(k, "")
 	}
 	// SEC-10: sem fallback golang/golang para usuário/senha.
@@ -462,6 +462,8 @@ func TestGetEnvEDSN(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "u:s@tcp(localhost:3306)/rotaperfumes?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true", dsn)
 
+	// SEC-49: host remoto sem DB_TLS_CA só com DB_TLS_REQUIRED=false.
+	t.Setenv("DB_TLS_REQUIRED", "false")
 	t.Setenv("DB_HOST", "db")
 	t.Setenv("DB_PORT", "3307")
 	t.Setenv("DB_NAME", "rp")

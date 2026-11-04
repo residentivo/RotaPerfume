@@ -65,6 +65,13 @@ make deps-audit-imagens # SEC-31: digests fixados (Jenkinsfile: golang/node/mari
 
 Banco: **MariaDB 11.4 LTS** (somente MariaDB; em produção, o container `rotaperfumes-mariadb` do `deploy/mariadb-docker.sh`, na rede Docker `rotaperfumes-db`). Os alvos `make db-*` (inclusive `db-seed`) exigem o cliente `mariadb` no `PATH` (`DB_CLIENTE_BIN` aponta outro executável, que o `db-check-env` confere ser o cliente MariaDB); com `DB_TLS_CA` eles usam `--ssl-ca` + `--ssl-verify-server-cert`. **SEC-42:** `DB_HOST` fora do loopback (`localhost`, `127.0.0.0/8`, `::1`) sem `DB_TLS_CA` derruba a API/CLIs e o `db-check-env`, salvo `DB_TLS_REQUIRED=false` (com AVISO). O cliente Go exige TLS 1.3 (TST-12). O driver Go é o `go-sql-driver/mysql` (compatível).
 
+- **Dev:** MariaDB 11.8 do CasaOS (`192.168.168.106:3307`, CA `deploy/ca-cert.pem`), no `.env` padrão.
+- **Produção:** `192.168.168.106:3306`. Seed inicial só pelo `deploy/seed-producao.sh` (`docs/deploy-servidor.md` §11). Acesso do admin pelo `.env.producao` (`make <alvo> ENV_ARQUIVO=.env.producao`).
+- **Guarda `db-guard-producao` (DEPLOY-07):** recusa os alvos que escrevem no banco contra a produção (host e porta), salvo `CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>` na linha de comando.
+- **SEC-46:** `db-down`, `db-seed`, `db-reset` e `db-rebuild` são recusados **sempre** na produção, mesmo com `CONFIRMO_PRODUCAO`. Fora do loopback, o `DROP DATABASE` exige `CONFIRMAR=<DB_NAME>` na linha de comando (ex.: `CONFIRMAR=rotaperfumes` no CasaOS :3307).
+- **SEC-53:** os segredos do `.env` (ou do `ENV_ARQUIVO`) não chegam aos processos de test, build, lint e npm do Makefile. As `DB_*` só chegam ao `go test` pelo `make test-integration`, que passa pela guarda.
+- **SEC-50:** os testes Go de integração (`INTEGRATION=1`) usam `backend/shared/testkit/integracao` e recusam a produção antes de conectar. Para rodá-los: `make test-integration ENV_ARQUIVO=<arquivo do banco descartável>`.
+
 ## Instalação do ambiente
 
 - **Scripts (SETUP-01):** `scripts/setup-linux.sh` (Debian/Ubuntu e derivados, via apt; em outras distros só confere) e `scripts/setup-windows.ps1` (PowerShell 5.1+/7, via winget). Pelo make: `make setup-check` (só verifica, sai com erro se faltar algo) e `make setup` (instala o que falta; idempotente). Opções: `--check`/`-Check`, `--deps`/`-Deps` (`go mod download` + `make frontend-deps`), `--go-dir`/`-GoDir`, `--go-sistema` (Linux, `/usr/local/go` com sudo), `--sem-sudo`; ver `--help`. Pelo make: `make setup SETUP_ARGS="--deps"`.

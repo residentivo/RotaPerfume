@@ -8,7 +8,6 @@ package db_test
 
 import (
 	"database/sql"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,16 +15,12 @@ import (
 
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/db"
+	"github.com/rotaperfumes/shared/testkit/integracao"
 )
 
 func abrirSchemaIT(t *testing.T) *sql.DB {
 	t.Helper()
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
-	}
-	if os.Getenv("DB_USUARIO") == "" || os.Getenv("DB_SENHA") == "" {
-		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
-	}
+	integracao.Config(t) // SEC-50: guarda (pula sem INTEGRATION=1/credenciais; recusa a produção)
 	t.Setenv("JWT_SECRET", "integracao-segredo-com-pelo-menos-32-bytes")
 	t.Setenv("PASSWORD_PEPPER", "pepper-de-integracao-com-32-bytes-ou-mais")
 	cfg, err := config.Load()

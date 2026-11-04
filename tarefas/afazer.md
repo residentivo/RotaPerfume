@@ -1,6 +1,12 @@
 # A Fazer
 
-> Atualizado em 2026-11-04 (🔴 TestBrain): o **TST-18** (estágio "Testes Frontend" no Jenkinsfile, pedido do usuário) foi criado e concluído no mesmo dia, direto em `feito.md`; o backlog abaixo não mudou.
+> Atualizado em 2026-11-04 (decisões do usuário após o Lote 34, repassadas pelo 🤍 MegaBrain; 🔵 SubBrain). Saíram desta lista para `feito.md` (bloco "Decisões do usuário de 2026-11-04 (após o Lote 34)"): **OPS-02** (SMTP de produção configurado pelo usuário, por ora via Gmail; o passo 10 do DEPLOY-08 fica com o pré-requisito atendido) e **CHORE-18** (hostname `ivo-Inspiron-15-3530` confirmado; a guarda já o cobre em minúsculas, sem alteração; a conferência do SAN virou item opcional do DEPLOY-08). O **DEPLOY-08** ganhou a nota "Andamento 2026-11-04" (passo 11 rodado no servidor por engano; na máquina do admin, `db-check-env` ok, mas a `192.168.168.106:3306` não responde e o fingerprint da `deploy/ca-producao.pem` difere do `deploy/db-ca.fingerprint`). O **TST-17** ganhou nota (Docker na máquina do admin sem acesso ao socket; falta `usermod -aG docker`; sem `shellcheck`). O **SEC-54** deixou de citar o CHORE-18 como pendente. O **DOC-09** continua aqui: fatos conferidos, mas o `CLAUDE.md` não foi alterado pelo agente (autorização repassada por agente não vale; o usuário aplica direto). **Seguem pendentes do usuário:** **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`), **DOC-09** e **TST-17**. O restante do backlog não mudou.
+>
+> Antes, ainda em 2026-11-04 (fechamento do Lote 34, 🔵 SubBrain). O **Lote 34** (SEC-53, SEC-46, SEC-50, SEC-49, CHORE-15, CHORE-17 e BUG-26) foi concluído e está em `feito.md` (**não commitado**, pendente do usuário). Entraram 7 cards no bloco "Achados do Lote 34", logo abaixo: **BUG-27** (MÉDIA: `db-reset`/`db-rebuild` com `db-down` e `db-seed` como pré-requisitos irmãos) e **SEC-54**, **TST-19**, **SEC-55**, **TST-20**, **TST-21** e **TST-22** (BAIXA). O **DOC-09** ganhou o texto do SEC-46, do SEC-53 e do SEC-50 (continua aguardando a autorização do usuário). **Seguem pendentes do usuário:** **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`), **OPS-02** (SMTP de produção), **CHORE-18** (hostname do servidor), **DOC-09** (alteração do `CLAUDE.md`) e **TST-17** (precisa de uma máquina com Docker). O restante do backlog não mudou.
+>
+> Antes, ainda em 2026-11-04 (abertura do Lote 34, 🔵 SubBrain). O usuário pediu "continue com as tarefas a fazer e as fazendo". O 🤍 MegaBrain abriu o **Lote 34 de 2026-11-04** e 7 cards saíram desta lista para `fazendo.md`: **SEC-50**, **SEC-53**, **CHORE-17** e **BUG-26** (bloco "Achados do Lote 33 (DEPLOY-07)") e **SEC-46**, **SEC-49** e **CHORE-15** (bloco "Achados dos Lotes 30 e 31"). Passo atual do lote: "🟣 SecBrain especificando → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain fechando". **Continuam aqui, pendentes do usuário:** **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`), **OPS-02** (SMTP de produção), **CHORE-18** (hostname do servidor), **DOC-09** (alteração do `CLAUDE.md`, exige autorização) e **TST-17** (precisa de uma máquina com Docker). O restante do backlog não mudou.
+>
+> Antes, ainda em 2026-11-04 (🔴 TestBrain): o **TST-18** (estágio "Testes Frontend" no Jenkinsfile, pedido do usuário) foi criado e concluído no mesmo dia, direto em `feito.md`; o backlog abaixo não mudou.
 >
 > Antes, ainda em 2026-11-04 (fechamento do Lote 33, 🔵 SubBrain). O **DEPLOY-07** foi concluído no código e nas docs e está em `feito.md` (não commitado). O **DEPLOY-05** saiu desta lista (substituído pelo DEPLOY-07; registro em `feito.md`). Entraram 11 cards novos no bloco "Achados do Lote 33 (DEPLOY-07)", logo abaixo: **DEPLOY-08** (ALTA, pendente do usuário: executar a §11 de `docs/deploy-servidor.md` no servidor; **bloqueia o primeiro deploy da `main`**), **SEC-50**, **SEC-53**, **TST-17**, **OPS-02** e **CHORE-18** (MÉDIA) e **SEC-51**, **SEC-52** (risco aceito), **CHORE-17**, **BUG-26** e **DOC-09** (BAIXA). O restante do backlog não mudou.
 >
@@ -65,9 +71,114 @@
 
 ---
 
+# Achados do Lote 34, 2026-11-04
+
+> Pendências do Lote 34 (`feito.md`, "Lote 34 de 2026-11-04"), levantadas pelo 🟣 SecBrain e pelo 🔴 TestBrain. Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
+
+## BUG-27: `db-reset`/`db-rebuild` rodam o `db-seed` mesmo com o DROP recusado (`make -k`) e têm corrida com `-j` — prioridade MÉDIA
+
+**Status:** pendente.
+**Camadas:** Config (Makefile)
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 34 (2026-11-04). O problema já existia antes do lote.
+
+**Descrição:** `db-reset` e `db-rebuild` têm `db-down` e `db-seed` como **pré-requisitos irmãos**. Com `make -k`, o `db-seed` roda (`CREATE DATABASE` + seed) mesmo quando o `DROP` foi recusado pelo `db-guard-drop` (SEC-46); confirmado num tempdir. Com `-j`, os dois podem rodar em paralelo (corrida entre o DROP e o seed).
+
+**Sugestão:** receitas sequenciais (`$(MAKE) db-down && $(MAKE) db-seed`, repassando `CONFIRMAR`/`ENV_ARQUIVO`) ou `.NOTPARALLEL` nesses alvos; garantir que a recusa de qualquer guarda pare o alvo inteiro mesmo com `-k`.
+
+**Critério de aceite:** teste com `make -k db-reset` e `make -k db-rebuild` (DROP recusado → nenhum `CREATE DATABASE`/seed) e com `-j` (ordem garantida); os testes do SEC-46 continuam verdes.
+
+---
+
+## SEC-54: guarda de produção é blocklist; aliases do servidor passam — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Config (Makefile), Backend (testes)
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain no Lote 34 (2026-11-04).
+
+**Descrição:** a detecção de produção (`PRODUCAO_DETECTA` no Makefile e `SH/testkit/integracao` no Go) compara o `DB_HOST` com uma lista fixa. Aliases do mesmo servidor passam nos dois: `ivo-inspiron-15-3530.local`, `::ffff:192.168.168.106`, outro IP da máquina.
+
+**A avaliar:** allowlist para a integração (loopback e CasaOS `192.168.168.106:3307`) ou resolver o DNS antes de comparar (com cuidado para não depender de rede nos testes). Manter a paridade Makefile × Go.
+
+**Relacionado:** CHORE-18 (hostname real do servidor na guarda): **concluído em 2026-11-04**, sem alteração (o hostname `ivo-Inspiron-15-3530` confirmado pelo usuário já está coberto, em minúsculas, no `PRODUCAO_HOSTS_LAN` e no `SH/testkit/integracao`; ver `feito.md`). Continuam valendo os aliases acima (`.local`, IPv4 mapeado em IPv6, outros IPs).
+
+---
+
+## TST-19: catraca para testes que abrem conexão com a config do ambiente sem o helper do SEC-50 — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 34 (2026-11-04).
+
+**Descrição:** a catraca de `SH/tests/config/sec50_integracao_guarda_test.go` só detecta leitura direta de `INTEGRATION` (`Getenv("INTEGRATION")`). Um `_test.go` novo que faça `config.Load()` + `db.Open` sem passar por `integracao.Config`/`integracao.Abrir` não é pego.
+
+**Critério de aceite:** teste (AST ou varredura) que falha se algum `_test.go` abrir conexão com a config do ambiente sem chamar `integracao.Config`/`Abrir`; lista de exceções explícita, se houver.
+
+---
+
+## SEC-55: `go build` de `build-shared`/`build-api` recebe as `DB_*` no modo integração — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Config (Makefile)
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain no Lote 34 (2026-11-04).
+
+**Descrição:** com `INTEGRATION=1` (caminho do `make test-integration`), os `go build` de `build-shared` e `build-api` também recebem as `DB_*`. Não há conexão ao banco no build (impacto mínimo), mas o segredo chega a um processo que não precisa dele.
+
+**Ação esperada:** um `SEM_SEGREDOS` estrito para os alvos de build (sem a exceção do modo integração).
+
+**Critério de aceite:** teste do Makefile (no padrão do `sec53_makefile_segredos_test.go`) mostrando que o `go build` nunca recebe `DB_*`/`MYSQL_PWD`, mesmo com `INTEGRATION=1`.
+
+---
+
+## TST-20: cobrir o ramo de erro de `integracao.Abrir` — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 34 (2026-11-04).
+
+**Descrição:** `SH/testkit/integracao` está com 72,7% de cobertura no `Abrir`: o ramo de erro (falha ao abrir/pingar o banco → `t.Fatal`) não é exercitado.
+
+**Critério de aceite:** teste do ramo de erro (ex.: `testing.TB` falso e DSN inválido/porta fechada no loopback, sem tocar em banco real); cobertura do pacote sem queda.
+
+---
+
+## TST-21: teste com terminal real do `seed-producao.sh` (confirmação e pepper) — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Testes, Deploy
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 34 (BUG-26, 2026-11-04).
+
+**Descrição:** o BUG-26 cobriu só o caminho **sem** terminal (`bug26_seed_sem_terminal_linux_test.go`). O caminho com terminal real (digitar a confirmação do `--forcar` e o pepper sem eco) não tem teste automatizado.
+
+**Sugestão:** pty (ex.: `script -qec`, ou um pty em Go) com `docker` falso, no padrão dos testes de ensaio do DEPLOY-07; pular quando o `script`/pty não estiver disponível.
+
+---
+
+## TST-22: rodar os testes de integração com o helper do SEC-50 contra um MariaDB descartável — prioridade BAIXA
+
+**Status:** pendente (execução; exige um banco descartável: CasaOS `192.168.168.106:3307` ou loopback).
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain (com o arquivo de ambiente fornecido pelo usuário)
+**Origem:** 🔴 TestBrain no Lote 34 (2026-11-04).
+
+**Descrição:** no Lote 34, os 22 pontos de integração migrados para `SH/testkit/integracao` foram verificados só com `INTEGRATION` desligado (42 SKIP) e pela recusa da produção. O **caminho de sucesso** com o helper novo não rodou contra um banco real.
+
+**A fazer:** `make test-integration ENV_ARQUIVO=integracao.env` com um `integracao.env` apontando para o CasaOS :3307 ou para o loopback (nunca o `.env` local, que aponta para a produção).
+
+**Critério de aceite:** testes de integração verdes contra o banco descartável; nenhuma conexão à produção.
+
+**Relacionado:** TST-17 (testes reais com Docker).
+
+---
+
 # Achados do Lote 33 (DEPLOY-07), 2026-11-04
 
-> Pendências do DEPLOY-07 (`feito.md`, "Lote 33 de 2026-11-04"). O DEPLOY-08 vem primeiro: sem ele não há produção. A OPS-02 e a CHORE-18 convém resolver antes ou junto do DEPLOY-08.
+> Pendências do DEPLOY-07 (`feito.md`, "Lote 33 de 2026-11-04"). O DEPLOY-08 vem primeiro: sem ele não há produção. A OPS-02 e a CHORE-18 foram concluídas em 2026-11-04 (`feito.md`, "Decisões do usuário de 2026-11-04 (após o Lote 34)").
 
 ## DEPLOY-08: executar a §11 de `docs/deploy-servidor.md` no servidor (instalação inicial da produção) — prioridade ALTA (pendente do usuário)
 
@@ -88,39 +199,24 @@
 7. conferências SQL (13 tabelas, admin ativo com `deve_trocar_senha = 1` e Argon2id, 42 vendedores, 0 não-admin ativos);
 8. checklist pré-push (`IMPORTAR_DUMP` desmarcado);
 9. push na `main`;
-10. 1º login do admin com troca obrigatória e ativação dos vendedores (depende da **OPS-02**);
+10. 1º login do admin com troca obrigatória e ativação dos vendedores (pré-requisito **OPS-02 atendido** em 2026-11-04: SMTP de produção configurado pelo usuário, por ora via Gmail);
 11. `.env.producao` + `deploy/ca-producao.pem` na máquina do admin;
 12. `TestTST15_MariadbDocker_Real` numa máquina com Docker (ver **TST-17**).
+
+**Item opcional (vindo do CHORE-18):** conferir o SAN do certificado no servidor: `openssl x509 -in /etc/mysql/ssl/server-cert.pem -noout -ext subjectAltName` (deve conter `ivo-Inspiron-15-3530` e `192.168.168.106`).
+
+**Andamento 2026-11-04:**
+- O usuário rodou os comandos do passo 11 **no servidor, dentro de `deploy/`**: por isso `make: Sem regra para processar o alvo 'db-check-env'`, e `make 192.168.168.106 ...` porque o `<alvo>` do exemplo foi trocado pelo IP. O passo 11 é para a **máquina do admin** (`192.168.168.105`), **na raiz do repositório**.
+- Conferido pelo 🤍 MegaBrain na máquina do admin: `make db-check-env ENV_ARQUIVO=.env.producao` → ok. **Porém:**
+  - (a) a porta `192.168.168.106:3306` **não responde** desta máquina (timeout de TCP; a 3307 do CasaOS responde);
+  - (b) o fingerprint de `deploy/ca-producao.pem` local (`f8dbaf59…aaf70`) **difere** da linha útil de `deploy/db-ca.fingerprint` (`f31ee820…a04c2`).
+- **Próximo passo do usuário:** no servidor, conferir `docker port rotaperfumes-mariadb`, o firewall (`ufw status`/`iptables`) e se `192.168.168.105` está no `--dev-ip`; conferir o fingerprint de `/etc/mysql/ssl/ca.pem`; depois recopiar a CA (passo 11.1) e repetir o passo 11.3 na máquina do admin.
 
 **Critério de aceite:** container `rotaperfumes-mariadb` 11.4 com a CA de produção; `deploy/db-ca.fingerprint` commitado só com o fingerprint dela; estágios "CA do banco", "Deploy" e "Smoke test" verdes; log da API com `tls=ligado (custom)` e `min=TLS1.3`; admin logado e com a senha trocada; `/root/rotaperfumes-ca/ca-key.pem`, `/root/pepper-producao.txt` e `/root/rotaperfumes-mariadb/admin-app.senha` apagados do servidor.
 
 ---
 
-## SEC-50: guarda de produção nos testes Go com `INTEGRATION=1` chamados direto — prioridade MÉDIA
-
-**Status:** pendente.
-**Camadas:** Backend (testes), Config
-**Responsável:** 🟣 SecBrain (especifica) → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** DEPLOY-07 (Lote 33, 2026-11-04).
-
-**Descrição:** a guarda `db-guard-producao` do Makefile protege o `make test-integration`, mas um `go test` com `INTEGRATION=1` chamado direto lê `DB_*` do `.env`/ambiente sem nenhuma checagem. Com um `.env` (ou `.env.producao`) apontando para a produção, os testes de integração apagariam ou alterariam dados reais.
-
-**Proposta inicial:** um helper comum dos testes de integração que recuse o mesmo critério da guarda (host e porta: `PRODUCAO_HOSTS_LAN` com `DB_PORT` vazio ou 3306; `PRODUCAO_HOSTS_REDE` em qualquer porta), sem válvula ou com válvula explícita só para banco descartável. Teste que confere que a lista do helper é igual à do Makefile.
-
-**Critério de aceite:** `INTEGRATION=1 go test ./...` com `DB_HOST`/`DB_PORT` de produção falha antes de qualquer conexão; com o CasaOS (`192.168.168.106:3307`) ou com o loopback, segue normal.
-
----
-
-## SEC-53: Makefile exporta `MYSQL_PWD`/`DB_*` do `.env` para os alvos `test*` — prioridade MÉDIA
-
-**Status:** pendente (🟣 SecBrain avaliar).
-**Camadas:** Config (Makefile), Testes
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🔴 TestBrain no DEPLOY-07 (Lote 33, 2026-11-04).
-
-**Descrição:** o `Makefile` faz `-include .env` (ou `include $(ENV_ARQUIVO)`) seguido de `export` geral, então `MYSQL_PWD`, `DB_*`, `PASSWORD_PEPPER` e outros segredos do `.env` chegam ao ambiente de todos os processos dos alvos `test*`. Com um `.env` de produção, o segredo de produção vai para os processos de teste. No DEPLOY-07, o `helpers_test.go` passou a limpar `MYSQL_PWD`/`DB_*`/`PASSWORD_PEPPER` dentro dos testes Go, mas isso não cobre os outros processos filhos.
-
-**A avaliar:** `unexport` dessas variáveis nos alvos `test*` (ou um export seletivo só onde o cliente `mariadb` precisa) e o efeito no `test-integration`.
+> **2026-11-04 (Lote 34):** SEC-50, SEC-53, CHORE-17 e BUG-26 foram para o **Lote 34** e estão concluídos (`feito.md`).
 
 ---
 
@@ -138,31 +234,11 @@
 
 **Relacionado:** TST-16 (isolamento do teste real do `mariadb-docker.sh`).
 
----
-
-## OPS-02: SMTP de produção para o reset de senha dos vendedores — prioridade MÉDIA
-
-**Status:** pendente (decisão/ação do usuário; pré-requisito do passo 10 do DEPLOY-08).
-**Camadas:** Deploy (Secret file), Ops
-**Responsável:** usuário (credenciais SMTP) → 🟣 SecBrain (se precisar de fluxo alternativo)
-**Origem:** 🔵 SubBrain no DEPLOY-07 (Lote 33, 2026-11-04).
-
-**Descrição:** em produção os 42 vendedores nascem inativos e com hash placeholder. O admin os ativa na tela **Usuários** em dois passos: **Resetar** (`POST /api/admin/reset-password`: gera a senha, grava com troca obrigatória e envia **só por e-mail**) e o botão de status (`PATCH /api/usuarios/{id}/inativar`; o reset sozinho não ativa). Sem `SMTP_*` no Secret file `rotaperfumes-api-env`, a resposta vem com `email_enviado = false` e a senha gerada não chega a ninguém (não aparece na tela nem no log).
-
-**A decidir:** configurar o SMTP de produção (ex.: Gmail com senha de app, `SMTP_*` e `SECURITY_ALERT_EMAILS`) antes do passo 10 do DEPLOY-08, ou definir um fluxo alternativo seguro para entregar a senha inicial.
+**Nota 2026-11-04:** a máquina do admin (`192.168.168.105`, `residentivo-MS-7E28`) tem Docker, mas o usuário `residentivo` não está no grupo `docker` (`permission denied` no socket) e a sessão do agente não tem sudo. **Aguardando o usuário** rodar `sudo usermod -aG docker residentivo` e reabrir a sessão. O `shellcheck` também não está instalado nessa máquina.
 
 ---
 
-## CHORE-18: hostname do servidor na guarda `db-guard-producao` — prioridade MÉDIA
-
-**Status:** pendente (o usuário confirma o hostname; depois 🟡 BackBrain).
-**Camadas:** Config (Makefile), Docs
-**Responsável:** usuário → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🤍 MegaBrain no fechamento do DEPLOY-07 (Lote 33, 2026-11-04).
-
-**Descrição:** o `PRODUCAO_HOSTS_LAN` do Makefile tem `ivo-inspiron-15-3530` fixo, mas o `deploy/mariadb-docker.sh` usa `$(hostname)` do servidor como `SITE_HOST` (entra no SAN do certificado). Se o hostname real do servidor for outro, um `DB_HOST=<hostname real>` com porta 3306 passaria pela guarda.
-
-**A fazer:** conferir `hostname` no servidor (e o SAN: `openssl x509 -in /etc/mysql/ssl/server-cert.pem -noout -ext subjectAltName`); se for diferente, ajustar o `PRODUCAO_HOSTS_LAN`, o teste da guarda e as docs que citam `ivo-inspiron-15-3530`.
+> **2026-11-04 (decisões do usuário após o Lote 34):** **OPS-02** (SMTP de produção configurado, por ora via Gmail) e **CHORE-18** (hostname `ivo-Inspiron-15-3530` confirmado, sem alteração de código) foram concluídos e estão em `feito.md`.
 
 ---
 
@@ -188,36 +264,7 @@
 
 ---
 
-## CHORE-17: `mariadb-docker.sh` gera `casaos.senha` mesmo sem `--dev-ip` — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Deploy
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🔴 TestBrain no DEPLOY-07 (Lote 33, 2026-11-04).
-
-**Descrição:** sem `--dev-ip` não há conta `casaos`, mas o script ainda gera `/root/rotaperfumes-mariadb/casaos.senha`. Gerar só quando houver `--dev-ip` (e decidir o que fazer com o arquivo quando a lista ficar vazia), mantendo a regra de não trocar senhas na reexecução.
-
----
-
-## BUG-26: `seed-producao.sh --forcar` sem terminal sai sem a mensagem "exige um terminal" — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Deploy
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🔴 TestBrain no DEPLOY-07 (Lote 33, 2026-11-04).
-
-**Descrição:** com `--forcar` e sem terminal, o script cai por `set -e` na leitura da confirmação, sem a mensagem `--forcar exige um terminal para a confirmacao`. Nada é alterado (a recusa vem antes da DDL), mas o erro fica obscuro. Ajustar a checagem para falhar com a mensagem clara e cobrir no teste.
-
----
-
-## DOC-09: `CLAUDE.md` com o banco de dev, o `seed-producao.sh` e a guarda de produção — prioridade BAIXA
-
-**Status:** **aguardando o usuário** (o `CLAUDE.md` é instrução do projeto: a equipe não o altera sem pedido direto do usuário).
-**Camadas:** Docs
-**Responsável:** usuário (ou um agente, com a autorização dele)
-**Origem:** DEPLOY-07 (Lote 33, 2026-11-04).
-
-**Texto sugerido** (no parágrafo "Banco:" do `CLAUDE.md`): "Banco de dev: MariaDB 11.8 do CasaOS (`192.168.168.106:3307`, CA `deploy/ca-cert.pem`). Produção: seed inicial só pelo `deploy/seed-producao.sh` (`docs/deploy-servidor.md` §11); a guarda `db-guard-producao` do Makefile recusa os alvos que escrevem no banco contra a produção (host e porta), salvo `CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>` na linha de comando; acesso do admin pelo `.env.producao` (`ENV_ARQUIVO`)."
+> **DOC-09** concluído em 2026-11-04 (autorização direta do usuário; ver `feito.md`, "Decisões do usuário de 2026-11-04 (após o Lote 34)").
 
 ---
 
@@ -249,18 +296,7 @@
 
 ---
 
-## SEC-46: confirmação explícita em `make db-down/db-reset/db-rebuild` contra o banco real — prioridade MÉDIA
-
-**Status:** pendente.
-**Camadas:** Backend (tooling/Makefile)
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
-**Origem:** 🟣 SecBrain, Lote 30 (2026-11-02).
-
-**Descrição:** os alvos destrutivos `make db-down`, `db-reset` e `db-rebuild` rodam sem confirmação mesmo com `DB_HOST` fora do loopback e `DB_NAME=rotaperfumes` (o `.env` local hoje aponta para a produção).
-
-**Ação esperada:** nesses casos, exigir `CONFIRMAR=rotaperfumes` na linha de comando; sem ele, abortar com mensagem clara. Loopback e bancos descartáveis sem mudança.
-
-**Critério de aceite:** teste dos três alvos (aborta sem `CONFIRMAR`, segue com ele, loopback inalterado); `CLAUDE.md` e `.env.example` documentados.
+> **2026-11-04 (Lote 34):** SEC-46, SEC-49 e CHORE-15 foram para o **Lote 34** e estão concluídos (`feito.md`).
 
 ---
 
@@ -336,36 +372,6 @@
 **Ação esperada:** rodar a suíte de integração (`INTEGRATION=1`) num MariaDB descartável com o modo ligado; corrigir as consultas que falharem; incluir o modo no `SQL_MODE` e documentar.
 
 **Critério de aceite:** integração verde com o modo ligado; `mariadb-docker.sh` e `docs/deploy-servidor.md` atualizados.
-
----
-
-## SEC-49: `ValidarDBTLSObrigatorio` (SEC-42) no `shared/tools/resetpassword` — prioridade BAIXA
-
-**Status:** pendente.
-**Camada:** Backend (shared/tools)
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** SEC-42 (Lote 30, 2026-11-02).
-
-**Descrição:** o `SH/tools/resetpassword` chama `LoadDBTLS` direto e não aplica a regra do `DB_TLS_REQUIRED` (com `DB_HOST` remoto sem CA, conectaria em claro).
-
-**Ação esperada:** usar `ValidarDBTLSObrigatorio` como a API e as demais CLIs.
-
-**Critério de aceite:** teste do `resetpassword` recusando `DB_HOST` remoto sem `DB_TLS_CA` (e aceitando com `DB_TLS_REQUIRED=false`, com aviso).
-
----
-
-## CHORE-15: remover o código morto `argon2idPepper.verificar` — prioridade BAIXA
-
-**Status:** pendente.
-**Camada:** Backend (shared)
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** SEC-32 (Lote 31, 2026-11-02).
-
-**Descrição:** `argon2idPepper.verificar` (`SH/identidade/identidadecrypto/hasher.go`, ~linha 171) ficou sem chamador.
-
-**Ação esperada:** remover, sem mudar o comportamento do `Hasher`.
-
-**Critério de aceite:** função removida; testes do SEC-22/SEC-32 verdes; cobertura sem queda.
 
 ---
 

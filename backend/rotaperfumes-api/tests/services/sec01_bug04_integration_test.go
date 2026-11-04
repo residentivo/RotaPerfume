@@ -10,19 +10,18 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/rotaperfumes/shared/comercial"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rotaperfumes/shared/testkit/integracao"
 )
 
 func pularSemIntegracao(t *testing.T) {
 	t.Helper()
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
-	}
+	integracao.Config(t) // SEC-50
 }
 
 // criarVendedorTemp cria um vendedor ZZ-TEST-<tag>-* e agenda o DELETE.

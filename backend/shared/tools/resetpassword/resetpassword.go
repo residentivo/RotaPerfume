@@ -116,10 +116,16 @@ func DSN() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// SEC-49: mesma regra do SEC-42 (DB_TLS_REQUIRED) da API e das demais
+	// CLIs: DB_HOST fora do loopback sem DB_TLS_CA não conecta em claro.
+	host := GetEnv("DB_HOST", "localhost")
+	if err := config.ValidarDBTLSObrigatorio(host, dbTLS); err != nil {
+		return "", err
+	}
 	cfg := config.Config{
 		DBUsuario: usuario,
 		DBSenha:   senha,
-		DBHost:    GetEnv("DB_HOST", "localhost"),
+		DBHost:    host,
 		DBPort:    GetEnv("DB_PORT", "3306"),
 		DBName:    GetEnv("DB_NAME", "rotaperfumes"),
 		DBTLS:     dbTLS,

@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/rotaperfumes/shared/comercial/comercialapp"
-	"os"
 	"testing"
 	"time"
 
@@ -32,41 +31,15 @@ import (
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/comercial/comercialmysql"
-	"github.com/rotaperfumes/shared/config"
-	shareddb "github.com/rotaperfumes/shared/db"
+	"github.com/rotaperfumes/shared/testkit/integracao"
 )
 
-func envOr(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
-// abrirDBIntegracao abre o MySQL local já com time.Local definido (o driver
+// abrirDBIntegracao abre o MariaDB de integração (SEC-50: integracao.Abrir
+// recusa a produção antes de conectar) já com time.Local definido (o driver
 // resolve loc=Local no parse do DSN).
 func abrirDBIntegracao(t *testing.T) *sql.DB {
 	t.Helper()
-	// SEC-11: sem fallback de credenciais; sem DB_USUARIO/DB_SENHA, pula.
-	usuario, senha := os.Getenv("DB_USUARIO"), os.Getenv("DB_SENHA")
-	if usuario == "" || senha == "" {
-		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
-	}
-	// SEC-29: mesmo TLS do config.Load (DB_TLS_CA/DB_TLS_SERVER_NAME do ambiente).
-	dbTLS, err := config.LoadDBTLS()
-	require.NoError(t, err, "DB_TLS_CA/DB_TLS_SERVER_NAME inválidos")
-	cfg := &config.Config{
-		DBHost:    envOr("DB_HOST", "localhost"),
-		DBPort:    envOr("DB_PORT", "3306"),
-		DBName:    envOr("DB_NAME", "rotaperfumes"),
-		DBUsuario: usuario,
-		DBSenha:   senha,
-		DBTLS:     dbTLS,
-	}
-	db, err := shareddb.Open(cfg.DSN())
-	require.NoError(t, err, "MySQL local indisponível")
-	t.Cleanup(func() { db.Close() })
-	return db
+	return integracao.Abrir(t)
 }
 
 // dataNoBanco lê a coluna DATE como texto direto no MySQL (sem conversão de
@@ -91,9 +64,7 @@ func dataComoAPI(t *testing.T, v time.Time) string {
 }
 
 func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
-	}
+	integracao.Config(t) // SEC-50: pula sem INTEGRATION=1/credenciais; recusa a produção
 
 	fusos := []*time.Location{
 		time.Local, // fuso real da máquina
@@ -187,9 +158,7 @@ func TestIntegracaoBUG01_GravaLeReSalvaSemDeslocamento(t *testing.T) {
 // existe. Com a flag, RowsAffected conta linhas encontradas e o re-save sem
 // alteração responde sucesso.
 func TestIntegracao_UpdateSemAlteracao(t *testing.T) {
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
-	}
+	integracao.Config(t) // SEC-50: pula sem INTEGRATION=1/credenciais; recusa a produção
 	db := abrirDBIntegracao(t)
 	ctx := context.Background()
 	sufixo := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -293,9 +262,7 @@ func bug05DataDesligamento(t *testing.T, db *sql.DB, vendedorID int64) sql.NullS
 }
 
 func TestIntegracaoBUG05_InativarVendedorInativaUsuarios(t *testing.T) {
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
-	}
+	integracao.Config(t) // SEC-50: pula sem INTEGRATION=1/credenciais; recusa a produção
 	db := abrirDBIntegracao(t)
 	ctx := context.Background()
 	casos := casosComercial(db, 0)

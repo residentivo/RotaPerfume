@@ -1928,25 +1928,32 @@ Todos têm controle negativo (fonte sintética que a regra precisa reprovar).
 ### 10.9 Como rodar os testes (unitários e de integração)
 
 - **Unitários:** `make test` (os dois módulos), ou `go test ./...` em `backend/shared` e em `backend/rotaperfumes-api`. Cobertura combinada (portão do Lote 21): `make cover-combinada`.
-- **Integração (MariaDB 11.4 descartável; nunca o banco do servidor, DOC-08):** os testes `*_integration_test.go` e `TestIntegracao*` são pulados (`t.Skip`) sem `INTEGRATION=1`. **Só `INTEGRATION=1` não basta:** as variáveis `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USUARIO` e `DB_SENHA` precisam estar **no ambiente do processo** (SEC-11: sem default; os testes não leem o `.env` sozinhos). Sem elas, parte dos testes é pulada e outra falha ao conectar, e um resultado "verde" pode não ter tocado o banco. Rode **com `-p 1`**: os pacotes de integração usam o mesmo banco e, em paralelo, interferem entre si.
-  - Git Bash (na raiz do repositório):
+- **Integração (MariaDB 11.4 descartável; nunca o banco do servidor, DOC-08):** os testes `*_integration_test.go` e `TestIntegracao*` são pulados (`t.Skip`) sem `INTEGRATION=1`. Todos entram pelo helper `backend/shared/testkit/integracao` (`integracao.Abrir(t)` / `integracao.Config(t)`; SEC-50), que lê `INTEGRATION` e as `DB_*` **do ambiente do processo** (SEC-11: usuário e senha sem default; sem eles, o teste é pulado) e **recusa o banco de PRODUÇÃO antes de conectar**, com a mesma regra do `db-guard-producao` do `Makefile` (`PRODUCAO_HOSTS_LAN` com `DB_PORT` vazio ou 3306; `PRODUCAO_HOSTS_REDE` em qualquer porta). **Não há válvula**: nem `CONFIRMO_PRODUCAO` libera integração na produção. Nenhum teste lê `INTEGRATION` direto (catraca `TestSEC50_NenhumTesteLeIntegrationDireto`). Os pacotes de integração usam o mesmo banco: rode **com `-p 1`**.
+  - **Não carregue o `.env` no shell** (`set -a; . ./.env`): o `.env` de trabalho pode apontar para a produção. Use um arquivo só com as `DB_*` do banco descartável (ex.: `integracao.env`, ignorado pelo Git via `*.env`) ou exporte as variáveis à mão.
+  - Pelo make (recomendado; roda com `-p 1 -count=1` e passa pelo `db-guard-producao`):
 
     ```bash
-    set -a; . ./.env; set +a
-    (cd backend/shared && INTEGRATION=1 go test -p 1 -count=1 ./...)
-    (cd backend/rotaperfumes-api && INTEGRATION=1 go test -p 1 -count=1 ./...)
+    make test-integration ENV_ARQUIVO=integracao.env
     ```
 
-  - PowerShell (na raiz do repositório; carrega só as `DB_*` do `.env`):
+  - Direto pelo `go test` (Git Bash, na raiz do repositório; valores do banco descartável):
+
+    ```bash
+    export INTEGRATION=1 DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=rotaperfumes DB_USUARIO=<usuario> DB_SENHA=<senha>
+    (cd backend/shared && go test -p 1 -count=1 ./...)
+    (cd backend/rotaperfumes-api && go test -p 1 -count=1 ./...)
+    ```
+
+  - PowerShell (na raiz do repositório; carrega só as `DB_*` do arquivo do banco descartável):
 
     ```powershell
-    Get-Content .env | Where-Object { $_ -match '^\s*(DB_[A-Z_]+)=(.*)$' } | ForEach-Object { Set-Item "env:$($Matches[1])" $Matches[2].Trim() }
+    Get-Content integracao.env | Where-Object { $_ -match '^\s*(DB_[A-Z_]+)=(.*)$' } | ForEach-Object { Set-Item "env:$($Matches[1])" $Matches[2].Trim() }
     $env:INTEGRATION = "1"
     Push-Location backend/shared; go test -p 1 -count=1 ./...; Pop-Location
     Push-Location backend/rotaperfumes-api; go test -p 1 -count=1 ./...; Pop-Location
     ```
 
-  - `make test-integration` exporta as variáveis do `.env` (o `Makefile` faz `-include .env` + `export`), mas **não** passa `-p 1`; prefira os comandos acima.
+  - SEC-53: o `Makefile` exporta o arquivo lido (`-include .env` + `export`), mas as receitas de `go test`/`go build`/`go vet` e `npm` rodam com `$(SEM_SEGREDOS)` (`env -u` de toda variável declarada no arquivo lido e dos segredos fixos: `DB_*`, `MYSQL_PWD`, `PASSWORD_PEPPER`, `JWT_SECRET`, `SMTP_USER`/`SMTP_PASSWORD`, `TURNSTILE_SECRET_KEY`, `SEED_ADMIN_PASSWORD`; as `NEXT_PUBLIC_*` ficam). Só o `make test-integration` (sub-make com `INTEGRATION=1` **na linha de comando**) deixa as `DB_*` chegarem ao `go test`; `MYSQL_PWD`, pepper, JWT e SMTP nunca chegam. `INTEGRATION=1 make test` do shell fica sem credenciais (integração pulada); `make test INTEGRATION=1` também passa pelo `db-guard-producao`.
   - Resultado de referência (ARQ-07, 2026-10-16): shared 2930 e API 4096 execuções aprovadas, 0 falhas.
 
 ### 10.10 Design Patterns aplicados → onde no código

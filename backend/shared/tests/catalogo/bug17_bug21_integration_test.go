@@ -17,7 +17,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -28,38 +27,14 @@ import (
 	"github.com/rotaperfumes/shared/catalogo"
 	"github.com/rotaperfumes/shared/catalogo/catalogoapp"
 	"github.com/rotaperfumes/shared/catalogo/catalogomysql"
-	"github.com/rotaperfumes/shared/config"
-	shareddb "github.com/rotaperfumes/shared/db"
+	"github.com/rotaperfumes/shared/testkit/integracao"
 )
 
-func lote25EnvOr(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
+// abrirDBLote25 abre o MariaDB de integração (SEC-50: integracao.Abrir pula
+// sem INTEGRATION=1/credenciais e recusa a produção antes de conectar).
 func abrirDBLote25(t *testing.T) *sql.DB {
 	t.Helper()
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MariaDB local)")
-	}
-	usuario, senha := os.Getenv("DB_USUARIO"), os.Getenv("DB_SENHA")
-	if usuario == "" || senha == "" {
-		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
-	}
-	// SEC-29: mesmo TLS do config.Load (DB_TLS_CA/DB_TLS_SERVER_NAME do ambiente).
-	dbTLS, err := config.LoadDBTLS()
-	require.NoError(t, err, "DB_TLS_CA/DB_TLS_SERVER_NAME inválidos")
-	cfg := &config.Config{
-		DBHost: lote25EnvOr("DB_HOST", "localhost"), DBPort: lote25EnvOr("DB_PORT", "3306"),
-		DBName: lote25EnvOr("DB_NAME", "rotaperfumes"), DBUsuario: usuario, DBSenha: senha,
-		DBTLS: dbTLS,
-	}
-	db, err := shareddb.Open(cfg.DSN())
-	require.NoError(t, err, "MariaDB indisponível")
-	t.Cleanup(func() { db.Close() })
-	return db
+	return integracao.Abrir(t)
 }
 
 // produtoLote25 cria um produto de teste e agenda a limpeza dele e do estoque.

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -31,9 +30,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rotaperfumes/rotaperfumes-api/internal/bootstrap"
-	"github.com/rotaperfumes/shared/config"
-	shareddb "github.com/rotaperfumes/shared/db"
 	"github.com/rotaperfumes/shared/identidade"
+	"github.com/rotaperfumes/shared/testkit/integracao"
 )
 
 // ---------------------------------------------------------------------------
@@ -50,38 +48,10 @@ type itCtx struct {
 	seq    atomic.Int64
 }
 
-func envOrIT(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
 // novoItCtx abre o banco, sobe o servidor real e registra a limpeza.
 func novoItCtx(t *testing.T) *itCtx {
 	t.Helper()
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
-	}
-	// SEC-11: sem fallback de credenciais; sem DB_USUARIO/DB_SENHA, pula.
-	usuario, senha := os.Getenv("DB_USUARIO"), os.Getenv("DB_SENHA")
-	if usuario == "" || senha == "" {
-		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
-	}
-	// SEC-29: mesmo TLS do config.Load (DB_TLS_CA/DB_TLS_SERVER_NAME do ambiente).
-	dbTLS, err := config.LoadDBTLS()
-	require.NoError(t, err, "DB_TLS_CA/DB_TLS_SERVER_NAME inválidos")
-	dbCfg := &config.Config{
-		DBHost:    envOrIT("DB_HOST", "localhost"),
-		DBPort:    envOrIT("DB_PORT", "3306"),
-		DBName:    envOrIT("DB_NAME", "rotaperfumes"),
-		DBUsuario: usuario,
-		DBSenha:   senha,
-		DBTLS:     dbTLS,
-	}
-	db, err := shareddb.Open(dbCfg.DSN())
-	require.NoError(t, err, "MySQL local indisponível")
-	t.Cleanup(func() { db.Close() })
+	db := integracao.Abrir(t) // SEC-50: pula sem INTEGRATION=1/credenciais; recusa a produção
 
 	cfg := testCfg()
 	authH := novaIdentidadeTeste(db, cfg)

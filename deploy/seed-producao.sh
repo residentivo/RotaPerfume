@@ -157,6 +157,11 @@ limpar() {
 }
 trap limpar EXIT
 
+# tem_tty (BUG-26): ha terminal de controle? [[ -r /dev/tty ]] usa access()
+# e /dev/tty e 0666, entao passa mesmo sem terminal; so o open() responde
+# (ENXIO sem terminal de controle).
+tem_tty() { { : </dev/tty; } 2>/dev/null; }
+
 # arquivo_secreto_ok ARQ: regular, dono root, modo 600 ou 400.
 arquivo_secreto_ok() {
   [[ -f "$1" && ! -L "$1" ]] || return 1
@@ -167,6 +172,14 @@ arquivo_secreto_ok() {
 # ---------------------------------------------------------------------------
 etapa "Pre-requisitos"
 [[ $EUID -eq 0 ]] || die "rode como root: sudo bash $0"
+# BUG-26: sem terminal, falha ja aqui (antes do Docker e do banco) quando a
+# execucao vai precisar dele (pepper sem --pepper-file; confirmacao do --forcar).
+if [[ -z "$PEPPER_FILE" ]]; then
+  tem_tty || die "sem terminal para pedir o PASSWORD_PEPPER: use --pepper-file ARQ"
+fi
+if $FORCAR; then
+  tem_tty || die "--forcar exige um terminal para a confirmacao"
+fi
 for cmd in docker tar shred stat install mktemp grep; do
   command -v "$cmd" >/dev/null || die "comando '$cmd' nao encontrado"
 done
@@ -216,10 +229,12 @@ if [[ -n "$PEPPER_FILE" ]]; then
   arquivo_secreto_ok "$PEPPER_FILE" || die "--pepper-file $PEPPER_FILE: precisa ser arquivo regular do root com modo 600 ou 400"
   IFS= read -r PEPPER < "$PEPPER_FILE" || [[ -n "$PEPPER" ]] || die "--pepper-file $PEPPER_FILE vazio"
 else
-  [[ -r /dev/tty ]] || die "sem terminal para pedir o PASSWORD_PEPPER: use --pepper-file ARQ"
-  IFS= read -rs -p "PASSWORD_PEPPER (o mesmo do rotaperfumes-api-env; nao aparece na tela): " PEPPER < /dev/tty
+  tem_tty || die "sem terminal para pedir o PASSWORD_PEPPER: use --pepper-file ARQ"
+  IFS= read -rs -p "PASSWORD_PEPPER (o mesmo do rotaperfumes-api-env; nao aparece na tela): " PEPPER < /dev/tty \
+    || die "leitura do PASSWORD_PEPPER no terminal falhou (use --pepper-file ARQ); nada foi alterado"
   printf '\n' >&2
-  IFS= read -rs -p "Confirme o PASSWORD_PEPPER: " PEPPER2 < /dev/tty
+  IFS= read -rs -p "Confirme o PASSWORD_PEPPER: " PEPPER2 < /dev/tty \
+    || die "leitura da confirmacao do PASSWORD_PEPPER falhou; nada foi alterado"
   printf '\n' >&2
   [[ "$PEPPER" == "$PEPPER2" ]] || die "os dois PASSWORD_PEPPER digitados nao conferem"
   unset PEPPER2
@@ -260,9 +275,10 @@ fi
 [[ "$LINHAS" =~ ^[0-9]+$ ]] || die "resposta inesperada ao contar usuarios: '$LINHAS'"
 if (( LINHAS > 0 )); then
   $FORCAR || die "a tabela usuarios ja tem $LINHAS linha(s): este banco ja foi semeado. Nada foi alterado. (--forcar reaplica e INATIVA todos os nao-admin)"
-  [[ -r /dev/tty ]] || die "--forcar exige um terminal para a confirmacao"
+  tem_tty || die "--forcar exige um terminal para a confirmacao"
   aviso "--forcar: usuarios tem $LINHAS linha(s). A DDL e os seeds serao reaplicados, a senha do admin trocada e TODOS os usuarios nao-admin INATIVADOS."
-  IFS= read -r -p "Digite o nome do banco ($DB_NOME) para confirmar: " RESPOSTA < /dev/tty
+  IFS= read -r -p "Digite o nome do banco ($DB_NOME) para confirmar: " RESPOSTA < /dev/tty \
+    || die "--forcar: leitura da confirmacao falhou; nada foi alterado"
   [[ "$RESPOSTA" == "$DB_NOME" ]] || die "confirmacao nao confere; nada foi alterado"
 else
   info "Banco sem usuarios (instalacao nova): seguindo."

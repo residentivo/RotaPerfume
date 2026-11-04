@@ -8,7 +8,6 @@ package db_test
 import (
 	"bytes"
 	"log"
-	"os"
 	"strings"
 	"testing"
 
@@ -17,6 +16,7 @@ import (
 
 	"github.com/rotaperfumes/shared/config"
 	"github.com/rotaperfumes/shared/db"
+	"github.com/rotaperfumes/shared/testkit/integracao"
 )
 
 func TestOpen_Erros(t *testing.T) {
@@ -41,13 +41,8 @@ func TestOpen_Erros(t *testing.T) {
 }
 
 func TestOpen_Integracao(t *testing.T) {
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
-	}
-	// SEC-11: Load exige DB_USUARIO/DB_SENHA (sem default); sem eles, pula.
-	if os.Getenv("DB_USUARIO") == "" || os.Getenv("DB_SENHA") == "" {
-		t.Skip("teste de integração: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
-	}
+	// SEC-50: guarda (pula sem INTEGRATION=1/credenciais; recusa a produção).
+	integracao.Config(t)
 	t.Setenv("JWT_SECRET", "integracao-segredo-com-pelo-menos-32-bytes")
 	t.Setenv("PASSWORD_PEPPER", "pepper-de-integracao-com-32-bytes-ou-mais")
 	cfg, err := config.Load()

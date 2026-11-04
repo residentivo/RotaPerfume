@@ -248,11 +248,11 @@ func TestSEC10_DSN(t *testing.T) {
 		{"DB_SENHA vazia", map[string]string{"DB_USUARIO": "u", "DB_SENHA": ""}, "", true},
 		{"golang/golang não é mais default", map[string]string{"DB_USUARIO": "<unset>", "DB_SENHA": "<unset>", "DB_HOST": "h"}, "", true},
 		{"com credenciais e defaults", map[string]string{"DB_USUARIO": "u", "DB_SENHA": "s"}, "u:s@tcp(localhost:3306)/rotaperfumes" + sufixo, false},
-		{"com tudo", map[string]string{"DB_USUARIO": "app", "DB_SENHA": "p@ss", "DB_HOST": "db", "DB_PORT": "3307", "DB_NAME": "rp"}, "app:p@ss@tcp(db:3307)/rp" + sufixo, false},
+		{"com tudo", map[string]string{"DB_USUARIO": "app", "DB_SENHA": "p@ss", "DB_HOST": "db", "DB_PORT": "3307", "DB_NAME": "rp", "DB_TLS_REQUIRED": "false"}, "app:p@ss@tcp(db:3307)/rp" + sufixo, false},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
-			for _, k := range []string{"DB_USUARIO", "DB_SENHA", "DB_HOST", "DB_PORT", "DB_NAME", "DB_TLS_CA", "DB_TLS_SERVER_NAME"} {
+			for _, k := range []string{"DB_USUARIO", "DB_SENHA", "DB_HOST", "DB_PORT", "DB_NAME", "DB_TLS_CA", "DB_TLS_SERVER_NAME", "DB_TLS_REQUIRED"} {
 				unsetEnv(t, k)
 			}
 			for k, v := range c.env {

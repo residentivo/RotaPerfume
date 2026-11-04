@@ -160,10 +160,17 @@ func (e *ensaioSeed) ler(rel string) string {
 
 func (e *ensaioSeed) rodar(args ...string) (string, error) {
 	e.t.Helper()
+	out, err := e.comando(args...).CombinedOutput()
+	return string(out), err
+}
+
+// comando monta a execução do script real no ensaio (BUG-26: o caso sem
+// terminal ajusta o SysProcAttr antes de rodar).
+func (e *ensaioSeed) comando(args ...string) *exec.Cmd {
+	e.t.Helper()
 	cmd := exec.Command("unshare", append([]string{"-rm", "bash", filepath.Join(e.dir, "runner.sh")}, args...)...)
 	cmd.Env = append(ambienteLimpo(), "FAKE="+e.dir, "SCRIPT="+caminhoRaiz(e.t, "deploy", "seed-producao.sh"))
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	return cmd
 }
 
 type chamadaDocker struct {

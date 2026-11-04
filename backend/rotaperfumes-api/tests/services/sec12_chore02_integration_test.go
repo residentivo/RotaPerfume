@@ -19,7 +19,6 @@ import (
 	"github.com/rotaperfumes/shared/identidade/identidadeapp"
 	"github.com/rotaperfumes/shared/identidade/identidadecrypto"
 	"github.com/rotaperfumes/shared/identidade/identidademysql"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -36,9 +35,6 @@ type l12IT struct {
 
 func novoL12IT(t *testing.T) *l12IT {
 	t.Helper()
-	if os.Getenv("INTEGRATION") != "1" {
-		t.Skip("teste de integração: defina INTEGRATION=1 (requer MySQL local)")
-	}
 	db := abrirDBIntegracao(t)
 	res, err := db.Exec(`INSERT INTO usuarios (nome, email, password_hash, role, ativo) VALUES ('ZZ-TEST-L12', ?, 'x', 'normal', 1)`,
 		fmt.Sprintf("zz-test-l12-%d@teste.local", time.Now().UnixNano()))
