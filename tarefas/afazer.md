@@ -237,7 +237,7 @@
 8. checklist pré-push (`IMPORTAR_DUMP` desmarcado);
 9. push na `main`;
 10. 1º login do admin com troca obrigatória e ativação dos vendedores (pré-requisito **OPS-02 atendido** em 2026-11-04: SMTP de produção configurado pelo usuário, por ora via Gmail);
-11. `.env.producao` + `deploy/ca-producao.pem` na máquina do admin;
+11. ~~`.env.producao` + `deploy/ca-producao.pem` na máquina do admin~~ **não aplicável** (marcado em 2026-11-05; decisão de 2026-11-04: o banco de produção só responde localmente no servidor, para o `rotaperfumes-api` e o root; sem `--dev-ip` para `192.168.168.105`; conferências pelo passo 7);
 12. `TestTST15_MariadbDocker_Real` numa máquina com Docker (ver **TST-17**).
 
 **Item opcional (vindo do CHORE-18):** conferir o SAN do certificado no servidor: `openssl x509 -in /etc/mysql/ssl/server-cert.pem -noout -ext subjectAltName` (deve conter `ivo-Inspiron-15-3530` e `192.168.168.106`).
@@ -247,7 +247,9 @@
 - Conferido pelo 🤍 MegaBrain na máquina do admin: `make db-check-env ENV_ARQUIVO=.env.producao` → ok. **Porém:**
   - (a) a porta `192.168.168.106:3306` **não responde** desta máquina (timeout de TCP; a 3307 do CasaOS responde);
   - (b) o fingerprint de `deploy/ca-producao.pem` local (`f8dbaf59…aaf70`) **difere** da linha útil de `deploy/db-ca.fingerprint` (`f31ee820…a04c2`).
-- **Próximo passo do usuário:** no servidor, conferir `docker port rotaperfumes-mariadb`, o firewall (`ufw status`/`iptables`) e se `192.168.168.105` está no `--dev-ip`; conferir o fingerprint de `/etc/mysql/ssl/ca.pem`; depois recopiar a CA (passo 11.1) e repetir o passo 11.3 na máquina do admin.
+- ~~**Próximo passo do usuário:** no servidor, conferir `docker port rotaperfumes-mariadb`, o firewall (`ufw status`/`iptables`) e se `192.168.168.105` está no `--dev-ip`; conferir o fingerprint de `/etc/mysql/ssl/ca.pem`; depois recopiar a CA (passo 11.1) e repetir o passo 11.3 na máquina do admin.~~ Superado: o timeout de (a) é o esperado, pois o banco de produção só responde localmente no servidor (decisão do usuário de 2026-11-04). O `deploy/ca-producao.pem` e o `.env.producao` locais da máquina do admin não são usados (podem ser apagados).
+
+**Andamento 2026-11-05:** o passo 11 foi marcado como **não aplicável** em `docs/deploy-servidor.md` (caixa de aviso; texto antigo mantido como referência, caso o `--dev-ip` seja habilitado) e em `docs/Instal_SSL.md` (§8 e §11). O **critério de aceite deixa de depender do passo 11**; as conferências da produção são feitas no servidor, como root, pelo `admin_sql` do passo 7.
 
 **Critério de aceite:** container `rotaperfumes-mariadb` 11.4 com a CA de produção; `deploy/db-ca.fingerprint` commitado só com o fingerprint dela; estágios "CA do banco", "Deploy" e "Smoke test" verdes; log da API com `tls=ligado (custom)` e `min=TLS1.3`; admin logado e com a senha trocada; `/root/rotaperfumes-ca/ca-key.pem`, `/root/pepper-producao.txt` e `/root/rotaperfumes-mariadb/admin-app.senha` apagados do servidor.
 

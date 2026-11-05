@@ -192,7 +192,7 @@ Não há passo manual: a cada execução o script roda, pelo stdin (nunca no arg
 |---|---|---|---|
 | `rotaperfumes_app` | `172.30.42.10` | `SELECT, INSERT, UPDATE, DELETE ON rotaperfumes.*` | API (`DB_SENHA` do Secret file) |
 | `rotaperfumes_admin` | `172.30.42.20` | `ALL ON rotaperfumes.*` | import do Jenkins (`rotaperfumes-db-admin`), `deploy/seed-producao.sh` e migrações |
-| `casaos` | cada `--dev-ip` | `ALL ON rotaperfumes.*` (só esse banco, DEPLOY-07) | `make <alvo> ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=...` da máquina do admin (seção 11) |
+| `casaos` | cada `--dev-ip` | `ALL ON rotaperfumes.*` (só esse banco, DEPLOY-07) | só se houver `--dev-ip`; **hoje não aplicável** (sem `--dev-ip`, não há host para ela; seção 11) |
 
 **Cliente sem ed25519.** O cliente precisa do plugin `client_ed25519` (vem no cliente `mariadb` 11.x e no Connector/C; o MySQL Workbench e o cliente `mysql` do Oracle **não** têm). O driver Go (`go-sql-driver/mysql`) suporta ed25519. Só para `casaos`, existe a saída de emergência `--casaos-native-motivo "<motivo, 10 a 300 caracteres>"` (`mysql_native_password`, ainda com `REQUIRE SSL`; motivo em `/root/rotaperfumes-mariadb/casaos-native.motivo`). Volte ao ed25519 rodando de novo sem a opção.
 
@@ -246,6 +246,8 @@ Se o `ca.pem` do host for trocado à mão sem atualizar o `deploy/db-ca.fingerpr
 
 **Banco de desenvolvimento (oficial, DEPLOY-07):** o MariaDB 11.8 do CasaOS, no mesmo servidor, porta **3307**, com a CA de dev em `deploy/ca-cert.pem` (`CN=RotaPerfumes_MySQL_CA`, fingerprint `ef31b656...`; não versionada, `.gitignore`). É para ele que o `.env` padrão da raiz aponta (`DB_HOST=192.168.168.106`, `DB_PORT=3307`, `DB_TLS_CA=deploy/ca-cert.pem`, como no `.env.example`). Os dados dele são de desenvolvimento e não vão para a produção. Essa CA **não** muda quando a CA de produção é criada ou trocada.
 
+> **Não aplicável hoje (2026-11-05).** Por decisão do usuário (2026-11-04), o banco de produção só responde localmente no servidor (container `rotaperfumes-api` e root), sem `--dev-ip` para a máquina do admin. Os itens 1 a 4 abaixo ficam como referência; para conferir a produção, use o passo 7 da §11 de `docs/deploy-servidor.md` (no servidor, como root). Ver também o passo 11 dessa seção.
+
 **Acesso à produção, só para a máquina do admin.** A porta `192.168.168.106:3306` só é publicada com `--dev-ip`, e só para os IPs da lista (use IP fixo ou reserva no DHCP: a conta e o firewall são por IP). A máquina do admin usa arquivos **separados**, ambos no `.gitignore`: `deploy/ca-producao.pem` e `.env.producao`.
 
 1. No servidor: `sudo bash deploy/mariadb-docker.sh --dev-ip <IP do admin>` (com `--recriar` se a lista mudou; repita sempre a mesma lista).
@@ -267,6 +269,6 @@ Se o `ca.pem` do host for trocado à mão sem atualizar o `deploy/db-ca.fingerpr
    DB_TLS_CA=deploy/ca-producao.pem
    ```
    `DB_TLS_SERVER_NAME` fica vazio: `192.168.168.106` está no SAN. Com `DB_HOST` fora do loopback, `DB_TLS_CA` é obrigatório (SEC-42); **não** use `DB_TLS_REQUIRED=false`. O cliente `mariadb` precisa do `client_ed25519`.
-4. Uso: `make <alvo> ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=192.168.168.106/rotaperfumes`. O `ENV_ARQUIVO` (só na linha de comando) faz o `make` ler esse arquivo **no lugar** do `.env`. A guarda `db-guard-producao` recusa todo alvo que escreve no banco quando o destino é a produção (host e porta: `192.168.168.106`/`ivo-inspiron-15-3530` com `DB_PORT` vazio ou 3306, ou `rotaperfumes-mariadb`/`172.30.42.2` em qualquer porta; o CasaOS em `192.168.168.106:3307` passa), salvo o `CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>` na linha de comando. Para só conferir: `make db-check-env ENV_ARQUIVO=.env.producao`.
+4. Uso (na raiz do repositório; `<alvo>` é o nome de um alvo do Makefile, ex.: `make db-check-env ENV_ARQUIVO=.env.producao`): `make <alvo> ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=192.168.168.106/rotaperfumes`. O `ENV_ARQUIVO` (só na linha de comando) faz o `make` ler esse arquivo **no lugar** do `.env`. A guarda `db-guard-producao` recusa todo alvo que escreve no banco quando o destino é a produção (host e porta: `192.168.168.106`/`ivo-inspiron-15-3530` com `DB_PORT` vazio ou 3306, ou `rotaperfumes-mariadb`/`172.30.42.2` em qualquer porta; o CasaOS em `192.168.168.106:3307` passa), salvo o `CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME>` na linha de comando. Para só conferir: `make db-check-env ENV_ARQUIVO=.env.producao`.
 
 > **Aviso forte: dados reais.** Com o `.env.producao`, a conta `casaos` tem `ALL` no banco de produção. **Nunca** rode `make db-down`, `db-reset`, `db-rebuild`, `db-seed`, `db-import-*`, `db-seed-mes-atual`, `gen-hash`, `fix-hash` nem `reset-senhas-ativos` contra ele, mesmo com o `CONFIRMO_PRODUCAO`. Não use o `.env.producao` com `make dev-api`, `make test`, `go test` com `INTEGRATION=1` nem com as CLIs Go (a guarda não cobre esses casos). Testes de integração e recriação de banco só num banco de dev ou **descartável** (MariaDB 11.4 local em container, `DB_HOST=127.0.0.1`, ou o container temporário do `TestTST15_MariadbDocker_Real`).

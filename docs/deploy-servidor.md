@@ -23,7 +23,7 @@ As **duas credenciais do Jenkins** continuam sendo cadastradas **à mão**: o `s
    # ou, com uma CA existente cuja chave está na mídia offline:
    sudo bash deploy/mariadb-docker.sh --ca-key /media/<pendrive>/ca-key.pem
    ```
-   Acrescente `--dev-ip <IP>` só para a máquina do admin que precisa acessar o banco de produção (seção 3.3 e seção 11, passo 11). Numa instalação nova, o seed inicial é o `deploy/seed-producao.sh` (seção 11, passo 6), nunca o `make db-seed`.
+   Acrescente `--dev-ip <IP>` só para a máquina do admin que precisa acessar o banco de produção (seção 3.3 e seção 11, passo 11). **Hoje não se aplica (2026-11-05):** a produção só responde localmente no servidor, sem `--dev-ip`; as conferências do banco são pelo passo 7 da seção 11. Numa instalação nova, o seed inicial é o `deploy/seed-producao.sh` (seção 11, passo 6), nunca o `make db-seed`.
 2. **No Windows**, na raiz do projeto, copie o dump e o `.env` para o `/tmp` do servidor:
    ```powershell
    scp deploy\dumps\rotaperfumes-AAAAMMDD-HHMMSS.sql.gz .env SEU_USUARIO@ivo-inspiron-15-3530:/tmp/
@@ -194,7 +194,7 @@ Todas `IDENTIFIED VIA ed25519` + `REQUIRE SSL` (SEC-30/SEC-39), criadas e altera
 |---|---|---|---|---|
 | `rotaperfumes_app` | `172.30.42.10` | `SELECT, INSERT, UPDATE, DELETE ON rotaperfumes.*` | `rotaperfumes_app.senha` | `DB_SENHA` do Secret file `rotaperfumes-api-env` |
 | `rotaperfumes_admin` | `172.30.42.20` | `ALL ON rotaperfumes.*` | `rotaperfumes_admin.senha` | credencial `rotaperfumes-db-admin` |
-| `casaos` | cada `--dev-ip` | `ALL ON rotaperfumes.*` (só esse banco, DEPLOY-07) | `casaos.senha` | `.env.producao` da máquina do admin (seção 11, passo 11) |
+| `casaos` | cada `--dev-ip` | `ALL ON rotaperfumes.*` (só esse banco, DEPLOY-07) | `casaos.senha` | `.env.producao` da máquina do admin (seção 11, passo 11); **não se aplica hoje** (produção só local, sem `--dev-ip`; conferência pelo passo 7) |
 | `root` | `localhost` | (todos) | `root.senha` | só `docker exec` (socket) |
 
 A cada execução: `CREATE USER IF NOT EXISTS` + `ALTER USER` (converge plugin, senha e TLS), `REVOKE ALL` + `GRANT` (converge privilégios), `DROP USER` de toda conta do projeto com host fora do desejado, remoção de contas anônimas e do banco `test`, e aviso de contas desconhecidas. Root no banco: `sudo docker exec -it rotaperfumes-mariadb mariadb --defaults-extra-file=/run/rotaperfumes/root.cnf`.
@@ -487,7 +487,7 @@ As imagens da aplicação são sempre `:latest`, sem tag por versão. Para volta
 | API: `x509: certificate is valid for ..., not rotaperfumes-mariadb` | Certificado do servidor emitido fora do script ou com SAN antigo | `sudo bash deploy/mariadb-docker.sh --novo-cert --ca-key ...` |
 | Estágio **Importar dump** falha com "Dump nao encontrado/legivel" | Arquivo fora do `DUMP_PATH` ou sem permissão para o usuário do Jenkins | Seção 7.2/7.3 (`chown`/`chmod`), ou o `DUMP_PATH` informado pelo `setup-servidor.sh` (Jenkins em container) |
 | Import falha com `Access denied` | Credencial `rotaperfumes-db-admin` com senha diferente de `rotaperfumes_admin.senha` | Atualize a credencial (seção 5.2) |
-| `make db-* ENV_ARQUIVO=.env.producao` da máquina do admin: `Access denied for user 'casaos'@'<IP>'` ou timeout | IP da máquina fora da lista `--dev-ip` (ou mudou por DHCP) | Rode o script com o `--dev-ip` certo (e `--recriar` se a lista mudou); fixe o IP |
+| `make db-* ENV_ARQUIVO=.env.producao` da máquina do admin: `Access denied for user 'casaos'@'<IP>'` ou timeout | IP da máquina fora da lista `--dev-ip` (ou mudou por DHCP) | Rode o script com o `--dev-ip` certo (e `--recriar` se a lista mudou); fixe o IP. **Hoje o timeout é o esperado:** produção só local, sem `--dev-ip` (passo 11 da seção 11 não se aplica); confira o banco pelo passo 7, no servidor, como root |
 | Cliente: `Authentication plugin 'client_ed25519' cannot be loaded` | Cliente sem ed25519 (ex.: `mysql` do Oracle, Workbench) | Use o cliente `mariadb` 11.x; em último caso, `--casaos-native-motivo` (`docs/Instal_SSL.md` passo 8) |
 | `mariadb-docker.sh`: "rode de novo com --recriar" | Container existente difere do desejado (rede, porta, `--dev-ip`, read-only, usuário) | Confira a lista `--dev-ip`; rode com `--recriar` (o banco fica fora do ar alguns segundos) |
 | `mariadb-docker.sh`: "o container parou" com escrita negada fora de `/var/lib/mysql` | `--read-only` incompatível com a imagem | `--recriar --sem-read-only` |
@@ -519,7 +519,7 @@ As imagens da aplicação são sempre `:latest`, sem tag por versão. Para volta
 | 8 | todos | checklist pré-push |
 | 9 | máquina de dev | push na `main` (deploy) |
 | 10 | navegador | 1º login do admin e ativação dos vendedores |
-| 11 | máquina do admin | `.env.producao` + `deploy/ca-producao.pem` |
+| 11 | máquina do admin | **não aplicável** (2026-11-05: banco só local no servidor; conferências pelo passo 7) |
 | 12 | máquina com Docker (não o servidor) | teste real do `mariadb-docker.sh` |
 
 ### Passo 1. Código no servidor
@@ -558,7 +558,7 @@ bash deploy/mariadb-docker.sh --nova-ca --dev-ip <IP da máquina do admin>
   iptables -S DOCKER-USER | grep ROTAPERFUMES-DB   # uma linha, com --ctdir ORIGINAL (DEPLOY-08)
   ```
 - **Anote o `CA_FP`**: é o valor impresso no fim, em "CA do banco de PRODUCAO ... fingerprint SHA-256 (formato do deploy/db-ca.fingerprint)". Ele vai para o passo 4. Nesta fase, o resumo também avisa que o `deploy/db-ca.fingerprint` "ainda nao tem fingerprint" e que a chave da CA está no servidor (passo 3). Os dois avisos são esperados.
-- **Não** copie esta CA para `deploy/ca-cert.pem`: esse arquivo é a CA de **dev** (CasaOS). Na máquina do admin, a CA de produção vai para `deploy/ca-producao.pem` (passo 11).
+- **Não** copie esta CA para `deploy/ca-cert.pem`: esse arquivo é a CA de **dev** (CasaOS). Na máquina do admin, a CA de produção iria para `deploy/ca-producao.pem` (passo 11, **não aplicável hoje**: produção só local, conferência pelo passo 7).
 
 ### Passo 3. Chave da CA para mídia offline
 
@@ -700,7 +700,14 @@ Falhou? A seção 10 (Troubleshooting) cobre os erros de cada estágio. O `CA do
    - Usuários de vendedores desligados (vendedores 1, 3, 9, 30, 37 e 38) continuam inativos.
    - Não use `make reset-senhas-ativos` nem o `resetpassword -all-users` para isso.
 
-### Passo 11. Máquina do admin: `.env.producao`
+### Passo 11. Máquina do admin: `.env.producao` (não aplicável)
+
+> **NÃO APLICÁVEL (decisão do usuário de 2026-11-04; marcado em 2026-11-05).** O banco de produção só responde **localmente** no servidor `ivo-Inspiron-15-3530` (`192.168.168.106`): para o container `rotaperfumes-api` (rede Docker `rotaperfumes-db`) e para o root do servidor. Não há `--dev-ip` para a máquina do admin (`192.168.168.105`), então não existe `.env.producao` nem `deploy/ca-producao.pem` em uso.
+>
+> - **Não rode estes comandos no servidor:** o `openssl s_client` do próprio servidor nunca faz handshake, e o `make` fora da raiz de um checkout com o Makefile atual dá `Sem regra para processar o alvo 'db-check-env'`.
+> - **Para conferir o banco de produção:** use o **Passo 7** (no servidor, como root, pelo `admin_sql`).
+>
+> O texto abaixo fica só como **referência**, para o caso de algum dia o `--dev-ip` ser habilitado para a máquina do admin.
 
 Só a máquina do `--dev-ip` (passo 2) alcança `192.168.168.106:3306`. Ela usa **arquivos separados** para a produção; o `.env` padrão continua apontando para o banco de **dev** do CasaOS (`DB_HOST=192.168.168.106`, `DB_PORT=3307`, `DB_TLS_CA=deploy/ca-cert.pem`; a guarda `db-guard-producao` deixa passar a porta 3307).
 
@@ -728,8 +735,9 @@ Só a máquina do `--dev-ip` (passo 2) alcança `192.168.168.106:3306`. Ela usa 
    openssl s_client -starttls mysql -connect 192.168.168.106:3306 -CAfile deploy/ca-producao.pem \
      -verify_return_error -verify_ip 192.168.168.106 </dev/null 2>/dev/null | grep -E 'Verify return code|Cipher is'
    # esperado: "Cipher is TLS_AES_..." (nunca "(NONE)") E "Verify return code: 0 (ok)"
-   make <alvo> ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=192.168.168.106/rotaperfumes
+   make db-check-env ENV_ARQUIVO=.env.producao CONFIRMO_PRODUCAO=192.168.168.106/rotaperfumes
    ```
+   No lugar de `db-check-env` vai o **nome de um alvo do Makefile** (o que aparece em `make help`, ex.: `db-check-env`, `db-fix-*`), nunca um IP ou host; rode sempre **na raiz** do repositório, onde está o Makefile. O `CONFIRMO_PRODUCAO` só é exigido pelos alvos que escrevem no banco.
    O `Verify return code: 0 (ok)` **sozinho é enganoso**: sem handshake (ex.: o `mariadbd` recusou o host com o erro 1130, ou a máquina não está em `--dev-ip`) o `s_client` também o imprime, junto com `no peer certificate available` e `Cipher is (NONE)`. Só vale com uma cifra de verdade em `Cipher is`. Esse teste só funciona de uma máquina listada em `--dev-ip`; do próprio servidor ele nunca faz handshake (DEPLOY-08).
 
 > **Aviso forte: dados reais.** Com o `.env.producao`, a conta `casaos` tem `ALL` no banco de produção. **Nunca** rode `make db-down`, `db-reset`, `db-rebuild`, `db-seed`, `db-import-*`, `db-seed-mes-atual`, `gen-hash`, `fix-hash` nem `reset-senhas-ativos` contra ele, mesmo com o `CONFIRMO_PRODUCAO`: eles apagam, sobrescrevem ou trocam senhas reais (SEC-46: `db-down`, `db-reset`, `db-rebuild` e `db-seed` são recusados na produção mesmo com o `CONFIRMO_PRODUCAO`; os demais dependem só da sua atenção). Faça backup (seção 9) antes de qualquer migração (`db-fix-*`). Não use o `.env.producao` com `make dev-api` nem com as CLIs Go (a guarda não cobre esses casos). Os testes de integração recusam a produção antes de conectar (SEC-50) e o `make test` não recebe as variáveis do arquivo lido (SEC-53), mas também não aponte o `go test` para ela. Nunca copie a CA de produção para `deploy/ca-cert.pem` nem o conteúdo do `.env.producao` para o `.env`.
