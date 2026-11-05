@@ -168,10 +168,18 @@ exit 0
 `
 
 // install/chown sem -o/-g: no user namespace só o uid 0 está mapeado.
+// Lote 36 (TOCTOU): com $S/install_troca = caminho, depois do install
+// desse caminho o stub o troca por um symlink para $FAKE/desvio (simula a
+// troca entre o install -d e a gravacao).
 const stubInstall = `#!/bin/bash
 args=()
 while [[ $# -gt 0 ]]; do case "$1" in -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac; done
-exec /usr/bin/install "${args[@]}"
+/usr/bin/install "${args[@]}" || exit
+if [[ -f "$FAKE/state/install_troca" && "${args[-1]}" == "$(<"$FAKE/state/install_troca")" ]]; then
+  mkdir -p "$FAKE/desvio"
+  rm -rf "${args[-1]}"
+  ln -s "$FAKE/desvio" "${args[-1]}"
+fi
 `
 
 const stubChown = "#!/bin/bash\nexit 0\n"
@@ -198,12 +206,35 @@ cat "$FAKE/state/porta_resposta"
 
 // Roda o script real, sem cópia/sed: user namespace (EUID 0) + mount
 // namespace com binds dos caminhos fixos do script para o $FAKE.
+// Lote 36 (TOCTOU): o script exige que os ancestrais de --segredos-dir e
+// --ca-dir sejam do root e sem escrita de grupo/outros. No user namespace o
+// "/" real aparece com o overflow uid (65534) e o /tmp é 1777, então o runner
+// faz um chroot numa raiz tmpfs (dona: o root do namespace, 755) com rbind
+// dos diretórios de topo; o topo do $FAKE (ex.: /tmp) é recriado vazio (755)
+// e só o $FAKE e o deploy/ do script são expostos nele, nos mesmos caminhos.
 const runnerEnsaio = `#!/bin/bash
 set -euo pipefail
-mount --bind "$FAKE/root" /root
-mount --bind "$FAKE/opt" /opt
-mount --bind "$FAKE/sbin" /usr/local/sbin
-mount --bind "$FAKE/systemd" /etc/systemd/system
+umask 022
+NR="$FAKE/.raiz"
+mkdir -p "$NR"
+mount -t tmpfs -o mode=755 tmpfs "$NR"
+topo=${FAKE#/}; topo=/${topo%%/*}
+for x in /*; do
+  [[ "$x" == "$topo" ]] && continue
+  if [[ -L "$x" ]]; then ln -s "$(readlink "$x")" "$NR$x"
+  elif [[ -d "$x" ]]; then mkdir "$NR$x"; mount --rbind "$x" "$NR$x"
+  fi
+done
+mkdir -p "$NR$topo"
+expor() { [[ "$1" == "$topo"/* ]] || return 0; mkdir -p "$NR$1"; mount --bind "$1" "$NR$1"; }
+expor "$FAKE"
+expor "$(dirname "$SCRIPT")"
+mount --bind "$FAKE/root" "$NR/root"
+mount --bind "$FAKE/opt" "$NR/opt"
+mount --bind "$FAKE/sbin" "$NR/usr/local/sbin"
+mount --bind "$FAKE/systemd" "$NR/etc/systemd/system"
+cd /
 export PATH="$FAKE/bin:$PATH"
-exec bash "$SCRIPT" "$@"
+umask 077
+exec chroot "$NR" /bin/bash -c 'cd / && exec bash "$0" "$@"' "$SCRIPT" "$@"
 `

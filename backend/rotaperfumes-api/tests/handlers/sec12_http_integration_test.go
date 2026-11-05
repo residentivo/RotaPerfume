@@ -64,7 +64,7 @@ func TestIntegracaoHTTP_SEC12_ReusoRepetido(t *testing.T) {
 	st, raw, refresh2 := refreshIT(t, c, refresh1)
 	require.Equal(t, http.StatusOK, st, raw)
 	require.NotEmpty(t, refresh2)
-	_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL 120 SECOND WHERE token_hash = ?`, hashRefresh(refresh1))
+	_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ?`, c.haSegundos(120), hashRefresh(refresh1))
 	require.NoError(t, err)
 	require.Nil(t, c.reusoDetectadoEm(refresh1))
 

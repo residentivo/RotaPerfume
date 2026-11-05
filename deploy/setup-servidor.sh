@@ -430,6 +430,7 @@ validar_argumentos() {
   [[ -n "$ARQ_ENV" ]] || falhar "Informe --env ARQUIVO (veja --help)."
   [[ "$SITE_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || falhar "--site-host invalido."
   [[ "$SITE_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || falhar "--site-ip invalido (IPv4)."
+  # shellcheck disable=SC2015 # o "|| C" deve rodar se A OU B falhar (pretendido)
   [[ "$HTTPS_PORT" =~ ^[0-9]{1,5}$ ]] && ((HTTPS_PORT >= 1 && HTTPS_PORT <= 65535)) ||
     falhar "--https-port invalida."
   [[ "$TURNSTILE_SITE_KEY" =~ ^[A-Za-z0-9_-]*$ ]] || falhar "--turnstile-site-key invalida."

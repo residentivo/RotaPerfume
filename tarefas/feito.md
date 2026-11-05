@@ -2,9 +2,113 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-11-05 (fechamento do Lote 35, 🔵 SubBrain): o **Lote 35** (BUG-27, SEC-54, TST-19, SEC-55, TST-20, TST-21, FE-18 e CHORE-16) foi concluído (bloco "Lote 35 de 2026-11-05" logo abaixo; commitado na `main` pelo 🤍 MegaBrain, a pedido do usuário). Dele saíram 3 cards em `afazer.md` (bloco "Achados do Lote 35"): SEC-56, SEC-57 e BUG-28 (BAIXA).
+> Atualizado em 2026-11-05 (fechamento do Lote 36, 🔵 SubBrain): o **Lote 36** foi fechado (bloco "Lote 36 de 2026-11-05" logo abaixo): **TST-22**, **DB-07** e **TST-16** concluídos (o TST-16 com a execução real como root pendente); o **TST-17** ficou **parcial** e voltou para `afazer.md`. Registro do incidente do `MAKEFLAGS=-k` no bloco do lote. Entraram em `afazer.md` (bloco "Achados do Lote 36"): BUG-29 (MÉDIA), SEC-58 e TST-23 (BAIXA), além do TST-17 parcial. Commit do lote na `main` pelo 🤍 MegaBrain, sem push (inclui o `CLAUDE.md` alterado pelo usuário).
+>
+> Antes, ainda em 2026-11-05 (abertura do Lote 36, 🔵 SubBrain): a pendência do usuário do bloco "Lote 35 de 2026-11-05" (citar SEC-54, SEC-55 e BUG-27 no `CLAUDE.md`) foi **atendida**: o usuário alterou ele mesmo o `CLAUDE.md`. O **Lote 36** (TST-22, DB-07, TST-17 e TST-16) está em execução (`fazendo.md`).
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 35, 🔵 SubBrain): o **Lote 35** (BUG-27, SEC-54, TST-19, SEC-55, TST-20, TST-21, FE-18 e CHORE-16) foi concluído (bloco "Lote 35 de 2026-11-05" logo abaixo; commitado na `main` pelo 🤍 MegaBrain, a pedido do usuário). Dele saíram 3 cards em `afazer.md` (bloco "Achados do Lote 35"): SEC-56, SEC-57 e BUG-28 (BAIXA).
 >
 > Antes, ainda em 2026-11-04 (decisões do usuário após o Lote 34, repassadas pelo 🤍 MegaBrain; 🔵 SubBrain): **OPS-02** (SMTP de produção configurado pelo usuário, por ora via Gmail) e **CHORE-18** (hostname do servidor confirmado, sem alteração de código) foram concluídos (bloco "Decisões do usuário de 2026-11-04 (após o Lote 34)" abaixo). O DOC-09 continua em `afazer.md` (o `CLAUDE.md` não foi alterado pelo agente).
+
+---
+
+## Lote 36 de 2026-11-05: 3 cards concluídos, 1 parcial
+
+Aberto e fechado em 2026-11-05 pelo 🤍 MegaBrain, depois de o usuário resolver o acesso ao Docker (`usermod -aG docker`; sessão do agente via `sg docker`), instalar o `shellcheck` e autorizar os processos de banco descartável. **Banco descartável:** container local `rp-descartavel-l36` (MariaDB 11.4.13 com o digest de produção, `127.0.0.1:33306`, banco `rotaperfumes_l36`, credenciais fora do repositório); nada de CasaOS nem de produção (salvo o incidente abaixo, sem escrita). Passos: 🔴 TestBrain (TST-22, TST-17) + 🌸 DataBrain (DB-07, TST-16) → 🟣 SecBrain revisando → correções → 🔵 SubBrain fechando. **Commit na `main`** pelo 🤍 MegaBrain, **sem push**; inclui o `CLAUDE.md` alterado pelo usuário. Caminhos: `SH` = `backend/shared`; `API` = `backend/rotaperfumes-api`.
+
+**Testes finais (conferidos pelo 🤍 MegaBrain):**
+- `go clean -testcache && env -u INTEGRATION make -k test`: rc=0, 10291 PASS, 0 FAIL, 48 SKIP;
+- `make lint` ok; `make shellcheck` ok;
+- `make test-integration ENV_ARQUIVO=<descartável>`: rc=0, 10662 PASS, 0 FAIL, 3 SKIP (TST15 real, TST17 real e SEC10 Windows).
+
+**Revisão (🟣 SecBrain): aprovado com ressalvas, corrigidas no lote:**
+- MÉDIA: TOCTOU/symlink nas opções novas do `mariadb-docker.sh` → `conferir_dir_privado` (TST-16).
+- BAIXA: disjunção textual dos diretórios → comparação pelos `realpath` (TST-16).
+- BAIXA: admin ZZ-TEST que sobra se o processo morrer → o `novoItCtx` chama `purgarRestosHTTP` antes de criar; teste em `API/tests/handlers/lote36_purga_restos_integration_test.go`. Limite documentado: dois `go test` do pacote no mesmo banco ao mesmo tempo.
+- INFO: o TST-17 recusa a produção.
+- Disables do `shellcheck` e instalação revisados: OK. Sem regressão no SEC-46/50/53/54.
+- Achados novos viraram cards: SEC-58 (e, do incidente, BUG-29).
+
+**Incidente (registro):** numa rodada, o 🔴 TestBrain passou `MAKEFLAGS=-k` na linha de comando do `make test-integration`. Isso tirou o `ENV_ARQUIVO` do sub-make, que leu o `.env` padrão (CasaOS dev `192.168.168.106:3307`). Todas as conexões falharam no TLS ("certificate signed by unknown authority"); **nada foi escrito**. A rodada foi refeita com `make -k`. Correção estrutural: card **BUG-29** (`afazer.md`).
+
+**Arquivos (lista do `git status` da sessão; o 🔵 SubBrain não roda git):**
+- Alterados: `CLAUDE.md` (pelo usuário), `Makefile`, `API/tests/handlers/lote5_http_integration_test.go`, `API/tests/handlers/lote6_http_integration_test.go`, `API/tests/handlers/sec01_bug04_risco01_http_integration_test.go`, `API/tests/handlers/sec08_http_integration_test.go`, `API/tests/handlers/sec12_http_integration_test.go`, `SH/tests/deploy/mariadb_docker_stubs_test.go`, `SH/tests/deploy/mariadb_docker_test.go`, `deploy/mariadb-docker.sh`, `deploy/setup-servidor.sh`, `docs/deploy-servidor.md`, `docs/manual-base-de-dados.md`, `docs/roteiro-teste-manual-lote5.md`, `scripts/setup-linux.sh`, `scripts/setup-windows.ps1`, `scripts/versoes.conf` e os três arquivos de `tarefas/`.
+- Novos: `API/tests/handlers/lote36_purga_restos_integration_test.go`, `API/tests/services/tst16_bug22_toggles_integration_test.go`, `SH/tests/analytics/db07_only_full_group_by_integration_test.go`, `SH/tests/deploy/db07_sql_mode_test.go`, `SH/tests/deploy/tst16_mariadb_docker_dirs_test.go` e `SH/tests/deploy/tst17_seed_producao_real_test.go`.
+
+**Docs:** `docs/deploy-servidor.md` §3.1 (DB-07) e opções novas do script (TST-16), `docs/manual-base-de-dados.md` (DB-07) e `docs/roteiro-teste-manual-lote5.md` (TST-22). Sem endpoint novo nem tela nova: coleção Postman e manual de telas sem mudança.
+
+**Cards criados em `afazer.md`** (bloco "Achados do Lote 36"): BUG-29 (MÉDIA), SEC-58 e TST-23 (BAIXA); o TST-17 voltou parcial para o mesmo bloco.
+
+---
+
+## TST-22: testes de integração com o helper do SEC-50 contra um MariaDB descartável — 2026-11-05
+
+**Status:** ✅ concluído (Lote 36).
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 34.
+
+**Entregas:**
+- `make db-seed` no descartável `rp-descartavel-l36` (`127.0.0.1:33306`): 13 tabelas e 43 usuários.
+- 1ª rodada: 14 FAIL em `API/tests/handlers`, ambos problemas de teste:
+  - o admin id 1 nasce com `deve_trocar_senha=1` (DEPLOY-07) e o SEC-23 barrava as rotas → o `novoItCtx` cria um admin próprio ZZ-TEST (com `purgarRestosHTTP` antes, ressalva do 🟣 SecBrain);
+  - o `revoked_at` era gravado com `NOW()` do MariaDB (UTC), contra a API em -03 → usa o relógio do Go (`c.haSegundos`) em lote5/lote6/sec08/sec12; `docs/roteiro-teste-manual-lote5.md` ajustado.
+- Integração final verde (10662 PASS, 0 FAIL); nenhuma conexão à produção.
+
+**Observação → card:** comparar o `NOW()` do banco com o relógio da API depende do `time_zone`; não foi achado esse uso em produção (**TST-23**).
+
+---
+
+## DB-07: `ONLY_FULL_GROUP_BY` no `SQL_MODE` do `mariadb-docker.sh` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 36).
+**Camadas:** Database, Testes
+**Responsável:** 🌸 DataBrain → 🔴 TestBrain
+**Origem:** DB-04 + DB-06 (Lote 30).
+
+**Entregas:**
+- `ONLY_FULL_GROUP_BY` incluído no `SQL_MODE` do `deploy/mariadb-docker.sh`.
+- Integração verde com o modo ligado (sql_mode global do descartável alterado e depois restaurado); **nenhuma consulta precisou de correção**.
+- Testes novos: `SH/tests/deploy/db07_sql_mode_test.go` e `SH/tests/analytics/db07_only_full_group_by_integration_test.go` (liga o modo na sessão).
+- Docs: `docs/deploy-servidor.md` §3.1 e `docs/manual-base-de-dados.md`.
+
+**Limites:** numa instalação existente, o modo só vale depois do `--recriar`; o CasaOS :3307 não é configurado pelo script.
+
+---
+
+## TST-16: isolamento do teste real do `mariadb-docker.sh` e concorrência real do BUG-22 — 2026-11-05
+
+**Status:** ✅ concluído (Lote 36), com a **execução real como root pendente** (acompanhada no TST-17, `afazer.md`).
+**Camadas:** Deploy (script), Testes
+**Responsável:** 🌸 DataBrain → 🟣 SecBrain → 🔴 TestBrain
+**Origem:** TST-15 (Lote 30) e BUG-22 (Lote 31).
+
+**Entregas:**
+- Opções `--segredos-dir` e `--ca-dir` no `deploy/mariadb-docker.sh`; padrão = comportamento atual em `/root`.
+- Validação (revisada depois do 🟣 SecBrain), função `conferir_dir_privado`:
+  - `realpath -m` igual ao informado (nenhum symlink, `//` nem `/./`);
+  - todo ancestral até `/` do root e sem escrita para grupo e outros (o `/tmp` 1777 é recusado);
+  - diretório que já existe precisa estar em 0700;
+  - checagem refeita depois do `install -d`, antes de gravar a CA e as senhas;
+  - disjunção dos 4 diretórios comparando os `realpath`;
+  - temporário da emissão em `$CA_DIR/.ssl-tmp.*`.
+- Ensaio: `SH/tests/deploy/tst16_mariadb_docker_dirs_test.go` (inclui `TestTST16_Ensaio_RechecagemDepoisDoInstall`); o runner do ensaio faz chroot em tmpfs (`mariadb_docker_stubs_test.go`). O `TestTST15` usa o `baseRootPrivada` (`/root/.tst15-*`).
+- Concorrência do BUG-22: `API/tests/services/tst16_bug22_toggles_integration_test.go`, verde no descartável.
+
+**Pendente:** o `TestTST15_MariadbDocker_Real` só roda como root (`sudo TST15_DOCKER=1 ...`) e o agente não usa sudo → usuário (TST-17).
+
+---
+
+## TST-17 (registro do Lote 36, parcial): testes reais com Docker e `shellcheck` — 2026-11-05
+
+**Status:** ⚠️ **parcial**; o card voltou para `afazer.md` (bloco "Achados do Lote 36") com o que falta.
+**Responsável:** 🔴 TestBrain
+
+**Feito:**
+- (c) `shellcheck`: 10 achados resolvidos (SC1007 com `GOFLAGS=''` em `scripts/setup-linux.sh`; SC2015/SC2016 com `# shellcheck disable=` e motivo); `SHELLCHECK_MIN=0.8.0` em `scripts/versoes.conf`; instalação por apt/winget (só avisa se faltar); alvo `make shellcheck`; `TestTST15_ScriptsDeploy_Shellcheck` com todas as severidades e `scripts/*.sh`; `TestTST17_ShellcheckDisableComMotivo`.
+- (a) `SH/tests/deploy/tst17_seed_producao_real_test.go` criado (`TST17_DOCKER=1` + root; base `/root/tst17-*` com 700; `recusaProducaoTST17`/`TestTST17_RecusaProducao`). **Pula** até o `seed-producao.sh` ter as opções de isolamento.
+
+**Falta:** 🟡 BackBrain implementar `--container`, `--rede-nome`, `--ip-admin`, `--segredos-dir`, `--ssl-dir` e `--trabalho-dir` no `seed-producao.sh`; o usuário rodar com `sudo` os testes reais TST15 e TST17 (nunca no servidor de produção). Observação: o `make setup-check` já falhava antes (Go 1.26.0 local ausente/`covdata`, segundo o 🔴 TestBrain); o usuário deve conferir.
 
 ---
 
@@ -24,7 +128,7 @@ Aberto e fechado em 2026-11-05 pelo 🤍 MegaBrain (pedido do usuário: "continu
 
 **Docs (🟡 BackBrain):** `docs/deploy-servidor.md` §3.8, `docs/arquitetura-ddd.md` §10.9 e `docs/manual-base-de-dados.md`. Sem endpoint novo nem tela nova: coleção Postman e manual de telas sem mudança (o FE-18 só altera o tempo de bloqueio dos botões de ativo).
 
-**Pendência do usuário:** o 🟡 BackBrain sugeriu citar SEC-54, SEC-55 e BUG-27 no `CLAUDE.md` (parágrafo "Banco:"). **Não aplicada:** só o usuário altera o `CLAUDE.md`. Texto sugerido: "**SEC-54:** a guarda normaliza o `DB_HOST` (minúsculas, sem `[ ]`, sem pontos finais e `.local`, `::ffff:a.b.c.d` → `a.b.c.d`) e recusa porta não numérica; o `make test-integration` só aceita loopback ou o CasaOS `192.168.168.106:3307` (`db-guard-integracao`). **SEC-55:** os `go build` nunca recebem os segredos, nem com `INTEGRATION=1`. **BUG-27:** `db-reset`/`db-rebuild` rodam as etapas em sequência e param na primeira recusa, mesmo com `make -k`/`-j`."
+**Pendência do usuário (atendida em 2026-11-05):** o usuário alterou ele mesmo o `CLAUDE.md` com a sugestão abaixo (informado na abertura do Lote 36). Antes: o 🟡 BackBrain sugeriu citar SEC-54, SEC-55 e BUG-27 no `CLAUDE.md` (parágrafo "Banco:"). **Não aplicada** pelo agente: só o usuário altera o `CLAUDE.md`. Texto sugerido: "**SEC-54:** a guarda normaliza o `DB_HOST` (minúsculas, sem `[ ]`, sem pontos finais e `.local`, `::ffff:a.b.c.d` → `a.b.c.d`) e recusa porta não numérica; o `make test-integration` só aceita loopback ou o CasaOS `192.168.168.106:3307` (`db-guard-integracao`). **SEC-55:** os `go build` nunca recebem os segredos, nem com `INTEGRATION=1`. **BUG-27:** `db-reset`/`db-rebuild` rodam as etapas em sequência e param na primeira recusa, mesmo com `make -k`/`-j`."
 
 **Cards criados em `afazer.md`** (bloco "Achados do Lote 35"): SEC-56, SEC-57 e BUG-28 (BAIXA).
 

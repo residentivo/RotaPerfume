@@ -250,6 +250,7 @@ go_aceitavel() {
 procurar_go() {
 	local c v vistos=" "
 	for c in "$GO_DESTINO/bin/go" /usr/local/go/bin/go "$HOME/.local/go/bin/go" "$HOME/sdk/go$GO_VERSAO/bin/go" "$(command -v go 2>/dev/null)"; do
+		# shellcheck disable=SC2015 # o "|| C" deve rodar se A OU B falhar (é o pretendido)
 		[ -n "$c" ] && [ -x "$c" ] || continue
 		c="$(readlink -f "$c")"
 		case "$vistos" in *" $c "*) continue ;; esac
@@ -275,6 +276,7 @@ instalar_go() {
 	if [ -z "$esperado" ] || [ "$esperado" != "$obtido" ]; then
 		aviso "SHA-256 do tarball não confere (esperado $esperado, obtido $obtido)"; rm -rf "$tmp"; return 1
 	fi
+	# shellcheck disable=SC2015 # o "|| C" deve rodar se A OU B falhar (é o pretendido)
 	mkdir -p "$tmp/x" && tar -C "$tmp/x" -xzf "$tmp/$arquivo" || { rm -rf "$tmp"; return 1; }
 
 	if [ -e "$GO_DESTINO" ] && ! grep -q '^go' "$GO_DESTINO/VERSION" 2>/dev/null; then
@@ -288,6 +290,7 @@ instalar_go() {
 		exec_=(como_root)
 	fi
 	# Recomendação oficial: remover a instalação anterior antes de extrair.
+	# shellcheck disable=SC2015 # o "|| C" deve rodar se A OU B falhar (é o pretendido)
 	"${exec_[@]}" rm -rf "$GO_DESTINO" &&
 		"${exec_[@]}" mkdir -p "$pai" &&
 		"${exec_[@]}" mv "$tmp/x/go" "$GO_DESTINO" || { rm -rf "$tmp"; return 1; }
@@ -325,7 +328,7 @@ smoke_covdata() {
 	printf 'module smoke\n\ngo %s\n' "$GO_VERSAO" >"$d/go.mod"
 	printf 'package a\n\nfunc F() int { return 1 }\n' >"$d/a/a.go"
 	printf 'package t_test\n\nimport (\n\t"testing"\n\n\t"smoke/a"\n)\n\nfunc TestF(t *testing.T) {\n\tif a.F() != 1 {\n\t\tt.Fatal()\n\t}\n}\n' >"$d/t/t_test.go"
-	saida="$(cd "$d" && GOTOOLCHAIN=local GOFLAGS= "$go" test -count=1 -coverpkg=./... ./... 2>&1)"
+	saida="$(cd "$d" && GOTOOLCHAIN=local GOFLAGS='' "$go" test -count=1 -coverpkg=./... ./... 2>&1)"
 	local rc=$?
 	rm -rf "$d"
 	[ $rc -eq 0 ] || { printf '%s\n' "$saida" | tail -n 5 | sed 's/^/   /'; return 1; }
@@ -507,10 +510,12 @@ configurar_repo_mariadb() {
 	*" ubuntu "*) base=ubuntu; suite="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}" ;;
 	*" debian "*) base=debian; suite="${VERSION_CODENAME:-}" ;;
 	esac
+	# shellcheck disable=SC2015 # o "|| C" deve rodar se A OU B falhar (é o pretendido)
 	[ -n "${base:-}" ] && [ -n "${suite:-}" ] || { aviso "não identifiquei a versão da distro para o repositório do MariaDB"; return 1; }
 	info "Configurando o repositório oficial do MariaDB $MARIADB_SERIE ($base $suite)"
 	local tmp; tmp="$(mktemp)"
 	baixar "https://mariadb.org/mariadb_release_signing_key.pgp" "$tmp" || { rm -f "$tmp"; return 1; }
+	# shellcheck disable=SC2015 # o "|| C" deve rodar se A OU B falhar (é o pretendido)
 	como_root install -d -m 0755 /etc/apt/keyrings &&
 		como_root install -m 0644 "$tmp" /etc/apt/keyrings/mariadb-keyring.pgp || { rm -f "$tmp"; return 1; }
 	printf 'X-Repolib-Name: MariaDB\nTypes: deb\nURIs: https://dlm.mariadb.com/repo/mariadb-server/%s/repo/%s\nSuites: %s\nComponents: main\nSigned-By: /etc/apt/keyrings/mariadb-keyring.pgp\n' \
@@ -588,6 +593,28 @@ etapa_postman() {
 }
 
 # ----------------------------------------------------------------------------
+# ShellCheck (TST-17, make shellcheck): opcional, nunca FALTA (não quebra o
+# make setup-check); instalado pelo apt quando houver.
+# ----------------------------------------------------------------------------
+etapa_shellcheck() {
+	titulo "shellcheck (opcional, make shellcheck)"
+	local v
+	if ! tem shellcheck && [ "$MODO" != check ] && [ "$APT" -eq 1 ]; then
+		info "Instalando shellcheck..."
+		apt_instalar shellcheck || true
+	fi
+	if ! tem shellcheck; then
+		registrar shellcheck AVISO "não encontrado (opcional; apt: shellcheck)"; return
+	fi
+	v="$(shellcheck --version 2>/dev/null | sed -n 's/^version: *//p' | extrair_versao)"
+	if ver_ge "${v:-0}" "$SHELLCHECK_MIN"; then
+		registrar shellcheck OK "${v:-?}"
+	else
+		registrar shellcheck AVISO "${v:-?} (mínimo $SHELLCHECK_MIN)"
+	fi
+}
+
+# ----------------------------------------------------------------------------
 # Docker (opcional, só para deploy): só confere
 # ----------------------------------------------------------------------------
 etapa_docker() {
@@ -631,6 +658,7 @@ main() {
 	etapa_govulncheck
 	etapa_mariadb
 	etapa_postman
+	etapa_shellcheck
 	etapa_docker
 	[ "$DEPS" -eq 1 ] && etapa_deps
 	resumo

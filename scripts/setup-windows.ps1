@@ -467,6 +467,20 @@ function Etapa-Postman {
 }
 
 # ---------------------------------------------------------------------------
+# shellcheck (TST-17, make shellcheck): opcional, nunca FALTA
+# ---------------------------------------------------------------------------
+function Etapa-Shellcheck {
+    Titulo 'shellcheck (opcional, make shellcheck)'
+    if (-not (Tem 'shellcheck') -and -not $Check -and $TemWinget) {
+        [void](Instalar-Winget 'koalaman.shellcheck' $null)
+    }
+    if (-not (Tem 'shellcheck')) { Registrar 'shellcheck' 'AVISO' 'não encontrado (opcional; winget install koalaman.shellcheck)'; return }
+    $v = Extrair-Versao (((& shellcheck --version 2>$null) | Select-String '^version:') -join '')
+    $st = if ($v -and (Versao-Ge $v $V.SHELLCHECK_MIN)) { 'OK' } else { 'AVISO' }
+    Registrar 'shellcheck' $st "$v"
+}
+
+# ---------------------------------------------------------------------------
 # Docker (opcional, deploy): só confere
 # ---------------------------------------------------------------------------
 function Etapa-Docker {
@@ -512,6 +526,7 @@ Etapa-Node
 Etapa-Govulncheck
 Etapa-Mariadb
 Etapa-Postman
+Etapa-Shellcheck
 Etapa-Docker
 if ($Deps) { Etapa-Deps }
 

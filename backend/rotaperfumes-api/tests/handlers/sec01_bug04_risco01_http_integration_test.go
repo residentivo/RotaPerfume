@@ -10,8 +10,16 @@ package handlers_test
 // Dados: todo registro criado usa o marcador da execução
 //   - nome/razao_social/sku/descricao: "ZZ-TEST-HTTP-<sufixo>-..."
 //   - e-mail: "zz-test-http-<sufixo>-...@teste.local"
-// e é apagado no t.Cleanup (limpezaIntegracao), em ordem compatível com as
-// FKs. Nenhum dado pré-existente é alterado.
+// e é apagado no t.Cleanup (limpar), em ordem compatível com as FKs.
+//
+// Lote 36 (ressalva do SecBrain): se o processo morrer antes do Cleanup
+// (pânico do -timeout, SIGKILL), sobra um admin zz-test-http-%@teste.local
+// com ativo=1 e deve_trocar_senha=0. Por isso o novoItCtx, ANTES de criar
+// qualquer coisa, apaga os restos de execuções anteriores (todo o marcador
+// ZZ-TEST-HTTP-% / zz-test-http-%@teste.local, com os dependentes, na mesma
+// ordem do limpar). Os testes do pacote não usam t.Parallel e só este pacote
+// usa o marcador; não rode dois `go test` deste pacote ao mesmo tempo contra
+// o mesmo banco. Fora o marcador, nenhum dado pré-existente é alterado.
 
 import (
 	"bytes"
@@ -52,6 +60,7 @@ type itCtx struct {
 func novoItCtx(t *testing.T) *itCtx {
 	t.Helper()
 	db := integracao.Abrir(t) // SEC-50: pula sem INTEGRATION=1/credenciais; recusa a produção
+	purgarRestosHTTP(t, db)   // Lote 36: restos de execuções mortas antes do Cleanup
 
 	cfg := testCfg()
 	authH := novaIdentidadeTeste(db, cfg)
@@ -67,16 +76,43 @@ func novoItCtx(t *testing.T) *itCtx {
 		t: t, db: db, srv: srv,
 		prefix: "ZZ-TEST-HTTP-" + suf + "-",
 		email:  "zz-test-http-" + suf + "-",
-		admin:  generateToken(t, cfg, 1, "admin"),
 	}
 	t.Cleanup(c.limpar) // roda antes de db.Close (LIFO)
+	// TST-22: admin próprio da execução (marcador ZZ-TEST-HTTP-, apagado no
+	// limpar). O admin id 1 do seed nasce com deve_trocar_senha = 1
+	// (DEPLOY-07) e seria barrado com 403 pelo SEC-23 em toda rota de escrita.
+	c.admin = generateToken(t, cfg, c.usuarioAdmin("ADM"), "admin")
 	return c
 }
 
-// limpar apaga tudo que carrega o marcador desta execução, respeitando FKs.
-func (c *itCtx) limpar() {
-	like := c.prefix + "%"
-	likeEmail := c.email + "%"
+// haSegundos é o instante de n segundos atrás pelo relógio do Go, o mesmo
+// que a API usa para gravar e comparar revoked_at (TST-22: NOW() do MariaDB
+// depende do time_zone do servidor, ex.: UTC num container, e o driver lê o
+// DATETIME em time.Local = -03, deslocando a janela de graça em 3 h).
+func (c *itCtx) haSegundos(n int) time.Time {
+	return time.Now().Add(-time.Duration(n) * time.Second)
+}
+
+// usuarioAdmin cria um admin ativo, sem troca de senha pendente (TST-22).
+func (c *itCtx) usuarioAdmin(tag string) int64 {
+	c.t.Helper()
+	res, err := c.db.Exec(`INSERT INTO usuarios (nome, email, password_hash, role, ativo, deve_trocar_senha)
+		VALUES (?, ?, 'x-hash-de-teste-nao-usado', 'admin', 1, 0)`,
+		c.nome(tag), fmt.Sprintf("%s%s-%d@teste.local", c.email, strings.ToLower(tag), c.seq.Add(1)))
+	require.NoError(c.t, err)
+	id, _ := res.LastInsertId()
+	return id
+}
+
+// Marcadores globais (qualquer execução) usados pela purga de restos.
+const (
+	marcadorNomeHTTP  = "ZZ-TEST-HTTP-%"
+	marcadorEmailHTTP = "zz-test-http-%@teste.local"
+)
+
+// limparMarcador apaga tudo que casa com os LIKE dados, respeitando FKs, e
+// devolve quantos registros ainda casam (0 = limpo).
+func limparMarcador(db *sql.DB, like, likeEmail string) (int, error) {
 	stmts := []struct {
 		q    string
 		args []any
@@ -93,19 +129,43 @@ func (c *itCtx) limpar() {
 		{`DELETE FROM usuarios WHERE email LIKE ?`, []any{likeEmail}}, // refresh_tokens/senha_historico em cascata
 		{`DELETE FROM vendedores WHERE nome LIKE ?`, []any{like}},
 	}
+	var erros []string
 	for _, s := range stmts {
-		if _, err := c.db.Exec(s.q, s.args...); err != nil {
-			c.t.Errorf("limpeza falhou (%s): %v", strings.Fields(s.q)[0:3], err)
+		if _, err := db.Exec(s.q, s.args...); err != nil {
+			erros = append(erros, fmt.Sprintf("%s: %v", strings.Join(strings.Fields(s.q)[0:3], " "), err))
 		}
 	}
-	// Garantia: nada remanescente desta execução.
+	n, err := contarMarcador(db, like, likeEmail)
+	if err == nil && len(erros) > 0 {
+		err = fmt.Errorf("limpeza falhou: %s", strings.Join(erros, "; "))
+	}
+	return n, err
+}
+
+// contarMarcador conta os registros que casam com os LIKE dados.
+func contarMarcador(db *sql.DB, like, likeEmail string) (int, error) {
 	var n int
-	err := c.db.QueryRow(`SELECT
+	err := db.QueryRow(`SELECT
 		(SELECT COUNT(*) FROM clientes WHERE razao_social LIKE ?) +
 		(SELECT COUNT(*) FROM vendedores WHERE nome LIKE ?) +
 		(SELECT COUNT(*) FROM produtos WHERE sku LIKE ?) +
 		(SELECT COUNT(*) FROM estoque WHERE sku LIKE ?) +
 		(SELECT COUNT(*) FROM usuarios WHERE email LIKE ?)`, like, like, like, like, likeEmail).Scan(&n)
+	return n, err
+}
+
+// purgarRestosHTTP apaga os restos de execuções anteriores que morreram
+// antes do t.Cleanup (Lote 36). Falha o teste se sobrar algo.
+func purgarRestosHTTP(t *testing.T, db *sql.DB) {
+	t.Helper()
+	n, err := limparMarcador(db, marcadorNomeHTTP, marcadorEmailHTTP)
+	require.NoError(t, err, "purga dos restos ZZ-TEST-HTTP-")
+	require.Zero(t, n, "restos ZZ-TEST-HTTP- após a purga")
+}
+
+// limpar apaga tudo que carrega o marcador desta execução, respeitando FKs.
+func (c *itCtx) limpar() {
+	n, err := limparMarcador(c.db, c.prefix+"%", c.email+"%")
 	if err != nil || n != 0 {
 		c.t.Errorf("registros de teste remanescentes: n=%d err=%v", n, err)
 	}

@@ -1,4 +1,4 @@
-.PHONY: help db-guard-producao db-guard-sem-producao db-guard-drop db-guard-integracao fix-admin test-integration reset-senhas-simular reset-senhas-ativos db-gerar-imagens-produtos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-produtos-imagem db-revert-produtos-imagem db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint \
+.PHONY: help db-guard-producao db-guard-sem-producao db-guard-drop db-guard-integracao fix-admin test-integration reset-senhas-simular reset-senhas-ativos db-gerar-imagens-produtos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-produtos-imagem db-revert-produtos-imagem db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint shellcheck \
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
@@ -461,6 +461,11 @@ test-frontend:
 lint: ## Vet em todos os módulos
 	cd backend/shared && $(SEM_SEGREDOS) go vet ./...
 	cd backend/rotaperfumes-api && $(SEM_SEGREDOS) go vet ./...
+
+SHELLCHECK ?= shellcheck
+shellcheck: ## TST-17: shellcheck (todas as severidades) em deploy/*.sh e scripts/*.sh (instale com make setup)
+	@command -v $(SHELLCHECK) >/dev/null 2>&1 || { echo "shellcheck nao encontrado: make setup (apt: shellcheck; winget: koalaman.shellcheck)"; exit 1; }
+	$(SEM_SEGREDOS) $(SHELLCHECK) deploy/*.sh scripts/*.sh
 
 # =============================================================================
 # Dependências

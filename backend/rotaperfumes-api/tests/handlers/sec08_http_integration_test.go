@@ -187,8 +187,8 @@ func TestIntegracaoHTTP_SEC08_CorteDeSessao(t *testing.T) {
 		require.Nil(t, c.corteDe(uid), "rotação normal não grava corte")
 
 		// Tira o token rotacionado da janela de graça e o reusa.
-		_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL 120 SECOND
-			WHERE token_hash = ? AND revoked_at IS NOT NULL`, hashRefresh(refresh1))
+		_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = ?
+			WHERE token_hash = ? AND revoked_at IS NOT NULL`, c.haSegundos(120), hashRefresh(refresh1))
 		require.NoError(t, err)
 		st, raw, _ := refreshIT(t, c, refresh1)
 		require.Equal(t, http.StatusUnauthorized, st, raw)

@@ -82,15 +82,14 @@ readonly DB_NOME="rotaperfumes"
 readonly DB_APP="rotaperfumes_app"
 readonly DB_ADMIN="rotaperfumes_admin"
 readonly DB_MAKE="casaos"
-# DB-04/DB-06: ONLY_FULL_GROUP_BY fica DESLIGADO (decisao de 2026-11-02,
-# revisao estatica). O MariaDB nao reconhece dependencia funcional nem casa
-# "SELECT expr ... GROUP BY expr" (a mesma expressao) com a lista do SELECT:
-# a serie de vendas do dashboard (backend/shared/analytics/analyticsmysql/
-# sql.go, sqlSerieVendas: SELECT DATE_FORMAT(data_pedido, ...) ... GROUP BY
-# DATE_FORMAT(data_pedido, ...)) seria recusada com ER_WRONG_FIELD_WITH_GROUP.
-# Ligar depois de o backend agrupar pelo alias (GROUP BY data) e de um teste
-# de integracao em banco DESCARTAVEL; o mesmo sql_mode vale para dev (make).
-readonly SQL_MODE="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+# DB-07 (Lote 36): ONLY_FULL_GROUP_BY LIGADO (um GROUP BY incompleto da erro
+# 1055 em vez de devolver valores arbitrarios). Antes (DB-04/DB-06) ficava
+# desligado ate o sqlSerieVendas agrupar pelo alias (GROUP BY data) e a
+# integracao rodar num banco DESCARTAVEL com o modo ligado (2026-11-05:
+# verde; o TestIntegracaoDB07_GroupByComOnlyFullGroupBy liga o modo na
+# sessao e cobre os GROUP BY do analyticsmysql). O mesmo sql_mode vale para
+# dev (make).
+readonly SQL_MODE="ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
 readonly COLLATION="utf8mb4_unicode_ci"
 readonly MIN_CHARSET_COLLATIONS="11.2"
 readonly CERT_DIAS=730
@@ -133,6 +132,15 @@ Uso: sudo bash $0 [opcoes]
                       outro nome nao aceita --dev-ip)
   --dados DIR         datadir no host (padrao $DADOS_DIR)
   --ssl-dir DIR       certificados no host (padrao $SSL_DIR, lido pelo Jenkins)
+  --segredos-dir DIR  senhas e root.cnf (padrao $SEGREDOS_DIR; o
+                      seed-producao.sh so le o padrao: outro caminho e para
+                      testes). TST-16: absoluto, sem '..', nenhum
+                      componente symlink (realpath -m igual), ancestrais
+                      do root sem escrita de grupo/outros (o /tmp 1777 e
+                      recusado); se ja existir, diretorio real (nao
+                      symlink), dono root e modo 700
+  --ca-dir DIR        chave da CA gerada no servidor e server-ext.cnf
+                      (padrao $CA_DIR; mesmas regras do --segredos-dir)
   --sem-read-only     cria o container sem --read-only (so se nao subir com ele)
   --casaos-native-motivo TEXTO
                       SAIDA DE EMERGENCIA (SEC-30): casaos com
@@ -162,6 +170,8 @@ while [[ $# -gt 0 ]]; do
     --container) exigir_valor "$@"; CONTAINER="$2"; shift 2 ;;
     --dados) exigir_valor "$@"; DADOS_DIR="$2"; shift 2 ;;
     --ssl-dir) exigir_valor "$@"; SSL_DIR="$2"; shift 2 ;;
+    --segredos-dir) exigir_valor "$@"; SEGREDOS_DIR="$2"; shift 2 ;;
+    --ca-dir) exigir_valor "$@"; CA_DIR="$2"; shift 2 ;;
     --sem-read-only) READ_ONLY=false; shift ;;
     --casaos-native-motivo) exigir_valor "$@"; CASAOS_NATIVE_MOTIVO="$2"; shift 2 ;;
     --rede-lan) die "--rede-lan saiu (SEC-45): use --dev-ip IP, uma vez por maquina de dev" ;;
@@ -198,7 +208,7 @@ gerar_senha() {
 # ---------------------------------------------------------------------------
 etapa "Pre-requisitos"
 [[ $EUID -eq 0 ]] || die "rode como root: sudo bash $0"
-for cmd in docker openssl ss sha256sum; do
+for cmd in docker openssl ss sha256sum stat realpath dirname; do
   command -v "$cmd" >/dev/null || die "comando '$cmd' nao encontrado"
 done
 docker info >/dev/null 2>&1 || die "o daemon do Docker nao responde"
@@ -210,6 +220,7 @@ VERSAO_BASE=${IMAGEM_BASE#mariadb:}; VERSAO_BASE=${VERSAO_BASE%%@*}
 DIGEST_BASE=${IMAGEM_BASE##*@sha256:}
 [[ "$VERSAO_BASE" =~ ^([0-9]+\.[0-9]+) ]] || die "versao da --imagem-base sem major.minor: $VERSAO_BASE"
 VERSAO_MM=${BASH_REMATCH[1]}
+# shellcheck disable=SC2015 # die deve rodar se o formato OU a faixa falhar (pretendido)
 [[ "$PORTA" =~ ^[0-9]+$ ]] && (( PORTA >= 1 && PORTA <= 65535 )) || die "--porta invalida: $PORTA"
 ipv4_valido "$SITE_IP" || die "--ip invalido: $SITE_IP"
 [[ "$SITE_IP" != 0.0.0.0 && "$SITE_IP" != 127.* ]] || die "--ip precisa ser o IP da LAN (nao 0.0.0.0/loopback): $SITE_IP"
@@ -219,10 +230,68 @@ ipv4_valido "$SITE_IP" || die "--ip invalido: $SITE_IP"
 # (ipv4_valido usa =~: guardar o prefixo antes de chama-la)
 REDE_PREFIXO=""
 [[ "$REDE_DOCKER" =~ ^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})\.0/24$ ]] && REDE_PREFIXO=${BASH_REMATCH[1]}
+# shellcheck disable=SC2015 # die deve rodar se o prefixo faltar OU for invalido (pretendido)
 [[ -n "$REDE_PREFIXO" ]] && ipv4_valido "$REDE_PREFIXO.0" || die "--rede-docker invalida: $REDE_DOCKER (use A.B.C.0/24)"
-for d in "$SSL_DIR" "$DADOS_DIR"; do
+for d in "$SSL_DIR" "$DADOS_DIR" "$SEGREDOS_DIR" "$CA_DIR"; do
   [[ "$d" =~ ^/[A-Za-z0-9._/-]+$ && "$d" != / && "$d" != *..* ]] || die "diretorio invalido: '$d' (caminho absoluto, sem espacos/virgulas/..)"
 done
+# Sem a barra final: a comparacao de prefixo abaixo fica exata.
+SSL_DIR=${SSL_DIR%/}; DADOS_DIR=${DADOS_DIR%/}; SEGREDOS_DIR=${SEGREDOS_DIR%/}; CA_DIR=${CA_DIR%/}
+# TST-16: os quatro diretorios sao disjuntos. O SSL_DIR (755, montado no
+# container e lido pelo Jenkins) e o datadir nunca podem conter a chave da CA
+# nem as senhas; um dentro do outro misturaria donos e modos. Lote 36
+# (SecBrain): compara os caminhos reais (realpath -m), nao o texto: um
+# symlink no --ssl-dir/--dados nao esconde a sobreposicao.
+dentro_de() { [[ "$1" == "$2" || "$1" == "$2"/* ]]; }
+declare -A _dirs=([--ssl-dir]="$SSL_DIR" [--dados]="$DADOS_DIR" [--segredos-dir]="$SEGREDOS_DIR" [--ca-dir]="$CA_DIR")
+declare -A _reais=()
+for a in "${!_dirs[@]}"; do
+  _reais[$a]=$(realpath -m -- "${_dirs[$a]}") || die "$a ${_dirs[$a]}: realpath falhou"
+done
+for a in "${!_dirs[@]}"; do
+  for b in "${!_dirs[@]}"; do
+    [[ "$a" == "$b" ]] && continue
+    dentro_de "${_reais[$a]}" "${_reais[$b]}" \
+      && die "$a (${_dirs[$a]}) nao pode ficar dentro de $b (${_dirs[$b]}) nem ser igual a ele (caminhos reais: ${_reais[$a]} e ${_reais[$b]})"
+  done
+done
+unset _dirs _reais
+
+# TST-16 + Lote 36 (SecBrain, TOCTOU): segredos e CA. Nenhum componente do
+# caminho pode ser symlink (realpath -m == caminho informado) e cada ancestral
+# existente, ate /, precisa ser do root e sem escrita para grupo e outros (o
+# sticky do /tmp NAO basta: recusa). Assim nenhum outro usuario consegue
+# trocar o diretorio por um symlink entre esta checagem e a gravacao. Se o
+# diretorio ja existir: diretorio real, do root, modo 700. O script nao
+# corrige nada (falha fechada). conferir_dir_privado roda de novo logo depois
+# do install -d, antes de gravar senhas e a chave da CA (exige que exista).
+conferir_dir_privado() { # opcao dir [existe]
+  local op=$1 d=$2 exigir=${3:-} real p dono modo
+  [[ -L "$d" ]] && die "$op $d e um link simbolico: use o caminho real"
+  real=$(realpath -m -- "$d") || die "$op $d: realpath falhou"
+  [[ "$real" == "$d" ]] \
+    || die "$op $d nao e o caminho real ($real): nenhum componente pode ser link simbolico (nem '//' ou '.')"
+  p=$d
+  while [[ "$p" != / ]]; do
+    p=$(dirname -- "$p")
+    [[ -e "$p" || -L "$p" ]] || continue
+    [[ -d "$p" && ! -L "$p" ]] || die "$op $d: o ancestral $p nao e diretorio real"
+    read -r dono modo < <(stat -c '%u %a' -- "$p")
+    [[ "$dono" == 0 ]] \
+      || die "$op $d: o ancestral $p precisa ser do root (dono atual: $dono); outro usuario poderia trocar o caminho"
+    (( (8#$modo & 8#022) == 0 )) \
+      || die "$op $d: o ancestral $p tem escrita para grupo/outros (modo $modo; o sticky bit nao basta); use um caminho so com ancestrais do root sem escrita para grupo e outros"
+  done
+  if [[ -e "$d" ]]; then
+    [[ -d "$d" ]] || die "$op $d existe e nao e diretorio"
+    [[ "$(stat -c '%u %a' -- "$d")" == "0 700" ]] \
+      || die "$op $d precisa ser do root com modo 700 (atual: dono $(stat -c '%u' -- "$d"), modo $(stat -c '%a' -- "$d")); confira e ajuste (chown root:root; chmod 700)"
+  elif [[ "$exigir" == existe ]]; then
+    die "$op $d nao existe depois do install -d"
+  fi
+}
+conferir_dir_privado --segredos-dir "$SEGREDOS_DIR"
+conferir_dir_privado --ca-dir "$CA_DIR"
 readonly IP_DB="$REDE_PREFIXO.2" IP_API="$REDE_PREFIXO.10" IP_ADMIN="$REDE_PREFIXO.20"
 
 # --dev-ip: IPv4 de maquina (sem faixa), sem repeticao.
@@ -325,7 +394,7 @@ require_secure_transport = ON
 tls_version = TLSv1.2,TLSv1.3
 # SEC-30: contas com IDENTIFIED VIA ed25519.
 plugin_load_add = auth_ed25519
-# DEPLOY-02: hardening. DB-04/DB-06: sem ONLY_FULL_GROUP_BY (ver o script).
+# DEPLOY-02: hardening. DB-07: sql_mode com ONLY_FULL_GROUP_BY (ver o script).
 local_infile = 0
 sql_mode = $SQL_MODE
 character_set_server = utf8mb4
@@ -357,6 +426,8 @@ fi
 etapa "Certificados em $SSL_DIR"
 install -d -m 755 "$SSL_DIR"
 install -d -m 700 "$CA_DIR"
+# Lote 36 (TOCTOU): de novo depois do install -d, antes de gravar na CA_DIR.
+conferir_dir_privado --ca-dir "$CA_DIR" existe
 # SEC-45: sem host.docker.internal nem gateway do docker0 (a API usa a rede
 # rotaperfumes-db e o nome do container).
 SAN="IP:$SITE_IP, DNS:$CONTAINER, DNS:localhost, IP:127.0.0.1, DNS:$SITE_HOST"
@@ -399,7 +470,8 @@ if ! $NOVO_CERT && cert_servidor_valido; then
   info "Certificado existente valido (CA confere, SAN exato, vale mais de 30 dias): reaproveitado."
 else
   if $NOVO_CERT; then info "Reemissao pedida (--novo-cert/--nova-ca)."; else info "Certificado ausente, invalido, vencendo ou com SAN diferente de: $SAN"; fi
-  TMP=$(mktemp -d /root/rotaperfumes-ssl.XXXXXX)
+  # TST-16: o temporario fica no CA_DIR (700, do root), nao em /root.
+  TMP=$(mktemp -d "$CA_DIR/.ssl-tmp.XXXXXX")
   trap 'rm -rf "$TMP"' EXIT
   if $NOVA_CA; then
     if [[ -s "$SSL_DIR/ca.pem" ]]; then
@@ -456,9 +528,13 @@ CA_FP=$(fingerprint_sha256 "$SSL_DIR/ca.pem")
 # ---------------------------------------------------------------------------
 etapa "Senhas em $SEGREDOS_DIR"
 install -d -m 700 -o root -g root "$SEGREDOS_DIR"
+# Lote 36 (TOCTOU): de novo depois do install -d, antes de gravar as senhas.
+conferir_dir_privado --segredos-dir "$SEGREDOS_DIR" existe
 # Subpasta montada no container: o entrypoint (como mysql) le a senha do root.
 install -d -m 700 -o "$MYSQL_UID" -g "$MYSQL_GID" "$SEGREDOS_DIR/container"
 install -d -m 700 -o "$MYSQL_UID" -g "$MYSQL_GID" "$DADOS_DIR"
+[[ -d "$SEGREDOS_DIR/container" && ! -L "$SEGREDOS_DIR/container" ]] \
+  || die "$SEGREDOS_DIR/container precisa ser diretorio real (nao symlink)"
 # --user mysql: o datadir inteiro precisa ser do uid da imagem.
 if [[ -n "$(find "$DADOS_DIR" \( ! -uid "$MYSQL_UID" -o ! -gid "$MYSQL_GID" \) -print -quit)" ]]; then
   chown -R "$MYSQL_UID:$MYSQL_GID" "$DADOS_DIR"
@@ -821,6 +897,7 @@ info "Certificado em uso = $SSL_DIR/server-cert.pem (mesma validade): OK."
 # little-endian = erro; 1130 = 0x046a = "Host ... is not allowed to connect").
 resposta_porta() { # ip porta
   local hex
+  # shellcheck disable=SC2016 # $1/$2 expandem no bash -c (argumentos), nao aqui
   hex=$(timeout 5 bash -c 'exec 3<>"/dev/tcp/$1/$2" && head -c 16 <&3' _ "$1" "$2" 2>/dev/null \
           | od -An -v -tx1 | tr -d ' \n') || true
   if [[ "${hex:6:4}" == "000a" ]]; then

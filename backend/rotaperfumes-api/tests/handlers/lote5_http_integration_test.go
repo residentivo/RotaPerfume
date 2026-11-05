@@ -47,8 +47,8 @@ func TestIntegracaoHTTP_SEC04_JanelaDeGraca(t *testing.T) {
 		return tok
 	}
 	revogarHa := func(t *testing.T, tok string, segundos int) {
-		_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL ? SECOND WHERE token_hash = ?`,
-			segundos, hashRefresh(tok))
+		_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ?`,
+			c.haSegundos(segundos), hashRefresh(tok))
 		require.NoError(t, err)
 	}
 	ativos := func() int {
@@ -75,7 +75,7 @@ func TestIntegracaoHTTP_SEC04_JanelaDeGraca(t *testing.T) {
 		assert.Equal(t, http.StatusOK, st, "a aba vencedora segue com o token novo, sem 429")
 	})
 
-	t.Run("revogado há 5s pelo relógio do banco: 15 tentativas sem 429", func(t *testing.T) {
+	t.Run("revogado há 5s (relógio da API): 15 tentativas sem 429", func(t *testing.T) {
 		tok := novoToken(t)
 		revogarHa(t, tok, 5)
 		for i := 0; i < 15; i++ {

@@ -263,8 +263,8 @@ func TestIntegracaoHTTP_SEC07_ReusoForaDaJanela(t *testing.T) {
 		return tok
 	}
 	envelhecer := func(t *testing.T, tok string, segundos int) {
-		res, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL ? SECOND
-			WHERE token_hash = ? AND revoked_at IS NOT NULL`, segundos, hashRefresh(tok))
+		res, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = ?
+			WHERE token_hash = ? AND revoked_at IS NOT NULL`, c.haSegundos(segundos), hashRefresh(tok))
 		require.NoError(t, err)
 		n, _ := res.RowsAffected()
 		require.EqualValues(t, 1, n, "o token precisa estar revogado para envelhecer")
@@ -326,8 +326,8 @@ func TestIntegracaoHTTP_SEC07_ReusoForaDaJanela(t *testing.T) {
 		uid := c.usuario("USEC07N", 0, true)
 		tok := novoToken(t, uid)
 		novoToken(t, uid)
-		_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL 120 SECOND, revoked_reason = NULL
-			WHERE token_hash = ?`, hashRefresh(tok))
+		_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = ?, revoked_reason = NULL
+			WHERE token_hash = ?`, c.haSegundos(120), hashRefresh(tok))
 		require.NoError(t, err)
 		st, raw, _ := refreshIT(t, c, tok)
 		assert.Equal(t, http.StatusUnauthorized, st, raw)
@@ -340,8 +340,8 @@ func TestIntegracaoHTTP_SEC07_ReusoForaDaJanela(t *testing.T) {
 				uid := c.usuario("USEC07"+motivo, 0, true)
 				tok := novoToken(t, uid)
 				novoToken(t, uid)
-				_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL 120 SECOND, revoked_reason = ?
-					WHERE token_hash = ?`, motivo, hashRefresh(tok))
+				_, err := c.db.Exec(`UPDATE refresh_tokens SET revoked_at = ?, revoked_reason = ?
+					WHERE token_hash = ?`, c.haSegundos(120), motivo, hashRefresh(tok))
 				require.NoError(t, err)
 				st, raw, _ := refreshIT(t, c, tok)
 				assert.Equal(t, http.StatusUnauthorized, st, raw)

@@ -54,16 +54,40 @@ func TestTST15_ScriptsDeploy_BashN(t *testing.T) {
 	}
 }
 
+// TST-17: todas as severidades (o mesmo do make shellcheck), em deploy/*.sh e
+// scripts/*.sh; exceções só com "# shellcheck disable=SCxxxx # motivo".
 func TestTST15_ScriptsDeploy_Shellcheck(t *testing.T) {
 	sc, err := exec.LookPath("shellcheck")
 	if err != nil {
-		t.Skip("shellcheck não está no PATH (instale para rodar este teste)")
+		t.Skip("shellcheck não está no PATH (instale com make setup)")
 	}
-	for _, s := range scriptsDeploy(t) {
+	extras, err := filepath.Glob(caminhoRaiz(t, "scripts", "*.sh"))
+	require.NoError(t, err)
+	require.NotEmpty(t, extras)
+	for _, s := range append(scriptsDeploy(t), extras...) {
 		t.Run(filepath.Base(s), func(t *testing.T) {
-			out, err := exec.Command(sc, "-S", "error", s).CombinedOutput()
+			out, err := exec.Command(sc, s).CombinedOutput()
 			require.NoError(t, err, "%s", out)
 		})
+	}
+}
+
+// TST-17: todo "shellcheck disable" nos scripts traz o motivo na mesma linha
+// (exceto o SC1091 do source de /etc/os-release, já justificado acima dele).
+func TestTST17_ShellcheckDisableComMotivo(t *testing.T) {
+	extras, err := filepath.Glob(caminhoRaiz(t, "scripts", "*.sh"))
+	require.NoError(t, err)
+	re := regexp.MustCompile(`#\s*shellcheck\s+disable=(SC\d+(?:,SC\d+)*)(.*)$`)
+	for _, s := range append(scriptsDeploy(t), extras...) {
+		b, err := os.ReadFile(s)
+		require.NoError(t, err)
+		for i, l := range strings.Split(string(b), "\n") {
+			m := re.FindStringSubmatch(l)
+			if m == nil || m[1] == "SC1091" {
+				continue
+			}
+			assert.Regexp(t, `^\s*#\s*\S`, m[2], "%s:%d sem motivo: %s", filepath.Base(s), i+1, l)
+		}
 	}
 }
 
@@ -324,6 +348,9 @@ func novoEnsaio(t *testing.T) *ensaio {
 	t.Helper()
 	precisaUnshare(t)
 	e := &ensaio{t: t, dir: t.TempDir()}
+	// Lote 36: o TempDir sai com 0777 &^ umask (775 com umask 002) e é
+	// ancestral do --segredos-dir/--ca-dir dos ensaios: sem escrita de grupo.
+	require.NoError(t, os.Chmod(e.dir, 0o700))
 	for _, d := range []string{"root", "opt", "sbin", "systemd", "state", "bin"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(e.dir, d), 0o755))
 	}
@@ -927,39 +954,50 @@ func TestTST15_Ensaio_CasaosNativeMotivo(t *testing.T) {
 // Docker real (pendência: sem acesso ao socket nesta máquina)
 // ---------------------------------------------------------------------------
 
+// baseRootPrivada cria, para os testes reais (como root), um diretório 700
+// do root em /root (/root 700 e / 755, ambos do root). Lote 36 (TOCTOU): o
+// mariadb-docker.sh recusa --segredos-dir/--ca-dir com ancestral gravável
+// por grupo/outros, e o t.TempDir() fica em /tmp (1777: o sticky não basta).
+// Removido no fim do teste.
+func baseRootPrivada(t *testing.T, prefixo string) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/root", "."+prefixo+"-")
+	require.NoError(t, err)
+	require.NoError(t, os.Chmod(dir, 0o700))
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 // TestTST15_MariadbDocker_Real roda o script de verdade com container, rede,
-// datadir e ssl-dir de teste, sem --dev-ip. Exige root (o script grava em
-// /root/rotaperfumes-ca e /root/rotaperfumes-mariadb, caminhos fixos) e por
-// isso só roda com TST15_DOCKER=1 e se esses diretórios NÃO existirem (não
-// roda no servidor de produção). Ex.: sudo -E env TST15_DOCKER=1 go test
-// -count=1 -run TestTST15_MariadbDocker_Real ./tests/deploy/
+// datadir, ssl-dir, segredos e CA de teste (TST-16: --segredos-dir e
+// --ca-dir num diretório 700 do root criado pelo teste em /root e removido
+// no fim, ver baseRootPrivada), sem --dev-ip. Exige root (o script
+// recusa outro EUID e grava com dono root/mysql) e por isso só roda com
+// TST15_DOCKER=1. O único caminho fixo que sobra é o diretório de build
+// (/opt/rotaperfumes/mariadb-imagem, removido no fim se o teste o criou).
+// Ex.: sudo -E env TST15_DOCKER=1 go test -count=1 -run
+// TestTST15_MariadbDocker_Real ./tests/deploy/
 func TestTST15_MariadbDocker_Real(t *testing.T) {
 	sc := mariadbDocker(t)
 	if os.Getenv("TST15_DOCKER") != "1" {
 		t.Skip("opt-in: TST15_DOCKER=1 (como root, com Docker; pendência do TST-15)")
 	}
 	if os.Geteuid() != 0 {
-		t.Skip("precisa de root (caminhos fixos em /root)")
+		t.Skip("precisa de root (o script recusa outro EUID)")
 	}
 	if err := exec.Command("docker", "info").Run(); err != nil {
 		t.Skip("docker inacessível: " + err.Error())
-	}
-	for _, d := range []string{"/root/rotaperfumes-ca", "/root/rotaperfumes-mariadb"} {
-		if _, err := os.Stat(d); err == nil {
-			t.Skip(d + " já existe (servidor real?): o teste não sobrescreve")
-		}
 	}
 	criadoBuild := false
 	if _, err := os.Stat("/opt/rotaperfumes/mariadb-imagem"); os.IsNotExist(err) {
 		criadoBuild = true
 	}
 	const nome, rede, subnet = "tst15-mariadb", "tst15-db", "172.30.243.0/24"
-	dir := t.TempDir()
+	dir := baseRootPrivada(t, "tst15")
+	segredosDir, caDir := filepath.Join(dir, "segredos"), filepath.Join(dir, "ca")
 	t.Cleanup(func() {
 		_ = exec.Command("docker", "rm", "-f", nome).Run()
 		_ = exec.Command("docker", "network", "rm", rede).Run()
-		_ = os.RemoveAll("/root/rotaperfumes-ca")
-		_ = os.RemoveAll("/root/rotaperfumes-mariadb")
 		if criadoBuild {
 			_ = os.RemoveAll("/opt/rotaperfumes/mariadb-imagem")
 		}
@@ -967,7 +1005,8 @@ func TestTST15_MariadbDocker_Real(t *testing.T) {
 	})
 	rodar := func(args ...string) (string, error) {
 		base := []string{sc, "--container", nome, "--rede-nome", rede, "--rede-docker", subnet,
-			"--dados", filepath.Join(dir, "dados"), "--ssl-dir", filepath.Join(dir, "ssl"), "--host-nome", "tst15"}
+			"--dados", filepath.Join(dir, "dados"), "--ssl-dir", filepath.Join(dir, "ssl"),
+			"--segredos-dir", segredosDir, "--ca-dir", caDir, "--host-nome", "tst15"}
 		cmd := exec.Command("bash", append(base, args...)...)
 		cmd.Env = ambienteLimpo()
 		out, err := cmd.CombinedOutput()
@@ -986,15 +1025,17 @@ func TestTST15_MariadbDocker_Real(t *testing.T) {
 	assert.Equal(t, "rotaperfumes_admin@172.30.243.20 ed25519\nrotaperfumes_app@172.30.243.10 ed25519",
 		rootSQL("SELECT CONCAT(User,'@',Host,' ',JSON_VALUE(Priv,'$.plugin')) FROM mysql.global_priv WHERE User LIKE 'rotaperfumes%' OR User='casaos' ORDER BY User"))
 	assert.Equal(t, "0", rootSQL("SELECT COUNT(*) FROM mysql.global_priv WHERE User='root' AND Host<>'localhost'"), "root sem host remoto")
+	assert.Equal(t, sqlModeDB07, rootSQL("SELECT @@GLOBAL.sql_mode"), "DB-07: sql_mode do cnf com ONLY_FULL_GROUP_BY")
 	assert.Equal(t, "0", rootSQL("SELECT COUNT(*) FROM mysql.global_priv WHERE User LIKE 'rotaperfumes%' AND JSON_VALUE(Priv,'$.ssl_type')<>'1'"))
 	portas, _ := exec.Command("docker", "inspect", "-f", "{{json .HostConfig.PortBindings}}", nome).Output()
 	assert.Contains(t, []string{"{}", "null"}, strings.TrimSpace(string(portas)), "sem --dev-ip nenhuma porta")
 
-	senha1, err := os.ReadFile("/root/rotaperfumes-mariadb/rotaperfumes_app.senha")
+	assert.FileExists(t, filepath.Join(caDir, "ca-key.pem"), "chave da CA no --ca-dir")
+	senha1, err := os.ReadFile(filepath.Join(segredosDir, "rotaperfumes_app.senha"))
 	require.NoError(t, err)
 	out, err = rodar()
 	require.NoError(t, err, out)
-	senha2, _ := os.ReadFile("/root/rotaperfumes-mariadb/rotaperfumes_app.senha")
+	senha2, _ := os.ReadFile(filepath.Join(segredosDir, "rotaperfumes_app.senha"))
 	assert.Equal(t, senha1, senha2, "reexecução não troca senha")
 	assert.Contains(t, out, "Certificado existente valido")
 

@@ -71,6 +71,9 @@ Banco: **MariaDB 11.4 LTS** (somente MariaDB; em produção, o container `rotape
 - **SEC-46:** `db-down`, `db-seed`, `db-reset` e `db-rebuild` são recusados **sempre** na produção, mesmo com `CONFIRMO_PRODUCAO`. Fora do loopback, o `DROP DATABASE` exige `CONFIRMAR=<DB_NAME>` na linha de comando (ex.: `CONFIRMAR=rotaperfumes` no CasaOS :3307).
 - **SEC-53:** os segredos do `.env` (ou do `ENV_ARQUIVO`) não chegam aos processos de test, build, lint e npm do Makefile. As `DB_*` só chegam ao `go test` pelo `make test-integration`, que passa pela guarda.
 - **SEC-50:** os testes Go de integração (`INTEGRATION=1`) usam `backend/shared/testkit/integracao` e recusam a produção antes de conectar. Para rodá-los: `make test-integration ENV_ARQUIVO=<arquivo do banco descartável>`.
+- **SEC-54:** a guarda normaliza o DB_HOST (minúsculas, sem [ ], sem pontos finais e .local, ::ffff:a.b.c.d → a.b.c.d) e recusa porta não numérica; o `make test-integration` só aceita loopback ou o CasaOS 192.168.168.106:3307 (db-guard-integracao). 
+- **SEC-55:** os go build nunca recebem os segredos, nem com INTEGRATION=1
+- **BUG-27:** db-reset/db-rebuild rodam as etapas em sequência e param na primeira recusa, mesmo com `make -k/-j`."
 
 ## Instalação do ambiente
 

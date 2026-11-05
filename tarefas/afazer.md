@@ -1,6 +1,10 @@
 # A Fazer
 
-> Atualizado em 2026-11-05 (fechamento do Lote 35, 🔵 SubBrain). O **Lote 35** (BUG-27, SEC-54, TST-19, SEC-55, TST-20, TST-21, FE-18 e CHORE-16) foi concluído e está em `feito.md` (commitado na `main` pelo 🤍 MegaBrain, a pedido do usuário). Entraram 3 cards no bloco "Achados do Lote 35", logo abaixo: **SEC-56**, **SEC-57** e **BUG-28** (BAIXA). **Seguem pendentes do usuário:** **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`) e **TST-17** (precisa de Docker); a sugestão de citar SEC-54/SEC-55/BUG-27 no `CLAUDE.md` está em `feito.md` (bloco do Lote 35). O restante do backlog não mudou.
+> Atualizado em 2026-11-05 (fechamento do Lote 36, 🔵 SubBrain). O **Lote 36** foi fechado: **TST-22**, **DB-07** e **TST-16** concluídos (`feito.md`, "Lote 36 de 2026-11-05"; o TST-16 com a execução real como root pendente, coberta pelo TST-17). O **TST-17** voltou **parcial** para esta lista, no bloco novo "Achados do Lote 36" (logo abaixo), com o que falta: 🟡 BackBrain implementar as opções de isolamento do `seed-producao.sh` e o usuário rodar com `sudo` os testes reais TST15 e TST17 (nunca no servidor de produção). Entraram também **BUG-29** (MÉDIA), **SEC-58** e **TST-23** (BAIXA). **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), SEC-56, SEC-57, BUG-28, ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
+>
+> Antes, ainda em 2026-11-05 (abertura do Lote 36, 🔵 SubBrain). O usuário alterou ele mesmo o `CLAUDE.md` (sugestão do Lote 35: SEC-54, SEC-55 e BUG-27; pendência atendida em `feito.md`), rodou o `usermod -aG docker` (sessão do agente via `sg docker`; `shellcheck` instalado) e autorizou os processos de banco descartável. O 🤍 MegaBrain abriu o **Lote 36 de 2026-11-05** e 4 cards saíram desta lista para `fazendo.md`: **TST-22** (bloco "Achados do Lote 34"), **TST-17** (bloco "Achados do Lote 33 (DEPLOY-07)") e **DB-07** e **TST-16** (bloco "Achados dos Lotes 30 e 31"). Banco descartável: container local `rp-descartavel-l36` (`127.0.0.1:33306`, `rotaperfumes_l36`); nada de CasaOS nem de produção. Passo atual do lote: "🔴 TestBrain (TST-22, TST-17) + 🌸 DataBrain (DB-07, TST-16) → 🟣 SecBrain revisando → 🔵 SubBrain fechando". **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), SEC-56, SEC-57, BUG-28, ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 35, 🔵 SubBrain). O **Lote 35** (BUG-27, SEC-54, TST-19, SEC-55, TST-20, TST-21, FE-18 e CHORE-16) foi concluído e está em `feito.md` (commitado na `main` pelo 🤍 MegaBrain, a pedido do usuário). Entraram 3 cards no bloco "Achados do Lote 35", logo abaixo: **SEC-56**, **SEC-57** e **BUG-28** (BAIXA). **Seguem pendentes do usuário:** **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`) e **TST-17** (precisa de Docker); a sugestão de citar SEC-54/SEC-55/BUG-27 no `CLAUDE.md` está em `feito.md` (bloco do Lote 35). O restante do backlog não mudou.
 >
 > Antes, ainda em 2026-11-05 (abertura do Lote 35, 🔵 SubBrain). O usuário pediu "continue com as tarefas a fazer, em seguida commit as alterações finalizadas". O 🤍 MegaBrain abriu o **Lote 35 de 2026-11-05** e 8 cards saíram desta lista para `fazendo.md`: **BUG-27**, **SEC-54**, **TST-19**, **SEC-55**, **TST-20** e **TST-21** (bloco "Achados do Lote 34") e **FE-18** e **CHORE-16** (bloco "Achados dos Lotes 30 e 31"). Critério: executáveis sem o usuário, sem Docker e sem banco. Passo atual do lote: "🟣 SecBrain especificando → 🟡 BackBrain + 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain fechando". **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17, TST-22, DB-07 e TST-16 (dependem de servidor/Docker/banco), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
 >
@@ -75,6 +79,77 @@
 
 ---
 
+# Achados do Lote 36, 2026-11-05
+
+> Pendências do Lote 36 (`feito.md`, "Lote 36 de 2026-11-05"), levantadas pelo 🔴 TestBrain, pelo 🟣 SecBrain e no incidente do `MAKEFLAGS=-k`. Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
+
+---
+
+## TST-17: testes reais com Docker do `seed-producao.sh` e do `mariadb-docker.sh` (`TST15_DOCKER=1`) e `shellcheck` nos scripts — prioridade MÉDIA
+
+**Status:** **parcial** (voltou do Lote 36). Item (c) concluído; (a) com o teste criado, mas pulando; (b) não rodou (precisa de root).
+**Camadas:** Deploy (script), Testes
+**Responsável:** 🟡 BackBrain (opções do `seed-producao.sh`) → 🔴 TestBrain; execução real pelo **usuário** com `sudo`
+**Origem:** DEPLOY-07 (Lote 33, 2026-11-04); continua a pendência do TST-15. Histórico do card no Lote 36: `feito.md`.
+
+**Feito no Lote 36:**
+- (c) `shellcheck`: 10 achados resolvidos (SC1007 corrigido com `GOFLAGS=''` em `scripts/setup-linux.sh`; SC2015/SC2016 com `# shellcheck disable=` e motivo); `SHELLCHECK_MIN=0.8.0` em `scripts/versoes.conf`; instalação por apt/winget em `scripts/setup-linux.sh`/`scripts/setup-windows.ps1` (só avisa se faltar); alvo novo `make shellcheck`. O `TestTST15_ScriptsDeploy_Shellcheck` cobre todas as severidades e `scripts/*.sh`; o novo `TestTST17_ShellcheckDisableComMotivo` exige o motivo em cada disable.
+- (a) Teste real criado: `SH/tests/deploy/tst17_seed_producao_real_test.go` (`TST17_DOCKER=1` + root; base em `/root/tst17-*` com 700). Recusa rodar no servidor de produção (`recusaProducaoTST17`, `TestTST17_RecusaProducao`).
+
+**Falta:**
+1. 🟡 BackBrain: opções de isolamento no `deploy/seed-producao.sh`: `--container`, `--rede-nome`, `--ip-admin`, `--segredos-dir`, `--ssl-dir` e `--trabalho-dir`. Hoje o script fixa `rotaperfumes-mariadb`, `rotaperfumes-db`, `172.30.42.20`, `/root/rotaperfumes-mariadb`, `/etc/mysql/ssl/ca.pem` e o `mktemp` em `/root`. Padrão = comportamento atual; validar os diretórios como o `conferir_dir_privado` do TST-16 (passar pelo 🟣 SecBrain). Enquanto isso, o `TestTST17_*_Real` pula.
+2. **Usuário:** rodar com `sudo` o `TestTST15_MariadbDocker_Real` (`sudo TST15_DOCKER=1 ...`) e, depois do item 1, o teste real do TST17 (`TST17_DOCKER=1`), **nunca no servidor de produção**. O agente não usa sudo.
+3. **Usuário (observação):** o `make setup-check` já falhava antes do lote (Go 1.26.0 local ausente/`covdata`, segundo o 🔴 TestBrain); conferir.
+
+**Critério de aceite:** `TestTST15_MariadbDocker_Real` e o teste real do TST17 verdes como root numa máquina que não seja o servidor; `seed-producao.sh` com as opções novas e testes estáticos/ensaio cobrindo-as.
+
+---
+
+## BUG-29: `MAKEFLAGS=...` na linha de comando apaga `ENV_ARQUIVO`/`CONFIRMAR`/`CONFIRMO_PRODUCAO` nos sub-makes — prioridade MÉDIA
+
+**Status:** pendente.
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** incidente do Lote 36 (registrado em `feito.md`, "Lote 36 de 2026-11-05").
+
+**Descrição:** com `MAKEFLAGS=-k` (ou outro valor) passado como variável na linha de comando, o `MAKEFLAGS` do pai é substituído e as variáveis de linha de comando (`ENV_ARQUIVO`, `CONFIRMAR`, `CONFIRMO_PRODUCAO`) não chegam aos sub-makes. O `test-integration` (e os sub-makes do BUG-27, `db-reset`/`db-rebuild`) caem no `.env` padrão **sem avisar**. No Lote 36 isso levou o `test-integration` ao CasaOS dev (`192.168.168.106:3307`); as conexões falharam no TLS e nada foi escrito.
+
+**Sugestão:** o sub-make recebe o arquivo já resolvido por uma variável interna dedicada e recusa a execução se o `ENV_ARQUIVO_LIDO` divergir do pai (ou o `test-integration` exige `ENV_ARQUIVO` explícito). **Confirmar** se o `CONFIRMAR`/`CONFIRMO_PRODUCAO` some nos sub-makes (fail-closed: o DROP/escrita seria recusado) ou não.
+
+**Critério de aceite:** teste com `MAKEFLAGS=-k` na linha de comando: o sub-make do `test-integration` (e do `db-reset`/`db-rebuild`) usa o mesmo arquivo do pai ou recusa; comportamento do `CONFIRMAR`/`CONFIRMO_PRODUCAO` documentado e coberto; testes do SEC-46/SEC-50/SEC-53/SEC-54/BUG-27 continuam verdes.
+
+---
+
+## SEC-58: chave do repositório MariaDB instalada sem conferir o fingerprint em `scripts/setup-linux.sh` — prioridade BAIXA
+
+**Status:** pendente (possivelmente anterior ao lote).
+**Camadas:** Scripts (setup), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão do Lote 36.
+
+**Descrição:** a chave de assinatura do repositório MariaDB (`scripts/setup-linux.sh`, ~:517-520) é baixada por HTTPS e instalada sem conferir o fingerprint.
+
+**Correção:** fingerprint fixado em `scripts/versoes.conf`; `gpg --show-keys` e comparação antes do `install`; falha se divergir.
+
+**Critério de aceite:** teste (estático ou ensaio) que recusa a chave com fingerprint diferente; `make shellcheck` verde.
+
+---
+
+## TST-23: testes de integração que comparam `NOW()` do banco com o relógio da API dependem do `time_zone` — prioridade BAIXA (informativo)
+
+**Status:** pendente.
+**Camadas:** Testes, Database (conexão)
+**Responsável:** 🔴 TestBrain (com 🌸 DataBrain/🟡 BackBrain se mexer no DSN)
+**Origem:** 🔴 TestBrain no TST-22 (Lote 36).
+
+**Descrição:** no TST-22, o `revoked_at` gravado com `NOW()` do MariaDB (UTC) contra a API em -03 derrubou testes; foi corrigido usando o relógio do Go (`c.haSegundos`). Qualquer teste que compare `NOW()` do banco com o relógio da API depende do `time_zone` do servidor. Não foi achado esse uso em produção.
+
+**Ação esperada:** avaliar fixar o `time_zone` na conexão (DSN `loc`/`time_zone`) ou criar uma regra/catraca nos testes contra `NOW()` comparado ao relógio da API.
+
+**Critério de aceite:** decisão registrada; se houver correção, testes de integração verdes com o servidor em UTC e em -03.
+
+---
+
 # Achados do Lote 35, 2026-11-05
 
 > Ressalvas da revisão final do 🟣 SecBrain no Lote 35 (`feito.md`, "Lote 35 de 2026-11-05"). Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
@@ -132,24 +207,9 @@
 
 > Pendências do Lote 34 (`feito.md`, "Lote 34 de 2026-11-04"), levantadas pelo 🟣 SecBrain e pelo 🔴 TestBrain. Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
 
+> **2026-11-05 (Lote 36):** TST-22 foi para o Lote 36 (`fazendo.md`). Este bloco fica sem cards pendentes.
+>
 > **2026-11-05 (Lote 35):** BUG-27, SEC-54, TST-19, SEC-55, TST-20 e TST-21 foram para o Lote 35 (`fazendo.md`).
-
----
-
-## TST-22: rodar os testes de integração com o helper do SEC-50 contra um MariaDB descartável — prioridade BAIXA
-
-**Status:** pendente (execução; exige um banco descartável: CasaOS `192.168.168.106:3307` ou loopback).
-**Camadas:** Testes
-**Responsável:** 🔴 TestBrain (com o arquivo de ambiente fornecido pelo usuário)
-**Origem:** 🔴 TestBrain no Lote 34 (2026-11-04).
-
-**Descrição:** no Lote 34, os 22 pontos de integração migrados para `SH/testkit/integracao` foram verificados só com `INTEGRATION` desligado (42 SKIP) e pela recusa da produção. O **caminho de sucesso** com o helper novo não rodou contra um banco real.
-
-**A fazer:** `make test-integration ENV_ARQUIVO=integracao.env` com um `integracao.env` apontando para o CasaOS :3307 ou para o loopback (nunca o `.env` local, que aponta para a produção).
-
-**Critério de aceite:** testes de integração verdes contra o banco descartável; nenhuma conexão à produção.
-
-**Relacionado:** TST-17 (testes reais com Docker).
 
 ---
 
@@ -197,21 +257,9 @@
 
 ---
 
-## TST-17: testes reais com Docker do `seed-producao.sh` e do `mariadb-docker.sh` (`TST15_DOCKER=1`) e `shellcheck` nos scripts — prioridade MÉDIA
-
-**Status:** pendente (exige uma máquina com Docker que **não** seja o servidor; esta máquina não tem acesso ao socket do Docker).
-**Camadas:** Testes, Deploy
-**Responsável:** 🔴 TestBrain (usuário roda onde houver Docker)
-**Origem:** DEPLOY-07 (Lote 33, 2026-11-04); continua a pendência do TST-15.
-
-**Descrição:**
-- O `deploy/seed-producao.sh` só tem testes estáticos e de ensaio (`deploy07_seed_producao_test.go`, `deploy07_seed_producao_ensaio_test.go`). Falta um teste real, no padrão do `TestTST15_MariadbDocker_Real`: container descartável criado pelo `mariadb-docker.sh`, seed, conferências (13 tabelas, admin `1 1 1`, 0 não-admin ativos), recusa da 2ª execução e `--forcar`.
-- O `TestTST15_MariadbDocker_Real` (`TST15_DOCKER=1`) ainda não rodou (`docs/deploy-servidor.md` §11, passo 12).
-- O `shellcheck` não está instalado no ambiente: incluir no `make setup`/`scripts/versoes.conf` (ou documentar) e rodar em `deploy/*.sh` e `scripts/*.sh`.
-
-**Relacionado:** TST-16 (isolamento do teste real do `mariadb-docker.sh`).
-
-**Nota 2026-11-04:** a máquina do admin (`192.168.168.105`, `residentivo-MS-7E28`) tem Docker, mas o usuário `residentivo` não está no grupo `docker` (`permission denied` no socket) e a sessão do agente não tem sudo. **Aguardando o usuário** rodar `sudo usermod -aG docker residentivo` e reabrir a sessão. O `shellcheck` também não está instalado nessa máquina.
+> **2026-11-05 (fechamento do Lote 36):** o TST-17 voltou **parcial** e está no bloco "Achados do Lote 36" (acima).
+>
+> **2026-11-05 (Lote 36):** TST-17 foi para o Lote 36 (`fazendo.md`); o acesso ao Docker foi resolvido pelo usuário (`usermod -aG docker`; sessão do agente via `sg docker`; `shellcheck` instalado).
 
 ---
 
@@ -273,6 +321,8 @@
 
 ---
 
+> **2026-11-05 (Lote 36):** DB-07 e TST-16 foram para o Lote 36 (`fazendo.md`) e foram concluídos (`feito.md`, "Lote 36 de 2026-11-05").
+>
 > **2026-11-05 (Lote 35):** FE-18 e CHORE-16 foram para o Lote 35 (`fazendo.md`).
 >
 > **2026-11-04 (Lote 34):** SEC-46, SEC-49 e CHORE-15 foram para o **Lote 34** e estão concluídos (`feito.md`).
@@ -339,21 +389,6 @@
 
 ---
 
-## DB-07: ligar `ONLY_FULL_GROUP_BY` no `SQL_MODE` do `mariadb-docker.sh` — prioridade BAIXA
-
-**Status:** pendente; depende de um MariaDB descartável para a integração.
-**Camadas:** Database, Testes
-**Responsável:** 🌸 DataBrain → 🔴 TestBrain
-**Origem:** DB-04 + DB-06 (Lote 30, 2026-11-02): o modo ficou desligado.
-
-**Descrição:** o `SQL_MODE` do `deploy/mariadb-docker.sh` ficou sem `ONLY_FULL_GROUP_BY`; um `GROUP BY` incompleto devolve valores arbitrários em vez de erro. O `sqlSerieVendas` já foi ajustado (`GROUP BY` da data).
-
-**Ação esperada:** rodar a suíte de integração (`INTEGRATION=1`) num MariaDB descartável com o modo ligado; corrigir as consultas que falharem; incluir o modo no `SQL_MODE` e documentar.
-
-**Critério de aceite:** integração verde com o modo ligado; `mariadb-docker.sh` e `docs/deploy-servidor.md` atualizados.
-
----
-
 ## BUG-25: usuário apagado no meio da troca da própria senha responde 500 — prioridade BAIXA (decisão)
 
 **Status:** pendente; **decisão** do 🟣 SecBrain/🤍 MegaBrain.
@@ -366,21 +401,6 @@
 **Ação esperada:** decidir se a troca da própria senha passa a 404 (ou 401 de sessão inválida, como no refresh do BUG-23); aplicar e testar.
 
 **Critério de aceite:** decisão registrada; teste do caso; contrato documentado.
-
----
-
-## TST-16: isolamento do teste real do `mariadb-docker.sh` e concorrência real do BUG-22 — prioridade BAIXA
-
-**Status:** pendente; depende de Docker/banco descartável.
-**Camadas:** Deploy (script), Testes
-**Responsável:** 🌸 DataBrain → 🔴 TestBrain
-**Origem:** TST-15 (Lote 30) e BUG-22 (Lote 31), 2026-11-02.
-
-**Descrição:** o `TestTST15_MariadbDocker_Real` usa os diretórios padrão de segredos e da CA do script, então não fica isolado de uma instalação real na mesma máquina. O BUG-22 não teve teste de concorrência contra banco real.
-
-**Ação esperada:** opções `--segredos-dir` e `--ca-dir` no `deploy/mariadb-docker.sh`, usadas pelo teste real com diretórios temporários; teste de integração com toggles concorrentes (clientes e usuários) num banco descartável.
-
-**Critério de aceite:** teste real sem tocar em `/root`; teste de concorrência verde; docs do script atualizadas.
 
 ---
 
