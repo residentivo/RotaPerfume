@@ -2,7 +2,137 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-11-04 (decisões do usuário após o Lote 34, repassadas pelo 🤍 MegaBrain; 🔵 SubBrain): **OPS-02** (SMTP de produção configurado pelo usuário, por ora via Gmail) e **CHORE-18** (hostname do servidor confirmado, sem alteração de código) foram concluídos (bloco "Decisões do usuário de 2026-11-04 (após o Lote 34)" logo abaixo). O DOC-09 continua em `afazer.md` (o `CLAUDE.md` não foi alterado pelo agente).
+> Atualizado em 2026-11-05 (fechamento do Lote 35, 🔵 SubBrain): o **Lote 35** (BUG-27, SEC-54, TST-19, SEC-55, TST-20, TST-21, FE-18 e CHORE-16) foi concluído (bloco "Lote 35 de 2026-11-05" logo abaixo; commitado na `main` pelo 🤍 MegaBrain, a pedido do usuário). Dele saíram 3 cards em `afazer.md` (bloco "Achados do Lote 35"): SEC-56, SEC-57 e BUG-28 (BAIXA).
+>
+> Antes, ainda em 2026-11-04 (decisões do usuário após o Lote 34, repassadas pelo 🤍 MegaBrain; 🔵 SubBrain): **OPS-02** (SMTP de produção configurado pelo usuário, por ora via Gmail) e **CHORE-18** (hostname do servidor confirmado, sem alteração de código) foram concluídos (bloco "Decisões do usuário de 2026-11-04 (após o Lote 34)" abaixo). O DOC-09 continua em `afazer.md` (o `CLAUDE.md` não foi alterado pelo agente).
+
+---
+
+## Lote 35 de 2026-11-05: 8 cards concluídos
+
+Aberto e fechado em 2026-11-05 pelo 🤍 MegaBrain (pedido do usuário: "continue com as tarefas a fazer, em seguida commit as alterações finalizadas"). Critério: executáveis sem o usuário, sem Docker e sem banco. Passos: 🟣 SecBrain especificando → 🟡 BackBrain + 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain fechando. **Commitado na `main`** pelo 🤍 MegaBrain, a pedido do usuário (o push na `main` dispara o deploy). Caminhos: `SH` = `backend/shared`.
+
+**Especificação (🟣 SecBrain), resumo:** BUG-27 com as 3 guardas como pré-requisitos diretos e a receita em cadeia de sub-makes (um por etapa), **sem** repassar `CONFIRMAR`/`CONFIRMO_PRODUCAO`/`ENV_ARQUIVO` à mão (repassar transformaria um valor do `.env`/ambiente em valor de linha de comando e furaria o "no `.env` não vale" do SEC-46/DEPLOY-07); SEC-54 com normalização textual igual no Makefile e no Go (trim, minúsculas, sem `[ ]`, sem pontos finais, sem `.local`, `::ffff:a.b.c.d` → `a.b.c.d`, outro literal com `:` que não seja `::1` = produção), porta não numérica = produção e allowlist só na integração; SEC-55 com `SEM_SEGREDOS` estrito; TST-19 por AST resolvendo pelo caminho do import; TST-20 com `tbFalso` e porta fechada no loopback; TST-21 com `script -qec` sobre o ensaio do DEPLOY-07; FE-18 com hook único e `useRef<Set>` síncrono; CHORE-16 renomeando só as funções. Risco residual registrado: loopback:3306 no próprio servidor pode ser a produção (hoje o banco não é publicado).
+
+**Testes finais (🔴 TestBrain):** `go clean -testcache && env -u INTEGRATION make -k test` com 10248 PASS, 0 FAIL e 41 SKIP (integração e Docker); cobertura `shared` 92,0%, API 94,5%, combinada 97,6%; `make lint` ok; `make test-frontend` com 43 arquivos e 1741 testes ok; `tsc` e `eslint` limpos. O 87,8% visto pelo 🟡 BackBrain durante o rename foi artefato de uma rodada com um pacote de teste sem perfil; não houve perda real de cobertura.
+
+**Revisão final (🟣 SecBrain):** aprovado com ressalvas (viraram SEC-56, SEC-57 e BUG-28).
+
+**Arquivos (`git status` no fechamento):**
+- Alterados: `Makefile`, `SH/testkit/integracao/integracao.go`, `SH/tests/config/sec11_makefile_sql_test.go`, `SH/tests/config/sec50_integracao_guarda_test.go`, `SH/tests/config/sec53_makefile_segredos_test.go`, `SH/tests/tools/seedusers/seedusers_test.go`, `SH/tools/seedusers/cli.go`, `SH/tools/seedusers/seedusers.go`, `docs/arquitetura-ddd.md`, `docs/deploy-servidor.md`, `docs/manual-base-de-dados.md`, `frontend/src/app/admin/clientes/page.tsx`, `frontend/src/app/admin/produtos/page.tsx`, `frontend/src/app/admin/usuarios/page.tsx` e os três arquivos de `tarefas/`.
+- Novos: `SH/tests/config/bug27_makefile_reset_rebuild_test.go`, `SH/tests/config/sec54_guarda_normalizada_test.go`, `SH/tests/config/tst19_catraca_conexao_test.go`, `SH/tests/config/tst20_integracao_abrir_erro_test.go`, `SH/tests/deploy/tst21_seed_terminal_real_linux_test.go`, `frontend/src/lib/useBloqueioToggle.ts`, `frontend/tests/app/admin/bloqueioToggle.test.tsx` e `frontend/tests/lib/useBloqueioToggle.test.ts`.
+
+**Docs (🟡 BackBrain):** `docs/deploy-servidor.md` §3.8, `docs/arquitetura-ddd.md` §10.9 e `docs/manual-base-de-dados.md`. Sem endpoint novo nem tela nova: coleção Postman e manual de telas sem mudança (o FE-18 só altera o tempo de bloqueio dos botões de ativo).
+
+**Pendência do usuário:** o 🟡 BackBrain sugeriu citar SEC-54, SEC-55 e BUG-27 no `CLAUDE.md` (parágrafo "Banco:"). **Não aplicada:** só o usuário altera o `CLAUDE.md`. Texto sugerido: "**SEC-54:** a guarda normaliza o `DB_HOST` (minúsculas, sem `[ ]`, sem pontos finais e `.local`, `::ffff:a.b.c.d` → `a.b.c.d`) e recusa porta não numérica; o `make test-integration` só aceita loopback ou o CasaOS `192.168.168.106:3307` (`db-guard-integracao`). **SEC-55:** os `go build` nunca recebem os segredos, nem com `INTEGRATION=1`. **BUG-27:** `db-reset`/`db-rebuild` rodam as etapas em sequência e param na primeira recusa, mesmo com `make -k`/`-j`."
+
+**Cards criados em `afazer.md`** (bloco "Achados do Lote 35"): SEC-56, SEC-57 e BUG-28 (BAIXA).
+
+---
+
+## BUG-27: `db-reset`/`db-rebuild` rodavam o `db-seed` com o DROP recusado (`make -k`) e tinham corrida com `-j` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 35).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 34.
+
+**Entregas:**
+- `db-reset` e `db-rebuild` têm só as 3 guardas como pré-requisitos (`db-guard-producao`, `db-guard-sem-producao`, `db-guard-drop`); a receita é `$(MAKE) db-down && $(MAKE) db-seed` e, no rebuild, mais os 8 `db-import-*` em cadeia (clientes, produtos, pedidos, pagamentos, carteiras, oportunidades, visitas, estoque).
+- **Decisão:** nada de `CONFIRMAR=$(CONFIRMAR)`, `CONFIRMO_PRODUCAO=...` ou `ENV_ARQUIVO=...` repassados à mão; os valores da linha de comando chegam pelo `MAKEFLAGS`. As guardas rodam de novo em cada sub-make (o AVISO aparece mais de uma vez; aceito).
+- Testes: `SH/tests/config/bug27_makefile_reset_rebuild_test.go` (`-k` com DROP recusado → nenhum `CREATE DATABASE`/seed; `-j4` com a ordem DROP → CREATE → DDL → seed → imports; `CONFIRMAR`/`CONFIRMO_PRODUCAO` do `.env`/ambiente sem valer nos sub-makes); SEC-46 verde. Lacunas fechadas pelo 🔴 TestBrain.
+
+**Pendência → card:** o `db-seed` sozinho ainda tem o `db-up` como pré-requisito (**BUG-28**).
+
+---
+
+## SEC-54: guarda de produção normalizada e allowlist na integração — 2026-11-05
+
+**Status:** ✅ concluído (Lote 35).
+**Camadas:** Config (Makefile), Backend (testkit), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain no Lote 34.
+
+**Entregas:**
+- Makefile: `NORMALIZA_HOST` e `HOST_LOOPBACK` usados no `PRODUCAO_DETECTA` e nos testes de loopback de `db-guard-drop`/`db-check-env`; porta não numérica = produção. Allowlist `INTEGRACAO_PERMITIDOS` (loopback em qualquer porta e `192.168.168.106` só na 3307) no alvo novo `db-guard-integracao`, usado pelo `test-integration` e pelo `GUARDA_INTEGRACAO`.
+- Go (`SH/testkit/integracao/integracao.go`): `normalizarHost`/`normalizarPorta` textuais (sem DNS, sem `net.ParseIP`); `Permitidos`, `ValidarPermitidoIntegracao` e `ErrHostNaoPermitido`, aplicados no `ConfigDoAmbiente` depois do `ValidarNaoProducao`.
+- Testes: `SH/tests/config/sec54_guarda_normalizada_test.go` com tabela de paridade Makefile × Go de 38 casos (+8 do 🔴 TestBrain), incluindo `IVO-INSPIRON-15-3530.local.`, `[::ffff:192.168.168.106]`, `::ffff:c0a8:a86a`, porta `+03306` e `abc`; `sec50_integracao_guarda_test.go` estendido à allowlist.
+- **Desvios da especificação** (aceitos pelo 🤍 MegaBrain e aprovados pelo 🟣 SecBrain, todos fail-closed): host que só bate depois de tirar o `.local` nunca vale como loopback nem allowlist; porta não numérica recusada em qualquer host; `[::ffff:192.168.168.106]:3307` = CasaOS.
+- **Risco residual aceito:** outro IP da máquina e loopback:3306 no próprio servidor (o destrutivo fora do loopback já exige `CONFIRMAR`).
+
+**Pendências → cards:** formas numéricas não canônicas do IPv4 (**SEC-56**); paridade da porta com espaço (**SEC-57**).
+
+---
+
+## TST-19: catraca para conexão com a config do ambiente sem o helper do SEC-50 — 2026-11-05
+
+**Status:** ✅ concluído (Lote 35).
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 34.
+
+**Entregas:** `SH/tests/config/tst19_catraca_conexao_test.go`: varredura AST de todos os `.go` de `backend/shared` e `backend/rotaperfumes-api`, resolvendo pelo caminho do import (`shared/config.Load`, `shared/db.Open`, `database/sql.Open`), com lista explícita de exceções (cada uma justificada) e detecção de exceção obsoleta; só o `testkit/integracao` fica fora.
+
+---
+
+## SEC-55: `SEM_SEGREDOS` estrito para build, lint e npm — 2026-11-05
+
+**Status:** ✅ concluído (Lote 35).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain no Lote 34.
+
+**Entregas:** `SEM_SEGREDOS` ficou estrito (sem a exceção do modo integração); `SEM_SEGREDOS_TESTE` (com a exceção do `INTEGRACAO_PELO_MAKE`) só nas 6 linhas `go test` (test-shared, cover-shared, test-api, cover-api e cover-combinada). `build-*`, `go tool cover`, `arch-check`, `lint`, `deps*` e npm usam o estrito. Testes: `SH/tests/config/sec53_makefile_segredos_test.go` atualizado, com `make build-api INTEGRATION=1` e `go` falso (nenhuma `DB_*`/`MYSQL_PWD`). Lacunas fechadas pelo 🔴 TestBrain.
+
+---
+
+## TST-20: ramo de erro de `integracao.Abrir` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 35).
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 34.
+
+**Entregas:** `SH/tests/config/tst20_integracao_abrir_erro_test.go` (`tbFalso`, `INTEGRATION=1`, `127.0.0.1` com a porta de um listener aberto e fechado na hora, variáveis de TLS zeradas; espera `Fatalf` com "indisponível", retorno nil e nenhum `Cleanup`; sem banco real). Cobertura de `SH/testkit/integracao`: 100%.
+
+---
+
+## TST-21: `seed-producao.sh` com terminal real (confirmação e pepper) — 2026-11-05
+
+**Status:** ✅ concluído (Lote 35).
+**Camadas:** Testes, Deploy
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 34 (BUG-26).
+
+**Entregas:** `SH/tests/deploy/tst21_seed_terminal_real_linux_test.go`: o ensaio do DEPLOY-07 (`unshare -rm`, `docker` falso) por baixo de `script -qec`, esperando o prompt antes de escrever; casos de pepper sem eco, dois peppers diferentes, `--forcar` com o nome errado e com o certo; o `docker` falso confere o pepper por `--env-file`, nunca pelo argv. Pula sem `script`/`unshare`; nesta máquina **rodou sem pular**.
+
+---
+
+## FE-18: bloqueio de 1500 ms nos botões de ativo de clientes e usuários — 2026-11-05
+
+**Status:** ✅ concluído (Lote 35).
+**Camada:** Frontend, Testes
+**Responsável:** 🟢 FrontBrain → 🔴 TestBrain
+**Origem:** BUG-22 (Lote 31), complemento.
+
+**Entregas:**
+- Hook novo `frontend/src/lib/useBloqueioToggle.ts`: ref síncrona + state (a closure antiga não deixa passar dois cliques no mesmo tick), bloqueio de 1500 ms no `finally`, timers limpos no unmount.
+- Aplicado em `frontend/src/app/admin/produtos/page.tsx` (refatoração do BUG-17, mesmo comportamento), `clientes/page.tsx` e `usuarios/page.tsx`.
+- Testes: `frontend/tests/lib/useBloqueioToggle.test.ts` (8) e `frontend/tests/app/admin/bloqueioToggle.test.tsx` (12).
+- **Mudança de comportamento:** em clientes e usuários, o botão de ativo fica desabilitado 1500 ms após cada toggle, inclusive com erro.
+
+---
+
+## CHORE-16: `seedusers` renomeado; pacotes `*mysql` mantidos — 2026-11-05
+
+**Status:** ✅ concluído (Lote 35; cosmético).
+**Camada:** Backend
+**Responsável:** 🟡 BackBrain
+**Origem:** CHORE-13/DOC-08 (Lote 30).
+
+**Entregas:** `RunMySQL` → `ExecutarSQLMariaDB` e `MySQLArgs` → `ArgsClienteMariaDB` em `SH/tools/seedusers/seedusers.go` e `cli.go`, com `--local-infile=0` nos args (alinhado ao `MYSQL_OPTS` do Makefile); `SH/tests/tools/seedusers/seedusers_test.go` atualizado.
+
+**Decisão (🤍 MegaBrain):** os 5 pacotes `*mysql` **não** foram renomeados: o nome segue o driver `go-sql-driver/mysql`, as allowlists de arquitetura os citam e o ganho seria só cosmético.
 
 ## DOC-09: `CLAUDE.md` com o banco de dev, o `seed-producao.sh` e a guarda de produção — prioridade BAIXA
 

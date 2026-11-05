@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import { User, UserRole } from "@/lib/types";
 import { vlog } from "@/lib/vlog";
+import { TOGGLE_BLOQUEIO_MS, useBloqueioToggle } from "@/lib/useBloqueioToggle";
 
 const FILE = "admin/usuarios/page.tsx";
 
@@ -364,8 +365,15 @@ function UsuariosPageContent() {
     setModalOpen(false);
   };
 
+  // FE-18: depois de cada toggle o botao fica bloqueado por TOGGLE_BLOQUEIO_MS
+  // (mesmo padrao do BUG-17 em produtos), para evitar cliques duplos.
+  vlog(FILE, "UsuariosPageContent", "inicializando bloqueio do toggle de ativo");
+  const toggleBloqueio = useBloqueioToggle<number>(TOGGLE_BLOQUEIO_MS);
+
   vlog(FILE, "UsuariosPageContent", "definindo handler handleToggleStatus");
   const handleToggleStatus = async (user: User) => {
+    vlog(FILE, "UsuariosPageContent.handleToggleStatus", "verificando bloqueio do toggle (id=%d)", user.id);
+    if (!toggleBloqueio.adquirir(user.id)) return;
     vlog(FILE, "UsuariosPageContent.handleToggleStatus", "calculando novo status (usuario_id=%d)", user.id);
     const novoStatus = !user.ativo;
     vlog(FILE, "UsuariosPageContent.handleToggleStatus", "definindo acao (novoStatus=%s)", novoStatus);
@@ -375,7 +383,10 @@ function UsuariosPageContent() {
       `Tem certeza que deseja ${acao} o usuario "${user.nome}"?`
     );
     vlog(FILE, "UsuariosPageContent.handleToggleStatus", "verificando confirmacao (ok=%s)", ok);
-    if (!ok) return;
+    if (!ok) {
+      toggleBloqueio.liberar(user.id);
+      return;
+    }
 
     vlog(FILE, "UsuariosPageContent.handleToggleStatus", "marcando acao toggle em andamento");
     setAction({ type: "toggle", userId: user.id });
@@ -402,6 +413,8 @@ function UsuariosPageContent() {
     } finally {
       vlog(FILE, "UsuariosPageContent.handleToggleStatus", "limpando acao em andamento");
       setAction({ type: null, userId: null });
+      vlog(FILE, "UsuariosPageContent.handleToggleStatus", "bloqueando o toggle por %d ms", TOGGLE_BLOQUEIO_MS);
+      toggleBloqueio.bloquear(user.id);
     }
   };
 
@@ -511,7 +524,10 @@ function UsuariosPageContent() {
         <button
           type="button"
           onClick={() => handleToggleStatus(u)}
-          disabled={action.type === "toggle" && action.userId === u.id}
+          disabled={
+            (action.type === "toggle" && action.userId === u.id) ||
+            toggleBloqueio.estaBloqueado(u.id)
+          }
           title={u.ativo ? "Clique para inativar" : "Clique para reativar"}
           className={[
             "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition-colors",

@@ -19,5 +19,5 @@ func CLI(args []string, amb cmdutil.Ambiente) error {
 	if err != nil {
 		return err
 	}
-	return Run(cfg, opts, Deps{Out: amb.Saida, ProjectRoot: cmdutil.FindProjectRoot, RunSQL: RunMySQL})
+	return Run(cfg, opts, Deps{Out: amb.Saida, ProjectRoot: cmdutil.FindProjectRoot, RunSQL: ExecutarSQLMariaDB})
 }

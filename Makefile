@@ -1,4 +1,4 @@
-.PHONY: help db-guard-producao db-guard-sem-producao db-guard-drop fix-admin test-integration reset-senhas-simular reset-senhas-ativos db-gerar-imagens-produtos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-produtos-imagem db-revert-produtos-imagem db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint \
+.PHONY: help db-guard-producao db-guard-sem-producao db-guard-drop db-guard-integracao fix-admin test-integration reset-senhas-simular reset-senhas-ativos db-gerar-imagens-produtos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-produtos-imagem db-revert-produtos-imagem db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint \
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
@@ -49,20 +49,28 @@ export
 # mas as receitas de go test/build/vet e npm rodam com $(SEM_SEGREDOS), que
 # tira (env -u) toda variavel declarada no arquivo lido (.env ou ENV_ARQUIVO)
 # e os segredos fixos abaixo, menos NEXT_PUBLIC_* (publicas, o build do
-# frontend precisa). Excecao: "make test-integration" chama o sub-make com
-# INTEGRATION=1 NA LINHA DE COMANDO (passando pelo db-guard-producao); so ai
-# as DB_* chegam ao go test. "INTEGRATION=1 make test" do shell fica sem
+# frontend precisa). Excecao (so no $(SEM_SEGREDOS_TESTE), SEC-55): "make
+# test-integration" chama o sub-make com INTEGRATION=1 NA LINHA DE COMANDO
+# (passando pelo db-guard-producao e pelo db-guard-integracao); so ai as DB_*
+# chegam ao go test. "INTEGRATION=1 make test" do shell fica sem
 # credenciais: os testes de integracao sao pulados.
 ENV_ARQUIVO_LIDO := $(if $(filter command line,$(origin ENV_ARQUIVO)),$(ENV_ARQUIVO),.env)
 VARS_DO_ENV := $(shell sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*[:?+]\{0,1\}=.*/\2/p' $(ENV_ARQUIVO_LIDO) 2>/dev/null)
 VARS_DB_INTEGRACAO := DB_HOST DB_PORT DB_NAME DB_USUARIO DB_SENHA DB_TLS_CA DB_TLS_SERVER_NAME DB_TLS_REQUIRED
 SEGREDOS_FIXOS := $(VARS_DB_INTEGRACAO) MYSQL_PWD MSYS2_ENV_CONV_EXCL MYSQL_OPTS MYSQL_TLS_OPTS DB_CLI PASSWORD_PEPPER JWT_SECRET SMTP_USER SMTP_PASSWORD TURNSTILE_SECRET_KEY SEED_ADMIN_PASSWORD
 INTEGRACAO_PELO_MAKE := $(and $(filter command line,$(origin INTEGRATION)),$(filter 1,$(INTEGRATION)))
-SEM_SEGREDOS = env $(addprefix -u ,$(sort $(filter-out NEXT_PUBLIC_% $(if $(INTEGRACAO_PELO_MAKE),$(VARS_DB_INTEGRACAO)),$(VARS_DO_ENV) $(SEGREDOS_FIXOS))))
+# SEC-55: SEM_SEGREDOS e estrito (sem excecao): go build, go tool cover,
+# go vet, go get/mod, govulncheck e npm nunca recebem DB_*/MYSQL_PWD, nem com
+# INTEGRATION=1. SEM_SEGREDOS_TESTE (so nas linhas "go test" de test-shared,
+# test-api, cover-shared, cover-api e cover-combinada) libera as DB_* quando
+# INTEGRATION=1 veio da linha de comando (test-integration).
+SEM_SEGREDOS = env $(addprefix -u ,$(sort $(filter-out NEXT_PUBLIC_%,$(VARS_DO_ENV) $(SEGREDOS_FIXOS))))
+SEM_SEGREDOS_TESTE = env $(addprefix -u ,$(sort $(filter-out NEXT_PUBLIC_% $(if $(INTEGRACAO_PELO_MAKE),$(VARS_DB_INTEGRACAO)),$(VARS_DO_ENV) $(SEGREDOS_FIXOS))))
 # Com as DB_* liberadas (INTEGRATION=1 na linha de comando), test-shared,
-# test-api, cover-*, arch-check e cover-combinada passam tambem pela guarda de producao (vale para
+# test-api, cover-*, arch-check e cover-combinada passam tambem pela guarda de
+# producao e pela allowlist da integracao (SEC-54; vale para
 # "make test INTEGRATION=1" chamado direto, sem o test-integration).
-GUARDA_INTEGRACAO := $(if $(INTEGRACAO_PELO_MAKE),db-guard-producao)
+GUARDA_INTEGRACAO := $(if $(INTEGRACAO_PELO_MAKE),db-guard-producao db-guard-integracao)
 
 # SEC-29/CHORE-13: com DB_TLS_CA no .env, o cliente mariadb conecta por TLS
 # conferindo a CA e o nome do servidor (--ssl-ca + --ssl-verify-server-cert;
@@ -110,8 +118,8 @@ setup-check: ## SETUP-01: só confere versões (inclui covdata e GOTOOLCHAIN, pr
 db-check-env: ## Confere DB_USUARIO/DB_SENHA (SEC-11), o TLS exigido para host remoto (SEC-42) e o cliente MariaDB (DB_CLIENTE_BIN)
 	@test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD" || { echo "SEC-11: defina DB_USUARIO/DB_SENHA no .env"; exit 1; }
 	@case "$(DB_TLS_REQUIRED)" in ""|true|false) ;; *) echo "SEC-42: DB_TLS_REQUIRED=$(DB_TLS_REQUIRED) invalido: use true ou false"; exit 1 ;; esac; \
-	h=$$(printf '%s' "$(DB_HOST)" | tr 'A-Z' 'a-z'); \
-	if [ "$$h" = localhost ] || [ "$$h" = ::1 ] || [ "$$h" = "[::1]" ] || printf '%s' "$$h" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$$'; then :; \
+	$(NORMALIZA_HOST); \
+	if $(HOST_LOOPBACK); then :; \
 	elif [ -n "$(DB_TLS_CA)" ]; then :; \
 	elif [ "$(DB_TLS_REQUIRED)" = false ]; then echo "AVISO (SEC-42): DB_TLS_REQUIRED=false: conexao SEM TLS com DB_HOST=$(DB_HOST) (fora do loopback); usuario e senha em texto claro"; \
 	else echo "SEC-42: DB_HOST=$(DB_HOST) nao e loopback (localhost, 127.x.x.x, ::1) e DB_TLS_CA esta vazio: defina DB_TLS_CA no .env (ou, so sabendo do risco, DB_TLS_REQUIRED=false)"; exit 1; fi
@@ -132,12 +140,27 @@ db-check-env: ## Confere DB_USUARIO/DB_SENHA (SEC-11), o TLS exigido para host r
 # permanente). O seed inicial de producao e o deploy/seed-producao.sh.
 PRODUCAO_HOSTS_LAN := 192.168.168.106 ivo-inspiron-15-3530
 PRODUCAO_HOSTS_REDE := rotaperfumes-mariadb 172.30.42.2
+# SEC-54: normalizacao textual do DB_HOST (sem DNS), a mesma do
+# normalizarHost do backend/shared/testkit/integracao (paridade testada):
+# espacos nas pontas, minusculas, "[" e "]" das pontas, todos os "." finais,
+# um sufixo ".local" ($$eralocal=true) e IPv4 mapeado em IPv6
+# (::ffff:a.b.c.d e 0:0:0:0:0:ffff:a.b.c.d viram a.b.c.d). Define $$h.
+NORMALIZA_HOST = h=$$(printf '%s' "$(DB_HOST)" | tr 'A-Z' 'a-z' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$$//' -e 's/^\[//' -e 's/\]$$//' -e 's/\.*$$//'); \
+	eralocal=false; case "$$h" in *.local) h=$${h%.local}; eralocal=true ;; esac; \
+	h=$$(printf '%s' "$$h" | sed -e 's/^::ffff:\([0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}\)$$/\1/' -e 's/^0:0:0:0:0:ffff:\([0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}\)$$/\1/')
+# Loopback (localhost, ::1, 127.x.x.x) depois do NORMALIZA_HOST; nome com
+# ".local" (mDNS, pode ser qualquer maquina) nunca conta como loopback.
+HOST_LOOPBACK = { ! $$eralocal && { [ "$$h" = localhost ] || [ "$$h" = ::1 ] || printf '%s' "$$h" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$$'; }; }
 # SEC-46: deteccao reutilizada pelas guardas (define $$h, $$porta e $$prod no
 # shell da receita). A porta e normalizada como numero ("+"/zeros a esquerda:
 # 03306 e 3306 para o cliente mariadb e para o Go), igual ao SEC-50. O SEC-50 aplica a mesma regra nos testes Go
-# (backend/shared/testkit/integracao; paridade testada).
-PRODUCAO_DETECTA = h=$$(printf '%s' "$(DB_HOST)" | tr 'A-Z' 'a-z' | sed 's/\.$$//'); \
+# (backend/shared/testkit/integracao; paridade testada). SEC-54: porta nao
+# numerica e literal com ":" que nao seja ::1 (IPv6) contam como PRODUCAO
+# (fail-closed).
+PRODUCAO_DETECTA = $(NORMALIZA_HOST); \
 	porta=$$(printf '%s' "$(DB_PORT)" | sed 's/^+//; s/^0*\([0-9]\)/\1/'); prod=false; \
+	pnum="$(DB_PORT)"; case "$$pnum" in +) prod=true ;; esac; case "$${pnum\#+}" in *[!0-9]*) prod=true ;; esac; \
+	case "$$h" in ::1) ;; *:*) prod=true ;; esac; \
 	for p in $(PRODUCAO_HOSTS_REDE); do [ "$$h" = "$$p" ] && prod=true; done; \
 	for p in $(PRODUCAO_HOSTS_LAN); do \
 	  if [ "$$h" = "$$p" ] && { [ -z "$$porta" ] || [ "$$porta" = 3306 ]; }; then prod=true; fi; \
@@ -169,14 +192,35 @@ db-guard-sem-producao: ## SEC-46: recusa db-down/db-reset/db-rebuild/db-seed na 
 # lista, exige CONFIRMAR=<DB_NAME> NA LINHA DE COMANDO (no .env ou no
 # ambiente nao vale). Loopback ou outro nome de banco: sem pergunta.
 db-guard-drop: ## SEC-46: DROP DATABASE rotaperfumes fora do loopback exige CONFIRMAR=<DB_NAME> na linha de comando
-	@h=$$(printf '%s' "$(DB_HOST)" | tr 'A-Z' 'a-z'); \
-	if [ "$$h" = localhost ] || [ "$$h" = ::1 ] || [ "$$h" = "[::1]" ] || printf '%s' "$$h" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$$'; then exit 0; fi; \
+	@$(NORMALIZA_HOST); \
+	if $(HOST_LOOPBACK); then exit 0; fi; \
 	[ "$$(printf '%s' "$(DB_NAME)" | tr 'A-Z' 'a-z')" = rotaperfumes ] || exit 0; \
 	porta="$(DB_PORT)"; \
 	if [ "$(origin CONFIRMAR)" = "command line" ] && [ "$(CONFIRMAR)" = "$(DB_NAME)" ]; then \
 	  echo "AVISO (SEC-46): DROP DATABASE $(DB_NAME) em $(DB_HOST):$${porta:-3306} confirmado por CONFIRMAR=$(DB_NAME)."; exit 0; \
 	fi; \
 	echo "SEC-46: DROP DATABASE $(DB_NAME) em $(DB_HOST):$${porta:-3306} (fora do loopback): repita com CONFIRMAR=$(DB_NAME) na linha de comando (no .env ou no ambiente nao vale)."; \
+	exit 1
+
+# SEC-54: allowlist dos testes de integracao (test-integration e GUARDA_INTEGRACAO),
+# a mesma de integracao.Permitidos no Go (paridade testada). "host" vale em
+# qualquer porta; "host:porta", so nessa porta (DB_PORT vazio = 3306);
+# 127.0.0.0/8 e o loopback IPv4 (textual). O CasaOS de dev so na 3307. Nome
+# com ".local" nunca passa. Os alvos db-* continuam com a blocklist do
+# db-guard-producao (outro IP da maquina: risco residual aceito).
+INTEGRACAO_PERMITIDOS := localhost 127.0.0.0/8 ::1 192.168.168.106:3307
+db-guard-integracao: ## SEC-54: testes de integracao so no loopback ou no CasaOS de dev (192.168.168.106:3307)
+	@$(PRODUCAO_DETECTA); \
+	ok=false; $$prod || $$eralocal || for e in $(INTEGRACAO_PERMITIDOS); do \
+	  case "$$e" in \
+	    127.0.0.0/8) printf '%s' "$$h" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$$' && ok=true ;; \
+	    *:*:*) [ "$$h" = "$$e" ] && ok=true ;; \
+	    *:*) [ "$$h:$${porta:-3306}" = "$$e" ] && ok=true ;; \
+	    *) [ "$$h" = "$$e" ] && ok=true ;; \
+	  esac; \
+	done; \
+	$$ok && exit 0; \
+	echo "SEC-54: DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) fora da allowlist da integracao ($(INTEGRACAO_PERMITIDOS)): use um MariaDB descartavel no loopback ou o dev do CasaOS (porta 3307)."; \
 	exit 1
 
 db-create: db-guard-producao db-check-env ## Cria o banco de dados se não existir
@@ -210,7 +254,17 @@ db-seed: db-guard-producao db-guard-sem-producao db-up ## Cria o schema, carrega
 db-down: db-guard-producao db-guard-sem-producao db-guard-drop db-check-env ## Dropa o banco de dados (CUIDADO!)
 	$(DB_CLI) -e "DROP DATABASE IF EXISTS $(DB_NAME);"
 
-db-reset: db-guard-producao db-guard-sem-producao db-guard-drop db-down db-seed ## Recria o banco do zero com hashes validos
+# BUG-27: as 3 guardas sao pre-requisitos diretos; db-down, db-seed e os
+# db-import-* rodam na receita, um sub-make por etapa encadeado por "&&". Com
+# make -k a receita nem roda se uma guarda falhar e o "&&" para na primeira
+# etapa que falhar (um sub-make so com varios goals continuaria com o -k
+# herdado); com -j cada etapa so comeca depois da anterior. CONFIRMAR,
+# CONFIRMO_PRODUCAO e ENV_ARQUIVO NAO sao repassados a mao: os da linha de
+# comando ja chegam pelo MAKEFLAGS (origin = command line); repassar
+# transformaria um valor do .env/ambiente em linha de comando (SEC-46).
+# As guardas rodam de novo em cada sub-make (o AVISO pode repetir).
+db-reset: db-guard-producao db-guard-sem-producao db-guard-drop ## Recria o banco do zero com hashes validos (db-down && db-seed em sequencia; para no 1o erro, mesmo com -k/-j: BUG-27)
+	$(MAKE) db-down && $(MAKE) db-seed
 
 db-fix-deve-trocar-senha: db-guard-producao db-check-env ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
 	$(DB_CLI) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
@@ -301,7 +355,14 @@ db-import-visitas: db-guard-producao ## Importa dados/crm/visitas.csv para a tab
 db-import-estoque: db-guard-producao ## Importa dados/erp/estoque.csv para a tabela estoque (upsert idempotente, depende de produtos já importados)
 	cd backend/shared && go run ./cmd/importestoque
 
-db-rebuild: db-guard-producao db-guard-sem-producao db-guard-drop db-down db-seed db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque ## Recria o banco do zero e importa todos os dados
+# BUG-27: mesma cadeia do db-reset, seguida dos imports na ordem das
+# dependencias, um sub-make por etapa.
+db-rebuild: db-guard-producao db-guard-sem-producao db-guard-drop ## Recria o banco do zero e importa todos os dados (db-down && db-seed && db-import-*, em sequencia: BUG-27)
+	$(MAKE) db-down && $(MAKE) db-seed && \
+	$(MAKE) db-import-clientes && $(MAKE) db-import-produtos && \
+	$(MAKE) db-import-pedidos && $(MAKE) db-import-pagamentos && \
+	$(MAKE) db-import-carteiras && $(MAKE) db-import-oportunidades && \
+	$(MAKE) db-import-visitas && $(MAKE) db-import-estoque
 
 db-export: ## Exporta as tabelas do banco para CSV em export/crm e export/erp (mesmo formato de dados/)
 	cd backend/shared && go run ./cmd/exportdados
@@ -351,18 +412,18 @@ frontend-deps: ## Instala dependências npm do frontend (roda uma vez)
 test: test-shared test-api ## Roda todos os testes Go (requer Go local na versão do go.mod, com covdata: ver make setup-check / TST-08)
 
 test-shared: $(GUARDA_INTEGRACAO) ## Testes do pacote compartilhado (em tests/, cobertura medida com -coverpkg=./...)
-	cd backend/shared && $(SEM_SEGREDOS) go test ./... $(GO_TEST_FLAGS) -v -coverpkg=./... -coverprofile=coverage.txt
+	cd backend/shared && $(SEM_SEGREDOS_TESTE) go test ./... $(GO_TEST_FLAGS) -v -coverpkg=./... -coverprofile=coverage.txt
 
 cover-shared: $(GUARDA_INTEGRACAO) ## Cobertura do shared: total + relatório HTML (backend/shared/coverage.html)
-	cd backend/shared && $(SEM_SEGREDOS) go test ./... -coverpkg=./... -coverprofile=coverage.txt
+	cd backend/shared && $(SEM_SEGREDOS_TESTE) go test ./... -coverpkg=./... -coverprofile=coverage.txt
 	cd backend/shared && $(SEM_SEGREDOS) go tool cover -func=coverage.txt | tail -1
 	cd backend/shared && $(SEM_SEGREDOS) go tool cover -html=coverage.txt -o coverage.html
 
 test-api: $(GUARDA_INTEGRACAO) build-shared ## Testes da API (em tests/, cobertura medida com -coverpkg=./...)
-	cd backend/rotaperfumes-api && $(SEM_SEGREDOS) go test ./... $(GO_TEST_FLAGS) -v -coverpkg=./... -coverprofile=coverage.txt
+	cd backend/rotaperfumes-api && $(SEM_SEGREDOS_TESTE) go test ./... $(GO_TEST_FLAGS) -v -coverpkg=./... -coverprofile=coverage.txt
 
 cover-api: $(GUARDA_INTEGRACAO) build-shared ## Cobertura da API: total + relatório HTML (backend/rotaperfumes-api/coverage.html)
-	cd backend/rotaperfumes-api && $(SEM_SEGREDOS) go test ./... -coverpkg=./... -coverprofile=coverage.txt
+	cd backend/rotaperfumes-api && $(SEM_SEGREDOS_TESTE) go test ./... -coverpkg=./... -coverprofile=coverage.txt
 	cd backend/rotaperfumes-api && $(SEM_SEGREDOS) go tool cover -func=coverage.txt | tail -1
 	cd backend/rotaperfumes-api && $(SEM_SEGREDOS) go tool cover -html=coverage.txt -o coverage.html
 
@@ -375,22 +436,23 @@ arch-check: $(GUARDA_INTEGRACAO) ## ARQ-01: testes de arquitetura (dependências
 # shared, somada à do módulo shared (blocos mesclados: um bloco conta como
 # coberto se algum dos dois perfis o cobrir).
 cover-combinada: $(GUARDA_INTEGRACAO) build-shared ## ARQ-01: cobertura combinada API+shared (-coverpkg cobrindo os dois módulos, blocos mesclados)
-	cd backend/shared && $(SEM_SEGREDOS) go test ./... -coverpkg=./... -coverprofile=coverage-combinada-shared.txt
-	cd backend/rotaperfumes-api && $(SEM_SEGREDOS) go test ./... -coverpkg=./...,github.com/rotaperfumes/shared/... -coverprofile=coverage-combinada-api.txt
+	cd backend/shared && $(SEM_SEGREDOS_TESTE) go test ./... -coverpkg=./... -coverprofile=coverage-combinada-shared.txt
+	cd backend/rotaperfumes-api && $(SEM_SEGREDOS_TESTE) go test ./... -coverpkg=./...,github.com/rotaperfumes/shared/... -coverprofile=coverage-combinada-api.txt
 	awk 'NR == 1 { print; next } FNR == 1 { next } { chave = $$1 " " $$2; if (!(chave in n) || $$3 > n[chave]) n[chave] = $$3 } END { for (c in n) print c, n[c] }' \
 		backend/rotaperfumes-api/coverage-combinada-api.txt backend/shared/coverage-combinada-shared.txt > backend/rotaperfumes-api/coverage-combinada.txt
 	cd backend/rotaperfumes-api && $(SEM_SEGREDOS) go tool cover -func=coverage-combinada.txt | tail -1
 
 # Integração: além de INTEGRATION=1, os testes precisam das DB_* no ambiente
 # (SEC-11). SEC-53: o sub-make recebe INTEGRATION=1 NA LINHA DE COMANDO, e só
-# assim o $(SEM_SEGREDOS) deixa as DB_* chegarem ao go test (MYSQL_PWD,
-# PASSWORD_PEPPER, JWT_SECRET e SMTP_* nunca). SEC-50: os testes recusam a
-# produção antes de conectar (backend/shared/testkit/integracao), sem
-# válvula. Os pacotes usam o mesmo banco: GO_TEST_FLAGS="-p 1 -count=1"
+# assim o $(SEM_SEGREDOS_TESTE) deixa as DB_* chegarem ao go test (MYSQL_PWD,
+# PASSWORD_PEPPER, JWT_SECRET e SMTP_* nunca; go build/cover nunca, SEC-55).
+# SEC-50: os testes recusam a produção antes de conectar
+# (backend/shared/testkit/integracao), sem válvula. SEC-54: só loopback ou
+# o CasaOS :3307 (db-guard-integracao / integracao.Permitidos). Os pacotes usam o mesmo banco: GO_TEST_FLAGS="-p 1 -count=1"
 # (um pacote por vez, sem cache). Banco descartável fora do .env:
 #   make test-integration ENV_ARQUIVO=integracao.env
 # (ver docs/arquitetura-ddd.md §10.9).
-test-integration: db-guard-producao ## Roda testes de integração com -p 1 (requer MariaDB descartável e DB_*; recusa a producao; ver docs/arquitetura-ddd.md §10.9)
+test-integration: db-guard-producao db-guard-integracao ## Roda testes de integração com -p 1 (requer MariaDB descartável e DB_*; só loopback ou CasaOS :3307, SEC-54; ver docs/arquitetura-ddd.md §10.9)
 	$(MAKE) test INTEGRATION=1 GO_TEST_FLAGS="-p 1 -count=1"
 
 test-frontend:

@@ -68,6 +68,9 @@ func TestSEC50_ListasIguaisAoMakefile(t *testing.T) {
 	rede := strings.Fields(strings.SplitN(mk.linhaDaVariavel(t, "PRODUCAO_HOSTS_REDE"), "=", 2)[1])
 	assert.Equal(t, lan, integracao.ProducaoHostsLAN, "PRODUCAO_HOSTS_LAN do Makefile == integracao.ProducaoHostsLAN")
 	assert.Equal(t, rede, integracao.ProducaoHostsRede, "PRODUCAO_HOSTS_REDE do Makefile == integracao.ProducaoHostsRede")
+	// SEC-54: a allowlist da integração também é a mesma nos dois lados.
+	permitidos := strings.Fields(strings.SplitN(mk.linhaDaVariavel(t, "INTEGRACAO_PERMITIDOS"), "=", 2)[1])
+	assert.Equal(t, permitidos, integracao.Permitidos, "INTEGRACAO_PERMITIDOS do Makefile == integracao.Permitidos")
 }
 
 // ambienteIntegracao limpa as variáveis lidas pelo helper e aplica vars.

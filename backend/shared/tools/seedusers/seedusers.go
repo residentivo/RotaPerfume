@@ -60,7 +60,7 @@ type Options struct {
 	ShowPassword bool // -show-password: imprime as senhas em claro
 }
 
-// SQLRunner executa um arquivo SQL no banco de cfg (RunMySQL no comando).
+// SQLRunner executa um arquivo SQL no banco de cfg (ExecutarSQLMariaDB no comando).
 type SQLRunner func(cfg *config.Config, file string) error
 
 // Deps agrupa as dependências externas do Run, substituíveis em testes.
@@ -69,7 +69,7 @@ type Deps struct {
 	Out io.Writer
 	// ProjectRoot localiza a raiz do repositório (FindProjectRoot no comando).
 	ProjectRoot func() (string, error)
-	// RunSQL executa cada SQL renderizado (RunMySQL no comando).
+	// RunSQL executa cada SQL renderizado (ExecutarSQLMariaDB no comando).
 	RunSQL SQLRunner
 }
 
@@ -285,18 +285,18 @@ func RenderSeedFile(src, dstDir string, repl map[string]string) (dst string, n i
 	return dst, n, nil
 }
 
-// RunMySQL executa um arquivo SQL no MariaDB via cliente `mariadb` (exigido no
+// ExecutarSQLMariaDB executa um arquivo SQL no MariaDB via cliente `mariadb` (exigido no
 // PATH, sem fallback para o binário `mysql`), lendo o conteúdo via stdin.
 // A senha do banco é passada via variável de ambiente MYSQL_PWD (lida
 // nativamente pelo cliente mariadb) em vez de argumento de linha de comando
 // (-p senha), que ficaria visível para outros processos/usuários do sistema
 // via `ps`/Task Manager e no histórico de shell.
-func RunMySQL(cfg *config.Config, file string) error {
+func ExecutarSQLMariaDB(cfg *config.Config, file string) error {
 	sqlBytes, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("leitura de %s: %w", file, err)
 	}
-	cmd := exec.Command("mariadb", MySQLArgs(cfg)...)
+	cmd := exec.Command("mariadb", ArgsClienteMariaDB(cfg)...)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("MYSQL_PWD=%s", cfg.DBSenha))
 	cmd.Stdin = strings.NewReader(string(sqlBytes))
 	cmd.Stdout = os.Stdout
@@ -304,11 +304,13 @@ func RunMySQL(cfg *config.Config, file string) error {
 	return cmd.Run()
 }
 
-// MySQLArgs monta os argumentos do cliente mariadb (sem a senha, que vai via
-// MYSQL_PWD). ARQ-07 NB-F: sem --local-infile (o seed não usa LOAD DATA
-// LOCAL; ligado, um servidor malicioso poderia pedir arquivos locais).
-func MySQLArgs(cfg *config.Config) []string {
+// ArgsClienteMariaDB monta os argumentos do cliente mariadb (sem a senha,
+// que vai via MYSQL_PWD). ARQ-07 NB-F/CHORE-16: --local-infile=0 explícito,
+// igual ao MYSQL_OPTS do Makefile (o seed não usa LOAD DATA LOCAL; ligado, um
+// servidor malicioso poderia pedir arquivos locais).
+func ArgsClienteMariaDB(cfg *config.Config) []string {
 	return []string{
+		"--local-infile=0",
 		fmt.Sprintf("-u%s", cfg.DBUsuario),
 		fmt.Sprintf("-h%s", cfg.DBHost),
 		fmt.Sprintf("-P%s", cfg.DBPort),

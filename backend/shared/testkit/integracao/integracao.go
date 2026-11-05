@@ -1,8 +1,9 @@
 // Package integracao é o ponto de entrada único dos testes de integração Go
 // (SEC-50): lê INTEGRATION e DB_* do ambiente, recusa o banco de PRODUÇÃO
 // ANTES de qualquer conexão (mesma regra do db-guard-producao do Makefile,
-// sem válvula: integração nunca roda na produção) e só então carrega o TLS
-// (SEC-29/SEC-42) e abre o pool.
+// sem válvula: integração nunca roda na produção), aplica a allowlist da
+// integração (SEC-54: loopback ou o CasaOS de dev na 3307, igual ao
+// db-guard-integracao) e só então carrega o TLS (SEC-29/SEC-42) e abre o pool.
 //
 // Uso nos testes (dos dois módulos):
 //
@@ -17,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -36,6 +38,12 @@ var ProducaoHostsLAN = []string{"192.168.168.106", "ivo-inspiron-15-3530"}
 // produção em qualquer porta. Igual a PRODUCAO_HOSTS_REDE do Makefile.
 var ProducaoHostsRede = []string{"rotaperfumes-mariadb", "172.30.42.2"}
 
+// Permitidos (SEC-54): allowlist dos testes de integração, igual a
+// INTEGRACAO_PERMITIDOS do Makefile (paridade testada em shared/tests/config).
+// "host" vale em qualquer porta; "host:porta", só nessa porta; "127.0.0.0/8"
+// é o loopback IPv4 (textual). O CasaOS de dev (192.168.168.106) só na 3307.
+var Permitidos = []string{"localhost", "127.0.0.0/8", "::1", "192.168.168.106:3307"}
+
 // portaProducao é a porta do MariaDB de produção publicada na LAN.
 const portaProducao = 3306
 
@@ -46,14 +54,28 @@ var (
 	ErrSemCredenciais = errors.New("integracao: defina DB_USUARIO/DB_SENHA (SEC-11: sem default)")
 	// ErrBancoProducao: DB_HOST/DB_PORT apontam para o banco de produção.
 	ErrBancoProducao = errors.New("integracao: banco de PRODUÇÃO recusado")
+	// ErrHostNaoPermitido (SEC-54): DB_HOST/DB_PORT fora de Permitidos.
+	ErrHostNaoPermitido = errors.New("integracao: DB_HOST/DB_PORT fora da allowlist da integração")
 )
 
-// ValidarNaoProducao aplica a regra do db-guard-producao: host (sem espaços
-// nas pontas, minúsculo, sem "." final) em ProducaoHostsRede é produção em
-// qualquer porta; em ProducaoHostsLAN, com porta vazia ou 3306 (comparada
-// como número). Porta não numérica é erro.
+// ValidarNaoProducao aplica a regra do db-guard-producao (PRODUCAO_DETECTA
+// do Makefile; paridade testada em shared/tests/config), sem DNS:
+//   - porta não numérica (fora de "+"? e dígitos) é erro, em qualquer host;
+//   - host normalizado (normalizarHost) com ":" que não seja "::1" é
+//     produção (fail-closed para literais IPv6 que não são loopback);
+//   - host em ProducaoHostsRede é produção em qualquer porta; em
+//     ProducaoHostsLAN, com porta vazia ou 3306 (comparada como número).
 func ValidarNaoProducao(host, porta string) error {
-	h := normalizarHost(host)
+	p, ok := normalizarPorta(porta)
+	if !ok {
+		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão porta_nao_numerica_recusada")
+		return fmt.Errorf("integracao: DB_PORT=%q não é numérico (SEC-50/SEC-54)", porta)
+	}
+	h, _ := normalizarHost(host)
+	if strings.Contains(h, ":") && h != "::1" {
+		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão literal_ipv6_nao_loopback_recusado")
+		return erroProducao(host, porta)
+	}
 	if contem(ProducaoHostsRede, h) {
 		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão host_da_rede_docker_de_producao_recusado")
 		return erroProducao(host, porta)
@@ -62,26 +84,60 @@ func ValidarNaoProducao(host, porta string) error {
 		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão host_fora_da_producao_ok")
 		return nil
 	}
-	p := strings.TrimSpace(porta)
-	if p == "" {
-		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão host_lan_sem_porta_recusado")
+	if p == "" || p == strconv.Itoa(portaProducao) {
+		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão host_lan_porta_de_producao_recusado (porta=%q)", p)
 		return erroProducao(host, porta)
 	}
-	n, err := strconv.Atoi(p)
-	if err != nil {
-		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão porta_nao_numerica_recusada")
-		return fmt.Errorf("integracao: DB_PORT=%q não é numérico (SEC-50)", porta)
-	}
-	if n == portaProducao {
-		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão host_lan_porta_%d_recusado", n)
-		return erroProducao(host, porta)
-	}
-	vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão host_lan_outra_porta_ok (porta=%d)", n)
+	vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão host_lan_outra_porta_ok (porta=%s)", p)
 	return nil
 }
 
+// ValidarPermitidoIntegracao (SEC-54) aplica a allowlist da integração
+// (INTEGRACAO_PERMITIDOS do db-guard-integracao no Makefile): só os
+// destinos de Permitidos passam. Porta vazia conta como 3306. Host que
+// só bate depois de tirar o sufixo ".local" (nome mDNS, pode resolver para
+// qualquer máquina) não passa.
+func ValidarPermitidoIntegracao(host, porta string) error {
+	p, ok := normalizarPorta(porta)
+	if !ok {
+		vlog.Printf("integracao.go", "ValidarPermitidoIntegracao", "decisão porta_nao_numerica_recusada")
+		return erroNaoPermitido(host, porta)
+	}
+	if p == "" {
+		p = strconv.Itoa(portaProducao)
+	}
+	h, eraLocal := normalizarHost(host)
+	if eraLocal {
+		vlog.Printf("integracao.go", "ValidarPermitidoIntegracao", "decisão sufixo_local_recusado")
+		return erroNaoPermitido(host, porta)
+	}
+	for _, e := range Permitidos {
+		if permitidoCasa(e, h, p) {
+			vlog.Printf("integracao.go", "ValidarPermitidoIntegracao", "decisão permitido (regra=%s)", e)
+			return nil
+		}
+	}
+	vlog.Printf("integracao.go", "ValidarPermitidoIntegracao", "decisão fora_da_allowlist_recusado")
+	return erroNaoPermitido(host, porta)
+}
+
+// permitidoCasa: "127.0.0.0/8" casa 127.x.x.x (textual, como o grep do
+// Makefile); entrada com um só ":" é host:porta; o resto é o host em
+// qualquer porta ("::1", "localhost").
+func permitidoCasa(entrada, host, porta string) bool {
+	switch {
+	case entrada == "127.0.0.0/8":
+		return reLoopbackV4.MatchString(host)
+	case strings.Count(entrada, ":") == 1:
+		return entrada == host+":"+porta
+	default:
+		return entrada == host
+	}
+}
+
 // ConfigDoAmbiente monta a Config do banco a partir do ambiente, nesta
-// ordem: INTEGRATION=1, credenciais, guarda de produção e, só então, o TLS
+// ordem: INTEGRATION=1, credenciais, guarda de produção, allowlist da
+// integração (SEC-54) e, só então, o TLS
 // (LoadDBTLS lê a CA do disco) e o SEC-42. Não conecta.
 func ConfigDoAmbiente() (*config.Config, error) {
 	vlog.Printf("integracao.go", "ConfigDoAmbiente", "verificando INTEGRATION=1")
@@ -100,6 +156,9 @@ func ConfigDoAmbiente() (*config.Config, error) {
 		return nil, ErrSemCredenciais
 	}
 	if err := ValidarNaoProducao(cfg.DBHost, cfg.DBPort); err != nil {
+		return nil, err
+	}
+	if err := ValidarPermitidoIntegracao(cfg.DBHost, cfg.DBPort); err != nil {
 		return nil, err
 	}
 	vlog.Printf("integracao.go", "ConfigDoAmbiente", "carregando TLS do banco (LoadDBTLS)")
@@ -156,8 +215,51 @@ func erroProducao(host, porta string) error {
 	return fmt.Errorf("%w: DB_HOST=%q DB_PORT=%q é o banco de PRODUÇÃO; teste de integração recusado antes de conectar (SEC-50). Use o dev do CasaOS (porta 3307) ou um MariaDB descartável no loopback", ErrBancoProducao, host, porta)
 }
 
-func normalizarHost(host string) string {
-	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+func erroNaoPermitido(host, porta string) error {
+	return fmt.Errorf("%w: DB_HOST=%q DB_PORT=%q fora de %s (SEC-54); teste de integração recusado antes de conectar", ErrHostNaoPermitido, host, porta, strings.Join(Permitidos, " "))
+}
+
+var (
+	reLoopbackV4  = regexp.MustCompile(`^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$`)
+	reIPv4Mapeado = regexp.MustCompile(`^(?:::ffff:|0:0:0:0:0:ffff:)([0-9]{1,3}(?:\.[0-9]{1,3}){3})$`)
+	rePorta       = regexp.MustCompile(`^\+?[0-9]+$`)
+)
+
+// normalizarHost (SEC-54) é a mesma normalização textual do NORMALIZA_HOST
+// do Makefile, sem DNS: espaços nas pontas, minúsculas, "[" e "]" das
+// pontas, todos os "." finais, um sufixo ".local" e IPv4 mapeado em IPv6
+// (::ffff:a.b.c.d e 0:0:0:0:0:ffff:a.b.c.d viram a.b.c.d). eraLocal informa
+// se o sufixo ".local" foi tirado.
+func normalizarHost(host string) (h string, eraLocal bool) {
+	h = strings.ToLower(strings.TrimSpace(host))
+	h = strings.TrimPrefix(h, "[")
+	h = strings.TrimSuffix(h, "]")
+	h = strings.TrimRight(h, ".")
+	if sem, ok := strings.CutSuffix(h, ".local"); ok {
+		h, eraLocal = sem, true
+	}
+	if m := reIPv4Mapeado.FindStringSubmatch(h); m != nil {
+		h = m[1]
+	}
+	return h, eraLocal
+}
+
+// normalizarPorta (SEC-54): vazia fica vazia; senão exige "+"? e dígitos e
+// tira o "+" e os zeros à esquerda (03306 e +3306 viram 3306), igual ao
+// PRODUCAO_DETECTA do Makefile. ok=false para porta não numérica.
+func normalizarPorta(porta string) (p string, ok bool) {
+	p = strings.TrimSpace(porta)
+	if p == "" {
+		return "", true
+	}
+	if !rePorta.MatchString(p) {
+		return "", false
+	}
+	p = strings.TrimLeft(strings.TrimPrefix(p, "+"), "0")
+	if p == "" {
+		p = "0"
+	}
+	return p, true
 }
 
 func contem(lista []string, v string) bool {

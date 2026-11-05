@@ -49,7 +49,7 @@
 
 ## 2. Índice das tabelas
 
-A ordem é a do `make db-up`, que cria o schema vazio. O `make db-seed` roda o `db-up` e depois os seeds. O `make db-reset` apaga o banco e roda o `db-seed`. O `make db-rebuild` faz o `db-reset` e roda todos os importadores.
+A ordem é a do `make db-up`, que cria o schema vazio. O `make db-seed` roda o `db-up` e depois os seeds. O `make db-reset` apaga o banco e roda o `db-seed`. O `make db-rebuild` faz o mesmo e roda todos os importadores. **BUG-27:** as etapas rodam em cadeia (`$(MAKE) db-down && $(MAKE) db-seed && $(MAKE) db-import-...`), uma depois da outra mesmo com `make -j`; se o DROP for recusado ou falhar, nada mais roda, mesmo com `make -k`.
 
 | Tabela | Script de criação | Migrações que alteram | Seção |
 | --- | --- | --- | --- |
@@ -173,7 +173,7 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 26 | `26_alter_produtos_imagem.sql` | Adiciona `produtos.imagem` (VARCHAR(41) NULL), o UNIQUE `uk_produtos_imagem` e o CHECK `chk_produtos_imagem` (IMG-01, Lote 26, idempotente; linhas existentes ficam NULL) | `db-fix-produtos-imagem` | Sim: `26_revert_...`, `db-revert-produtos-imagem` (remove CHECK, UNIQUE e coluna; os arquivos em disco ficam órfãos) |
 
 - As migrações de alteração (08, 13, 18 a 24 e 26) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
-- Todos os alvos que chamam o cliente `mariadb` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed`/`db-reset` herdam via `db-create`) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23) e o `mariadb` (MariaDB ≥ 11.4) no `PATH` (DB-03). O `Makefile` passa `--local-infile=0` (SEC-28). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h ...`, sem `-p` no argv.
+- Todos os alvos que chamam o cliente `mariadb` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed` herdam via `db-create`; `db-reset`/`db-rebuild` chamam `db-down` e `db-seed` por sub-make, BUG-27) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23) e o `mariadb` (MariaDB ≥ 11.4) no `PATH` (DB-03). O `Makefile` passa `--local-infile=0` (SEC-28). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h ...`, sem `-p` no argv.
 - Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`backend/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por Argon2id real (com o `PASSWORD_PEPPER` do `.env`).
 - **Seeds em produção (DEPLOY-07, Lote 33, 2026-11-04):** em produção o seed é feito **só** pelo `deploy/seed-producao.sh`, **nunca** pelo `make db-seed` (que roda `-all-users` e daria a mesma senha a todos os vendedores). O script aplica o `02_seed_admin.sql`, depois o `03_seed_vendedores.sql`, inativa todos os usuários não-admin (`UPDATE usuarios SET ativo = 0` fora do `role = 'admin'`: os 42 vendedores são reais e entram inativos) e roda o `resetpassword -create-admin`. Ele não roda o `-all-users`: os vendedores ficam com o hash placeholder (ninguém loga com ele) até o admin ativá-los e resetar a senha pela API.
 - **Regras dos seeds 02 e 03 (DEPLOY-07):**
@@ -919,7 +919,7 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 - `DB_USUARIO` e `DB_SENHA` são **obrigatórios** no `.env` da raiz. Não existe mais o default `golang/golang` em nenhum lugar: nem no `Makefile` (sem `DB_USUARIO?=`/`DB_SENHA?=`), nem no `config.Load()`, nem no `resetpassword`/`seedusers` (já desde o SEC-10), nem nos testes de integração (que dão `t.Skip` sem as variáveis).
 - **API e importadores:** `config.Load()` devolve `config: defina DB_USUARIO/DB_SENHA no .env` (`ErrCredenciaisDB`) se faltar um dos dois (usuário só com espaços também conta como vazio). A mensagem nunca traz os valores. A checagem roda depois das demais validações: sem `JWT_SECRET` e sem DB, o erro citado é o do `JWT_SECRET`. A API loga `[server] config: ...` e não sobe.
 - **`seedusers` com `-dry-run`/`-no-exec`:** usa `config.LoadSemCredenciaisDB()` e funciona sem credenciais (não toca no banco).
-- **Makefile:** o alvo `db-check-env` falha com `SEC-11: defina DB_USUARIO/DB_SENHA no .env`. É pré-requisito de `db-create`, `db-down` e de todos os `db-fix-*`/`db-revert-*`; `db-up`, `db-seed`, `db-reset` e `db-rebuild` herdam via `db-create`/`db-down`. `help`, `build`, `test`, `lint` e `dev-frontend` não exigem credenciais.
+- **Makefile:** o alvo `db-check-env` falha com `SEC-11: defina DB_USUARIO/DB_SENHA no .env`. É pré-requisito de `db-create`, `db-down` e de todos os `db-fix-*`/`db-revert-*`; `db-up` e `db-seed` herdam via `db-create`; `db-reset` e `db-rebuild` chamam `db-down` e `db-seed` por sub-make (BUG-27). `help`, `build`, `test`, `lint` e `dev-frontend` não exigem credenciais.
 
 ### 23.2 Senha fora da linha de comando (`MYSQL_PWD`)
 

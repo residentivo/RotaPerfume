@@ -27,6 +27,12 @@ var alvosSemSegredos = []string{"test-shared", "test-api", "cover-shared", "cove
 
 var reChamadaGoNpm = regexp.MustCompile(`(^|[\s;&|(])(go|npm|govulncheck)\s`)
 
+// SEC-55: só as linhas "go test" destes alvos usam $(SEM_SEGREDOS_TESTE)
+// (DB_* liberadas com INTEGRATION=1 na linha de comando); o resto (build,
+// go tool cover, vet, get/mod, govulncheck, npm e o arch-check) usa o
+// $(SEM_SEGREDOS) estrito.
+var alvosSemSegredosTeste = map[string]bool{"test-shared": true, "test-api": true, "cover-shared": true, "cover-api": true, "cover-combinada": true}
+
 func TestSEC53_Makefile_ReceitasUsamSemSegredos(t *testing.T) {
 	mk := lerMakefile(t)
 	for _, a := range alvosSemSegredos {
@@ -42,7 +48,12 @@ func TestSEC53_Makefile_ReceitasUsamSemSegredos(t *testing.T) {
 						continue
 					}
 					chamadas++
-					assert.True(t, strings.HasSuffix(antes, "$(SEM_SEGREDOS) "), "%s: chamada sem $(SEM_SEGREDOS): %s", a, l)
+					goTest := strings.HasPrefix(l[ini:], "go test ")
+					if alvosSemSegredosTeste[a] && goTest {
+						assert.True(t, strings.HasSuffix(antes, "$(SEM_SEGREDOS_TESTE) "), "%s: go test sem $(SEM_SEGREDOS_TESTE): %s", a, l)
+						continue
+					}
+					assert.True(t, strings.HasSuffix(antes, "$(SEM_SEGREDOS) "), "%s: chamada sem o $(SEM_SEGREDOS) estrito (SEC-55): %s", a, l)
 				}
 			}
 			assert.Greater(t, chamadas, 0, "%s: nenhuma chamada a go/npm encontrada", a)
@@ -72,7 +83,20 @@ func TestSEC53_Makefile_ListaDeSegredos(t *testing.T) {
 	assert.NotContains(t, db, "MYSQL_PWD", "o MYSQL_PWD nunca vai para o go test")
 	sem := mk.linhaDaVariavel(t, "SEM_SEGREDOS")
 	assert.Contains(t, sem, "filter-out NEXT_PUBLIC_%")
-	assert.Contains(t, sem, "$(INTEGRACAO_PELO_MAKE)")
+	assert.NotContains(t, sem, "INTEGRACAO_PELO_MAKE", "SEC-55: SEM_SEGREDOS estrito, sem exceção")
+	assert.NotContains(t, sem, "VARS_DB_INTEGRACAO")
+	semTeste := mk.linhaDaVariavel(t, "SEM_SEGREDOS_TESTE")
+	assert.Contains(t, semTeste, "filter-out NEXT_PUBLIC_%")
+	assert.Contains(t, semTeste, "$(if $(INTEGRACAO_PELO_MAKE),$(VARS_DB_INTEGRACAO))")
+	// SEM_SEGREDOS_TESTE só nas linhas "go test" (nunca em build/cover/vet/npm).
+	for _, a := range mk.ordem {
+		for _, l := range mk.regras[a].receita {
+			if strings.Contains(l, "$(SEM_SEGREDOS_TESTE)") {
+				assert.True(t, alvosSemSegredosTeste[a], "%s não pode usar $(SEM_SEGREDOS_TESTE)", a)
+				assert.Contains(t, l, "$(SEM_SEGREDOS_TESTE) go test ", "%s: só no go test: %s", a, l)
+			}
+		}
+	}
 	assert.Contains(t, mk.linhaDaVariavel(t, "INTEGRACAO_PELO_MAKE"), "$(origin INTEGRATION)")
 
 	// O sub-make recebe INTEGRATION=1 como variável de linha de comando.
@@ -215,4 +239,80 @@ func TestSEC53_Makefile_EnvArquivoTrocaALista(t *testing.T) {
 	assert.False(t, nomes["DB_SENHA"])
 	assert.NotContains(t, texto, "outro-sec53")
 	assert.False(t, nomes["CUSTOM_SEGREDO"], "o .env não é lido com ENV_ARQUIVO")
+}
+
+// sec55Chamada: uma chamada ao go falso (cabeçalho e variáveis do ambiente).
+type sec55Chamada struct {
+	cab   string
+	nomes map[string]bool
+}
+
+// sec55Chamadas separa o env.log por chamada ("=== go build ...").
+func sec55Chamadas(t *testing.T, envLog string) []sec55Chamada {
+	t.Helper()
+	var chamadas []sec55Chamada
+	for _, l := range strings.Split(lerSeExiste(t, envLog), "\n") {
+		if strings.HasPrefix(l, "=== ") {
+			chamadas = append(chamadas, sec55Chamada{cab: strings.TrimPrefix(l, "=== "), nomes: map[string]bool{}})
+			continue
+		}
+		if i := strings.Index(l, "="); i > 0 && len(chamadas) > 0 {
+			chamadas[len(chamadas)-1].nomes[l[:i]] = true
+		}
+	}
+	return chamadas
+}
+
+var sec55Proibidas = []string{"DB_HOST", "DB_PORT", "DB_NAME", "DB_USUARIO", "DB_SENHA", "DB_TLS_CA", "MYSQL_PWD", "PASSWORD_PEPPER", "JWT_SECRET"}
+
+// SEC-55: com INTEGRATION=1 na linha de comando, go build e go tool cover
+// continuam sem DB_*/MYSQL_PWD; só o go test recebe as DB_*.
+func TestSEC55_Makefile_BuildSemSegredosComIntegracao(t *testing.T) {
+	casos := []struct {
+		alvo     string
+		args     []string
+		esperado []string // prefixos de chamada que precisam aparecer
+		estrito  bool     // TestBrain: nem o go test recebe DB_* (alvo com o $(SEM_SEGREDOS) estrito)
+	}{
+		{"build-api", []string{"INTEGRATION=1"}, []string{"go build ./...", "go build -o"}, false},
+		{"build-shared", []string{"INTEGRATION=1"}, []string{"go build ./..."}, false},
+		{"cover-shared", []string{"INTEGRATION=1"}, []string{"go test", "go tool cover"}, false},
+		{"test-api", []string{"INTEGRATION=1"}, []string{"go build ./...", "go test"}, false},
+		{"test-integration", nil, []string{"go build ./...", "go test"}, false},
+		{"lint", []string{"INTEGRATION=1"}, []string{"go vet"}, false},
+		// TestBrain (invariante 6): npm, go get/mod e o arch-check também.
+		{"test-frontend", []string{"INTEGRATION=1"}, []string{"npm test"}, true},
+		{"frontend-deps", []string{"INTEGRATION=1"}, []string{"npm install"}, true},
+		{"deps", []string{"INTEGRATION=1"}, []string{"go get ./...", "go mod tidy"}, true},
+		{"arch-check", []string{"INTEGRATION=1"}, []string{"go test ./tests/arquitetura/..."}, true},
+	}
+	for _, c := range casos {
+		t.Run(c.alvo, func(t *testing.T) {
+			dir, path, envLog := sec53Dir(t)
+			out, err := makeAlvo(t, dir, c.alvo, []string{path, "MYSQL_PWD=do-shell-sec55"}, c.args...)
+			require.NoError(t, err, out)
+			chamadas := sec55Chamadas(t, envLog)
+			require.NotEmpty(t, chamadas, "go falso não foi chamado")
+			for _, e := range c.esperado {
+				achou := false
+				for _, ch := range chamadas {
+					achou = achou || strings.HasPrefix(ch.cab, e)
+				}
+				assert.True(t, achou, "%s: chamada %q não encontrada", c.alvo, e)
+			}
+			for _, ch := range chamadas {
+				ehTeste := strings.HasPrefix(ch.cab, "go test") && !c.estrito
+				for _, v := range sec55Proibidas {
+					if ehTeste && strings.HasPrefix(v, "DB_") {
+						continue // go test de integração recebe as DB_* (SEC-53)
+					}
+					assert.False(t, ch.nomes[v], "%s: %s chegou a %q", c.alvo, v, ch.cab)
+				}
+				if ehTeste {
+					assert.True(t, ch.nomes["DB_SENHA"], "%s: o go test de integração recebe as DB_*", c.alvo)
+				}
+			}
+			assert.NotContains(t, lerSeExiste(t, envLog), "do-shell-sec55")
+		})
+	}
 }

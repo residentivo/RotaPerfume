@@ -1,6 +1,10 @@
 # A Fazer
 
-> Atualizado em 2026-11-04 (decisões do usuário após o Lote 34, repassadas pelo 🤍 MegaBrain; 🔵 SubBrain). Saíram desta lista para `feito.md` (bloco "Decisões do usuário de 2026-11-04 (após o Lote 34)"): **OPS-02** (SMTP de produção configurado pelo usuário, por ora via Gmail; o passo 10 do DEPLOY-08 fica com o pré-requisito atendido) e **CHORE-18** (hostname `ivo-Inspiron-15-3530` confirmado; a guarda já o cobre em minúsculas, sem alteração; a conferência do SAN virou item opcional do DEPLOY-08). O **DEPLOY-08** ganhou a nota "Andamento 2026-11-04" (passo 11 rodado no servidor por engano; na máquina do admin, `db-check-env` ok, mas a `192.168.168.106:3306` não responde e o fingerprint da `deploy/ca-producao.pem` difere do `deploy/db-ca.fingerprint`). O **TST-17** ganhou nota (Docker na máquina do admin sem acesso ao socket; falta `usermod -aG docker`; sem `shellcheck`). O **SEC-54** deixou de citar o CHORE-18 como pendente. O **DOC-09** continua aqui: fatos conferidos, mas o `CLAUDE.md` não foi alterado pelo agente (autorização repassada por agente não vale; o usuário aplica direto). **Seguem pendentes do usuário:** **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`), **DOC-09** e **TST-17**. O restante do backlog não mudou.
+> Atualizado em 2026-11-05 (fechamento do Lote 35, 🔵 SubBrain). O **Lote 35** (BUG-27, SEC-54, TST-19, SEC-55, TST-20, TST-21, FE-18 e CHORE-16) foi concluído e está em `feito.md` (commitado na `main` pelo 🤍 MegaBrain, a pedido do usuário). Entraram 3 cards no bloco "Achados do Lote 35", logo abaixo: **SEC-56**, **SEC-57** e **BUG-28** (BAIXA). **Seguem pendentes do usuário:** **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`) e **TST-17** (precisa de Docker); a sugestão de citar SEC-54/SEC-55/BUG-27 no `CLAUDE.md` está em `feito.md` (bloco do Lote 35). O restante do backlog não mudou.
+>
+> Antes, ainda em 2026-11-05 (abertura do Lote 35, 🔵 SubBrain). O usuário pediu "continue com as tarefas a fazer, em seguida commit as alterações finalizadas". O 🤍 MegaBrain abriu o **Lote 35 de 2026-11-05** e 8 cards saíram desta lista para `fazendo.md`: **BUG-27**, **SEC-54**, **TST-19**, **SEC-55**, **TST-20** e **TST-21** (bloco "Achados do Lote 34") e **FE-18** e **CHORE-16** (bloco "Achados dos Lotes 30 e 31"). Critério: executáveis sem o usuário, sem Docker e sem banco. Passo atual do lote: "🟣 SecBrain especificando → 🟡 BackBrain + 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain fechando". **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17, TST-22, DB-07 e TST-16 (dependem de servidor/Docker/banco), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
+>
+> Antes, ainda em 2026-11-04 (decisões do usuário após o Lote 34, repassadas pelo 🤍 MegaBrain; 🔵 SubBrain). Saíram desta lista para `feito.md` (bloco "Decisões do usuário de 2026-11-04 (após o Lote 34)"): **OPS-02** (SMTP de produção configurado pelo usuário, por ora via Gmail; o passo 10 do DEPLOY-08 fica com o pré-requisito atendido) e **CHORE-18** (hostname `ivo-Inspiron-15-3530` confirmado; a guarda já o cobre em minúsculas, sem alteração; a conferência do SAN virou item opcional do DEPLOY-08). O **DEPLOY-08** ganhou a nota "Andamento 2026-11-04" (passo 11 rodado no servidor por engano; na máquina do admin, `db-check-env` ok, mas a `192.168.168.106:3306` não responde e o fingerprint da `deploy/ca-producao.pem` difere do `deploy/db-ca.fingerprint`). O **TST-17** ganhou nota (Docker na máquina do admin sem acesso ao socket; falta `usermod -aG docker`; sem `shellcheck`). O **SEC-54** deixou de citar o CHORE-18 como pendente. O **DOC-09** continua aqui: fatos conferidos, mas o `CLAUDE.md` não foi alterado pelo agente (autorização repassada por agente não vale; o usuário aplica direto). **Seguem pendentes do usuário:** **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`), **DOC-09** e **TST-17**. O restante do backlog não mudou.
 >
 > Antes, ainda em 2026-11-04 (fechamento do Lote 34, 🔵 SubBrain). O **Lote 34** (SEC-53, SEC-46, SEC-50, SEC-49, CHORE-15, CHORE-17 e BUG-26) foi concluído e está em `feito.md` (**não commitado**, pendente do usuário). Entraram 7 cards no bloco "Achados do Lote 34", logo abaixo: **BUG-27** (MÉDIA: `db-reset`/`db-rebuild` com `db-down` e `db-seed` como pré-requisitos irmãos) e **SEC-54**, **TST-19**, **SEC-55**, **TST-20**, **TST-21** e **TST-22** (BAIXA). O **DOC-09** ganhou o texto do SEC-46, do SEC-53 e do SEC-50 (continua aguardando a autorização do usuário). **Seguem pendentes do usuário:** **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`), **OPS-02** (SMTP de produção), **CHORE-18** (hostname do servidor), **DOC-09** (alteração do `CLAUDE.md`) e **TST-17** (precisa de uma máquina com Docker). O restante do backlog não mudou.
 >
@@ -71,91 +75,64 @@
 
 ---
 
+# Achados do Lote 35, 2026-11-05
+
+> Ressalvas da revisão final do 🟣 SecBrain no Lote 35 (`feito.md`, "Lote 35 de 2026-11-05"). Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
+
+---
+
+## SEC-56: formas numéricas não canônicas do IPv4 não contam como produção — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Config (Makefile), Backend (testkit), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão final do Lote 35 (SEC-54).
+
+**Descrição:** a blocklist (`PRODUCAO_DETECTA` no Makefile e `SH/testkit/integracao` no Go) só reconhece o IPv4 `a.b.c.d`. As formas decimal `3232278634`, hex `0xc0a8a86a`, curta `192.168.43114` e octal `0300.0250.0250.0152`, aceitas pelo `getaddrinfo`, apontam para `192.168.168.106` mas não contam como produção nos dois lados: `db-seed`/`db-import-*`/`db-fix-*` rodariam se o banco de produção fosse publicado.
+
+**Correção:** nos dois lados, tratar como produção todo host formado só por dígitos, pontos e `x` que não seja um IPv4 canônico de 4 octetos sem zero à esquerda; acrescentar os casos à tabela de paridade do SEC-54.
+
+**Nota informativa:** com `DB_HOST` vazio, o Go usa `localhost` por padrão e o shell recusa (o lado estrito é o `make`; não é falha).
+
+**Critério de aceite:** as 4 formas acima (e variações) recusadas como produção no Makefile e no Go, com casos na paridade; os testes do SEC-46/SEC-50/SEC-54 continuam verdes.
+
+---
+
+## SEC-57: paridade Makefile × Go da porta com espaço — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Config (Makefile), Backend (testkit), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão final do Lote 35 (SEC-54).
+
+**Descrição:** o Go aplica `TrimSpace` na porta (`SH/testkit/integracao/integracao.go:251`) e aceita `"3307 "`; o Makefile recusa, mas com a mensagem enganosa "é o banco de PRODUCAO".
+
+**Correção:** o Go recusa espaço na porta; o Makefile dá uma mensagem própria (porta inválida); casos na tabela de paridade.
+
+**Critério de aceite:** porta com espaço (antes, depois, no meio) recusada nos dois lados com mensagem de porta inválida; paridade verde.
+
+---
+
+## BUG-28: `make -k db-seed` roda o `db-up` na produção com a guarda recusada — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão final do Lote 35 (BUG-27).
+
+**Descrição:** com `make -k db-seed CONFIRMO_PRODUCAO=...` sozinho, o `db-guard-sem-producao` falha, mas o `-k` ainda roda o `db-up` (`CREATE DATABASE` + DDL) na produção, porque ele é pré-requisito irmão das guardas (Makefile ~:240). Impacto limitado: o `db-up` com confirmação já é permitido na produção.
+
+**Correção:** tirar o `db-up` dos pré-requisitos do `db-seed` e chamar `$(MAKE) db-up && ...` na receita (padrão do BUG-27, sem repassar variáveis à mão).
+
+**Critério de aceite:** teste com `make -k db-seed` e a guarda recusada → nenhum `CREATE DATABASE`/DDL no log do cliente falso; os testes do BUG-27 e do SEC-46 continuam verdes.
+
+---
+
 # Achados do Lote 34, 2026-11-04
 
 > Pendências do Lote 34 (`feito.md`, "Lote 34 de 2026-11-04"), levantadas pelo 🟣 SecBrain e pelo 🔴 TestBrain. Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
 
-## BUG-27: `db-reset`/`db-rebuild` rodam o `db-seed` mesmo com o DROP recusado (`make -k`) e têm corrida com `-j` — prioridade MÉDIA
-
-**Status:** pendente.
-**Camadas:** Config (Makefile)
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🔴 TestBrain no Lote 34 (2026-11-04). O problema já existia antes do lote.
-
-**Descrição:** `db-reset` e `db-rebuild` têm `db-down` e `db-seed` como **pré-requisitos irmãos**. Com `make -k`, o `db-seed` roda (`CREATE DATABASE` + seed) mesmo quando o `DROP` foi recusado pelo `db-guard-drop` (SEC-46); confirmado num tempdir. Com `-j`, os dois podem rodar em paralelo (corrida entre o DROP e o seed).
-
-**Sugestão:** receitas sequenciais (`$(MAKE) db-down && $(MAKE) db-seed`, repassando `CONFIRMAR`/`ENV_ARQUIVO`) ou `.NOTPARALLEL` nesses alvos; garantir que a recusa de qualquer guarda pare o alvo inteiro mesmo com `-k`.
-
-**Critério de aceite:** teste com `make -k db-reset` e `make -k db-rebuild` (DROP recusado → nenhum `CREATE DATABASE`/seed) e com `-j` (ordem garantida); os testes do SEC-46 continuam verdes.
-
----
-
-## SEC-54: guarda de produção é blocklist; aliases do servidor passam — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Config (Makefile), Backend (testes)
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain no Lote 34 (2026-11-04).
-
-**Descrição:** a detecção de produção (`PRODUCAO_DETECTA` no Makefile e `SH/testkit/integracao` no Go) compara o `DB_HOST` com uma lista fixa. Aliases do mesmo servidor passam nos dois: `ivo-inspiron-15-3530.local`, `::ffff:192.168.168.106`, outro IP da máquina.
-
-**A avaliar:** allowlist para a integração (loopback e CasaOS `192.168.168.106:3307`) ou resolver o DNS antes de comparar (com cuidado para não depender de rede nos testes). Manter a paridade Makefile × Go.
-
-**Relacionado:** CHORE-18 (hostname real do servidor na guarda): **concluído em 2026-11-04**, sem alteração (o hostname `ivo-Inspiron-15-3530` confirmado pelo usuário já está coberto, em minúsculas, no `PRODUCAO_HOSTS_LAN` e no `SH/testkit/integracao`; ver `feito.md`). Continuam valendo os aliases acima (`.local`, IPv4 mapeado em IPv6, outros IPs).
-
----
-
-## TST-19: catraca para testes que abrem conexão com a config do ambiente sem o helper do SEC-50 — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Testes
-**Responsável:** 🔴 TestBrain
-**Origem:** 🔴 TestBrain no Lote 34 (2026-11-04).
-
-**Descrição:** a catraca de `SH/tests/config/sec50_integracao_guarda_test.go` só detecta leitura direta de `INTEGRATION` (`Getenv("INTEGRATION")`). Um `_test.go` novo que faça `config.Load()` + `db.Open` sem passar por `integracao.Config`/`integracao.Abrir` não é pego.
-
-**Critério de aceite:** teste (AST ou varredura) que falha se algum `_test.go` abrir conexão com a config do ambiente sem chamar `integracao.Config`/`Abrir`; lista de exceções explícita, se houver.
-
----
-
-## SEC-55: `go build` de `build-shared`/`build-api` recebe as `DB_*` no modo integração — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Config (Makefile)
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain no Lote 34 (2026-11-04).
-
-**Descrição:** com `INTEGRATION=1` (caminho do `make test-integration`), os `go build` de `build-shared` e `build-api` também recebem as `DB_*`. Não há conexão ao banco no build (impacto mínimo), mas o segredo chega a um processo que não precisa dele.
-
-**Ação esperada:** um `SEM_SEGREDOS` estrito para os alvos de build (sem a exceção do modo integração).
-
-**Critério de aceite:** teste do Makefile (no padrão do `sec53_makefile_segredos_test.go`) mostrando que o `go build` nunca recebe `DB_*`/`MYSQL_PWD`, mesmo com `INTEGRATION=1`.
-
----
-
-## TST-20: cobrir o ramo de erro de `integracao.Abrir` — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Testes
-**Responsável:** 🔴 TestBrain
-**Origem:** 🔴 TestBrain no Lote 34 (2026-11-04).
-
-**Descrição:** `SH/testkit/integracao` está com 72,7% de cobertura no `Abrir`: o ramo de erro (falha ao abrir/pingar o banco → `t.Fatal`) não é exercitado.
-
-**Critério de aceite:** teste do ramo de erro (ex.: `testing.TB` falso e DSN inválido/porta fechada no loopback, sem tocar em banco real); cobertura do pacote sem queda.
-
----
-
-## TST-21: teste com terminal real do `seed-producao.sh` (confirmação e pepper) — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Testes, Deploy
-**Responsável:** 🔴 TestBrain
-**Origem:** 🔴 TestBrain no Lote 34 (BUG-26, 2026-11-04).
-
-**Descrição:** o BUG-26 cobriu só o caminho **sem** terminal (`bug26_seed_sem_terminal_linux_test.go`). O caminho com terminal real (digitar a confirmação do `--forcar` e o pepper sem eco) não tem teste automatizado.
-
-**Sugestão:** pty (ex.: `script -qec`, ou um pty em Go) com `docker` falso, no padrão dos testes de ensaio do DEPLOY-07; pular quando o `script`/pty não estiver disponível.
+> **2026-11-05 (Lote 35):** BUG-27, SEC-54, TST-19, SEC-55, TST-20 e TST-21 foram para o Lote 35 (`fazendo.md`).
 
 ---
 
@@ -296,6 +273,8 @@
 
 ---
 
+> **2026-11-05 (Lote 35):** FE-18 e CHORE-16 foram para o Lote 35 (`fazendo.md`).
+>
 > **2026-11-04 (Lote 34):** SEC-46, SEC-49 e CHORE-15 foram para o **Lote 34** e estão concluídos (`feito.md`).
 
 ---
@@ -390,21 +369,6 @@
 
 ---
 
-## FE-18: bloqueio de 1500 ms nos botões de ativo de clientes e usuários — prioridade BAIXA
-
-**Status:** pendente.
-**Camada:** Frontend
-**Responsável:** 🟢 FrontBrain → 🔴 TestBrain
-**Origem:** BUG-22 (Lote 31, 2026-11-02), complemento.
-
-**Descrição:** o BUG-22 deixou o toggle atômico no backend, mas os botões de ativo das telas de clientes e usuários não têm o bloqueio de 1500 ms que o BUG-17 colocou em produtos.
-
-**Ação esperada:** aplicar o mesmo bloqueio nas duas telas.
-
-**Critério de aceite:** teste de frontend (clique duplo dentro de 1500 ms gera uma só chamada); `tsc` e `eslint` limpos.
-
----
-
 ## TST-16: isolamento do teste real do `mariadb-docker.sh` e concorrência real do BUG-22 — prioridade BAIXA
 
 **Status:** pendente; depende de Docker/banco descartável.
@@ -417,21 +381,6 @@
 **Ação esperada:** opções `--segredos-dir` e `--ca-dir` no `deploy/mariadb-docker.sh`, usadas pelo teste real com diretórios temporários; teste de integração com toggles concorrentes (clientes e usuários) num banco descartável.
 
 **Critério de aceite:** teste real sem tocar em `/root`; teste de concorrência verde; docs do script atualizadas.
-
----
-
-## CHORE-16: renomear `seedusers.MySQLArgs`/`RunMySQL` e avaliar os pacotes `*mysql` — prioridade BAIXA
-
-**Status:** pendente (cosmético).
-**Camada:** Backend
-**Responsável:** 🟡 BackBrain
-**Origem:** CHORE-13/DOC-08 (Lote 30, 2026-11-02).
-
-**Descrição:** com somente MariaDB, `seedusers.MySQLArgs`/`RunMySQL` e os pacotes de adapter `*mysql` (`catalogomysql`, `vendasmysql` etc.) mantêm o nome antigo.
-
-**Ação esperada:** renomear as funções do `seedusers`; avaliar (custo × benefício) renomear os pacotes, sem mudança de comportamento.
-
-**Critério de aceite:** build e testes verdes; decisão sobre os pacotes registrada.
 
 ---
 

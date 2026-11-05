@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   faixaExibida,
   mensagemRecargaFalhou,
@@ -28,11 +28,10 @@ import { Produto, ProdutoInput } from "@/lib/types";
 import { urlImagemProduto } from "@/lib/imagemProduto";
 import { vlog } from "@/lib/vlog";
 import { MAX_BUSCA } from "@/lib/busca";
+import { TOGGLE_BLOQUEIO_MS, useBloqueioToggle } from "@/lib/useBloqueioToggle";
 
 const FILE = "admin/produtos/page.tsx";
 
-// BUG-17: tempo (ms) de bloqueio do toggle de ativo apos cada alteracao.
-const TOGGLE_BLOQUEIO_MS = 1500;
 
 type SortKey =
   | "id"
@@ -268,49 +267,15 @@ function ProdutosPageContent() {
     }
   };
 
-  // BUG-17: depois de cada toggle o botao do produto fica bloqueado por
+  // BUG-17/FE-18: depois de cada toggle o botao do produto fica bloqueado por
   // TOGGLE_BLOQUEIO_MS, para evitar cliques duplos que se anulariam.
-  vlog(FILE, "ProdutosPageContent", "inicializando estado de produtos com toggle bloqueado");
-  const [toggleBloqueado, setToggleBloqueado] = useState<Set<number>>(
-    () => new Set()
-  );
-  vlog(FILE, "ProdutosPageContent", "inicializando mapa de timers de bloqueio do toggle");
-  const toggleTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-
-  vlog(FILE, "ProdutosPageContent", "registrando limpeza dos timers de bloqueio no unmount");
-  useEffect(() => {
-    const timers = toggleTimers.current;
-    return () => {
-      vlog(FILE, "ProdutosPageContent.useEffect", "cleanup: limpando timers de bloqueio do toggle (qtd=%d)", timers.size);
-      timers.forEach((t) => clearTimeout(t));
-      timers.clear();
-    };
-  }, []);
-
-  vlog(FILE, "ProdutosPageContent", "definindo helper bloquearToggle");
-  const bloquearToggle = (produtoId: number) => {
-    vlog(FILE, "ProdutosPageContent.bloquearToggle", "bloqueando toggle (produto_id=%d)", produtoId);
-    setToggleBloqueado((prev) => new Set(prev).add(produtoId));
-    const anterior = toggleTimers.current.get(produtoId);
-    if (anterior) clearTimeout(anterior);
-    toggleTimers.current.set(
-      produtoId,
-      setTimeout(() => {
-        vlog(FILE, "ProdutosPageContent.bloquearToggle", "liberando toggle (produto_id=%d)", produtoId);
-        toggleTimers.current.delete(produtoId);
-        setToggleBloqueado((prev) => {
-          const next = new Set(prev);
-          next.delete(produtoId);
-          return next;
-        });
-      }, TOGGLE_BLOQUEIO_MS)
-    );
-  };
+  vlog(FILE, "ProdutosPageContent", "inicializando bloqueio do toggle de ativo");
+  const toggleBloqueio = useBloqueioToggle<number>(TOGGLE_BLOQUEIO_MS);
 
   vlog(FILE, "ProdutosPageContent", "definindo handler handleToggleStatus");
   const handleToggleStatus = async (produto: Produto) => {
     vlog(FILE, "ProdutosPageContent.handleToggleStatus", "verificando bloqueio do toggle (produto_id=%d)", produto.id);
-    if (toggleBloqueado.has(produto.id)) return;
+    if (!toggleBloqueio.adquirir(produto.id)) return;
     vlog(FILE, "ProdutosPageContent.handleToggleStatus", "calculando novo status (produto_id=%d)", produto.id);
     const novoStatus = !produto.ativo;
     vlog(FILE, "ProdutosPageContent.handleToggleStatus", "definindo acao (novoStatus=%s)", novoStatus);
@@ -320,7 +285,10 @@ function ProdutosPageContent() {
       `Tem certeza que deseja ${acao} o produto "${produto.descricao}"?`
     );
     vlog(FILE, "ProdutosPageContent.handleToggleStatus", "verificando confirmacao (ok=%s)", ok);
-    if (!ok) return;
+    if (!ok) {
+      toggleBloqueio.liberar(produto.id);
+      return;
+    }
 
     vlog(FILE, "ProdutosPageContent.handleToggleStatus", "marcando acao toggle em andamento");
     setAction({ type: "toggle", produtoId: produto.id });
@@ -350,7 +318,7 @@ function ProdutosPageContent() {
       vlog(FILE, "ProdutosPageContent.handleToggleStatus", "limpando acao em andamento");
       setAction({ type: null, produtoId: null });
       vlog(FILE, "ProdutosPageContent.handleToggleStatus", "bloqueando o toggle por %d ms", TOGGLE_BLOQUEIO_MS);
-      bloquearToggle(produto.id);
+      toggleBloqueio.bloquear(produto.id);
     }
   };
 
@@ -510,7 +478,7 @@ function ProdutosPageContent() {
           onClick={() => handleToggleStatus(p)}
           disabled={
             (action.type === "toggle" && action.produtoId === p.id) ||
-            toggleBloqueado.has(p.id)
+            toggleBloqueio.estaBloqueado(p.id)
           }
           title={p.ativo ? "Clique para inativar" : "Clique para reativar"}
           className={[

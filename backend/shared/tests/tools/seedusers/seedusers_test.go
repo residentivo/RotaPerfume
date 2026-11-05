@@ -303,18 +303,21 @@ func TestRenderSeedFile(t *testing.T) {
 	})
 }
 
-func TestMySQLArgs_SenhaNaoVaiNaLinhaDeComando(t *testing.T) {
+// CHORE-16: MySQLArgs virou ArgsClienteMariaDB, com --local-infile=0
+// explícito (igual ao MYSQL_OPTS do Makefile).
+func TestArgsClienteMariaDB_SenhaNaoVaiNaLinhaDeComando(t *testing.T) {
 	cfg := &config.Config{DBUsuario: "u", DBSenha: "segredo", DBHost: "h", DBPort: "3307", DBName: "rp"}
-	args := seedusers.MySQLArgs(cfg)
-	assert.Equal(t, []string{"-uu", "-hh", "-P3307", "--default-character-set=utf8mb4", "rp"}, args)
-	assert.NotContains(t, strings.Join(args, " "), "local-infile", "ARQ-07 NB-F: LOAD DATA LOCAL desligado")
+	args := seedusers.ArgsClienteMariaDB(cfg)
+	assert.Equal(t, []string{"--local-infile=0", "-uu", "-hh", "-P3307", "--default-character-set=utf8mb4", "rp"}, args)
+	assert.Equal(t, "--local-infile=0", args[0], "ARQ-07 NB-F: LOAD DATA LOCAL desligado, antes dos demais")
+	assert.NotContains(t, strings.Join(args, " "), "--local-infile=1")
 	assert.NotContains(t, strings.Join(args, " "), "segredo", "senha vai via MYSQL_PWD")
 }
 
-func TestRunMySQL(t *testing.T) {
+func TestExecutarSQLMariaDB(t *testing.T) {
 	cfg := &config.Config{DBUsuario: "u", DBSenha: "s", DBHost: "h", DBPort: "1", DBName: "d"}
 	t.Run("arquivo ausente", func(t *testing.T) {
-		err := seedusers.RunMySQL(cfg, filepath.Join(t.TempDir(), "nada.sql"))
+		err := seedusers.ExecutarSQLMariaDB(cfg, filepath.Join(t.TempDir(), "nada.sql"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "leitura de")
 	})
@@ -322,7 +325,7 @@ func TestRunMySQL(t *testing.T) {
 		p := filepath.Join(t.TempDir(), "x.sql")
 		require.NoError(t, os.WriteFile(p, []byte("SELECT 1;"), 0o600))
 		t.Setenv("PATH", t.TempDir())
-		assert.Error(t, seedusers.RunMySQL(cfg, p))
+		assert.Error(t, seedusers.ExecutarSQLMariaDB(cfg, p))
 	})
 	// DB-03: o binário é o `mariadb`, sem fallback para `mysql`.
 	t.Run("usa o binário mariadb, sem fallback para mysql", func(t *testing.T) {
@@ -335,12 +338,33 @@ func TestRunMySQL(t *testing.T) {
 		soMysql := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(soMysql, "mysql"), []byte("#!/bin/sh\nexit 0\n"), 0o700))
 		t.Setenv("PATH", soMysql)
-		assert.Error(t, seedusers.RunMySQL(cfg, p), "só `mysql` no PATH não basta")
+		assert.Error(t, seedusers.ExecutarSQLMariaDB(cfg, p), "só `mysql` no PATH não basta")
 
 		comMariadb := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(comMariadb, "mariadb"), []byte("#!/bin/sh\nexit 0\n"), 0o700))
 		t.Setenv("PATH", comMariadb)
-		assert.NoError(t, seedusers.RunMySQL(cfg, p))
+		assert.NoError(t, seedusers.ExecutarSQLMariaDB(cfg, p))
+	})
+	// CHORE-16: o cliente recebe --local-infile=0 no argv e a senha só no ambiente.
+	t.Run("argv com --local-infile=0 e senha fora do argv", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("cliente falso em shell script")
+		}
+		p := filepath.Join(t.TempDir(), "x.sql")
+		require.NoError(t, os.WriteFile(p, []byte("SELECT 1;"), 0o600))
+		dir := t.TempDir()
+		log := filepath.Join(dir, "argv.log")
+		script := "#!/bin/sh\necho \"$*\" > '" + log + "'\necho \"pwd=$MYSQL_PWD\" >> '" + log + "'\n"
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "mariadb"), []byte(script), 0o700))
+		t.Setenv("PATH", dir)
+		cfgSenha := &config.Config{DBUsuario: "u", DBSenha: "senha-chore16", DBHost: "h", DBPort: "1", DBName: "d"}
+		require.NoError(t, seedusers.ExecutarSQLMariaDB(cfgSenha, p))
+		b, err := os.ReadFile(log)
+		require.NoError(t, err)
+		linhas := strings.SplitN(string(b), "\n", 2)
+		assert.Equal(t, "--local-infile=0 -uu -hh -P1 --default-character-set=utf8mb4 d", linhas[0])
+		assert.NotContains(t, linhas[0], "senha-chore16")
+		assert.Contains(t, linhas[1], "pwd=senha-chore16")
 	})
 }
 

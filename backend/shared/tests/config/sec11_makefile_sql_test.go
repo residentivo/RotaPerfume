@@ -252,10 +252,20 @@ func TestSEC11_Makefile_AlvosDeBancoDependemDeDbCheckEnv(t *testing.T) {
 		})
 	}
 
-	// Transitivos: db-up/db-seed/db-reset/db-rebuild herdam via db-create.
-	for _, a := range []string{"db-up", "db-seed", "db-reset", "db-rebuild"} {
+	// Transitivos: db-up/db-seed herdam via db-create.
+	for _, a := range []string{"db-up", "db-seed"} {
 		t.Run("transitivo/"+a, func(t *testing.T) {
 			assert.True(t, mk.dependeDe(a, "db-check-env"))
+		})
+	}
+	// BUG-27: db-reset/db-rebuild chamam db-down e db-seed por sub-make
+	// ($(MAKE) db-down && $(MAKE) db-seed), que exigem o db-check-env.
+	for _, a := range []string{"db-reset", "db-rebuild"} {
+		t.Run("sub-make/"+a, func(t *testing.T) {
+			receita := strings.Join(mk.regras[a].receita, " ")
+			assert.Contains(t, receita, "$(MAKE) db-down && $(MAKE) db-seed")
+			assert.True(t, mk.dependeDe("db-down", "db-check-env"))
+			assert.True(t, mk.dependeDe("db-seed", "db-check-env"))
 		})
 	}
 

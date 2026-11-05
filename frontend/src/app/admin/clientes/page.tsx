@@ -30,6 +30,7 @@ import { Cliente, ClienteInput } from "@/lib/types";
 import { formatCnpj } from "@/lib/cnpj";
 import { formatarData } from "@/lib/formatarData";
 import { vlog } from "@/lib/vlog";
+import { TOGGLE_BLOQUEIO_MS, useBloqueioToggle } from "@/lib/useBloqueioToggle";
 import { MAX_BUSCA } from "@/lib/busca";
 
 const FILE = "admin/clientes/page.tsx";
@@ -317,8 +318,15 @@ function ClientesContent() {
     setError(err.message || MSG_CLIENTE_NAO_ENCONTRADO);
   };
 
+  // FE-18: depois de cada toggle o botao fica bloqueado por TOGGLE_BLOQUEIO_MS
+  // (mesmo padrao do BUG-17 em produtos), para evitar cliques duplos.
+  vlog(FILE, "ClientesContent", "inicializando bloqueio do toggle de ativo");
+  const toggleBloqueio = useBloqueioToggle<number>(TOGGLE_BLOQUEIO_MS);
+
   vlog(FILE, "ClientesContent", "definindo handler handleToggleStatus");
   const handleToggleStatus = async (cliente: Cliente) => {
+    vlog(FILE, "ClientesContent.handleToggleStatus", "verificando bloqueio do toggle (id=%d)", cliente.cliente_id_origem);
+    if (!toggleBloqueio.adquirir(cliente.cliente_id_origem)) return;
     vlog(FILE, "ClientesContent.handleToggleStatus", "calculando novo status (cliente_id=%d)", cliente.cliente_id_origem);
     const novoStatus = !cliente.ativo;
     vlog(FILE, "ClientesContent.handleToggleStatus", "definindo acao (novoStatus=%s)", novoStatus);
@@ -328,7 +336,10 @@ function ClientesContent() {
       `Tem certeza que deseja ${acao} o cliente "${cliente.razao_social}"?`
     );
     vlog(FILE, "ClientesContent.handleToggleStatus", "verificando confirmacao (ok=%s)", ok);
-    if (!ok) return;
+    if (!ok) {
+      toggleBloqueio.liberar(cliente.cliente_id_origem);
+      return;
+    }
 
     vlog(FILE, "ClientesContent.handleToggleStatus", "marcando acao toggle em andamento");
     setAction({ type: "toggle", clienteId: cliente.cliente_id_origem });
@@ -371,6 +382,8 @@ function ClientesContent() {
     } finally {
       vlog(FILE, "ClientesContent.handleToggleStatus", "limpando acao em andamento");
       setAction({ type: null, clienteId: null });
+      vlog(FILE, "ClientesContent.handleToggleStatus", "bloqueando o toggle por %d ms", TOGGLE_BLOQUEIO_MS);
+      toggleBloqueio.bloquear(cliente.cliente_id_origem);
     }
   };
 
@@ -528,8 +541,9 @@ function ClientesContent() {
           type="button"
           onClick={() => handleToggleStatus(c)}
           disabled={
-            action.type === "toggle" &&
-            action.clienteId === c.cliente_id_origem
+            (action.type === "toggle" &&
+              action.clienteId === c.cliente_id_origem) ||
+            toggleBloqueio.estaBloqueado(c.cliente_id_origem)
           }
           title={c.ativo ? "Clique para inativar" : "Clique para reativar"}
           className={[
