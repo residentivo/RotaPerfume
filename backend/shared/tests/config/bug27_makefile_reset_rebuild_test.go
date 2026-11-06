@@ -38,13 +38,15 @@ func TestBUG27_Makefile_ReceitaEmCadeia(t *testing.T) {
 			}
 			var cadeia []string
 			for _, e := range etapas {
-				cadeia = append(cadeia, "$(MAKE) "+e)
+				cadeia = append(cadeia, "$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' "+e) // BUG-29: sentinela RP_ENV_PAI
 			}
 			assert.Equal(t, strings.Join(cadeia, " && "), strings.Join(strings.Fields(receita), " "),
 				"%s: um sub-make por etapa, encadeado por &&, na ordem", a)
 			// SEC-46/DEPLOY-07: "no .env não vale"; repassar à mão viraria linha de comando.
+			// BUG-29: só o nome do arquivo lido vai na sentinela (RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)').
+			semSentinela := strings.ReplaceAll(receita, "RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)'", "")
 			for _, v := range []string{"CONFIRMAR", "CONFIRMO_PRODUCAO", "ENV_ARQUIVO"} {
-				assert.NotContains(t, receita, v, "%s: %s não é repassado à mão", a, v)
+				assert.NotContains(t, semSentinela, v, "%s: %s não é repassado à mão", a, v)
 			}
 		})
 	}

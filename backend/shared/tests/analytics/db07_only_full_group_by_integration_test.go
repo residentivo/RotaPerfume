@@ -10,7 +10,8 @@ package analytics_test
 // somado de um pedido de teste, não só a ausência de erro.
 //
 // Dados: vendedor/cliente "ZZ-TEST-DB07-*" e um pedido de hoje, apagados no
-// t.Cleanup.
+// t.Cleanup. BUG-30: o "hoje" é o do Go (fuso tz.Local), o mesmo relógio
+// dos três adapters; nenhum SQL usa o relógio do servidor.
 
 import (
 	"context"
@@ -27,6 +28,7 @@ import (
 	"github.com/rotaperfumes/shared/analytics/analyticsmysql"
 	"github.com/rotaperfumes/shared/kernel"
 	"github.com/rotaperfumes/shared/testkit/integracao"
+	"github.com/rotaperfumes/shared/tz"
 )
 
 const valorPedidoDB07 = 123.45
@@ -48,8 +50,8 @@ func conexaoFullGroupBy(t *testing.T, db *sql.DB) *sql.Conn {
 }
 
 // dadosDB07 cria vendedor, cliente (na carteira ativa do vendedor) e um
-// pedido faturado de hoje.
-func dadosDB07(t *testing.T, db *sql.DB) (vendedorID int64) {
+// pedido faturado de hoje (dia no formato DATE, calculado no Go).
+func dadosDB07(t *testing.T, db *sql.DB, hoje string) (vendedorID int64) {
 	t.Helper()
 	n := time.Now().UnixNano()
 	res, err := db.Exec(`INSERT INTO vendedores (nome, regiao, uf, data_admissao, meta_mensal) VALUES (?, 'Teste', 'PR', '2024-01-01', 1000)`,
@@ -57,8 +59,8 @@ func dadosDB07(t *testing.T, db *sql.DB) (vendedorID int64) {
 	require.NoError(t, err)
 	vendedorID, err = res.LastInsertId()
 	require.NoError(t, err)
-	res, err = db.Exec(`INSERT INTO clientes (cnpj, razao_social, segmento, cidade, uf, data_cadastro) VALUES (?, ?, 'ZZ-TEST-DB07', 'Curitiba', 'PR', CURDATE())`,
-		fmt.Sprintf("%014d", n%1e14), fmt.Sprintf("ZZ-TEST-DB07-%d", n))
+	res, err = db.Exec(`INSERT INTO clientes (cnpj, razao_social, segmento, cidade, uf, data_cadastro) VALUES (?, ?, 'ZZ-TEST-DB07', 'Curitiba', 'PR', ?)`,
+		fmt.Sprintf("%014d", n%1e14), fmt.Sprintf("ZZ-TEST-DB07-%d", n), hoje)
 	require.NoError(t, err)
 	clienteID, err := res.LastInsertId()
 	require.NoError(t, err)
@@ -75,10 +77,10 @@ func dadosDB07(t *testing.T, db *sql.DB) (vendedorID int64) {
 		_, err = db.Exec("DELETE FROM vendedores WHERE id = ? AND nome LIKE 'ZZ-TEST-DB07-%'", vendedorID)
 		assert.NoError(t, err)
 	})
-	_, err = db.Exec(`INSERT INTO carteiras (cliente_id, vendedor_id, data_inicio) VALUES (?, ?, CURDATE())`, clienteID, vendedorID)
+	_, err = db.Exec(`INSERT INTO carteiras (cliente_id, vendedor_id, data_inicio) VALUES (?, ?, ?)`, clienteID, vendedorID, hoje)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO pedidos (cliente_id, vendedor_id, data_pedido, canal, status, valor_total) VALUES (?, ?, CURDATE(), 'App', 'Faturado', ?)`,
-		clienteID, vendedorID, valorPedidoDB07)
+	_, err = db.Exec(`INSERT INTO pedidos (cliente_id, vendedor_id, data_pedido, canal, status, valor_total) VALUES (?, ?, ?, 'App', 'Faturado', ?)`,
+		clienteID, vendedorID, hoje, valorPedidoDB07)
 	require.NoError(t, err)
 	return vendedorID
 }
@@ -86,7 +88,9 @@ func dadosDB07(t *testing.T, db *sql.DB) (vendedorID int64) {
 func TestIntegracaoDB07_GroupByComOnlyFullGroupBy(t *testing.T) {
 	db := integracao.Abrir(t)
 	ctx := context.Background()
-	vendedorID := dadosDB07(t, db)
+	agora := time.Now()
+	relogio := func() time.Time { return agora }
+	vendedorID := dadosDB07(t, db, agora.In(tz.Local).Format("2006-01-02"))
 	c := conexaoFullGroupBy(t, db)
 	doVendedor, err := kernel.EscopoDoVendedor(vendedorID)
 	require.NoError(t, err)
@@ -96,17 +100,17 @@ func TestIntegracaoDB07_GroupByComOnlyFullGroupBy(t *testing.T) {
 		escopo kernel.Escopo
 	}{{"irrestrito", irrestrito(t)}, {"vendedor", doVendedor}} {
 		t.Run(e.nome, func(t *testing.T) {
-			_, err := analyticsmysql.NovoOportunidades(c).Funil(ctx, e.escopo, analytics.JanelaTudo)
+			_, err := analyticsmysql.NovoOportunidades(c, relogio).Funil(ctx, e.escopo, analytics.JanelaTudo)
 			require.NoError(t, err, "funil (GROUP BY etapa)")
 
-			cl := analyticsmysql.NovoClientes(c)
+			cl := analyticsmysql.NovoClientes(c, relogio)
 			seg, err := cl.PorSegmento(ctx, e.escopo)
 			require.NoError(t, err, "clientes por segmento")
 			assert.Contains(t, seg, analytics.ContagemSegmento{Segmento: "ZZ-TEST-DB07", Total: 1})
 			_, err = cl.PorUF(ctx, e.escopo)
 			require.NoError(t, err, "clientes por UF")
 
-			d := analyticsmysql.NovoDashboard(c, time.Now)
+			d := analyticsmysql.NovoDashboard(c, relogio)
 			serie, err := d.SerieVendas(ctx, e.escopo, analytics.DiasDe(7))
 			require.NoError(t, err, "série de vendas (GROUP BY data)")
 			require.NotEmpty(t, serie)

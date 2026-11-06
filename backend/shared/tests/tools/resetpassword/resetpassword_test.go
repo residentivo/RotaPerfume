@@ -460,7 +460,7 @@ func TestGetEnvEDSN(t *testing.T) {
 	t.Setenv("DB_SENHA", "s")
 	dsn, err := resetpassword.DSN()
 	require.NoError(t, err)
-	assert.Equal(t, "u:s@tcp(localhost:3306)/rotaperfumes?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true", dsn)
+	assert.Equal(t, "u:s@tcp(localhost:3306)/rotaperfumes?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true&time_zone=%27-03%3A00%27", dsn)
 
 	// SEC-49: host remoto sem DB_TLS_CA só com DB_TLS_REQUIRED=false.
 	t.Setenv("DB_TLS_REQUIRED", "false")

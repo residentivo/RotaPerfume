@@ -29,7 +29,7 @@ func TestDashboardService_GetClienteMetrics_ErroEmCadaEtapa(t *testing.T) {
 			return m.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \? AND `+carteira).WithArgs(false, int64(7))
 		}},
 		{"CountNovosNoPeriodo", func(m sqlmock.Sqlmock) *sqlmock.ExpectedQuery {
-			return m.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE YEAR\(data_cadastro\)`).WithArgs(int64(7))
+			return m.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE YEAR\(data_cadastro\) = \? AND MONTH\(data_cadastro\) = \? AND ` + carteira).WithArgs(argsMesAtual(int64(7))...)
 		}},
 		{"CountPorSegmento", func(m sqlmock.Sqlmock) *sqlmock.ExpectedQuery {
 			return m.ExpectQuery(`SELECT segmento`).WithArgs(int64(7))

@@ -27,8 +27,8 @@
 
 ## 1. Visão geral e convenções
 
-- **Engine:** InnoDB em todas as tabelas com `ENGINE` explícito. `senha_historico` não declara engine, charset nem collation: herda os padrões do servidor e do banco (a confirmar, seção 22).
-- **Controle:** quase todas as tabelas têm `created_at` (`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`) e `updated_at` (`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`). Nas tabelas abaixo eles aparecem numa linha só. Exceção: `senha_historico` tem só `created_at`, e ele aceita NULL.
+- **Engine:** InnoDB em todas as tabelas com `ENGINE` explícito. `senha_historico` também declara `ENGINE=InnoDB`, `utf8mb4` e `utf8mb4_unicode_ci` (`sql/07_ddl_senha_historico.sql`, linha 20).
+- **Controle:** quase todas as tabelas têm `created_at` (`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`) e `updated_at` (`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`). Nas tabelas abaixo eles aparecem numa linha só. Exceção: `senha_historico` tem só `created_at` (sem `updated_at`); ele é `NOT NULL` desde o DB-09 (Lote 39), e bancos anteriores recebem a mudança pela migração 27 (seção 8).
 - **`*_id_origem` promovido a PK (atualização de 2026-09-15):** em `clientes`, `pedidos`, `itens_pedido` e `carteiras`, o id do CSV de origem deixou de ser uma coluna auxiliar e virou a própria PK `BIGINT AUTO_INCREMENT`. A antiga PK interna `id` foi removida. `pagamentos`, `oportunidades` e `visitas` seguem o mesmo princípio, mas com o nome do CSV (`pagamento_id`, `oportunidade_id`, `visita_id`). Os importadores gravam o id explicitamente (upsert na PK). `vendedores`, `usuarios`, `produtos` e `estoque` têm PK `id` própria.
 - **Colunas de FK para clientes:** `cliente_id` das tabelas filhas guarda o `clientes.cliente_id_origem`. Todas as FKs para `clientes` apontam para `cliente_id_origem`.
 - **Booleanos:** `TINYINT(1)` com 0/1. No CSV vêm como S/N.
@@ -45,18 +45,70 @@
 | `refresh_tokens` | Revogação (`revoked_at` + `revoked_reason`). Limpeza física periódica pela própria API desde o CHORE-02 (Lote 12): apaga tokens com `expires_at` anterior a agora menos `REFRESH_TOKEN_RETENCAO` (seção 7.2). |
 | `estoque`, `senha_historico` | Não há DELETE no repositório. |
 
+### 1.1 Fuso horário das colunas de data (DB-08, Lote 38, 2026-11-05)
+
+**Decisão (opção c, aprovada no Lote 38):** a API fixa o `time_zone` da **sessão** em `'-03:00'` pelo DSN (`&time_zone=%27-03%3A00%27`, a partir de `tz.OffsetSQL` em `backend/shared/config/config.go`), junto do `loc=Local` (o `time.Local` do Go já é `-03:00`, pacote `tz`). **O DDL não muda** e o `time_zone` global do servidor não é alterado.
+
+**Por quê:** antes, com a sessão no fuso do servidor (UTC no descartável), o `DEFAULT CURRENT_TIMESTAMP`/`ON UPDATE` gravava o instante verdadeiro, mas o Go gravava a hora de parede de `-03` que a sessão UTC interpretava como UTC, uma diferença de 3 h. Com a sessão em `-03:00`, o DEFAULT, o ON UPDATE e o Go ficam coerentes, em qualquer servidor (UTC ou `-03`). As linhas antigas gravadas pelo DEFAULT passam a aparecer certas. Efeito colateral aceito: o `usuarios.ultimo_login_at` antigo do CasaOS aparece 3 h mais cedo (só dev).
+
+**Regras:**
+
+- **`TIMESTAMP` guarda o instante** (UTC internamente) e é convertido de/para o `time_zone` da sessão na leitura e na escrita. **`DATETIME` e `DATE` são "naive"**: guardam o valor literal, sem conversão de fuso.
+- **API (DB-08):** toda sessão aberta pela API, pelos importadores e pelas CLIs Go que usam `config` roda com `@@session.time_zone = '-03:00'`.
+- **Cliente `mariadb` e seeds:** a sessão da CLI usa o `time_zone` do servidor (`SYSTEM`; UTC no descartável). Ali um `TIMESTAMP` aparece e é gravado **em UTC**, 3 h à frente da hora de `-03`, salvo `SET time_zone = '-03:00';` no início da sessão ou do script (o `sql/25_seed_movimentacoes_mes_atual.sql` faz isso na linha 61, antes do `CURDATE()` da linha 65). Ao conferir um horário pela CLI, rode o `SET` antes.
+- **Nenhum SQL de produção usa o relógio do servidor** (`NOW()`, `CURDATE()`, `CURRENT_TIMESTAMP()` em expressão etc.; TST-23 e BUG-30): as datas e os instantes são calculados no Go e passados como parâmetro `?`. A única exceção aceita é o `DEFAULT CURRENT_TIMESTAMP [ON UPDATE CURRENT_TIMESTAMP]` das colunas de auditoria abaixo, coerente por causa da sessão `-03:00` (catraca de DDL do DB-08 em `backend/shared/tests/arquitetura/`).
+
+**Colunas `TIMESTAMP` afetadas** (`created_at`/`updated_at` com `DEFAULT CURRENT_TIMESTAMP [ON UPDATE CURRENT_TIMESTAMP]`):
+
+| Tabela | Script | Observação |
+| --- | --- | --- |
+| `vendedores` | `sql/01_ddl_usuarios.sql` | |
+| `usuarios` | `sql/01_ddl_usuarios.sql` | Também `ultimo_login_at TIMESTAMP NULL`, gravado pelo Go |
+| `pedidos` | `sql/04_ddl_pedidos.sql` | |
+| `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` | |
+| `senha_historico` | `sql/07_ddl_senha_historico.sql` | Só `created_at`, `NOT NULL` desde o DB-09 (migração 27; seção 22, item 7) |
+| `clientes` | `sql/09_ddl_clientes.sql` | |
+| `produtos` | `sql/10_ddl_produtos.sql` | |
+| `itens_pedido` | `sql/11_ddl_itens_pedido.sql` | |
+| `pagamentos` | `sql/12_ddl_pagamentos.sql` | |
+| `carteiras` | `sql/14_ddl_carteiras.sql` | |
+| `oportunidades` | `sql/15_ddl_oportunidades.sql` | |
+| `visitas` | `sql/16_ddl_visitas.sql` | |
+| `estoque` | `sql/17_ddl_estoque.sql` | |
+| `clientes_merge_backup_20260925_vinculos` | `sql/19_alter_clientes_cnpj_unique.sql`, linha 143 | Tabela de backup (seção 19) |
+
+**Não afetadas (`DATETIME`, naive, gravadas pelo Go em `-03`):** `usuarios.tokens_validos_desde` (seção 6.1), `refresh_tokens.expires_at`, `revoked_at` e `reuso_detectado_em` (seções 7 e 7.1).
+
+**Levantamento no banco descartável** (`rp-descartavel-l36`, `127.0.0.1:33306`, MariaDB `11.4.13-MariaDB-ubu2404`, 2026-11-05 18:08 UTC, pelo cliente `mariadb`, sem o DSN da API):
+
+| Variável / função | Sessão da CLI | Depois de `SET time_zone = '-03:00'` |
+| --- | --- | --- |
+| `@@global.time_zone` | `SYSTEM` | `SYSTEM` |
+| `@@system_time_zone` | `UTC` | `UTC` |
+| `@@session.time_zone` | `SYSTEM` | `-03:00` |
+| `NOW()` | `2026-11-05 18:08:01` | `2026-11-05 15:08:01` |
+| `UTC_TIMESTAMP()` | `2026-11-05 18:08:01` | `2026-11-05 18:08:01` |
+
+Ou seja: o servidor do descartável roda em UTC, e só o `SET` da sessão (ou o DSN da API) traz `NOW()`/`TIMESTAMP` para `-03`.
+
+**Pendência informativa do usuário (CasaOS e produção):** os agentes não consultam o CasaOS nem a produção para este levantamento. Como a decisão vale com o servidor em UTC ou em `-03`, o resultado é só informativo. Para registrar, rode a consulta abaixo. No CasaOS (`192.168.168.106:3307`), use o cliente `mariadb` com `--ssl-ca deploy/ca-cert.pem --ssl-verify-server-cert` e a senha em `MYSQL_PWD` (seção 23.2). Na produção, rode só localmente no servidor, pelo `admin_sql` do Passo 7 da §11 de `docs/deploy-servidor.md`.
+
+```sql
+SELECT @@global.time_zone, @@system_time_zone, @@session.time_zone, NOW(), UTC_TIMESTAMP();
+```
+
 ---
 
 ## 2. Índice das tabelas
 
-A ordem é a do `make db-up`, que cria o schema vazio. O `make db-seed` roda o `db-up` e depois os seeds. O `make db-reset` apaga o banco e roda o `db-seed`. O `make db-rebuild` faz o mesmo e roda todos os importadores. **BUG-27:** as etapas rodam em cadeia (`$(MAKE) db-down && $(MAKE) db-seed && $(MAKE) db-import-...`), uma depois da outra mesmo com `make -j`; se o DROP for recusado ou falhar, nada mais roda, mesmo com `make -k`.
+A ordem é a do `make db-up`, que cria o schema vazio. O `make db-seed` roda o `db-up` (por sub-make na receita, depois das guardas: BUG-28, Lote 37) e depois os seeds. O `make db-reset` apaga o banco e roda o `db-seed`. O `make db-rebuild` faz o mesmo e roda todos os importadores. **BUG-27:** as etapas rodam em cadeia (`$(MAKE) db-down && $(MAKE) db-seed && $(MAKE) db-import-...`), uma depois da outra mesmo com `make -j`; se o DROP for recusado ou falhar, nada mais roda, mesmo com `make -k`. **BUG-29 (Lote 37):** use `make -k ...` (ou `MAKEFLAGS=-k make ...` no ambiente), nunca `make ... MAKEFLAGS=-k`: o `Makefile` recusa `MAKEFLAGS`/`MAKEOVERRIDES`/`GNUMAKEFLAGS` na linha de comando e `ENV_ARQUIVO` vindo do ambiente, que fariam as etapas lerem o `.env` padrão no lugar do `ENV_ARQUIVO` (detalhes em `docs/deploy-servidor.md`, seção 3).
 
 | Tabela | Script de criação | Migrações que alteram | Seção |
 | --- | --- | --- | --- |
 | `vendedores` | `sql/01_ddl_usuarios.sql` | - | 5 |
 | `usuarios` | `sql/01_ddl_usuarios.sql` | 08 (`deve_trocar_senha`), 22 (`tokens_validos_desde`) | 6 |
 | `refresh_tokens` | `sql/06_ddl_refresh_tokens.sql` | 21 (`revoked_reason`), 23 (`reuso_detectado_em`) | 7 |
-| `senha_historico` | `sql/07_ddl_senha_historico.sql` | 13 (ENUM `tipo_reset`) | 8 |
+| `senha_historico` | `sql/07_ddl_senha_historico.sql` | 13 (ENUM `tipo_reset`), 27 (`created_at` NOT NULL) | 8 |
 | `clientes` | `sql/09_ddl_clientes.sql` | 19 (`uq_clientes_cnpj`), 20 (COMMENT de `cnpj`) | 9 |
 | `produtos` | `sql/10_ddl_produtos.sql` (já com `imagem` desde o IMG-01) | 26 (`imagem`, `uk_produtos_imagem`, `chk_produtos_imagem`) | 13 |
 | `pedidos` | `sql/04_ddl_pedidos.sql` | 19 (transferência de `cliente_id`, só dados) | 14 |
@@ -152,7 +204,7 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 04 | `04_ddl_pedidos.sql` | Cria `pedidos` | `db-up` | Não (DDL base) |
 | 05 | `05_seed_pedidos.sql` | Descontinuado: só comentários, sem SQL | nenhum | - |
 | 06 | `06_ddl_refresh_tokens.sql` | Cria `refresh_tokens` (já com `revoked_reason` e `reuso_detectado_em`) | `db-up` | Não (DDL base) |
-| 07 | `07_ddl_senha_historico.sql` | Cria `senha_historico` (já com o ENUM corrigido) | `db-up` | Não (DDL base) |
+| 07 | `07_ddl_senha_historico.sql` | Cria `senha_historico` (já com o ENUM corrigido e `created_at` NOT NULL) | `db-up` | Não (DDL base) |
 | 08 | `08_alter_usuarios_deve_trocar_senha.sql` | Adiciona `usuarios.deve_trocar_senha` (idempotente) | `db-fix-deve-trocar-senha` | Não (sem script) |
 | 09 | `09_ddl_clientes.sql` | Cria `clientes` (já com `uq_clientes_cnpj` e o COMMENT novo) | `db-up` | Não (DDL base) |
 | 10 | `10_ddl_produtos.sql` | Cria `produtos` (já com `imagem`, `uk_produtos_imagem` e `chk_produtos_imagem` desde o IMG-01) | `db-up` | Não (DDL base) |
@@ -171,9 +223,10 @@ As tabelas de backup da migração 19 (seção 19) não têm FK e ficam fora do 
 | 23 | `23_alter_refresh_tokens_reuso_detectado_em.sql` | Adiciona `refresh_tokens.reuso_detectado_em` (SEC-12, idempotente) | `db-fix-reuso-detectado` | Sim: `23_revert_...`, `db-revert-reuso-detectado` (perde as marcas de reuso) |
 | 24 | `24_alter_pagamentos_taxa_pct_check.sql` | Cria o CHECK `chk_pagamentos_taxa_pct` (0 a 30) em `pagamentos` (SEC-27, idempotente; aborta sem alterar dados se houver linha fora da faixa) | `db-fix-taxa-pct-check` | Sim: `24_revert_...`, `db-revert-taxa-pct-check` (só remove o CHECK) |
 | 26 | `26_alter_produtos_imagem.sql` | Adiciona `produtos.imagem` (VARCHAR(41) NULL), o UNIQUE `uk_produtos_imagem` e o CHECK `chk_produtos_imagem` (IMG-01, Lote 26, idempotente; linhas existentes ficam NULL) | `db-fix-produtos-imagem` | Sim: `26_revert_...`, `db-revert-produtos-imagem` (remove CHECK, UNIQUE e coluna; os arquivos em disco ficam órfãos) |
+| 27 | `27_alter_senha_historico_created_at_not_null.sql` | `senha_historico.created_at` passa a `NOT NULL` (DB-09, Lote 39, idempotente; aborta sem alterar dados se houver `created_at` NULL) | `db-fix-historico-created-at` | Sim: `27_revert_...`, `db-revert-historico-created-at` (volta a aceitar NULL; não desfaz o remédio manual) |
 
-- As migrações de alteração (08, 13, 18 a 24 e 26) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
-- Todos os alvos que chamam o cliente `mariadb` (`db-create`, `db-down`, `db-fix-*`, `db-revert-*`; `db-up`/`db-seed` herdam via `db-create`; `db-reset`/`db-rebuild` chamam `db-down` e `db-seed` por sub-make, BUG-27) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23) e o `mariadb` (MariaDB ≥ 11.4) no `PATH` (DB-03). O `Makefile` passa `--local-infile=0` (SEC-28). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h ...`, sem `-p` no argv.
+- As migrações de alteração (08, 13, 18 a 24, 26 e 27) **não** fazem parte do `db-up`/`db-seed`/`db-reset`. Servem para bancos criados antes da mudança. Desde o DB-01 (Lote 12), **todos** os DDLs base nascem com o resultado delas, inclusive o 17 (sem `estoque.origem`).
+- Todos os alvos que chamam o cliente `mariadb` (`db-create`, `db-down`, `db-seed`, `db-fix-*`, `db-revert-*`; `db-up` herda via `db-create`; o `db-seed` chama o `db-up` por sub-make, BUG-28; `db-reset`/`db-rebuild` chamam `db-down` e `db-seed` por sub-make, BUG-27) dependem de `db-check-env` e exigem `DB_USUARIO`/`DB_SENHA` no `.env` (SEC-11, seção 23) e o `mariadb` (MariaDB ≥ 11.4) no `PATH` (DB-03). O `Makefile` passa `--local-infile=0` (SEC-28). Os cabeçalhos dos scripts ensinam a execução manual com `MYSQL_PWD="$DB_SENHA" mariadb -u $DB_USUARIO -h ...`, sem `-p` no argv.
 - Depois do `db-seed`, o Makefile roda `resetpassword -list`, `-create-admin` e `-all-users` (`backend/shared`), que trocam os hashes placeholder dos seeds 02 e 03 por Argon2id real (com o `PASSWORD_PEPPER` do `.env`).
 - **Seeds em produção (DEPLOY-07, Lote 33, 2026-11-04):** em produção o seed é feito **só** pelo `deploy/seed-producao.sh`, **nunca** pelo `make db-seed` (que roda `-all-users` e daria a mesma senha a todos os vendedores). O script aplica o `02_seed_admin.sql`, depois o `03_seed_vendedores.sql`, inativa todos os usuários não-admin (`UPDATE usuarios SET ativo = 0` fora do `role = 'admin'`: os 42 vendedores são reais e entram inativos) e roda o `resetpassword -create-admin`. Ele não roda o `-all-users`: os vendedores ficam com o hash placeholder (ninguém loga com ele) até o admin ativá-los e resetar a senha pela API.
 - **Regras dos seeds 02 e 03 (DEPLOY-07):**
@@ -252,7 +305,7 @@ Corte de sessão por usuário. Revogar refresh tokens não invalida os access to
 
 #### Quando o corte é gravado
 
-O valor vem do Go (`time.Now().Truncate(time.Second)`), nunca do `NOW()` do MariaDB (o DSN usa `loc=Local`, fuso fixo `-03:00`).
+O valor vem do Go (`time.Now().Truncate(time.Second)`), nunca do `NOW()` do MariaDB (o DSN usa `loc=Local`, fuso fixo `-03:00`, e, desde o DB-08, `time_zone='-03:00'` na sessão; seção 1.1). A coluna é `DATETIME` (naive): não sofre conversão de fuso.
 
 | Evento | Onde no código |
 | --- | --- |
@@ -419,7 +472,7 @@ Auditoria das trocas de senha. Cada linha guarda o hash **anterior** e quem fez 
 | `ip_origem` | VARCHAR(45) | **sim** | NULL | IP de quem fez a troca. |
 | `user_agent` | TEXT | **sim** | NULL | User-Agent de quem fez a troca. |
 | `tipo_reset` | ENUM('usuario','admin','primeiro_acesso','esquecimento') | não | - | Tipo da troca (ver abaixo). |
-| `created_at` | TIMESTAMP | **sim** | CURRENT_TIMESTAMP | Data da troca. Não tem `NOT NULL` nem `updated_at`. |
+| `created_at` | TIMESTAMP | não (desde o DB-09) | CURRENT_TIMESTAMP | Data da troca. Não tem `updated_at`. |
 
 **Índices:** `PRIMARY` (`id`), `idx_usuario` (`usuario_id`), `idx_data` (`created_at`).
 
@@ -435,10 +488,18 @@ Auditoria das trocas de senha. Cada linha guarda o hash **anterior** e quem fez 
 | `esquecimento` | Recuperação por esquecimento. | Constante definida, sem uso fora dos testes (a confirmar) |
 
 **Regras de negócio e histórico:**
-- **Colunas anuláveis (BUG-12, Lote 10):** `ip_origem`, `user_agent` e `created_at` aceitam NULL. Um registro com NULL derrubava a listagem com `500`. Desde o BUG-12 o repositório lê essas colunas como `sql.Null*`: NULL sai como `""` (texto) ou data zero `"0001-01-01T00:00:00Z"` (`created_at`), e a tela mostra `-`. O contrato JSON não mudou e não houve migração.
+- **Colunas anuláveis (BUG-12, Lote 10):** `ip_origem` e `user_agent` aceitam NULL (e `created_at` aceitava, até o DB-09). Um registro com NULL derrubava a listagem com `500`. Desde o BUG-12 o repositório lê essas colunas como `sql.Null*`: NULL sai como `""` (texto) ou data zero `"0001-01-01T00:00:00Z"` (`created_at`), e a tela mostra `-`. O contrato JSON não mudou. O scan de `created_at` continua como `sql.NullTime`, como defesa para bancos ainda sem a migração 27.
+- **`created_at` NOT NULL (DB-09, Lote 39, 2026-11-05):** o `sql/07` já nasce com `NOT NULL`. A migração 27 serve para bancos anteriores. A migração não entra no `db-up` nem no `sql/ordem-ddl.txt`. Regras:
+  - `make db-fix-historico-created-at` aplica `sql/27_alter_senha_historico_created_at_not_null.sql` (torna `senha_historico.created_at` NOT NULL; aborta sem alterar dados se houver linha NULL, remédio no cabeçalho do arquivo). `make db-revert-historico-created-at` aplica `sql/27_revert_senha_historico_created_at_not_null.sql`. Ambos passam por `db-guard-producao` e `db-check-env`.
+  - **Produção:** o `make` não alcança esse banco, e o seed pode ter rodado com o `sql/07` antigo. Use o `admin_sql` do Passo 7 da §11 de `docs/deploy-servidor.md`: primeiro o `SELECT COUNT(*) FROM senha_historico WHERE created_at IS NULL;`, depois `admin_sql rotaperfumes < sql/27_alter_senha_historico_created_at_not_null.sql`. A execução é do usuário, no servidor.
+  - Se houver linha com `created_at` NULL, ela aborta com `SIGNAL SQLSTATE '45000'` e a quantidade, sem alterar nada. Levantamento: `SELECT COUNT(*) FROM senha_historico WHERE created_at IS NULL;`.
+  - Essas linhas **não** devem ser apagadas, porque alimentam o bloqueio de reuso de senha. O remédio é manual, e a data real não é recuperável: `SET time_zone = '-03:00'; UPDATE senha_historico SET created_at = '1970-01-01 00:00:01' WHERE created_at IS NULL;` (sem o `SET`, numa sessão UTC, a API lê `1969-12-31 21:00:01`). Depois disso, rode a migração de novo. Com a sentinela, a tela passa a mostrar essa data em vez de `-`.
+  - O `ALTER` fica dentro do bloco, depois do `SIGNAL`: no MariaDB 11.4, o `MODIFY` para `NOT NULL` não recusa os NULL, mesmo em modo estrito, e os preenche em silêncio com a hora da migração (conferido no descartável).
+  - Com a coluna `NOT NULL`, um `INSERT` com `created_at` NULL explícito não dá erro: grava o valor padrão (conferido no descartável, modo estrito).
+  - Risco residual: o `IMPORTAR_DUMP` do Jenkinsfile recria as tabelas pelo DDL do dump, então um dump antigo volta a coluna para anulável. Rode a migração de novo depois de importar um dump assim.
 - **ENUM corrigido (migração 13):** o DDL original tinha `ENUM('proprio','admin','primeiro_login')`, mas o código grava `usuario`/`admin`/`primeiro_acesso`/`esquecimento`. Isso causava o erro 1265 e travava a troca de senha obrigatória. O `07_ddl_senha_historico.sql` já foi corrigido; bancos antigos recebem a correção por `make db-fix-tipo-reset`. Não há script de reversão.
 
-**Migrações:** 13.
+**Migrações:** 13, 27.
 
 ---
 
@@ -897,8 +958,8 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 | 3 | `estoque` | ~~A migração 18 não é idempotente e não tem alvo no Makefile.~~ **Resolvido no DB-01:** idempotente, com `db-fix-estoque-origem` e reversão `db-revert-estoque-origem`. | `sql/18_*.sql` |
 | 4 | `estoque` | ~~`postman/README.md` diz que o `db-up` cria `estoque`; o Makefile não criava.~~ **Resolvido no DB-01:** agora o `db-up` cria, e o README foi revisto no Lote 12. | `postman/README.md` |
 | 5 | `estoque` | **Aberto.** `ruptura`: o DDL diz que vem do S/N do CSV; o card de criação diz "derivado de `saldo <= 0`". Regra efetiva a confirmar no código. | `sql/17`, `tarefas/feito.md` |
-| 6 | `senha_historico` | Sem `ENGINE`/charset/collation explícitos: herda do servidor e do banco (esperado InnoDB e `utf8mb4_unicode_ci`). Nomes das FKs gerados pelo MariaDB. | `sql/07_ddl_senha_historico.sql` |
-| 7 | `senha_historico` | `created_at` aceita NULL (sem `NOT NULL`); o BUG-12 confirmou `timestamp NULL DEFAULT CURRENT_TIMESTAMP` no banco local. Um `NOT NULL` exigiria migração (decisão de negócio). | BUG-12 em `tarefas/feito.md` |
+| 6 | `senha_historico` | ~~Sem `ENGINE`/charset/collation explícitos.~~ **Corrigido no DB-09 (Lote 39):** o `sql/07`, linha 20, declara `ENGINE=InnoDB`, `utf8mb4` e `utf8mb4_unicode_ci`. **Aberto:** nomes das FKs gerados pelo MariaDB. | `sql/07_ddl_senha_historico.sql` |
+| 7 | `senha_historico` | ~~`created_at` aceita NULL (sem `NOT NULL`); o BUG-12 confirmou `timestamp NULL DEFAULT CURRENT_TIMESTAMP` no banco local.~~ **Resolvido no DB-09 (Lote 39, 2026-11-05):** `sql/07` com `NOT NULL` e migração 27 para bancos anteriores, que aborta se houver NULL (seção 8). | `sql/07_ddl_senha_historico.sql`, `sql/27_*.sql` |
 | 8 | `senha_historico` | O teste de integração do BUG-12 usa um "registro órfão" (`usuario_id` sem usuário), o que a FK `ON DELETE CASCADE` não deveria permitir. Confirmar se a FK existe no banco local ou se o teste desliga `FOREIGN_KEY_CHECKS`. | `backend/shared/tests/repositories/bug12_senha_historico_null_test.go` |
 | 9 | `senha_historico` | `tipo_reset` `primeiro_acesso` e `esquecimento` estão no ENUM, mas nenhum código fora dos testes os grava. A troca de primeiro acesso é gravada como `usuario`. | `backend/shared/identidade/historico.go`, `backend/shared/identidade/identidadeapp/senha.go` (até o Lote 21, `senha_historico_service.go` e `auth_handler.go`) |
 | 10 | `usuarios` | ~~Valor de `deve_trocar_senha` gravado pelo CLI `resetpassword` (`-all-users`, `-create-admin`) no `db-seed`.~~ **Resolvido no DEPLOY-07 (Lote 33, 2026-11-04):** `UpsertAdmin` (`-create-admin`) e `UpsertByEmail` (`-email`) gravam `deve_trocar_senha = 1` no INSERT e no UPDATE; o `-all-users` não altera a coluna (mantém o valor do seed 03, que já é `1`). | `backend/shared/tools/resetpassword` |
@@ -919,7 +980,7 @@ Levantados no DOC-04 só pela leitura dos arquivos (sem consulta ao banco). Deve
 - `DB_USUARIO` e `DB_SENHA` são **obrigatórios** no `.env` da raiz. Não existe mais o default `golang/golang` em nenhum lugar: nem no `Makefile` (sem `DB_USUARIO?=`/`DB_SENHA?=`), nem no `config.Load()`, nem no `resetpassword`/`seedusers` (já desde o SEC-10), nem nos testes de integração (que dão `t.Skip` sem as variáveis).
 - **API e importadores:** `config.Load()` devolve `config: defina DB_USUARIO/DB_SENHA no .env` (`ErrCredenciaisDB`) se faltar um dos dois (usuário só com espaços também conta como vazio). A mensagem nunca traz os valores. A checagem roda depois das demais validações: sem `JWT_SECRET` e sem DB, o erro citado é o do `JWT_SECRET`. A API loga `[server] config: ...` e não sobe.
 - **`seedusers` com `-dry-run`/`-no-exec`:** usa `config.LoadSemCredenciaisDB()` e funciona sem credenciais (não toca no banco).
-- **Makefile:** o alvo `db-check-env` falha com `SEC-11: defina DB_USUARIO/DB_SENHA no .env`. É pré-requisito de `db-create`, `db-down` e de todos os `db-fix-*`/`db-revert-*`; `db-up` e `db-seed` herdam via `db-create`; `db-reset` e `db-rebuild` chamam `db-down` e `db-seed` por sub-make (BUG-27). `help`, `build`, `test`, `lint` e `dev-frontend` não exigem credenciais.
+- **Makefile:** o alvo `db-check-env` falha com `SEC-11: defina DB_USUARIO/DB_SENHA no .env`. É pré-requisito de `db-create`, `db-down` e de todos os `db-fix-*`/`db-revert-*`; `db-seed` também depende dele direto (BUG-28) e `db-up` herda via `db-create`; `db-reset` e `db-rebuild` chamam `db-down` e `db-seed` por sub-make (BUG-27). `help`, `build`, `test`, `lint` e `dev-frontend` não exigem credenciais.
 
 ### 23.2 Senha fora da linha de comando (`MYSQL_PWD`)
 

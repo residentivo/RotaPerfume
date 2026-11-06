@@ -94,11 +94,7 @@ func TestTST18_EstagioTestesFrontend_Comandos(t *testing.T) {
 		{"npm ci pelo lockfile", "npm ci"},
 		{"lint", "npm run lint"},
 		{"testes", "npm test"},
-		{"sem node_modules", "--exclude=frontend/node_modules"},
-		{"sem .next", "--exclude=frontend/.next"},
-		{"sem coverage", "--exclude=frontend/coverage"},
-		{"sem tsbuildinfo", "--exclude=frontend/tsconfig.tsbuildinfo"},
-		{"sem .env", "--exclude=frontend/.env"},
+		{"código só do rastreado (SEC-62)", "git archive --format=tar HEAD -- "},
 	}
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
@@ -118,6 +114,7 @@ func TestTST18_EstagioTestesFrontend_Comandos(t *testing.T) {
 		{"credenciais", `withCredentials`},
 		{"set -x", `set -[a-z]*x`},
 		{"rede do banco", `--network`},
+		{"tar do workspace (SEC-62)", `tar -cf -`},
 	}
 	for _, p := range proibidos {
 		t.Run("sem "+p.nome, func(t *testing.T) {

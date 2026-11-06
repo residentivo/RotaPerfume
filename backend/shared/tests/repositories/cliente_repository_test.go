@@ -5,6 +5,7 @@ package repositories_test
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"github.com/rotaperfumes/shared/analytics/analyticsmysql"
 	"github.com/rotaperfumes/shared/comercial"
 	"github.com/rotaperfumes/shared/comercial/comercialmysql"
@@ -32,26 +33,31 @@ func TestClienteCountNovosNoPeriodo_Success(t *testing.T) {
 		nome        string
 		periodo     string
 		queryRegexp string
+		args        []driver.Value // BUG-30: datas do relógio (hojeFixo)
 	}{
 		{
 			nome:        "periodo today",
 			periodo:     "today",
-			queryRegexp: `SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro = CURDATE\(\)`,
+			queryRegexp: `SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro = \?$`,
+			args:        []driver.Value{"2026-10-15"},
 		},
 		{
 			nome:        "periodo week",
 			periodo:     "week",
-			queryRegexp: `SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro >= DATE_SUB\(CURDATE\(\), INTERVAL 6 DAY\)`,
+			queryRegexp: `SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro >= \?$`,
+			args:        []driver.Value{"2026-10-09"},
 		},
 		{
 			nome:        "periodo month",
 			periodo:     "month",
-			queryRegexp: `SELECT COUNT\(\*\) FROM clientes WHERE YEAR\(data_cadastro\) = YEAR\(CURDATE\(\)\) AND MONTH\(data_cadastro\) = MONTH\(CURDATE\(\)\)`,
+			queryRegexp: `SELECT COUNT\(\*\) FROM clientes WHERE YEAR\(data_cadastro\) = \? AND MONTH\(data_cadastro\) = \?$`,
+			args:        []driver.Value{2026, 10},
 		},
 		{
 			nome:        "periodo desconhecido cai no default (month)",
 			periodo:     "ano",
-			queryRegexp: `SELECT COUNT\(\*\) FROM clientes WHERE YEAR\(data_cadastro\) = YEAR\(CURDATE\(\)\) AND MONTH\(data_cadastro\) = MONTH\(CURDATE\(\)\)`,
+			queryRegexp: `SELECT COUNT\(\*\) FROM clientes WHERE YEAR\(data_cadastro\) = \? AND MONTH\(data_cadastro\) = \?$`,
+			args:        []driver.Value{2026, 10},
 		},
 	}
 
@@ -61,10 +67,11 @@ func TestClienteCountNovosNoPeriodo_Success(t *testing.T) {
 			defer db.Close()
 
 			mock.ExpectQuery(tt.queryRegexp).
+				WithArgs(tt.args...).
 				WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(3))
 
 			ctx := context.Background()
-			total, err := analyticsmysql.NovoClientes(db).NovosNoPeriodo(ctx, escopoDe(0), periodoDe(tt.periodo))
+			total, err := analyticsmysql.NovoClientes(db, relogioFixo).NovosNoPeriodo(ctx, escopoDe(0), periodoDe(tt.periodo))
 
 			require.NoError(t, err)
 			assert.Equal(t, 3, total)
@@ -180,10 +187,10 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 			WithoutArgs().
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(40))
 
-		total, err := analyticsmysql.NovoClientes(db).Total(ctx, escopoDe(7))
+		total, err := analyticsmysql.NovoClientes(db, relogioFixo).Total(ctx, escopoDe(7))
 		require.NoError(t, err)
 		assert.Equal(t, 4, total)
-		total, err = analyticsmysql.NovoClientes(db).Total(ctx, escopoDe(0))
+		total, err = analyticsmysql.NovoClientes(db, relogioFixo).Total(ctx, escopoDe(0))
 		require.NoError(t, err)
 		assert.Equal(t, 40, total)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -199,10 +206,10 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 			WithArgs(false).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(9))
 
-		total, err := analyticsmysql.NovoClientes(db).PorAtivo(ctx, escopoDe(7), true)
+		total, err := analyticsmysql.NovoClientes(db, relogioFixo).PorAtivo(ctx, escopoDe(7), true)
 		require.NoError(t, err)
 		assert.Equal(t, 3, total)
-		total, err = analyticsmysql.NovoClientes(db).PorAtivo(ctx, escopoDe(0), false)
+		total, err = analyticsmysql.NovoClientes(db, relogioFixo).PorAtivo(ctx, escopoDe(0), false)
 		require.NoError(t, err)
 		assert.Equal(t, 9, total)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -211,11 +218,11 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 	t.Run("CountNovosNoPeriodo", func(t *testing.T) {
 		db, mock := newMock(t)
 		defer db.Close()
-		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro = CURDATE\(\) AND ` + carteiraAtivaWhereRegexp + `$`).
-			WithArgs(int64(7)).
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro = \? AND `+carteiraAtivaWhereRegexp+`$`).
+			WithArgs("2026-10-15", int64(7)).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
 
-		total, err := analyticsmysql.NovoClientes(db).NovosNoPeriodo(ctx, escopoDe(7), periodoDe("today"))
+		total, err := analyticsmysql.NovoClientes(db, relogioFixo).NovosNoPeriodo(ctx, escopoDe(7), periodoDe("today"))
 		require.NoError(t, err)
 		assert.Equal(t, 1, total)
 		assert.NoError(t, mock.ExpectationsWereMet())
@@ -231,12 +238,12 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 			WithoutArgs().
 			WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}))
 
-		out, err := analyticsmysql.NovoClientes(db).PorSegmento(ctx, escopoDe(7))
+		out, err := analyticsmysql.NovoClientes(db, relogioFixo).PorSegmento(ctx, escopoDe(7))
 		require.NoError(t, err)
 		require.Len(t, out, 1)
 		assert.Equal(t, "varejo", out[0].Segmento)
 
-		vazio, err := analyticsmysql.NovoClientes(db).PorSegmento(ctx, escopoDe(0))
+		vazio, err := analyticsmysql.NovoClientes(db, relogioFixo).PorSegmento(ctx, escopoDe(0))
 		require.NoError(t, err)
 		require.NotNil(t, vazio, "sem linhas deve devolver slice vazio, nunca nil")
 		assert.Len(t, vazio, 0)
@@ -253,12 +260,12 @@ func TestClienteContagens_EscopoCarteira(t *testing.T) {
 			WithoutArgs().
 			WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}).AddRow("SP", 5))
 
-		vazio, err := analyticsmysql.NovoClientes(db).PorUF(ctx, escopoDe(7))
+		vazio, err := analyticsmysql.NovoClientes(db, relogioFixo).PorUF(ctx, escopoDe(7))
 		require.NoError(t, err)
 		require.NotNil(t, vazio, "sem linhas deve devolver slice vazio, nunca nil")
 		assert.Len(t, vazio, 0)
 
-		out, err := analyticsmysql.NovoClientes(db).PorUF(ctx, escopoDe(0))
+		out, err := analyticsmysql.NovoClientes(db, relogioFixo).PorUF(ctx, escopoDe(0))
 		require.NoError(t, err)
 		require.Len(t, out, 1)
 		assert.Equal(t, "SP", out[0].UF)
@@ -276,7 +283,7 @@ func TestClienteCountNovosNoPeriodo_DBError(t *testing.T) {
 		WillReturnError(sql.ErrConnDone)
 
 	ctx := context.Background()
-	_, err := analyticsmysql.NovoClientes(db).NovosNoPeriodo(ctx, escopoDe(0), periodoDe("week"))
+	_, err := analyticsmysql.NovoClientes(db, relogioFixo).NovosNoPeriodo(ctx, escopoDe(0), periodoDe("week"))
 
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

@@ -62,8 +62,8 @@ func TestDASH01_Funil_ContratoJSON(t *testing.T) {
 	server, db, mock := setupTestServer(t)
 	defer server.Close()
 	defer db.Close()
-	mock.ExpectQuery(reFunil + `\s+AND data_abertura >= DATE_SUB\(CURDATE\(\), INTERVAL 29 DAY\)\s+GROUP BY etapa$`).
-		WithoutArgs().WillReturnRows(funilLinhas())
+	mock.ExpectQuery(reFunil + `\s+AND data_abertura >= \?\s+GROUP BY etapa$`).
+		WithArgs(argDia(29)).WillReturnRows(funilLinhas())
 
 	status, body := getComToken(t, server.URL+"/api/dashboard/funil?janela=30d", 1, "admin")
 	require.Equal(t, http.StatusOK, status, body)
@@ -90,22 +90,31 @@ func TestDASH01_Funil_ContratoJSON(t *testing.T) {
 }
 
 func TestDASH01_Funil_JanelasValidas(t *testing.T) {
+	// BUG-30: a data de início vem do Go (hoje-29/-89/-364), por placeholder.
+	const desde = `\s+AND data_abertura >= \?`
 	casos := []struct {
 		query, janela, clausula string
+		diasAtras               int // -1: sem cláusula nem argumento
 	}{
-		{"", "all", ``},
-		{"?janela=", "all", ``},
-		{"?janela=all", "all", ``},
-		{"?janela=30d", "30d", `\s+AND data_abertura >= DATE_SUB\(CURDATE\(\), INTERVAL 29 DAY\)`},
-		{"?janela=90d", "90d", `\s+AND data_abertura >= DATE_SUB\(CURDATE\(\), INTERVAL 89 DAY\)`},
-		{"?janela=365d", "365d", `\s+AND data_abertura >= DATE_SUB\(CURDATE\(\), INTERVAL 364 DAY\)`},
+		{"", "all", ``, -1},
+		{"?janela=", "all", ``, -1},
+		{"?janela=all", "all", ``, -1},
+		{"?janela=30d", "30d", desde, 29},
+		{"?janela=90d", "90d", desde, 89},
+		{"?janela=365d", "365d", desde, 364},
 	}
 	for _, c := range casos {
 		t.Run(c.janela+c.query, func(t *testing.T) {
 			server, db, mock := setupTestServer(t)
 			defer server.Close()
 			defer db.Close()
-			mock.ExpectQuery(reFunil + c.clausula + `\s+GROUP BY etapa$`).WithoutArgs().WillReturnRows(sqlmock.NewRows(funilColunas))
+			exp := mock.ExpectQuery(reFunil + c.clausula + `\s+GROUP BY etapa$`)
+			if c.diasAtras < 0 {
+				exp.WithoutArgs()
+			} else {
+				exp.WithArgs(argDia(c.diasAtras))
+			}
+			exp.WillReturnRows(sqlmock.NewRows(funilColunas))
 			status, body := getComToken(t, server.URL+"/api/dashboard/funil"+c.query, 1, "admin")
 			require.Equal(t, http.StatusOK, status, body)
 			_, data := decodeFunil(t, body)
@@ -143,8 +152,8 @@ func TestDASH01_Funil_VendedorFiltraPeloPrincipal(t *testing.T) {
 			defer server.Close()
 			defer db.Close()
 			expectEscopoVendedor(mock, escopoVendedorB)
-			mock.ExpectQuery(reFunil + `\s+AND data_abertura >= DATE_SUB\(CURDATE\(\), INTERVAL 89 DAY\)\s+AND vendedor_id = \?\s+GROUP BY etapa$`).
-				WithArgs(escopoVendedorB).WillReturnRows(funilLinhas())
+			mock.ExpectQuery(reFunil+`\s+AND data_abertura >= \?\s+AND vendedor_id = \?\s+GROUP BY etapa$`).
+				WithArgs(argDia(89), escopoVendedorB).WillReturnRows(funilLinhas())
 			status, body := getComToken(t, server.URL+"/api/dashboard/funil"+query, escopoUsuarioNormal, "normal")
 			require.Equal(t, http.StatusOK, status, body)
 			_, data := decodeFunil(t, body)
@@ -273,7 +282,7 @@ func TestDASH01_Funil_VlogNiveis(t *testing.T) {
 	out := capturarVlogLigado(t)
 
 	expectEscopoVendedor(mock, escopoVendedorB)
-	mock.ExpectQuery(reFunil).WithArgs(escopoVendedorB).WillReturnRows(funilLinhas())
+	mock.ExpectQuery(reFunil).WithArgs(argDia(29), escopoVendedorB).WillReturnRows(funilLinhas())
 	status, _ := getComToken(t, server.URL+"/api/dashboard/funil?janela=30d", escopoUsuarioNormal, "normal")
 	require.Equal(t, http.StatusOK, status)
 

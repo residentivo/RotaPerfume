@@ -135,7 +135,7 @@ func (mk *makefile) dependeDe(alvo, dep string) bool {
 
 func (mk *makefile) linhaDaVariavel(t *testing.T, nome string) string {
 	t.Helper()
-	re := regexp.MustCompile(`^` + regexp.QuoteMeta(nome) + `\s*[:?]?=`)
+	re := regexp.MustCompile(`^(override\s+)?` + regexp.QuoteMeta(nome) + `\s*[:?]?=`)
 	for _, l := range mk.linhas {
 		if re.MatchString(l) {
 			return l
@@ -159,7 +159,7 @@ func TestSEC11_Makefile_MysqlOptsSemSenha(t *testing.T) {
 	opts := mk.linhaDaVariavel(t, "MYSQL_OPTS")
 	assert.NotRegexp(t, `(^|\s)-p`, strings.SplitN(opts, "=", 2)[1], "MYSQL_OPTS não pode levar -p (senha no argv)")
 	assert.NotContains(t, opts, "DB_SENHA")
-	assert.Contains(t, opts, "-u $(DB_USUARIO)")
+	assert.Contains(t, opts, `-u "$(DB_USUARIO)"`)
 	// SEC-28 (DB-03): LOAD DATA LOCAL desligado no cliente mariadb.
 	assert.Contains(t, opts, "--local-infile=0")
 	assert.NotContains(t, opts, "--local-infile=1")
@@ -217,7 +217,16 @@ func TestSEC11_Makefile_IncludeEnvEMysqlPwd(t *testing.T) {
 	assert.Less(t, iPwd, iExport, "MYSQL_PWD precisa ser exportado")
 	assert.Less(t, iMsys, iExport)
 	assert.Contains(t, mk.linhaDaVariavel(t, "CR"), `$(shell printf '\r')`)
-	assert.NotContains(t, mk.texto, "$(error", "nada de $(error) no parse: help/build/test não exigem credenciais")
+	// Nada de $(error) por credenciais no parse (help/build/test não exigem
+	// .env); os únicos $(error) são as recusas do BUG-29 (MAKEFLAGS na linha
+	// de comando, ENV_ARQUIVO do ambiente/inválido, sentinela, vars proibidas)
+	// a allowlist de linhas do SEC-59 e os charsets do SEC-63.
+	reErroPermitido := regexp.MustCompile(`\$\(error (BUG-29|SEC-59|SEC-63): `)
+	for _, l := range mk.linhas {
+		if strings.Contains(l, "$(error") {
+			assert.Regexp(t, reErroPermitido, l, "só os $(error) do BUG-29, do SEC-59 e do SEC-63: %s", l)
+		}
+	}
 }
 
 func TestSEC11_Makefile_AlvosDeBancoDependemDeDbCheckEnv(t *testing.T) {
@@ -263,7 +272,7 @@ func TestSEC11_Makefile_AlvosDeBancoDependemDeDbCheckEnv(t *testing.T) {
 	for _, a := range []string{"db-reset", "db-rebuild"} {
 		t.Run("sub-make/"+a, func(t *testing.T) {
 			receita := strings.Join(mk.regras[a].receita, " ")
-			assert.Contains(t, receita, "$(MAKE) db-down && $(MAKE) db-seed")
+			assert.Contains(t, receita, "$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-down && $(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-seed")
 			assert.True(t, mk.dependeDe("db-down", "db-check-env"))
 			assert.True(t, mk.dependeDe("db-seed", "db-check-env"))
 		})
@@ -407,6 +416,8 @@ func TestSEC11_SQL_CabecalhosUsamMysqlPwd(t *testing.T) {
 		"22_revert_usuarios_tokens_validos_desde.sql",
 		"23_alter_refresh_tokens_reuso_detectado_em.sql",
 		"23_revert_refresh_tokens_reuso_detectado_em.sql",
+		"27_alter_senha_historico_created_at_not_null.sql",
+		"27_revert_senha_historico_created_at_not_null.sql",
 	} {
 		t.Run(nome, func(t *testing.T) {
 			texto := lerTexto(t, filepath.Join(root, "sql", nome))

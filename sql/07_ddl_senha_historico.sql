@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS senha_historico (
     ip_origem VARCHAR(45),
     user_agent TEXT,
     tipo_reset ENUM('usuario','admin','primeiro_acesso','esquecimento') NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
     FOREIGN KEY (resetado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL,
     INDEX idx_usuario (usuario_id),

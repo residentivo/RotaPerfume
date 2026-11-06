@@ -16,8 +16,11 @@ const arqDashboard = "dashboard.go"
 
 // Dashboard são as consultas agregadoras de pedidos e vendedores (porta
 // analyticsapp.IndicadoresVendas). Cada chamada faz as próprias consultas
-// (sem cache, R4). O relógio dá o "hoje" das séries zeradas (o mesmo das
-// Deps do caso de uso, ligado no bootstrap).
+// (sem cache, R4). O relógio dá o "hoje" (fuso tz.Local) das datas das
+// consultas e das séries (BUG-30; o mesmo das Deps do caso de uso, ligado
+// no bootstrap). Cada método público calcula o hoje UMA vez por MÉTODO, não
+// por requisição: na virada exata do dia/mês, uma requisição de /metricas pode
+// misturar dois dias (aceito, BUG-33).
 type Dashboard struct {
 	q       db.Querier
 	relogio func() time.Time
@@ -40,6 +43,7 @@ func (r *Dashboard) VendasTotais(ctx context.Context, e kernel.Escopo, p analyti
 	}
 	var valor sql.NullFloat64
 	var qtd sql.NullInt64
+	args = append(argsPeriodo(p, hojeEm(r.relogio)), args...)
 	err = r.q.QueryRowContext(ctx, fmt.Sprintf(fmtVendasTotais, clausulaPeriodoPedido(p))+filtro, args...).Scan(&valor, &qtd)
 	if err != nil {
 		return analytics.TotaisVendas{}, semTabela(err, "vendas totais")
@@ -55,6 +59,7 @@ func (r *Dashboard) TotalPedidos(ctx context.Context, e kernel.Escopo, p analyti
 		return 0, err
 	}
 	var total sql.NullInt64
+	args = append(argsPeriodo(p, hojeEm(r.relogio)), args...)
 	err = r.q.QueryRowContext(ctx, fmt.Sprintf(fmtTotalPedidos, clausulaPeriodoPedido(p))+filtro, args...).Scan(&total)
 	if err != nil {
 		return 0, semTabela(err, "total pedidos")
@@ -112,7 +117,7 @@ func (r *Dashboard) TopVendedores(ctx context.Context, e kernel.Escopo, limite i
 		top = append(top, v)
 	}
 	if len(top) > 0 {
-		vendas := r.vendasDoMes(ctx, idsDe(top, func(v analytics.VendedorRanking) int64 { return v.ID }))
+		vendas := r.vendasDoMes(ctx, hojeEm(r.relogio), idsDe(top, func(v analytics.VendedorRanking) int64 { return v.ID }))
 		for i := range top {
 			if vm, ok := vendas[top[i].ID]; ok {
 				top[i].AplicarVendas(vm)
@@ -144,7 +149,7 @@ func (r *Dashboard) MetasVendedores(ctx context.Context, e kernel.Escopo) ([]ana
 		metas = append(metas, m)
 	}
 	if len(metas) > 0 {
-		vendas := r.vendasDoMes(ctx, idsDe(metas, func(m analytics.MetaVendedor) int64 { return m.ID }))
+		vendas := r.vendasDoMes(ctx, hojeEm(r.relogio), idsDe(metas, func(m analytics.MetaVendedor) int64 { return m.ID }))
 		for i := range metas {
 			if vm, ok := vendas[metas[i].ID]; ok {
 				metas[i].AplicarVendas(vm)
@@ -160,23 +165,27 @@ func (r *Dashboard) MetasVendedores(ctx context.Context, e kernel.Escopo) ([]ana
 // de placeholders não crescer com o cadastro.
 const LoteVendasDoMes = 100
 
-// vendasDoMes soma as vendas do mês dos vendedores (enriquecimento do
-// legado), em lotes de LoteVendasDoMes ids. Falha é silenciosa: a lista já
-// tem os dados de meta; o lote que falha fica sem vendas e linha que não
-// escaneia é ignorada.
-func (r *Dashboard) vendasDoMes(ctx context.Context, ids []any) map[int64]analytics.VendasDoMes {
+// vendasDoMes soma as vendas do mês de hoje dos vendedores (enriquecimento
+// do legado), em lotes de LoteVendasDoMes ids; todos os lotes usam o mesmo
+// mês. Falha é silenciosa: a lista já tem os dados de meta; o lote que
+// falha fica sem vendas e linha que não escaneia é ignorada.
+func (r *Dashboard) vendasDoMes(ctx context.Context, hoje time.Time, ids []any) map[int64]analytics.VendasDoMes {
 	vendas := make(map[int64]analytics.VendasDoMes)
+	mes := argsMes(hoje)
 	for inicio := 0; inicio < len(ids); inicio += LoteVendasDoMes {
 		fim := min(inicio+LoteVendasDoMes, len(ids))
-		r.somarVendasDoLote(ctx, ids[inicio:fim], vendas)
+		r.somarVendasDoLote(ctx, ids[inicio:fim], mes, vendas)
 	}
 	vlog.Printf(arqDashboard, "Dashboard.vendasDoMes", "SELECT pedidos vendas do mes vendedores=%d lotes=%d", len(ids), (len(ids)+LoteVendasDoMes-1)/LoteVendasDoMes)
 	return vendas
 }
 
-// somarVendasDoLote roda o SELECT de um lote (até LoteVendasDoMes ids).
-func (r *Dashboard) somarVendasDoLote(ctx context.Context, ids []any, vendas map[int64]analytics.VendasDoMes) {
-	rows, err := r.q.QueryContext(ctx, sqlVendasDoMesInicio+marcadores(len(ids))+sqlVendasDoMesFim, ids...)
+// somarVendasDoLote roda o SELECT de um lote (até LoteVendasDoMes ids) no
+// mês {ano, mês}. Os args são uma CÓPIA: append direto sobre o lote (uma
+// fatia de ids) sobrescreveria os ids do lote seguinte.
+func (r *Dashboard) somarVendasDoLote(ctx context.Context, lote, mes []any, vendas map[int64]analytics.VendasDoMes) {
+	args := append(append(make([]any, 0, len(lote)+len(mes)), lote...), mes...)
+	rows, err := r.q.QueryContext(ctx, sqlVendasDoMesInicio+marcadores(len(lote))+sqlVendasDoMesFim, args...)
 	if err != nil {
 		return
 	}
@@ -208,11 +217,14 @@ func (r *Dashboard) SerieVendas(ctx context.Context, e kernel.Escopo, d analytic
 	if err != nil {
 		return nil, err
 	}
-	dias := d.Int()
-	rows, err := r.q.QueryContext(ctx, sqlSerieVendasInicio+filtro+sqlSerieVendasFim, append([]any{dias}, filtroArgs...)...)
+	dias, hoje := d.Int(), hojeEm(r.relogio)
+	// dias+1 dias a partir do início: o dia extra (o mais antigo) fica fora
+	// da sequência e é descartado, como no legado.
+	args := append([]any{diasAntes(hoje, dias)}, filtroArgs...)
+	rows, err := r.q.QueryContext(ctx, sqlSerieVendasInicio+filtro+sqlSerieVendasFim, args...)
 	if err != nil {
 		if tabelaInexistente(err) {
-			return analytics.SerieZerada(dias, r.relogio()), nil
+			return analytics.SerieZerada(dias, hoje), nil
 		}
 		return nil, fmt.Errorf("analyticsmysql: série de vendas: %w", err)
 	}
@@ -220,9 +232,9 @@ func (r *Dashboard) SerieVendas(ctx context.Context, e kernel.Escopo, d analytic
 
 	vendas := lerVendasPorDia(rows)
 	if len(vendas) == 0 {
-		return analytics.SerieZerada(dias, r.relogio()), nil
+		return analytics.SerieZerada(dias, hoje), nil
 	}
-	pontos := r.serieCompleta(ctx, dias, vendas)
+	pontos := analytics.SerieCompleta(sequenciaDias(dias, hoje), vendas)
 	vlog.Printf(arqDashboard, "Dashboard.SerieVendas", "SELECT pedidos por dia linhas=%d pontos=%d", len(vendas), len(pontos))
 	return pontos, nil
 }
@@ -243,26 +255,6 @@ func lerVendasPorDia(rows *sql.Rows) map[string]analytics.PontoVenda {
 	return vendas
 }
 
-// serieCompleta pega no banco a sequência de dias da janela (para casar com
-// o CURDATE() do servidor) e preenche cada dia. Falha na consulta dos dias
-// devolve a série zerada (como o legado); dia que não escaneia é ignorado.
-func (r *Dashboard) serieCompleta(ctx context.Context, dias int, vendas map[string]analytics.PontoVenda) []analytics.PontoVenda {
-	rows, err := r.q.QueryContext(ctx, sqlDiasDaSerie, dias)
-	if err != nil {
-		return analytics.SerieZerada(dias, r.relogio())
-	}
-	defer rows.Close()
-	var sequencia []string
-	for rows.Next() {
-		var dia string
-		if err := rows.Scan(&dia); err != nil {
-			continue
-		}
-		sequencia = append(sequencia, dia)
-	}
-	return analytics.SerieCompleta(sequencia, vendas)
-}
-
 // Ranking pagina o ranking de vendedores ativos do escopo (o restrito vê só
 // a própria linha; total 0 ou 1). A ordenação é do SQL, antes do LIMIT.
 func (r *Dashboard) Ranking(ctx context.Context, e kernel.Escopo, p kernel.Pagina) (kernel.Resultado[analytics.LinhaRanking], error) {
@@ -281,7 +273,10 @@ func (r *Dashboard) Ranking(ctx context.Context, e kernel.Escopo, p kernel.Pagin
 	if err := r.q.QueryRowContext(ctx, sqlRankingTotal+filtroTotal, args...).Scan(&total); err != nil {
 		return kernel.Resultado[analytics.LinhaRanking]{}, fmt.Errorf("analyticsmysql: ranking count: %w", err)
 	}
-	linhas, err := r.linhasRanking(ctx, sqlRankingInicio+filtroLista+sqlRankingFim, db.Paginada(args, p), p.Limite())
+	// A lista recebe o mês de hoje antes do filtro (ordem dos placeholders);
+	// o COUNT não tem data.
+	argsLista := append(argsMes(hojeEm(r.relogio)), args...)
+	linhas, err := r.linhasRanking(ctx, sqlRankingInicio+filtroLista+sqlRankingFim, db.Paginada(argsLista, p), p.Limite())
 	if err != nil {
 		return kernel.Resultado[analytics.LinhaRanking]{}, err
 	}

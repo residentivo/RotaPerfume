@@ -38,14 +38,66 @@ func lerRaiz(t *testing.T, partes ...string) string {
 	return string(b)
 }
 
+// emCI: o teste roda no CI (o estágio "Testes Go" do Jenkinsfile passa
+// -e CI=true ao container; CI-01). Só os.Getenv("CI") é lido.
+func emCI() bool {
+	v := os.Getenv("CI")
+	return v == "true" || v == "1"
+}
+
+// Ações de acaoArquivoAusente.
+const (
+	acaoFalhar = "falhar"
+	acaoPular  = "pular"
+)
+
+// acaoArquivoAusente decide o que fazer quando um arquivo do repositório
+// lido pelo teste não existe: no CI falha (o tar do Jenkinsfile deixou de
+// copiá-lo — regressão); fora dele pula (checkout parcial).
+func acaoArquivoAusente(ci bool) string {
+	if ci {
+		return acaoFalhar
+	}
+	return acaoPular
+}
+
+// arquivoObrigatorio lê um arquivo da raiz do projeto. Ausente: t.Fatalf no
+// CI, t.Skip fora (acaoArquivoAusente). Outro erro de leitura sempre falha.
+func arquivoObrigatorio(t *testing.T, partes ...string) string {
+	t.Helper()
+	p := caminhoRaiz(t, partes...)
+	b, err := os.ReadFile(p)
+	if os.IsNotExist(err) {
+		rel := filepath.ToSlash(filepath.Join(partes...))
+		if acaoArquivoAusente(emCI()) == acaoFalhar {
+			t.Fatalf("%s ausente no CI: o estágio \"Testes Go\" do Jenkinsfile precisa copiá-lo (CI-01)", rel)
+		}
+		t.Skipf("%s ausente (checkout parcial)", rel)
+	}
+	require.NoError(t, err)
+	return string(b)
+}
+
 func precisaBash(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("scripts bash de servidor Linux")
 	}
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash não está no PATH")
+	ferramentaObrigatoria(t, "bash")
+}
+
+// ferramentaObrigatoria exige um executável que a imagem do CI traz (CI-02:
+// GO_TEST_IMAGE). Ausente: t.Fatalf no CI, para o teste não pular calado;
+// t.Skip fora (mesma decisão de arquivoObrigatorio).
+func ferramentaObrigatoria(t *testing.T, nome string) {
+	t.Helper()
+	if _, err := exec.LookPath(nome); err == nil {
+		return
 	}
+	if acaoArquivoAusente(emCI()) == acaoFalhar {
+		t.Fatalf("%s ausente no CI: o GO_TEST_IMAGE do Jenkinsfile precisa trazê-lo (CI-02)", nome)
+	}
+	t.Skipf("%s não está no PATH", nome)
 }
 
 func precisaOpenSSL(t *testing.T) {

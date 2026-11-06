@@ -10,7 +10,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-sql-driver/mysql"
@@ -37,10 +36,10 @@ func TestBUG18_MetasVendedores_INEmLotes(t *testing.T) {
 	in := func(n int) string {
 		return `WHERE vendedor_id IN \(` + strings.TrimSuffix(strings.Repeat(`\?,`, n), ",") + `\)`
 	}
-	mock.ExpectQuery(in(analyticsmysql.LoteVendasDoMes)).WillReturnRows(sqlmock.NewRows([]string{"v", "t", "q"}).AddRow(int64(1), 10.0, 1))
-	mock.ExpectQuery(in(50)).WillReturnRows(sqlmock.NewRows([]string{"v", "t", "q"}).AddRow(int64(total), 20.0, 2))
+	mock.ExpectQuery(in(analyticsmysql.LoteVendasDoMes)).WithArgs(append(idsDeAte(1, analyticsmysql.LoteVendasDoMes), 2026, 10)...).WillReturnRows(sqlmock.NewRows([]string{"v", "t", "q"}).AddRow(int64(1), 10.0, 1))
+	mock.ExpectQuery(in(50)).WithArgs(append(idsDeAte(analyticsmysql.LoteVendasDoMes+1, total), 2026, 10)...).WillReturnRows(sqlmock.NewRows([]string{"v", "t", "q"}).AddRow(int64(total), 20.0, 2))
 
-	metas, err := analyticsmysql.NovoDashboard(db, time.Now).MetasVendedores(ctx, e)
+	metas, err := analyticsmysql.NovoDashboard(db, relogioFixo).MetasVendedores(ctx, e)
 	require.NoError(t, err)
 	require.Len(t, metas, total)
 	assert.Equal(t, 10.0, metas[0].Realizado)
@@ -52,11 +51,11 @@ func TestBUG18_TabelaAusente_SoCodigo1146(t *testing.T) {
 	ctx := context.Background()
 	admin, _ := kernel.NovoPrincipal(1, kernel.RoleAdmin)
 	e, _ := kernel.EscopoIrrestrito(admin)
-	hoje := func() time.Time { return hojeFixo }
+	hoje := relogioFixo
 
 	t.Run("1146 degrada para série zerada", func(t *testing.T) {
 		db, mock := novoMock(t)
-		mock.ExpectQuery(`AS data`).WithArgs(2).WillReturnError(&mysql.MySQLError{Number: 1146, Message: "Table 'x.pedidos' doesn't exist"})
+		mock.ExpectQuery(`AS data`).WithArgs("2026-10-13").WillReturnError(&mysql.MySQLError{Number: 1146, Message: "Table 'x.pedidos' doesn't exist"})
 		pontos, err := analyticsmysql.NovoDashboard(db, hoje).SerieVendas(ctx, e, analytics.DiasDe(2))
 		require.NoError(t, err)
 		assert.Equal(t, analytics.SerieZerada(2, hojeFixo), pontos)
@@ -68,7 +67,7 @@ func TestBUG18_TabelaAusente_SoCodigo1146(t *testing.T) {
 	} {
 		t.Run(nome+" é propagado", func(t *testing.T) {
 			db, mock := novoMock(t)
-			mock.ExpectQuery(`AS data`).WithArgs(2).WillReturnError(errBanco)
+			mock.ExpectQuery(`AS data`).WithArgs("2026-10-13").WillReturnError(errBanco)
 			_, err := analyticsmysql.NovoDashboard(db, hoje).SerieVendas(ctx, e, analytics.DiasDe(2))
 			assert.Error(t, err)
 		})

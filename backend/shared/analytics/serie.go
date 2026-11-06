@@ -19,8 +19,9 @@ type PontoVenda struct {
 }
 
 // SerieZerada é a série com todos os n dias zerados, do mais antigo até
-// hoje (datas YYYY-MM-DD no fuso de hoje, equivalentes a
-// DATE_SUB(CURDATE(), INTERVAL i DAY)). n ≤ 0 devolve lista vazia, nunca nil.
+// hoje (datas YYYY-MM-DD no fuso de hoje: hoje-(n-1) .. hoje, a mesma
+// sequência que o adapter calcula no Go, BUG-30). n ≤ 0 devolve lista
+// vazia, nunca nil.
 func SerieZerada(n int, hoje time.Time) []PontoVenda {
 	pontos := make([]PontoVenda, 0, max(n, 0))
 	for i := n - 1; i >= 0; i-- {

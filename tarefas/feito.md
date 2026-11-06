@@ -2,13 +2,609 @@
 
 > Histórico de tarefas finalizadas.
 >
-> Atualizado em 2026-11-05 (fechamento do Lote 36, 🔵 SubBrain): o **Lote 36** foi fechado (bloco "Lote 36 de 2026-11-05" logo abaixo): **TST-22**, **DB-07** e **TST-16** concluídos (o TST-16 com a execução real como root pendente); o **TST-17** ficou **parcial** e voltou para `afazer.md`. Registro do incidente do `MAKEFLAGS=-k` no bloco do lote. Entraram em `afazer.md` (bloco "Achados do Lote 36"): BUG-29 (MÉDIA), SEC-58 e TST-23 (BAIXA), além do TST-17 parcial. Commit do lote na `main` pelo 🤍 MegaBrain, sem push (inclui o `CLAUDE.md` alterado pelo usuário).
+> 2026-11-06 (🤍 MegaBrain): os Lotes 37 a 40 foram commitados juntos na branch `lote-37-40`, a pedido do usuário, sem push e sem merge na `main`. Onde os blocos abaixo desses lotes dizem "não commitado", vale esta nota.
+>
+> Atualizado em 2026-11-06 (fechamento do Lote 40, 🔵 SubBrain): o **Lote 40** foi fechado (bloco "Lote 40 de 2026-11-06: 1 card concluído" logo abaixo): **SEC-63** concluído. **Não commitado** (Lotes 37 a 40 juntos). Entraram 5 cards BAIXA em `afazer.md` (bloco "Achados do Lote 40"): **SEC-66**, **SEC-67**, **SEC-68**, **SEC-69** e **SEC-70**; o **SEC-64** ganhou um acréscimo. Pendência do usuário no bloco do lote: sugestão de texto para o `CLAUDE.md`. Registro do reinício da máquina de 2026-11-06 no bloco do lote. O `fazendo.md` voltou a ficar sem cards.
+>
+> Antes, em 2026-11-05 (fechamento do Lote 39, 🔵 SubBrain): o **Lote 39** foi fechado (bloco "Lote 39 de 2026-11-05: 12 cards fechados (11 concluídos, 1 aceito)" logo abaixo): **BUG-31**, **SEC-59**, **BUG-32**, **CHORE-19**, **SEC-60**, **SEC-61**, **CI-02**, **SEC-62**, **DB-09**, **TST-24** e **TST-25** concluídos; **BUG-33** fechado como aceito, sem correção. **Não commitado** (Lotes 37, 38 e 39 juntos). Entraram 7 cards em `afazer.md` (bloco "Achados do Lote 39"): **SEC-63** (MÉDIA) e **SEC-64**, **SEC-65**, **CHORE-20**, **TST-26**, **CI-03** e **TST-27** (BAIXA); o **SEC-47** ganhou um acréscimo. Pendências do usuário no bloco do lote: migração 27 no CasaOS, `make setup` no ambiente local e sugestões para o `CLAUDE.md`. O `fazendo.md` voltou a ficar sem cards.
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 38, 🔵 SubBrain): o **Lote 38** foi fechado (bloco "Lote 38 de 2026-11-05: 3 cards concluídos" logo abaixo): **BUG-30**, **DB-08** (decisão (c) do 🤍 MegaBrain) e **CI-01** (aceite reescrito) concluídos; **não commitado** (o usuário não pediu commit neste lote). Registro de um incidente menor (senha do usuário `l36` do descartável exibida em saída de ferramenta; trocada) no bloco do lote. Entraram 6 cards em `afazer.md` (bloco "Achados do Lote 38"): CI-02, DB-09, TST-24, TST-25, SEC-62 e BUG-33 (todos BAIXA). Pendências do usuário: levantar `@@global.time_zone`/`@@system_time_zone` no CasaOS e na produção e a sugestão de texto para o `CLAUDE.md`, no bloco do lote. O `fazendo.md` voltou a ficar sem cards.
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 37, 🔵 SubBrain): o **Lote 37** foi fechado (bloco "Lote 37 de 2026-11-05: 7 cards concluídos" logo abaixo): **BUG-29**, **BUG-28**, **SEC-56**, **SEC-57**, **TST-17** (item 1), **SEC-58** e **TST-23** concluídos; **não commitado** (o usuário não pediu commit neste lote). O card "TST-17 (resto, pendente do usuário)" continua em `afazer.md`. Entraram 9 cards em `afazer.md` (bloco "Achados do Lote 37"): CI-01, BUG-30 e DB-08 (MÉDIA) e BUG-31, SEC-59, SEC-60, SEC-61, BUG-32 e CHORE-19 (BAIXA). Pendência do usuário: sugestão de texto para o `CLAUDE.md` (BUG-29, BUG-28, SEC-56/57), no bloco do lote. O `fazendo.md` voltou a ficar sem cards.
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 36, 🔵 SubBrain): o **Lote 36** foi fechado (bloco "Lote 36 de 2026-11-05" logo abaixo): **TST-22**, **DB-07** e **TST-16** concluídos (o TST-16 com a execução real como root pendente); o **TST-17** ficou **parcial** e voltou para `afazer.md`. Registro do incidente do `MAKEFLAGS=-k` no bloco do lote. Entraram em `afazer.md` (bloco "Achados do Lote 36"): BUG-29 (MÉDIA), SEC-58 e TST-23 (BAIXA), além do TST-17 parcial. Commit do lote na `main` pelo 🤍 MegaBrain, sem push (inclui o `CLAUDE.md` alterado pelo usuário).
 >
 > Antes, ainda em 2026-11-05 (abertura do Lote 36, 🔵 SubBrain): a pendência do usuário do bloco "Lote 35 de 2026-11-05" (citar SEC-54, SEC-55 e BUG-27 no `CLAUDE.md`) foi **atendida**: o usuário alterou ele mesmo o `CLAUDE.md`. O **Lote 36** (TST-22, DB-07, TST-17 e TST-16) está em execução (`fazendo.md`).
 >
 > Antes, ainda em 2026-11-05 (fechamento do Lote 35, 🔵 SubBrain): o **Lote 35** (BUG-27, SEC-54, TST-19, SEC-55, TST-20, TST-21, FE-18 e CHORE-16) foi concluído (bloco "Lote 35 de 2026-11-05" logo abaixo; commitado na `main` pelo 🤍 MegaBrain, a pedido do usuário). Dele saíram 3 cards em `afazer.md` (bloco "Achados do Lote 35"): SEC-56, SEC-57 e BUG-28 (BAIXA).
 >
 > Antes, ainda em 2026-11-04 (decisões do usuário após o Lote 34, repassadas pelo 🤍 MegaBrain; 🔵 SubBrain): **OPS-02** (SMTP de produção configurado pelo usuário, por ora via Gmail) e **CHORE-18** (hostname do servidor confirmado, sem alteração de código) foram concluídos (bloco "Decisões do usuário de 2026-11-04 (após o Lote 34)" abaixo). O DOC-09 continua em `afazer.md` (o `CLAUDE.md` não foi alterado pelo agente).
+
+---
+
+## Lote 40 de 2026-11-06: 1 card concluído
+
+Aberto em 2026-11-05 e fechado em 2026-11-06 pelo 🤍 MegaBrain, a pedido do usuário ("siga para SEC-63"). Passos: 🟣 SecBrain especificando → 🟡 BackBrain (PoCs, depois correção) → 🔴 TestBrain ∥ 🟣 SecBrain revisando (aprovado) → achado do 🔴 TestBrain → 🟡 BackBrain → 🟣 SecBrain revisando de novo (aprovado com ressalvas) → 🤍 MegaBrain conferência final → 🔵 SubBrain fechando. **Banco:** só cópia do `Makefile` com cliente falso e descartável local (`rp-descartavel-l36` em `127.0.0.1:33306`); **nada rodou contra o CasaOS nem contra a produção**. **Não commitado** (Lotes 37 a 40 juntos). Caminhos: `SH` = `backend/shared`.
+
+**Testes finais (🤍 MegaBrain, código final antes do ajuste só de comentários):**
+- `make lint` e `make shellcheck` rc=0.
+- `go clean -testcache && env -u INTEGRATION make -k test` rc=0, 12090 PASS, 0 FAIL, 62 SKIP.
+- `CI=true go test ./tests/deploy/` rc=0, 585 PASS, 0 FAIL, 5 SKIP.
+- `make -k test-integration` no descartável rc=0, 12476 PASS, 0 FAIL, 6 SKIP.
+- Compatibilidade por `make -n`, sem conexão e sem imprimir conteúdo: `.env`, `.env.producao` e `.env.example` passam (rc=0), conforme relatório do 🟡 BackBrain anterior ao ajuste do gate.
+
+**Revisão (🟣 SecBrain): aprovado com ressalvas.** R1 e R2 viraram o **SEC-69** e R3 virou o **SEC-70**, ambos a provar por PoC; os demais achados estão em `afazer.md` (bloco "Achados do Lote 40") e no acréscimo do **SEC-64**.
+
+**Registros da sessão:**
+- A máquina reiniciou de novo em 2026-11-06 às 07:24 e limpou o `/tmp`. O relatório final do 🟡 BackBrain-A se perdeu; por isso o 🤍 MegaBrain refez todas as rodadas de teste e o 🟣 SecBrain revisou o estado atual dos arquivos.
+- `rp-descartavel-l36` recriado com senhas novas, sem exibi-las.
+
+**Decisão registrada do 🤍 MegaBrain (fronteira):** as guardas protegem contra engano e contra o conteúdo do `.env`, não contra o operador. `MAKEFILES`, `-f`, `-o`, `--eval`, `SHELL=` e variáveis internas digitadas ficam fora do modelo; os comentários do `Makefile` e do teste foram atualizados para dizer isso. O `export` global (SEC-64) é uma exceção ainda aberta a essa frase: ver a nota no acréscimo do card.
+
+**Docs:** nenhum arquivo de `docs/` cita o SEC-63 (conferido no fechamento). Sem endpoint novo nem tela nova: coleção Postman e manual de telas sem mudança.
+
+**Pendência do usuário (só o usuário edita o `CLAUDE.md`):** sugestão de texto: "**SEC-63:** fora dos alvos sem banco (`RP_ALVOS_SEM_BANCO`), o make recusa no parse `DB_HOST`, `DB_NAME`, `DB_USUARIO`, `DB_TLS_CA`, `DB_CLIENTE_BIN`, `CONFIRMAR` e `CONFIRMO_PRODUCAO` fora do charset, em qualquer origem; as guardas leem as variáveis do ambiente. `integracao.ConfigDoAmbiente` aplica os mesmos charsets a host, nome e usuário (`ValidarFormaDB`). `DB_TLS_CA` com espaço deixa de ser aceito. As guardas protegem contra engano e contra o conteúdo do `.env`, não contra o operador."
+
+**Cards criados em `afazer.md`** (bloco "Achados do Lote 40"): SEC-66, SEC-67, SEC-68, SEC-69 e SEC-70 (BAIXA). Acréscimo no SEC-64.
+
+---
+
+## SEC-63: `DB_HOST`, `DB_NAME` e `DB_USUARIO` sofriam word-splitting no `DB_CLI` e desviavam as guardas — 2026-11-06
+
+**Status:** ✅ concluído (Lote 40).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** Lote 39 (SEC-59).
+
+**PoCs antes da correção (cópia do `Makefile` e cliente falso, sem conexão):**
+- **Confirmados:**
+  - A: `DB_HOST=127.0.0.1 -h 192.168.168.106` dava argv com dois `-h`.
+  - B: `db-reset` fazia o DROP com dois `-h`, o que anula o SEC-46.
+  - C: `DB_NAME=rotaperfumes -h 192.168.168.106 -P 3306` em `db-fix-*`, sem TLS.
+  - E: `DB_USUARIO` com `--tee`/`--init-command`.
+  - F e G: `CONFIRMO_PRODUCAO`/`CONFIRMAR` com `x"; exit 0; "`, só no `.env`, passavam pelas guardas.
+  - H, I e J.
+  - K com `DB_CLIENTE`: comando executado no shell da guarda.
+  - L: `DB_CLIENTE_BIN` com `(` dava "Syntax error".
+- **Divergiram da previsão, sem mudar a correção:** D (`-h` dentro do SQL do `-e`), K com `DB_TLS_REQUIRED` ("Syntax error", sem executar) e M (o SEC-42 recusa antes).
+- `mariadb -h a -h b --help` mostrou `host b`: o último `-h` vence, inclusive depois do nome do banco.
+
+**Entregas:**
+- Validação no parse (`$(error)` com `RP_TIRA_CHARS`, sem imprimir o valor) de `DB_HOST`, `DB_NAME`, `DB_USUARIO`, `DB_TLS_CA`, `DB_CLIENTE_BIN`, `CONFIRMAR` e `CONFIRMO_PRODUCAO`, em qualquer origem, fora de `RP_ALVOS_SEM_BANCO`. Alvo novo é validado por padrão.
+- Guardas leem do ambiente. O `DB_TLS_REQUIRED` não entra na validação do parse: valor fora de `true`/`false` é recusado pelo `case` do `db-check-env`, sem executar (K1 em `SH/tests/config/lote40_sec63_testbrain_test.go`).
+- `MYSQL_OPTS` com `-u "..." -h "$(or $(DB_HOST),localhost)"`.
+- `RP_TIRA_CHARS` proibida no `.env`.
+- `integracao.ConfigDoAmbiente` chama `ValidarFormaDB` (`ErrDBValorInvalido`) antes de `ValidarNaoProducao`.
+
+**Achado do 🔴 TestBrain, corrigido no lote:**
+- `MAKECMDGOALS=help make db-create` desligava a validação e, com `.env` adulterado, chamava o cliente falso apontando para a produção. Também desligavam `RP_VALIDAR_BANCO=` e `RP_ALVOS_SEM_BANCO=` na linha de comando e `.DEFAULT_GOAL=` na linha de comando sem goal.
+- Correção: `$(error)` para `MAKECMDGOALS` e `.DEFAULT_GOAL` vindos de fora e `override` nas variáveis do gate.
+- `test-all` saiu do `.PHONY` (saía rc=0 sem rodar nada).
+- `.env.example` cita `CONFIRMAR`/`CONFIRMO_PRODUCAO`.
+
+**Efeito colateral:** `DB_TLS_CA` com espaço deixa de ser aceito.
+
+**Testes:** `SH/tests/config/lote40_sec63_makefile_test.go` e `SH/tests/config/lote40_sec63_testbrain_test.go`, com paridade byte a byte `Makefile` × Go e `TestSEC63TB_GateNaoDesligaDeFora`; 10 mutações detectadas numa cópia do `Makefile`; helper `dirTempMake`. Suíte final do lote verde.
+
+**Limite importante:** o `TestSEC63_Go_DSNNaoTrocaEndereco` confirma que um `DB_NAME` malicioso muda o `Addr`. A proteção do Go vale só em `integracao`; a API e as CLIs ficam para o **SEC-66**.
+
+---
+
+## Lote 39 de 2026-11-05: 12 cards fechados (11 concluídos, 1 aceito)
+
+Aberto e fechado em 2026-11-05 pelo 🤍 MegaBrain, a pedido do usuário ("pode seguir com os de baixa prioridade"), com os 12 cards BAIXA dos blocos "Achados do Lote 37" e "Achados do Lote 38" de `afazer.md`. Passos: 🟣 SecBrain especificando → 🤍 MegaBrain decidindo → 🌸 DataBrain ∥ 🟡 BackBrain-A ∥ 🟡 BackBrain-B → 🟡 BackBrain-C ∥ 🟣 SecBrain revisando → correções → 🔴 TestBrain conferência final → 🔵 SubBrain fechando. **Banco:** só descartável local (`rp-descartavel-l36` em `127.0.0.1:33306`); **nada rodou contra o CasaOS nem contra a produção**. **Não commitado** (Lotes 37, 38 e 39 juntos). Caminhos: `SH` = `backend/shared`.
+
+**Testes finais (🔴 TestBrain, código final):**
+- `go clean -testcache && env -u INTEGRATION make -k test` rc=0, 11053 PASS, 0 FAIL, 62 SKIP; `make lint` e `make shellcheck` rc=0.
+- `CI=true go test ./tests/deploy/` 585 PASS, 0 FAIL, 5 SKIP.
+- Integração no descartável (UTC) rc=0, 11439 PASS, 0 FAIL, 6 SKIP. **Não** rodou a integração com o servidor em -03 neste lote (só no Lote 38; o Lote 39 não mexe em fuso).
+- Ensaio do `git archive` com índice temporário (sem commit): "Testes Go" no `GO_TEST_IMAGE` rc=0, 10796 PASS, 0 FAIL, 247 SKIP (172 de `unshare`, 56 de integração); "Testes Frontend" no `NODE_IMAGE` rc=0, 1741 testes; tar sem `.env` real, `.pem`, chave ou dump. A árvore do frontend é anterior só a um teste Go.
+- Cobertura: `SH` 89,9%, API 94,5%.
+
+**Revisão (🟣 SecBrain): aprovado com ressalvas, corrigidas no lote:** `$` no `.env`, `ENV_ARQUIVO` com `-` inicial, docs da migração 27, engine/charset do `senha_historico` no manual e texto do `deps-audit-imagens`. Os demais achados viraram cards em `afazer.md` (bloco "Achados do Lote 39"), entre eles o **SEC-63** (MÉDIA), que não bloqueou o lote porque a produção não é alcançável pela LAN.
+
+**Registros da sessão:**
+- O reinício da máquina às 16:54 limpou o `/tmp`. O 🌸 DataBrain recriou o `rp-descartavel-l36` com senha nova, e o env-file agora fica no scratchpad da sessão.
+- Os blobs soltos do `git add` temporário do ensaio ficam em `.git/objects` até o `git gc` (sem arquivos ignorados).
+- **Antes do deploy:** todos os arquivos novos (`sql/27_*` e testes) precisam entrar no mesmo commit do `Jenkinsfile`, porque os estágios de teste só recebem o que está em `HEAD` (SEC-62).
+
+**Docs:** `docs/deploy-servidor.md` (estágios, constantes, §3.6, §3.8, §5.1, §10 e §11: CI-02, SEC-59, SEC-60, SEC-61, SEC-62 e DB-09) e `docs/manual-base-de-dados.md` (DB-09, §8 e itens relacionados; 🌸 DataBrain). Sem endpoint novo nem tela nova: coleção Postman e manual de telas sem mudança.
+
+**Pendências do usuário:**
+- **CasaOS (DB-09):** rodar `SELECT COUNT(*) AS created_at_null FROM senha_historico WHERE created_at IS NULL;`. Se der 0, `make db-fix-historico-created-at`; se der mais que 0, decidir sobre a sentinela (`docs/manual-base-de-dados.md` §8). Até lá, `TestIntegracaoBUG12_NullReal` falha no CasaOS.
+- **Produção (DB-09):** se o seed tiver rodado com o `sql/07` antigo, aplicar a migração 27 (`docs/deploy-servidor.md` §11, Passo 7).
+- **Ambiente local fora do TST-08:** fora de um módulo, `go` é `/usr/bin/go` 1.25.0; rodar `make setup`.
+- **Sugestões para o `CLAUDE.md` (só o usuário edita):**
+  - Corrigir a frase "o `GO_IMAGE` e o `NODE_IMAGE` só existem no Jenkinsfile" para "o `GO_TEST_IMAGE` e o `NODE_IMAGE` só existem no Jenkinsfile; o `GO_IMAGE` está também em `deploy/seed-producao.sh`".
+  - Acrescentar o `GO_TEST_IMAGE` junto do `GO_IMAGE` (linhas ~81 e ~90).
+  - Acrescentar: "**SEC-59:** o `.env`/`ENV_ARQUIVO` só aceita linhas vazias, comentários e `[export ]NOME [:?+]=valor` literal, sem `$`; diretivas do make, linha terminada em `\`, `SHELL` e `PATH` são recusados no parse."
+
+**Cards criados em `afazer.md`** (bloco "Achados do Lote 39"): SEC-63 (MÉDIA); SEC-64, SEC-65, CHORE-20, TST-26, CI-03 e TST-27 (BAIXA). Acréscimo no SEC-47 (paridade do `GO_VERSION` e `govulncheck` com o toolchain da produção).
+
+---
+
+## BUG-31: com `DB_PORT` vazio, o `-P` do cliente engolia `--default-character-set=utf8mb4` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain no Lote 37.
+
+**Entregas:** `-P $(or $(DB_PORT),3306)` no `MYSQL_OPTS`; `db-check-env` recusa porta inválida.
+
+**Testes:** `SH/tests/config/lote39_makefile_bug31_bug32_sec59_test.go` e `SH/tests/config/lote39_testbrain_test.go`; suíte final do lote verde.
+
+---
+
+## SEC-59: `override` e outras diretivas no `.env` escapavam da lista de variáveis proibidas e do `SEM_SEGREDOS` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain no Lote 37 (BUG-29/SEC-53).
+
+**Entregas:**
+- Allowlist de linhas do `.env` antes do `include`: vazia, comentário e `[export ]NOME [:?+]=valor`.
+- Recusa de linha com `\` final e de `$` fora de comentário. O 🟣 SecBrain achou que `X := $(eval override PRODUCAO_HOSTS_LAN :=)` desviava as guardas; a PoC confirmou com cliente falso, e o desvio foi corrigido.
+- Mensagem só com números de linha, nunca o conteúdo.
+- Proibidas `SHELL`, `MAKESHELL`, `MAKECMDGOALS`, `CURDIR`, `VPATH`, `PATH` e `VARS_DO_ENV`, conferidas antes do `include`.
+- `ENV_ARQUIVO` com `-` inicial recusado, porque fazia a allowlist ficar vazia (use `./-foo`).
+
+**Efeito colateral:** `.env` com BOM UTF-8 e qualquer valor com `$` são recusados. `.env`, `.env.example` e `.env.producao` locais têm 0 linhas assim (só contagem).
+
+**Testes:** `SH/tests/config/lote39_makefile_bug31_bug32_sec59_test.go` e `SH/tests/config/lote39_testbrain_test.go`; suíte final do lote verde. A PoC foi só com cliente falso.
+
+**Docs:** `docs/deploy-servidor.md` §3.8, §5.1 e §10.
+
+---
+
+## BUG-32: `DB_PORT` com quebra de linha quebrava as aspas do echo da mensagem SEC-57 — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 37 (SEC-57).
+
+**Entregas:** as guardas leem `$$DB_PORT` do ambiente (`PORTA_DETECTA_INVALIDA`, `PORTA_EXIBIVEL` e `MSG_SEC57` com `printf`).
+
+**Testes:** catraca proíbe `$(DB_PORT)` nas receitas e `unexport DB_PORT` (`SH/tests/config/lote39_makefile_bug31_bug32_sec59_test.go`); suíte final do lote verde.
+
+---
+
+## CHORE-19: contorno do `ENV_ARQUIVO`/`RP_ENV_PAI` removido de `sec21_makefile_setup_test.go` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39).
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 37 (BUG-29).
+
+**Entregas:** contorno removido; `SH/tests/config/sec21_makefile_setup_test.go` voltou a ficar igual ao HEAD.
+
+**Testes:** `SH/tests/config` verde na suíte final do lote.
+
+---
+
+## SEC-60: diretório do `--admin-senha-arquivo` do `seed-producao.sh` agora é conferido como privado — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39).
+**Camadas:** Deploy (script), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão do Lote 37 (TST-17 item 1).
+
+**Entregas:** `conferir_dir_privado --admin-senha-arquivo <dirname> existe` e regex do caminho, antes de ler os segredos. O padrão `<segredos-dir>/admin-app.senha` continua valendo; caminho em `/tmp` é recusado.
+
+**Testes:** ensaios `TestSEC60_Ensaio_*` passaram na máquina local (conferido pelo 🤍 MegaBrain: PASS, não SKIP). No container eles pulam por causa do `unshare`; a cobertura de execução no CI fica para o **TST-26**. `make shellcheck` verde.
+
+**Docs:** `docs/deploy-servidor.md` §11, Passo 6.
+
+---
+
+## SEC-61: keyring do MariaDB divergente ou não conferível aborta o `make setup` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39).
+**Camadas:** Scripts (setup), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão do Lote 37 (SEC-58).
+
+**Entregas:** `conferir_chave_mariadb` retorna 1 (recusada) ou 2 (não conferível); `preflight_keyring_mariadb` roda em `main()` antes de `etapa_basicas`. No `make setup-check`, divergente é FALTA e sem `gpg` é AVISO.
+
+**Não feito:** o opcional de `Signed-By`. O 🟣 SecBrain recomendou não abrir card, porque alterar `/etc/apt` já exige root.
+
+**Testes:** `SH/tests/deploy/sec61_setup_keyring_test.go`; `CI=true go test ./tests/deploy/` 585 PASS, 0 FAIL, 5 SKIP; `make shellcheck` verde.
+
+**Docs:** `docs/deploy-servidor.md` §10.
+
+---
+
+## CI-02: testes bash/gpg de `tests/deploy` passam a rodar no CI, em imagem Debian fixada por digest — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39), com limite registrado.
+**Camadas:** CI (Jenkinsfile), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa a imagem)
+**Origem:** CI-01 no Lote 38.
+
+**Entregas:**
+- `GO_TEST_IMAGE = golang:1.26.10-trixie@sha256:fd9a91f0ece5664556f4851d06dce5e5b505a71166dffd385a03ba9d200b6983`.
+- Digest conferido por `curl` HEAD, sha256 do corpo do índice e `docker pull`/`RepoDigests` (`buildx` ausente; o 🟣 SecBrain aceitou).
+- `docker run` mostrou go1.26.10, bash, gpg 2.4.7, tar e git.
+- `precisaBash` e o gpg falham com `CI=true` em vez de pular.
+
+**Limite:** os testes com `unshare` pulam no container (172 entradas, incluindo `TestSEC60_Ensaio_*`; o pai aparece PASS). Só rodam na máquina local. Vira o **TST-26**.
+
+**Testes:** ensaio do "Testes Go" no `GO_TEST_IMAGE` rc=0, 10796 PASS, 0 FAIL, 247 SKIP.
+
+**Docs:** `docs/deploy-servidor.md` §1, §2 e §3.6.
+
+---
+
+## SEC-62: estágios de teste do Jenkinsfile recebem o código por `git archive HEAD` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39).
+**Camadas:** CI (Jenkinsfile), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão do Lote 38 (CI-01).
+
+**Entregas:** `git archive --format=tar HEAD -- <lista>` nos dois estágios ("Testes Go" e "Testes Frontend"), com guarda do `git`. Caminho da lista não rastreado derruba o estágio.
+
+**Testes:** teste estático `SH/tests/deploy/ci02_sec62_jenkinsfile_test.go`; ensaio com índice temporário (sem commit): tar sem `.env` real, `.pem`, chave ou dump.
+
+**Docs:** `docs/deploy-servidor.md` §1, §2, §10 e §11, Passo 8.
+
+---
+
+## DB-09: `senha_historico.created_at` passa a `NOT NULL` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39). Aplicação no CasaOS e na produção pendente do usuário.
+**Camadas:** Database, Testes
+**Responsável:** 🌸 DataBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** 🟣 SecBrain no Lote 38 (DB-08).
+
+**Entregas:** `sql/07` com `NOT NULL`; `sql/27_alter_senha_historico_created_at_not_null.sql` e `sql/27_revert_senha_historico_created_at_not_null.sql`; alvos `make db-fix-historico-created-at` e `make db-revert-historico-created-at`.
+
+**Decisão sobre as linhas NULL:** a migração aborta sem alterar nada. As linhas não são apagadas, porque alimentam o bloqueio de reuso de senha; o remédio manual com a sentinela está no `docs/manual-base-de-dados.md` §8.
+
+**Desvio do spec:** o `ALTER` fica **dentro** do `BEGIN NOT ATOMIC`. Com `--force`, fora do bloco, ele preenchia NULL com a hora da migração, sem avisar.
+
+**Testes:**
+- Mutação provou que `TestIntegracaoDB09_Migracao27_ForceNaoPreencheNull` e o estático `TestDB09_SQL27_AlterDentroDoBlocoDepoisDoSignal` falham com o `ALTER` fora do bloco (sha256 `ff1cb1a0...190bb` conferido depois de restaurar).
+- Testes nos `bug12` e `db09_*`; os de migração pulam fora do loopback.
+- Integração no descartável verde.
+
+**Docs:** `docs/manual-base-de-dados.md` (🌸 DataBrain) e `docs/deploy-servidor.md` §11, Passo 7.
+
+---
+
+## TST-24: catraca do DB-08 não falha mais aberta com `-- ` dentro de string SQL — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39).
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** 🟣 SecBrain no Lote 38.
+
+**Entregas:** lexer `db08RemoverComentariosSQL` por arquivo, preservando `\n`; `CURRENT_TIME`/`UTC_TIME` no `reRelogioServidor`; trata `/*!50000NOW()*/`.
+
+**Testes:** catraca em `SH/tests/arquitetura/db08_ddl_relogio_test.go` verde na suíte final.
+
+---
+
+## TST-25: catraca do DB-08 passa a varrer SQL embutido em scripts, `Makefile` e `Jenkinsfile` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 39).
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** 🟣 SecBrain no Lote 38.
+
+**Entregas:** varredura de `deploy/*.sh`, `scripts/*.sh`, `Makefile` e `Jenkinsfile`; allowlist vazia, sem achado real.
+
+**Testes:** catraca em `SH/tests/arquitetura/db08_ddl_relogio_test.go` verde na suíte final.
+
+---
+
+## BUG-33: consultas de `/metricas` leem o relógio cada uma por si — 2026-11-05
+
+**Status:** ✅ **fechado como aceito, não corrigido** (Lote 39).
+**Camadas:** Backend (analytics)
+**Responsável:** 🟡 BackBrain
+**Origem:** 🟣 SecBrain no Lote 38 (BUG-30).
+
+**Decisão:** sem impacto de segurança, janela de milissegundos e custo alto. O comportamento na virada do dia ou do mês continua igual.
+
+**Entrega:** só o comentário de `dashboard.go` foi corrigido.
+
+**Testes:** sem teste novo de comportamento, porque o comportamento não mudou; suíte final do lote verde.
+
+---
+
+## Lote 38 de 2026-11-05: 3 cards concluídos
+
+Aberto e fechado em 2026-11-05 pelo 🤍 MegaBrain, a pedido do usuário ("siga com os cards média"), com os 3 cards MÉDIA do bloco "Achados do Lote 37" de `afazer.md`: **BUG-30**, **DB-08** e **CI-01**. Passos: 🟣 SecBrain especificando → 🤍 MegaBrain decidindo (DB-08 opção (c); aceite do CI-01 reescrito) → 🟡 BackBrain-A (BUG-30) ∥ 🟡 BackBrain-B (DB-08 Go + CI-01) ∥ 🌸 DataBrain (DB-08 docs) → 🔴 TestBrain ∥ 🟣 SecBrain revisando → correções → 🤍 MegaBrain conferência final → 🔵 SubBrain fechando. **Banco:** só descartável local (`rp-descartavel-l36` em `127.0.0.1:33306`, servidor em UTC, e o temporário `rp-descartavel-l38-tz` em `127.0.0.1:33326`, servidor em -03, removido ao final); **nada rodou contra o CasaOS nem contra a produção**. **Não commitado** (o usuário não pediu commit neste lote). Caminhos: `SH` = `backend/shared`.
+
+**Testes finais:**
+- 🔴 TestBrain: `go clean -testcache && env -u INTEGRATION make -k test` rc=0, 10690 PASS, 0 FAIL, 55 SKIP; `make lint` e `make shellcheck` ok; `CI=true go test ./tests/deploy/` 460 PASS, 0 FAIL, 4 SKIP; integração com o servidor em UTC (`rp-descartavel-l36`) 11069 PASS, 0 FAIL, 5 SKIP; integração com o servidor em -03 (`rp-descartavel-l38-tz`) 11069 PASS, 0 FAIL, 5 SKIP; cobertura do `SH` 92,0% (`analyticsmysql` e `tz` 100%).
+- 🤍 MegaBrain (conferência final, depois das últimas correções): `make lint` e `make shellcheck` rc=0; `make -k test-integration ENV_ARQUIVO=<descartável l36>` rc=0, 11069 PASS, 0 FAIL, 5 SKIP.
+
+**Revisão (🟣 SecBrain): aprovado com ressalvas (BAIXA), corrigidas no lote:** `.In(tz.Local)` no `SerieZerada` de `SH/analytics/analyticsapp/consultas.go` (com teste de mutação) e comentários desatualizados. Os demais achados viraram cards em `afazer.md` (bloco "Achados do Lote 38").
+
+**Incidente menor:** a senha do usuário `l36` do banco descartável local apareceu duas vezes em saídas de ferramenta da sessão (🤍 MegaBrain e 🌸 DataBrain; o filtro de mascaramento procurava `PASS*` em vez de `DB_SENHA`). Nada foi gravado no repositório. O 🤍 MegaBrain trocou a senha do `l36` (sem exibi-la) e atualizou o env-file do descartável. Para os próximos lotes: mascarar `DB_SENHA` (e qualquer `*SENHA*`/`*PASS*`) ao exibir env-files.
+
+**Docs:** `docs/manual-base-de-dados.md` §1.1 (fuso da sessão, DB-08, linhas ~48-100, com o comando de levantamento do fuso) e §6.1 (~307), pelo 🌸 DataBrain. Sem endpoint novo nem tela nova: coleção Postman e manual de telas sem mudança.
+
+**Pendências do usuário:**
+- Levantar `@@global.time_zone` e `@@system_time_zone` no CasaOS e na produção (comando em `docs/manual-base-de-dados.md` §1.1). No descartável: `@@global.time_zone=SYSTEM`, `@@system_time_zone=UTC`.
+- Sugestão para o `CLAUDE.md` (só o usuário edita):
+> "**DB-08:** o DSN fixa `time_zone='-03:00'` na sessão; a CLI `mariadb` e os seeds ficam em UTC salvo `SET time_zone`. **BUG-30/TST-23:** nenhum SQL usa o relógio do servidor (`NOW()`, `CURDATE()`...); datas calculadas no Go."
+
+**Cards criados em `afazer.md`** (bloco "Achados do Lote 38"): CI-02, DB-09, TST-24, TST-25, SEC-62 e BUG-33 (BAIXA).
+
+---
+
+## BUG-30: `CURDATE()` do servidor nos filtros e no funil do analytics deslocava "hoje/semana/mês" entre 21h e 24h (-03) — 2026-11-05
+
+**Status:** ✅ concluído (Lote 38).
+**Camadas:** Backend (analytics), Testes
+**Responsável:** 🟡 BackBrain-A → 🔴 TestBrain
+**Origem:** 🔴 TestBrain no Lote 37 (catraca do TST-23).
+
+**Entregas:**
+- Nenhum `CURDATE()` no analytics: as datas (hoje; semana = últimos 7 dias; mês por YEAR/MONTH; janelas do funil de 30/90/365 dias; sequência da série) são calculadas no Go, em `tz.Local`, a partir do relógio injetado, e passadas como `?`.
+- Novo `SH/analytics/analyticsmysql/datas.go` (`hojeEm`, `diaSQL`, `argsPeriodo`, `argsJanela`, `argsMes`, `diasAntes`, `sequenciaDias`). As cláusulas continuam constantes (as 3 janelas viraram `janelaAberturaDesde`).
+- `sqlDiasDaSerie` (UNION de 365 linhas) e `serieCompleta` removidas: 1 consulta a menos por série.
+- `NovoClientes(q, relogio)` e `NovoOportunidades(q, relogio)` com panic se o relógio for nil; o bootstrap (`backend/rotaperfumes-api/internal/bootstrap/analytics.go`) passa o mesmo relógio; `hoje` lido uma vez por método.
+- Aliasing do lote em `vendasDoMes` evitado (cópia; confirmado por mutação).
+- `SH/analytics/analyticsapp/consultas.go`: `SerieZerada(..., Relogio().In(tz.Local))` (ressalva do 🟣 SecBrain, com teste de mutação).
+- Comentários atualizados em `SH/analytics/serie.go`, `SH/analytics/dias.go` e `SH/cmd/resetpassword/main.go`.
+- Catraca do TST-23 (`SH/tests/arquitetura/tst23_relogio_servidor_test.go`) sem as 52 entradas (ficam só as 6 de texto não-SQL); item 2 do cabeçalho reescrito para a decisão do DB-08.
+
+**Testes:** novos `SH/tests/analytics/bug30_datas_no_go_test.go`, `SH/tests/analytics/bug30_datas_no_go_integration_test.go` e `SH/tests/analytics/bug30_datas_lacunas_test.go` (🔴 TestBrain); apoio em `backend/rotaperfumes-api/tests/handlers/bug30_datas_apoio_test.go` e `backend/rotaperfumes-api/tests/services/bug30_datas_apoio_test.go`. Cerca de 20 testes de analytics/dashboard/repositories/handlers/services ajustados (inclusive `dashboard_handler_test.go` e `dashboard_service_cliente_erros_test.go`). Integração verde com o servidor em UTC e em -03.
+
+---
+
+## DB-08: `created_at`/`updated_at` com `DEFAULT CURRENT_TIMESTAMP` apareciam 3 h adiantados — 2026-11-05
+
+**Status:** ✅ concluído (Lote 38).
+**Camadas:** Database, Backend, Testes
+**Responsável:** 🟣 SecBrain → 🤍 MegaBrain (decisão) → 🟡 BackBrain-B + 🌸 DataBrain → 🔴 TestBrain
+**Origem:** 🔴 TestBrain / 🟣 SecBrain no Lote 37 (TST-23).
+
+**Decisão (opção (c) do 🤍 MegaBrain):** fixar o fuso da sessão no DSN. `SH/config/config.go` acrescenta `&time_zone=%27-03%3A00%27` (`tz.OffsetSQL = "-03:00"`, antes do parâmetro de TLS). Com isso, `DEFAULT`/`ON UPDATE CURRENT_TIMESTAMP` e os valores gravados pelo Go ficam coerentes, e as linhas antigas passam a aparecer certas. DDL não muda; as colunas de acesso (DATETIME naive) não são afetadas. O 🟣 SecBrain conferiu que todo caminho Go abre a conexão por `config.DSN()` (API, CLIs, `resetpassword`, importers, testkit).
+
+**Efeito colateral aceito:** `ultimo_login_at` antigo no CasaOS aparece 3 h mais cedo (só dev). Dados do CasaOS não migrados; produção ainda sem dados (DEPLOY-08 pendente).
+
+**Levantamento (só no descartável):** `@@global.time_zone=SYSTEM`, `@@system_time_zone=UTC`. CasaOS e produção ficam como pendência do usuário.
+
+**Testes:** DSN exato nos testes de config, SEC-29, `resetpassword` e SEC-10; `TestDB08_OffsetSQLBateComOffsetSegundos`; integração `SH/tests/repositories/db08_auditoria_fuso_integration_test.go` (sessão -03, DEFAULT, ON UPDATE, `ultimo_login_at`; falha sem o `time_zone` no DSN, provado pelo 🟡 BackBrain-B); catraca de DDL `SH/tests/arquitetura/db08_ddl_relogio_test.go` (só `DEFAULT`/`ON UPDATE CURRENT_TIMESTAMP` em `created_at`/`updated_at` TIMESTAMP; allowlist `sql/25_seed_movimentacoes_mes_atual.sql:65`). Decisão do TST-23 atualizada (item 2).
+
+**Docs:** `docs/manual-base-de-dados.md` §1.1 (~48-100) e §6.1 (~307), pelo 🌸 DataBrain.
+
+---
+
+## CI-01: estágio "Testes Go" do Jenkinsfile não copiava `scripts/`; os testes do SEC-58 pulavam em silêncio no CI — 2026-11-05
+
+**Status:** ✅ concluído (Lote 38; aceite reescrito pelo 🤍 MegaBrain).
+**Camadas:** CI (Jenkinsfile), Testes
+**Responsável:** 🟡 BackBrain-B → 🔴 TestBrain
+**Origem:** 🟣 SecBrain / 🟡 BackBrain-B no Lote 37 (SEC-58).
+
+**Entregas:**
+- `Jenkinsfile`, estágio "Testes Go": `scripts` no tar e `-e CI=true`.
+- `SH/tests/deploy/helpers_test.go`: `emCI`, `acaoArquivoAusente` e `arquivoObrigatorio` (arquivo ausente falha em CI e pula fora dele); o SEC-58 usa o helper.
+- `TestTST17_ShellcheckDisableComMotivo` exige lista não vazia em CI.
+
+**Aceite reescrito:** os 3 testes estáticos do SEC-58 rodam no CI; o comportamental (`TestSEC58_ConferirChaveMariaDB`) segue pulando na imagem alpine sem bash/gpg, tratado no card CI-02.
+
+**Testes:** novos `SH/tests/deploy/ci01_jenkinsfile_scripts_test.go` e `SH/tests/deploy/ci01_arquivo_obrigatorio_test.go` (🔴 TestBrain, por subprocesso); `CI=true go test ./tests/deploy/` 460 PASS, 0 FAIL, 4 SKIP.
+
+---
+
+## Lote 37 de 2026-11-05: 7 cards concluídos
+
+Aberto e fechado em 2026-11-05 pelo 🤍 MegaBrain, a pedido do usuário ("continue com as tarefas a fazer"), com 7 cards vindos de `afazer.md`: **BUG-29**, **TST-17** (só o item 1), **SEC-58** e **TST-23** (bloco "Achados do Lote 36") e **SEC-56**, **SEC-57** e **BUG-28** (bloco "Achados do Lote 35"). Passos: 🟣 SecBrain especificando → 🟡 BackBrain-A/B + 🔴 TestBrain (TST-23) → 🔴 TestBrain cobertura/integração ∥ 🟣 SecBrain revisando → correções → 🤍 MegaBrain conferência final → 🔵 SubBrain fechando. **Banco:** só descartável local (`rp-descartavel-l36` em `127.0.0.1:33306` e, para o TST-23, o temporário `rp-descartavel-l37-tz` em `127.0.0.1:33316`, removido ao final); **nada rodou contra o CasaOS nem contra a produção**. **Não commitado** (o usuário não pediu commit neste lote). Caminhos: `SH` = `backend/shared`.
+
+**Testes finais:**
+- 🔴 TestBrain: `go clean -testcache && env -u INTEGRATION make -k test` rc=0, 10615 PASS, 0 FAIL, 49 SKIP; `make lint` e `make shellcheck` ok; integração com o servidor em UTC (`rp-descartavel-l36`) 10986 PASS, 0 FAIL, 4 SKIP; integração com o servidor em -03 (`rp-descartavel-l37-tz`) 10986 PASS, 0 FAIL, 4 SKIP.
+- Depois das últimas correções: 🟡 BackBrain-A `go clean -testcache && env -u INTEGRATION make -k test` rc=0, 10619 PASS, 0 FAIL, 49 SKIP; `make lint` ok.
+- 🤍 MegaBrain (conferência final): `make shellcheck` rc=0; `make -k test-integration ENV_ARQUIVO=<descartável l36>` rc=0, 10990 PASS, 0 FAIL, 4 SKIP.
+
+**Revisão (🟣 SecBrain): aprovado com ressalvas, corrigidas no lote:** `make -e` (origin `environment override` do `ENV_ARQUIVO`) passou a ser recusado (BUG-29); validade `i` (inválida) incluída no awk do SEC-58. **Achados do 🔴 TestBrain corrigidos no lote:** regressão do `export` (as variáveis de controle vazavam para os filhos; resolvido com `unexport`) e `//` nos diretórios do seed (recusado). Os demais achados viraram cards em `afazer.md` (bloco "Achados do Lote 37").
+
+**Arquivos (lista do `git status` da sessão; o 🔵 SubBrain não roda git):**
+- Alterados: `Makefile`, `SH/testkit/integracao/integracao.go`, `deploy/seed-producao.sh`, `scripts/setup-linux.sh`, `scripts/versoes.conf`, `docs/deploy-servidor.md`, `docs/manual-base-de-dados.md`, `SH/tests/config/bug27_makefile_reset_rebuild_test.go`, `SH/tests/config/sec11_makefile_sql_test.go`, `SH/tests/config/sec21_makefile_setup_test.go`, `SH/tests/config/sec50_integracao_guarda_test.go`, `SH/tests/config/sec53_makefile_segredos_test.go`, `SH/tests/config/sec54_guarda_normalizada_test.go`, `SH/tests/deploy/deploy07_seed_producao_ensaio_test.go`, `SH/tests/deploy/deploy07_seed_producao_test.go`, `SH/tests/deploy/tst17_seed_producao_real_test.go`, `SH/tests/repositories/sec12_chore02_refresh_integration_test.go` e os três arquivos de `tarefas/`.
+- Novos: `SH/tests/arquitetura/tst23_relogio_servidor_test.go`, `SH/tests/config/lote37_cobertura_testbrain_test.go`, `SH/tests/config/lote37_makefile_bug29_sec56_test.go`, `SH/tests/deploy/lote37_cobertura_testbrain_test.go`, `SH/tests/deploy/sec58_setup_chave_mariadb_test.go` e `SH/tests/deploy/tst17_seed_producao_opcoes_test.go`.
+
+**Docs:** `docs/deploy-servidor.md` (§11: opções novas do `seed-producao.sh` e a recusa fail-closed de `/root`; BUG-29) e `docs/manual-base-de-dados.md` (BUG-29/guardas). Sem endpoint novo nem tela nova: coleção Postman e manual de telas sem mudança.
+
+**Pendência do usuário (sugestão para o `CLAUDE.md`; só o usuário edita):**
+> "**BUG-29:** o make recusa `MAKEFLAGS`/`MAKEOVERRIDES`/`GNUMAKEFLAGS` na linha de comando e `ENV_ARQUIVO` vindo do ambiente; use `make -k ...` ou `MAKEFLAGS=-k make ...`. **BUG-28:** db-seed roda o db-up na receita. **SEC-56/57:** IPv4 não canônico e porta não numérica (com espaço) são recusados antes do `CONFIRMO_PRODUCAO`."
+
+**Cards criados em `afazer.md`** (bloco "Achados do Lote 37"): CI-01, BUG-30 e DB-08 (MÉDIA); BUG-31, SEC-59, SEC-60, SEC-61, BUG-32 e CHORE-19 (BAIXA). O card "TST-17 (resto, pendente do usuário)" continua em `afazer.md`, atualizado.
+
+---
+
+## BUG-29: `MAKEFLAGS=...` na linha de comando apaga `ENV_ARQUIVO`/`CONFIRMAR`/`CONFIRMO_PRODUCAO` nos sub-makes — 2026-11-05
+
+**Status:** ✅ concluído (Lote 37).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** incidente do Lote 36.
+
+**Confirmação (GNU Make 4.3, Makefile mínimo):** com `make MAKEFLAGS=-k X=1` e com `make MAKEOVERRIDES= X=1`, no sub-make `X` tem origin `environment` (deixa de ser de linha de comando); `MAKEFLAGS=-k make` e `make -k` preservam. Resposta à pergunta do card: o `CONFIRMAR`/`CONFIRMO_PRODUCAO` chegavam ao filho só pelo ambiente e as guardas recusavam (**fail-closed**); o `ENV_ARQUIVO` fazia o filho ler o `.env` padrão (**fail-open**, o incidente).
+
+**Entregas (Makefile):**
+- recusa, já no parse, de `MAKEFLAGS`/`MAKEOVERRIDES`/`GNUMAKEFLAGS` vindos da linha de comando e de `ENV_ARQUIVO` vindo do ambiente (inclusive o origin `environment override` do `make -e`, ressalva do 🟣 SecBrain);
+- `ENV_ARQUIVO` só com `[A-Za-z0-9._/-]`;
+- sentinela `RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)'` em todo `$(MAKE)` (`db-reset`, `db-rebuild`, `db-seed`, `test-integration`), com `$(error)` se o filho ler outro arquivo;
+- o `.env` não pode declarar `MAKEFLAGS`, `MAKEOVERRIDES`, `GNUMAKEFLAGS`, `MAKEFILES`, `MAKELEVEL`, `MAKE`, `RP_ENV_PAI` nem `ENV_ARQUIVO_LIDO`;
+- `unexport ENV_ARQUIVO RP_ENV_PAI CONFIRMAR CONFIRMO_PRODUCAO` para os processos filhos (regressão achada pelo 🔴 TestBrain e corrigida no lote).
+- Uso correto: `make -k ...` ou `MAKEFLAGS=-k make ...`.
+
+**Testes:** `SH/tests/config/lote37_makefile_bug29_sec56_test.go` e `SH/tests/config/lote37_cobertura_testbrain_test.go`; ajustes em `bug27_makefile_reset_rebuild_test.go`, `sec11_makefile_sql_test.go`, `sec21_makefile_setup_test.go`, `sec50_integracao_guarda_test.go`, `sec53_makefile_segredos_test.go` e `sec54_guarda_normalizada_test.go`. SEC-46/50/53/54 e BUG-27 verdes.
+
+---
+
+## BUG-28: `make -k db-seed` rodava o `db-up` na produção com a guarda recusada — 2026-11-05
+
+**Status:** ✅ concluído (Lote 37).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão final do Lote 35.
+
+**Entregas:** `db-seed: db-guard-producao db-guard-sem-producao db-check-env` (o `db-up` saiu dos pré-requisitos); o `db-up` roda na receita, por `$(MAKE) RP_ENV_PAI=... db-up`, só depois das guardas.
+
+**Testes:** `make -k db-seed` com a guarda recusada → nenhum `CREATE DATABASE`/DDL no log do cliente falso (testes do lote em `SH/tests/config/`); BUG-27 e SEC-46 verdes.
+
+---
+
+## SEC-56: formas numéricas não canônicas do IPv4 não contavam como produção — 2026-11-05
+
+**Status:** ✅ concluído (Lote 37).
+**Camadas:** Config (Makefile), Backend (testkit), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão final do Lote 35.
+
+**Entregas:** IPv4 numérico não canônico (decimal, hex, octal, forma curta, zero à esquerda, octeto >255, 5 ou mais partes) é recusado como produção nos dois lados: Makefile (`PRODUCAO_DETECTA`/`hostinvalido`) e Go (`SH/testkit/integracao/integracao.go`, `ErrBancoProducao`), **antes e sem** a válvula `CONFIRMO_PRODUCAO`. Loopback só com octetos canônicos (`HOST_LOOPBACK`, grep de 127/8, `reLoopbackV4`). Residual sem card: `config.HostLoopback` usa `net.ParseIP` (ok).
+
+**Testes:** casos na tabela de paridade Makefile × Go (`sec54_guarda_normalizada_test.go`, `lote37_makefile_bug29_sec56_test.go`); SEC-46/50/54 verdes.
+
+---
+
+## SEC-57: paridade Makefile × Go da porta com espaço — 2026-11-05
+
+**Status:** ✅ concluído (Lote 37).
+**Camadas:** Config (Makefile), Backend (testkit), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão final do Lote 35.
+
+**Entregas:** no Go, sem `TrimSpace` na porta e com o sentinel `ErrPortaInvalida` ("DB_PORT=%q inválida: não é numérico (SEC-57 ...)"); no Makefile, `portainvalida` com mensagem SEC-57, antes da válvula. **Desvio aceito pelo 🟣 SecBrain:** o GNU make tira o espaço inicial (`DB_PORT= 3307` → `3307`; `"  "` → vazio = 3306, fail-closed); esses casos só são cobertos no Go.
+
+**Testes:** casos de porta com espaço (antes, depois, no meio) na paridade; mensagem de porta inválida nos dois lados.
+
+---
+
+## TST-17 (item 1): opções de isolamento do `deploy/seed-producao.sh` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 37) **só o item 1**. Os itens 2 e 3 (execução com `sudo` pelo usuário) continuam em `afazer.md`, no card "TST-17 (resto, pendente do usuário)". Histórico do Lote 36 (shellcheck e teste real criado): bloco "Lote 36 de 2026-11-05".
+**Camadas:** Deploy (script), Testes, Docs
+**Responsável:** 🟣 SecBrain (validação dos diretórios) → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** DEPLOY-07 (Lote 33); continua a pendência do TST-15.
+
+**Entregas:**
+- opções novas `--container`, `--rede-nome`, `--ip-admin`, `--segredos-dir`, `--ssl-dir` e `--trabalho-dir` (padrões = comportamento anterior: `rotaperfumes-mariadb`, `rotaperfumes-db`, `172.30.42.20`, `/root/rotaperfumes-mariadb`, `/etc/mysql/ssl`, `/root`);
+- validações na etapa 1: regex dos nomes; IPv4 canônico `.20` da única /24 da rede; container rodando e ligado à rede; `conferir_dir_privado` copiado byte a byte do `mariadb-docker.sh` (com teste de paridade); `conferir_dir_root_sem_escrita`; `conferir_ca_host`; disjunção dos diretórios por `realpath`; `//` recusado; `mktemp` em `$TRABALHO_DIR` conferido;
+- **mudança de comportamento (fail-closed):** se `/root` não for root com 700, ou `/root/rotaperfumes-mariadb` não for 700, o seed recusa;
+- ensaio do DEPLOY-07 agora em chroot tmpfs;
+- docs: §11 de `docs/deploy-servidor.md`.
+
+**Testes:** `SH/tests/deploy/tst17_seed_producao_opcoes_test.go`, `SH/tests/deploy/lote37_cobertura_testbrain_test.go`, ajustes em `deploy07_seed_producao_test.go`, `deploy07_seed_producao_ensaio_test.go` e `tst17_seed_producao_real_test.go` (agora o `TestTST17_SeedProducao_Real` só pula por falta de `TST17_DOCKER=1`); `make shellcheck` verde.
+
+---
+
+## SEC-58: chave do repositório MariaDB instalada sem conferir o fingerprint em `scripts/setup-linux.sh` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 37).
+**Camadas:** Scripts (setup), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** 🟣 SecBrain na revisão do Lote 36.
+
+**Entregas:**
+- fingerprint `177F4010FE56CA3336300305F1656F24C74CD1D8` (MariaDB Signing Key, key ID `0xF1656F24C74CD1D8`) confirmado no arquivo baixado (sha256 `00adb387f4c12e8982cfc28165d225695621494354cd58108c6845063bfb74b5`; uma primária, não revogada, subchave só de cifragem) e pela documentação oficial;
+- `MARIADB_GPG_FPR` em `scripts/versoes.conf`;
+- `conferir_chave_mariadb` entre o download e o `install` (GNUPGHOME temporário, `gpg --show-keys`; recusa validade `r`/`e`/`i`, mais de uma primária e fingerprint diferente);
+- `conferir_keyring_mariadb_instalado`: AVISO se o keyring já instalado divergir (endurecimento no card SEC-61);
+- `gpg` instalado via apt se faltar.
+
+**Testes:** `SH/tests/deploy/sec58_setup_chave_mariadb_test.go` (recusa da chave com fingerprint diferente e as demais recusas do `conferir_chave_mariadb`); `make shellcheck` verde. Ressalva: no CI os testes pulam porque o Jenkinsfile não copia `scripts/` (card CI-01).
+
+---
+
+## TST-23: testes que comparam `NOW()` do banco com o relógio da API dependiam do `time_zone` — 2026-11-05
+
+**Status:** ✅ concluído (Lote 37).
+**Camadas:** Testes, Database (conexão)
+**Responsável:** 🔴 TestBrain
+**Origem:** 🔴 TestBrain no TST-22 (Lote 36).
+
+**Decisão registrada:** o fuso fica no Go; o DSN segue sem `time_zone`; nenhum SQL de produção ou de teste pode depender do relógio do servidor.
+
+**Entregas:**
+- catraca por AST `SH/tests/arquitetura/tst23_relogio_servidor_test.go`, com allowlist por arquivo:linha e motivo (58 entradas; falha também se sobrar entrada);
+- `SH/tests/repositories/sec12_chore02_refresh_integration_test.go:62` corrigido para usar o relógio do Go.
+
+**Testes (aceite):** integração verde com o servidor em UTC (`rp-descartavel-l36`) e em -03 (container temporário `rp-descartavel-l37-tz` em `127.0.0.1:33316`, removido ao final): 10986 PASS, 0 FAIL, 4 SKIP em cada. Os usos de `CURDATE()` em produção (analytics) e os `DEFAULT CURRENT_TIMESTAMP` viraram os cards BUG-30 e DB-08.
+
+---
+
+## Histórico de `fazendo.md` (movido em 2026-11-05)
+
+Registro das aberturas e fechamentos de lotes que ficava em `fazendo.md` (do Lote 13 ao Lote 36). Todos os lotes citados estão concluídos, cancelados ou com os cards de volta em `afazer.md`; movido para cá a pedido do usuário em 2026-11-05.
+
+> Atualizado em 2026-11-05 (fechamento do Lote 36, 🔵 SubBrain): **nenhum card em execução.** O **Lote 36** foi fechado: **TST-22**, **DB-07** e **TST-16** concluídos e em `feito.md` ("Lote 36 de 2026-11-05: 3 cards concluídos, 1 parcial"; o TST-16 com a execução real como root pendente). O **TST-17** ficou **parcial** e voltou para `afazer.md` (bloco "Achados do Lote 36"): falta o 🟡 BackBrain implementar as opções de isolamento do `seed-producao.sh` e o usuário rodar com `sudo` os testes reais TST15 e TST17 (nunca no servidor de produção). Testes finais (conferidos pelo 🤍 MegaBrain): `go clean -testcache && env -u INTEGRATION make -k test` com rc=0, 10291 PASS, 0 FAIL e 48 SKIP; `make lint` e `make shellcheck` ok; `make test-integration ENV_ARQUIVO=<descartável>` com rc=0, 10662 PASS, 0 FAIL e 3 SKIP. Revisão do 🟣 SecBrain: aprovado com ressalvas, corrigidas no lote. Incidente do `MAKEFLAGS=-k` (sub-make leu o `.env` padrão; nada escrito) registrado em `feito.md`. Entraram em `afazer.md`: BUG-29 (MÉDIA), SEC-58 e TST-23 (BAIXA). Commit do lote na `main` pelo 🤍 MegaBrain, sem push (inclui o `CLAUDE.md` alterado pelo usuário). Passos do Lote 36: "🔴 TestBrain (TST-22, TST-17) + 🌸 DataBrain (DB-07, TST-16) → 🟣 SecBrain revisando → 🔵 SubBrain fechando". **Seguem pendentes do usuário** (`afazer.md`): **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`) e a parte com `sudo` do **TST-17**.
+>
+> Antes, ainda em 2026-11-05 (abertura do Lote 36, 🔵 SubBrain): o usuário informou que (a) alterou ele mesmo o `CLAUDE.md` com a sugestão do 🟡 BackBrain do Lote 35 (SEC-54, SEC-55 e BUG-27; pendência marcada como atendida em `feito.md`), (b) rodou o `usermod -aG docker` (a sessão do agente acessa o Docker via `sg docker`; o `shellcheck` está instalado) e (c) autorizou rodar os processos de banco descartável. O 🤍 MegaBrain abriu o **Lote 36 de 2026-11-05** com 4 cards vindos de `afazer.md` (bloco "Lote 36 de 2026-11-05", no fim deste arquivo): **TST-17** (MÉDIA) e **TST-22**, **DB-07** e **TST-16** (BAIXA). Banco descartável: container local `rp-descartavel-l36` (MariaDB 11.4.13 com o digest de produção, `127.0.0.1:33306`, banco `rotaperfumes_l36`, credenciais fora do repositório); **nada de CasaOS nem de produção**. Passo atual: "🔴 TestBrain (TST-22, TST-17) + 🌸 DataBrain (DB-07, TST-16) → 🟣 SecBrain revisando → 🔵 SubBrain fechando". Continuam em `afazer.md`: DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), SEC-56, SEC-57, BUG-28, ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 35, 🔵 SubBrain): **nenhum card em execução.** O **Lote 35** (BUG-27, SEC-54, TST-19, SEC-55, TST-20, TST-21, FE-18 e CHORE-16) foi concluído e está em `feito.md` ("Lote 35 de 2026-11-05: 8 cards concluídos"; commitado na `main` pelo 🤍 MegaBrain, a pedido do usuário). Testes finais (🔴 TestBrain): `go clean -testcache && env -u INTEGRATION make -k test` com 10248 PASS, 0 FAIL e 41 SKIP; cobertura `shared` 92,0%, API 94,5%, combinada 97,6%; `make lint` ok; `make test-frontend` com 43 arquivos e 1741 testes ok; `tsc` e `eslint` limpos. Revisão final do 🟣 SecBrain: aprovado com ressalvas. Entraram 3 cards em `afazer.md` (bloco "Achados do Lote 35"): SEC-56, SEC-57 e BUG-28 (BAIXA). Passos do Lote 35: "🟣 SecBrain especificando → 🟡 BackBrain + 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain fechando". **Seguem pendentes do usuário** (`afazer.md`): **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`) e **TST-17** (precisa de Docker).
+>
+> Antes, ainda em 2026-11-05 (abertura do Lote 35, 🔵 SubBrain): o usuário pediu "continue com as tarefas a fazer, em seguida commit as alterações finalizadas". O 🤍 MegaBrain abriu o **Lote 35 de 2026-11-05** com 8 cards vindos de `afazer.md` (bloco "Lote 35 de 2026-11-05", no fim deste arquivo): **BUG-27** (MÉDIA) e **SEC-54**, **SEC-55**, **TST-19**, **TST-20**, **TST-21**, **FE-18** e **CHORE-16** (BAIXA). Critério: executáveis sem o usuário, sem Docker e sem banco. Passo atual: "🟣 SecBrain especificando → 🟡 BackBrain + 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain fechando". Continuam em `afazer.md`: DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17, TST-22, DB-07 e TST-16 (dependem de servidor/Docker/banco), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
+>
+> Antes, ainda em 2026-11-04 (fechamento do Lote 34, 🔵 SubBrain): **nenhum card em execução.** O **Lote 34** (SEC-53, SEC-46, SEC-50, SEC-49, CHORE-15, CHORE-17 e BUG-26) foi concluído e está em `feito.md` ("Lote 34 de 2026-11-04: 7 cards concluídos"; **não commitado**, pendente do usuário). Testes finais (🔴 TestBrain): `go clean -testcache && env -u INTEGRATION make -k test` com 10111 PASS, 0 FAIL e 42 SKIP; `make lint` ok; cobertura `shared` 91,9% e API 94,5%. Entraram 7 cards em `afazer.md` (bloco "Achados do Lote 34"): BUG-27 (MÉDIA), SEC-54, TST-19, SEC-55, TST-20, TST-21 e TST-22 (BAIXA). Passos do Lote 34: "🟣 SecBrain especificando → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain fechando". **Seguem pendentes do usuário** (`afazer.md`): **DEPLOY-08** (ALTA; bloqueia o primeiro deploy da `main`), **OPS-02**, **CHORE-18**, **DOC-09** (alteração do `CLAUDE.md`, exige autorização) e **TST-17** (precisa de Docker).
+>
+> Antes, ainda em 2026-11-04 (abertura do Lote 34, 🔵 SubBrain): o usuário pediu "continue com as tarefas a fazer e as fazendo". O 🤍 MegaBrain abriu o **Lote 34 de 2026-11-04** com 7 cards vindos de `afazer.md` (bloco "Lote 34 de 2026-11-04" abaixo): **SEC-50**, **SEC-53** e **SEC-46** (MÉDIA) e **SEC-49**, **CHORE-15**, **CHORE-17** e **BUG-26** (BAIXA). Passo atual: "🟣 SecBrain especificando → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain fechando". Continuam em `afazer.md`, pendentes do usuário: DEPLOY-08, OPS-02, CHORE-18, DOC-09 e TST-17 (precisa de Docker).
+>
+> Antes, ainda em 2026-11-04 (🔴 TestBrain): o **TST-18** (estágio "Testes Frontend" no Jenkinsfile) foi criado, executado e movido para `feito.md` no mesmo dia; **nenhum card em execução**.
+>
+> Antes, ainda em 2026-11-04 (fechamento do Lote 33, 🔵 SubBrain): **nenhum card em execução.** O **DEPLOY-07** foi concluído no código e nas docs e está em `feito.md` ("Lote 33 de 2026-11-04"; **não commitado**, pendente do usuário). Testes finais: `go clean -testcache && make -k test` com 2067 PASS e 0 FAIL; `make lint` ok. A execução no servidor virou o card **DEPLOY-08** (ALTA, pendente do usuário, `afazer.md`; passo a passo em `docs/deploy-servidor.md` §11), que **bloqueia o primeiro deploy da `main`**. O DEPLOY-05 saiu de `afazer.md` (substituído). Entraram 11 cards em `afazer.md` (bloco "Achados do Lote 33 (DEPLOY-07)"). Passos do Lote 33: "🟣 SecBrain especificando → 🟡 BackBrain/🌸 DataBrain → 🔴 TestBrain + 🔵 SubBrain (docs) → 🔵 SubBrain fechando".
+>
+> Antes, ainda em 2026-11-04 (abertura do Lote 33, 🔵 SubBrain): o primeiro build da `main` falhou no estágio "CA do banco" do Jenkinsfile (`bind source path does not exist: /etc/mysql/ssl/ca.pem`), porque o `deploy/mariadb-docker.sh` ainda não rodou no servidor 192.168.168.106. O usuário informou que **não existe MySQL no ambiente** e que a §11 de `docs/deploy-servidor.md` está desatualizada. O 🤍 MegaBrain abriu o **Lote 33 de 2026-11-04** com 1 card novo, o **DEPLOY-07** (ALTA; substitui o DEPLOY-05, que fica em `afazer.md` com a nota). Passo atual: "🔴 TestBrain + 🔵 SubBrain (docs)" (atualizado em 2026-11-04; antes: "🟣 SecBrain especificando → 🟡 BackBrain/🌸 DataBrain → 🔴 TestBrain → 🔵 SubBrain fechando").
+>
+> Antes, em 2026-11-02 (fechamento dos Lotes 30 e 31, 🔵 SubBrain): **nenhum card em execução.**
+> - **Lote 30** (somente MariaDB + infra/TLS) **concluído** e em `feito.md`: 15 cards concluídos (o TST-15 com pendência: rodar o `TestTST15_MariadbDocker_Real` numa máquina com Docker) e o **TST-14 cancelado**. O **DEPLOY-05** teve a revisão do script concluída; a **execução no servidor** voltou para `afazer.md` (topo) como pendência do usuário, ALTA, passo a passo em `docs/deploy-servidor.md` §11.
+> - **Lote 31** (backend/frontend, BAIXA) **concluído** e em `feito.md`: 24 cards. Go 9759 testes, 0 falhas (cobertura `shared` 91,8%, API 94,5%); vitest 1721 ok; `tsc`/`eslint` ok; `next build` ok. O DEP-03 continua em `afazer.md` (acompanhamento).
+> - **Lote 32** (ARQ-09) **adiado** pelo 🤍 MegaBrain por recomendação do 🟣 SecBrain (não executar antes do primeiro teste em produção); card de volta em `afazer.md` com as invariantes do SecBrain.
+> - Dos lotes saíram 12 cards novos em `afazer.md` (bloco "Achados dos Lotes 30 e 31").
+>
+> **Próximo passo:** o 🤍 MegaBrain faz em seguida o **merge de todas as branches na `main`** (pedido do usuário). **O primeiro deploy da `main` depende do DEPLOY-05:** sem a rede Docker `rotaperfumes-db` e o container `rotaperfumes-mariadb` no servidor, o compose falha e o pipeline para.
+>
+> Passos anteriores dos Lotes 30 e 31: "🟣 SecBrain especificando → devs → 🔴 TestBrain → 🔵 SubBrain fechando" (2026-11-02). Commits na branch `lote-30`: `9cb87eb`, `fd76dc7`, `e4f115a`, `e325dcf` (merge do `lote-31`) e `2a5995c`.
+>
+> Antes, ainda em 2026-11-02 (abertura dos Lotes 30, 31 e 32, 🔵 SubBrain): o usuário pediu para executar **todas** as pendências, aprovou antecipadamente as decisões de produto/contrato pendentes nos cards (inclusive os textos do **CHORE-07** e os nomes de cookies do **SEC-33**) e pediu, ao final, o **merge de todas as branches na `main` e o commit da `main`**, para testar o site em produção. O 🤍 MegaBrain abriu três lotes, com os cards vindos de `afazer.md`:
+> - **Lote 30 de 2026-11-02 (somente MariaDB + infra/TLS), 16 cards:** DEPLOY-05, CHORE-13, DEPLOY-06, DEPLOY-04, DOC-08, TST-15, SEC-45, SEC-39, SEC-31, SEC-30, SEC-40, SEC-41, SEC-42, TST-12, DB-04 e DB-06.
+> - **Lote 31 de 2026-11-02 (backend/frontend, BAIXA), 24 cards:** TST-06, BUG-18, TST-07, DOC-06, FE-15, UX-02, CHORE-07, BUG-22, SEC-32, SEC-33, BUG-23, CHORE-08, FE-16, CHORE-09, SEC-34, SEC-36, BUG-24, CHORE-10, FE-17, CHORE-11, SEC-38, LOG-03, CHORE-04 e CHORE-05; mais a conferência do upstream do **DEP-03** (o card fica em `afazer.md` como acompanhamento se não houver correção).
+> - **Lote 32 de 2026-11-02, 1 card:** ARQ-09 (valores monetários em centavos).
+>
+> **Triagem do 🤍 MegaBrain:** DOC-07 e DEPLOY-03 cancelados (`feito.md`); TST-14 e TST-04 ficam em `afazer.md`, bloqueados (sem acesso ao socket do Docker; `.env` local aponta para o banco de produção `192.168.168.106:3306`, onde os agentes não rodam `make db-*`).
+>
+> Antes, em 2026-11-01 (fechamento do Lote 29, 🔵 SubBrain): **nenhum card em execução.** O **Lote 29** foi concluído e está em `feito.md` ("Lote 29 de 2026-11-01"; **não commitado, pendente do usuário**): 7 cards concluídos (SEC-29, TST-09, TST-08, SETUP-01, SEC-44, SEC-37 e DEPLOY-02), 2 cancelados (TST-10 e TST-13) e 1 fechado sem correção (SEC-43). Dele saíram, em `afazer.md` (bloco "Achados do Lote 29"), SEC-39, SEC-40, SEC-41, SEC-42, TST-12, DOC-07, DB-06, DEPLOY-03, DEPLOY-04 e TST-14; o TST-11 foi fechado (flake corrigido no TST-09). **Atenção antes do merge na `main`:** o usuário precisa executar os passos 1 a 6 do `docs/Instal_SSL.md` no servidor (ver pendências do SEC-44 em `feito.md`). Passos anteriores do Lote 29: "🟣 SecBrain especificando"; "🟡 BackBrain (SEC-29) e 🔴 TestBrain (SETUP-01) → 🔴 TestBrain (integração TST-09/TST-08) e 🟣 SecBrain revisando SEC-29 → 🔵 SubBrain fechando"; "SEC-37 e DEPLOY-02: 🟣 SecBrain especificando"; "🟡 BackBrain (SEC-29b/Instal_SSL) e 🟣 SecBrain especificando SEC-37 e DEPLOY-02 → 🟡 BackBrain (SEC-37) e 🌸 DataBrain (DEPLOY-02) → 🔴 TestBrain → 🔵 SubBrain fechando" (2026-11-01).
+>
+> Antes, ainda em 2026-11-01 (novas decisões do usuário no Lote 29, 🔵 SubBrain): **TST-13 cancelado** e **SEC-43 fechado como "não corrigir"** (ambiente de dev; risco aceito pelo usuário), ambos em `feito.md`. Card novo **SEC-44** (TLS do SEC-29 no ambiente real, MÉDIA) entrou no Lote 29: a produção é MySQL 8.0.46 nativo com certificado sem SAN e o Jenkins roda em contêiner. Card novo **DOC-07** (docs MariaDB 11.4 × produção MySQL 8.0, MÉDIA) em `afazer.md`. O lote segue com 3 cards: SEC-37, DEPLOY-02 e SEC-44. Passo atual: "🟡 BackBrain (SEC-29b/Instal_SSL) e 🟣 SecBrain especificando SEC-37 e DEPLOY-02 → 🟡 BackBrain (SEC-37) e 🌸 DataBrain (DEPLOY-02) → 🔴 TestBrain → 🔵 SubBrain fechando" (SEC-29b = SEC-44).
+>
+> Antes, ainda em 2026-11-01 (fechamento parcial do Lote 29, 🔵 SubBrain): **SEC-29, TST-09, TST-08 e SETUP-01 concluídos** e movidos para `feito.md` ("Lote 29 de 2026-11-01: 4 cards concluídos, 1 cancelado"; não commitado, pendente do usuário). O lote **continua aberto** com **SEC-37** e **DEPLOY-02** (não trabalhados hoje). Passo atual: "SEC-37 e DEPLOY-02: 🟣 SecBrain especificando". Dos cards concluídos saíram SEC-39, SEC-40, SEC-41, SEC-42, SEC-43, TST-12 e TST-13 em `afazer.md` (bloco "Achados do Lote 29").
+>
+> Antes, ainda em 2026-11-01 (decisões do usuário no Lote 29, 🔵 SubBrain): **TST-10 cancelado** (o projeto foi migrado para um HD com Linux, sem exFAT, e com Node 22 via nvm; card em `feito.md`). **TST-08** resolvido no ambiente pelo usuário (Go da versão do `go.mod` instalado localmente; `make test` roda); falta a verificação do 🔴 TestBrain e a documentação do pré-requisito, vinculada ao card novo **SETUP-01** (scripts de instalação do ambiente de desenvolvimento em Linux e Windows, MÉDIA, entrou no Lote 29). **SEC-29:** a parte do servidor foi feita pelo usuário (MariaDB 11.8.8 com TLSv1.3, CA em `deploy/ca-cert.pem`, `DB_TLS_CA` nos `.env.example`); falta a parte da API, do Jenkinsfile e do docker-compose. **TST-09 desbloqueado** (credencial do `.env` voltou a funcionar). O lote segue com 6 cards: TST-08, SEC-37, SEC-29, DEPLOY-02, TST-09 e SETUP-01. Passo atual: "🟡 BackBrain (SEC-29) e 🔴 TestBrain (SETUP-01) → 🔴 TestBrain (integração TST-09/TST-08) e 🟣 SecBrain revisando SEC-29 → 🔵 SubBrain fechando".
+>
+> Antes, ainda em 2026-11-01 (abertura do Lote 29, 🔵 SubBrain): o 🤍 MegaBrain abriu o **Lote 29** com 6 cards de prioridade MÉDIA vindos de `afazer.md`: **TST-08, SEC-37, SEC-29, DEPLOY-02, TST-09 e TST-10** (bloco "Lote 29 de 2026-11-01" abaixo). Passo atual: "🟣 SecBrain especificando". O CHORE-12 (rename `apis/` → `backend/`) foi commitado em `c4c87af` (branch `lote-27`; registro em `feito.md`).
+>
+> Atualizado em 2026-10-31 (fechamento do Lote 28, 🔵 SubBrain): **nenhum card em execução.** O **Lote 28** (SEC-19, SEC-23 e SEC-35) foi concluído e está em `feito.md` ("Lote 28 de 2026-10-31: 3 cards concluídos"; não commitado, pendente do usuário). Dele saíram os cards SEC-37, FE-17, CHORE-11, SEC-38 e LOG-03 em `afazer.md` (bloco "Achados do Lote 28"). Passos anteriores do Lote 28: "🟣 SecBrain especificando → 🟡 BackBrain → 🟢 FrontBrain → verificação do 🤍 MegaBrain → 🔵 SubBrain fechando" (2026-10-31; o 🔴 TestBrain não rodou passo separado, os testes vieram com os devs).
+>
+> Antes, ainda em 2026-10-31 (abertura do Lote 28, 🔵 SubBrain): o 🤍 MegaBrain abriu o **Lote 28** com 3 cards vindos de `afazer.md`: **SEC-19** (Turnstile sem conferência de `hostname`/`action`) e **SEC-23** (`deve_trocar_senha` imposto pelo backend), ambos do bloco "GAPs de segurança da auditoria ARQ-00" e com backend + frontend + config, e **SEC-35** (`ExcluirPagamento`/`CriarPagamento` fora de lock, bloco "Achados do Lote 27"). Passo atual: "🟣 SecBrain especificando → 🟡 BackBrain → 🟢 FrontBrain → 🔴 TestBrain → 🔵 SubBrain fechando". O **Lote 27** foi commitado pelo usuário (`a7e2d4a` "Lote 27: limites HTTP, CORS, LIKE, paginação e transações", branch `lote-27`, criado a partir de `main`; registro em `feito.md`).
+>
+> Antes, ainda em 2026-10-31 (fechamento do Lote 27, 🔵 SubBrain): **nenhum card em execução.** O **Lote 27** (SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25, BUG-14, BUG-15 e SEC-26) foi concluído e está em `feito.md` ("Lote 27 de 2026-10-31: 9 cards concluídos"; no fechamento, não commitado). Dele saíram os cards SEC-35, SEC-36, BUG-24, CHORE-10 e TST-11 em `afazer.md` (bloco "Achados do Lote 27"). Passos anteriores do Lote 27: "🟣 SecBrain especificando → 🟡 BackBrain → 🔴 TestBrain → 🔵 SubBrain fechando" (2026-10-31).
+>
+> Antes, ainda em 2026-10-31 (abertura do Lote 27, 🔵 SubBrain): o 🤍 MegaBrain abriu o **Lote 27** com 9 cards de backend/testes vindos de `afazer.md`: **SEC-14, SEC-15, SEC-16, SEC-17, SEC-24, SEC-25** (GAPs de segurança da auditoria ARQ-00), **BUG-14, BUG-15** (transações em `VincularCliente` e na troca de senha) e **SEC-26** (achado do ARQ-05). Critério: cards de backend/testes de prioridade MÉDIA (mais SEC-16 e SEC-25, BAIXA, que tocam os mesmos pontos), sem decisão de produto pendente. SEC-19 e SEC-23 (backend + frontend + config) ficam para o lote seguinte.
+>
+> Antes, ainda em 2026-10-31 (fechamento do Lote 26, 🔵 SubBrain): **nenhum card em execução.** O **IMG-01** (imagem do produto) foi concluído e está em `feito.md` ("Lote 26 de 2026-10-31"; não commitado, pendente do usuário). Dele saíram os cards CHORE-09 e SEC-34 em `afazer.md` (bloco "Achados do IMG-01").
+>
+> Antes, ainda em 2026-10-31 (abertura do Lote 26, 🔵 SubBrain): o 🤍 MegaBrain abriu o **Lote 26** com um card, o **IMG-01** (imagem do produto), pedido direto do usuário (não passou por `afazer.md`). Passos: 🟣 SecBrain especificando → 🌸 DataBrain, 🟡 BackBrain, 🟢 FrontBrain e 🔴 TestBrain → 🔵 SubBrain fechando.
+>
+> Antes, ainda em 2026-10-31: nenhum card em execução. O DB-05 (`make db-seed-mes-atual`) foi concluído e está em `feito.md` (não commitado, pendente do usuário).
+>
+> Antes, em 2026-10-30: nenhum card em execução.
+>
+> Histórico: o **Lote 25** (8 cards: BUG-16, SEC-27, BUG-17, BUG-19, CHORE-03, CHORE-06, BUG-20 e BUG-21), aberto em 2026-10-29 depois das decisões de produto do usuário, foi concluído por 🌸 DataBrain, 🟡 BackBrain, 🟢 FrontBrain e 🔴 TestBrain e fechado pelo 🔵 SubBrain em 2026-10-30. Os 8 cards, com as decisões (originais e refinadas), as extensões do 🤍 MegaBrain, as entregas, os testes e as pendências, estão em `feito.md` ("Lote 25 de 2026-10-30: 8 cards concluídos"; não commitado, pendente do usuário). As pendências viraram os cards TST-09, TST-10, CHORE-08 e FE-16 em `afazer.md` (bloco "Achados do Lote 25"). Passos anteriores do Lote 25: "🌸 DataBrain e 🟡 BackBrain implementando" (2026-10-30), "aguarda o fechamento do Lote 24; especificação pronta" e "🟣 SecBrain especificando" (2026-10-29).
+>
+> Histórico: o **Lote 24** (SEC-18, SEC-20, SEC-21 e SEC-22, os 4 GAPs de segurança de prioridade ALTA da auditoria ARQ-00) foi fechado em 2026-10-30 e está em `feito.md` (não commitado, pendente do usuário).
+>
+> Atualização de 2026-10-29 (🔵 SubBrain): o 🟣 SecBrain concluiu a especificação do Lote 25 e o usuário tomou novas decisões a partir dos riscos R1 a R6. BUG-16 e SEC-27 tiveram a decisão refinada (a anterior ficou como histórico em cada card), o BUG-17 passou a incluir o UPDATE atômico no backend, e os riscos R2 e R3 viraram os cards **BUG-20** e **BUG-21** (no Lote 25). R4, R6 e os achados do Lote 24 viraram cards de backlog em `afazer.md` (UX-02, CHORE-07, BUG-22, SEC-32, SEC-33, BUG-23 e TST-08). Antes (2026-10-29): Lote 25 com 6 cards, passo "🟣 SecBrain especificando".
+>
+> Histórico: o **Lote 23** (DB-03, troca da conexão de MySQL para MariaDB 11.4, escopo "Infra + docs") foi concluído em 2026-10-29 e está em `feito.md` (commitado pelo usuário em `c87a30d` e `186b15f`), junto com o SEC-28 (resolvido pelo DB-03); os achados do 🟣 SecBrain viraram os cards SEC-29, SEC-30, SEC-31, DB-04 e DEPLOY-02 em `afazer.md`. O **Lote 22** (DASH-01, funil de vendas no Dashboard) foi concluído em 2026-10-29 e está em `feito.md`; os achados viraram os cards DOC-06, BUG-19 e FE-15 em `afazer.md`. Em 2026-10-16 o DEPLOY-01 (Lote 13) foi concluído e o MAIL-01 foi cancelado; os dois estão em `feito.md`.
 
 ---
 

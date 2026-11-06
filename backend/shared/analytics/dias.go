@@ -7,8 +7,8 @@ const (
 )
 
 // Dias é a janela da série de vendas: sempre de 1 a 365 (D-03). O zero
-// value vale DiasPadrao (30), então nenhum caminho leva 0 ou negativo ao
-// INTERVAL ? DAY.
+// value vale DiasPadrao (30), então nenhum caminho leva 0 ou negativo à
+// série (o início da consulta é hoje-dias, calculado no Go; BUG-30).
 type Dias struct{ n int }
 
 // DiasDe aceita n de 1 a 365; fora disso, DiasPadrao (o legado não

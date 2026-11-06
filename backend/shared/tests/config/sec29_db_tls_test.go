@@ -27,7 +27,7 @@ import (
 	"github.com/rotaperfumes/shared/config"
 )
 
-const sec29SufixoDSN = "?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true"
+const sec29SufixoDSN = "?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true&time_zone=%27-03%3A00%27"
 
 // sec29Env: ambiente válido (credenciais incluídas) com DB_TLS_* definidos
 // pelo caso (nil = ausente).

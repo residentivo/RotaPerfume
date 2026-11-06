@@ -234,7 +234,7 @@ func unsetEnv(t *testing.T, k string) {
 }
 
 func TestSEC10_DSN(t *testing.T) {
-	const sufixo = "?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true"
+	const sufixo = "?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true&time_zone=%27-03%3A00%27"
 	casos := []struct {
 		nome    string
 		env     map[string]string // valor "<unset>" = variável ausente

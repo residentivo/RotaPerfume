@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/rotaperfumes/shared/analytics"
 	"github.com/rotaperfumes/shared/db"
@@ -35,15 +36,19 @@ const (
 
 // Clientes são as contagens da base de clientes (porta
 // analyticsapp.IndicadoresClientes). O escopo de vendedor restringe à
-// carteira ATIVA do vendedor.
-type Clientes struct{ q db.Querier }
+// carteira ATIVA do vendedor. O relógio dá o "hoje" (fuso tz.Local) do
+// período de cadastro (BUG-30).
+type Clientes struct {
+	q       db.Querier
+	relogio func() time.Time
+}
 
-// NovoClientes liga o adapter ao pool. q nil: panic.
-func NovoClientes(q db.Querier) *Clientes {
-	if q == nil {
-		panic("analyticsmysql: NovoClientes exige Querier")
+// NovoClientes liga o adapter ao pool e ao relógio. nil: panic.
+func NovoClientes(q db.Querier, relogio func() time.Time) *Clientes {
+	if q == nil || relogio == nil {
+		panic("analyticsmysql: NovoClientes exige Querier e relógio")
 	}
-	return &Clientes{q: q}
+	return &Clientes{q: q, relogio: relogio}
 }
 
 // Total: clientes cadastrados no escopo.
@@ -66,10 +71,11 @@ func (r *Clientes) PorAtivo(ctx context.Context, e kernel.Escopo, ativo bool) (i
 
 // NovosNoPeriodo: clientes do escopo com data_cadastro no período.
 func (r *Clientes) NovosNoPeriodo(ctx context.Context, e kernel.Escopo, p analytics.Periodo) (int, error) {
-	where, args, err := whereCarteira(e, clausulaPeriodoCadastro(p))
+	where, carteira, err := whereCarteira(e, clausulaPeriodoCadastro(p))
 	if err != nil {
 		return 0, err
 	}
+	args := append(argsPeriodo(p, hojeEm(r.relogio)), carteira...)
 	return r.contar(ctx, "Clientes.NovosNoPeriodo", "count novos clientes", where, args)
 }
 

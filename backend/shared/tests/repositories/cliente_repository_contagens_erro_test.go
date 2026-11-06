@@ -33,7 +33,9 @@ func TestClienteContagens_ErrosPropagados(t *testing.T) {
 				mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ` + carteiraAtivaWhereRegexp).
 					WithArgs(int64(7)).WillReturnError(errDB)
 			},
-			call: func(db *sql.DB) (any, error) { return analyticsmysql.NovoClientes(db).Total(ctx, escopoDe(7)) },
+			call: func(db *sql.DB) (any, error) {
+				return analyticsmysql.NovoClientes(db, relogioFixo).Total(ctx, escopoDe(7))
+			},
 		},
 		{
 			nome: "CountPorAtivo erro de query (admin)",
@@ -41,14 +43,18 @@ func TestClienteContagens_ErrosPropagados(t *testing.T) {
 				mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \?$`).
 					WithArgs(true).WillReturnError(errDB)
 			},
-			call: func(db *sql.DB) (any, error) { return analyticsmysql.NovoClientes(db).PorAtivo(ctx, escopoDe(0), true) },
+			call: func(db *sql.DB) (any, error) {
+				return analyticsmysql.NovoClientes(db, relogioFixo).PorAtivo(ctx, escopoDe(0), true)
+			},
 		},
 		{
 			nome: "CountPorSegmento erro de query",
 			setup: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(`SELECT segmento`).WithArgs(int64(7)).WillReturnError(errDB)
 			},
-			call: func(db *sql.DB) (any, error) { return analyticsmysql.NovoClientes(db).PorSegmento(ctx, escopoDe(7)) },
+			call: func(db *sql.DB) (any, error) {
+				return analyticsmysql.NovoClientes(db, relogioFixo).PorSegmento(ctx, escopoDe(7))
+			},
 		},
 		{
 			nome: "CountPorSegmento erro de scan",
@@ -56,7 +62,9 @@ func TestClienteContagens_ErrosPropagados(t *testing.T) {
 				mock.ExpectQuery(`SELECT segmento`).
 					WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}).AddRow("varejo", "nao-numero"))
 			},
-			call: func(db *sql.DB) (any, error) { return analyticsmysql.NovoClientes(db).PorSegmento(ctx, escopoDe(0)) },
+			call: func(db *sql.DB) (any, error) {
+				return analyticsmysql.NovoClientes(db, relogioFixo).PorSegmento(ctx, escopoDe(0))
+			},
 		},
 		{
 			nome: "CountPorSegmento erro de iteração",
@@ -64,14 +72,18 @@ func TestClienteContagens_ErrosPropagados(t *testing.T) {
 				mock.ExpectQuery(`SELECT segmento`).
 					WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}).AddRow("varejo", 1).RowError(0, errDB))
 			},
-			call: func(db *sql.DB) (any, error) { return analyticsmysql.NovoClientes(db).PorSegmento(ctx, escopoDe(0)) },
+			call: func(db *sql.DB) (any, error) {
+				return analyticsmysql.NovoClientes(db, relogioFixo).PorSegmento(ctx, escopoDe(0))
+			},
 		},
 		{
 			nome: "CountPorUF erro de query",
 			setup: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery(`SELECT uf`).WithArgs(int64(7)).WillReturnError(errDB)
 			},
-			call: func(db *sql.DB) (any, error) { return analyticsmysql.NovoClientes(db).PorUF(ctx, escopoDe(7)) },
+			call: func(db *sql.DB) (any, error) {
+				return analyticsmysql.NovoClientes(db, relogioFixo).PorUF(ctx, escopoDe(7))
+			},
 		},
 		{
 			nome: "CountPorUF erro de scan",
@@ -79,7 +91,9 @@ func TestClienteContagens_ErrosPropagados(t *testing.T) {
 				mock.ExpectQuery(`SELECT uf`).
 					WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}).AddRow("SP", "nao-numero"))
 			},
-			call: func(db *sql.DB) (any, error) { return analyticsmysql.NovoClientes(db).PorUF(ctx, escopoDe(0)) },
+			call: func(db *sql.DB) (any, error) {
+				return analyticsmysql.NovoClientes(db, relogioFixo).PorUF(ctx, escopoDe(0))
+			},
 		},
 		{
 			nome: "CountPorUF erro de iteração",
@@ -87,7 +101,9 @@ func TestClienteContagens_ErrosPropagados(t *testing.T) {
 				mock.ExpectQuery(`SELECT uf`).
 					WillReturnRows(sqlmock.NewRows([]string{"uf", "total"}).AddRow("SP", 1).RowError(0, errDB))
 			},
-			call: func(db *sql.DB) (any, error) { return analyticsmysql.NovoClientes(db).PorUF(ctx, escopoDe(0)) },
+			call: func(db *sql.DB) (any, error) {
+				return analyticsmysql.NovoClientes(db, relogioFixo).PorUF(ctx, escopoDe(0))
+			},
 		},
 	}
 

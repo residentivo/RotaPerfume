@@ -21,8 +21,9 @@ import (
 
 	"github.com/rotaperfumes/shared/cmdutil"
 	"github.com/rotaperfumes/shared/tools/resetpassword"
-	// Este binário não usa config.DSN(); importa tz diretamente para fixar
-	// time.Local em -03:00 antes do sql.Open (RISCO-01).
+	// O DSN vem de config.DSN() (tools/resetpassword), mas este binário
+	// não importa config; importa tz diretamente para fixar time.Local em
+	// -03:00 antes do sql.Open (RISCO-01).
 	_ "github.com/rotaperfumes/shared/tz"
 )
 

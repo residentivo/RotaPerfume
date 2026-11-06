@@ -504,6 +504,70 @@ etapa_govulncheck() {
 # ----------------------------------------------------------------------------
 versao_mariadb() { mariadb --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-MariaDB' | head -n1 | sed 's/-MariaDB//'; }
 
+# SEC-58 (Lote 37): a chave do repositório oficial só é instalada se o
+# arquivo baixado tiver exatamente uma chave primária, não revogada nem
+# expirada, com o fingerprint de MARIADB_GPG_FPR (scripts/versoes.conf).
+# GNUPGHOME temporário: não cria nem lê o ~/.gnupg. Autocontida (o teste do
+# SEC-58 a extrai do script); usa só aviso e tem.
+# SEC-61: retorno 1 = chave recusada; 2 = não foi possível conferir (FPR
+# inválido, gpg ausente ou mktemp falhou).
+conferir_chave_mariadb() { # ARQ FPR_ESPERADO
+	local arq=$1 esp gh fprs n
+	esp=$(printf '%s' "${2:-}" | tr -d ' ' | tr 'a-f' 'A-F')
+	[[ "$esp" =~ ^[0-9A-F]{40}$ ]] || { aviso "SEC-58: MARIADB_GPG_FPR ausente/invalido em versoes.conf"; return 2; }
+	tem gpg || { aviso "SEC-58: gpg ausente: sem conferir a chave, o repositorio oficial do MariaDB nao e configurado"; return 2; }
+	gh=$(mktemp -d) || return 2
+	fprs=$(GNUPGHOME="$gh" LC_ALL=C gpg --batch --no-tty --quiet --with-colons --show-keys "$arq" 2>/dev/null |
+		awk -F: '$1=="pub"{p=1; if ($2 ~ /[rei]/) bad=1; next} p&&$1=="fpr"{print $10; p=0} END{if (bad) print "REVOGADA_OU_EXPIRADA"}')
+	rm -rf "$gh"
+	n=$(printf '%s\n' "$fprs" | grep -c .)
+	# shellcheck disable=SC2015 # o "|| C" deve rodar se A OU B falhar (é o pretendido)
+	[ "$n" -eq 1 ] && [ "$fprs" = "$esp" ] || {
+		aviso "SEC-58: chave do MariaDB com fingerprint inesperado (${fprs//$'\n'/ }); esperado $esp: nada instalado"
+		return 1
+	}
+}
+
+# SEC-58: a chave já instalada (de um setup anterior) é conferida também.
+# Retorno: 0 = ausente ou confere; 1 e 2 como em conferir_chave_mariadb.
+conferir_keyring_mariadb_instalado() { # ARQ
+	local k=$1 rc=0
+	[ -e "$k" ] || [ -L "$k" ] || return 0
+	conferir_chave_mariadb "$k" "${MARIADB_GPG_FPR:-}" || rc=$?
+	[ "$rc" -ne 0 ] || info "SEC-58: $k confere com MARIADB_GPG_FPR"
+	return "$rc"
+}
+
+# SEC-61: o mariadb.sources confia nesse keyring, e o primeiro apt-get update
+# já usaria a chave; por isso roda em main() antes de etapa_basicas. Instalar
+# com apt: keyring divergente ou não conferível aborta antes de qualquer apt.
+# Sem apt ou no --check: nada será instalado, só registra (divergente = FALTA;
+# não conferível = AVISO).
+preflight_keyring_mariadb() { # ARQ
+	local k=$1 rc=0 problema status
+	conferir_keyring_mariadb_instalado "$k" || rc=$?
+	case "$rc" in
+	0) return 0 ;;
+	2)
+		status=AVISO
+		if tem gpg; then
+			problema="não foi possível conferir $k: MARIADB_GPG_FPR inválido em scripts/versoes.conf ou mktemp falhou"
+		else
+			problema="não foi possível conferir $k: gpg ausente"
+		fi
+		;;
+	*)
+		status=FALTA
+		problema="$k não confere com MARIADB_GPG_FPR (scripts/versoes.conf)"
+		;;
+	esac
+	if [ "$MODO" = instalar ] && [ "$APT" -eq 1 ]; then
+		printf 'SEC-61: %s. Nada foi instalado. Confira e reinstale: sudo rm %s /etc/apt/sources.list.d/mariadb.sources && make setup\n' "$problema" "$k" >&2
+		exit 1
+	fi
+	registrar mariadb-key "$status" "$problema: confira e reinstale (sudo rm $k /etc/apt/sources.list.d/mariadb.sources && make setup)"
+}
+
 configurar_repo_mariadb() {
 	local base suite
 	case " $DISTRO_ID $DISTRO_LIKE " in
@@ -513,8 +577,10 @@ configurar_repo_mariadb() {
 	# shellcheck disable=SC2015 # o "|| C" deve rodar se A OU B falhar (é o pretendido)
 	[ -n "${base:-}" ] && [ -n "${suite:-}" ] || { aviso "não identifiquei a versão da distro para o repositório do MariaDB"; return 1; }
 	info "Configurando o repositório oficial do MariaDB $MARIADB_SERIE ($base $suite)"
+	tem gpg || apt_instalar gpg || true
 	local tmp; tmp="$(mktemp)"
 	baixar "https://mariadb.org/mariadb_release_signing_key.pgp" "$tmp" || { rm -f "$tmp"; return 1; }
+	conferir_chave_mariadb "$tmp" "${MARIADB_GPG_FPR:-}" || { rm -f "$tmp"; return 1; }
 	# shellcheck disable=SC2015 # o "|| C" deve rodar se A OU B falhar (é o pretendido)
 	como_root install -d -m 0755 /etc/apt/keyrings &&
 		como_root install -m 0644 "$tmp" /etc/apt/keyrings/mariadb-keyring.pgp || { rm -f "$tmp"; return 1; }
@@ -652,6 +718,7 @@ main() {
 	printf 'RotaPerfume - setup do ambiente (Linux) - modo: %s\n' "$MODO"
 	info "Repositório: $RAIZ"
 	detectar_distro
+	preflight_keyring_mariadb /etc/apt/keyrings/mariadb-keyring.pgp
 	etapa_basicas
 	etapa_go
 	etapa_node

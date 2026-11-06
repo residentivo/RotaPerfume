@@ -37,8 +37,19 @@ printf '%s\n' "$@" >"$C/$n.argv"
 [[ -n "${MYSQL_PWD:-}" ]] && printf '%s' "$MYSQL_PWD" >"$C/$n.mysql_pwd"
 case "${1:-}" in
   info) exit 0 ;;
-  inspect) echo true; exit 0 ;;
-  network) exit 0 ;;
+  inspect)
+    # TST-17: estado do container e as redes ligadas a ele (chaves de
+    # .NetworkSettings.Networks), pelo formato pedido.
+    case "$*" in
+      *State.Running*) cat "$FAKE/state/running" 2>/dev/null || echo true ;;
+      *NetworkSettings.Networks*) cat "$FAKE/state/redes" 2>/dev/null || echo rotaperfumes-db ;;
+      *) echo true ;;
+    esac
+    exit 0 ;;
+  network)
+    [[ -f "$FAKE/state/sem_rede" ]] && exit 1
+    if [[ "$*" == *IPAM.Config* ]]; then cat "$FAKE/state/subnets" 2>/dev/null || echo "172.30.42.0/24 "; fi
+    exit 0 ;;
   run) ;;
   *) echo "docker stub: $*" >&2; exit 2 ;;
 esac
@@ -100,12 +111,54 @@ while [[ $# -gt 0 ]]; do case "$1" in -o|-g) shift 2 ;; *) args+=("$1"); shift ;
 exec /usr/bin/install "${args[@]}"
 `
 
+// stubMktempSeed registra cada mktemp (TST-17: nenhuma recusa chega nele; sem
+// opções, o destino é o /root).
+const stubMktempSeed = `#!/bin/bash
+printf '%s\n' "$*" >>"$FAKE/mktemp.log"
+exec /usr/bin/mktemp "$@"
+`
+
+// runnerSeed roda o script real num user namespace (EUID 0) + mount
+// namespace. TST-17 (Lote 37): o seed confere o caminho real e os
+// ancestrais (root, sem escrita de grupo/outros) do --segredos-dir,
+// --trabalho-dir e --ssl-dir. No namespace o "/" e o "/etc" reais aparecem
+// com o overflow uid (65534) e o /tmp é 1777; por isso, como o runnerEnsaio
+// do TST-15/16, ele faz chroot numa raiz tmpfs (dona: o root do namespace,
+// 755) com rbind dos diretórios de topo. O /etc é recriado na tmpfs com bind
+// de cada entrada (o /etc/mysql vem do $FAKE/etcmysql) e o topo do $FAKE
+// (ex.: /tmp) é recriado vazio (755) com só o $FAKE e o deploy/ expostos.
 const runnerSeed = `#!/bin/bash
 set -euo pipefail
-mount --bind "$FAKE/root" /root
-mount --bind "$FAKE/etcmysql" /etc/mysql
+umask 022
+NR="$FAKE/.raiz"
+mkdir -p "$NR"
+mount -t tmpfs -o mode=755 tmpfs "$NR"
+topo=${FAKE#/}; topo=/${topo%%/*}
+for x in /*; do
+  [[ "$x" == "$topo" ]] && continue
+  if [[ -L "$x" ]]; then ln -s "$(readlink "$x")" "$NR$x"
+  elif [[ "$x" == /etc ]]; then
+    mkdir "$NR/etc"
+    for y in /etc/*; do
+      [[ "$y" == /etc/mysql ]] && continue
+      if [[ -L "$y" ]]; then ln -s "$(readlink "$y")" "$NR$y"
+      elif [[ -d "$y" ]]; then mkdir "$NR$y"; mount --rbind "$y" "$NR$y" 2>/dev/null || true
+      elif [[ -e "$y" ]]; then : >"$NR$y"; mount --bind "$y" "$NR$y" 2>/dev/null || true
+      fi
+    done
+  elif [[ -d "$x" ]]; then mkdir "$NR$x"; mount --rbind "$x" "$NR$x"
+  fi
+done
+mkdir -p "$NR$topo" "$NR/etc/mysql"
+expor() { [[ "$1" == "$topo"/* ]] || return 0; mkdir -p "$NR$1"; mount --bind "$1" "$NR$1"; }
+expor "$FAKE"
+expor "$(dirname "$SCRIPT")"
+mount --bind "$FAKE/root" "$NR/root"
+mount --bind "$FAKE/etcmysql" "$NR/etc/mysql"
+cd /
 export PATH="$FAKE/bin:$PATH"
-exec bash "$SCRIPT" "$@"
+umask 077
+exec chroot "$NR" /bin/bash -c 'cd / && exec bash "$0" "$@"' "$SCRIPT" "$@"
 `
 
 const (
@@ -122,20 +175,30 @@ type ensaioSeed struct {
 func novoEnsaioSeed(t *testing.T) *ensaioSeed {
 	t.Helper()
 	precisaUnshare(t)
-	if _, err := os.Stat("/etc/mysql"); err != nil {
-		t.Skip("/etc/mysql não existe nesta máquina (alvo do bind do ensaio)")
-	}
-	for _, c := range []string{"shred", "tar", "stat", "mktemp"} {
+	for _, c := range []string{"shred", "tar", "stat", "mktemp", "realpath", "chroot"} {
 		if _, err := exec.LookPath(c); err != nil {
 			t.Skip(c + " não está no PATH")
 		}
 	}
+	if _, err := os.Stat("/usr/bin/mktemp"); err != nil {
+		t.Skip("/usr/bin/mktemp não existe (stub do mktemp)")
+	}
 	e := &ensaioSeed{t: t, dir: t.TempDir()}
+	// TST-17: o t.TempDir() cria o 00N com 0777 &^ umask (775 com umask 002),
+	// e o seed recusa ancestral com escrita para o grupo.
+	require.NoError(t, os.Chmod(e.dir, 0o700))
 	for _, d := range []string{"root/rotaperfumes-mariadb", "etcmysql/ssl", "state", "bin"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(e.dir, d), 0o755))
 	}
+	for _, d := range []string{"root", "etcmysql", "etcmysql/ssl"} {
+		require.NoError(t, os.Chmod(filepath.Join(e.dir, d), 0o755))
+	}
+	// TST-17: /root e o --segredos-dir precisam ser 700 (conferir_dir_privado).
+	require.NoError(t, os.Chmod(filepath.Join(e.dir, "root"), 0o700))
+	require.NoError(t, os.Chmod(filepath.Join(e.dir, "root", "rotaperfumes-mariadb"), 0o700))
 	escrever(t, filepath.Join(e.dir, "bin", "docker"), stubDockerSeed, 0o755)
 	escrever(t, filepath.Join(e.dir, "bin", "install"), stubInstallSeed, 0o755)
+	escrever(t, filepath.Join(e.dir, "bin", "mktemp"), stubMktempSeed, 0o755)
 	escrever(t, filepath.Join(e.dir, "runner.sh"), runnerSeed, 0o755)
 	escrever(t, filepath.Join(e.dir, "etcmysql", "ssl", "ca.pem"), "-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----\n", 0o644)
 	escrever(t, filepath.Join(e.dir, "root", "rotaperfumes-mariadb", "rotaperfumes_admin.senha"), senhaDBSeed+"\n", 0o600)

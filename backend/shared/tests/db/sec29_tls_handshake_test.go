@@ -181,7 +181,7 @@ func TestSEC29_TLS_CACertaEServerName_Conecta(t *testing.T) {
 	linha := abrirELogar(t, dsn)
 	assert.EqualValues(t, 1, logins.Load(), "o login aconteceu dentro do TLS")
 	assert.Equal(t, "[db] conexão MariaDB estabelecida (host=user:****@tcp("+addr+")/rota"+
-		"?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true&tls=custom, tls=ligado (custom))", linha)
+		"?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true&time_zone=%27-03%3A00%27&tls=custom, tls=ligado (custom))", linha)
 	assert.NotContains(t, linha, "segredo-sec29", "a senha nunca vai para o log")
 }
 

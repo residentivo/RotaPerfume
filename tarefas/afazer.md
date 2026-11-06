@@ -1,6 +1,22 @@
 # A Fazer
 
-> Atualizado em 2026-11-05 (fechamento do Lote 36, 🔵 SubBrain). O **Lote 36** foi fechado: **TST-22**, **DB-07** e **TST-16** concluídos (`feito.md`, "Lote 36 de 2026-11-05"; o TST-16 com a execução real como root pendente, coberta pelo TST-17). O **TST-17** voltou **parcial** para esta lista, no bloco novo "Achados do Lote 36" (logo abaixo), com o que falta: 🟡 BackBrain implementar as opções de isolamento do `seed-producao.sh` e o usuário rodar com `sudo` os testes reais TST15 e TST17 (nunca no servidor de produção). Entraram também **BUG-29** (MÉDIA), **SEC-58** e **TST-23** (BAIXA). **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), SEC-56, SEC-57, BUG-28, ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
+> Atualizado em 2026-11-06 (fechamento do Lote 40, 🔵 SubBrain). O **Lote 40** foi fechado: **SEC-63** concluído (`feito.md`, "Lote 40 de 2026-11-06: 1 card concluído"; **não commitado**: Lotes 37 a 40 juntos). Entraram 5 cards BAIXA no bloco novo "Achados do Lote 40" (logo abaixo): **SEC-66**, **SEC-67**, **SEC-68**, **SEC-69** e **SEC-70**. O **SEC-64** ganhou um acréscimo. **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17 (resto, pendente do usuário), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04, DEP-03, SEC-64, SEC-65, CHORE-20, TST-26, CI-03, TST-27 e os 5 novos.
+>
+> Antes, em 2026-11-05 (abertura do Lote 40, 🔵 SubBrain). A pedido do usuário ("siga para SEC-63"), o 🤍 MegaBrain abriu o **Lote 40 de 2026-11-05** e o **SEC-63** (MÉDIA, bloco "Achados do Lote 39") saiu desta lista para `fazendo.md`, com o texto completo. Testes só com cópia do `Makefile` e cliente falso, ou no descartável local (`rp-descartavel-l36`, `127.0.0.1:33306`); nada no CasaOS nem na produção. O restante do backlog não mudou.
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 39, 🔵 SubBrain). O **Lote 39** foi fechado: **BUG-31**, **SEC-59**, **SEC-60**, **SEC-61**, **BUG-32**, **CHORE-19**, **CI-02**, **DB-09**, **TST-24**, **TST-25** e **SEC-62** concluídos e **BUG-33** fechado como aceito, sem correção (`feito.md`, "Lote 39 de 2026-11-05: 12 cards fechados (11 concluídos, 1 aceito)"; **não commitado**: Lotes 37, 38 e 39 juntos). Entraram 7 cards no bloco novo "Achados do Lote 39" (logo abaixo): **SEC-63** (MÉDIA; primeiro card do próximo lote) e **SEC-64**, **SEC-65**, **CHORE-20**, **TST-26**, **CI-03** e **TST-27** (BAIXA). O **SEC-47** ganhou um acréscimo. **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17 (resto, pendente do usuário), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04, DEP-03 e os 7 novos.
+>
+> Antes, ainda em 2026-11-05 (abertura do Lote 39, 🔵 SubBrain). A pedido do usuário ("pode seguir com os de baixa prioridade"), o 🤍 MegaBrain abriu o **Lote 39 de 2026-11-05** e 12 cards BAIXA saíram desta lista para `fazendo.md`: **BUG-31**, **SEC-59**, **SEC-60**, **SEC-61**, **BUG-32** e **CHORE-19** (bloco "Achados do Lote 37") e **CI-02**, **DB-09**, **TST-24**, **TST-25**, **SEC-62** e **BUG-33** (bloco "Achados do Lote 38"); os dois blocos ficam sem cards pendentes. Banco só no descartável local (`rp-descartavel-l36`, `127.0.0.1:33306`); nada no CasaOS nem na produção. Passo atual do lote: "🟣 SecBrain especificando → 🌸 DataBrain (DB-09) + 🟡 BackBrain → 🔴 TestBrain → 🟣 SecBrain revisando → 🔵 SubBrain fechando". **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17 (resto, pendente do usuário), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 38, 🔵 SubBrain). O **Lote 38** foi fechado: **BUG-30**, **DB-08** e **CI-01** concluídos (`feito.md`, "Lote 38 de 2026-11-05: 3 cards concluídos"; **não commitado**). Entraram 6 cards BAIXA no bloco novo "Achados do Lote 38" (logo abaixo): **CI-02**, **DB-09**, **TST-24**, **TST-25**, **SEC-62** e **BUG-33**. Pendência informativa do usuário: levantar `@@global.time_zone`/`@@system_time_zone` no CasaOS e na produção (comando em `docs/manual-base-de-dados.md` §1.1). **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17 (resto, pendente do usuário), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04, DEP-03, os 6 BAIXA do Lote 37 (BUG-31, SEC-59, SEC-60, SEC-61, BUG-32, CHORE-19) e os 6 novos (CI-02, DB-09, TST-24, TST-25, SEC-62, BUG-33).
+>
+> Antes, ainda em 2026-11-05 (abertura do Lote 38, 🔵 SubBrain). A pedido do usuário ("siga com os cards média"), o 🤍 MegaBrain abriu o **Lote 38 de 2026-11-05** e 3 cards MÉDIA saíram do bloco "Achados do Lote 37" para `fazendo.md`: **BUG-30**, **DB-08** e **CI-01**. Testes de banco só no descartável local (`rp-descartavel-l36`, `127.0.0.1:33306`); nada no CasaOS nem na produção. Passo atual do lote: "🟣 SecBrain especificando → 🌸 DataBrain (DB-08) + 🟡 BackBrain (BUG-30, CI-01, DB-08) → 🔴 TestBrain → 🟣 SecBrain revisando → 🔵 SubBrain fechando". **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17 (resto, pendente do usuário), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04, DEP-03 e os 6 BAIXA do Lote 37 (BUG-31, SEC-59, SEC-60, SEC-61, BUG-32, CHORE-19).
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 37, 🔵 SubBrain). O **Lote 37** foi fechado: **BUG-29**, **BUG-28**, **SEC-56**, **SEC-57**, **TST-17** (item 1), **SEC-58** e **TST-23** concluídos (`feito.md`, "Lote 37 de 2026-11-05: 7 cards concluídos"; **não commitado**). O card "TST-17 (resto, pendente do usuário)" continua aqui, atualizado (o item 1 já foi feito; o `TestTST17_SeedProducao_Real` só pula por falta de `TST17_DOCKER=1`). Entraram 9 cards no bloco novo "Achados do Lote 37" (logo abaixo): **CI-01**, **BUG-30** e **DB-08** (MÉDIA) e **BUG-31**, **SEC-59**, **SEC-60**, **SEC-61**, **BUG-32** e **CHORE-19** (BAIXA). **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17 (resto, pendente do usuário), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04, DEP-03 e os 9 novos (CI-01, BUG-30, DB-08, BUG-31, SEC-59, SEC-60, SEC-61, BUG-32, CHORE-19).
+>
+> Antes, ainda em 2026-11-05 (abertura do Lote 37, 🔵 SubBrain). A pedido do usuário ("continue com as tarefas a fazer"), o 🤍 MegaBrain abriu o **Lote 37 de 2026-11-05** e 7 cards saíram desta lista para `fazendo.md`: **BUG-29**, **TST-17** (só o item 1: opções de isolamento do `seed-producao.sh`), **SEC-58** e **TST-23** (bloco "Achados do Lote 36") e **SEC-56**, **SEC-57** e **BUG-28** (bloco "Achados do Lote 35", que fica sem cards pendentes). Os itens 2 e 3 do TST-17 (execução com `sudo` pelo usuário) ficaram aqui, no card "TST-17 (resto, pendente do usuário)". Passo atual do lote: "🟣 SecBrain especificando → 🟡 BackBrain → 🔴 TestBrain → 🟣 SecBrain revisando → 🔵 SubBrain fechando". **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), TST-17 (resto, pendente do usuário), ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
+>
+> Antes, ainda em 2026-11-05 (fechamento do Lote 36, 🔵 SubBrain). O **Lote 36** foi fechado: **TST-22**, **DB-07** e **TST-16** concluídos (`feito.md`, "Lote 36 de 2026-11-05"; o TST-16 com a execução real como root pendente, coberta pelo TST-17). O **TST-17** voltou **parcial** para esta lista, no bloco novo "Achados do Lote 36" (logo abaixo), com o que falta: 🟡 BackBrain implementar as opções de isolamento do `seed-producao.sh` e o usuário rodar com `sudo` os testes reais TST15 e TST17 (nunca no servidor de produção). Entraram também **BUG-29** (MÉDIA), **SEC-58** e **TST-23** (BAIXA). **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), SEC-56, SEC-57, BUG-28, ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
 >
 > Antes, ainda em 2026-11-05 (abertura do Lote 36, 🔵 SubBrain). O usuário alterou ele mesmo o `CLAUDE.md` (sugestão do Lote 35: SEC-54, SEC-55 e BUG-27; pendência atendida em `feito.md`), rodou o `usermod -aG docker` (sessão do agente via `sg docker`; `shellcheck` instalado) e autorizou os processos de banco descartável. O 🤍 MegaBrain abriu o **Lote 36 de 2026-11-05** e 4 cards saíram desta lista para `fazendo.md`: **TST-22** (bloco "Achados do Lote 34"), **TST-17** (bloco "Achados do Lote 33 (DEPLOY-07)") e **DB-07** e **TST-16** (bloco "Achados dos Lotes 30 e 31"). Banco descartável: container local `rp-descartavel-l36` (`127.0.0.1:33306`, `rotaperfumes_l36`); nada de CasaOS nem de produção. Passo atual do lote: "🔴 TestBrain (TST-22, TST-17) + 🌸 DataBrain (DB-07, TST-16) → 🟣 SecBrain revisando → 🔵 SubBrain fechando". **Continuam aqui:** DEPLOY-08 (ALTA, pendente do usuário; bloqueia o primeiro deploy da `main`), SEC-56, SEC-57, BUG-28, ARQ-09 (adiado), CHORE-14 (só 7 dias após o deploy do SEC-33), BUG-25 (decisão), BACKUP-01, SEC-47, SEC-48, SEC-51, SEC-52, TST-04 e DEP-03.
 >
@@ -79,74 +95,248 @@
 
 ---
 
-# Achados do Lote 36, 2026-11-05
+# Achados do Lote 40, 2026-11-06
 
-> Pendências do Lote 36 (`feito.md`, "Lote 36 de 2026-11-05"), levantadas pelo 🔴 TestBrain, pelo 🟣 SecBrain e no incidente do `MAKEFLAGS=-k`. Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
-
----
-
-## TST-17: testes reais com Docker do `seed-producao.sh` e do `mariadb-docker.sh` (`TST15_DOCKER=1`) e `shellcheck` nos scripts — prioridade MÉDIA
-
-**Status:** **parcial** (voltou do Lote 36). Item (c) concluído; (a) com o teste criado, mas pulando; (b) não rodou (precisa de root).
-**Camadas:** Deploy (script), Testes
-**Responsável:** 🟡 BackBrain (opções do `seed-producao.sh`) → 🔴 TestBrain; execução real pelo **usuário** com `sudo`
-**Origem:** DEPLOY-07 (Lote 33, 2026-11-04); continua a pendência do TST-15. Histórico do card no Lote 36: `feito.md`.
-
-**Feito no Lote 36:**
-- (c) `shellcheck`: 10 achados resolvidos (SC1007 corrigido com `GOFLAGS=''` em `scripts/setup-linux.sh`; SC2015/SC2016 com `# shellcheck disable=` e motivo); `SHELLCHECK_MIN=0.8.0` em `scripts/versoes.conf`; instalação por apt/winget em `scripts/setup-linux.sh`/`scripts/setup-windows.ps1` (só avisa se faltar); alvo novo `make shellcheck`. O `TestTST15_ScriptsDeploy_Shellcheck` cobre todas as severidades e `scripts/*.sh`; o novo `TestTST17_ShellcheckDisableComMotivo` exige o motivo em cada disable.
-- (a) Teste real criado: `SH/tests/deploy/tst17_seed_producao_real_test.go` (`TST17_DOCKER=1` + root; base em `/root/tst17-*` com 700). Recusa rodar no servidor de produção (`recusaProducaoTST17`, `TestTST17_RecusaProducao`).
-
-**Falta:**
-1. 🟡 BackBrain: opções de isolamento no `deploy/seed-producao.sh`: `--container`, `--rede-nome`, `--ip-admin`, `--segredos-dir`, `--ssl-dir` e `--trabalho-dir`. Hoje o script fixa `rotaperfumes-mariadb`, `rotaperfumes-db`, `172.30.42.20`, `/root/rotaperfumes-mariadb`, `/etc/mysql/ssl/ca.pem` e o `mktemp` em `/root`. Padrão = comportamento atual; validar os diretórios como o `conferir_dir_privado` do TST-16 (passar pelo 🟣 SecBrain). Enquanto isso, o `TestTST17_*_Real` pula.
-2. **Usuário:** rodar com `sudo` o `TestTST15_MariadbDocker_Real` (`sudo TST15_DOCKER=1 ...`) e, depois do item 1, o teste real do TST17 (`TST17_DOCKER=1`), **nunca no servidor de produção**. O agente não usa sudo.
-3. **Usuário (observação):** o `make setup-check` já falhava antes do lote (Go 1.26.0 local ausente/`covdata`, segundo o 🔴 TestBrain); conferir.
-
-**Critério de aceite:** `TestTST15_MariadbDocker_Real` e o teste real do TST17 verdes como root numa máquina que não seja o servidor; `seed-producao.sh` com as opções novas e testes estáticos/ensaio cobrindo-as.
+> Pendências do Lote 40 (`feito.md`, "Lote 40 de 2026-11-06: 1 card concluído"), levantadas no SEC-63 e nas revisões do 🟣 SecBrain. Nenhuma bloqueou o fechamento do lote. As linhas são as da árvore no fechamento do lote. Caminhos: `SH` = `backend/shared`.
 
 ---
 
-## BUG-29: `MAKEFLAGS=...` na linha de comando apaga `ENV_ARQUIVO`/`CONFIRMAR`/`CONFIRMO_PRODUCAO` nos sub-makes — prioridade MÉDIA
+## SEC-66: `config.load` e `DSN()` não validam as `DB_*`, e um `DB_NAME` malicioso desvia o SEC-42 (`SH/config/config.go:~203-206`) — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Backend (config, CLIs), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** Lote 40 (SEC-63).
+
+**Descrição:** o ganho real seria desviar o SEC-42: com `DB_HOST=127.0.0.1`, `ValidarDBTLSObrigatorio` não exige TLS, enquanto um `DB_NAME` malicioso aponta o `Addr` para host remoto, sem TLS e sem aviso. O log de `backend/rotaperfumes-api/cmd/server/main.go:37` mostraria o host errado. O `TestSEC63_Go_DSNNaoTrocaEndereco` confirma a troca do `Addr`; hoje a proteção do Go vale só em `integracao`.
+
+**Escopo:**
+- `SH/config/config.go:~203-206` (leitura) e `:~682` (`DSN()`).
+- `SH/tools/resetpassword/resetpassword.go:~121-133` (monta o DSN sem `load`).
+- `SH/tools/seedusers/seedusers.go:~311-320` (`DB_NAME=--host=...` entra como argumento, e o último `-h` vence).
+- `DB_PORT`, que o `ValidarFormaDB` atual não recebe (`SH/testkit/integracao/integracao.go:~163`).
+
+**Correção:** mover `ValidarFormaDB` para `config`, com `integracao` reaproveitando.
+
+**Critério de aceite:** a API, o `resetpassword` e o `seedusers` recusam valor fora do charset antes de conectar; teste confirma que o `Addr` não muda; paridade `Makefile` × Go do SEC-63 verde.
+
+---
+
+## SEC-67: `make setup` passa os segredos do `.env` a instaladores de terceiros (`Makefile:~264,267`) — prioridade BAIXA
 
 **Status:** pendente.
 **Camadas:** Config (Makefile), Testes
 **Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** incidente do Lote 36 (registrado em `feito.md`, "Lote 36 de 2026-11-05").
+**Origem:** Lote 40.
 
-**Descrição:** com `MAKEFLAGS=-k` (ou outro valor) passado como variável na linha de comando, o `MAKEFLAGS` do pai é substituído e as variáveis de linha de comando (`ENV_ARQUIVO`, `CONFIRMAR`, `CONFIRMO_PRODUCAO`) não chegam aos sub-makes. O `test-integration` (e os sub-makes do BUG-27, `db-reset`/`db-rebuild`) caem no `.env` padrão **sem avisar**. No Lote 36 isso levou o `test-integration` ao CasaOS dev (`192.168.168.106:3307`); as conexões falharam no TLS e nada foi escrito.
+**Descrição:** `setup` e `setup-check` rodam sem `$(SEM_SEGREDOS)`. `DB_SENHA`, `MYSQL_PWD`, `JWT_SECRET` e o pepper chegam a `scripts/setup-linux.sh:~435` (nvm), `:~647` (npm global) e `:~652` (Postman). `SH/tests/config/sec53_makefile_segredos_test.go` não cobre `setup`.
 
-**Sugestão:** o sub-make recebe o arquivo já resolvido por uma variável interna dedicada e recusa a execução se o `ENV_ARQUIVO_LIDO` divergir do pai (ou o `test-integration` exige `ENV_ARQUIVO` explícito). **Confirmar** se o `CONFIRMAR`/`CONFIRMO_PRODUCAO` some nos sub-makes (fail-closed: o DROP/escrita seria recusado) ou não.
+**Correção:** aplicar `$(SEM_SEGREDOS)` às duas receitas.
 
-**Critério de aceite:** teste com `MAKEFLAGS=-k` na linha de comando: o sub-make do `test-integration` (e do `db-reset`/`db-rebuild`) usa o mesmo arquivo do pai ou recusa; comportamento do `CONFIRMAR`/`CONFIRMO_PRODUCAO` documentado e coberto; testes do SEC-46/SEC-50/SEC-53/SEC-54/BUG-27 continuam verdes.
+**Critério de aceite:** teste com script falso confirma que os segredos não chegam ao processo; `sec53_makefile_segredos_test.go` cobre `setup` e `setup-check`; `make setup-check` continua funcionando.
 
 ---
 
-## SEC-58: chave do repositório MariaDB instalada sem conferir o fingerprint em `scripts/setup-linux.sh` — prioridade BAIXA
+## SEC-68: `seedusers` ignora `DB_TLS_CA` no cliente (`SH/tools/seedusers/seedusers.go:~311-320`) — prioridade BAIXA (a confirmar)
 
-**Status:** pendente (possivelmente anterior ao lote).
-**Camadas:** Scripts (setup), Testes
+**Status:** pendente; a confirmar com o cliente real.
+**Camadas:** Backend (CLI), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** Lote 40.
+
+**Descrição:** `ArgsClienteMariaDB` monta os argumentos sem TLS/SSL, embora o comentário diga "igual ao MYSQL_OPTS". O `make gen-hash` não conferiria a CA do projeto.
+
+**Correção:** confirmar com o cliente real e usar `--ssl-ca` + `--ssl-verify-server-cert`.
+
+**Critério de aceite:** resultado da confirmação registrado no card; com `DB_TLS_CA`, os argumentos incluem as duas opções, com teste; sem `DB_TLS_CA` no loopback, nada muda.
+
+---
+
+## SEC-69: desligamentos do gate do SEC-63 por ação do operador (`Makefile:~39,200`) — prioridade BAIXA (a provar)
+
+**Status:** pendente; só para reavaliar. **[a provar]** por PoC antes de corrigir.
+**Camadas:** Config (Makefile), Testes
 **Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain na revisão do Lote 36.
+**Origem:** ressalvas R1 e R2 do 🟣 SecBrain no Lote 40.
 
-**Descrição:** a chave de assinatura do repositório MariaDB (`scripts/setup-linux.sh`, ~:517-520) é baixada por HTTPS e instalada sem conferir o fingerprint.
+**Descrição:**
+- **R1:** `--eval='undefine MAKECMDGOALS'` deixa a origem `undefined`, aceita pela allowlist em `Makefile:~39`.
+- **R2:** `VARS_DO_ENV=`, `VARS_PROIBIDAS_NO_ENV=`, `RP_ENV_LINHAS_RUINS=`, `ENV_ARQUIVO_LIDO=/dev/null` e `CR=` digitadas ainda ficam sem `override`.
 
-**Correção:** fingerprint fixado em `scripts/versoes.conf`; `gpg --show-keys` e comparação antes do `install`; falha se divergir.
+Os dois casos estão fora do modelo pela decisão registrada do 🤍 MegaBrain (`feito.md`, Lote 40).
 
-**Critério de aceite:** teste (estático ou ensaio) que recusa a chave com fingerprint diferente; `make shellcheck` verde.
+**Correção proposta (R1):** `$(filter-out $(RP_ALVOS_SEM_BANCO),$(or $(MAKECMDGOALS),sem-goal))`, com o custo de `make` puro com `.env` inválido recusar em vez de mostrar o help.
+
+**Critério de aceite:** PoC registrada; decisão de manter fora do modelo ou corrigir, registrada no card; se corrigir, teste com cliente falso.
 
 ---
 
-## TST-23: testes de integração que comparam `NOW()` do banco com o relógio da API dependem do `time_zone` — prioridade BAIXA (informativo)
+## SEC-70: o arquivo conferido pode não ser o incluído (`Makefile:~87,92,107,109`) — prioridade BAIXA (a provar)
+
+**Status:** pendente. **[a provar]** por PoC antes de corrigir.
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** ressalva R3 do 🟣 SecBrain no Lote 40.
+
+**Descrição:** o `grep`/`sed` leem o caminho relativo ao diretório atual, mas o `include` também procura em `-I` e nos diretórios padrão. `make help ENV_ARQUIVO=db-create` faria o make tentar refazer o include rodando a receita com o gate desligado.
+
+**Correção:** condicionar a `$(wildcard ...)` no diretório atual; ajustar `SH/tests/config/sec11_makefile_sql_test.go:~211`.
+
+**Critério de aceite:** PoC só com cliente falso confirma ou descarta os dois caminhos; se confirmados, recusa coberta por teste e `sec11_makefile_sql_test.go` verde.
+
+---
+
+# Achados do Lote 39, 2026-11-05
+
+> Pendências do Lote 39 (`feito.md`, "Lote 39 de 2026-11-05: 12 cards fechados (11 concluídos, 1 aceito)"). Nenhuma bloqueou o fechamento do lote. As linhas do `Makefile` são as da árvore no fechamento do lote. Caminhos: `SH` = `backend/shared`.
+>
+> **2026-11-06 (fechamento do Lote 40):** o **SEC-63** foi concluído (`feito.md`). O **SEC-64** ganhou um acréscimo.
+>
+> **2026-11-05 (abertura do Lote 40):** o **SEC-63** foi para o **Lote 40 de 2026-11-05** (`fazendo.md`, com o texto completo). Seguem neste bloco SEC-64, SEC-65, CHORE-20, TST-26, CI-03 e TST-27.
+
+---
+
+## SEC-64: `export` global do `Makefile` entrega `LD_PRELOAD`, `GOFLAGS`, `NODE_OPTIONS` e `BASH_ENV` do `.env` aos filhos (`Makefile:~109`) — prioridade BAIXA
 
 **Status:** pendente.
-**Camadas:** Testes, Database (conexão)
-**Responsável:** 🔴 TestBrain (com 🌸 DataBrain/🟡 BackBrain se mexer no DSN)
-**Origem:** 🔴 TestBrain no TST-22 (Lote 36).
+**Camadas:** Config (Makefile), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** Lote 39 (SEC-59).
 
-**Descrição:** no TST-22, o `revoked_at` gravado com `NOW()` do MariaDB (UTC) contra a API em -03 derrubou testes; foi corrigido usando o relógio do Go (`c.haSegundos`). Qualquer teste que compare `NOW()` do banco com o relógio da API depende do `time_zone` do servidor. Não foi achado esse uso em produção.
+**Descrição:** o `Makefile` exporta tudo. `LD_PRELOAD`, `GOFLAGS`, `NODE_OPTIONS` e `BASH_ENV` no `.env` chegam aos filhos sem `$`, e o `LD_PRELOAD` alcança o shell das guardas. Uma denylist não fecha o problema.
 
-**Ação esperada:** avaliar fixar o `time_zone` na conexão (DSN `loc`/`time_zone`) ou criar uma regra/catraca nos testes contra `NOW()` comparado ao relógio da API.
+**Correção (decidir uma):** trocar o `export` global por uma lista explícita, ou documentar que as guardas protegem contra engano, não contra quem controla o `.env`.
 
-**Critério de aceite:** decisão registrada; se houver correção, testes de integração verdes com o servidor em UTC e em -03.
+**Critério de aceite:** decisão registrada; com a lista explícita, teste confirma que essas variáveis não chegam aos filhos e que os alvos `db-*` continuam recebendo as `DB_*`.
+
+**Acréscimo (2026-11-06, Lote 40):** o `export` global está hoje em `Makefile:~131`.
+- `GO_TEST_FLAGS`, `SETUP_ARGS`, `SHELLCHECK` e `GERAR_IMAGENS_FLAGS` do `.env` entram em receitas.
+- `MAKEFILE_LIST=;cmd;` no `.env` pode injetar comando em `make help` (`Makefile:~247`, a confirmar em teste).
+- `$(...)` no ambiente ou na linha de comando expande no parse (`DB_HOST='$(shell touch pwn)' make help`): BAIXA, residual.
+
+**Nota do 🔵 SubBrain para a decisão deste card:** a fronteira registrada no Lote 40 diz que as guardas protegem contra o conteúdo do `.env`. A opção "documentar que as guardas não protegem contra quem controla o `.env`" contradiz essa frase, e os itens acima e o `LD_PRELOAD` são conteúdo do `.env`. O 🤍 MegaBrain precisa conciliar as duas ao decidir este card.
+
+---
+
+## SEC-65: tar do `seed-producao.sh` montado por lista de exclusão (`deploy/seed-producao.sh:~521`) — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Deploy (script), Testes
+**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
+**Origem:** Lote 39 (SEC-62).
+
+**Descrição:** mesma classe do SEC-62: o tar enviado ao container do build é montado por exclusão, e esse container tem rede. O alcance é só `backend/shared`.
+
+**Correção:** montar o tar a partir do que está rastreado (como no SEC-62) ou por uma lista positiva.
+
+**Critério de aceite:** teste estático confere a forma escolhida; nenhum arquivo não rastreado entra no tar; ensaio do `seed-producao.sh` e `make shellcheck` verdes.
+
+---
+
+## CHORE-20: conferir o digest novo de `golang:1.26.10-alpine` (`GO_IMAGE`) — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** CI (Jenkinsfile), Deploy (script)
+**Responsável:** 🟡 BackBrain (🟣 SecBrain revisa)
+**Origem:** Lote 39 (CI-02).
+
+**Descrição:** o `GO_IMAGE` está fixado em `a2012b4a…`, e `golang:1.26.10-alpine` apontou para `df23b876380eb556f22bbba2fa57493e8684fc4fcabf06399fbfb65359978d28`. Não se sabe se esse valor é um índice ou o manifesto de uma plataforma. A imagem roda na rede do banco no seed.
+
+**Ação:** verificar o tipo do digest. Se for índice novo, atualizar nos dois arquivos (`Jenkinsfile` e `deploy/seed-producao.sh`) seguindo o SEC-31 (`docs/deploy-servidor.md` §3.6).
+
+**Critério de aceite:** tipo do digest registrado no card; se houver troca, mesma string nos dois arquivos e `make test` verde.
+
+---
+
+## TST-26: cobertura de execução do SEC-60 no CI, sem `unshare` — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Deploy (script), Testes
+**Responsável:** 🔴 TestBrain (🟡 BackBrain na extração)
+**Origem:** limite do CI-02 no Lote 39.
+
+**Descrição:** os testes com `unshare` pulam no container do CI (172 entradas, incluindo `TestSEC60_Ensaio_*`; o pai aparece PASS) e só rodam na máquina local. O CI roda como root.
+
+**Ação:** extrair o `conferir_dir_privado` e exercitá-lo de verdade sem `unshare`, em diretório fora do `/tmp`.
+
+**Critério de aceite:** no CI (`GO_TEST_IMAGE`, `CI=true`), teste do SEC-60 **executa** (não pula) os casos de diretório privado e de recusa; a cópia do `conferir_dir_privado` continua igual à do `mariadb-docker.sh`.
+
+---
+
+## CI-03: restringir a proibição de `--security-opt` e avaliar endurecimento do estágio "Testes Go" (`ci02_sec62_jenkinsfile_test.go:~62`) — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** CI (Jenkinsfile), Testes
+**Responsável:** 🟡 BackBrain → 🔴 TestBrain (🟣 SecBrain revisa)
+**Origem:** Lote 39 (CI-02/SEC-62).
+
+**Descrição:** `SH/tests/deploy/ci02_sec62_jenkinsfile_test.go:~62` proíbe qualquer `--security-opt`, inclusive o `no-new-privileges:true`, que endurece o container.
+
+**Ação:** restringir a proibição a `seccomp`/`apparmor` `unconfined` e avaliar `no-new-privileges` e `--cap-drop ALL` no estágio.
+
+**Critério de aceite:** teste recusa `seccomp=unconfined` e `apparmor=unconfined` e aceita `no-new-privileges:true`; decisão sobre o endurecimento registrada; se aplicado, ensaio do estágio verde.
+
+---
+
+## TST-27: `TestIMG01_FS_Novo_CriaDiretorioESemProbe` falha com `umask 077` — prioridade BAIXA
+
+**Status:** pendente.
+**Camadas:** Testes
+**Responsável:** 🔴 TestBrain
+**Origem:** Lote 39.
+
+**Descrição:** a asserção de `SH/tests/catalogofs/armazenamento_test.go:63` não considera o `umask` no valor esperado.
+
+**Correção proposta:** `assert.Equal(t, fs.FileMode(0o750)&^umaskBits(t), info.Mode().Perm())`.
+
+**Critério de aceite:** teste verde com `umask 022` e com `umask 077`.
+
+---
+
+# Achados do Lote 38, 2026-11-05
+
+> Pendências do Lote 38 (`feito.md`, "Lote 38 de 2026-11-05"), levantadas pelo 🟣 SecBrain, pelo 🟡 BackBrain e pelo 🔴 TestBrain. Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
+>
+> **2026-11-05 (fechamento do Lote 39):** CI-02, DB-09, TST-24, TST-25 e SEC-62 foram concluídos e BUG-33 foi fechado como aceito (`feito.md`).
+>
+> **2026-11-05 (abertura do Lote 39):** os 6 cards deste bloco (**CI-02**, **DB-09**, **TST-24**, **TST-25**, **SEC-62** e **BUG-33**) foram para o **Lote 39 de 2026-11-05** (`fazendo.md`, com o texto completo). O bloco fica sem cards pendentes.
+
+---
+
+# Achados do Lote 37, 2026-11-05
+
+> Pendências do Lote 37 (`feito.md`, "Lote 37 de 2026-11-05"), levantadas pelo 🟣 SecBrain, pelo 🟡 BackBrain e pelo 🔴 TestBrain. Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
+>
+> **2026-11-05 (fechamento do Lote 39):** BUG-31, SEC-59, SEC-60, SEC-61, BUG-32 e CHORE-19 foram concluídos (`feito.md`).
+>
+> **2026-11-05 (abertura do Lote 39):** os 6 BAIXA deste bloco (**BUG-31**, **SEC-59**, **SEC-60**, **SEC-61**, **BUG-32** e **CHORE-19**) foram para o **Lote 39 de 2026-11-05** (`fazendo.md`, com o texto completo). O bloco fica sem cards pendentes.
+>
+> **2026-11-05 (fechamento do Lote 38):** CI-01, BUG-30 e DB-08 foram concluídos (`feito.md`, "Lote 38 de 2026-11-05: 3 cards concluídos"). Ficam aqui os 6 BAIXA.
+>
+> **2026-11-05:** os 3 cards MÉDIA deste bloco (**CI-01**, **BUG-30** e **DB-08**) foram para o **Lote 38 de 2026-11-05** (`fazendo.md`). Ficam aqui os 6 BAIXA.
+
+---
+
+# Achados do Lote 36, 2026-11-05
+
+> Pendências do Lote 36 (`feito.md`, "Lote 36 de 2026-11-05"), levantadas pelo 🔴 TestBrain, pelo 🟣 SecBrain e no incidente do `MAKEFLAGS=-k`. Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
+
+> **2026-11-05 (fechamento do Lote 37):** BUG-29, SEC-58, TST-23 e o item 1 do TST-17 foram concluídos (`feito.md`, "Lote 37 de 2026-11-05"). Fica aqui só o card-resto do TST-17 (itens 2 e 3, pendentes do usuário).
+>
+> **2026-11-05 (Lote 37):** BUG-29, SEC-58, TST-23 e o item 1 do TST-17 (opções de isolamento do `seed-producao.sh`) foram para o Lote 37 (`fazendo.md`, com o texto completo do TST-17). Fica aqui só o card-resto do TST-17 (itens 2 e 3, pendentes do usuário).
+
+---
+
+## TST-17 (resto, pendente do usuário): execução real com `sudo` dos testes TST15 e TST17 e conferência do `make setup-check` — prioridade MÉDIA
+
+**Status:** pendente **do usuário**. O item 1 (opções de isolamento do `seed-producao.sh`: `--container`, `--rede-nome`, `--ip-admin`, `--segredos-dir`, `--ssl-dir`, `--trabalho-dir`) foi **concluído no Lote 37** (`feito.md`, card "TST-17 (item 1)"); o pré-requisito do teste real do TST17 está atendido e o `TestTST17_SeedProducao_Real` agora **só pula por falta de `TST17_DOCKER=1`**. **Atenção (mudança fail-closed do Lote 37):** o seed recusa se `/root` não for root com 700 ou se `/root/rotaperfumes-mariadb` não for 700.
+**Responsável:** usuário (com `sudo`, **nunca no servidor de produção**) → 🔴 TestBrain (conferência)
+
+**Falta:**
+2. **Usuário:** rodar com `sudo` o `TestTST15_MariadbDocker_Real` (`sudo TST15_DOCKER=1 ...`) e, depois do item 1, o teste real do TST17 (`TST17_DOCKER=1`), **nunca no servidor de produção**. O agente não usa sudo.
+3. **Usuário (observação):** o `make setup-check` já falhava antes do Lote 36 (Go 1.26.0 local ausente/`covdata`, segundo o 🔴 TestBrain); conferir.
+
+**Critério de aceite:** `TestTST15_MariadbDocker_Real` e o teste real do TST17 verdes como root numa máquina que não seja o servidor.
 
 ---
 
@@ -154,52 +344,9 @@
 
 > Ressalvas da revisão final do 🟣 SecBrain no Lote 35 (`feito.md`, "Lote 35 de 2026-11-05"). Nenhuma bloqueou o fechamento do lote. Caminhos: `SH` = `backend/shared`.
 
----
-
-## SEC-56: formas numéricas não canônicas do IPv4 não contam como produção — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Config (Makefile), Backend (testkit), Testes
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain na revisão final do Lote 35 (SEC-54).
-
-**Descrição:** a blocklist (`PRODUCAO_DETECTA` no Makefile e `SH/testkit/integracao` no Go) só reconhece o IPv4 `a.b.c.d`. As formas decimal `3232278634`, hex `0xc0a8a86a`, curta `192.168.43114` e octal `0300.0250.0250.0152`, aceitas pelo `getaddrinfo`, apontam para `192.168.168.106` mas não contam como produção nos dois lados: `db-seed`/`db-import-*`/`db-fix-*` rodariam se o banco de produção fosse publicado.
-
-**Correção:** nos dois lados, tratar como produção todo host formado só por dígitos, pontos e `x` que não seja um IPv4 canônico de 4 octetos sem zero à esquerda; acrescentar os casos à tabela de paridade do SEC-54.
-
-**Nota informativa:** com `DB_HOST` vazio, o Go usa `localhost` por padrão e o shell recusa (o lado estrito é o `make`; não é falha).
-
-**Critério de aceite:** as 4 formas acima (e variações) recusadas como produção no Makefile e no Go, com casos na paridade; os testes do SEC-46/SEC-50/SEC-54 continuam verdes.
-
----
-
-## SEC-57: paridade Makefile × Go da porta com espaço — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Config (Makefile), Backend (testkit), Testes
-**Responsável:** 🟣 SecBrain → 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain na revisão final do Lote 35 (SEC-54).
-
-**Descrição:** o Go aplica `TrimSpace` na porta (`SH/testkit/integracao/integracao.go:251`) e aceita `"3307 "`; o Makefile recusa, mas com a mensagem enganosa "é o banco de PRODUCAO".
-
-**Correção:** o Go recusa espaço na porta; o Makefile dá uma mensagem própria (porta inválida); casos na tabela de paridade.
-
-**Critério de aceite:** porta com espaço (antes, depois, no meio) recusada nos dois lados com mensagem de porta inválida; paridade verde.
-
----
-
-## BUG-28: `make -k db-seed` roda o `db-up` na produção com a guarda recusada — prioridade BAIXA
-
-**Status:** pendente.
-**Camadas:** Config (Makefile), Testes
-**Responsável:** 🟡 BackBrain → 🔴 TestBrain
-**Origem:** 🟣 SecBrain na revisão final do Lote 35 (BUG-27).
-
-**Descrição:** com `make -k db-seed CONFIRMO_PRODUCAO=...` sozinho, o `db-guard-sem-producao` falha, mas o `-k` ainda roda o `db-up` (`CREATE DATABASE` + DDL) na produção, porque ele é pré-requisito irmão das guardas (Makefile ~:240). Impacto limitado: o `db-up` com confirmação já é permitido na produção.
-
-**Correção:** tirar o `db-up` dos pré-requisitos do `db-seed` e chamar `$(MAKE) db-up && ...` na receita (padrão do BUG-27, sem repassar variáveis à mão).
-
-**Critério de aceite:** teste com `make -k db-seed` e a guarda recusada → nenhum `CREATE DATABASE`/DDL no log do cliente falso; os testes do BUG-27 e do SEC-46 continuam verdes.
+> **2026-11-05 (fechamento do Lote 37):** SEC-56, SEC-57 e BUG-28 foram concluídos (`feito.md`, "Lote 37 de 2026-11-05").
+>
+> **2026-11-05 (Lote 37):** SEC-56, SEC-57 e BUG-28 foram para o Lote 37 (`fazendo.md`). Este bloco fica sem cards pendentes.
 
 ---
 
@@ -358,6 +505,8 @@
 **Ação esperada:** fixar as bases por `tag@sha256:` e incluí-las no `make deps-audit-imagens`.
 
 **Critério de aceite:** todas as bases com digest; `deps-audit-imagens` cobrindo os três arquivos; build verde.
+
+**Acréscimo (2026-11-05, Lote 39):** alinhar `GO_VERSION=1.26.9` (`backend/Dockerfile:15`) com 1.26.10, com teste de paridade. Rodar `govulncheck` com o toolchain 1.26.9, o da produção: vulnerabilidade alcançável na stdlib eleva a prioridade deste card. **Cuidado:** push na `main` dispara deploy.
 
 ---
 

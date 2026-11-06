@@ -66,7 +66,7 @@ func sec42Make(t *testing.T, versaoCliente string, vars map[string]string) (stri
 	if err != nil {
 		t.Skip("make não encontrado")
 	}
-	dir := t.TempDir()
+	dir := dirTempMake(t)
 	dados, err := os.ReadFile(filepath.Join(raizProjeto(t), "Makefile"))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Makefile"), dados, 0o644))

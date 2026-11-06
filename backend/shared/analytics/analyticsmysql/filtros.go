@@ -56,14 +56,15 @@ func whereCarteira(e kernel.Escopo, conds ...string) (string, []any, error) {
 }
 
 // Cláusulas de período do legado (periodoWhereClause e o switch de
-// CountNovosNoPeriodo).
+// CountNovosNoPeriodo). As datas vêm de argsPeriodo (BUG-30: calculadas no
+// Go, sem o relógio do servidor), na ordem dos placeholders.
 const (
-	periodoPedidoHoje     = "DATE(data_pedido) = CURDATE()"
-	periodoPedidoSemana   = "data_pedido >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)"
-	periodoPedidoMes      = "YEAR(data_pedido) = YEAR(CURDATE()) AND MONTH(data_pedido) = MONTH(CURDATE())"
-	periodoCadastroHoje   = "data_cadastro = CURDATE()"
-	periodoCadastroSemana = "data_cadastro >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)"
-	periodoCadastroMes    = "YEAR(data_cadastro) = YEAR(CURDATE()) AND MONTH(data_cadastro) = MONTH(CURDATE())"
+	periodoPedidoHoje     = "DATE(data_pedido) = ?"
+	periodoPedidoSemana   = "data_pedido >= ?"
+	periodoPedidoMes      = "YEAR(data_pedido) = ? AND MONTH(data_pedido) = ?"
+	periodoCadastroHoje   = "data_cadastro = ?"
+	periodoCadastroSemana = "data_cadastro >= ?"
+	periodoCadastroMes    = "YEAR(data_cadastro) = ? AND MONTH(data_cadastro) = ?"
 )
 
 // clausulaPeriodoPedido traduz o enum em constante (D-02); fora do enum, o
@@ -93,22 +94,16 @@ func clausulaPeriodoCadastro(p analytics.Periodo) string {
 
 // Cláusulas da janela do funil (DASH-01) sobre oportunidades.data_abertura,
 // incluindo hoje (29 dias atrás + hoje = 30 dias). "all" não tem cláusula.
-const (
-	janelaAbertura30d  = " AND data_abertura >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)"
-	janelaAbertura90d  = " AND data_abertura >= DATE_SUB(CURDATE(), INTERVAL 89 DAY)"
-	janelaAbertura365d = " AND data_abertura >= DATE_SUB(CURDATE(), INTERVAL 364 DAY)"
-)
+// A data vem de argsJanela (BUG-30).
+// As três janelas têm o mesmo texto; muda só a data (argsJanela).
+const janelaAberturaDesde = " AND data_abertura >= ?"
 
 // clausulaJanelaAbertura traduz o enum em constante (D-02); fora do enum,
 // sem cláusula (o default "all").
 func clausulaJanelaAbertura(j analytics.Janela) string {
 	switch j {
-	case analytics.Janela30d:
-		return janelaAbertura30d
-	case analytics.Janela90d:
-		return janelaAbertura90d
-	case analytics.Janela365d:
-		return janelaAbertura365d
+	case analytics.Janela30d, analytics.Janela90d, analytics.Janela365d:
+		return janelaAberturaDesde
 	default:
 		return ""
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/rotaperfumes/shared/analytics"
 	"github.com/rotaperfumes/shared/kernel"
+	"github.com/rotaperfumes/shared/tz"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
@@ -22,7 +23,8 @@ type Deps struct {
 	Clientes IndicadoresClientes
 	Funil    IndicadoresFunil
 	Escopo   EscopoAnalytics
-	// Relogio é a fonte de "hoje" da série zerada.
+	// Relogio é a fonte de "hoje" da série zerada (lido no fuso tz.Local,
+	// BUG-30: o mesmo dia dos adapters, mesmo com time.Local em UTC).
 	Relogio func() time.Time
 }
 
@@ -124,7 +126,7 @@ func (c *Consultas) SerieVendas(ctx context.Context, q ConsultaSerieVendas) (s a
 	}
 	s.Dias = q.Dias
 	if !a.liberado {
-		s.Pontos = analytics.SerieZerada(q.Dias.Int(), c.d.Relogio())
+		s.Pontos = analytics.SerieZerada(q.Dias.Int(), c.d.Relogio().In(tz.Local))
 		return s, nil
 	}
 	s.Pontos, err = c.d.Vendas.SerieVendas(ctx, a.escopo, q.Dias)

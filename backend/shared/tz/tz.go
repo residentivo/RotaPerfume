@@ -20,9 +20,14 @@ import (
 )
 
 // Nome e offset do fuso fixo usado pelo sistema.
+//
+// OffsetSQL (DB-08) é o mesmo offset no formato aceito por SET time_zone do
+// MariaDB; config.DSN o envia como time_zone da sessão. Deve bater com
+// OffsetSegundos (há teste).
 const (
 	Nome           = "-03"
 	OffsetSegundos = -3 * 60 * 60
+	OffsetSQL      = "-03:00"
 )
 
 // Local é o *time.Location fixo aplicado a time.Local.

@@ -20,7 +20,7 @@ import (
 	// Fixa time.Local em -03:00 (sem horário de verão) antes de qualquer
 	// sql.Open — ver pacote tz (RISCO-01). Todo binário que usa config.DSN()
 	// herda o fuso por este import.
-	_ "github.com/rotaperfumes/shared/tz"
+	"github.com/rotaperfumes/shared/tz"
 	"github.com/rotaperfumes/shared/vlog"
 )
 
@@ -649,12 +649,21 @@ func adicionarSemRepetir(lista []string, v string) []string {
 	return append(lista, v)
 }
 
+// timeZoneSessaoDSN é o valor do parâmetro time_zone do DSN (DB-08):
+// '-03:00' com aspas, escapado para a query string ("%27-03%3A00%27").
+var timeZoneSessaoDSN = url.QueryEscape("'" + tz.OffsetSQL + "'")
+
 // DSN monta a connection string para o driver go-sql-driver/mysql, que
 // conecta ao MariaDB (protocolo MySQL).
 // Inclui parseTime=true para que colunas TIMESTAMP sejam tipadas como time.Time.
 //
-// loc=Local: time.Local é fixado em -03:00 pelo pacote tz (import em branco
-// acima). Não adicionar time_zone ao DSN.
+// loc=Local: time.Local é fixado em -03:00 pelo pacote tz (import acima).
+//
+// time_zone='-03:00' (DB-08): fixa o fuso da SESSÃO (tz.OffsetSQL), para o
+// DEFAULT/ON UPDATE CURRENT_TIMESTAMP das colunas TIMESTAMP e os time.Time
+// gravados pelo Go (parede -03, loc=Local) usarem a mesma convenção, em
+// servidor UTC ou -03. Não libera o relógio do servidor (NOW()/CURDATE())
+// em DML: as datas de negócio são calculadas no Go (TST-23).
 //
 // clientFoundRows=true (BUG-04): RowsAffected passa a contar as linhas
 // ENCONTRADAS pelo WHERE, não só as alteradas. Assim, um UPDATE que não muda
@@ -672,8 +681,8 @@ func adicionarSemRepetir(lista []string, v string) []string {
 // "custom" é registrada no driver por LoadDBTLS (chamado pelo Load).
 func (c *Config) DSN() string {
 	return fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true%s",
-		c.DBUsuario, c.DBSenha, c.DBHost, c.DBPort, c.DBName, c.DBTLS.parametroDSN(),
+		"%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local&clientFoundRows=true&time_zone=%s%s",
+		c.DBUsuario, c.DBSenha, c.DBHost, c.DBPort, c.DBName, timeZoneSessaoDSN, c.DBTLS.parametroDSN(),
 	)
 }
 

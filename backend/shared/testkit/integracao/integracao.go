@@ -56,22 +56,35 @@ var (
 	ErrBancoProducao = errors.New("integracao: banco de PRODUÇÃO recusado")
 	// ErrHostNaoPermitido (SEC-54): DB_HOST/DB_PORT fora de Permitidos.
 	ErrHostNaoPermitido = errors.New("integracao: DB_HOST/DB_PORT fora da allowlist da integração")
+	// ErrDBValorInvalido (SEC-63): DB_HOST, DB_NAME ou DB_USUARIO fora do charset
+	// (entrariam no DSN e poderiam trocar o endereço real depois da guarda).
+	ErrDBValorInvalido = errors.New("integracao: valor inválido em variável DB_*")
+	// ErrPortaInvalida (SEC-57): DB_PORT fora de "+"? e dígitos (espaços
+	// inclusive; não há TrimSpace), em qualquer host.
+	ErrPortaInvalida = errors.New("integracao: porta recusada")
 )
 
 // ValidarNaoProducao aplica a regra do db-guard-producao (PRODUCAO_DETECTA
 // do Makefile; paridade testada em shared/tests/config), sem DNS:
-//   - porta não numérica (fora de "+"? e dígitos) é erro, em qualquer host;
+//   - porta não numérica (fora de "+"? e dígitos, espaços inclusive) é
+//     ErrPortaInvalida, em qualquer host (SEC-57);
 //   - host normalizado (normalizarHost) com ":" que não seja "::1" é
 //     produção (fail-closed para literais IPv6 que não são loopback);
+//   - host IPv4 numérico fora da forma canônica a.b.c.d (decimal, hex,
+//     octal, curta) é produção, sem válvula (SEC-56);
 //   - host em ProducaoHostsRede é produção em qualquer porta; em
 //     ProducaoHostsLAN, com porta vazia ou 3306 (comparada como número).
 func ValidarNaoProducao(host, porta string) error {
 	p, ok := normalizarPorta(porta)
 	if !ok {
 		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão porta_nao_numerica_recusada")
-		return fmt.Errorf("integracao: DB_PORT=%q não é numérico (SEC-50/SEC-54)", porta)
+		return erroPortaInvalida(porta)
 	}
 	h, _ := normalizarHost(host)
+	if ipv4NaoCanonico(h) {
+		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão ipv4_nao_canonico_recusado")
+		return fmt.Errorf("%w: SEC-56: DB_HOST=%q e IPv4 em forma numerica nao canonica (decimal/hex/octal/curta): use a.b.c.d", ErrBancoProducao, host)
+	}
 	if strings.Contains(h, ":") && h != "::1" {
 		vlog.Printf("integracao.go", "ValidarNaoProducao", "decisão literal_ipv6_nao_loopback_recusado")
 		return erroProducao(host, porta)
@@ -101,7 +114,7 @@ func ValidarPermitidoIntegracao(host, porta string) error {
 	p, ok := normalizarPorta(porta)
 	if !ok {
 		vlog.Printf("integracao.go", "ValidarPermitidoIntegracao", "decisão porta_nao_numerica_recusada")
-		return erroNaoPermitido(host, porta)
+		return fmt.Errorf("%w; %w", erroNaoPermitido(host, porta), erroPortaInvalida(porta))
 	}
 	if p == "" {
 		p = strconv.Itoa(portaProducao)
@@ -121,8 +134,8 @@ func ValidarPermitidoIntegracao(host, porta string) error {
 	return erroNaoPermitido(host, porta)
 }
 
-// permitidoCasa: "127.0.0.0/8" casa 127.x.x.x (textual, como o grep do
-// Makefile); entrada com um só ":" é host:porta; o resto é o host em
+// permitidoCasa: "127.0.0.0/8" casa 127.x.x.x com octetos canônicos
+// (textual, como o LOOPBACK_V4 do Makefile; SEC-56); entrada com um só ":" é host:porta; o resto é o host em
 // qualquer porta ("::1", "localhost").
 func permitidoCasa(entrada, host, porta string) bool {
 	switch {
@@ -135,8 +148,33 @@ func permitidoCasa(entrada, host, porta string) bool {
 	}
 }
 
+// Charsets do SEC-63, os mesmos do Makefile (paridade testada em
+// shared/tests/config). O "-" inicial é recusado: viraria opção no cliente mariadb.
+var (
+	reFormaHost    = regexp.MustCompile(`^[A-Za-z0-9._:\[\]][A-Za-z0-9._:\[\]-]*$`)
+	reFormaNome    = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
+	reFormaUsuario = regexp.MustCompile(`^[A-Za-z0-9_.][A-Za-z0-9_.-]*$`)
+)
+
+// ValidarFormaDB (SEC-63) confere host, nome do banco e usuário antes da guarda:
+// o DSN é montado por texto e o driver separa pelo último "@" e pelo último "/",
+// então um DB_NAME como x@tcp(host:3306)/banco mudaria o endereço real depois de
+// a guarda aprovar o DB_HOST. A mensagem cita só a variável, nunca o valor.
+func ValidarFormaDB(host, nome, usuario string) error {
+	vlog.Printf("integracao.go", "ValidarFormaDB", "conferindo charset de DB_HOST, DB_NAME e DB_USUARIO")
+	switch {
+	case !reFormaHost.MatchString(host):
+		return fmt.Errorf("%w: DB_HOST (SEC-63: só A-Z a-z 0-9 . _ - : [ ], sem \"-\" inicial)", ErrDBValorInvalido)
+	case !reFormaNome.MatchString(nome):
+		return fmt.Errorf("%w: DB_NAME (SEC-63: só A-Z a-z 0-9 _)", ErrDBValorInvalido)
+	case !reFormaUsuario.MatchString(usuario):
+		return fmt.Errorf("%w: DB_USUARIO (SEC-63: só A-Z a-z 0-9 _ . -, sem \"-\" inicial)", ErrDBValorInvalido)
+	}
+	return nil
+}
+
 // ConfigDoAmbiente monta a Config do banco a partir do ambiente, nesta
-// ordem: INTEGRATION=1, credenciais, guarda de produção, allowlist da
+// ordem: INTEGRATION=1, credenciais, forma dos valores (SEC-63), guarda de produção, allowlist da
 // integração (SEC-54) e, só então, o TLS
 // (LoadDBTLS lê a CA do disco) e o SEC-42. Não conecta.
 func ConfigDoAmbiente() (*config.Config, error) {
@@ -154,6 +192,9 @@ func ConfigDoAmbiente() (*config.Config, error) {
 	vlog.Printf("integracao.go", "ConfigDoAmbiente", "verificando credenciais (usuario_preenchido=%t)", cfg.DBUsuario != "")
 	if cfg.DBUsuario == "" || cfg.DBSenha == "" {
 		return nil, ErrSemCredenciais
+	}
+	if err := ValidarFormaDB(cfg.DBHost, cfg.DBName, cfg.DBUsuario); err != nil {
+		return nil, err
 	}
 	if err := ValidarNaoProducao(cfg.DBHost, cfg.DBPort); err != nil {
 		return nil, err
@@ -215,15 +256,33 @@ func erroProducao(host, porta string) error {
 	return fmt.Errorf("%w: DB_HOST=%q DB_PORT=%q é o banco de PRODUÇÃO; teste de integração recusado antes de conectar (SEC-50). Use o dev do CasaOS (porta 3307) ou um MariaDB descartável no loopback", ErrBancoProducao, host, porta)
 }
 
+func erroPortaInvalida(porta string) error {
+	return fmt.Errorf("%w: DB_PORT=%q inválida: não é numérico (SEC-57: só dígitos, '+' opcional, sem espaços)", ErrPortaInvalida, porta)
+}
+
 func erroNaoPermitido(host, porta string) error {
 	return fmt.Errorf("%w: DB_HOST=%q DB_PORT=%q fora de %s (SEC-54); teste de integração recusado antes de conectar", ErrHostNaoPermitido, host, porta, strings.Join(Permitidos, " "))
 }
 
+// octetoV4 (SEC-56): octeto IPv4 canônico (0-255, sem zero à esquerda),
+// igual ao OCTETO_V4 do Makefile.
+const octetoV4 = `(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])`
+
 var (
-	reLoopbackV4  = regexp.MustCompile(`^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$`)
+	reLoopbackV4  = regexp.MustCompile(`^127(\.` + octetoV4 + `){3}$`)
 	reIPv4Mapeado = regexp.MustCompile(`^(?:::ffff:|0:0:0:0:0:ffff:)([0-9]{1,3}(?:\.[0-9]{1,3}){3})$`)
 	rePorta       = regexp.MustCompile(`^\+?[0-9]+$`)
+	// SEC-56: IPV4_NUMERICO e IPV4_CANONICO do Makefile.
+	reIPv4Numerico = regexp.MustCompile(`^(0x[0-9a-f]*|[0-9]+)(\.(0x[0-9a-f]*|[0-9]+))*$`)
+	reIPv4Canonico = regexp.MustCompile(`^` + octetoV4 + `(\.` + octetoV4 + `){3}$`)
 )
+
+// ipv4NaoCanonico (SEC-56): h (já normalizado, minúsculo) é uma forma
+// numérica de IPv4 que o resolver aceitaria (3232278634, 0xc0a8a86a,
+// 0300.0250.0250.0152, 192.168.43114, 127.1) mas não é a.b.c.d canônico.
+func ipv4NaoCanonico(h string) bool {
+	return reIPv4Numerico.MatchString(h) && !reIPv4Canonico.MatchString(h)
+}
 
 // normalizarHost (SEC-54) é a mesma normalização textual do NORMALIZA_HOST
 // do Makefile, sem DNS: espaços nas pontas, minúsculas, "[" e "]" das
@@ -246,9 +305,10 @@ func normalizarHost(host string) (h string, eraLocal bool) {
 
 // normalizarPorta (SEC-54): vazia fica vazia; senão exige "+"? e dígitos e
 // tira o "+" e os zeros à esquerda (03306 e +3306 viram 3306), igual ao
-// PRODUCAO_DETECTA do Makefile. ok=false para porta não numérica.
+// PRODUCAO_DETECTA do Makefile. ok=false para porta não numérica. SEC-57:
+// sem TrimSpace ("3307 " e "  " são inválidas, como no Makefile).
 func normalizarPorta(porta string) (p string, ok bool) {
-	p = strings.TrimSpace(porta)
+	p = porta
 	if p == "" {
 		return "", true
 	}

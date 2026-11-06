@@ -9,6 +9,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -36,21 +37,27 @@ const (
 var funilCols = []string{"etapa", "quantidade", "valor"}
 
 func TestDASH01_Oportunidades_ExigeQuerier(t *testing.T) {
-	assert.PanicsWithValue(t, "analyticsmysql: NovoOportunidades exige Querier", func() { analyticsmysql.NovoOportunidades(nil) })
+	const msg = "analyticsmysql: NovoOportunidades exige Querier e relógio"
+	assert.PanicsWithValue(t, msg, func() { analyticsmysql.NovoOportunidades(nil, time.Now) })
+	db, _ := novoMockExato(t)
+	assert.PanicsWithValue(t, msg, func() { analyticsmysql.NovoOportunidades(db, nil) })
 }
 
 func TestDASH01_Oportunidades_Funil_SQLPorEscopoEJanela(t *testing.T) {
 	doVendedor, err := kernel.EscopoDoVendedor(42)
 	require.NoError(t, err)
+	// BUG-30: a data de início vem do relógio (hojeFixo = 2026-10-15 -03),
+	// por placeholder, antes do vendedor.
 	janelas := []struct {
 		j        analytics.Janela
 		clausula string
+		desde    []driver.Value
 	}{
-		{analytics.JanelaTudo, ""},
-		{analytics.Janela30d, " AND data_abertura >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)"},
-		{analytics.Janela90d, " AND data_abertura >= DATE_SUB(CURDATE(), INTERVAL 89 DAY)"},
-		{analytics.Janela365d, " AND data_abertura >= DATE_SUB(CURDATE(), INTERVAL 364 DAY)"},
-		{analytics.Janela(99), ""}, // fora do enum: default all, sem cláusula
+		{analytics.JanelaTudo, "", nil},
+		{analytics.Janela30d, " AND data_abertura >= ?", []driver.Value{"2026-09-16"}},
+		{analytics.Janela90d, " AND data_abertura >= ?", []driver.Value{"2026-07-18"}},
+		{analytics.Janela365d, " AND data_abertura >= ?", []driver.Value{"2025-10-16"}},
+		{analytics.Janela(99), "", nil}, // fora do enum: default all, sem cláusula
 	}
 	escopos := []struct {
 		nome   string
@@ -66,16 +73,17 @@ func TestDASH01_Oportunidades_Funil_SQLPorEscopoEJanela(t *testing.T) {
 			t.Run(esc.nome+"/"+jan.j.String(), func(t *testing.T) {
 				db, mock := novoMockExato(t)
 				exp := mock.ExpectQuery(sqlFunilBase + jan.clausula + esc.filtro + sqlFunilFim)
-				if esc.args == nil {
+				args := append(append([]driver.Value{}, jan.desde...), esc.args...)
+				if len(args) == 0 {
 					exp = exp.WithoutArgs()
 				} else {
-					exp = exp.WithArgs(esc.args...)
+					exp = exp.WithArgs(args...)
 				}
 				exp.WillReturnRows(sqlmock.NewRows(funilCols).
 					AddRow(analytics.EtapaProspeccao, 3, 300.5).
 					AddRow(analytics.EtapaPerdido, 1, nil)) // SUM NULL → 0
 
-				got, err := analyticsmysql.NovoOportunidades(db).Funil(context.Background(), esc.e, jan.j)
+				got, err := analyticsmysql.NovoOportunidades(db, relogioFixo).Funil(context.Background(), esc.e, jan.j)
 				require.NoError(t, err)
 				assert.Equal(t, []analytics.ContagemEtapa{
 					{Etapa: analytics.EtapaProspeccao, Quantidade: 3, Valor: 300.5},
@@ -90,7 +98,7 @@ func TestDASH01_Oportunidades_Funil_SQLPorEscopoEJanela(t *testing.T) {
 func TestDASH01_Oportunidades_Funil_SemLinhasListaVazia(t *testing.T) {
 	db, mock := novoMockExato(t)
 	mock.ExpectQuery(sqlFunilBase + sqlFunilFim).WillReturnRows(sqlmock.NewRows(funilCols))
-	got, err := analyticsmysql.NovoOportunidades(db).Funil(context.Background(), irrestrito(t), analytics.JanelaTudo)
+	got, err := analyticsmysql.NovoOportunidades(db, relogioFixo).Funil(context.Background(), irrestrito(t), analytics.JanelaTudo)
 	require.NoError(t, err)
 	assert.NotNil(t, got, "lista vazia, nunca nil")
 	assert.Empty(t, got)
@@ -110,7 +118,7 @@ func TestDASH01_Oportunidades_Funil_SemAcessoSemSQL(t *testing.T) {
 	for _, c := range casos {
 		t.Run(c.nome, func(t *testing.T) {
 			db, mock := novoMockExato(t)
-			got, err := analyticsmysql.NovoOportunidades(db).Funil(context.Background(), c.e, analytics.Janela30d)
+			got, err := analyticsmysql.NovoOportunidades(db, relogioFixo).Funil(context.Background(), c.e, analytics.Janela30d)
 			assert.ErrorIs(t, err, c.want)
 			assert.Nil(t, got)
 			assert.NoError(t, mock.ExpectationsWereMet(), "nenhuma query")
@@ -141,7 +149,7 @@ func TestDASH01_Oportunidades_Funil_ErrosDeInfra(t *testing.T) {
 		t.Run(c.nome, func(t *testing.T) {
 			db, mock := novoMockExato(t)
 			c.preparo(mock)
-			got, err := analyticsmysql.NovoOportunidades(db).Funil(context.Background(), irrestrito(t), analytics.JanelaTudo)
+			got, err := analyticsmysql.NovoOportunidades(db, relogioFixo).Funil(context.Background(), irrestrito(t), analytics.JanelaTudo)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), c.msg)
 			if c.causa != nil {

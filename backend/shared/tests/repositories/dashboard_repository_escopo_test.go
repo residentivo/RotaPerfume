@@ -79,14 +79,15 @@ func TestDashboardEscopo_GetVendasTotais(t *testing.T) {
 			t.Run(tt.nome+"/"+periodo, func(t *testing.T) {
 				db, mock, captured := newCapturingMock(t)
 				exp := mock.ExpectQuery(`SELECT COALESCE\(SUM\(valor_total\), 0\), COUNT\(\*\)\s+FROM pedidos`)
+				// BUG-30: as datas do período antes do vendedor.
 				if tt.filtra {
-					exp.WithArgs(tt.vendedorID)
+					exp.WithArgs(append(argsPeriodoFixo(periodo), tt.vendedorID)...)
 				} else {
-					exp.WithoutArgs()
+					exp.WithArgs(argsPeriodoFixo(periodo)...)
 				}
 				exp.WillReturnRows(sqlmock.NewRows([]string{"v", "q"}).AddRow(50.0, 1))
 
-				valor, qtd, err := valorEQtd(analyticsmysql.NovoDashboard(db, time.Now).VendasTotais(context.Background(), escopoDe(tt.vendedorID), periodoDe(periodo)))
+				valor, qtd, err := valorEQtd(analyticsmysql.NovoDashboard(db, relogioFixo).VendasTotais(context.Background(), escopoDe(tt.vendedorID), periodoDe(periodo)))
 				require.NoError(t, err)
 				assert.Equal(t, 50.0, valor)
 				assert.Equal(t, 1, qtd)
@@ -104,13 +105,13 @@ func TestDashboardEscopo_GetTotalPedidos(t *testing.T) {
 			db, mock, captured := newCapturingMock(t)
 			exp := mock.ExpectQuery(`SELECT COUNT\(\*\) FROM pedidos\s+WHERE`)
 			if tt.filtra {
-				exp.WithArgs(tt.vendedorID)
+				exp.WithArgs(2026, 10, tt.vendedorID)
 			} else {
-				exp.WithoutArgs()
+				exp.WithArgs(2026, 10)
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"t"}).AddRow(3))
 
-			total, err := analyticsmysql.NovoDashboard(db, time.Now).TotalPedidos(context.Background(), escopoDe(tt.vendedorID), periodoDe("month"))
+			total, err := analyticsmysql.NovoDashboard(db, relogioFixo).TotalPedidos(context.Background(), escopoDe(tt.vendedorID), periodoDe("month"))
 			require.NoError(t, err)
 			assert.Equal(t, 3, total)
 			assertFiltro(t, (*captured)[0], "AND vendedor_id = ?", tt.filtra, "")
@@ -131,7 +132,7 @@ func TestDashboardEscopo_GetMetaMensalTotal(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"m"}).AddRow(1000.0))
 
-			meta, err := analyticsmysql.NovoDashboard(db, time.Now).MetaMensalTotal(context.Background(), escopoDe(tt.vendedorID))
+			meta, err := analyticsmysql.NovoDashboard(db, relogioFixo).MetaMensalTotal(context.Background(), escopoDe(tt.vendedorID))
 			require.NoError(t, err)
 			assert.Equal(t, 1000.0, meta)
 			assertFiltro(t, (*captured)[0], "WHERE data_desligamento IS NULL AND id = ?", tt.filtra, "")
@@ -153,7 +154,7 @@ func TestDashboardEscopo_GetTopVendedores(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}))
 
-			res, err := analyticsmysql.NovoDashboard(db, time.Now).TopVendedores(context.Background(), escopoDe(tt.vendedorID), 10)
+			res, err := analyticsmysql.NovoDashboard(db, relogioFixo).TopVendedores(context.Background(), escopoDe(tt.vendedorID), 10)
 			require.NoError(t, err)
 			assert.Empty(t, res)
 			assertFiltro(t, (*captured)[0], "WHERE v.data_desligamento IS NULL AND v.id = ?", tt.filtra, "ORDER BY")
@@ -174,7 +175,7 @@ func TestDashboardEscopo_GetMetasVendedores(t *testing.T) {
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta"}))
 
-			res, err := analyticsmysql.NovoDashboard(db, time.Now).MetasVendedores(context.Background(), escopoDe(tt.vendedorID))
+			res, err := analyticsmysql.NovoDashboard(db, relogioFixo).MetasVendedores(context.Background(), escopoDe(tt.vendedorID))
 			require.NoError(t, err)
 			assert.Empty(t, res)
 			assertFiltro(t, (*captured)[0], "WHERE v.data_desligamento IS NULL AND v.id = ?", tt.filtra, "ORDER BY")
@@ -189,14 +190,14 @@ func TestDashboardEscopo_GetVendasSeries(t *testing.T) {
 			db, mock, captured := newCapturingMock(t)
 			exp := mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data`)
 			if tt.filtra {
-				// dias primeiro (INTERVAL ? DAY), depois o vendedor.
-				exp.WithArgs(15, tt.vendedorID)
+				// a data de início primeiro (hoje-15, BUG-30), depois o vendedor.
+				exp.WithArgs(inicioSerie(15), tt.vendedorID)
 			} else {
-				exp.WithArgs(15)
+				exp.WithArgs(inicioSerie(15))
 			}
 			exp.WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
-			serie, err := analyticsmysql.NovoDashboard(db, time.Now).SerieVendas(context.Background(), escopoDe(tt.vendedorID), analytics.DiasDe(15))
+			serie, err := analyticsmysql.NovoDashboard(db, relogioFixo).SerieVendas(context.Background(), escopoDe(tt.vendedorID), analytics.DiasDe(15))
 			require.NoError(t, err)
 			assert.Len(t, serie, 15)
 			assertFiltro(t, (*captured)[0], "AND status NOT IN ('cancelado', 'devolvido') AND vendedor_id = ?", tt.filtra, "GROUP BY")
@@ -230,18 +231,18 @@ func TestDashboardEscopo_GetVendedoresRanking(t *testing.T) {
 			total := 3
 			if tt.filtra {
 				count.WithArgs(tt.vendedorID)
-				// Filtro antes de LIMIT/OFFSET.
-				lista.WithArgs(tt.vendedorID, tt.limit, tt.offset)
+				// O mês (BUG-30) e o filtro antes de LIMIT/OFFSET.
+				lista.WithArgs(2026, 10, tt.vendedorID, tt.limit, tt.offset)
 				total = 1
 				rows.AddRow(tt.vendedorID, "B", "Sul", "PR", 100.0, 50.0, 1, 50.0)
 			} else {
 				count.WithoutArgs()
-				lista.WithArgs(tt.limit, tt.offset)
+				lista.WithArgs(2026, 10, tt.limit, tt.offset)
 			}
 			count.WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(total))
 			lista.WillReturnRows(rows)
 
-			res, gotTotal, err := itensETotal(analyticsmysql.NovoDashboard(db, time.Now).Ranking(context.Background(), escopoDe(tt.vendedorID), kernel.NovaPagina(tt.page, tt.limit)))
+			res, gotTotal, err := itensETotal(analyticsmysql.NovoDashboard(db, relogioFixo).Ranking(context.Background(), escopoDe(tt.vendedorID), kernel.NovaPagina(tt.page, tt.limit)))
 			require.NoError(t, err)
 			assert.Equal(t, total, gotTotal)
 			require.Len(t, *captured, 2)
@@ -264,7 +265,7 @@ func TestDashboardEscopo_GetVendedoresRanking_CountError_ComFiltro(t *testing.T)
 		WithArgs(int64(7)).
 		WillReturnError(sql.ErrConnDone)
 
-	_, _, err := itensETotal(analyticsmysql.NovoDashboard(db, time.Now).Ranking(context.Background(), escopoDe(7), kernel.NovaPagina(1, 20)))
+	_, _, err := itensETotal(analyticsmysql.NovoDashboard(db, relogioFixo).Ranking(context.Background(), escopoDe(7), kernel.NovaPagina(1, 20)))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sql.ErrConnDone)
 	assert.NoError(t, mock.ExpectationsWereMet())

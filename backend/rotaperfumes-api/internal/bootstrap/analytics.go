@@ -14,11 +14,11 @@ import (
 // escopo de carteira de Comercial (o AutorizadorEscopo.ResolverParaAnalytics,
 // a mesma regra de todo o sistema, D-01).
 func NovoAnalytics(pool *sql.DB, escopo analyticsapp.EscopoAnalytics) *analyticsapp.Consultas {
-	relogio := time.Now // o mesmo "hoje" para as séries zeradas do caso de uso e do adapter
+	relogio := time.Now // o mesmo "hoje" (BUG-30) no caso de uso e nos três adapters
 	return analyticsapp.Novo(analyticsapp.Deps{
 		Vendas:   analyticsmysql.NovoDashboard(pool, relogio),
-		Clientes: analyticsmysql.NovoClientes(pool),
-		Funil:    analyticsmysql.NovoOportunidades(pool),
+		Clientes: analyticsmysql.NovoClientes(pool, relogio),
+		Funil:    analyticsmysql.NovoOportunidades(pool, relogio),
 		Escopo:   escopo,
 		Relogio:  relogio,
 	})

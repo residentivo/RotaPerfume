@@ -79,8 +79,13 @@ func TestDEPLOY07_SeedProducao_Contrato(t *testing.T) {
 	} {
 		assert.Contains(t, codigo, s)
 	}
-	for _, s := range []string{`readonly IP_ADMIN="172.30.42.20"`, `readonly REDE_NOME="rotaperfumes-db"`,
-		`readonly CONTAINER="rotaperfumes-mariadb"`, `readonly CA_HOST="/etc/mysql/ssl/ca.pem"`,
+	// TST-17 (Lote 37): os padrões viram *_PADRAO; os valores ficam readonly
+	// depois de validados na etapa 1.
+	for _, s := range []string{`readonly IP_ADMIN_PADRAO="172.30.42.20"`, `readonly REDE_NOME_PADRAO="rotaperfumes-db"`,
+		`readonly CONTAINER_PADRAO="rotaperfumes-mariadb"`, `readonly SSL_DIR_PADRAO="/etc/mysql/ssl"`,
+		`readonly SEGREDOS_DIR_PADRAO="/root/rotaperfumes-mariadb"`, `readonly TRABALHO_DIR_PADRAO="/root"`,
+		`readonly CA_HOST="$SSL_DIR/ca.pem"`, `readonly C_CA="/etc/mysql/ssl/ca.pem"`,
+		`readonly CONTAINER REDE_NOME IP_ADMIN SEGREDOS_DIR SSL_DIR TRABALHO_DIR ADMIN_SENHA_ARQ`,
 		`readonly SENHA_DB_ARQ="$SEGREDOS_DIR/$DB_ADMIN.senha"`, `readonly DB_ADMIN="rotaperfumes_admin"`} {
 		assert.Contains(t, codigo, s)
 	}

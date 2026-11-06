@@ -52,7 +52,8 @@ func TestDSN(t *testing.T) {
 			assert.Contains(t, dsn, param)
 		})
 	}
-	assert.NotContains(t, dsn, "time_zone", "fuso vem do pacote tz, não do DSN")
+	// DB-08: fuso da SESSÃO em '-03:00' (tz.OffsetSQL), escapado na query string.
+	assert.Contains(t, dsn, "&time_zone=%27-03%3A00%27", "DB-08: time_zone da sessão em -03:00")
 }
 
 // pepperTeste tem exatamente config.PepperMinBytes (32) bytes.

@@ -24,3 +24,16 @@ func TestInit_FixaTimeLocalEmMenos3SemDST(t *testing.T) {
 		t.Fatalf("offset esperado -10800, obtido %d", off)
 	}
 }
+
+// DB-08: o offset enviado como time_zone da sessão (config.DSN) bate com o
+// offset do fuso fixo do processo.
+func TestDB08_OffsetSQLBateComOffsetSegundos(t *testing.T) {
+	if tz.OffsetSQL != "-03:00" {
+		t.Fatalf("OffsetSQL esperado -03:00, obtido %q", tz.OffsetSQL)
+	}
+	// "-07:00" é o layout de offset do pacote time.
+	ref := time.Date(2026, 11, 5, 12, 0, 0, 0, time.FixedZone("", tz.OffsetSegundos))
+	if got := ref.Format("-07:00"); got != tz.OffsetSQL {
+		t.Fatalf("OffsetSQL %q não bate com OffsetSegundos %d (%q)", tz.OffsetSQL, tz.OffsetSegundos, got)
+	}
+}

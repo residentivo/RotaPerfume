@@ -40,7 +40,6 @@ var casosSEC54 = []casoSEC54{
 	{"[2001:db8::1]", "3307", true, false},
 	{"ROTAPERFUMES-MARIADB", "3307", true, false},
 	{"172.30.42.2.", "1", true, false},
-	{" 192.168.168.106 ", "3306", true, false},
 	// Porta: número com "+"/zeros; não numérica é recusada em qualquer host.
 	{"192.168.168.106", "+03306", true, false},
 	{"192.168.168.106", "abc", true, false},
@@ -76,6 +75,37 @@ var casosSEC54 = []casoSEC54{
 	{"0:0:0:0:0:FFFF:127.0.0.1", "", false, true},
 	{"localhost..", "3306", false, true},
 	{"127.0.0.1", "0003307", false, true},
+	// SEC-56 (Lote 37): IPv4 numérico não canônico é recusado, sem válvula.
+	{"3232278634", "3307", true, false},
+	{"3232278634", "", true, false},
+	{"0xc0a8a86a", "3307", true, false},
+	{"0XC0A8A86A", "3307", true, false},
+	{"192.168.43114", "3307", true, false},
+	{"0300.0250.0250.0152", "3307", true, false},
+	{"192.168.168.0106", "3307", true, false},
+	{"192.0250.168.106", "3307", true, false},
+	{"2130706433", "3307", true, false},
+	{"127.1", "3307", true, false},
+	{"127.000.000.001", "3307", true, false},
+	{"0x7f.1", "3307", true, false},
+	{"0", "3307", true, false},
+	{"0x", "3307", true, false},
+	{"192.168.168.256", "3307", true, false},
+	{"1.2.3.4.5", "3307", true, false},
+	{"[::ffff:010.1.1.1]", "3307", true, false},
+	// SEC-56: nomes que parecem hex continuam nomes (fora das duas listas).
+	{"cafe", "3307", false, false},
+	{"db1.lan", "3307", false, false},
+	{"0xg", "3307", false, false},
+	// SEC-57 (Lote 37): espaço na porta é porta inválida (sem TrimSpace).
+	// Espaço À ESQUERDA (" 3307", "\t3307", "  ") não entra na paridade: o
+	// próprio make tira o branco inicial de "DB_PORT= 3307" na linha de
+	// comando (o cliente recebe 3307); no Go é recusado (TestSEC56_SEC57_Go).
+	{"127.0.0.1", "3307 ", true, false},
+	{"127.0.0.1", "33 07", true, false},
+	{"127.0.0.1", "3307\t", true, false},
+	{"192.168.168.106", "3307 ", true, false},
+	{"localhost", "3307  ", true, false},
 }
 
 func TestSEC54_Paridade_MakefileEGo(t *testing.T) {

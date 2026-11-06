@@ -47,22 +47,33 @@ umask 077
 DB_CLIENT_IMAGE="mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620"
 GO_IMAGE="golang:1.26.10-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308"
 
-readonly CONTAINER="rotaperfumes-mariadb"
-readonly REDE_NOME="rotaperfumes-db"
-readonly IP_ADMIN="172.30.42.20"
 readonly DB_NOME="rotaperfumes"
 readonly DB_ADMIN="rotaperfumes_admin"
-readonly SEGREDOS_DIR="/root/rotaperfumes-mariadb"
-readonly SENHA_DB_ARQ="$SEGREDOS_DIR/$DB_ADMIN.senha"
-readonly CA_HOST="/etc/mysql/ssl/ca.pem"
 readonly C_CA="/etc/mysql/ssl/ca.pem"
 readonly ADMIN_EMAIL="admin@rotaperfumes.com.br"
 readonly PEPPER_MIN_BYTES=32
 
+# TST-17 (Lote 37): padroes das opcoes de isolamento (os mesmos do
+# deploy/mariadb-docker.sh). Os valores so ficam readonly depois de validados
+# na etapa 1.
+readonly CONTAINER_PADRAO="rotaperfumes-mariadb"
+readonly REDE_NOME_PADRAO="rotaperfumes-db"
+readonly IP_ADMIN_PADRAO="172.30.42.20"
+readonly SEGREDOS_DIR_PADRAO="/root/rotaperfumes-mariadb"
+readonly SSL_DIR_PADRAO="/etc/mysql/ssl"
+readonly TRABALHO_DIR_PADRAO="/root"
+CONTAINER=$CONTAINER_PADRAO
+REDE_NOME=$REDE_NOME_PADRAO
+IP_ADMIN=$IP_ADMIN_PADRAO
+SEGREDOS_DIR=$SEGREDOS_DIR_PADRAO
+SSL_DIR=$SSL_DIR_PADRAO
+TRABALHO_DIR=$TRABALHO_DIR_PADRAO
+
 FORCAR=false
 PEPPER_FILE=""
 ADMIN_PROMPT=false
-ADMIN_SENHA_ARQ="$SEGREDOS_DIR/admin-app.senha"
+# Vazio = <segredos-dir>/admin-app.senha (resolvido depois do parse).
+ADMIN_SENHA_ARQ=""
 
 RAIZ=$(cd "$(dirname "$0")/.." && pwd -P)
 readonly RAIZ
@@ -74,9 +85,9 @@ usage() {
   cat <<EOF
 Uso: sudo bash $0 [opcoes]
 
-Seed INICIAL do banco de producao ($DB_NOME no container $CONTAINER, rede
-$REDE_NOME). Rode depois do deploy/mariadb-docker.sh e antes do primeiro
-deploy da API. Nunca use "make db-seed" contra este banco.
+Seed INICIAL do banco de producao ($DB_NOME no container $CONTAINER_PADRAO,
+rede $REDE_NOME_PADRAO). Rode depois do deploy/mariadb-docker.sh e antes do
+primeiro deploy da API. Nunca use "make db-seed" contra este banco.
 
   --pepper-file ARQ     le o PASSWORD_PEPPER da 1a linha de ARQ (arquivo
                         regular do root, modo 600 ou 400). Sem a opcao, o
@@ -90,10 +101,33 @@ deploy da API. Nunca use "make db-seed" contra este banco.
                         --admin-senha-arquivo (nunca impressa).
   --admin-senha-arquivo ARQ
                         destino da senha gerada do admin (padrao
-                        $ADMIN_SENHA_ARQ). Nao pode existir (o script recusa
-                        antes de mudar qualquer coisa); fica com modo 600,
-                        dono root. Depois do 1o login (troca obrigatoria),
-                        apague com shred -u.
+                        <segredos-dir>/admin-app.senha). Nao pode existir (o
+                        script recusa antes de mudar qualquer coisa) nem ficar
+                        no --ssl-dir; o diretorio precisa ser privado (root,
+                        700, sem symlink, ancestrais do root sem escrita de
+                        grupo/outros: SEC-60). Fica com modo 600, dono root. Depois do
+                        1o login (troca obrigatoria), apague com shred -u.
+
+Isolamento (TST-17; os padroes sao os do deploy/mariadb-docker.sh; mude so
+para uma instalacao de teste criada por ele com as mesmas opcoes):
+  --container NOME      container do MariaDB (padrao $CONTAINER_PADRAO);
+                        precisa estar rodando e ligado a --rede-nome
+  --rede-nome NOME      rede docker interna (padrao $REDE_NOME_PADRAO)
+  --ip-admin IP         IP do cliente na rede (padrao $IP_ADMIN_PADRAO); a rede
+                        precisa ter uma unica subnet IPv4 A.B.C.0/24 e o IP
+                        tem de ser A.B.C.20 (rotaperfumes_admin@A.B.C.20)
+  --segredos-dir DIR    senhas do mariadb-docker.sh (padrao
+                        $SEGREDOS_DIR_PADRAO; root, modo 700)
+  --ssl-dir DIR         CA em DIR/ca.pem (padrao $SSL_DIR_PADRAO; root, sem
+                        escrita para grupo/outros)
+  --trabalho-dir DIR    onde fica a area temporaria rotaperfumes-seed.XXXXXX
+                        (padrao $TRABALHO_DIR_PADRAO; root, modo 700)
+                        Diretorios: caminho absoluto real (sem symlink, '..',
+                        espacos ou virgulas), ancestrais do root sem escrita
+                        para grupo/outros; --ssl-dir disjunto de
+                        --segredos-dir e de --trabalho-dir; --trabalho-dir
+                        nao pode ser --segredos-dir nem ficar dentro dele.
+
   --forcar              aceita rodar com a tabela usuarios ja com linhas
                         (reaplica a DDL e os seeds, troca a senha do admin e
                         INATIVA todos os usuarios nao-admin). Exige digitar o
@@ -101,8 +135,9 @@ deploy da API. Nunca use "make db-seed" contra este banco.
   -h, --help            esta ajuda
 
 O que o script faz (nesta ordem):
-  1. confere root, docker, container $CONTAINER rodando, rede $REDE_NOME,
-     CA em $CA_HOST, senha em $SENHA_DB_ARQ, sql/ordem-ddl.txt e os seeds,
+  1. confere as opcoes, root, docker, container rodando na rede, CA em
+     <ssl-dir>/ca.pem, senha em <segredos-dir>/$DB_ADMIN.senha,
+     sql/ordem-ddl.txt e os seeds,
      pepper ($PEPPER_MIN_BYTES bytes ou mais) e o destino da senha do admin
   2. recusa se usuarios ja tem linhas (salvo --forcar)
   3. aplica a DDL na ordem de sql/ordem-ddl.txt (a mesma do make db-up)
@@ -111,14 +146,14 @@ O que o script faz (nesta ordem):
      (os 42 vendedores sao reais e entram INATIVOS, com hash placeholder;
      o admin os ativa pelo fluxo de reset de senha da aplicacao)
   5. compila o resetpassword (backend/shared) num container $GO_IMAGE
-  6. resetpassword -create-admin num container na rede $REDE_NOME
-     ($IP_ADMIN, conta $DB_ADMIN, TLS verificado): admin ativo, Argon2id com
+  6. resetpassword -create-admin num container na rede --rede-nome
+     (--ip-admin, conta $DB_ADMIN, TLS verificado): admin ativo, Argon2id com
      o pepper e deve_trocar_senha = 1. NAO roda -all-users.
   7. confere o resultado
 
-Clientes do banco: docker run --rm -i --network $REDE_NOME --ip $IP_ADMIN
+Clientes do banco: docker run --rm -i --network <rede-nome> --ip <ip-admin>
 --cap-drop ALL --security-opt no-new-privileges:true, MYSQL_PWD pelo ambiente,
-CA montada read-only, --ssl-verify-server-cert -h $CONTAINER --local-infile=0.
+CA montada read-only, --ssl-verify-server-cert -h <container> --local-infile=0.
 O resetpassword recebe DB_* e PASSWORD_PEPPER por --env-file temporario (600,
 apagado com shred no fim, inclusive em erro). Docs: docs/deploy-servidor.md §11.
 EOF
@@ -135,6 +170,12 @@ while [[ $# -gt 0 ]]; do
     --admin-senha-prompt) ADMIN_PROMPT=true; shift ;;
     --admin-senha-arquivo) exigir_valor "$@"; ADMIN_SENHA_ARQ="$2"; shift 2 ;;
     --forcar) FORCAR=true; shift ;;
+    --container) exigir_valor "$@"; CONTAINER="$2"; shift 2 ;;
+    --rede-nome) exigir_valor "$@"; REDE_NOME="$2"; shift 2 ;;
+    --ip-admin) exigir_valor "$@"; IP_ADMIN="$2"; shift 2 ;;
+    --segredos-dir) exigir_valor "$@"; SEGREDOS_DIR="$2"; shift 2 ;;
+    --ssl-dir) exigir_valor "$@"; SSL_DIR="$2"; shift 2 ;;
+    --trabalho-dir) exigir_valor "$@"; TRABALHO_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Opcao desconhecida: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -170,7 +211,161 @@ arquivo_secreto_ok() {
 }
 
 # ---------------------------------------------------------------------------
+# TST-17 (Lote 37): validacao das opcoes de isolamento (etapa 1, antes de
+# qualquer escrita). Os caminhos entram em --mount "type=bind,source=...":
+# virgula injetaria opcoes, por isso o regex de caminho e obrigatorio.
+readonly RE_OCTETO='(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])'
+readonly RE_IPV4_CANONICO="^$RE_OCTETO\.$RE_OCTETO\.$RE_OCTETO\.$RE_OCTETO\$"
+dentro_de() { [[ "$1" == "$2" || "$1" == "$2"/* ]]; }
+
+validar_sintaxe_opcoes() {
+  local d
+  [[ "$CONTAINER" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ && ${#CONTAINER} -le 63 ]] \
+    || die "--container invalido: $CONTAINER (minusculas, numeros e '-', ate 63; igual ao deploy/mariadb-docker.sh)"
+  [[ "$REDE_NOME" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "--rede-nome invalido: $REDE_NOME"
+  [[ "$IP_ADMIN" =~ $RE_IPV4_CANONICO ]] || die "--ip-admin invalido: $IP_ADMIN (IPv4 canonico a.b.c.d, sem zeros a esquerda)"
+  for d in "$SEGREDOS_DIR" "$SSL_DIR" "$TRABALHO_DIR"; do
+    # Antes do regex e do teste de "/": "//" em qualquer posicao e recusado
+    # (senao "//" viraria "/" ao tirar a barra final).
+    [[ "$d" != *//* ]] || die "diretorio invalido: '$d' (barras repetidas '//' nao sao aceitas)"
+    [[ "$d" =~ ^/[A-Za-z0-9._/-]+$ && "$d" != / && "$d" != *..* ]] \
+      || die "diretorio invalido: '$d' (caminho absoluto, sem espacos/virgulas/..)"
+  done
+  # Sem a barra final: a comparacao de prefixo fica exata.
+  SEGREDOS_DIR=${SEGREDOS_DIR%/}; SSL_DIR=${SSL_DIR%/}; TRABALHO_DIR=${TRABALHO_DIR%/}
+  ADMIN_SENHA_ARQ=${ADMIN_SENHA_ARQ:-$SEGREDOS_DIR/admin-app.senha}
+  # SEC-60: o caminho do arquivo da senha, mesmas regras dos diretorios.
+  if ! $ADMIN_PROMPT; then
+    [[ "$ADMIN_SENHA_ARQ" == /* ]] || die "--admin-senha-arquivo precisa de caminho absoluto: $ADMIN_SENHA_ARQ"
+    [[ "$ADMIN_SENHA_ARQ" =~ ^/[A-Za-z0-9._/-]+$ && "$ADMIN_SENHA_ARQ" != *..* && "$ADMIN_SENHA_ARQ" != *//* && "$ADMIN_SENHA_ARQ" != */ ]] \
+      || die "--admin-senha-arquivo invalido: '$ADMIN_SENHA_ARQ' (caminho absoluto de arquivo, sem espacos/virgulas/.. nem '//')"
+  fi
+}
+
+# Disjuncao pelos caminhos reais (realpath -m, como o mariadb-docker.sh):
+# o --ssl-dir (755, publico) nunca contem nem fica dentro dos diretorios
+# privados; a area de trabalho nao fica nos segredos (o contrario pode: o
+# padrao /root/rotaperfumes-mariadb esta dentro de /root).
+validar_disjuncao() {
+  local seg ssl trab adm
+  seg=$(realpath -m -- "$SEGREDOS_DIR") || die "--segredos-dir $SEGREDOS_DIR: realpath falhou"
+  ssl=$(realpath -m -- "$SSL_DIR") || die "--ssl-dir $SSL_DIR: realpath falhou"
+  trab=$(realpath -m -- "$TRABALHO_DIR") || die "--trabalho-dir $TRABALHO_DIR: realpath falhou"
+  if dentro_de "$ssl" "$seg" || dentro_de "$seg" "$ssl"; then
+    die "--ssl-dir ($SSL_DIR) e --segredos-dir ($SEGREDOS_DIR) precisam ser disjuntos (caminhos reais: $ssl e $seg)"
+  fi
+  if dentro_de "$ssl" "$trab" || dentro_de "$trab" "$ssl"; then
+    die "--ssl-dir ($SSL_DIR) e --trabalho-dir ($TRABALHO_DIR) precisam ser disjuntos (caminhos reais: $ssl e $trab)"
+  fi
+  dentro_de "$trab" "$seg" \
+    && die "--trabalho-dir ($TRABALHO_DIR) nao pode ser --segredos-dir ($SEGREDOS_DIR) nem ficar dentro dele (caminhos reais: $trab e $seg)"
+  if ! $ADMIN_PROMPT; then
+    adm=$(realpath -m -- "$(dirname -- "$ADMIN_SENHA_ARQ")") || die "--admin-senha-arquivo $ADMIN_SENHA_ARQ: realpath falhou"
+    dentro_de "$adm" "$ssl" \
+      && die "--admin-senha-arquivo ($ADMIN_SENHA_ARQ) nao pode ficar no --ssl-dir ($SSL_DIR), que e publico"
+  fi
+  return 0
+}
+
+# Copia byte a byte do conferir_dir_privado do deploy/mariadb-docker.sh
+# (o teste do TST-17 confere a paridade): nenhum componente symlink,
+# ancestrais do root sem escrita para grupo/outros, diretorio root 700.
+conferir_dir_privado() { # opcao dir [existe]
+  local op=$1 d=$2 exigir=${3:-} real p dono modo
+  [[ -L "$d" ]] && die "$op $d e um link simbolico: use o caminho real"
+  real=$(realpath -m -- "$d") || die "$op $d: realpath falhou"
+  [[ "$real" == "$d" ]] \
+    || die "$op $d nao e o caminho real ($real): nenhum componente pode ser link simbolico (nem '//' ou '.')"
+  p=$d
+  while [[ "$p" != / ]]; do
+    p=$(dirname -- "$p")
+    [[ -e "$p" || -L "$p" ]] || continue
+    [[ -d "$p" && ! -L "$p" ]] || die "$op $d: o ancestral $p nao e diretorio real"
+    read -r dono modo < <(stat -c '%u %a' -- "$p")
+    [[ "$dono" == 0 ]] \
+      || die "$op $d: o ancestral $p precisa ser do root (dono atual: $dono); outro usuario poderia trocar o caminho"
+    (( (8#$modo & 8#022) == 0 )) \
+      || die "$op $d: o ancestral $p tem escrita para grupo/outros (modo $modo; o sticky bit nao basta); use um caminho so com ancestrais do root sem escrita para grupo e outros"
+  done
+  if [[ -e "$d" ]]; then
+    [[ -d "$d" ]] || die "$op $d existe e nao e diretorio"
+    [[ "$(stat -c '%u %a' -- "$d")" == "0 700" ]] \
+      || die "$op $d precisa ser do root com modo 700 (atual: dono $(stat -c '%u' -- "$d"), modo $(stat -c '%a' -- "$d")); confira e ajuste (chown root:root; chmod 700)"
+  elif [[ "$exigir" == existe ]]; then
+    die "$op $d nao existe depois do install -d"
+  fi
+}
+
+# conferir_dir_root_sem_escrita: como o conferir_dir_privado, mas para o
+# --ssl-dir (publico, 755): precisa existir, ser do root e sem escrita para
+# grupo/outros (o modo 700 nao e exigido).
+conferir_dir_root_sem_escrita() { # opcao dir
+  local op=$1 d=$2 real p dono modo
+  [[ -L "$d" ]] && die "$op $d e um link simbolico: use o caminho real"
+  real=$(realpath -m -- "$d") || die "$op $d: realpath falhou"
+  [[ "$real" == "$d" ]] \
+    || die "$op $d nao e o caminho real ($real): nenhum componente pode ser link simbolico (nem '//' ou '.')"
+  p=$d
+  while [[ "$p" != / ]]; do
+    p=$(dirname -- "$p")
+    [[ -e "$p" || -L "$p" ]] || continue
+    [[ -d "$p" && ! -L "$p" ]] || die "$op $d: o ancestral $p nao e diretorio real"
+    read -r dono modo < <(stat -c '%u %a' -- "$p")
+    [[ "$dono" == 0 ]] \
+      || die "$op $d: o ancestral $p precisa ser do root (dono atual: $dono); outro usuario poderia trocar o caminho"
+    (( (8#$modo & 8#022) == 0 )) \
+      || die "$op $d: o ancestral $p tem escrita para grupo/outros (modo $modo; o sticky bit nao basta)"
+  done
+  [[ -d "$d" ]] || die "$op $d nao existe ou nao e diretorio (deploy/mariadb-docker.sh)"
+  read -r dono modo < <(stat -c '%u %a' -- "$d")
+  if [[ "$dono" != 0 ]] || (( (8#$modo & 8#022) != 0 )); then
+    die "$op $d precisa ser do root sem escrita para grupo/outros (atual: dono $dono, modo $modo)"
+  fi
+}
+
+# conferir_ca_host: <ssl-dir>/ca.pem regular (nao symlink), nao vazio, do
+# root e sem escrita para grupo/outros.
+conferir_ca_host() {
+  local dono modo
+  [[ -f "$CA_HOST" && ! -L "$CA_HOST" && -s "$CA_HOST" ]] \
+    || die "CA do banco nao encontrada em $CA_HOST (arquivo regular nao vazio, sem symlink; deploy/mariadb-docker.sh)"
+  read -r dono modo < <(stat -c '%u %a' -- "$CA_HOST")
+  if [[ "$dono" != 0 ]] || (( (8#$modo & 8#022) != 0 )); then
+    die "CA $CA_HOST precisa ser do root sem escrita para grupo/outros (atual: dono $dono, modo $modo)"
+  fi
+}
+
+# conferir_container_rede: container rodando, ligado a rede (nome exato) e
+# IP do admin = A.B.C.20 da unica subnet IPv4 A.B.C.0/24 da rede (o
+# mariadb-docker.sh so cria rotaperfumes_admin@<prefixo>.20). So inspect.
+conferir_container_rede() {
+  local redes r ligado=false subnets s v4=() prefixo
+  [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)" == "true" ]] \
+    || die "o container $CONTAINER nao esta rodando: rode antes sudo bash deploy/mariadb-docker.sh"
+  docker network inspect "$REDE_NOME" >/dev/null 2>&1 || die "a rede docker $REDE_NOME nao existe (deploy/mariadb-docker.sh)"
+  redes=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$CONTAINER" 2>/dev/null) \
+    || die "nao foi possivel ler as redes do container $CONTAINER"
+  while IFS= read -r r; do
+    [[ "$r" == "$REDE_NOME" ]] && ligado=true
+  done <<<"$redes"
+  $ligado || die "o container $CONTAINER nao esta ligado a rede $REDE_NOME"
+  subnets=$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$REDE_NOME" 2>/dev/null) \
+    || die "nao foi possivel ler as subnets da rede $REDE_NOME"
+  for s in $subnets; do
+    [[ "$s" == *:* ]] && continue
+    v4+=("$s")
+  done
+  (( ${#v4[@]} == 1 )) || die "a rede $REDE_NOME precisa ter exatamente uma subnet IPv4 (tem ${#v4[@]}: ${v4[*]:-nenhuma})"
+  [[ "${v4[0]}" =~ ^($RE_OCTETO\.$RE_OCTETO\.$RE_OCTETO)\.0/24$ ]] \
+    || die "a subnet da rede $REDE_NOME (${v4[0]}) nao e A.B.C.0/24 (deploy/mariadb-docker.sh)"
+  prefixo=${BASH_REMATCH[1]}
+  [[ "$IP_ADMIN" == "$prefixo.20" ]] \
+    || die "--ip-admin $IP_ADMIN fora do esperado: na rede $REDE_NOME (${v4[0]}) a conta $DB_ADMIN so existe em $prefixo.20"
+}
+
+# ---------------------------------------------------------------------------
 etapa "Pre-requisitos"
+validar_sintaxe_opcoes
 [[ $EUID -eq 0 ]] || die "rode como root: sudo bash $0"
 # BUG-26: sem terminal, falha ja aqui (antes do Docker e do banco) quando a
 # execucao vai precisar dele (pepper sem --pepper-file; confirmacao do --forcar).
@@ -180,17 +375,41 @@ fi
 if $FORCAR; then
   tem_tty || die "--forcar exige um terminal para a confirmacao"
 fi
-for cmd in docker tar shred stat install mktemp grep; do
+for cmd in docker tar shred stat install mktemp grep realpath dirname; do
   command -v "$cmd" >/dev/null || die "comando '$cmd' nao encontrado"
 done
 docker info >/dev/null 2>&1 || die "o daemon do Docker nao responde"
 [[ "$DB_CLIENT_IMAGE" =~ ^mariadb:[0-9.]+@sha256:[0-9a-f]{64}$ ]] || die "DB_CLIENT_IMAGE invalida: $DB_CLIENT_IMAGE"
 [[ "$GO_IMAGE" =~ ^golang:[0-9.]+-alpine@sha256:[0-9a-f]{64}$ ]] || die "GO_IMAGE invalida: $GO_IMAGE"
 
-[[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)" == "true" ]] \
-  || die "o container $CONTAINER nao esta rodando: rode antes sudo bash deploy/mariadb-docker.sh"
-docker network inspect "$REDE_NOME" >/dev/null 2>&1 || die "a rede docker $REDE_NOME nao existe (deploy/mariadb-docker.sh)"
-[[ -r "$CA_HOST" && -s "$CA_HOST" ]] || die "CA do banco nao encontrada em $CA_HOST (deploy/mariadb-docker.sh)"
+
+# TST-17: diretorios (caminho real, ancestrais do root, donos e modos).
+# Mudanca de comportamento (fail closed): /root fora de root 700 ou
+# /root/rotaperfumes-mariadb fora de 700 agora recusam.
+validar_disjuncao
+[[ -d "$SEGREDOS_DIR" ]] || die "--segredos-dir $SEGREDOS_DIR nao existe (deploy/mariadb-docker.sh)"
+conferir_dir_privado --segredos-dir "$SEGREDOS_DIR" existe
+[[ -d "$TRABALHO_DIR" ]] || die "--trabalho-dir $TRABALHO_DIR nao existe"
+conferir_dir_privado --trabalho-dir "$TRABALHO_DIR" existe
+conferir_dir_root_sem_escrita --ssl-dir "$SSL_DIR"
+# Destino/forma da senha do admin. SEC-60: o diretorio do arquivo e privado
+# (root 700, ancestrais sem escrita, sem symlink), conferido antes de ler a
+# senha do banco e o pepper: num diretorio gravavel por outros, o arquivo
+# poderia ser trocado entre a conferencia e o install -m 600.
+if $ADMIN_PROMPT; then
+  [[ -t 0 && -t 1 ]] || die "--admin-senha-prompt exige um terminal interativo"
+else
+  [[ -d "$(dirname -- "$ADMIN_SENHA_ARQ")" ]] || die "--admin-senha-arquivo: diretorio de $ADMIN_SENHA_ARQ nao existe"
+  conferir_dir_privado --admin-senha-arquivo "$(dirname -- "$ADMIN_SENHA_ARQ")" existe
+  [[ ! -e "$ADMIN_SENHA_ARQ" && ! -L "$ADMIN_SENHA_ARQ" ]] \
+    || die "$ADMIN_SENHA_ARQ ja existe: confira se a senha anterior ainda e necessaria, apague com shred -u ou use --admin-senha-arquivo"
+fi
+readonly CONTAINER REDE_NOME IP_ADMIN SEGREDOS_DIR SSL_DIR TRABALHO_DIR ADMIN_SENHA_ARQ
+readonly SENHA_DB_ARQ="$SEGREDOS_DIR/$DB_ADMIN.senha"
+readonly CA_HOST="$SSL_DIR/ca.pem"
+conferir_ca_host
+
+conferir_container_rede
 arquivo_secreto_ok "$SENHA_DB_ARQ" || die "$SENHA_DB_ARQ ausente ou com dono/modo errado (esperado root, 600)"
 SENHA_DB=$(<"$SENHA_DB_ARQ")
 [[ "$SENHA_DB" =~ ^[A-Za-z0-9]{20,}$ ]] || die "senha em $SENHA_DB_ARQ fora do formato [A-Za-z0-9]{20,}"
@@ -212,16 +431,6 @@ for f in "${SEEDS[@]}"; do
   [[ -r "$SQL_DIR/$f" ]] || die "$SQL_DIR/$f nao encontrado"
 done
 [[ -r "$RAIZ/backend/shared/go.mod" ]] || die "$RAIZ/backend/shared/go.mod nao encontrado"
-
-# Destino/forma da senha do admin.
-if $ADMIN_PROMPT; then
-  [[ -t 0 && -t 1 ]] || die "--admin-senha-prompt exige um terminal interativo"
-else
-  [[ "$ADMIN_SENHA_ARQ" == /* ]] || die "--admin-senha-arquivo precisa de caminho absoluto: $ADMIN_SENHA_ARQ"
-  [[ ! -e "$ADMIN_SENHA_ARQ" && ! -L "$ADMIN_SENHA_ARQ" ]] \
-    || die "$ADMIN_SENHA_ARQ ja existe: confira se a senha anterior ainda e necessaria, apague com shred -u ou use --admin-senha-arquivo"
-  [[ -d "$(dirname "$ADMIN_SENHA_ARQ")" ]] || die "diretorio de $ADMIN_SENHA_ARQ nao existe"
-fi
 
 # PASSWORD_PEPPER: arquivo (600/400 do root) ou terminal sem eco.
 PEPPER=""
@@ -247,7 +456,10 @@ case "$PEPPER" in
 esac
 info "Pre-requisitos OK (container $CONTAINER, rede $REDE_NOME, ${#DDLS[@]} DDL, pepper lido; nada foi impresso)."
 
-TRAB=$(mktemp -d /root/rotaperfumes-seed.XXXXXX)
+TRAB=$(mktemp -d "$TRABALHO_DIR/rotaperfumes-seed.XXXXXX") || die "mktemp em $TRABALHO_DIR falhou"
+# TST-17: a area de trabalho e o caminho real, do root, modo 700.
+[[ ! -L "$TRAB" && "$(realpath -e -- "$TRAB")" == "$TRAB" && "$(stat -c '%u %a' -- "$TRAB")" == "0 700" ]] \
+  || die "area de trabalho $TRAB fora do esperado (caminho real, root, modo 700)"
 install -d -m 700 -o root -g root "$TRAB/bin" "$TRAB/saida"
 
 # Cliente mariadb descartavel na rede interna (padrao do mariadb_cli do Jenkinsfile).

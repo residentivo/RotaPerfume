@@ -101,7 +101,7 @@ func TestSEC53_Makefile_ListaDeSegredos(t *testing.T) {
 
 	// O sub-make recebe INTEGRATION=1 como variável de linha de comando.
 	receita := strings.Join(mk.regras["test-integration"].receita, "\n")
-	assert.Contains(t, receita, `$(MAKE) test INTEGRATION=1 GO_TEST_FLAGS="-p 1 -count=1"`)
+	assert.Contains(t, receita, `$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' test INTEGRATION=1 GO_TEST_FLAGS="-p 1 -count=1"`)
 	assert.NotContains(t, receita, "INTEGRATION=1 $(MAKE)")
 	// Todo alvo que roda go test com $(SEM_SEGREDOS) (DB_* liberadas com
 	// INTEGRATION=1 na linha de comando) passa pela guarda de produção.

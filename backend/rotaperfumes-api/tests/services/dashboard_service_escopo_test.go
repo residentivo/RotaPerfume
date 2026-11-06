@@ -14,7 +14,6 @@ import (
 	"github.com/rotaperfumes/shared/analytics/analyticsapp"
 	"github.com/rotaperfumes/shared/kernel"
 	"testing"
-	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -70,13 +69,10 @@ func TestDashboardService_EmptyVendasSeries_MesmoFormato(t *testing.T) {
 	for _, tt := range casos {
 		t.Run(tt.nome, func(t *testing.T) {
 			db, mock := newDashboardTestDB(t)
-			hoje := time.Now().Format("2006-01-02")
+			hoje := diaBUG30(0)
 			mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data`).
-				WithArgs(tt.dias).
+				WithArgs(argDia(tt.dias)).
 				WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}).AddRow(hoje, 10.0, 1))
-			mock.ExpectQuery(`SELECT DATE_FORMAT\(DATE_SUB\(CURDATE\(\), INTERVAL n DAY\), '%Y-%m-%d'\) AS dia`).
-				WithArgs(tt.dias).
-				WillReturnRows(sqlmock.NewRows([]string{"dia"}).AddRow(hoje))
 
 			normal, err := consultasAnalytics(db, 0).SerieVendas(context.Background(), analyticsapp.ConsultaSerieVendas{Dias: analytics.DiasDe(tt.dias)})
 			require.NoError(t, err)
@@ -87,8 +83,11 @@ func TestDashboardService_EmptyVendasSeries_MesmoFormato(t *testing.T) {
 			require.NoError(t, mock.ExpectationsWereMet(), "a série zerada não consulta o banco")
 
 			assert.Equal(t, tt.dias, vazio.Dias.Int())
-			require.NotEmpty(t, normal.Pontos)
 			require.Len(t, vazio.Pontos, tt.dias)
+			require.Len(t, normal.Pontos, tt.dias, "mesmo formato: a sequência do Go")
+			for i, p := range normal.Pontos {
+				assert.Equal(t, vazio.Pontos[i].Dia, p.Dia)
+			}
 			for _, p := range vazio.Pontos {
 				assert.Equal(t, 0.0, p.TotalVendas)
 				assert.Equal(t, 0, p.TotalPedidos)
@@ -104,9 +103,9 @@ func TestDashboardService_EscopoVendedor_RepassaVendedorID(t *testing.T) {
 
 	t.Run("GetMetrics", func(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
-		mock.ExpectQuery(`FROM pedidos.*AND vendedor_id = \?`).WithArgs(vid).
+		mock.ExpectQuery(`FROM pedidos.*AND vendedor_id = \?`).WithArgs(argsMesAtual(vid)...).
 			WillReturnRows(sqlmock.NewRows([]string{"v", "q"}).AddRow(50.0, 1))
-		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM pedidos.*AND vendedor_id = \?`).WithArgs(vid).
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM pedidos.*AND vendedor_id = \?`).WithArgs(argsMesAtual(vid)...).
 			WillReturnRows(sqlmock.NewRows([]string{"t"}).AddRow(1))
 		mock.ExpectQuery(`v\.meta_mensal AS meta\s+FROM vendedores v\s+WHERE v\.data_desligamento IS NULL AND v\.id = \?`).
 			WithArgs(vid, 10).
@@ -126,7 +125,7 @@ func TestDashboardService_EscopoVendedor_RepassaVendedorID(t *testing.T) {
 	t.Run("GetVendasSeries", func(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
 		mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data.*AND vendedor_id = \?`).
-			WithArgs(7, vid).
+			WithArgs(argDia(7), vid).
 			WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}))
 
 		s, err := consultasAnalytics(db, vid).SerieVendas(context.Background(), analyticsapp.ConsultaSerieVendas{Dias: analytics.DiasDe(7)})
@@ -141,7 +140,7 @@ func TestDashboardService_EscopoVendedor_RepassaVendedorID(t *testing.T) {
 			WithArgs(vid).
 			WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
 		mock.ExpectQuery(`(?s)AND v\.id = \?.*LIMIT \? OFFSET \?`).
-			WithArgs(vid, 20, 0).
+			WithArgs(argsMesAtual(vid, 20, 0)...).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}).
 				AddRow(vid, "B", "Sul", "PR", 100.0, 50.0, 1, 50.0))
 

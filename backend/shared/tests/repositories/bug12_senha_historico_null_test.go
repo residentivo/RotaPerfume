@@ -7,8 +7,10 @@ package repositories_test
 // sql.Null* e converte para o valor zero ("" / time.Time{}).
 //
 // Os testes sqlmock cobrem FindAll e FindByUsuario (parametrizados) com
-// linhas totalmente NULL, parcialmente NULL, preenchidas e páginas mistas;
-// o teste de integração (INTEGRATION=1) grava NULLs reais no MySQL.
+// linhas totalmente NULL, parcialmente NULL, preenchidas e páginas mistas
+// (created_at NULL inclusive: um dump antigo volta a coluna para anulável,
+// ver sql/27). O teste de integração (INTEGRATION=1) grava NULLs reais em
+// ip_origem e user_agent; created_at é NOT NULL desde o DB-09.
 
 import (
 	"context"
@@ -22,6 +24,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-sql-driver/mysql"
 	"github.com/rotaperfumes/shared/identidade"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -229,14 +232,16 @@ func TestBUG12_SenhaHistorico_ScanTipoInvalido(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestIntegracaoBUG12_NullReal grava, para dois usuários temporários
-// (zz-test-bug12-*@teste.local), registros com ip_origem/user_agent/
-// created_at NULL misturados a registros preenchidos, e um registro órfão
-// (usuario_id sem linha em usuarios, gravado com FOREIGN_KEY_CHECKS=0 na
-// sessão) para produzir u1.nome NULL no LEFT JOIN. Tudo é apagado no Cleanup.
+// (zz-test-bug12-*@teste.local), registros com ip_origem/user_agent NULL
+// misturados a registros preenchidos, e um registro órfão (usuario_id sem
+// linha em usuarios, gravado com FOREIGN_KEY_CHECKS=0 na sessão) para produzir
+// u1.nome NULL no LEFT JOIN. created_at é sempre preenchido (NOT NULL, DB-09).
+// Tudo é apagado no Cleanup.
 func TestIntegracaoBUG12_NullReal(t *testing.T) {
 	db := abrirDBSEC08(t)
 	ctx := context.Background()
 	sufixo := time.Now().UnixNano()
+	require.False(t, db09ColunaAnulavel(t, db), "DB-09: senha_historico.created_at deve ser NOT NULL")
 
 	criarUsuario := func(tag string) int64 {
 		t.Helper()
@@ -257,16 +262,15 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 
 	type reg struct {
 		ip, ua   any // nil => NULL
-		created  any
 		resetPor any
 	}
 	criado := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	regs := []reg{
-		{nil, nil, nil, nil},                  // tudo NULL
-		{"10.0.0.2", "ua-bug12", criado, nil}, // preenchido
-		{nil, "ua-bug12", criado, admin},      // só ip NULL, reset por admin
-		{"10.0.0.1", nil, nil, nil},           // user_agent e created_at NULL
-		{"10.0.0.3", "ua-bug12", nil, admin},  // só created_at NULL
+		{nil, nil, nil},                 // ip e user_agent NULL
+		{"10.0.0.2", "ua-bug12", nil},   // preenchido
+		{nil, "ua-bug12", admin},        // só ip NULL, reset por admin
+		{"10.0.0.1", nil, nil},          // só user_agent NULL
+		{"10.0.0.3", "ua-bug12", admin}, // preenchido, reset por admin
 	}
 	ids := make([]int64, len(regs))
 	for i, r := range regs {
@@ -275,16 +279,29 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 			tipo = "admin"
 		}
 		res, err := db.Exec(`INSERT INTO senha_historico (usuario_id, resetado_por_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset, created_at)
-			VALUES (?, ?, 'x', ?, ?, ?, ?)`, alvo, r.resetPor, r.ip, r.ua, tipo, r.created)
+			VALUES (?, ?, 'x', ?, ?, ?, ?)`, alvo, r.resetPor, r.ip, r.ua, tipo, criado)
 		require.NoError(t, err)
 		ids[i], err = res.LastInsertId()
 		require.NoError(t, err)
 	}
 
-	// Garante que os NULLs foram realmente gravados (explicit_defaults_for_timestamp).
-	var nullCreated int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM senha_historico WHERE usuario_id = ? AND created_at IS NULL`, alvo).Scan(&nullCreated))
-	require.Equal(t, 3, nullCreated, "o MySQL deve gravar created_at NULL explícito")
+	// DB-09: o NULL explícito em created_at não fica gravado (o servidor grava o
+	// DEFAULT ou recusa com 1048). No admin, para não contar nas listagens do alvo.
+	t.Run("created_at NULL explícito não fica NULL", func(t *testing.T) {
+		res, err := db.Exec(`INSERT INTO senha_historico (usuario_id, senha_hash_anterior, tipo_reset, created_at)
+			VALUES (?, 'x', 'usuario', NULL)`, admin)
+		if err != nil {
+			var erroMySQL *mysql.MySQLError
+			require.ErrorAs(t, err, &erroMySQL)
+			assert.Equal(t, uint16(1048), erroMySQL.Number, "só o erro de coluna NOT NULL é aceito")
+			return
+		}
+		id, err := res.LastInsertId()
+		require.NoError(t, err)
+		var preenchido bool
+		require.NoError(t, db.QueryRow(`SELECT created_at IS NOT NULL FROM senha_historico WHERE id = ?`, id).Scan(&preenchido))
+		assert.True(t, preenchido, "o INSERT com NULL explícito deixou created_at NULL")
+	})
 
 	// Registro órfão: usuario_id inexistente => u1.nome NULL no LEFT JOIN.
 	orfaoUsuario := int64(9_000_000_000) + sufixo%1_000_000
@@ -293,7 +310,7 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 	_, err = conn.ExecContext(ctx, `SET SESSION foreign_key_checks = 0`)
 	require.NoError(t, err)
 	res, err := conn.ExecContext(ctx, `INSERT INTO senha_historico (usuario_id, senha_hash_anterior, ip_origem, user_agent, tipo_reset, created_at)
-		VALUES (?, 'x', NULL, NULL, 'usuario', NULL)`, orfaoUsuario)
+		VALUES (?, 'x', NULL, NULL, 'usuario', ?)`, orfaoUsuario, criado)
 	_, errFK := conn.ExecContext(ctx, `SET SESSION foreign_key_checks = 1`)
 	require.NoError(t, errFK)
 	require.NoError(t, conn.Close())
@@ -305,17 +322,17 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	nomeAlvo := "ZZ-BUG12-ALVO-" + fmt.Sprint(sufixo)
 	esperado := map[int64]struct {
 		ip, ua, nome string
-		createdZero  bool
 		resetado     bool
 	}{
-		ids[0]:  {"", "", "ZZ-BUG12-ALVO-" + fmt.Sprint(sufixo), true, false},
-		ids[1]:  {"10.0.0.2", "ua-bug12", "ZZ-BUG12-ALVO-" + fmt.Sprint(sufixo), false, false},
-		ids[2]:  {"", "ua-bug12", "ZZ-BUG12-ALVO-" + fmt.Sprint(sufixo), false, true},
-		ids[3]:  {"10.0.0.1", "", "ZZ-BUG12-ALVO-" + fmt.Sprint(sufixo), true, false},
-		ids[4]:  {"10.0.0.3", "ua-bug12", "ZZ-BUG12-ALVO-" + fmt.Sprint(sufixo), true, true},
-		orfaoID: {"", "", "", true, false},
+		ids[0]:  {"", "", nomeAlvo, false},
+		ids[1]:  {"10.0.0.2", "ua-bug12", nomeAlvo, false},
+		ids[2]:  {"", "ua-bug12", nomeAlvo, true},
+		ids[3]:  {"10.0.0.1", "", nomeAlvo, false},
+		ids[4]:  {"10.0.0.3", "ua-bug12", nomeAlvo, true},
+		orfaoID: {"", "", "", false},
 	}
 	conferir := func(t *testing.T, h identidade.RegistroSenha) {
 		t.Helper()
@@ -323,10 +340,7 @@ func TestIntegracaoBUG12_NullReal(t *testing.T) {
 		assert.Equal(t, e.ip, h.IP, "ip_origem id=%d", h.ID)
 		assert.Equal(t, e.ua, h.UserAgent, "user_agent id=%d", h.ID)
 		assert.Equal(t, e.nome, h.UsuarioNome, "usuario_nome id=%d", h.ID)
-		assert.Equal(t, e.createdZero, h.CriadoEm.IsZero(), "created_at id=%d", h.ID)
-		if !e.createdZero {
-			assert.True(t, criado.Equal(h.CriadoEm), "created_at id=%d: %v", h.ID, h.CriadoEm)
-		}
+		assert.True(t, criado.Equal(h.CriadoEm), "created_at id=%d: %v", h.ID, h.CriadoEm)
 		assert.Equal(t, e.resetado, (h.ResetadoPorID != nil), "resetado_por_id id=%d", h.ID)
 		assert.Equal(t, e.resetado, (h.ResetadoPorNome != nil), "resetado_por_nome id=%d", h.ID)
 	}

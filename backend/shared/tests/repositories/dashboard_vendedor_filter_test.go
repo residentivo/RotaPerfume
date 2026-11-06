@@ -12,7 +12,6 @@ import (
 	"github.com/rotaperfumes/shared/analytics/analyticsmysql"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -35,12 +34,12 @@ func TestDashboardVendedorFilter(t *testing.T) {
 			executa: func(t *testing.T, db *sql.DB, mock sqlmock.Sqlmock, vendedorID int64, comFiltro bool) {
 				exp := mock.ExpectQuery(`FROM pedidos`)
 				if comFiltro {
-					exp.WithArgs(vendedorID)
+					exp.WithArgs(2026, 10, vendedorID) // BUG-30: o mês antes do vendedor
 				} else {
-					exp.WithArgs()
+					exp.WithArgs(2026, 10)
 				}
 				exp.WillReturnRows(sqlmock.NewRows([]string{"v", "q"}).AddRow(10.5, 2))
-				v, q, err := valorEQtd(analyticsmysql.NovoDashboard(db, time.Now).VendasTotais(ctx, escopoDe(vendedorID), periodoDe("month")))
+				v, q, err := valorEQtd(analyticsmysql.NovoDashboard(db, relogioFixo).VendasTotais(ctx, escopoDe(vendedorID), periodoDe("month")))
 				require.NoError(t, err)
 				assert.Equal(t, 10.5, v)
 				assert.Equal(t, 2, q)
@@ -57,7 +56,7 @@ func TestDashboardVendedorFilter(t *testing.T) {
 					exp.WithArgs()
 				}
 				exp.WillReturnRows(sqlmock.NewRows([]string{"m"}).AddRow(1000.0))
-				m, err := analyticsmysql.NovoDashboard(db, time.Now).MetaMensalTotal(ctx, escopoDe(vendedorID))
+				m, err := analyticsmysql.NovoDashboard(db, relogioFixo).MetaMensalTotal(ctx, escopoDe(vendedorID))
 				require.NoError(t, err)
 				assert.Equal(t, 1000.0, m)
 			},
@@ -74,7 +73,7 @@ func TestDashboardVendedorFilter(t *testing.T) {
 				}
 				// Sem linhas: não dispara o enriquecimento com vendas.
 				exp.WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}))
-				out, err := analyticsmysql.NovoDashboard(db, time.Now).TopVendedores(ctx, escopoDe(vendedorID), 5)
+				out, err := analyticsmysql.NovoDashboard(db, relogioFixo).TopVendedores(ctx, escopoDe(vendedorID), 5)
 				require.NoError(t, err)
 				assert.Empty(t, out)
 			},

@@ -43,8 +43,7 @@ func TestSEC50_ValidarNaoProducao_MesmaTabelaDoMakefile(t *testing.T) {
 		recusa      bool
 	}{
 		{" 192.168.168.106 ", "3306", true},
-		{"192.168.168.106", " 3306 ", true}, // espaços nas pontas
-		{"192.168.168.106.", "3306", true},  // "." final
+		{"192.168.168.106.", "3306", true}, // "." final
 		{"ivo-inspiron-15-3530", "", true},
 		{"rotaperfumes-mariadb", "", true},
 	}
@@ -54,6 +53,12 @@ func TestSEC50_ValidarNaoProducao_MesmaTabelaDoMakefile(t *testing.T) {
 			assert.Equal(t, c.recusa, errors.Is(err, integracao.ErrBancoProducao), "%v", err)
 		})
 	}
+	// SEC-57: espaços na porta não são mais tirados (ErrPortaInvalida).
+	t.Run("porta com espaços", func(t *testing.T) {
+		err := integracao.ValidarNaoProducao("192.168.168.106", " 3306 ")
+		require.ErrorIs(t, err, integracao.ErrPortaInvalida)
+		assert.NotErrorIs(t, err, integracao.ErrBancoProducao)
+	})
 	t.Run("porta não numérica no host da LAN", func(t *testing.T) {
 		err := integracao.ValidarNaoProducao("192.168.168.106", "abc")
 		require.Error(t, err)

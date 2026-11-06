@@ -176,12 +176,9 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 	t.Run("sucesso retorna shape {dias, pontos}", func(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
 		mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data`).
-			WithArgs(7).
+			WithArgs(argDia(7)).
 			WillReturnRows(sqlmock.NewRows([]string{"data", "valor", "quantidade"}).
-				AddRow("2024-01-01", 500.0, 3))
-		mock.ExpectQuery(`SELECT DATE_FORMAT\(DATE_SUB\(CURDATE\(\), INTERVAL n DAY\), '%Y-%m-%d'\) AS dia`).
-			WithArgs(7).
-			WillReturnRows(sqlmock.NewRows([]string{"dia"}).AddRow("2024-01-01"))
+				AddRow(diaBUG30(0), 500.0, 3))
 
 		series, err := consultasAnalytics(db, 0).SerieVendas(context.Background(), analyticsapp.ConsultaSerieVendas{Dias: analytics.DiasDe(7)})
 		require.NoError(t, err)
@@ -191,17 +188,18 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 
 		pontos := series.Pontos
 		require.NotNil(t, pontos, "pontos nunca é nil (JSON [])")
-		require.Len(t, pontos, 1)
-		assert.Equal(t, "2024-01-01", pontos[0].Dia)
-		assert.Equal(t, 500.0, pontos[0].TotalVendas)
-		assert.Equal(t, 3, pontos[0].TotalPedidos)
+		// BUG-30: a sequência de 7 dias é do Go; a venda de hoje no último ponto.
+		require.Len(t, pontos, 7)
+		assert.Equal(t, diaBUG30(0), pontos[6].Dia)
+		assert.Equal(t, 500.0, pontos[6].TotalVendas)
+		assert.Equal(t, 3, pontos[6].TotalPedidos)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("tabela pedidos inexistente retorna serie vazia com zeros", func(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
 		mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data`).
-			WithArgs(7).
+			WithArgs(argDia(7)).
 			WillReturnError(sql.ErrNoRows) // não contém texto "doesn't exist" -> repo retorna erro real
 
 		series, err := consultasAnalytics(db, 0).SerieVendas(context.Background(), analyticsapp.ConsultaSerieVendas{Dias: analytics.DiasDe(7)})
@@ -215,7 +213,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 	t.Run("erro tipo tabela nao existe retorna serie vazia sem erro", func(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
 		mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data`).
-			WithArgs(3).
+			WithArgs(argDia(3)).
 			WillReturnError(sql.ErrConnDone)
 
 		// sql.ErrConnDone também não contém "doesn't exist" -> erro propagado.
@@ -229,7 +227,7 @@ func TestDashboardService_GetVendasSeries(t *testing.T) {
 		db, mock := newDashboardTestDB(t)
 		errTabelaNaoExiste := &mysql.MySQLError{Number: 1146, Message: "Table 'db.pedidos' doesn't exist"}
 		mock.ExpectQuery(`SELECT DATE_FORMAT\(data_pedido, '%Y-%m-%d'\) AS data`).
-			WithArgs(4).
+			WithArgs(argDia(4)).
 			WillReturnError(errTabelaNaoExiste)
 
 		series, err := consultasAnalytics(db, 0).SerieVendas(context.Background(), analyticsapp.ConsultaSerieVendas{Dias: analytics.DiasDe(4)})
@@ -259,7 +257,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
 		mock.ExpectQuery(`(?s)SELECT.*FROM vendedores v.*LEFT JOIN.*ORDER BY v\.meta_mensal DESC, atingimento_meta DESC.*LIMIT \? OFFSET \?`).
-			WithArgs(20, 0).
+			WithArgs(argsMesAtual(20, 0)...).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}))
 
 		ranking, total, err := itensETotal(consultasAnalytics(db, 0).Ranking(context.Background(), analyticsapp.ConsultaRanking{Pagina: kernel.NovaPagina(1, 20)}))
@@ -274,7 +272,7 @@ func TestDashboardService_GetVendedoresRanking(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM vendedores WHERE data_desligamento IS NULL`).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
 		mock.ExpectQuery(`(?s)SELECT.*FROM vendedores v.*LEFT JOIN.*ORDER BY v\.meta_mensal DESC, atingimento_meta DESC.*LIMIT \? OFFSET \?`).
-			WithArgs(20, 0).
+			WithArgs(argsMesAtual(20, 0)...).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta_mensal", "total_vendas", "total_pedidos", "atingimento_meta"}).
 				AddRow(int64(1), "João", "Sudeste", "SP", 10000.0, 5000.0, 5, 50.0))
 
@@ -316,7 +314,8 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \?`).
 			WithArgs(false).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(20))
-		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE`).
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE YEAR\(data_cadastro\) = \? AND MONTH\(data_cadastro\) = \?$`).
+			WithArgs(argsMesAtual()...).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(5))
 		mock.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total\s+FROM clientes\s+GROUP BY segmento\s+ORDER BY total DESC`).
 			WillReturnRows(sqlmock.NewRows([]string{"segmento", "total"}).AddRow("varejo", 60))
@@ -345,8 +344,8 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \? AND `+carteira+`$`).
 			WithArgs(false, int64(7)).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
-		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro >= DATE_SUB\(CURDATE\(\), INTERVAL 6 DAY\) AND ` + carteira + `$`).
-			WithArgs(int64(7)).
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro >= \? AND `+carteira+`$`).
+			WithArgs(argDia(6), int64(7)).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(0))
 		mock.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total\s+FROM clientes WHERE ` + carteira + `\s+GROUP BY segmento`).
 			WithArgs(int64(7)).
@@ -402,7 +401,8 @@ func TestDashboardService_GetClienteMetrics(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE ativo = \?`).
 			WithArgs(false).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(20))
-		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE`).
+		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes WHERE data_cadastro = \?$`).
+			WithArgs(argDia(0)).
 			WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(5))
 		mock.ExpectQuery(`SELECT segmento, COUNT\(\*\) AS total\s+FROM clientes\s+GROUP BY segmento\s+ORDER BY total DESC`).
 			WillReturnError(sql.ErrConnDone)

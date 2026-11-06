@@ -1,4 +1,4 @@
-.PHONY: help db-guard-producao db-guard-sem-producao db-guard-drop db-guard-integracao fix-admin test-integration reset-senhas-simular reset-senhas-ativos db-gerar-imagens-produtos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-produtos-imagem db-revert-produtos-imagem db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test test-all lint shellcheck \
+.PHONY: help db-guard-producao db-guard-sem-producao db-guard-drop db-guard-integracao fix-admin test-integration reset-senhas-simular reset-senhas-ativos db-gerar-imagens-produtos db-check-env db-up db-down db-seed db-reset db-create db-fix-deve-trocar-senha db-fix-tipo-reset db-fix-cnpj-unique db-revert-cnpj-unique db-fix-cnpj-comment db-revert-cnpj-comment db-fix-revoked-reason db-revert-revoked-reason db-fix-tokens-validos-desde db-revert-tokens-validos-desde db-fix-reuso-detectado db-revert-reuso-detectado db-fix-taxa-pct-check db-revert-taxa-pct-check db-fix-produtos-imagem db-revert-produtos-imagem db-fix-historico-created-at db-revert-historico-created-at db-fix-estoque-origem db-revert-estoque-origem db-rebuild db-export db-import-clientes db-import-produtos db-import-pedidos db-import-pagamentos db-import-carteiras db-import-oportunidades db-import-visitas db-import-estoque db-seed-mes-atual test lint shellcheck \
 	build build-api run-api dev-api stop-api \
 	test-api cover-api test-shared cover-shared arch-check cover-combinada gen-hash fix-hash \
 	frontend-deps \
@@ -13,6 +13,93 @@
 # shell; "make DB_SENHA=x" na linha de comando ganha de tudo.
 # Formato do .env: DB_SENHA sem "$", "#", aspas, espaços nas pontas e sem
 # começar com "/" (o make e o Git Bash interpretariam esses caracteres).
+# SEC-63: DB_HOST, DB_NAME, DB_USUARIO, DB_TLS_CA, DB_CLIENTE_BIN, CONFIRMAR e
+# CONFIRMO_PRODUCAO têm charset próprio, conferido no parse (ver RP_VALIDAR_BANCO).
+#
+# BUG-29: ENV_ARQUIVO, CONFIRMAR e CONFIRMO_PRODUCAO so valem NA LINHA DE
+# COMANDO e chegam aos sub-makes (db-reset, db-rebuild, db-seed,
+# test-integration) pelo "-- $(MAKEOVERRIDES)" do MAKEFLAGS. MAKEFLAGS,
+# MAKEOVERRIDES ou GNUMAKEFLAGS na linha de comando apagam esse repasse: o
+# sub-make leria o .env padrao no lugar do ENV_ARQUIVO (fail-open). Recusado;
+# use a opcao direto (make -k ...) ou MAKEFLAGS no ambiente (MAKEFLAGS=-k make ...).
+ifneq ($(filter command line,$(origin MAKEFLAGS) $(origin MAKEOVERRIDES) $(origin GNUMAKEFLAGS)),)
+$(error BUG-29: MAKEFLAGS/MAKEOVERRIDES/GNUMAKEFLAGS na linha de comando apagam ENV_ARQUIVO/CONFIRMAR/CONFIRMO_PRODUCAO nos sub-makes; use a opcao direto (make -k ...) ou MAKEFLAGS no ambiente)
+endif
+# SEC-63: o gate de validacao (RP_VALIDAR_BANCO) le o MAKECMDGOALS, que o make
+# define com origem "default" (undefined sem goal) e que o ambiente, a linha de
+# comando e o --eval conseguem trocar: MAKECMDGOALS=help make db-create desligaria
+# os charsets. Allowlist de origem. O make nao o exporta aos filhos (nem com o
+# "export" global): os sub-makes recebem origem default. Sem goal, o gate nao
+# valida nada, entao o alvo padrao tem de ser o do Makefile (help): antes de
+# qualquer regra, .DEFAULT_GOAL so tem valor se veio de fora.
+# Limite: as guardas e o gate protegem contra engano e contra o conteudo do .env,
+# NAO contra o operador. MAKEFILES no ambiente, -f, -o, --eval, SHELL= e outras
+# variaveis internas digitadas na linha de comando (ou no ambiente com -e) ficam
+# fora do modelo; as recusas acima cobrem so MAKECMDGOALS e .DEFAULT_GOAL.
+ifeq ($(filter default undefined,$(origin MAKECMDGOALS)),)
+$(error SEC-63: MAKECMDGOALS veio de fora do make ($(origin MAKECMDGOALS)): desligaria a validacao; informe o alvo direto)
+endif
+ifeq ($(MAKECMDGOALS),)
+ifneq ($(.DEFAULT_GOAL),)
+$(error SEC-63: .DEFAULT_GOAL veio de fora do make ($(origin .DEFAULT_GOAL)): desligaria a validacao; informe o alvo direto)
+endif
+endif
+ifneq ($(filter environment%,$(origin ENV_ARQUIVO)),)
+$(error BUG-29: ENV_ARQUIVO veio do ambiente (so vale na linha de comando); o .env padrao seria lido no lugar dele)
+endif
+# BUG-29: ENV_ARQUIVO so com [A-Za-z0-9._/-] (vai entre aspas simples no
+# RP_ENV_PAI dos sub-makes). RP_TIRA_CHARS tira cada caractere permitido; o
+# que sobrar (ou mais de uma palavra, ou vazio) e recusado. SEC-59: "-" inicial
+# tambem (grep e sed o tomariam como opcao; para esse nome, use ./-foo).
+override RP_CHARS_ENV_ARQUIVO := A B C D E F G H I J K L M N O P Q R S T U V W X Y Z a b c d e f g h i j k l m n o p q r s t u v w x y z 0 1 2 3 4 5 6 7 8 9 . _ / -
+override RP_TIRA_CHARS = $(if $(2),$(call RP_TIRA_CHARS,$(subst $(firstword $(2)),,$(1)),$(wordlist 2,$(words $(2)),$(2))),$(1))
+ifeq ($(origin ENV_ARQUIVO),command line)
+ifneq ($(words $(ENV_ARQUIVO)),1)
+$(error BUG-29: ENV_ARQUIVO='$(ENV_ARQUIVO)' invalido: um caminho so com A-Z a-z 0-9 . _ / -)
+endif
+ifneq ($(call RP_TIRA_CHARS,$(ENV_ARQUIVO),$(RP_CHARS_ENV_ARQUIVO)),)
+$(error BUG-29: ENV_ARQUIVO='$(ENV_ARQUIVO)' invalido: um caminho so com A-Z a-z 0-9 . _ / -)
+endif
+ifneq ($(filter -%,$(ENV_ARQUIVO)),)
+$(error BUG-29: ENV_ARQUIVO='$(ENV_ARQUIVO)' invalido: nao pode comecar com "-" (use ./$(ENV_ARQUIVO)))
+endif
+endif
+# Arquivo lido (o mesmo calculo e repetido depois do include, para o .env
+# nao conseguir troca-lo). Sentinela pai->filho: todo "$(MAKE)" recursivo
+# passa RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' na linha de comando; o sub-make que
+# leria outro arquivo (ou RP_ENV_PAI vindo de fora) aborta.
+ENV_ARQUIVO_LIDO := $(if $(filter command line,$(origin ENV_ARQUIVO)),$(ENV_ARQUIVO),.env)
+ifneq ($(origin RP_ENV_PAI),undefined)
+ifneq ($(RP_ENV_PAI),$(ENV_ARQUIVO_LIDO))
+$(error BUG-29: o make pai leu $(RP_ENV_PAI) e este sub-make leria $(ENV_ARQUIVO_LIDO): recusado)
+endif
+endif
+# SEC-59: o arquivo so pode ter linhas NOME=valor (allowlist, fail-closed), ANTES
+# do include: "override X=", "private X=", "define X", "X != cmd" (shell no
+# parse), "X ::= y", "include", "unexport", regras e ".SHELLFLAGS=" escapariam
+# do VARS_DO_ENV e das recusas abaixo. Linha terminada em "\" continuaria na
+# proxima. "$" fora de comentario tambem e recusado: $(eval), $(shell) e $(file)
+# no valor expandiriam no parse ou na exportacao e desviariam as guardas (ex.:
+# X := $(eval override PRODUCAO_HOSTS_LAN :=)). Aceitas: vazia, "#...",
+# "[export ]NOME [:?+]=valor" sem "$" (a mesma forma do sed do VARS_DO_ENV;
+# paridade testada). So numeros de linha na mensagem, nunca o conteudo (pode ter
+# segredo). Arquivo ausente com "-include" nao gera saida.
+RP_ENV_LINHAS_RUINS := $(shell { LC_ALL=C grep -anvE -- '^[[:space:]]*($$|\#|(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*[:?+]?=)' '$(ENV_ARQUIVO_LIDO)'; LC_ALL=C grep -anE -- '\\[[:space:]]*$$' '$(ENV_ARQUIVO_LIDO)'; LC_ALL=C grep -anE -- '^[[:space:]]*[^\#[:space:]].*[$$]' '$(ENV_ARQUIVO_LIDO)'; } 2>/dev/null | cut -d: -f1 | sort -un)
+ifneq ($(RP_ENV_LINHAS_RUINS),)
+$(error SEC-59: $(ENV_ARQUIVO_LIDO):$(RP_ENV_LINHAS_RUINS) nao e NOME=valor literal (sem $$ fora de comentario; diretivas do make como override/define/include/!= nao sao aceitas))
+endif
+# SEC-53: nomes declarados no arquivo (usados no SEM_SEGREDOS, adiante).
+VARS_DO_ENV := $(shell sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*[:?+]\{0,1\}=.*/\2/p' -- $(ENV_ARQUIVO_LIDO) 2>/dev/null)
+# BUG-29/SEC-59: variaveis que mudam o make, o shell das receitas (SHELL, PATH)
+# ou a sentinela nao podem vir do .env/ENV_ARQUIVO. Conferido ANTES do include:
+# depois dele, SHELL=/bin/true ja valeria para o proprio $(shell) desta leitura
+# e a recusa nunca dispararia (fail-open). VARS_DO_ENV tambem e proibida: nao ha
+# segunda leitura depois do include, e o SEM_SEGREDOS depende dela. RP_TIRA_CHARS
+# tambem (SEC-63): definida antes do include; vazia, anularia os charsets.
+VARS_PROIBIDAS_NO_ENV := MAKEFLAGS MAKEOVERRIDES GNUMAKEFLAGS MAKEFILES MAKELEVEL MAKE RP_ENV_PAI ENV_ARQUIVO_LIDO SHELL MAKESHELL MAKECMDGOALS CURDIR VPATH PATH VARS_DO_ENV RP_TIRA_CHARS
+ifneq ($(filter $(VARS_PROIBIDAS_NO_ENV),$(VARS_DO_ENV)),)
+$(error BUG-29: $(ENV_ARQUIVO_LIDO) declara $(sort $(filter $(VARS_PROIBIDAS_NO_ENV),$(VARS_DO_ENV))): remova (mudam o make, o shell das receitas e os sub-makes; SEC-59))
+endif
 ifeq ($(origin ENV_ARQUIVO),command line)
 # DEPLOY-07: outro arquivo NO LUGAR do .env (ex.: .env.producao da maquina do
 # admin); o .env NAO e lido. So pela linha de comando:
@@ -42,6 +129,10 @@ MYSQL_PWD = $(DB_SENHA)
 # Git Bash/MSYS: impede a conversão de caminho POSIX no valor da senha.
 MSYS2_ENV_CONV_EXCL = MYSQL_PWD
 export
+# BUG-29: estas so valem na linha de comando e chegam aos sub-makes pelo
+# MAKEFLAGS (origin = command line); fora do ambiente dos filhos (go test,
+# CLIs, scripts), onde virariam "ENV_ARQUIVO veio do ambiente" num make aninhado.
+unexport ENV_ARQUIVO RP_ENV_PAI CONFIRMAR CONFIRMO_PRODUCAO
 
 # SEC-53: segredos do .env fora dos processos de teste, build, lint e npm.
 # O "export" acima continua global (o cliente mariadb dos db-* precisa do
@@ -55,10 +146,9 @@ export
 # chegam ao go test. "INTEGRATION=1 make test" do shell fica sem
 # credenciais: os testes de integracao sao pulados.
 ENV_ARQUIVO_LIDO := $(if $(filter command line,$(origin ENV_ARQUIVO)),$(ENV_ARQUIVO),.env)
-VARS_DO_ENV := $(shell sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*[:?+]\{0,1\}=.*/\2/p' $(ENV_ARQUIVO_LIDO) 2>/dev/null)
 VARS_DB_INTEGRACAO := DB_HOST DB_PORT DB_NAME DB_USUARIO DB_SENHA DB_TLS_CA DB_TLS_SERVER_NAME DB_TLS_REQUIRED
 SEGREDOS_FIXOS := $(VARS_DB_INTEGRACAO) MYSQL_PWD MSYS2_ENV_CONV_EXCL MYSQL_OPTS MYSQL_TLS_OPTS DB_CLI PASSWORD_PEPPER JWT_SECRET SMTP_USER SMTP_PASSWORD TURNSTILE_SECRET_KEY SEED_ADMIN_PASSWORD
-INTEGRACAO_PELO_MAKE := $(and $(filter command line,$(origin INTEGRATION)),$(filter 1,$(INTEGRATION)))
+override INTEGRACAO_PELO_MAKE := $(and $(filter command line,$(origin INTEGRATION)),$(filter 1,$(INTEGRATION)))
 # SEC-55: SEM_SEGREDOS e estrito (sem excecao): go build, go tool cover,
 # go vet, go get/mod, govulncheck e npm nunca recebem DB_*/MYSQL_PWD, nem com
 # INTEGRATION=1. SEM_SEGREDOS_TESTE (so nas linhas "go test" de test-shared,
@@ -83,8 +173,75 @@ GUARDA_INTEGRACAO := $(if $(INTEGRACAO_PELO_MAKE),db-guard-producao db-guard-int
 #   make db-up DB_CLIENTE_BIN=/opt/mariadb/bin/mariadb
 DB_CLIENTE_BIN := $(or $(strip $(subst $(CR),,$(DB_CLIENTE_BIN))),mariadb)
 MYSQL_TLS_OPTS = $(if $(DB_TLS_CA),--ssl-ca="$(DB_TLS_CA)" --ssl-verify-server-cert)
-MYSQL_OPTS = --local-infile=0 -u $(DB_USUARIO) -h $(DB_HOST) -P $(DB_PORT) --default-character-set=utf8mb4 $(MYSQL_TLS_OPTS)
+# BUG-31: DB_PORT= vazio (no .env ou na linha de comando) nao ativa o "?=" e o
+# -P engoliria a opcao seguinte; vazio = 3306, como nas guardas e no Go.
+# SEC-63: aspas por causa do glob de [::1]; DB_HOST= vazio nao deixa o -h engolir
+# o -P (e continua fora do loopback para as guardas, fail-closed).
+MYSQL_OPTS = --local-infile=0 -u "$(DB_USUARIO)" -h "$(or $(DB_HOST),localhost)" -P $(or $(DB_PORT),3306) --default-character-set=utf8mb4 $(MYSQL_TLS_OPTS)
 DB_CLI = $(DB_CLIENTE_BIN) $(MYSQL_OPTS)
+
+# SEC-63: os valores abaixo entram sem aspas no argv do cliente ou no SQL e, com
+# espaco, viram opcoes novas (-h de outro host depois da guarda: o ultimo -h
+# vale). Charset no parse, nunca imprimindo o valor. Vale para todo alvo, exceto
+# a lista explicita sem banco (alvo novo e validado por padrao); "make test
+# INTEGRATION=1" e validado. Sem goal = help. Nao usar $(or), $(if) nem $(strip)
+# no resultado do RP_TIRA_CHARS: ignoram sobra so de espacos ("a -h b" deixa
+# exatamente isso). CONFIRMAR e CONFIRMO_PRODUCAO valem em qualquer origem e
+# seguem interpolados nas guardas (o unexport do BUG-29 impede ler do ambiente).
+# "override": VAR=valor na linha de comando nao troca as variaveis do gate (nem
+# RP_TIRA_CHARS e INTEGRACAO_PELO_MAKE, tambem com override). Vale so para as
+# variaveis com override, nao para toda variavel interna, e nao protege contra o
+# operador: MAKEFILES no ambiente, -f, -o, --eval, SHELL= e outras variaveis
+# internas na linha de comando (ou no ambiente com -e) ficam fora do modelo.
+# Paridade com integracao.ValidarFormaDB no Go (testada).
+override RP_ALVOS_SEM_BANCO := help setup setup-check build build-all build-shared build-api lint shellcheck \
+	test test-shared test-api test-frontend cover-shared cover-api cover-combinada arch-check \
+	frontend-deps dev-frontend deps deps-audit deps-audit-go deps-audit-frontend deps-audit-imagens audit stop-api
+override RP_VALIDAR_BANCO := $(INTEGRACAO_PELO_MAKE)$(filter-out $(RP_ALVOS_SEM_BANCO),$(MAKECMDGOALS))
+ifneq ($(RP_VALIDAR_BANCO),)
+override RP_CHARS_ALFANUM := A B C D E F G H I J K L M N O P Q R S T U V W X Y Z a b c d e f g h i j k l m n o p q r s t u v w x y z 0 1 2 3 4 5 6 7 8 9
+override RP_CHARS_HOST := $(RP_CHARS_ALFANUM) . _ - : [ ]
+override RP_CHARS_NOME := $(RP_CHARS_ALFANUM) _
+override RP_CHARS_USUARIO := $(RP_CHARS_ALFANUM) _ . -
+override RP_CHARS_CAMINHO := $(RP_CHARS_ALFANUM) . _ / : -
+override RP_CHARS_CONFIRMO := $(RP_CHARS_HOST) /
+ifneq ($(call RP_TIRA_CHARS,$(DB_HOST),$(RP_CHARS_HOST)),)
+$(error SEC-63: DB_HOST invalido: so A-Z a-z 0-9 . _ - : [ ], sem espacos)
+endif
+ifneq ($(filter -%,$(DB_HOST)),)
+$(error SEC-63: DB_HOST invalido: nao pode comecar com "-")
+endif
+ifeq ($(DB_NAME),)
+$(error SEC-63: DB_NAME vazio)
+endif
+ifneq ($(call RP_TIRA_CHARS,$(DB_NAME),$(RP_CHARS_NOME)),)
+$(error SEC-63: DB_NAME invalido: so A-Z a-z 0-9 _)
+endif
+ifneq ($(call RP_TIRA_CHARS,$(DB_USUARIO),$(RP_CHARS_USUARIO)),)
+$(error SEC-63: DB_USUARIO invalido: so A-Z a-z 0-9 _ . -, sem espacos)
+endif
+ifneq ($(filter -%,$(DB_USUARIO)),)
+$(error SEC-63: DB_USUARIO invalido: nao pode comecar com "-")
+endif
+ifneq ($(call RP_TIRA_CHARS,$(DB_TLS_CA),$(RP_CHARS_CAMINHO)),)
+$(error SEC-63: DB_TLS_CA invalido: so A-Z a-z 0-9 . _ / : -, sem espacos)
+endif
+ifneq ($(filter -%,$(DB_TLS_CA)),)
+$(error SEC-63: DB_TLS_CA invalido: nao pode comecar com "-")
+endif
+ifneq ($(call RP_TIRA_CHARS,$(DB_CLIENTE_BIN),$(RP_CHARS_CAMINHO)),)
+$(error SEC-63: DB_CLIENTE_BIN invalido: so A-Z a-z 0-9 . _ / : -, sem espacos)
+endif
+ifneq ($(filter -%,$(DB_CLIENTE_BIN)),)
+$(error SEC-63: DB_CLIENTE_BIN invalido: nao pode comecar com "-")
+endif
+ifneq ($(call RP_TIRA_CHARS,$(subst $(CR),,$(CONFIRMAR)),$(RP_CHARS_NOME)),)
+$(error SEC-63: CONFIRMAR invalido: so A-Z a-z 0-9 _)
+endif
+ifneq ($(call RP_TIRA_CHARS,$(subst $(CR),,$(CONFIRMO_PRODUCAO)),$(RP_CHARS_CONFIRMO)),)
+$(error SEC-63: CONFIRMO_PRODUCAO invalido: so A-Z a-z 0-9 . _ - : [ ] /)
+endif
+endif
 
 help: ## Mostra esta ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -117,16 +274,17 @@ setup-check: ## SETUP-01: só confere versões (inclui covdata e GOTOOLCHAIN, pr
 # "help" para não virar o alvo padrão do make.
 db-check-env: ## Confere DB_USUARIO/DB_SENHA (SEC-11), o TLS exigido para host remoto (SEC-42) e o cliente MariaDB (DB_CLIENTE_BIN)
 	@test -n "$$DB_USUARIO" -a -n "$$MYSQL_PWD" || { echo "SEC-11: defina DB_USUARIO/DB_SENHA no .env"; exit 1; }
-	@case "$(DB_TLS_REQUIRED)" in ""|true|false) ;; *) echo "SEC-42: DB_TLS_REQUIRED=$(DB_TLS_REQUIRED) invalido: use true ou false"; exit 1 ;; esac; \
+	@$(PORTA_DETECTA_INVALIDA); if $$portainvalida; then $(MSG_SEC57); exit 1; fi
+	@case "$$DB_TLS_REQUIRED" in ""|true|false) ;; *) echo "SEC-42: DB_TLS_REQUIRED=$$DB_TLS_REQUIRED invalido: use true ou false"; exit 1 ;; esac; \
 	$(NORMALIZA_HOST); \
 	if $(HOST_LOOPBACK); then :; \
-	elif [ -n "$(DB_TLS_CA)" ]; then :; \
-	elif [ "$(DB_TLS_REQUIRED)" = false ]; then echo "AVISO (SEC-42): DB_TLS_REQUIRED=false: conexao SEM TLS com DB_HOST=$(DB_HOST) (fora do loopback); usuario e senha em texto claro"; \
-	else echo "SEC-42: DB_HOST=$(DB_HOST) nao e loopback (localhost, 127.x.x.x, ::1) e DB_TLS_CA esta vazio: defina DB_TLS_CA no .env (ou, so sabendo do risco, DB_TLS_REQUIRED=false)"; exit 1; fi
-	@test -z "$(DB_TLS_CA)" -o -r "$(DB_TLS_CA)" || { echo "SEC-29: DB_TLS_CA=$(DB_TLS_CA) nao encontrado/legivel (caminho relativo vale a partir da raiz do projeto)"; exit 1; }
-	@test -z "$(DB_CLIENTE)" || { echo "CHORE-13: DB_CLIENTE nao existe mais (o projeto usa so o cliente MariaDB): remova do .env; para outro executavel use DB_CLIENTE_BIN"; exit 1; }
-	@v=$$($(DB_CLIENTE_BIN) --version 2>&1) || { echo "DB_CLIENTE_BIN=$(DB_CLIENTE_BIN) nao encontrado no PATH (instale o cliente MariaDB: make setup)"; exit 1; }; \
-	case "$$v" in *MariaDB*) ;; *) echo "DB_CLIENTE_BIN=$(DB_CLIENTE_BIN) nao e o cliente MariaDB ($$v)"; exit 1 ;; esac
+	elif [ -n "$$DB_TLS_CA" ]; then :; \
+	elif [ "$$DB_TLS_REQUIRED" = false ]; then echo "AVISO (SEC-42): DB_TLS_REQUIRED=false: conexao SEM TLS com DB_HOST=$$DB_HOST (fora do loopback); usuario e senha em texto claro"; \
+	else echo "SEC-42: DB_HOST=$$DB_HOST nao e loopback (localhost, 127.x.x.x, ::1) e DB_TLS_CA esta vazio: defina DB_TLS_CA no .env (ou, so sabendo do risco, DB_TLS_REQUIRED=false)"; exit 1; fi
+	@test -z "$$DB_TLS_CA" -o -r "$$DB_TLS_CA" || { echo "SEC-29: DB_TLS_CA=$$DB_TLS_CA nao encontrado/legivel (caminho relativo vale a partir da raiz do projeto)"; exit 1; }
+	@test -z "$$DB_CLIENTE" || { echo "CHORE-13: DB_CLIENTE nao existe mais (o projeto usa so o cliente MariaDB): remova do .env; para outro executavel use DB_CLIENTE_BIN"; exit 1; }
+	@v=$$("$$DB_CLIENTE_BIN" --version 2>&1) || { echo "DB_CLIENTE_BIN=$$DB_CLIENTE_BIN nao encontrado no PATH (instale o cliente MariaDB: make setup)"; exit 1; }; \
+	case "$$v" in *MariaDB*) ;; *) echo "DB_CLIENTE_BIN=$$DB_CLIENTE_BIN nao e o cliente MariaDB ($$v)"; exit 1 ;; esac
 
 # DEPLOY-07: o banco de PRODUCAO (container rotaperfumes-mariadb) nunca recebe
 # make db-*/fix-*/import por engano. Todo alvo que escreve no banco depende
@@ -145,35 +303,62 @@ PRODUCAO_HOSTS_REDE := rotaperfumes-mariadb 172.30.42.2
 # espacos nas pontas, minusculas, "[" e "]" das pontas, todos os "." finais,
 # um sufixo ".local" ($$eralocal=true) e IPv4 mapeado em IPv6
 # (::ffff:a.b.c.d e 0:0:0:0:0:ffff:a.b.c.d viram a.b.c.d). Define $$h.
-NORMALIZA_HOST = h=$$(printf '%s' "$(DB_HOST)" | tr 'A-Z' 'a-z' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$$//' -e 's/^\[//' -e 's/\]$$//' -e 's/\.*$$//'); \
+NORMALIZA_HOST = h=$$(printf '%s' "$$DB_HOST" | tr 'A-Z' 'a-z' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$$//' -e 's/^\[//' -e 's/\]$$//' -e 's/\.*$$//'); \
 	eralocal=false; case "$$h" in *.local) h=$${h%.local}; eralocal=true ;; esac; \
 	h=$$(printf '%s' "$$h" | sed -e 's/^::ffff:\([0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}\)$$/\1/' -e 's/^0:0:0:0:0:ffff:\([0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}\)$$/\1/')
-# Loopback (localhost, ::1, 127.x.x.x) depois do NORMALIZA_HOST; nome com
-# ".local" (mDNS, pode ser qualquer maquina) nunca conta como loopback.
-HOST_LOOPBACK = { ! $$eralocal && { [ "$$h" = localhost ] || [ "$$h" = ::1 ] || printf '%s' "$$h" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$$'; }; }
+# SEC-56: octeto IPv4 canonico (0-255, sem zero a esquerda). IPV4_NUMERICO
+# casa qualquer forma numerica que o resolver aceitaria (decimal 3232278634,
+# hex 0xc0a8a86a, octal 0300.0250..., curta 192.168.43114); a que nao for
+# IPV4_CANONICO (a.b.c.d) e recusada pelas guardas, sem valvula. Mesmas
+# regras do backend/shared/testkit/integracao (paridade testada).
+OCTETO_V4 := (25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])
+IPV4_NUMERICO := ^(0x[0-9a-f]*|[0-9]+)(\.(0x[0-9a-f]*|[0-9]+))*$$
+IPV4_CANONICO := ^$(OCTETO_V4)(\.$(OCTETO_V4)){3}$$
+LOOPBACK_V4 := ^127(\.$(OCTETO_V4)){3}$$
+# Loopback (localhost, ::1, 127.x.x.x canonico) depois do NORMALIZA_HOST; nome
+# com ".local" (mDNS, pode ser qualquer maquina) nunca conta como loopback.
+HOST_LOOPBACK = { ! $$eralocal && { [ "$$h" = localhost ] || [ "$$h" = ::1 ] || printf '%s' "$$h" | grep -Eq '$(LOOPBACK_V4)'; }; }
 # SEC-46: deteccao reutilizada pelas guardas (define $$h, $$porta e $$prod no
 # shell da receita). A porta e normalizada como numero ("+"/zeros a esquerda:
 # 03306 e 3306 para o cliente mariadb e para o Go), igual ao SEC-50. O SEC-50 aplica a mesma regra nos testes Go
 # (backend/shared/testkit/integracao; paridade testada). SEC-54: porta nao
 # numerica e literal com ":" que nao seja ::1 (IPv6) contam como PRODUCAO
-# (fail-closed).
+# (fail-closed). SEC-57: porta fora de "+"? e digitos (inclusive espacos:
+# DB_PORT da linha de comando nao passa pelo $(strip); o do .env passa) define
+# $$portainvalida=true. SEC-56: IPv4 numerico nao canonico define
+# $$hostinvalido=true. Os dois tambem marcam prod=true.
+# BUG-32: o DB_PORT e lido do AMBIENTE ($$DB_PORT; o "export" global o exporta),
+# nunca interpolado na receita: quebra de linha, aspas, crase ou $$(...) da linha
+# de comando quebrariam ou executariam no shell da guarda. Nao fazer "unexport
+# DB_PORT": vazio viraria 3306 (catraca nos testes). PORTA_EXIBIVEL troca o que
+# nao e imprimivel por "?" nas mensagens.
+PORTA_DETECTA_INVALIDA = pnum=$$DB_PORT; portainvalida=false; case "$$pnum" in +) portainvalida=true ;; esac; case "$${pnum\#+}" in *[!0-9]*) portainvalida=true ;; esac
+PORTA_EXIBIVEL = $$(printf '%s' "$$DB_PORT" | tr -c '[:print:]' '?')
 PRODUCAO_DETECTA = $(NORMALIZA_HOST); \
-	porta=$$(printf '%s' "$(DB_PORT)" | sed 's/^+//; s/^0*\([0-9]\)/\1/'); prod=false; \
-	pnum="$(DB_PORT)"; case "$$pnum" in +) prod=true ;; esac; case "$${pnum\#+}" in *[!0-9]*) prod=true ;; esac; \
+	porta=$$(printf '%s' "$$DB_PORT" | sed 's/^+//; s/^0*\([0-9]\)/\1/'); prod=false; hostinvalido=false; \
+	$(PORTA_DETECTA_INVALIDA); \
+	$$portainvalida && prod=true; \
+	if printf '%s' "$$h" | grep -Eq '$(IPV4_NUMERICO)' && ! printf '%s' "$$h" | grep -Eq '$(IPV4_CANONICO)'; then hostinvalido=true; prod=true; fi; \
 	case "$$h" in ::1) ;; *:*) prod=true ;; esac; \
 	for p in $(PRODUCAO_HOSTS_REDE); do [ "$$h" = "$$p" ] && prod=true; done; \
 	for p in $(PRODUCAO_HOSTS_LAN); do \
 	  if [ "$$h" = "$$p" ] && { [ -z "$$porta" ] || [ "$$porta" = 3306 ]; }; then prod=true; fi; \
 	done
+# SEC-56/SEC-57: recusas sem valvula (CONFIRMO_PRODUCAO nao vale), antes da
+# deteccao de producao. Usadas pelas tres guardas.
+MSG_SEC57 = printf "SEC-57: DB_PORT='%s' invalida (so digitos, '+' opcional no inicio, sem espacos): alvo recusado\n" "$(PORTA_EXIBIVEL)"
+MSG_SEC56 = echo "SEC-56: DB_HOST=$$DB_HOST e IPv4 em forma numerica nao canonica (decimal/hex/octal/curta): use a.b.c.d (alvo recusado, sem valvula)"
 db-guard-producao: ## DEPLOY-07: recusa o banco de producao (salvo CONFIRMO_PRODUCAO=<DB_HOST>/<DB_NAME> na linha de comando)
 	@$(PRODUCAO_DETECTA); \
+	if $$portainvalida; then $(MSG_SEC57); exit 1; fi; \
+	if $$hostinvalido; then $(MSG_SEC56); exit 1; fi; \
 	$$prod || exit 0; \
-	if [ "$(origin CONFIRMO_PRODUCAO)" = "command line" ] && [ "$(CONFIRMO_PRODUCAO)" = "$(DB_HOST)/$(DB_NAME)" ]; then \
-	  echo "AVISO (DEPLOY-07): $(DB_HOST):$${porta:-3306} e PRODUCAO; confirmado por CONFIRMO_PRODUCAO=$(DB_HOST)/$(DB_NAME)."; exit 0; \
+	if [ "$(origin CONFIRMO_PRODUCAO)" = "command line" ] && [ "$(CONFIRMO_PRODUCAO)" = "$$DB_HOST/$$DB_NAME" ]; then \
+	  echo "AVISO (DEPLOY-07): $$DB_HOST:$${porta:-3306} e PRODUCAO; confirmado por CONFIRMO_PRODUCAO=$$DB_HOST/$$DB_NAME."; exit 0; \
 	fi; \
-	echo "DEPLOY-07: DB_HOST=$(DB_HOST) DB_PORT=$${porta:-3306} e o banco de PRODUCAO: alvo recusado (make db-* apaga/altera dados reais)."; \
+	echo "DEPLOY-07: DB_HOST=$$DB_HOST DB_PORT=$${porta:-3306} e o banco de PRODUCAO: alvo recusado (make db-* apaga/altera dados reais)."; \
 	echo "  O dev (CasaOS) e a porta 3307. Seed inicial de producao: sudo bash deploy/seed-producao.sh no servidor."; \
-	echo "  Se for mesmo producao, repita com CONFIRMO_PRODUCAO=$(DB_HOST)/$(DB_NAME) na linha de comando."; \
+	echo "  Se for mesmo producao, repita com CONFIRMO_PRODUCAO=$$DB_HOST/$$DB_NAME na linha de comando."; \
 	exit 1
 
 # SEC-46: db-down/db-reset/db-rebuild (DROP DATABASE) e db-seed (sobrescreve
@@ -183,7 +368,9 @@ db-guard-producao: ## DEPLOY-07: recusa o banco de producao (salvo CONFIRMO_PROD
 db-guard-sem-producao: ## SEC-46: recusa db-down/db-reset/db-rebuild/db-seed na producao, mesmo com CONFIRMO_PRODUCAO
 	@$(PRODUCAO_DETECTA); \
 	$$prod || exit 0; \
-	echo "SEC-46: DB_HOST=$(DB_HOST) DB_PORT=$${porta:-3306} e PRODUCAO: db-down/db-reset/db-rebuild/db-seed sao recusados mesmo com CONFIRMO_PRODUCAO (apagam ou sobrescrevem dados reais). Recriar producao: backup (BACKUP-01), sudo bash deploy/mariadb-docker.sh --recriar e sudo bash deploy/seed-producao.sh no servidor."; \
+	if $$portainvalida; then $(MSG_SEC57); fi; \
+	if $$hostinvalido; then $(MSG_SEC56); fi; \
+	echo "SEC-46: DB_HOST=$$DB_HOST DB_PORT=$${porta:-3306} e PRODUCAO: db-down/db-reset/db-rebuild/db-seed sao recusados mesmo com CONFIRMO_PRODUCAO (apagam ou sobrescrevem dados reais). Recriar producao: backup (BACKUP-01), sudo bash deploy/mariadb-docker.sh --recriar e sudo bash deploy/seed-producao.sh no servidor."; \
 	exit 1
 
 # SEC-46: DROP DATABASE rotaperfumes (o nome real, sem diferenciar maiusculas)
@@ -194,12 +381,12 @@ db-guard-sem-producao: ## SEC-46: recusa db-down/db-reset/db-rebuild/db-seed na 
 db-guard-drop: ## SEC-46: DROP DATABASE rotaperfumes fora do loopback exige CONFIRMAR=<DB_NAME> na linha de comando
 	@$(NORMALIZA_HOST); \
 	if $(HOST_LOOPBACK); then exit 0; fi; \
-	[ "$$(printf '%s' "$(DB_NAME)" | tr 'A-Z' 'a-z')" = rotaperfumes ] || exit 0; \
-	porta="$(DB_PORT)"; \
-	if [ "$(origin CONFIRMAR)" = "command line" ] && [ "$(CONFIRMAR)" = "$(DB_NAME)" ]; then \
-	  echo "AVISO (SEC-46): DROP DATABASE $(DB_NAME) em $(DB_HOST):$${porta:-3306} confirmado por CONFIRMAR=$(DB_NAME)."; exit 0; \
+	[ "$$(printf '%s' "$$DB_NAME" | tr 'A-Z' 'a-z')" = rotaperfumes ] || exit 0; \
+	porta="$(PORTA_EXIBIVEL)"; \
+	if [ "$(origin CONFIRMAR)" = "command line" ] && [ "$(CONFIRMAR)" = "$$DB_NAME" ]; then \
+	  echo "AVISO (SEC-46): DROP DATABASE $$DB_NAME em $$DB_HOST:$${porta:-3306} confirmado por CONFIRMAR=$$DB_NAME."; exit 0; \
 	fi; \
-	echo "SEC-46: DROP DATABASE $(DB_NAME) em $(DB_HOST):$${porta:-3306} (fora do loopback): repita com CONFIRMAR=$(DB_NAME) na linha de comando (no .env ou no ambiente nao vale)."; \
+	echo "SEC-46: DROP DATABASE $$DB_NAME em $$DB_HOST:$${porta:-3306} (fora do loopback): repita com CONFIRMAR=$$DB_NAME na linha de comando (no .env ou no ambiente nao vale)."; \
 	exit 1
 
 # SEC-54: allowlist dos testes de integracao (test-integration e GUARDA_INTEGRACAO),
@@ -213,14 +400,16 @@ db-guard-integracao: ## SEC-54: testes de integracao so no loopback ou no CasaOS
 	@$(PRODUCAO_DETECTA); \
 	ok=false; $$prod || $$eralocal || for e in $(INTEGRACAO_PERMITIDOS); do \
 	  case "$$e" in \
-	    127.0.0.0/8) printf '%s' "$$h" | grep -Eq '^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$$' && ok=true ;; \
+	    127.0.0.0/8) printf '%s' "$$h" | grep -Eq '$(LOOPBACK_V4)' && ok=true ;; \
 	    *:*:*) [ "$$h" = "$$e" ] && ok=true ;; \
 	    *:*) [ "$$h:$${porta:-3306}" = "$$e" ] && ok=true ;; \
 	    *) [ "$$h" = "$$e" ] && ok=true ;; \
 	  esac; \
 	done; \
 	$$ok && exit 0; \
-	echo "SEC-54: DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) fora da allowlist da integracao ($(INTEGRACAO_PERMITIDOS)): use um MariaDB descartavel no loopback ou o dev do CasaOS (porta 3307)."; \
+	if $$portainvalida; then $(MSG_SEC57); fi; \
+	if $$hostinvalido; then $(MSG_SEC56); fi; \
+	echo "SEC-54: DB_HOST=$$DB_HOST DB_PORT=$(PORTA_EXIBIVEL) fora da allowlist da integracao ($(INTEGRACAO_PERMITIDOS)): use um MariaDB descartavel no loopback ou o dev do CasaOS (porta 3307)."; \
 	exit 1
 
 db-create: db-guard-producao db-check-env ## Cria o banco de dados se não existir
@@ -237,7 +426,12 @@ db-up: db-guard-producao db-create ## Cria o schema (tabelas vazias) na ordem de
 	  $(DB_CLI) $(DB_NAME) < "sql/$$f" || exit 1; \
 	done
 
-db-seed: db-guard-producao db-guard-sem-producao db-up ## Cria o schema, carrega dados e corrige hashes (DEV; producao: deploy/seed-producao.sh)
+# BUG-28: o db-up (CREATE DATABASE + DDL) roda na RECEITA do db-seed, por
+# sub-make: com make -k/-j ele nao roda mais em paralelo a uma guarda que
+# falhou. Os pre-requisitos de quem depende do db-guard-sem-producao sao so
+# guardas e db-check-env (catraca nos testes).
+db-seed: db-guard-producao db-guard-sem-producao db-check-env ## Cria o schema, carrega dados e corrige hashes (DEV; producao: deploy/seed-producao.sh)
+	$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-up
 	@echo "=== Seed: admin principal ==="
 	$(DB_CLI) $(DB_NAME) < sql/02_seed_admin.sql
 	@echo "=== Seed: usuarios dos 42 vendedores ==="
@@ -262,9 +456,14 @@ db-down: db-guard-producao db-guard-sem-producao db-guard-drop db-check-env ## D
 # CONFIRMO_PRODUCAO e ENV_ARQUIVO NAO sao repassados a mao: os da linha de
 # comando ja chegam pelo MAKEFLAGS (origin = command line); repassar
 # transformaria um valor do .env/ambiente em linha de comando (SEC-46).
+# BUG-29: esse repasse some com MAKEFLAGS/MAKEOVERRIDES/GNUMAKEFLAGS na linha
+# de comando (o topo do Makefile recusa) e cada "$(MAKE)" (sempre literal, sem
+# wrapper) leva a sentinela RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)': o sub-make que
+# leria outro arquivo (ex.: o .env no lugar do ENV_ARQUIVO) aborta antes de
+# qualquer guarda ou cliente. So o nome do arquivo e repassado, nunca valores.
 # As guardas rodam de novo em cada sub-make (o AVISO pode repetir).
 db-reset: db-guard-producao db-guard-sem-producao db-guard-drop ## Recria o banco do zero com hashes validos (db-down && db-seed em sequencia; para no 1o erro, mesmo com -k/-j: BUG-27)
-	$(MAKE) db-down && $(MAKE) db-seed
+	$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-down && $(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-seed
 
 db-fix-deve-trocar-senha: db-guard-producao db-check-env ## Adiciona a coluna deve_trocar_senha em bancos existentes (nao destrutivo, sem apagar dados)
 	$(DB_CLI) $(DB_NAME) < sql/08_alter_usuarios_deve_trocar_senha.sql
@@ -320,6 +519,12 @@ db-fix-produtos-imagem: db-guard-producao db-check-env ## Adiciona produtos.imag
 db-revert-produtos-imagem: db-guard-producao db-check-env ## Reverte db-fix-produtos-imagem (remove CHECK, UNIQUE e coluna; perde os vinculos produto->imagem, arquivos ficam orfaos)
 	$(DB_CLI) $(DB_NAME) < sql/26_revert_produtos_imagem.sql
 
+db-fix-historico-created-at: db-guard-producao db-check-env ## Torna senha_historico.created_at NOT NULL (DB-09; idempotente; aborta sem alterar dados se houver linha com created_at NULL, remedio no cabecalho do sql/27)
+	$(DB_CLI) $(DB_NAME) < sql/27_alter_senha_historico_created_at_not_null.sql
+
+db-revert-historico-created-at: db-guard-producao db-check-env ## Reverte db-fix-historico-created-at (a coluna volta a aceitar NULL; nao altera as linhas)
+	$(DB_CLI) $(DB_NAME) < sql/27_revert_senha_historico_created_at_not_null.sql
+
 # IMG-01: gera um PNG por produto (nome na diagonal) pelo mesmo caso de uso do
 # upload, no PRODUTO_IMAGENS_DIR (padrão backend/rotaperfumes-api/data/produtos-imagens).
 # Flags extras: make db-gerar-imagens-produtos GERAR_IMAGENS_FLAGS=-sobrescrever
@@ -358,11 +563,11 @@ db-import-estoque: db-guard-producao ## Importa dados/erp/estoque.csv para a tab
 # BUG-27: mesma cadeia do db-reset, seguida dos imports na ordem das
 # dependencias, um sub-make por etapa.
 db-rebuild: db-guard-producao db-guard-sem-producao db-guard-drop ## Recria o banco do zero e importa todos os dados (db-down && db-seed && db-import-*, em sequencia: BUG-27)
-	$(MAKE) db-down && $(MAKE) db-seed && \
-	$(MAKE) db-import-clientes && $(MAKE) db-import-produtos && \
-	$(MAKE) db-import-pedidos && $(MAKE) db-import-pagamentos && \
-	$(MAKE) db-import-carteiras && $(MAKE) db-import-oportunidades && \
-	$(MAKE) db-import-visitas && $(MAKE) db-import-estoque
+	$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-down && $(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-seed && \
+	$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-import-clientes && $(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-import-produtos && \
+	$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-import-pedidos && $(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-import-pagamentos && \
+	$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-import-carteiras && $(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-import-oportunidades && \
+	$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-import-visitas && $(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' db-import-estoque
 
 db-export: ## Exporta as tabelas do banco para CSV em export/crm e export/erp (mesmo formato de dados/)
 	cd backend/shared && go run ./cmd/exportdados
@@ -453,7 +658,7 @@ cover-combinada: $(GUARDA_INTEGRACAO) build-shared ## ARQ-01: cobertura combinad
 #   make test-integration ENV_ARQUIVO=integracao.env
 # (ver docs/arquitetura-ddd.md §10.9).
 test-integration: db-guard-producao db-guard-integracao ## Roda testes de integração com -p 1 (requer MariaDB descartável e DB_*; só loopback ou CasaOS :3307, SEC-54; ver docs/arquitetura-ddd.md §10.9)
-	$(MAKE) test INTEGRATION=1 GO_TEST_FLAGS="-p 1 -count=1"
+	$(MAKE) RP_ENV_PAI='$(ENV_ARQUIVO_LIDO)' test INTEGRATION=1 GO_TEST_FLAGS="-p 1 -count=1"
 
 test-frontend:
 	cd frontend && $(SEM_SEGREDOS) npm test
@@ -499,17 +704,21 @@ deps-audit-frontend: ## SEC-13: npm audit (falha em severidade high+) e npm outd
 	@echo "=== frontend: npm audit --omit=dev --audit-level=high ==="
 	cd frontend && $(SEM_SEGREDOS) npm audit --omit=dev --audit-level=high
 
-# SEC-31: imagens fixadas por digest (tag@sha256:...) no Jenkinsfile e no
-# deploy/mariadb-docker.sh. Só informa: para cada referência, compara o digest
+# SEC-31: imagens fixadas por digest (tag@sha256:...) no Jenkinsfile (GO_IMAGE,
+# GO_TEST_IMAGE, NODE_IMAGE, DB_CLIENT_IMAGE), no deploy/mariadb-docker.sh
+# (IMAGEM_BASE) e no deploy/seed-producao.sh (GO_IMAGE, DB_CLIENT_IMAGE). Só
+# informa: para cada referência, compara o digest
 # fixado com o digest atual da mesma tag e o da tag sem o patch (ex.: 11.4,
 # 1.26-alpine) no Docker Hub (docker buildx imagetools ou, sem docker, curl ao
-# registry com token anônimo). Nunca falha. Para atualizar: trocar a string
-# nos dois arquivos (mesmo digest do mariadb), make test, backup e
+# registry com token anônimo). Nunca falha. Para atualizar: trocar a string em
+# todos os arquivos onde ela aparece: mariadb nos três (mesmo digest), GO_IMAGE
+# no Jenkinsfile e no seed-producao.sh; GO_TEST_IMAGE e NODE_IMAGE só existem no
+# Jenkinsfile. Depois, make test e, se o mariadb mudou, backup e
 # sudo bash deploy/mariadb-docker.sh --recriar (ver comentário no Jenkinsfile).
 IMAGENS_FIXADAS_EM = Jenkinsfile deploy/mariadb-docker.sh deploy/seed-producao.sh
 IMAGEM_ACCEPT = application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json
 
-deps-audit-imagens: ## SEC-31: compara os digests fixados (Jenkinsfile: go, node e mariadb; mariadb-docker.sh) com os das tags atuais no Docker Hub (informativo, nunca falha)
+deps-audit-imagens: ## SEC-31: compara os digests fixados (Jenkinsfile: GO_IMAGE, GO_TEST_IMAGE, NODE_IMAGE e mariadb; mariadb-docker.sh; seed-producao.sh) com os das tags atuais no Docker Hub (informativo, nunca falha)
 	@digest_remoto() { \
 	  if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then \
 	    docker buildx imagetools inspect "$$1:$$2" --format '{{.Manifest.Digest}}' 2>/dev/null && return; \

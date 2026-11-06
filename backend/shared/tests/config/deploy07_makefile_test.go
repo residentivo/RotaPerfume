@@ -122,12 +122,22 @@ func deploy07Make(t *testing.T, env []string, args ...string) (string, error) {
 
 // copiaDoMakefile copia o Makefile do projeto para um diretório temporário
 // (sem .env, sem sql/, sem backend/): nada ali conecta em banco.
+// dirTempMake (SEC-63): o t.TempDir() carrega o nome do subteste, com "(", "=" e
+// acentos; esse caminho vira DB_CLIENTE_BIN, que o Makefile recusaria.
+func dirTempMake(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "rp-make-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func copiaDoMakefile(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("usa sh")
 	}
-	dir := t.TempDir()
+	dir := dirTempMake(t)
 	dados, err := os.ReadFile(filepath.Join(raizProjeto(t), "Makefile"))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Makefile"), dados, 0o644))

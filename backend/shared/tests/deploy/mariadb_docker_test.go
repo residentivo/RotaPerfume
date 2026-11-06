@@ -77,6 +77,11 @@ func TestTST15_ScriptsDeploy_Shellcheck(t *testing.T) {
 func TestTST17_ShellcheckDisableComMotivo(t *testing.T) {
 	extras, err := filepath.Glob(caminhoRaiz(t, "scripts", "*.sh"))
 	require.NoError(t, err)
+	if emCI() {
+		// CI-01: no CI o scripts/ vai no tar do "Testes Go"; lista vazia
+		// passaria em silêncio.
+		require.NotEmpty(t, extras, "scripts/*.sh ausente no CI (CI-01)")
+	}
 	re := regexp.MustCompile(`#\s*shellcheck\s+disable=(SC\d+(?:,SC\d+)*)(.*)$`)
 	for _, s := range append(scriptsDeploy(t), extras...) {
 		b, err := os.ReadFile(s)

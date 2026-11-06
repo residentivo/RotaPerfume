@@ -90,12 +90,12 @@ func TestARQ06_ContratoJSON_ByteAByte(t *testing.T) {
 		server, db, mock := setupTestServer(t)
 		defer server.Close()
 		defer db.Close()
-		mock.ExpectQuery(reVendasTotais).WillReturnRows(sqlmock.NewRows([]string{"v", "q"}).AddRow(1234.5, 3))
-		mock.ExpectQuery(reTotalPedidos).WillReturnRows(sqlmock.NewRows([]string{"t"}).AddRow(3))
+		mock.ExpectQuery(reVendasTotais).WithArgs(argsPeriodoAtual("week")...).WillReturnRows(sqlmock.NewRows([]string{"v", "q"}).AddRow(1234.5, 3))
+		mock.ExpectQuery(reTotalPedidos).WithArgs(argsPeriodoAtual("week")...).WillReturnRows(sqlmock.NewRows([]string{"t"}).AddRow(3))
 		mock.ExpectQuery(reTopVendedores).WithArgs(10).WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "meta"}).AddRow(int64(7), "Ana", 1000.0))
-		mock.ExpectQuery(reEnrichVendas).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"v", "t", "q"}).AddRow(int64(7), 250.25, 2))
+		mock.ExpectQuery(reEnrichVendas).WithArgs(idsComMesAtual(int64(7))...).WillReturnRows(sqlmock.NewRows([]string{"v", "t", "q"}).AddRow(int64(7), 250.25, 2))
 		mock.ExpectQuery(reMetasVendedores).WillReturnRows(sqlmock.NewRows([]string{"id", "nome", "regiao", "uf", "meta"}).AddRow(int64(7), "Ana", "Sul", "PR", 1000.0))
-		mock.ExpectQuery(reEnrichVendas).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"v", "t", "q"}).AddRow(int64(7), 250.25, 2))
+		mock.ExpectQuery(reEnrichVendas).WithArgs(idsComMesAtual(int64(7))...).WillReturnRows(sqlmock.NewRows([]string{"v", "t", "q"}).AddRow(int64(7), 250.25, 2))
 		mock.ExpectQuery(reMetaMensalTotal).WillReturnRows(sqlmock.NewRows([]string{"m"}).AddRow(1000.0))
 
 		status, body := getComToken(t, server.URL+"/api/dashboard/metrics?periodo=week", 1, "admin")
@@ -111,13 +111,13 @@ func TestARQ06_ContratoJSON_ByteAByte(t *testing.T) {
 		server, db, mock := setupTestServer(t)
 		defer server.Close()
 		defer db.Close()
-		mock.ExpectQuery(reSerieVendas).WithArgs(2).WillReturnRows(sqlmock.NewRows([]string{"d", "v", "q"}).AddRow("2026-10-14", 10.5, 1))
-		mock.ExpectQuery(reSerieDias).WithArgs(2).WillReturnRows(sqlmock.NewRows([]string{"dia"}).AddRow("2026-10-14").AddRow("2026-10-15"))
+		ontem, hoje := diaBUG30(1), diaBUG30(0)
+		mock.ExpectQuery(reSerieVendas).WithArgs(argDia(2)).WillReturnRows(sqlmock.NewRows([]string{"d", "v", "q"}).AddRow(ontem, 10.5, 1))
 
 		status, body := getComToken(t, server.URL+"/api/dashboard/vendas?dias=2", 1, "admin")
 		assert.Equal(t, http.StatusOK, status)
 		assert.Equal(t, envelopeComercialLegado(t, map[string]any{"success": true, "data": map[string]any{"dias": 2,
-			"pontos": []map[string]any{legadoPonto("2026-10-14", 10.5, 1), legadoPonto("2026-10-15", 0.0, 0)}}}), body)
+			"pontos": []map[string]any{legadoPonto(ontem, 10.5, 1), legadoPonto(hoje, 0.0, 0)}}}), body)
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 
@@ -126,7 +126,7 @@ func TestARQ06_ContratoJSON_ByteAByte(t *testing.T) {
 		defer server.Close()
 		defer db.Close()
 		mock.ExpectQuery(reRankingCount).WithoutArgs().WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(3))
-		mock.ExpectQuery(reRankingLista).WithArgs(2, 0).WillReturnRows(sqlmock.NewRows(rankingCols).
+		mock.ExpectQuery(reRankingLista).WithArgs(argsMesAtual(2, 0)...).WillReturnRows(sqlmock.NewRows(rankingCols).
 			AddRow(int64(7), "Ana", "Sul", "PR", 1000.0, 333.333, 3, 33.3333))
 
 		status, body := getComToken(t, server.URL+"/api/dashboard/vendedores?page=1&limit=2", 1, "admin")
@@ -143,7 +143,7 @@ func TestARQ06_ContratoJSON_ByteAByte(t *testing.T) {
 		defer server.Close()
 		defer db.Close()
 		mock.ExpectQuery(reRankingCount).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(0))
-		mock.ExpectQuery(reRankingLista).WithArgs(20, 0).WillReturnRows(sqlmock.NewRows(rankingCols))
+		mock.ExpectQuery(reRankingLista).WithArgs(argsMesAtual(20, 0)...).WillReturnRows(sqlmock.NewRows(rankingCols))
 
 		status, body := getComToken(t, server.URL+"/api/dashboard/vendedores", 1, "admin")
 		assert.Equal(t, http.StatusOK, status)
@@ -158,7 +158,7 @@ func TestARQ06_ContratoJSON_ByteAByte(t *testing.T) {
 		mock.ExpectQuery(`SELECT COUNT\(\*\) FROM clientes$`).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(9))
 		mock.ExpectQuery(`FROM clientes WHERE ativo = \?$`).WithArgs(true).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(7))
 		mock.ExpectQuery(`FROM clientes WHERE ativo = \?$`).WithArgs(false).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(2))
-		mock.ExpectQuery(`FROM clientes WHERE data_cadastro = CURDATE\(\)$`).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
+		mock.ExpectQuery(`FROM clientes WHERE data_cadastro = \?$`).WithArgs(argDia(0)).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
 		mock.ExpectQuery(`SELECT segmento`).WillReturnRows(sqlmock.NewRows([]string{"s", "t"}).AddRow("varejo", 6).AddRow("atacado", 3))
 		mock.ExpectQuery(`SELECT uf`).WillReturnRows(sqlmock.NewRows([]string{"u", "t"}).AddRow("PR", 9))
 
@@ -263,11 +263,11 @@ func TestARQ04_N1_PonteEscopo_ZeroValueEhSemAcesso(t *testing.T) {
 	}{
 		{"irrestrito", irrestrito, func(m sqlmock.Sqlmock) {
 			m.ExpectQuery(reRankingCount + `$`).WithoutArgs().WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(2))
-			m.ExpectQuery(reRankingLista).WithArgs(20, 0).WillReturnRows(sqlmock.NewRows(rankingCols))
+			m.ExpectQuery(reRankingLista).WithArgs(argsMesAtual(20, 0)...).WillReturnRows(sqlmock.NewRows(rankingCols))
 		}, 2},
 		{"vendedor", doVendedor, func(m sqlmock.Sqlmock) {
 			m.ExpectQuery(reRankingCount + ` AND id = \?$`).WithArgs(int64(10)).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
-			m.ExpectQuery(reRankingLista).WithArgs(int64(10), 20, 0).WillReturnRows(sqlmock.NewRows(rankingCols))
+			m.ExpectQuery(reRankingLista).WithArgs(argsMesAtual(int64(10), 20, 0)...).WillReturnRows(sqlmock.NewRows(rankingCols))
 		}, 1},
 		{"sem acesso", kernel.EscopoSemAcesso(), func(sqlmock.Sqlmock) {}, 0},
 		{"zero value do Escopo", kernel.Escopo{}, func(sqlmock.Sqlmock) {}, 0},
@@ -337,7 +337,7 @@ func TestARQ06_Vlog_NiveisSemValores(t *testing.T) {
 
 	expectEscopoVendedor(mock, escopoVendedorB)
 	mock.ExpectQuery(reRankingCount).WithArgs(escopoVendedorB).WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
-	mock.ExpectQuery(reRankingLista).WithArgs(escopoVendedorB, 20, 0).WillReturnRows(sqlmock.NewRows(rankingCols).
+	mock.ExpectQuery(reRankingLista).WithArgs(argsMesAtual(escopoVendedorB, 20, 0)...).WillReturnRows(sqlmock.NewRows(rankingCols).
 		AddRow(escopoVendedorB, "NomeSecreto", "Sul", "PR", 100.0, 50.0, 1, 50.0))
 	status, _ := getComToken2(t, server.URL+"/api/dashboard/vendedores", generateToken(t, testCfg(), escopoUsuarioNormal, "normal"))
 	require.Equal(t, http.StatusOK, status)
